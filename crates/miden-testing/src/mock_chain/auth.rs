@@ -22,9 +22,8 @@ use miden_standards::account::auth::{
     AuthMultisigSmartConfig,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
-    AuthSingleSigAclConfig,
     GuardianConfig,
+    SponsorshipPolicy,
 };
 use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::testing::account_component::{
@@ -61,14 +60,6 @@ pub enum Auth {
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
     },
 
-    /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthSingleSigAcl]. Any called procedure that is not
-    /// in `exempt_procedures` forces signature verification.
-    Acl {
-        exempt_procedures: BTreeSet<AccountProcedureRoot>,
-        auth_scheme: AuthScheme,
-    },
-
     /// Creates a mock authentication mechanism for the account that only increments the nonce.
     IncrNonce,
 
@@ -92,6 +83,7 @@ pub enum Auth {
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
         allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
         fee_policy_manager: FeePolicyManager,
+        sponsorship_policy: SponsorshipPolicy,
     },
 }
 
@@ -119,8 +111,7 @@ impl Auth {
     ///
     /// The authentication component is always the first component of the returned vector; variants
     /// that expand into multiple components (e.g. [`Auth::NetworkAccount`]) yield their companion
-    /// components after it. The authenticator is only `Some` when [`Auth::BasicAuth`] or
-    /// [`Auth::Acl`] is passed.
+    /// components after it. The authenticator is only `Some` when [`Auth::BasicAuth`] is passed.
     pub fn build_components(&self) -> (Vec<AccountComponent>, Option<BasicAuthenticator>) {
         match self {
             Auth::BasicAuth { auth_scheme } => {
@@ -168,23 +159,6 @@ impl Auth {
 
                 (vec![component], None)
             },
-            Auth::Acl { exempt_procedures, auth_scheme } => {
-                let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
-                    .expect("failed to create secret key");
-                let pub_key = sec_key.public_key().to_commitment();
-
-                let component = AuthSingleSigAcl::new(
-                    Approver::new(pub_key, *auth_scheme),
-                    AuthSingleSigAclConfig::new(exempt_procedures.clone()).expect(
-                        "AuthSingleSigAcl component creation failed: too many exempt procedures",
-                    ),
-                )
-                .into();
-                let authenticator = BasicAuthenticator::new(&[sec_key]);
-
-                (vec![component], Some(authenticator))
-            },
             Auth::IncrNonce => (vec![IncrNonceAuthComponent.into()], None),
             Auth::Noop => (vec![NoopAuthComponent.into()], None),
             Auth::Conditional => (vec![ConditionalAuthComponent.into()], None),
@@ -192,6 +166,7 @@ impl Auth {
                 allowed_script_roots,
                 allowed_tx_script_roots,
                 fee_policy_manager,
+                sponsorship_policy,
             } => {
                 let components = AuthNetworkAccount::new(
                     allowed_script_roots.clone(),
@@ -199,6 +174,7 @@ impl Auth {
                 )
                 .expect("network account allowlist must be non-empty")
                 .with_allowed_tx_scripts(allowed_tx_script_roots.clone())
+                .with_sponsorship_policy(*sponsorship_policy)
                 .into_iter()
                 .collect();
                 (components, None)

@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::AccountId;
+use miden_protocol::account::{AccountId, AccountProcedureRoot};
 use miden_protocol::assembly::Path;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -22,6 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
@@ -42,13 +43,13 @@ static NETWORK_ACCOUNT_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // NETWORK ACCOUNT CONFIG
 // ================================================================================================
 
-/// An allowlist-mutation action of the
+/// A configuration action of the
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component that a
 /// [`NetworkAccountConfigNote`] triggers on the network account that consumes it.
 ///
-/// Each variant adds or removes one script root from the note script or tx script allowlist.
-/// Because the allowlist check reads the transaction's initial state, an update only takes effect
-/// from the account's next transaction.
+/// Each variant adds or removes one root from the note-script allowlist, the tx-script allowlist,
+/// or the allowed fee policy roots map. The allowlist checks read the transaction's initial state,
+/// so an update only takes effect from the account's next transaction.
 ///
 /// The action is encoded into the note's storage (see [`NoteStorage`] conversion below). Because
 /// the storage is fixed at note creation and bound into the note commitment, the authorized party
@@ -64,6 +65,10 @@ pub enum NetworkAccountConfig {
     AddAllowedTxScript { script_root: TransactionScriptRoot },
     /// Removes `script_root` from the tx script allowlist.
     RemoveAllowedTxScript { script_root: TransactionScriptRoot },
+    /// Adds `policy_root` to the allowed fee policy roots map.
+    AddAllowedFeePolicy { policy_root: AccountProcedureRoot },
+    /// Removes `policy_root` from the allowed fee policy roots map.
+    RemoveAllowedFeePolicy { policy_root: AccountProcedureRoot },
 }
 
 impl NetworkAccountConfig {
@@ -76,8 +81,10 @@ impl NetworkAccountConfig {
     const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT: u8 = 1;
     const SELECTOR_ADD_ALLOWED_TX_SCRIPT: u8 = 2;
     const SELECTOR_REMOVE_ALLOWED_TX_SCRIPT: u8 = 3;
+    const SELECTOR_ADD_ALLOWED_FEE_POLICY: u8 = 4;
+    const SELECTOR_REMOVE_ALLOWED_FEE_POLICY: u8 = 5;
 
-    /// Returns the selector and the affected script root of this action.
+    /// Returns the selector and the affected root of this action.
     fn parts(self) -> (u8, Word) {
         match self {
             NetworkAccountConfig::AddAllowedNoteScript { script_root } => {
@@ -92,10 +99,16 @@ impl NetworkAccountConfig {
             NetworkAccountConfig::RemoveAllowedTxScript { script_root } => {
                 (Self::SELECTOR_REMOVE_ALLOWED_TX_SCRIPT, script_root.as_word())
             },
+            NetworkAccountConfig::AddAllowedFeePolicy { policy_root } => {
+                (Self::SELECTOR_ADD_ALLOWED_FEE_POLICY, policy_root.as_word())
+            },
+            NetworkAccountConfig::RemoveAllowedFeePolicy { policy_root } => {
+                (Self::SELECTOR_REMOVE_ALLOWED_FEE_POLICY, policy_root.as_word())
+            },
         }
     }
 
-    /// Returns the note storage values encoding this action, laid out as `[SCRIPT_ROOT, selector]`.
+    /// Returns the note storage values encoding this action, laid out as `[ROOT, selector]`.
     fn to_storage_values(self) -> Vec<Felt> {
         let (selector, script_root) = self.parts();
         let mut values = Vec::with_capacity(NetworkAccountConfigNote::NUM_STORAGE_ITEMS);
@@ -115,13 +128,13 @@ impl From<NetworkAccountConfig> for NoteStorage {
 // NETWORK ACCOUNT CONFIG NOTE
 // ================================================================================================
 
-/// A NetworkAccountConfig note: adds or removes a script root from a network account's
-/// note script or tx script allowlist.
+/// A NetworkAccountConfig note: adds or removes a root from a network account's note-script
+/// allowlist, tx-script allowlist, or allowed fee policy roots map.
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the
-/// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component's allowlist
-/// procedures. Authorization is enforced by those procedures through the account-wide `Authority`
-/// component against the note sender.
+/// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component's allowlist or
+/// fee-policy procedures. Authorization is enforced by those procedures through the account-wide
+/// `Authority` component against the note sender.
 ///
 /// For the consuming network account to accept this note, its own script root must be in the
 /// account's note script allowlist. Every
@@ -133,7 +146,7 @@ impl From<NetworkAccountConfig> for NoteStorage {
 #[derive(Debug, Clone)]
 pub struct NetworkAccountConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: NetworkAccountConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -143,23 +156,34 @@ pub struct NetworkAccountConfigNote {
 impl NetworkAccountConfigNote {
     /// Builds a new [`NetworkAccountConfigNote`] that applies `config` to `account`.
     ///
+    /// The note is bound to `account` with a [`NetworkAccountTarget`] attachment, so that only
+    /// `account` can consume it. This attachment is folded into the note commitment and verified
+    /// on-chain by the note script.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - `account` does not have [`AccountType::Public`](miden_protocol::account::AccountType).
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
+        // Bind consumption to the target account: the note script rejects any other consumer.
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
+            NoteError::other_with_source("failed to bind the note to its target account", err)
+        })?;
+
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -195,7 +219,7 @@ impl NetworkAccountConfigNote {
 
     /// Returns the account ID of the managed network account (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the allowlist-mutation action carried by the note.
@@ -256,7 +280,7 @@ impl From<NetworkAccountConfigNote> for Note {
         // NetworkAccountConfig notes carry no assets and are always public for network
         // execution; the action and its script root live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             NetworkAccountConfigNote::script(),
@@ -302,6 +326,10 @@ mod tests {
         TransactionScriptRoot::from_raw(Word::from([seed, seed + 1, seed + 2, seed + 3]))
     }
 
+    fn policy_root(seed: u32) -> AccountProcedureRoot {
+        AccountProcedureRoot::from_raw(Word::from([seed, seed + 1, seed + 2, seed + 3]))
+    }
+
     /// The builder produces a public, asset-less note tagged for the managed network account.
     #[test]
     fn builder_builds_allowlist_config_note() {
@@ -311,7 +339,7 @@ mod tests {
 
         let note = NetworkAccountConfigNote::builder()
             .sender(sender)
-            .account(account)
+            .target(account)
             .config(NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root(10) })
             .generate_serial_number(&mut rng)
             .build()
@@ -324,13 +352,19 @@ mod tests {
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(account));
         assert_eq!(note.assets().num_assets(), 0);
+
+        // The note is bound to its target account by a NetworkAccountTarget attachment
+        let target = NetworkAccountTarget::try_from(note.attachments())
+            .expect("note must carry a network account target attachment");
+        assert_eq!(target.target_id(), account);
     }
 
-    /// Storage is `[selector, SCRIPT_ROOT]` with the selector matching the action kind.
+    /// Storage is `[ROOT, selector]` with the selector matching the action kind.
     #[test]
     fn storage_layout() {
         let note_root = note_root(10);
         let tx_root = tx_root(20);
+        let policy_root = policy_root(30);
 
         let cases = [
             (
@@ -352,6 +386,16 @@ mod tests {
                 NetworkAccountConfig::RemoveAllowedTxScript { script_root: tx_root },
                 NetworkAccountConfig::SELECTOR_REMOVE_ALLOWED_TX_SCRIPT,
                 tx_root.as_word(),
+            ),
+            (
+                NetworkAccountConfig::AddAllowedFeePolicy { policy_root },
+                NetworkAccountConfig::SELECTOR_ADD_ALLOWED_FEE_POLICY,
+                policy_root.as_word(),
+            ),
+            (
+                NetworkAccountConfig::RemoveAllowedFeePolicy { policy_root },
+                NetworkAccountConfig::SELECTOR_REMOVE_ALLOWED_FEE_POLICY,
+                policy_root.as_word(),
             ),
         ];
 

@@ -350,11 +350,13 @@ async fn estimate_note_fee_returns_scheduled_fee(
     // or input note, so allowlist both the estimate script and the consumed note.
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            allowed_script_roots: BTreeSet::from([consumed_root]),
-            allowed_tx_script_roots: BTreeSet::from([tx_script.root()]),
-            fee_policy_manager: fee_policy_manager(&BTreeSet::from([consumed_root]))?,
-        })
+        .with_components(
+            AuthNetworkAccount::new(
+                BTreeSet::from([consumed_root]),
+                fee_policy_manager(&BTreeSet::from([consumed_root]))?,
+            )?
+            .with_allowed_tx_scripts(BTreeSet::from([tx_script.root()])),
+        )
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -394,11 +396,10 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
 
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            allowed_script_roots: BTreeSet::new(),
-            allowed_tx_script_roots: BTreeSet::from([tx_script.root()]),
-            fee_policy_manager: fee_policy_manager(&BTreeSet::new())?,
-        })
+        .with_components(
+            AuthNetworkAccount::new(BTreeSet::new(), fee_policy_manager(&BTreeSet::new())?)?
+                .with_allowed_tx_scripts(BTreeSet::from([tx_script.root()])),
+        )
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -440,11 +441,10 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
 
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            allowed_script_roots: BTreeSet::new(),
-            allowed_tx_script_roots: BTreeSet::from([tx_script.root()]),
-            fee_policy_manager: fee_policy_manager(&BTreeSet::new())?,
-        })
+        .with_components(
+            AuthNetworkAccount::new(BTreeSet::new(), fee_policy_manager(&BTreeSet::new())?)?
+                .with_allowed_tx_scripts(BTreeSet::from([tx_script.root()])),
+        )
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -484,11 +484,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // The foreign account's auth never runs under FPI, so its allowlists can stay empty.
     let foreign_account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            allowed_script_roots: BTreeSet::new(),
-            allowed_tx_script_roots: BTreeSet::new(),
-            fee_policy_manager,
-        })
+        .with_components(AuthNetworkAccount::new(BTreeSet::new(), fee_policy_manager)?)
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -629,11 +625,10 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
     // The foreign account's auth never runs under FPI, so its allowlists can stay empty.
     let foreign_account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_components(Auth::NetworkAccount {
-            allowed_script_roots: BTreeSet::new(),
-            allowed_tx_script_roots: BTreeSet::new(),
-            fee_policy_manager: fee_policy_manager(&BTreeSet::new())?,
-        })
+        .with_components(AuthNetworkAccount::new(
+            BTreeSet::new(),
+            fee_policy_manager(&BTreeSet::new())?,
+        )?)
         .with_component(BasicWallet)
         .build_existing()?;
 
@@ -815,14 +810,7 @@ async fn owner_can_mutate_allowed_fee_policy_roots(
 
     // Apply the allowlist mutation; it takes effect from the next block. The mutation note is
     // priced by the still-active constant policy at 0, so it needs no sponsorship.
-    let executed_transaction = mock_chain
-        .build_transaction(account.id())
-        .authenticated_input_note(mutation_note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
-    mock_chain.prove_next_block()?;
+    crate::consume_note(&mut mock_chain, account.id(), &mutation_note).await?;
 
     // Switch to the mutated root, consuming the switch note followed immediately by its sponsorship
     // note. In the `add` case the switch succeeds and fee collection prices the switch note through

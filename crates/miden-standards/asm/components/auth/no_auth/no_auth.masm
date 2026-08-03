@@ -41,7 +41,7 @@ pub proc auth_no_auth
     push.NO_AUTH_POST_FEE_CYCLES
     # => [num_extra_cycles, CONVERSION_INFO, pad(16)]
 
-    exec.fee::pay_fee
+    exec.fee::pay_fee drop
     # => [pad(16)]
 
     # check if the account state has changed by comparing initial and final commitments

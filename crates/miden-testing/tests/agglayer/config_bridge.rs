@@ -30,7 +30,11 @@ use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::interop::eth::EthAddress;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    bridge_admin_account_id,
+    create_existing_bridge_account_with_roles,
+};
 
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
@@ -103,6 +107,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -199,6 +204,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -318,6 +324,7 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -428,6 +435,7 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -572,6 +580,7 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -704,6 +713,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
 
     let bridge_account = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

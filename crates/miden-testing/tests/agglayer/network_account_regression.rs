@@ -22,7 +22,11 @@ use miden_standards::errors::standards::{
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use super::test_utils::{MIDEN_NETWORK_ID, create_existing_bridge_account_with_roles};
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    bridge_admin_account_id,
+    create_existing_bridge_account_with_roles,
+};
 
 /// Attack note script: trivial body whose root falls outside the bridge's allowlist.
 const ATTACK_NOTE_CODE: &str = "\
@@ -53,6 +57,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
@@ -88,7 +93,8 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
 }
 
 /// Asserts that a transaction consuming an input note whose script root falls outside the
-/// bridge's allowlist (CLAIM, B2AGG, CONFIG_AGG_BRIDGE, UPDATE_GER) fails with
+/// bridge's allowlist (see
+/// [`AggLayerBridge::allowed_notes`](miden_agglayer::AggLayerBridge::allowed_notes)) fails with
 /// [`ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED`].
 #[tokio::test]
 async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
@@ -107,6 +113,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     })?;
     let bridge_account = create_existing_bridge_account_with_roles(
         bridge_seed,
+        bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),

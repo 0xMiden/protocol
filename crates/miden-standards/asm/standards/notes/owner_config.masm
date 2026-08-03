@@ -1,5 +1,6 @@
 use miden::protocol::active_note
 use miden::standards::access::ownable2step
+use miden::standards::attachments::network_account_target
 
 # CONSTANTS
 # =================================================================================================
@@ -25,6 +26,8 @@ const NUM_ITEMS_RENOUNCE_OWNERSHIP = 1
 
 # ERRORS
 # =================================================================================================
+
+const ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH = "owner config note attachment target account does not match the consuming account"
 
 const ERR_OWNER_CONFIG_UNKNOWN_SELECTOR = "owner config note selector does not match a known action"
 
@@ -54,12 +57,19 @@ const ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner config note s
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized for the selected action (per the `Ownable2Step` procedures).
 @note_script
 pub proc main
     dropw
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR

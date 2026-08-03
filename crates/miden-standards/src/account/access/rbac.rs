@@ -76,16 +76,22 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// administrator. To hand authority back, the current delegated admin re-points the role
 /// (passing `0` reverts it to the `ADMIN` role).
 ///
-/// This supports a fully decentralized configuration: seed `ADMIN`, populate each role's
-/// dedicated admin role, delegate, and finally revoke or renounce the bootstrap `ADMIN`
-/// members so no single key retains authority over the whole graph.
+/// This supports a fully decentralized configuration: for each delegated role, (1) grant the
+/// dedicated admin role's members, (2) make it self-administering (`set_role_admin(X, X)` —
+/// only safe once `X` has members), (3) delegate the managed role to it, and (4) revoke or
+/// renounce all bootstrap `ADMIN` members, waiting for each step to commit before issuing
+/// the next. Emptying `ADMIN` is permanent and forfeits every `ADMIN`-defaulted capability
+/// (the `Authority` procedure→role map is fixed at account creation), so an account whose
+/// gated procedures are not all mapped to live roles must never empty `ADMIN`. A
+/// self-administering role has no quorum — any single member can evict the rest — so its
+/// members should themselves be strongly authenticated (e.g. multisig) accounts.
 ///
 /// The delegated admin of a role can itself be any role, including one that it admins.
 /// Circular relationships are possible but should be designed with care, since each role
-/// can then revoke the other. Note that revoking the last member of a role's effective admin
-/// (including the last `ADMIN` member for undelegated roles) leaves that role unmanageable
-/// until a member of its effective admin role is restored — treat `ADMIN` renouncement with
-/// the same caution as ownership renouncement.
+/// can then revoke the other. Only delegate to a role that already has members, and treat
+/// emptying a role's effective admin like ownership renouncement: the role stays
+/// unmanageable until its effective admin is repopulated — for a self-administering role
+/// (including `ADMIN`), never.
 ///
 /// ## Role semantics
 ///

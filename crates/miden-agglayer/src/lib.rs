@@ -10,7 +10,13 @@ use miden_protocol::assembly::Path;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::vm::Package;
-use miden_standards::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
+use miden_standards::account::access::{
+    Authority,
+    Ownable2Step,
+    Pausable,
+    PausableManager,
+    RoleBasedAccessControl,
+};
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
@@ -195,6 +201,11 @@ fn agglayer_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePo
 /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes. The
 /// tx-script allowlist contains only the canonical `ExpirationTransactionScript` so the network
 /// transaction builder can bound how long the bridge's transactions stay valid.
+///
+/// The bridge also installs the [`Pausable`] and [`PausableManager`] components for emergency
+/// pauses, gated by the `ADMIN` role via the [`Authority`] unmapped-procedure fallback. While
+/// paused, all bridge entry points abort except `remove_ger`, which stays available so a
+/// fraudulent GER can still be revoked.
 fn create_bridge_account_builder(
     seed: Word,
     admin: AccountId,
@@ -209,6 +220,8 @@ fn create_bridge_account_builder(
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
         })
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
 }
 
 /// Creates a new bridge account with the standard configuration.
@@ -364,7 +377,7 @@ mod tests {
     fn agglayer_accounts_allowlist_expiration_tx_script() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id, 77);
+        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, 77);
         let faucet = create_existing_agglayer_faucet(
             Word::default(),
             "AGG",

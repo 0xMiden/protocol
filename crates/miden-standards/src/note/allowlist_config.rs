@@ -21,6 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{ALLOWLIST_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
@@ -113,6 +114,11 @@ impl From<AllowlistConfig> for NoteStorage {
 /// authorized for the action per the target's `Authority` configuration (the owner under
 /// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
 ///
+/// The note is bound to `target` by a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
+/// that the consuming account matches that target before dispatching, so the note cannot be
+/// consumed by a third-party account that merely accepts its sender.
+///
 /// Construct one with the [builder](AllowlistConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
@@ -130,16 +136,29 @@ impl AllowlistConfigNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - `target` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
+    ///   which requires a public target).
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `target`.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
+    ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
         config: AllowlistConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
+        // The note script asserts that the consuming account matches this target before
+        // dispatching.
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
+            NoteError::other_with_source(
+                "failed to bind the AllowlistConfig note to its target account",
+                err,
+            )
+        })?;
+
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {

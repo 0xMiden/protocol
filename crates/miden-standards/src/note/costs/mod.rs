@@ -33,6 +33,8 @@ use crate::note::{
     AllowlistConfigNote,
     BlocklistConfigNote,
     BurnNote,
+    ConstantFeePolicyConfigNote,
+    FaucetMetadataConfigNote,
     FaucetPolicyConfigNote,
     FeeSponsorshipNote,
     MintNote,
@@ -119,7 +121,13 @@ impl StandardNote {
             StandardNote::PSWAP => Some(NoteCost::of::<PswapNote>()),
             StandardNote::MINT => Some(NoteCost::of::<MintNote>()),
             StandardNote::BURN => Some(NoteCost::of::<BurnNote>()),
+            StandardNote::CONSTANT_FEE_POLICY_CONFIG => {
+                Some(NoteCost::of::<ConstantFeePolicyConfigNote>())
+            },
             StandardNote::FAUCET_POLICY_CONFIG => Some(NoteCost::of::<FaucetPolicyConfigNote>()),
+            StandardNote::FAUCET_METADATA_CONFIG => {
+                Some(NoteCost::of::<FaucetMetadataConfigNote>())
+            },
             StandardNote::ALLOWLIST_CONFIG => Some(NoteCost::of::<AllowlistConfigNote>()),
             StandardNote::BLOCKLIST_CONFIG => Some(NoteCost::of::<BlocklistConfigNote>()),
             StandardNote::PAUSE_CONFIG => Some(NoteCost::of::<PauseConfigNote>()),
@@ -154,7 +162,15 @@ mod tests {
             (PswapNote::script_root(), PSWAP_CONSUMPTION_CYCLES),
             (MintNote::script_root(), MINT_CONSUMPTION_CYCLES),
             (BurnNote::script_root(), BURN_CONSUMPTION_CYCLES),
+            (
+                ConstantFeePolicyConfigNote::script_root(),
+                CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES,
+            ),
             (FaucetPolicyConfigNote::script_root(), FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES),
+            (
+                FaucetMetadataConfigNote::script_root(),
+                FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES,
+            ),
             (AllowlistConfigNote::script_root(), ALLOWLIST_CONFIG_CONSUMPTION_CYCLES),
             (BlocklistConfigNote::script_root(), BLOCKLIST_CONFIG_CONSUMPTION_CYCLES),
             (PauseConfigNote::script_root(), PAUSE_CONFIG_CONSUMPTION_CYCLES),
