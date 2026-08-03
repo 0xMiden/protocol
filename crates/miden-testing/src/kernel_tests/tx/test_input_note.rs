@@ -2,11 +2,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_protocol::account::{Account, AccountId};
+use miden_processor::ExecutionError;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::protocol::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_IS_NOT_NATIVE,
     ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS,
     ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
@@ -21,15 +24,72 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::ASSET_SIZE;
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::P2idNote;
+use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
+use miden_tx::{TransactionExecutorError, TransactionKernelError};
 use rstest::rstest;
 
 use super::{ExecutionOutputExt, TestSetup, setup_test};
 use crate::utils::create_public_p2any_note;
-use crate::{Auth, MockChain, MockTransaction, TestTransactionBuilder, assert_execution_error};
+use crate::{
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    MockTransaction,
+    TestTransactionBuilder,
+    assert_execution_error,
+    assert_transaction_executor_error,
+};
+
+const P2ID_INPUT_NOTE_INDEX: u8 = 1;
+const STOLEN_ASSET_PTR: u32 = 1024;
+
+fn assert_rejected_by_account_origin_auth(
+    result: Result<ExecutedTransaction, TransactionExecutorError>,
+) {
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
+    );
+}
+
+fn build_victim_p2id_note(target: AccountId, asset: Asset) -> anyhow::Result<Note> {
+    Ok(P2idNote::builder()
+        .sender(ACCOUNT_ID_SENDER.try_into()?)
+        .target(target)
+        .asset(asset)
+        .note_type(NoteType::Public)
+        .generate_serial_number(&mut RandomCoin::new(Word::from([2, 2, 2, 2u32])))
+        .build()
+        .map(Note::from)?)
+}
+
+fn build_attacker_output_note(sender: AccountId, asset: Asset) -> anyhow::Result<Note> {
+    Ok(NoteBuilder::new(sender, RandomCoin::new(Word::from([3, 3, 3, 3u32])))
+        .note_type(NoteType::Public)
+        .add_assets([asset])
+        .build()?)
+}
+
+fn build_malicious_note(code: String) -> anyhow::Result<Note> {
+    Ok(NoteBuilder::new(
+        ACCOUNT_ID_SENDER.try_into()?,
+        RandomCoin::new(Word::from([1, 1, 1, 1u32])),
+    )
+    .note_type(NoteType::Public)
+    .code(code)
+    .dynamically_linked_packages(CodeBuilder::mock_packages())
+    .build()?)
+}
 
 /// A transaction consuming a bare note (note 0: no assets, no attachments) and a rich note
 /// (note 1: an asset and two attachments), covering the empty and non-empty commitment branches.
@@ -497,11 +557,10 @@ async fn test_get_sender() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Check that `input_note::remove_all_assets` returns zero assets for notes whose assets were
-/// already removed by their note scripts during consumption, while the initial assets info stays
-/// unchanged.
+/// Check that notes whose assets were removed by their note scripts have empty current asset slots,
+/// while their initial assets info stays unchanged.
 #[tokio::test]
-async fn test_remove_all_assets_after_note_scripts() -> anyhow::Result<()> {
+async fn test_assets_removed_after_note_scripts() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
@@ -510,22 +569,26 @@ async fn test_remove_all_assets_after_note_scripts() -> anyhow::Result<()> {
         p2id_note_2_assets,
     } = setup_test()?;
 
-    fn check_removed_assets_code(
-        note_index: u8,
-        dest_ptr: u8,
-        assets_commitment: Word,
-        assets_number: usize,
-    ) -> String {
+    fn check_removed_assets_code(note_index: u8, note: &Note) -> String {
+        let mut check_current_assets = String::new();
+        for asset_index in 0..note.assets().num_assets() {
+            check_current_assets.push_str(&format!(
+                r#"
+                # the note script removed this asset, so its current slot must be empty
+                push.{note_index} push.{asset_index}
+                exec.input_note::get_asset
+                # => [ASSET_ID, ASSET_VALUE]
+
+                padw assert_eqw.err="note {note_index} asset {asset_index} ID was not removed"
+                padw assert_eqw.err="note {note_index} asset {asset_index} value was not removed"
+                # => []
+                "#,
+            ));
+        }
+
         format!(
             r#"
-            # remove all assets from the requested input note; the note script has already removed
-            # them while the note was consumed, so no assets remain
-            push.{note_index} push.{dest_ptr}
-            exec.input_note::remove_all_assets
-            # => [num_assets]
-
-            assertz.err="note {note_index} should not have any assets left"
-            # => []
+            {check_current_assets}
 
             # assert the initial assets info is unaffected by the removals
             push.{note_index}
@@ -537,7 +600,9 @@ async fn test_remove_all_assets_after_note_scripts() -> anyhow::Result<()> {
             push.{assets_number}
             assert_eq.err="note {note_index} has incorrect initial assets number"
             # => []
-        "#
+        "#,
+            assets_commitment = note.assets().commitment(),
+            assets_number = note.assets().num_assets(),
         )
     }
 
@@ -554,24 +619,9 @@ async fn test_remove_all_assets_after_note_scripts() -> anyhow::Result<()> {
             {check_note_2}
         end
     ",
-        check_note_0 = check_removed_assets_code(
-            0,
-            0,
-            p2any_note_0_assets.assets().commitment(),
-            p2any_note_0_assets.assets().num_assets()
-        ),
-        check_note_1 = check_removed_assets_code(
-            1,
-            8,
-            p2id_note_1_asset.assets().commitment(),
-            p2id_note_1_asset.assets().num_assets()
-        ),
-        check_note_2 = check_removed_assets_code(
-            2,
-            16,
-            p2id_note_2_assets.assets().commitment(),
-            p2id_note_2_assets.assets().num_assets()
-        ),
+        check_note_0 = check_removed_assets_code(0, &p2any_note_0_assets),
+        check_note_1 = check_removed_assets_code(1, &p2id_note_1_asset),
+        check_note_2 = check_removed_assets_code(2, &p2id_note_2_assets),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
@@ -587,117 +637,313 @@ async fn test_remove_all_assets_after_note_scripts() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Check that a transaction script can take a "fee" out of an input note via
-/// `input_note::remove_asset` and consume the remaining assets via
-/// `input_note::remove_all_assets`, with the asset conservation check of the epilogue passing.
-///
-/// The consumed note carries a no-op note script, so the transaction script is responsible for
-/// claiming all of the note's assets.
+/// A malicious note cannot move assets from a later P2ID note by removing them from the P2ID note
+/// by index and moving them into an attacker-controlled output note.
 #[tokio::test]
-async fn test_remove_asset_from_tx_script() -> anyhow::Result<()> {
-    const ASSET_0_AMOUNT: u64 = 100;
-    const FEE_AMOUNT: u64 = 30;
-    const ASSET_1_AMOUNT: u64 = 10;
+async fn test_malicious_note_cannot_remove_asset_from_later_p2id_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
+    let p2id_asset = FungibleAsset::mock(100);
+    let p2id_note = build_victim_p2id_note(account.id(), p2id_asset)?;
+    let attacker_output_note = build_attacker_output_note(account.id(), p2id_asset)?;
+
+    let malicious_note_code = format!(
+        r#"
+        use miden::protocol::input_note
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        @note_script
+        pub proc main
+            # This malicious note is input note 0. The victim's P2ID note is input note 1.
+            push.{p2id_note_index}
+            push.{asset_value}
+            push.{asset_id}
+            exec.input_note::remove_asset
+            # => [remaining_asset]
+            dropw
+
+            # If the indexed removal above were allowed, create an attacker-controlled output note.
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            # Move the asset stolen from the P2ID note into the attacker's output note.
+            push.{asset_value}
+            push.{asset_id}
+            exec.output_note::add_asset
+            exec.sys::truncate_stack
+        end
+    "#,
+        asset_id = p2id_asset.to_id_word(),
+        asset_value = p2id_asset.to_value_word(),
+        p2id_note_index = P2ID_INPUT_NOTE_INDEX,
+        recipient = attacker_output_note.recipient().digest(),
+        note_type = attacker_output_note.metadata().note_type() as u8,
+        tag = Felt::from(attacker_output_note.metadata().tag()),
+    );
+
+    let malicious_note = build_malicious_note(malicious_note_code)?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes([malicious_note, p2id_note])
+        .expected_output_note(RawOutputNote::Full(attacker_output_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_rejected_by_account_origin_auth(result);
+
+    Ok(())
+}
+
+/// A malicious note also cannot use the bulk indexed removal API to empty a later P2ID note.
+#[tokio::test]
+async fn test_malicious_note_cannot_remove_all_assets_from_later_p2id_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let p2id_asset = FungibleAsset::mock(100);
+    let p2id_note = build_victim_p2id_note(account.id(), p2id_asset)?;
+    let attacker_output_note = build_attacker_output_note(account.id(), p2id_asset)?;
+
+    let malicious_note_code = format!(
+        r#"
+        use miden::protocol::asset
+        use miden::protocol::input_note
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        @note_script
+        pub proc main
+            # This malicious note is input note 0. The victim's P2ID note is input note 1.
+            push.{p2id_note_index}
+            push.{stolen_asset_ptr}
+            exec.input_note::remove_all_assets
+            # => [num_assets]
+            push.1 assert_eq
+
+            # If the indexed removal above were allowed, create an attacker-controlled output note.
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            # Move the asset stolen from the P2ID note into the attacker's output note.
+            push.{stolen_asset_ptr}
+            exec.asset::load
+            exec.output_note::add_asset
+            exec.sys::truncate_stack
+        end
+    "#,
+        p2id_note_index = P2ID_INPUT_NOTE_INDEX,
+        recipient = attacker_output_note.recipient().digest(),
+        stolen_asset_ptr = STOLEN_ASSET_PTR,
+        note_type = attacker_output_note.metadata().note_type() as u8,
+        tag = Felt::from(attacker_output_note.metadata().tag()),
+    );
+
+    let malicious_note = build_malicious_note(malicious_note_code)?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes([malicious_note, p2id_note])
+        .expected_output_note(RawOutputNote::Full(attacker_output_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_rejected_by_account_origin_auth(result);
+
+    Ok(())
+}
+
+/// The account-origin check resolves the caller against the *active* account, so on its own it
+/// would let a malicious note reach indexed removal through an attacker-controlled foreign account:
+/// inside the FPI context that foreign account is active and vouches for its own procedures. The
+/// native account check closes that path, keeping indexed removal available only to the account the
+/// transaction is executed against.
+#[tokio::test]
+async fn test_malicious_note_cannot_remove_assets_via_foreign_account() -> anyhow::Result<()> {
+    let stolen_asset = FungibleAsset::mock(100);
+
+    let foreign_account_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "foreign_account",
+            "
+            use miden::protocol::input_note
+
+            @account_procedure
+            pub proc drain
+                exec.input_note::remove_asset
+            end
+            ",
+        )?,
+        Vec::new(),
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
+
+    let foreign_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(foreign_account_component.clone())
+        .build_existing()?;
+
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let victim_note = build_victim_p2id_note(native_account.id(), stolen_asset)?;
+    let attacker_output_note = build_attacker_output_note(native_account.id(), stolen_asset)?;
+
+    let malicious_note_code = format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::output_note
+        use miden::protocol::tx
+
+        @note_script
+        pub proc main
+            # This malicious note is input note 0. The victim's P2ID note is input note 1.
+            # Route the indexed removal through the attacker's foreign account, which is the
+            # active account for the duration of the FPI call.
+            padw push.0.0.0
+            push.{p2id_note_index}
+            push.{asset_value}
+            push.{asset_id}
+            procref.::foreign_account::drain
+            push.{foreign_prefix} push.{foreign_suffix}
+            exec.tx::execute_foreign_procedure
+            dropw
+            exec.sys::truncate_stack
+
+            # If the removal above were allowed, create an attacker-controlled output note and
+            # move the stolen asset into it.
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            call.::mock::account::create_note
+            # => [note_idx, pad(15)]
+
+            push.{asset_value}
+            push.{asset_id}
+            exec.output_note::add_asset
+            exec.sys::truncate_stack
+        end
+    "#,
+        asset_id = stolen_asset.to_id_word(),
+        asset_value = stolen_asset.to_value_word(),
+        p2id_note_index = P2ID_INPUT_NOTE_INDEX,
+        foreign_prefix = foreign_account.id().prefix().as_felt(),
+        foreign_suffix = foreign_account.id().suffix(),
+        recipient = attacker_output_note.recipient().digest(),
+        note_type = attacker_output_note.metadata().note_type() as u8,
+        tag = Felt::from(attacker_output_note.metadata().tag()),
+    );
+
+    let malicious_note_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
+        .compile_note_script(malicious_note_code)?;
+
+    let malicious_note = NoteBuilder::new(
+        ACCOUNT_ID_SENDER.try_into()?,
+        RandomCoin::new(Word::from([1, 1, 1, 1u32])),
+    )
+    .note_type(NoteType::Public)
+    .script(malicious_note_script)
+    .build()?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([native_account.clone(), foreign_account.clone()])?
+            .build()?;
+    mock_chain.prove_next_block()?;
+
+    let foreign_account_inputs = mock_chain
+        .get_foreign_account_inputs(foreign_account.id())
+        .expect("foreign account inputs should be available");
+
+    let result = mock_chain
+        .build_transaction(native_account.id())
+        .unauthenticated_input_notes([malicious_note, victim_note])
+        .foreign_accounts(vec![foreign_account_inputs])
+        .expected_output_note(RawOutputNote::Full(attacker_output_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_NATIVE);
+
+    Ok(())
+}
+
+/// Transaction scripts run outside the account context, so the account-origin gate on indexed
+/// input-note asset removal rejects them as well. This intentionally retires the previously
+/// supported pattern of a transaction script taking assets out of an input note by index;
+/// indexed removal on behalf of a transaction now requires a procedure of the native account (as
+/// the fee manager does for sponsorship notes, from its auth procedure).
+#[rstest]
+#[tokio::test]
+async fn test_tx_script_cannot_remove_input_note_assets_by_index(
+    #[values("remove_asset", "remove_all_assets")] removal_call: &str,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let faucet_id_0 = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
-    let faucet_id_1 = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?;
-    let asset_0 = Asset::Fungible(FungibleAsset::new(faucet_id_0, ASSET_0_AMOUNT)?);
-    let asset_1 = Asset::Fungible(FungibleAsset::new(faucet_id_1, ASSET_1_AMOUNT)?);
-
-    let fee_asset = Asset::Fungible(FungibleAsset::new(faucet_id_0, FEE_AMOUNT)?);
-    let remaining_asset =
-        Asset::Fungible(FungibleAsset::new(faucet_id_0, ASSET_0_AMOUNT - FEE_AMOUNT)?);
+    let asset = FungibleAsset::mock(100);
 
     // a note with a no-op script that does not touch its own assets
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let note = NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rng)
-        .add_assets([asset_0, asset_1])
-        .note_type(NoteType::Public)
-        .build()?;
+    let note = NoteBuilder::new(
+        ACCOUNT_ID_SENDER.try_into()?,
+        RandomCoin::new(Word::from([1, 2, 3, 4u32])),
+    )
+    .note_type(NoteType::Public)
+    .add_assets([asset])
+    .build()?;
 
-    // generate the code receiving each of the assets written to memory into the account
-    let mut receive_remaining_assets_code = String::new();
-    for asset_index in 0..note.assets().num_assets() {
-        receive_remaining_assets_code.push_str(&format!(
-            r#"
-            # load the asset at index {asset_index} from memory
-            push.{asset_ptr} exec.asset::load
-            # => [ASSET_ID, ASSET_VALUE]
-
-            padw padw swapdw
-            # => [ASSET_ID, ASSET_VALUE, pad(8)]
-
-            call.wallet::receive_asset
-            dropw dropw dropw dropw
-            # => []
-            "#,
-            asset_ptr = asset_index * ASSET_SIZE as usize,
-        ));
-    }
+    let removal_code = match removal_call {
+        "remove_asset" => format!(
+            "push.0 push.{asset_value} push.{asset_id} exec.input_note::remove_asset dropw",
+            asset_id = asset.to_id_word(),
+            asset_value = asset.to_value_word(),
+        ),
+        "remove_all_assets" => {
+            format!("push.0 push.{STOLEN_ASSET_PTR} exec.input_note::remove_all_assets drop")
+        },
+        other => anyhow::bail!("unknown removal call {other}"),
+    };
 
     let code = format!(
         r#"
-        use miden::protocol::asset
         use miden::protocol::input_note
-        use miden::standards::wallets::basic as wallet
 
         @transaction_script
         pub proc main
-            # remove the fee asset from note 0
-            push.0 push.{FEE_ASSET_VALUE} push.{FEE_ASSET_ID}
-            exec.input_note::remove_asset
-            # => [FINAL_ASSET_VALUE]
-
-            push.{REMAINING_ASSET_VALUE}
-            assert_eqw.err="unexpected value remaining in the note after fee removal"
-            # => []
-
-            # receive the fee asset into the account
-            push.{FEE_ASSET_VALUE} push.{FEE_ASSET_ID}
-            padw padw swapdw
-            call.wallet::receive_asset
-            dropw dropw dropw dropw
-            # => []
-
-            # remove the remaining assets from note 0 and write them to memory address 0
-            push.0 push.0
-            exec.input_note::remove_all_assets
-            # => [num_assets]
-
-            push.{NUM_REMAINING_ASSETS}
-            assert_eq.err="unexpected number of assets remaining in the note"
-            # => []
-
-            # receive the remaining assets into the account
-            {receive_remaining_assets_code}
+            # attempt to remove assets from input note 0 by index from the tx script context
+            {removal_code}
         end
-    "#,
-        FEE_ASSET_ID = fee_asset.to_id_word(),
-        FEE_ASSET_VALUE = fee_asset.to_value_word(),
-        REMAINING_ASSET_VALUE = remaining_asset.to_value_word(),
-        NUM_REMAINING_ASSETS = note.assets().num_assets(),
+    "#
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
 
-    let executed_transaction = mock_chain
+    let result = mock_chain
         .build_transaction(account.id())
         .unauthenticated_input_note(note)
         .tx_script(tx_script)
         .build()?
         .execute()
-        .await?;
+        .await;
 
-    // all of the note's assets should have ended up in the account's vault
-    let added_assets: Vec<Asset> =
-        executed_transaction.account_patch().vault().updated_assets().collect();
-    assert_eq!(added_assets.len(), 2);
-    assert!(added_assets.contains(&asset_0));
-    assert!(added_assets.contains(&asset_1));
+    assert_rejected_by_account_origin_auth(result);
 
     Ok(())
 }
@@ -796,11 +1042,7 @@ async fn test_get_asset_from_active_and_input_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Check that `active_note::remove_asset` and `input_note::remove_asset` both fail when the asset
-/// cannot be removed from the note.
-///
-/// The same note is targeted as the active note and by its input index, so both wrappers exercise
-/// the shared kernel removal logic and must reject the removal with the same error.
+/// Check that `active_note::remove_asset` fails when the asset cannot be removed from the note.
 #[rstest]
 #[tokio::test]
 async fn test_remove_asset_fails(
@@ -810,7 +1052,6 @@ async fn test_remove_asset_fails(
         "non_fungible_wrong_value"
     )]
     scenario: &str,
-    #[values(("", "active_note"), ("push.0", "input_note"))] (note_arg, note_module): (&str, &str),
 ) -> anyhow::Result<()> {
     const FUNGIBLE_AMOUNT: u64 = 100;
 
@@ -850,9 +1091,6 @@ async fn test_remove_asset_fails(
         other => anyhow::bail!("unknown scenario {other}"),
     };
 
-    // the note is consumed at input index 0: `active_note` targets it directly while `input_note`
-    // targets it via that index; both removals must fail identically
-
     let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
@@ -867,7 +1105,6 @@ async fn test_remove_asset_fails(
         r#"
             use miden::tx_kernel_core::prologue
             use miden::tx_kernel_core::note as note_internal
-            use miden::protocol::input_note
             use miden::protocol::active_note
 
             begin
@@ -876,7 +1113,7 @@ async fn test_remove_asset_fails(
                 dropw dropw dropw dropw
 
                 # try to remove an asset that cannot be removed from the note
-                {note_arg} push.{asset_value} push.{asset_id} exec.{note_module}::remove_asset
+                push.{asset_value} push.{asset_id} exec.active_note::remove_asset
             end
             "#,
     );
@@ -928,20 +1165,10 @@ async fn test_get_asset_index_out_of_bounds(#[case] get_asset_call: &str) -> any
     Ok(())
 }
 
-/// Check that `remove_asset` supports partial and full removal of assets and that `get_asset`
-/// reflects the note's current state after each removal, while the initial assets info stays
-/// unchanged.
-///
-/// The same note is exercised through the `active_note` API (targeting the note directly) and the
-/// `input_note` API (targeting it by its input index 0); both must behave identically.
-#[rstest]
-#[case::active_note("active_note", "")]
-#[case::input_note("input_note", "push.0")]
+/// Check that active-note asset removal supports partial and full removal and that `get_asset`
+/// reflects the note's current state, while the initial assets info stays unchanged.
 #[tokio::test]
-async fn test_remove_asset(
-    #[case] note_module: &str,
-    #[case] note_arg: &str,
-) -> anyhow::Result<()> {
+async fn test_remove_asset() -> anyhow::Result<()> {
     const FUNGIBLE_AMOUNT: u64 = 100;
     const PARTIAL_AMOUNT: u64 = 30;
 
@@ -985,7 +1212,7 @@ async fn test_remove_asset(
 
         use miden::tx_kernel_core::prologue
         use miden::tx_kernel_core::note as note_internal
-        use miden::protocol::{note_module}
+        use miden::protocol::active_note
 
         # allocate ASSET_SIZE * MAX_ASSETS_PER_NOTE locals as the destination buffer for
         # remove_all_assets; no assets remain by then, but the buffer must fit the maximum
@@ -995,15 +1222,15 @@ async fn test_remove_asset(
             dropw dropw dropw dropw
 
             # partially remove the fungible asset
-            {note_arg} push.{PARTIAL_VALUE} push.{FUNGIBLE_ID}
-            exec.{note_module}::remove_asset
+            push.{PARTIAL_VALUE} push.{FUNGIBLE_ID}
+            exec.active_note::remove_asset
             # => [FINAL_ASSET_VALUE]
 
             push.{REMAINING_VALUE}
             assert_eqw.err="unexpected value remaining after the partial removal"
 
             # the asset at the fungible index reflects the reduced value
-            {note_arg} push.{fungible_index} exec.{note_module}::get_asset
+            push.{fungible_index} exec.active_note::get_asset
             # => [ASSET_ID, ASSET_VALUE]
 
             push.{FUNGIBLE_ID}
@@ -1012,28 +1239,28 @@ async fn test_remove_asset(
             assert_eqw.err="unexpected asset value after the partial removal"
 
             # fully remove the non-fungible asset
-            {note_arg} push.{NON_FUNGIBLE_VALUE} push.{NON_FUNGIBLE_ID}
-            exec.{note_module}::remove_asset
+            push.{NON_FUNGIBLE_VALUE} push.{NON_FUNGIBLE_ID}
+            exec.active_note::remove_asset
             # => [FINAL_ASSET_VALUE]
 
             padw assert_eqw.err="expected empty value remaining after the full removal"
 
             # the non-fungible asset's slot is now cleared
-            {note_arg} push.{non_fungible_index} exec.{note_module}::get_asset
+            push.{non_fungible_index} exec.active_note::get_asset
             # => [ASSET_ID, ASSET_VALUE]
 
             padw assert_eqw.err="expected empty asset ID after the full removal"
             padw assert_eqw.err="expected empty asset value after the full removal"
 
             # remove the remainder of the fungible asset
-            {note_arg} push.{REMAINING_VALUE} push.{FUNGIBLE_ID}
-            exec.{note_module}::remove_asset
+            push.{REMAINING_VALUE} push.{FUNGIBLE_ID}
+            exec.active_note::remove_asset
             # => [FINAL_ASSET_VALUE]
 
             padw assert_eqw.err="expected empty value remaining after removing the remainder"
 
             # the initial assets info is unaffected by the removals
-            {note_arg} exec.{note_module}::get_initial_assets_info
+            exec.active_note::get_initial_assets_info
             # => [ASSETS_COMMITMENT, num_assets]
 
             push.{ASSETS_COMMITMENT}
@@ -1042,7 +1269,7 @@ async fn test_remove_asset(
             assert_eq.err="unexpected initial num assets"
 
             # no assets remain in the note
-            {note_arg} locaddr.0 exec.{note_module}::remove_all_assets
+            locaddr.0 exec.active_note::remove_all_assets
             assertz.err="note should not have any assets left"
         end
 
