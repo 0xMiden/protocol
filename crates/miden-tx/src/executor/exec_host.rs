@@ -98,12 +98,6 @@ where
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
     /// Whether execution is currently inside the authentication procedure.
-    ///
-    /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
-    /// `EpilogueAuthProcEnd` events, so this flag is `true` only while the registered auth
-    /// procedure is running. It is used to reject `AuthRequest` events emitted from any other
-    /// context (e.g. untrusted note or transaction scripts), which must never trigger signature
-    /// production.
     in_auth_procedure: bool,
 
     /// The source manager to track source code file span information, improving any MASM related
@@ -600,22 +594,17 @@ where
                 TransactionEvent::AuthRequest {
                     pub_key_commitment,
                     tx_summary_or_signature,
-                } => {
-                    // Signature production is only permitted while the registered auth procedure
-                    // is executing. An `AuthRequest` emitted from any other context (e.g. an
-                    // untrusted note or transaction script) must not force the host to sign.
-                    if !self.in_auth_procedure {
-                        Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
-                    } else {
-                        match tx_summary_or_signature {
-                            TxSummaryOrSignature::Signature(signature) => {
-                                Ok(self.base_host.on_auth_requested(signature))
-                            },
-                            TxSummaryOrSignature::TxSummary(tx_summary) => {
-                                self.on_auth_requested(pub_key_commitment, tx_summary).await
-                            },
+                } => match tx_summary_or_signature {
+                    TxSummaryOrSignature::Signature(signature) => {
+                        Ok(self.base_host.on_auth_requested(signature))
+                    },
+                    TxSummaryOrSignature::TxSummary(tx_summary) => {
+                        if !self.in_auth_procedure {
+                            Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
+                        } else {
+                            self.on_auth_requested(pub_key_commitment, tx_summary).await
                         }
-                    }
+                    },
                 },
 
                 // This always returns an error to abort the transaction.

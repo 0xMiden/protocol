@@ -8,7 +8,11 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDAT
 use miden_protocol::{Felt, ONE, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::account_component::{ConditionalAuthComponent, ERR_WRONG_ARGS_MSG};
+use miden_standards::testing::account_component::{
+    AuthRequestProbeComponent,
+    ConditionalAuthComponent,
+    ERR_WRONG_ARGS_MSG,
+};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
@@ -103,28 +107,62 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Regression test: an untrusted transaction script must not be able to force the host to produce a
-/// signature.
-///
-/// The script emits `AUTH_REQUEST` directly, supplying a precomputed message on the stack and a
-/// matching signature in the advice map. This deliberately bypasses `auth::create_tx_summary`
-/// (which computes `account::compute_delta_commitment` and is now gated to the account context, so
-/// it cannot be called from a script) and exercises the host's context check in isolation: the
-/// request must be rejected with `AuthRequestOutsideAuthProcedure` because it originates outside
-/// the authentication procedure. The check runs before the signature is validated, so a throwaway
-/// key is sufficient - the test is intentionally artificial and only asserts that the original
-/// error path is still reachable.
+/// Regression test: signature production must not be forced from outside the authentication
+/// procedure.
 #[tokio::test]
-async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
+async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder.add_existing_account_from_components(
+        Auth::IncrNonce,
+        [AuthRequestProbeComponent.into()],
+    )?;
     let chain = builder.build()?;
 
-    // Precompute the AUTH_REQUEST inputs instead of building the summary on-chain. A throwaway key
-    // signs an arbitrary message; the resulting signature is placed in the advice map keyed by
-    // `merge(pub_key_commitment, message)`, which is exactly where the host looks it up.
+    // A dummy public key commitment; the request is rejected before any signature is verified.
+    let pub_key_commitment = Word::from([1u32, 2, 3, 4]);
+    let tx_script_source = format!(
+        "
+        @transaction_script
+        pub proc main
+            push.2
+            push.{pub_key_commitment}
+            # => [PK_COMM, scheme_id]
+
+            call.::mock::auth_request_probe::emit_auth_request
+        end
+        "
+    );
+
+    let tx_script = CodeBuilder::new()
+        .with_dynamically_linked_package(AuthRequestProbeComponent::code())?
+        .compile_tx_script(&tx_script_source)?;
+
+    let execution_result = chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_matches!(
+        execution_result,
+        Err(TransactionExecutorError::AuthRequestOutsideAuthProcedure)
+    );
+
+    Ok(())
+}
+
+/// Complements [`test_auth_request_production_outside_auth_procedure_is_rejected`]: verifying an
+/// externally supplied signature is always allowed, even outside the authentication procedure.
+#[tokio::test]
+async fn test_auth_request_verification_outside_auth_procedure_is_allowed() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let chain = builder.build()?;
+
+    // A throwaway key signs an arbitrary message; the signature is placed in the advice map keyed
+    // by `merge(pub_key_commitment, message)`, which is exactly where the host looks it up, so the
+    // event resolves to the verification path rather than production.
     let message = Word::from([1u32, 2, 3, 4]);
     let secret_key = AuthSecretKey::new_falcon512_poseidon2();
     let pub_key_commitment = secret_key.public_key().to_commitment();
@@ -147,7 +185,7 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
 
             emit.AUTH_REQUEST_EVENT
 
-            # unreachable once the request is rejected; keeps the script well-formed
+            # drop the request inputs; the pushed signature stays on the advice stack, unused
             dropw dropw drop
         end
         "
@@ -163,10 +201,7 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_matches!(
-        execution_result,
-        Err(TransactionExecutorError::AuthRequestOutsideAuthProcedure)
-    );
+    assert_matches!(execution_result, Ok(_));
 
     Ok(())
 }
