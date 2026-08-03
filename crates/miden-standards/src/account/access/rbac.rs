@@ -76,6 +76,16 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// administrator. To hand authority back, the current delegated admin re-points the role
 /// (passing `0` reverts it to the `ADMIN` role).
 ///
+/// This supports a fully decentralized configuration: for each delegated role, (1) grant the
+/// dedicated admin role's members, (2) make it self-administering (`set_role_admin(X, X)` —
+/// only safe once `X` has members), (3) delegate the managed role to it, and (4) revoke or
+/// renounce all bootstrap `ADMIN` members, waiting for each step to commit before issuing
+/// the next. Emptying `ADMIN` is permanent and forfeits every `ADMIN`-defaulted capability
+/// (the `Authority` procedure→role map is fixed at account creation), so an account whose
+/// gated procedures are not all mapped to live roles must never empty `ADMIN`. A
+/// self-administering role has no quorum — any single member can evict the rest — so its
+/// members should themselves be strongly authenticated (e.g. multisig) accounts.
+///
 /// The delegated admin of a role can itself be any role, including one that it admins.
 /// Circular relationships are possible but should be designed with care, since each role
 /// can then revoke the other.
