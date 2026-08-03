@@ -2123,11 +2123,10 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     Ok(())
 }
 
-/// Tests that the configured minimum burn amount can be read through the faucet's public interface
-/// via `call`, both as initially configured and after the owner updates it. The getter aborts the
-/// transaction unless it returns the expected threshold, so successful execution proves the value.
+/// Tests that the configured minimum burn amount can be read through the faucet's public interface,
+/// both as initially configured and after the owner updates it.
 #[tokio::test]
-async fn test_network_faucet_get_min_burn_amount_uses_the_call_abi() -> anyhow::Result<()> {
+async fn test_network_faucet_get_min_burn_amount() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id =

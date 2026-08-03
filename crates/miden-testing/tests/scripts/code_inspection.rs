@@ -114,7 +114,7 @@ async fn code_inspection_has_procedure_reports_unknown_root() -> anyhow::Result<
 /// `CodeInspection::get_code_commitment`, invoked via `call` from a transaction script, returns the
 /// commitment to the account's code and honours the 16-felt call ABI.
 #[tokio::test]
-async fn code_inspection_get_code_commitment_uses_the_call_abi() -> anyhow::Result<()> {
+async fn code_inspection_get_code_commitment() -> anyhow::Result<()> {
     let account = create_inspectable_account()?;
     let expected_code_commitment = account.code().commitment();
 
@@ -144,7 +144,7 @@ async fn code_inspection_get_code_commitment_uses_the_call_abi() -> anyhow::Resu
 /// `CodeInspection::get_num_procedures`, invoked via `call` from a transaction script, returns the
 /// number of procedures the account exposes and honours the 16-felt call ABI.
 #[tokio::test]
-async fn code_inspection_get_num_procedures_uses_the_call_abi() -> anyhow::Result<()> {
+async fn code_inspection_get_num_procedures() -> anyhow::Result<()> {
     let account = create_inspectable_account()?;
     let expected_num_procedures = account.code().procedures().len();
 
@@ -172,7 +172,7 @@ async fn code_inspection_get_num_procedures_uses_the_call_abi() -> anyhow::Resul
 /// `CodeInspection::get_procedure_root`, invoked via `call` from a transaction script, returns the
 /// root of the procedure at the requested index and honours the 16-felt call ABI.
 #[tokio::test]
-async fn code_inspection_get_procedure_root_uses_the_call_abi() -> anyhow::Result<()> {
+async fn code_inspection_get_procedure_root() -> anyhow::Result<()> {
     let account = create_inspectable_account()?;
     let expected_proc_root = account.code().procedures()[0].as_word();
 
