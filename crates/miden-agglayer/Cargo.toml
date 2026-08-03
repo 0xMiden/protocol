@@ -44,15 +44,13 @@ serde          = { features = ["derive"], workspace = true }
 serde_json     = { features = ["std"], workspace = true }
 
 [build-dependencies]
-fs-err                 = { workspace = true }
-miden-assembly         = { features = ["std"], workspace = true }
-miden-core             = { workspace = true }
-miden-core-lib         = { workspace = true }
-miden-crypto           = { workspace = true }
-miden-mast-package     = { features = ["std"], workspace = true }
-miden-package-registry = { features = ["resolver", "std"], workspace = true }
-miden-project          = { features = ["serde", "std"], workspace = true }
-miden-protocol         = { features = ["testing"], workspace = true }
-miden-standards        = { workspace = true }
-regex                  = { workspace = true }
-walkdir                = { workspace = true }
+fs-err                     = { workspace = true }
+miden-assembly             = { features = ["std"], workspace = true }
+miden-core                 = { workspace = true }
+miden-core-lib             = { workspace = true }
+miden-crypto               = { workspace = true }
+miden-mast-package         = { features = ["std"], workspace = true }
+miden-package-registry     = { features = ["resolver", "std"], workspace = true }
+miden-protocol             = { features = ["testing"], workspace = true }
+miden-protocol-build-utils = { workspace = true }
+miden-standards            = { workspace = true }
