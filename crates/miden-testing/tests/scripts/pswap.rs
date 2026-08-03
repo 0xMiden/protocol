@@ -7,7 +7,7 @@ use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteAttachments, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
@@ -88,6 +88,37 @@ fn assert_vault_patch(
             assert_eq!(actual, &Asset::Fungible(expected));
         }
     }
+}
+
+/// Asserts that the payback note matching `expected_payback` carries exactly `expected_assets`.
+///
+/// The note is located by recipient digest, which commits to the creator and serial number but not
+/// to the assets, so each payback note is pinned to its own creator. Asserting that one note's
+/// complete asset set — rather than searching every output note for the asset — is what keeps an
+/// asset deposited into the wrong payback note from being masked by a correctly filled sibling.
+#[track_caller]
+fn assert_payback_assets(
+    output_notes: &RawOutputNotes,
+    expected_payback: &Note,
+    expected_assets: impl IntoIterator<Item = FungibleAsset>,
+) {
+    let recipient = expected_payback.recipient().digest();
+    let note = output_notes
+        .iter()
+        .find(|note| note.recipient_digest() == recipient)
+        .expect("payback note should be among the output notes");
+
+    let expected_assets = expected_assets.into_iter().collect::<Vec<_>>();
+    let actual_assets = note.assets().iter_fungible().collect::<Vec<_>>();
+
+    assert_eq!(
+        note.assets().num_assets(),
+        expected_assets.len(),
+        "payback note carries {} assets, expected {}",
+        note.assets().num_assets(),
+        expected_assets.len(),
+    );
+    assert_eq!(actual_assets, expected_assets, "payback note carries the wrong assets");
 }
 
 // TESTS
@@ -610,30 +641,21 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
         .authenticated_input_notes([alice_pswap_note.id(), bob_pswap_note.id()])
         .extend_note_args(note_args_map)
         .expected_output_notes(vec![
-            RawOutputNote::Full(alice_p2id_note),
-            RawOutputNote::Full(bob_p2id_note),
+            RawOutputNote::Full(alice_p2id_note.clone()),
+            RawOutputNote::Full(bob_p2id_note.clone()),
         ])
         .build()?;
 
     let executed_transaction = mock_tx.execute().await?;
 
-    // Verify: 2 P2ID notes, one carrying Alice's requested (25 ETH), one
-    // carrying Bob's requested (50 USDC).
+    // Verify: 2 P2ID notes, Alice's carrying exactly her requested 25 ETH and Bob's carrying
+    // exactly his requested 50 USDC. Both legs are filled through note_fill, so this pins each
+    // leg's deposit to its own payback note.
     let output_notes = executed_transaction.output_notes();
     assert_eq!(output_notes.num_notes(), 2);
 
-    assert!(
-        output_notes
-            .iter()
-            .any(|note| note.assets().iter_fungible().any(|a| a == eth_25)),
-        "Alice's P2ID note ({eth_25:?}) not found",
-    );
-    assert!(
-        output_notes
-            .iter()
-            .any(|note| note.assets().iter_fungible().any(|a| a == usdc_50)),
-        "Bob's P2ID note ({usdc_50:?}) not found",
-    );
+    assert_payback_assets(output_notes, &alice_p2id_note, [eth_25]);
+    assert_payback_assets(output_notes, &bob_p2id_note, [usdc_50]);
 
     // Charlie's vault should be unchanged
     assert!(
@@ -707,14 +729,16 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
         .authenticated_input_notes([alice_pswap_note.id(), bob_pswap_note.id()])
         .extend_note_args(note_args_map)
         .expected_output_notes(vec![
-            RawOutputNote::Full(alice_p2id_note),
-            RawOutputNote::Full(bob_p2id_note),
+            RawOutputNote::Full(alice_p2id_note.clone()),
+            RawOutputNote::Full(bob_p2id_note.clone()),
         ])
         .build()?;
 
     let executed_transaction = mock_tx.execute().await?;
 
     // Exactly 2 P2ID output notes, no remainder: Alice's (the full fill in ETH) + Bob's (USDC).
+    // Alice's leg is filled from both her account_fill and Bob's note_fill, so asserting her note's
+    // exact asset set pins both deposits to it rather than to Bob's payback note.
     let output_notes = executed_transaction.output_notes();
     assert_eq!(
         output_notes.num_notes(),
@@ -722,18 +746,8 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
         "expected exactly 2 P2ID output notes, no remainder"
     );
 
-    assert!(
-        output_notes
-            .iter()
-            .any(|note| note.assets().iter_fungible().any(|a| a == alice_payback_eth)),
-        "Alice's P2ID ({alice_payback_eth:?}) not found",
-    );
-    assert!(
-        output_notes
-            .iter()
-            .any(|note| note.assets().iter_fungible().any(|a| a == bob_requested)),
-        "Bob's P2ID ({bob_requested:?}) not found",
-    );
+    assert_payback_assets(output_notes, &alice_p2id_note, [alice_payback_eth]);
+    assert_payback_assets(output_notes, &bob_p2id_note, [bob_requested]);
 
     // Charlie's vault: -charlie_fill ETH and +his account-share of the offered USDC
     // (floor(offered * charlie_fill / total_fill)). The note_fill legs flow through inflight and
