@@ -16,7 +16,7 @@ use crate::procedure_root;
 
 account_component_code!(
     BASIC_BLOCKLIST_TRANSFER_POLICY_CODE,
-    "faucets/policies/transfer/basic_blocklist.masl"
+    "miden-standards-faucets-policies-transfer-basic-blocklist.masp"
 );
 
 procedure_root!(
@@ -34,16 +34,16 @@ procedure_root!(
 /// [`BasicBlocklist::root`]. When active, transfers fail if the native account (asset
 /// recipient or note creator) is currently blocked on the issuing faucet.
 ///
-/// The wrapped [`BTreeSet<AccountId>`] captures the initial blocklist contents (it can be
-/// empty for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
+/// The wrapped [`BlocklistStorage`] captures the initial blocklist contents (it can be empty
+/// for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
 /// [`Self::with_blocked_accounts`] to seed the storage map at component construction time.
 ///
 /// Block / unblock administration is intentionally not part of this component. The
 /// `block_account` / `unblock_account` procedures live in the standards library and require an
-/// auth-wrapped admin component (see [`super::BlocklistOwnerControlled`]) to be safely exposed
+/// auth-wrapped admin component (see [`super::BlocklistManager`]) to be safely exposed
 /// on a production faucet.
 #[derive(Debug, Clone, Default)]
-pub struct BasicBlocklist(BTreeSet<AccountId>);
+pub struct BasicBlocklist(BlocklistStorage);
 
 impl BasicBlocklist {
     /// The name of the component.
@@ -57,12 +57,12 @@ impl BasicBlocklist {
     where
         I: IntoIterator<Item = AccountId>,
     {
-        Self(blocked_accounts.into_iter().collect())
+        Self(BlocklistStorage::with_blocked_accounts(blocked_accounts))
     }
 
     /// Returns the initial blocked accounts captured in this component.
     pub fn blocked_accounts(&self) -> &BTreeSet<AccountId> {
-        &self.0
+        self.0.blocked_accounts()
     }
 
     /// Returns the [`AccountComponentCode`] of this component.
@@ -76,9 +76,14 @@ impl BasicBlocklist {
     }
 }
 
+impl From<BlocklistStorage> for BasicBlocklist {
+    fn from(storage: BlocklistStorage) -> Self {
+        Self(storage)
+    }
+}
+
 impl From<BasicBlocklist> for AccountComponent {
     fn from(blocklist: BasicBlocklist) -> Self {
-        let storage = BlocklistStorage::with_blocked_accounts(blocklist.0);
         let storage_schema = StorageSchema::new([BlocklistStorage::blocked_accounts_slot_schema()])
             .expect("storage schema should be valid");
 
@@ -89,7 +94,7 @@ impl From<BasicBlocklist> for AccountComponent {
             )
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(BasicBlocklist::code().clone(), vec![storage.into_slot()], metadata)
+        AccountComponent::new(BasicBlocklist::code().clone(), vec![blocklist.0.into_slot()], metadata)
             .expect(
                 "basic blocklist transfer policy component should satisfy the requirements of a valid account component",
             )

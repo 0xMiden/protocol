@@ -9,8 +9,7 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
-use miden_protocol::note::{NoteAttachments, NoteInclusionProof, NoteType};
-use miden_standards::note::P2idNote;
+use miden_protocol::note::{NoteInclusionProof, NoteType};
 use miden_tx::LocalTransactionProver;
 
 use crate::kernel_tests::batch::proposed_batch::setup_circular_note_dependency_test;
@@ -352,14 +351,7 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
     let mut builder = MockChain::builder();
     let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    let p2id_note = P2idNote::create(
-        account0.id(),
-        account1.id(),
-        vec![],
-        NoteType::Private,
-        NoteAttachments::default(),
-        builder.rng_mut(),
-    )?;
+    let p2id_note = create_p2any_note(account0.id(), NoteType::Private, [], builder.rng_mut());
     let spawn_note = builder.add_spawn_note([&p2id_note])?;
     let mut chain = builder.build()?;
 
@@ -373,10 +365,11 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
     // inclusion of the unauthenticated note.
     let batch0 = chain.create_batch(vec![tx0])?;
 
-    // Add the P2ID note to the chain by consuming the SPAWN note. The note will hence be created as
+    // Add the note to the chain by consuming the SPAWN note. The note will hence be created as
     // part of block 2 and the note inclusion proof references that block.
     let tx = chain
-        .build_tx_context(account0.id(), &[spawn_note.id()], &[])?
+        .build_transaction(account0.id())
+        .authenticated_input_note(spawn_note.id())
         .build()?
         .execute()
         .await?;
@@ -631,11 +624,11 @@ async fn proposed_block_fails_on_inconsistent_account_state_transition() -> anyh
     // Create three transactions on the same account that build on top of each other.
     let executed_tx0 = chain.create_authenticated_notes_tx(account.clone(), [note0.id()]).await?;
 
-    account.apply_delta(executed_tx0.account_delta())?;
+    account.apply_patch(executed_tx0.account_patch())?;
     // Builds a tx on top of the account state from tx0.
     let executed_tx1 = chain.create_authenticated_notes_tx(account.clone(), [note1.id()]).await?;
 
-    account.apply_delta(executed_tx1.account_delta())?;
+    account.apply_patch(executed_tx1.account_patch())?;
     // Builds a tx on top of the account state from tx1.
     let executed_tx2 = chain.create_authenticated_notes_tx(account.clone(), [note2.id()]).await?;
 

@@ -1,19 +1,19 @@
-use miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
-use miden::protocol::asset::ASSET_SIZE
+use {ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
+use {ASSET_SIZE} from miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::active_note
 
-# CONSTANTS
+# PUBLIC INTERFACE
 # =================================================================================================
 
 #! Adds the provided asset to the active account.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the received asset.
+#! - ASSET_ID is the asset ID of the received asset.
 #! - ASSET_VALUE is the value of the received asset.
 #!
 #! Panics if:
@@ -22,9 +22,10 @@ use miden::protocol::active_note
 #!   the total amount would be greater than 2^63.
 #!
 #! Invocation: call
+@account_procedure
 pub proc receive_asset
     exec.native_account::add_asset
-    # => [ASSET_VALUE', pad(12)]
+    # => [FINAL_ASSET_VALUE, pad(12)]
 
     # drop the final asset
     dropw
@@ -38,12 +39,12 @@ end
 #! the contents of the `PAD` elements shown below. It is the caller's responsibility to make sure
 #! these elements do not contain any meaningful data.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the output note.
-#! - ASSET_KEY is the vault key of the asset to move to the note.
+#! - ASSET_ID is the asset ID of the asset to move to the note.
 #! - ASSET_VALUE is the value of the asset to move to the note.
 #!
 #! Panics if:
@@ -52,29 +53,35 @@ end
 #! - the non-fungible asset is not found in the vault.
 #!
 #! Invocation: call
+@account_procedure
 pub proc move_asset_to_note
     dupw.1 dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     # remove the asset from the account
     exec.native_account::remove_asset
     dropw
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     exec.output_note::add_asset
     # => [pad(16)]
 end
 
-#! Adds all assets from the active note to the native account's vault.
+# PUBLIC HELPERS
+# =================================================================================================
+
+#! Moves all assets from the active note to the native account's vault.
 #!
 #! Inputs:  []
 #! Outputs: []
-@locals(512)
-pub proc add_assets_to_account
+#!
+#! Invocation: exec
+@locals(128)
+pub proc move_note_assets_to_account
     # write assets to local memory starting at offset 0
     # we have allocated ASSET_SIZE * MAX_ASSETS_PER_NOTE number of locals so all assets should fit
     # since the asset memory will be overwritten, we don't have to initialize the locals to zero
-    locaddr.0 exec.active_note::get_assets
+    locaddr.0 exec.active_note::remove_all_assets
     # => [num_of_assets]
 
     # compute the pointer at which we should stop iterating
@@ -100,13 +107,13 @@ pub proc add_assets_to_account
         add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le swapw
         # => [EMPTY_WORD, ASSET_VALUE, ptr, end_ptr]
 
-        # load the asset key
+        # load the asset ID
         dup.8 mem_loadw_le
-        # => [ASSET_KEY, ASSET_VALUE, ptr, end_ptr]
+        # => [ASSET_ID, ASSET_VALUE, ptr, end_ptr]
 
         # pad the stack before call
         padw padw swapdw
-        # => [ASSET_KEY, ASSET_VALUE, pad(8), ptr, end_ptr]
+        # => [ASSET_ID, ASSET_VALUE, pad(8), ptr, end_ptr]
 
         # add asset to the account
         call.receive_asset

@@ -21,6 +21,7 @@ pub use account_id::{
     AccountIdV1,
     AccountIdVersion,
     AccountType,
+    AssetCallbackFlag,
 };
 
 pub(crate) mod name_validation;
@@ -41,18 +42,28 @@ pub mod component;
 pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
 
 pub mod interface;
-pub use interface::AccountComponentName;
+pub use interface::{AccountCodeInterface, AccountComponentName};
+
+mod patch;
+pub use patch::{
+    AccountPatch,
+    AccountStoragePatch,
+    AccountUpdateDetails,
+    AccountVaultPatch,
+    StorageMapPatch,
+    StorageMapPatchEntries,
+    StoragePatchOperation,
+    StorageSlotPatch,
+    StorageValuePatch,
+};
 
 pub mod delta;
 pub use delta::{
     AccountDelta,
-    AccountStorageDelta,
     AccountVaultDelta,
     FungibleAssetDelta,
     NonFungibleAssetDelta,
     NonFungibleDeltaAction,
-    StorageMapDelta,
-    StorageSlotDelta,
 };
 
 pub mod storage;
@@ -158,7 +169,7 @@ impl Account {
 
     /// Creates an account's [`AccountCode`] and [`AccountStorage`] from the provided components.
     ///
-    /// This merges all libraries of the components into a single
+    /// This merges all packages of the components into a single
     /// [`MastForest`](miden_processor::MastForest) to produce the [`AccountCode`].
     ///
     /// The storage slots of all components are merged into a single [`AccountStorage`], where the
@@ -171,13 +182,13 @@ impl Account {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The number of procedures in all merged libraries is 0 or exceeds
+    /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more libraries export a procedure with the same MAST root.
+    /// - Two or more packages export a procedure with the same MAST root.
     /// - The first component doesn't contain exactly one authentication procedure.
     /// - Other components contain authentication procedures.
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
-    /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all libraries.
+    /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all packages.
     pub(super) fn initialize_from_components(
         components: Vec<AccountComponent>,
     ) -> Result<(AccountCode, AccountStorage), AccountError> {
@@ -242,6 +253,12 @@ impl Account {
         &self.code
     }
 
+    /// Returns the public interface of this account: its ID and the set of procedure roots it
+    /// exposes.
+    pub fn code_interface(&self) -> AccountCodeInterface {
+        self.code.interface(self.id())
+    }
+
     /// Returns nonce for this account.
     pub fn nonce(&self) -> Felt {
         self.nonce
@@ -282,34 +299,40 @@ impl Account {
     // DATA MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the provided delta to this account. This updates account vault, storage, and nonce
-    /// to the values specified by the delta.
+    /// Applies the provided patch to this account. This sets account vault, storage, and nonce to
+    /// the values specified by the patch.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - [`AccountDelta::is_full_state`] returns `true`, i.e. represents the state of an entire
-    ///   account. Only partial state deltas can be applied to an account.
-    /// - Applying vault sub-delta to the vault of this account fails.
-    /// - Applying storage sub-delta to the storage of this account fails.
-    /// - The nonce specified in the provided delta smaller than or equal to the current account
+    /// - The patch's account ID does not match this account's ID.
+    /// - The patch carries account code, i.e. represents a newly created account. Such patches can
+    ///   be converted to accounts directly and cannot be applied to an existing account.
+    /// - Applying the vault sub-patch to the vault of this account fails.
+    /// - Applying the storage sub-patch to the storage of this account fails.
+    /// - The nonce specified in the provided patch is not strictly greater than the current account
     ///   nonce.
-    pub fn apply_delta(&mut self, delta: &AccountDelta) -> Result<(), AccountError> {
-        if delta.is_full_state() {
-            return Err(AccountError::ApplyFullStateDeltaToAccount);
+    pub fn apply_patch(&mut self, patch: &AccountPatch) -> Result<(), AccountError> {
+        if patch.id() != self.id {
+            return Err(AccountError::PatchAccountIdMismatch {
+                account_id: self.id,
+                patch_id: patch.id(),
+            });
         }
 
-        // update vault; we don't check vault delta validity here because `AccountDelta` can contain
-        // only valid vault deltas
+        if patch.is_full_state() {
+            return Err(AccountError::ApplyFullStatePatchToAccount);
+        }
+
         self.vault
-            .apply_delta(delta.vault())
+            .apply_patch(patch.vault())
             .map_err(AccountError::AssetVaultUpdateError)?;
 
-        // update storage
-        self.storage.apply_delta(delta.storage())?;
+        self.storage.apply_patch(patch.storage())?;
 
-        // update nonce
-        self.increment_nonce(delta.nonce_delta())?;
+        if let Some(new_nonce) = patch.final_nonce() {
+            self.set_nonce(new_nonce)?;
+        }
 
         Ok(())
     }
@@ -323,12 +346,17 @@ impl Account {
     pub fn increment_nonce(&mut self, nonce_delta: Felt) -> Result<(), AccountError> {
         let new_nonce = self.nonce + nonce_delta;
 
+        self.set_nonce(new_nonce)
+    }
+
+    /// Sets the nonce of this account to the provided value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `new_nonce` is not equal to or greater than the current account nonce.
+    pub fn set_nonce(&mut self, new_nonce: Felt) -> Result<(), AccountError> {
         if new_nonce.as_canonical_u64() < self.nonce.as_canonical_u64() {
-            return Err(AccountError::NonceOverflow {
-                current: self.nonce,
-                increment: nonce_delta,
-                new: new_nonce,
-            });
+            return Err(AccountError::NonceMustIncrease { current: self.nonce, new: new_nonce });
         }
 
         self.nonce = new_nonce;
@@ -382,9 +410,12 @@ impl TryFrom<Account> for AccountDelta {
             .into_slots()
             .into_iter()
             .map(StorageSlot::into_parts)
-            .map(|(slot_name, slot_content)| (slot_name, StorageSlotDelta::from(slot_content)))
+            .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
             .collect();
-        let storage_delta = AccountStorageDelta::from_raw(slot_deltas);
+        // The account's storage is bounded by `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so the
+        // derived patch cannot exceed the limit.
+        let storage_patch = AccountStoragePatch::from_raw(slot_deltas)
+            .expect("number of slot patches is bounded by the account's storage slots");
 
         let mut fungible_delta = FungibleAssetDelta::default();
         let mut non_fungible_delta = NonFungibleAssetDelta::default();
@@ -410,12 +441,57 @@ impl TryFrom<Account> for AccountDelta {
         let nonce_delta = nonce;
 
         // SAFETY: As checked earlier, the nonce delta should be greater than 0 allowing for
-        // non-empty state changes.
-        let delta = AccountDelta::new(id, storage_delta, vault_delta, nonce_delta)
-            .expect("nonce_delta should be greater than 0")
-            .with_code(Some(code));
+        // non-empty state changes. The storage patch consists of `Create` slot patches only, so the
+        // full state delta validation passes.
+        let delta = AccountDelta::new(id, storage_patch, vault_delta, Some(code), nonce_delta)
+            .expect("full state delta from account contains only create patches");
 
         Ok(delta)
+    }
+}
+
+impl TryFrom<Account> for AccountPatch {
+    type Error = AccountError;
+
+    /// Converts an [`Account`] into an [`AccountPatch`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the account has a seed. Accounts with seeds have a nonce of 0. Representing such accounts
+    ///   as patches is not possible because patches with a non-empty state change need a
+    ///   `final_nonce` greater than 0.
+    fn try_from(account: Account) -> Result<Self, Self::Error> {
+        let Account { id, vault, storage, code, nonce, seed } = account;
+
+        if seed.is_some() {
+            return Err(AccountError::PatchFromAccountWithSeed);
+        }
+
+        let slot_patches = storage
+            .into_slots()
+            .into_iter()
+            .map(StorageSlot::into_parts)
+            .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
+            .collect();
+        // The account's storage is bounded by `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so the
+        // derived patch cannot exceed the limit.
+        let storage_patch = AccountStoragePatch::from_raw(slot_patches)
+            .expect("number of slot patches is bounded by the account's storage slots");
+
+        let mut vault_patch = AccountVaultPatch::default();
+        for asset in vault.assets() {
+            vault_patch.insert_asset(asset);
+        }
+
+        // The account's nonce is the final (absolute) nonce of the patch. Since the seed was
+        // checked above, the nonce is guaranteed to be greater than zero, so the patch can
+        // represent non-empty state changes and the `final_nonce == 1` invariant is satisfied
+        // by passing the account code.
+        let patch = AccountPatch::new(id, storage_patch, vault_patch, Some(code), Some(nonce))
+            .expect("non-seeded account should yield a valid patch");
+
+        Ok(patch)
     }
 }
 
@@ -515,22 +591,18 @@ mod tests {
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
-    use super::{
-        AccountCode,
-        AccountDelta,
-        AccountId,
-        AccountStorage,
-        AccountStorageDelta,
-        AccountVaultDelta,
-    };
+    use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
     use crate::account::{
         Account,
         AccountBuilder,
         AccountIdVersion,
+        AccountPatch,
         AccountType,
+        AccountVaultDelta,
+        AccountVaultPatch,
+        AssetCallbackFlag,
         PartialAccount,
         StorageMap,
-        StorageMapDelta,
         StorageMapKey,
         StorageSlot,
         StorageSlotContent,
@@ -539,8 +611,8 @@ mod tests {
     use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
@@ -560,20 +632,15 @@ mod tests {
 
     #[test]
     fn test_serde_account_delta() {
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
         let nonce_delta = Felt::from(2_u32);
         let asset_0 = FungibleAsset::mock(15);
         let asset_1 = NonFungibleAsset::mock(&[5, 5, 5]);
-        let storage_delta = AccountStorageDelta::new()
-            .add_cleared_items([StorageSlotName::mock(0)])
-            .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
-        let account_delta = build_account_delta(
-            account_id,
-            vec![asset_1],
-            vec![asset_0],
-            nonce_delta,
-            storage_delta,
-        );
+        let storage_patch = AccountStoragePatch::builder()
+            .update_value(StorageSlotName::mock(0), Word::empty())
+            .update_value(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))
+            .build();
+        let account_delta =
+            build_account_delta(vec![asset_1], vec![asset_0], nonce_delta, storage_patch);
 
         let serialized = account_delta.to_bytes();
         let deserialized = AccountDelta::read_from_bytes(&serialized).unwrap();
@@ -581,9 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_account_delta_is_correctly_applied() {
-        // build account
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    fn account_patch_is_correctly_applied() -> anyhow::Result<()> {
         let init_nonce = Felt::from(1_u32);
         let asset_0 = FungibleAsset::mock(100);
         let asset_1 = NonFungibleAsset::mock(&[1, 2, 3]);
@@ -591,48 +656,40 @@ mod tests {
         // build storage slots
         let storage_slot_value_0 = StorageSlotContent::Value(Word::from([1, 2, 3, 4u32]));
         let storage_slot_value_1 = StorageSlotContent::Value(Word::from([5, 6, 7, 8u32]));
+        let map_key_0 = StorageMapKey::from_array([101, 102, 103, 104]);
+        let map_key_1 = StorageMapKey::from_array([105, 106, 107, 108]);
+
         let mut storage_map = StorageMap::with_entries([
-            (
-                StorageMapKey::from_array([101, 102, 103, 104]),
-                Word::from([1_u32, 2_u32, 3_u32, 4_u32]),
-            ),
-            (
-                StorageMapKey::from_array([105, 106, 107, 108]),
-                Word::from([5_u32, 6_u32, 7_u32, 8_u32]),
-            ),
+            (map_key_0, Word::from([1, 2, 3, 4_u32])),
+            (map_key_1, Word::from([5, 6, 7, 8_u32])),
         ])
         .unwrap();
         let storage_slot_map = StorageSlotContent::Map(storage_map.clone());
 
-        let mut account = build_account(
+        // build account
+        let initial_account = build_account(
             vec![asset_0],
             init_nonce,
             vec![storage_slot_value_0, storage_slot_value_1, storage_slot_map],
         );
 
-        // update storage map
-        let key = StorageMapKey::from_array([101, 102, 103, 104]);
         let value = Word::from([9, 10, 11, 12u32]);
+        storage_map.insert(map_key_0, value).unwrap();
 
-        let updated_map = StorageMapDelta::from_iters([], [(key, value)]);
-        storage_map.insert(key, value).unwrap();
+        // build account patch
+        let final_nonce = init_nonce + Felt::ONE;
+        let storage_patch = AccountStoragePatch::builder()
+            .update_value(StorageSlotName::mock(0), Word::empty())
+            .update_value(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))
+            .update_map(StorageSlotName::mock(2), [(map_key_0, value)])
+            .build();
+        let account_patch =
+            build_account_patch(final_nonce, vec![asset_1], vec![asset_0], storage_patch);
 
-        // build account delta
-        let final_nonce = Felt::from(2_u32);
-        let storage_delta = AccountStorageDelta::new()
-            .add_cleared_items([StorageSlotName::mock(0)])
-            .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))])
-            .add_updated_maps([(StorageSlotName::mock(2), updated_map)]);
-        let account_delta = build_account_delta(
-            account_id,
-            vec![asset_1],
-            vec![asset_0],
-            final_nonce - init_nonce,
-            storage_delta,
-        );
+        // apply patch and create final_account
+        let mut account_with_patched = initial_account;
 
-        // apply delta and create final_account
-        account.apply_delta(&account_delta).unwrap();
+        account_with_patched.apply_patch(&account_patch)?;
 
         let final_account = build_account(
             vec![asset_1],
@@ -644,85 +701,138 @@ mod tests {
             ],
         );
 
-        // assert account is what it should be
-        assert_eq!(account, final_account);
+        assert_eq!(account_with_patched, final_account);
+
+        Ok(())
     }
 
     #[test]
-    #[should_panic]
-    fn valid_account_delta_with_unchanged_nonce() {
-        // build account
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    fn apply_patch_rejects_new_account_patch() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
         let init_nonce = Felt::from(1_u32);
-        let asset = FungibleAsset::mock(110);
-        let mut account =
-            build_account(vec![asset], init_nonce, vec![StorageSlotContent::Value(Word::empty())]);
+        let mut account = build_account(vec![], init_nonce, vec![]);
 
-        // build account delta
-        let storage_delta = AccountStorageDelta::new()
-            .add_cleared_items([StorageSlotName::mock(0)])
-            .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
-        let account_delta =
-            build_account_delta(account_id, vec![], vec![asset], init_nonce, storage_delta);
-
-        // apply delta
-        account.apply_delta(&account_delta).unwrap()
-    }
-
-    #[test]
-    #[should_panic]
-    fn valid_account_delta_with_decremented_nonce() {
-        // build account
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::from(2_u32);
-        let asset = FungibleAsset::mock(100);
-        let mut account =
-            build_account(vec![asset], init_nonce, vec![StorageSlotContent::Value(Word::empty())]);
-
-        // build account delta
-        let final_nonce = Felt::from(1_u32);
-        let storage_delta = AccountStorageDelta::new()
-            .add_cleared_items([StorageSlotName::mock(0)])
-            .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
-        let account_delta =
-            build_account_delta(account_id, vec![], vec![asset], final_nonce, storage_delta);
-
-        // apply delta
-        account.apply_delta(&account_delta).unwrap()
-    }
-
-    #[test]
-    fn empty_account_delta_with_incremented_nonce() {
-        // build account
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::from(1_u32);
-        let word = Word::from([1, 2, 3, 4u32]);
-        let storage_slot = StorageSlotContent::Value(word);
-        let mut account = build_account(vec![], init_nonce, vec![storage_slot]);
-
-        // build account delta
-        let nonce_delta = Felt::from(1_u32);
-        let account_delta = AccountDelta::new(
+        let patch = AccountPatch::new(
             account_id,
-            AccountStorageDelta::new(),
-            AccountVaultDelta::default(),
-            nonce_delta,
-        )
-        .unwrap();
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            Some(AccountCode::mock()),
+            Some(Felt::from(2_u32)),
+        )?;
 
-        // apply delta
-        account.apply_delta(&account_delta).unwrap()
+        let err = account.apply_patch(&patch).unwrap_err();
+        assert_matches!(err, AccountError::ApplyFullStatePatchToAccount);
+
+        Ok(())
+    }
+
+    #[test]
+    fn apply_patch_rejects_non_increasing_nonce() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+        let init_nonce = 5_u32;
+        let mut account = build_account(vec![], Felt::from(init_nonce), vec![]);
+
+        // Smaller nonce.
+        let patch_smaller = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(init_nonce - 1)),
+        )?;
+        let err = account.apply_patch(&patch_smaller).unwrap_err();
+        assert_matches!(err, AccountError::NonceMustIncrease { .. });
+
+        Ok(())
+    }
+
+    #[test]
+    fn apply_patch_rejects_id_mismatch() -> anyhow::Result<()> {
+        let other_account_id =
+            AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2)?;
+        let init_nonce = Felt::from(1_u32);
+        let mut account = build_account(vec![], init_nonce, vec![]);
+
+        let patch = AccountPatch::new(
+            other_account_id,
+            AccountStoragePatch::default(),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(2_u32)),
+        )?;
+
+        let err = account.apply_patch(&patch).unwrap_err();
+        assert_matches!(err, AccountError::PatchAccountIdMismatch { .. });
+
+        Ok(())
+    }
+
+    #[test]
+    fn apply_empty_account_patch() -> anyhow::Result<()> {
+        let nonce = Felt::from(2u8);
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+        let empty_patch = AccountPatch::new(
+            id,
+            AccountStoragePatch::default(),
+            AccountVaultPatch::default(),
+            None,
+            None,
+        )?;
+        let init_account = build_account(vec![], nonce, vec![]);
+
+        let mut account_with_patch = init_account.clone();
+        account_with_patch.apply_patch(&empty_patch)?;
+
+        assert_eq!(init_account, account_with_patch, "account should be unchanged");
+
+        Ok(())
+    }
+
+    #[test]
+    fn apply_empty_account_patch_with_incremented_nonce() -> anyhow::Result<()> {
+        let initial_nonce = Felt::from(2u8);
+        let final_nonce = initial_nonce + Felt::ONE;
+
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+        let empty_patch = AccountPatch::new(
+            id,
+            AccountStoragePatch::default(),
+            AccountVaultPatch::default(),
+            None,
+            Some(final_nonce),
+        )?;
+
+        let init_account = build_account(vec![], initial_nonce, vec![]);
+        let final_account = build_account(vec![], final_nonce, vec![]);
+
+        let mut account_with_patch = init_account.clone();
+        account_with_patch.apply_patch(&empty_patch)?;
+
+        assert_eq!(final_account, account_with_patch);
+
+        Ok(())
     }
 
     pub fn build_account_delta(
-        account_id: AccountId,
         added_assets: Vec<Asset>,
         removed_assets: Vec<Asset>,
         nonce_delta: Felt,
-        storage_delta: AccountStorageDelta,
+        storage_patch: AccountStoragePatch,
     ) -> AccountDelta {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
-        AccountDelta::new(account_id, storage_delta, vault_delta, nonce_delta).unwrap()
+        AccountDelta::new(id, storage_patch, vault_delta, None, nonce_delta).unwrap()
+    }
+
+    pub fn build_account_patch(
+        final_nonce: Felt,
+        added_assets: Vec<Asset>,
+        removed_assets: Vec<Asset>,
+        storage_patch: AccountStoragePatch,
+    ) -> AccountPatch {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+        let vault_patch = AccountVaultPatch::from_iters(added_assets, removed_assets);
+        AccountPatch::new(id, storage_patch, vault_patch, None, Some(final_nonce)).unwrap()
     }
 
     pub fn build_account(
@@ -750,7 +860,7 @@ mod tests {
     #[test]
     fn seed_validation() -> anyhow::Result<()> {
         let account = AccountBuilder::new([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
         let (id, vault, storage, code, _nonce, seed) = account.into_parts();
@@ -759,6 +869,7 @@ mod tests {
         let other_seed = AccountId::compute_account_seed(
             [9; 32],
             AccountType::Public,
+            AssetCallbackFlag::Disabled,
             AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),
@@ -814,7 +925,7 @@ mod tests {
     #[test]
     fn incrementing_nonce_should_remove_seed() -> anyhow::Result<()> {
         let mut account = AccountBuilder::new([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
         account.increment_nonce(Felt::ONE)?;

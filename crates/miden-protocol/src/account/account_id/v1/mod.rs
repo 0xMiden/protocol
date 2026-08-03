@@ -10,7 +10,7 @@ use miden_crypto::utils::hex_to_bytes;
 pub use prefix::AccountIdPrefixV1;
 
 use crate::account::account_id::NetworkId;
-use crate::account::{AccountIdVersion, AccountType};
+use crate::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
 use crate::address::AddressType;
 use crate::errors::{AccountError, AccountIdError, Bech32Error};
 use crate::utils::serde::{
@@ -55,6 +55,11 @@ impl AccountIdV1 {
     /// type.
     pub(crate) const ACCOUNT_TYPE_MASK: u8 = 0b1 << Self::ACCOUNT_TYPE_SHIFT;
     pub(crate) const ACCOUNT_TYPE_SHIFT: u64 = 4;
+
+    /// The bit directly above the account type bit encodes the immutable
+    /// [`AssetCallbackFlag`] of the faucet: whether assets it issues trigger callbacks.
+    pub(crate) const ASSET_CALLBACK_FLAG_MASK: u8 = 0b1 << Self::ASSET_CALLBACK_FLAG_SHIFT;
+    pub(crate) const ASSET_CALLBACK_FLAG_SHIFT: u64 = 5;
 
     /// The element index in the seed digest that becomes the account ID suffix (after
     /// [`shape_suffix`]).
@@ -107,12 +112,18 @@ impl AccountIdV1 {
 
     /// See [`AccountId::dummy`](super::AccountId::dummy) for details.
     #[cfg(any(feature = "testing", test))]
-    pub fn dummy(mut bytes: [u8; 15], account_type: AccountType) -> AccountIdV1 {
+    pub fn dummy(
+        mut bytes: [u8; 15],
+        account_type: AccountType,
+        asset_callbacks: AssetCallbackFlag,
+    ) -> AccountIdV1 {
         let version = AccountIdVersion::Version1 as u8;
-        let low_nibble = ((account_type as u8) << Self::ACCOUNT_TYPE_SHIFT) | version;
+        let low_byte = (asset_callbacks.as_u8() << Self::ASSET_CALLBACK_FLAG_SHIFT)
+            | ((account_type as u8) << Self::ACCOUNT_TYPE_SHIFT)
+            | version;
 
         // Set least significant byte.
-        bytes[7] = low_nibble;
+        bytes[7] = low_byte;
 
         // Clear the 32nd most significant bit.
         bytes[3] &= 0b1111_1110;
@@ -138,6 +149,7 @@ impl AccountIdV1 {
             .expect("we should have shaped the felts to produce a valid id");
 
         debug_assert_eq!(account_id.account_type(), account_type);
+        debug_assert_eq!(account_id.asset_callback_flag(), asset_callbacks);
 
         account_id
     }
@@ -146,6 +158,7 @@ impl AccountIdV1 {
     pub fn compute_account_seed(
         init_seed: [u8; 32],
         account_type: AccountType,
+        asset_callbacks: AssetCallbackFlag,
         version: AccountIdVersion,
         code_commitment: Word,
         storage_commitment: Word,
@@ -153,6 +166,7 @@ impl AccountIdV1 {
         crate::account::account_id::seed::compute_account_seed(
             init_seed,
             account_type,
+            asset_callbacks,
             version,
             code_commitment,
             storage_commitment,
@@ -165,6 +179,11 @@ impl AccountIdV1 {
     /// See [`AccountId::account_type`](super::AccountId::account_type) for details.
     pub fn account_type(&self) -> AccountType {
         extract_account_type(self.prefix().as_u64())
+    }
+
+    /// See [`AccountId::asset_callback_flag`](super::AccountId::asset_callback_flag) for details.
+    pub fn asset_callback_flag(&self) -> AssetCallbackFlag {
+        extract_asset_callback_flag(self.prefix().as_u64())
     }
 
     /// See [`AccountId::is_public`](super::AccountId::is_public) for details.
@@ -290,12 +309,6 @@ impl AccountIdV1 {
 
 // CONVERSIONS FROM ACCOUNT ID
 // ================================================================================================
-
-impl From<AccountIdV1> for [Felt; 2] {
-    fn from(id: AccountIdV1) -> Self {
-        [id.prefix, id.suffix]
-    }
-}
 
 impl From<AccountIdV1> for [u8; 15] {
     fn from(id: AccountIdV1) -> Self {
@@ -439,6 +452,10 @@ pub(crate) fn extract_account_type(prefix: u64) -> AccountType {
     }
 }
 
+pub(crate) fn extract_asset_callback_flag(prefix: u64) -> AssetCallbackFlag {
+    AssetCallbackFlag::from(prefix & AccountIdV1::ASSET_CALLBACK_FLAG_MASK as u64 != 0)
+}
+
 pub(crate) fn extract_version(prefix: u64) -> Result<AccountIdVersion, AccountIdError> {
     // SAFETY: The mask guarantees that we only mask out the least significant nibble, so casting to
     // u8 is safe.
@@ -526,18 +543,23 @@ mod tests {
         // all-zeroes input.
         #[values([0xff; 15], [0; 15])] input: [u8; 15],
         #[values(AccountType::Private, AccountType::Public)] account_type: AccountType,
+        #[values(AssetCallbackFlag::Disabled, AssetCallbackFlag::Enabled)]
+        asset_callbacks: AssetCallbackFlag,
     ) {
-        let id = AccountIdV1::dummy(input, account_type);
+        let id = AccountIdV1::dummy(input, account_type, asset_callbacks);
         assert_eq!(id.account_type(), account_type);
+        assert_eq!(id.asset_callback_flag(), asset_callbacks);
         assert_eq!(id.version(), AccountIdVersion::Version1);
 
-        // Do a serialization roundtrip to ensure validity.
+        // Do a serialization roundtrip to ensure validity and that the callback flag is preserved.
         let serialized_id = id.to_bytes();
-        AccountIdV1::read_from_bytes(&serialized_id).unwrap();
+        let deserialized_id = AccountIdV1::read_from_bytes(&serialized_id).unwrap();
+        assert_eq!(deserialized_id.asset_callback_flag(), asset_callbacks);
         assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
 
         let serialized_prefix = id.prefix().to_bytes();
-        AccountIdPrefix::read_from_bytes(&serialized_prefix).unwrap();
+        let deserialized_prefix = AccountIdPrefix::read_from_bytes(&serialized_prefix).unwrap();
+        assert_eq!(deserialized_prefix.asset_callback_flag(), asset_callbacks);
         assert_eq!(serialized_prefix.len(), AccountIdPrefix::SERIALIZED_SIZE);
     }
 

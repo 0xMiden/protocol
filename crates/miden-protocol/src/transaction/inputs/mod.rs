@@ -3,8 +3,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
+use miden_crypto::merkle::NodeIndex;
 use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
-use miden_crypto::merkle::{MerkleError, NodeIndex};
 
 use super::PartialBlockchain;
 use crate::account::{
@@ -19,7 +19,7 @@ use crate::account::{
     StorageSlotId,
     StorageSlotName,
 };
-use crate::asset::{Asset, AssetVaultKey, AssetWitness, PartialVault};
+use crate::asset::{Asset, AssetId, AssetWitness, PartialVault};
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
@@ -270,7 +270,7 @@ impl TransactionInputs {
         Ok(storage_witness)
     }
 
-    /// Reads the vault asset witnesses for the given account and vault keys.
+    /// Reads the vault asset witnesses for the given account and asset IDs.
     ///
     /// # Errors
     /// Returns an error if:
@@ -280,11 +280,11 @@ impl TransactionInputs {
     pub fn read_vault_asset_witnesses(
         &self,
         vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        asset_ids: BTreeSet<AssetId>,
     ) -> Result<Vec<AssetWitness>, TransactionInputsExtractionError> {
         let mut asset_witnesses = Vec::new();
-        for vault_key in vault_keys {
-            let smt_index = vault_key.to_leaf_index();
+        for asset_id in asset_ids {
+            let smt_index = asset_id.hash().to_leaf_index();
             // Construct sparse Merkle path.
             let merkle_path = self.advice_inputs.store.get_path(vault_root, smt_index.into())?;
             let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
@@ -300,18 +300,18 @@ impl TransactionInputs {
 
             // Construct SMT proof and witness.
             let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
-            let asset_witness = AssetWitness::new(smt_proof)?;
+            let asset_witness = AssetWitness::new(smt_proof, [asset_id])?;
             asset_witnesses.push(asset_witness);
         }
         Ok(asset_witnesses)
     }
 
-    /// Returns true if the witness for the specified asset key is present in these inputs.
+    /// Returns true if the witness for the specified asset ID is present in these inputs.
     ///
     /// Note that this does not verify the witness' validity (i.e., that the witness is for a valid
     /// asset).
-    pub fn has_vault_asset_witness(&self, vault_root: Word, asset_key: &AssetVaultKey) -> bool {
-        let smt_index: NodeIndex = asset_key.to_leaf_index().into();
+    pub fn has_vault_asset_witness(&self, vault_root: Word, asset_id: &AssetId) -> bool {
+        let smt_index: NodeIndex = asset_id.hash().to_leaf_index().into();
 
         // make sure the path is in the Merkle store
         if !self.advice_inputs.store.has_path(vault_root, smt_index) {
@@ -325,43 +325,27 @@ impl TransactionInputs {
         }
     }
 
-    /// Reads the asset from the specified vault under the specified key; returns `None` if the
-    /// specified asset is not present in these inputs.
+    /// Reads the asset stored under `asset_id` in the vault with the specified root.
+    ///
+    /// Returns `Ok(None)` when the key's leaf is tracked but holds no asset.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - A Merkle tree with the specified root is not present in the advice data of these inputs.
+    /// - A Merkle tree with the specified root, or the key's Merkle path, is not present in the
+    ///   advice data of these inputs.
     /// - Construction of the leaf node or the asset fails.
     pub fn read_vault_asset(
         &self,
         vault_root: Word,
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
     ) -> Result<Option<Asset>, TransactionInputsExtractionError> {
-        // Get the node corresponding to the asset_key; if not found return None
-        let smt_index = asset_key.to_leaf_index();
-        let merkle_node = match self.advice_inputs.store.get_node(vault_root, smt_index.into()) {
-            Ok(node) => node,
-            Err(MerkleError::NodeIndexNotFoundInStore(..)) => return Ok(None),
-            Err(err) => return Err(err.into()),
-        };
-
-        // Construct SMT leaf for this asset key
-        let smt_leaf_elements = self
-            .advice_inputs
-            .map
-            .get(&merkle_node)
-            .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-        let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
-
-        // Find the asset in the SMT leaf
-        let asset = smt_leaf
-            .entries()
-            .iter()
-            .find(|(key, _value)| key == &asset_key.to_word())
-            .map(|(_key, value)| Asset::from_key_value(asset_key, *value))
-            .transpose()?;
-
-        Ok(asset)
+        let witnesses =
+            self.read_vault_asset_witnesses(vault_root, BTreeSet::from_iter([asset_id]))?;
+        let witness = witnesses
+            .into_iter()
+            .next()
+            .expect("one key requested should yield exactly one witness");
+        Ok(witness.find(asset_id))
     }
 
     /// Reads `AccountInputs` for a foreign account from the advice inputs.

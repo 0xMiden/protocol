@@ -1,0 +1,34 @@
+# The MASM code of the Multi-Signature Smart Authentication Component.
+#
+# See the `AuthMultisigSmart` Rust type's documentation for more details.
+
+use miden::standards::auth::multisig
+use miden::standards::auth::multisig_smart
+
+pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
+pub use {get_signer_at} from miden::standards::auth::multisig
+pub use {is_signer} from miden::standards::auth::multisig
+pub use {set_procedure_policy} from miden::standards::auth::multisig_smart
+pub use {update_signers_and_threshold} from miden::standards::auth::multisig_smart
+
+#! Authenticate a transaction using multisig smart-policy rules.
+#!
+#! Inputs:
+#!   Operand stack: [SALT]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_tx_multisig_smart(salt: word)
+    # zero the leading user params (not exposed through this component's interface); the SALT
+    # occupies the trailing four
+    push.0.0.0
+    # => [0, 0, 0, SALT]
+
+    exec.multisig_smart::auth_tx
+    # => [TX_SUMMARY_COMMITMENT]
+
+    exec.multisig::record_and_assert_new_tx
+    # => []
+end

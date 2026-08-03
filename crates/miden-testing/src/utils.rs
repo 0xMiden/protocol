@@ -2,15 +2,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType, PartialNoteMetadata};
+use miden_protocol::note::{Note, NoteType};
 use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::note::NoteBuilder;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -152,10 +149,10 @@ pub fn create_p2any_note(
                 # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw movup.8 mem_loadw_le
-                # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
+                # => [ASSET_ID, ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw padw swapdw
-                # => [ASSET_KEY, ASSET_VALUE, pad(12), dest_ptr]
+                # => [ASSET_ID, ASSET_VALUE, pad(12), dest_ptr]
 
                 call.wallet::receive_asset
                 # => [pad(16), dest_ptr]
@@ -171,14 +168,13 @@ pub fn create_p2any_note(
         r#"
         use mock::account
         use miden::protocol::active_note
-        use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
-        use ::miden::protocol::asset::ASSET_SIZE
-        use miden::standards::wallets::basic->wallet
+        use {{ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET}} from miden::protocol::asset
+        use miden::standards::wallets::basic as wallet
 
         @note_script
         pub proc main
             # fetch pointer & number of assets
-            push.0 exec.active_note::get_assets     # [num_assets]
+            push.0 exec.active_note::remove_all_assets     # [num_assets]
 
             # runtime-check we got the expected count
             push.{num_assets} assert_eq.err="unexpected number of assets"             # []
@@ -197,7 +193,7 @@ pub fn create_p2any_note(
         .note_type(note_type)
         .serial_number(serial_number)
         .code(code)
-        .dynamically_linked_libraries(CodeBuilder::mock_libraries())
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
         .build()
         .expect("generated note script should compile")
 }
@@ -231,10 +227,10 @@ where
 
     let (note_code, advice_map) = note_script_that_creates_notes(sender_id, output_notes)?;
 
-    let note = NoteBuilder::new(sender_id, SmallRng::from_os_rng())
+    let note = NoteBuilder::new(sender_id, SmallRng::from_rng(&mut rand::rng()))
         .code(note_code)
         .advice_map(advice_map)
-        .dynamically_linked_libraries(CodeBuilder::mock_libraries())
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
         .build()?;
 
     Ok(note)
@@ -273,12 +269,16 @@ fn note_script_that_creates_notes<'note>(
         } else {
             out.push_str("dropw dropw dropw\n");
         }
+        // Note creation must originate from the account context, so the note script delegates to
+        // the mock account's `create_note` procedure (the consuming account is the mock account).
         out.push_str(&format!(
             "
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create\n",
+            call.::mock::account::create_note
+            # drop the 15 pad elements the account-procedure call convention leaves
+            repeat.15 swap drop end\n",
             recipient = note.recipient().digest(),
             note_type = note.metadata().note_type() as u8,
             tag = note.metadata().tag(),
@@ -307,12 +307,12 @@ fn note_script_that_creates_notes<'note>(
             out.push_str(&format!(
                 " dup
                   push.{ASSET_VALUE}
-                  push.{ASSET_KEY}
-                  # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+                  push.{ASSET_ID}
+                  # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
                   call.::miden::standards::wallets::basic::move_asset_to_note
                   # => [note_idx]
                 ",
-                ASSET_KEY = asset.to_key_word(),
+                ASSET_ID = asset.to_id_word(),
                 ASSET_VALUE = asset.to_value_word(),
             ));
         }
@@ -321,22 +321,4 @@ fn note_script_that_creates_notes<'note>(
     out.push_str("repeat.5 dropw end\nend");
 
     Ok((out, advice_map))
-}
-
-/// Generates a P2ID note - Pay-to-ID note with an exact serial number
-pub fn create_p2id_note_exact(
-    sender: AccountId,
-    target: AccountId,
-    assets: Vec<Asset>,
-    note_type: NoteType,
-    serial_num: Word,
-) -> Result<Note, NoteError> {
-    let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
-
-    let tag = NoteTag::with_account_target(target);
-
-    let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
-    let vault = NoteAssets::new(assets)?;
-
-    Ok(Note::new(vault, metadata, recipient))
 }

@@ -1,10 +1,8 @@
 use miden::core::crypto::dsa::falcon512_poseidon2
 use miden::core::crypto::hashes::poseidon2
 use miden::core::crypto::dsa::ecdsa_k256_keccak
-use miden::protocol::active_account
-use miden::protocol::auth::AUTH_REQUEST_EVENT
+use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
-use miden::protocol::tx
 use miden::standards::auth
 
 # CONSTANTS
@@ -14,15 +12,29 @@ use miden::standards::auth
 const ECDSA_K256_KECCAK_SCHEME_ID=1
 const FALCON_512_POSEIDON2_SCHEME_ID=2
 
+# Estimated upper bounds on the number of cycles authenticate_transaction takes per signature
+# scheme, for use as the num_extra_cycles input of fee::pay_fee. Measured values (see
+# bin/bench-transaction/bench-tx.json): ECDSA ~3.7k-4.1k, Falcon ~71.6k-72k. Overestimation is
+# cheap: the fee grows with ilog2 of the cycle count, so a <2x overshoot costs at most one
+# verification_base_fee unit. Guarded by the fee-payment regression tests.
+const ECDSA_K256_KECCAK_AUTH_CYCLES = 8000
+const FALCON_512_POSEIDON2_AUTH_CYCLES = 80000
+
+# Estimated upper bound on the number of cycles a multisig authentication flow spends outside of
+# per-signature verification: transaction summary creation and hashing, threshold config reads,
+# the per-procedure threshold/policy scans and replay-protection recording. The per-procedure
+# scans grow with the account's procedure count (bounded by the kernel's maximum), so accounts
+# with very many procedures may slightly under-estimate the fee; that fails closed (the batch
+# builder may reject the underpaying note) and is largely absorbed by the ilog2-domain fee
+# formula. Guarded by the fee-payment regression tests.
+const MULTISIG_AUTH_BASE_CYCLES = 8192
+
 # Local Memory Addresses for multisig operations
-const NUM_OF_APPROVERS_LOC=0
-const SIGNER_INDEX_LOC=1
-const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=4
-const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=5
-const CURRENT_PK_LOC=8
-const SUCCESSFUL_VERIFICATIONS_LOC=12
-const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=16
-const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=17
+const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=0
+const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=1
+const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=2
+const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=3
+const SUCCESSFUL_VERIFICATIONS_LOC=4
 
 # ERRORS
 # =================================================================================================
@@ -37,14 +49,15 @@ const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three
 #!
 #! It first increments the nonce of the account, independent of whether the account's state has
 #! changed or not. Then it computes and signs the following message (in memory order):
-#! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-#!  OUTPUT_NOTES_COMMITMENT, [0, 0, ref_block_num, final_nonce]]
+#! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!  BLOCK_COMMITMENT, [expiration_delta, final_nonce, 0, 0], [0, 0, 0, 0]]
 #!
-#! Including the final_nonce is necessary for replay protection. The reference block number is
+#! Including the final_nonce is necessary for replay protection. The reference block commitment is
 #! included to commit to the transaction creator's intended reference block of the transaction
-#! which determines the fee parameters and therefore the fee amount that is deducted.
+#! which determines the fee parameters and therefore the fee amount that is deducted. The
+#! expiration block delta is included to commit to the transaction's expiration.
 #!
-#! Inputs:  [PUB_KEY, scheme_id]
+#! Inputs:  [PK_COMM, scheme_id]
 #! Outputs: []
 #!
 #! Invocation: exec
@@ -53,22 +66,20 @@ pub proc authenticate_transaction
     # ---------------------------------------------------------------------------------------------
     # This has to happen before computing the delta commitment, otherwise that procedure will abort
     exec.native_account::incr_nonce
-    exec.tx::get_block_number
-    push.0.0
-    # => [[0, 0, ref_block_num, final_nonce], PUB_KEY, scheme_id]
+    # => [final_nonce, PK_COMM, scheme_id]
 
-    # Compute the message that is signed.
+    # Pass the final nonce as the first user param and zero the remaining ones.
+    push.0.0.0.0.0.0 movup.6
+    # => [user_params(7), PK_COMM, scheme_id]
+
+    # Compute the message that is signed. The summary preimage is inserted into the advice map
+    # for extraction by the host.
     # ---------------------------------------------------------------------------------------------
     exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, PK_COMM, scheme_id]
 
-    # insert tx summary into advice provider for extraction by the host
-    adv.insert_hqword
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
-
-    # The commitment to the tx summary is the message that is signed
-    exec.auth::hash_tx_summary
-    # OS => [MESSAGE, PUB_KEY, scheme_id]
+    exec.auth::hash_and_insert_tx_summary
+    # OS => [MESSAGE, PK_COMM, scheme_id]
     # AS => []
 
     # Fetch signature from advice provider and verify.
@@ -76,15 +87,11 @@ pub proc authenticate_transaction
     # Emit the authentication request event that pushes a signature for the message to the advice stack
     emit.AUTH_REQUEST_EVENT
     swapw
-    # OS => [PUB_KEY, MESSAGE, scheme_id]
+    # OS => [PK_COMM, MESSAGE, scheme_id]
     # AS => [SIGNATURE]
 
     movup.8
-    # OS => [scheme_id, PUB_KEY, MESSAGE]
-    # AS => [SIGNATURE]
-
-    dup.0 exec.assert_supported_scheme
-    # OS => [scheme_id, PUB_KEY, MESSAGE]
+    # OS => [scheme_id, PK_COMM, MESSAGE]
     # AS => [SIGNATURE]
 
     # Verify the signature against the public key and the message. The procedure gets as inputs the
@@ -99,26 +106,25 @@ end
 #   1 => ECDSA (ecdsa_k256_keccak)
 #   2 => Falcon (falcon512_poseidon2)
 #
-# Inputs:  [scheme_id, PUB_KEY, MSG]
+# Inputs:  [scheme_id, PK_COMM, MSG]
 # Outputs: []
 proc verify_signature_by_scheme
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
-    # => [is_one, scheme_id PUB_KEY, MESSAGE]
+    # => [is_one, scheme_id, PK_COMM, MESSAGE]
 
     if.true
         drop
-        # OS => [PUB_KEY, MESSAGE]
+        # OS => [PK_COMM, MESSAGE]
 
         exec.ecdsa_k256_keccak::verify
         # OS => []
         # AS => []
     else
-        dup eq.FALCON_512_POSEIDON2_SCHEME_ID
-        # => [is_2, scheme_id, PUB_KEY, MESSAGE]
+        eq.FALCON_512_POSEIDON2_SCHEME_ID
+        # => [is_2, PK_COMM, MESSAGE]
 
         if.true
-            drop
-            # OS => [PUB_KEY, MESSAGE]
+            # OS => [PK_COMM, MESSAGE]
 
             exec.falcon512_poseidon2::verify
             # OS => []
@@ -128,6 +134,69 @@ proc verify_signature_by_scheme
             push.0 assert.err=ERR_INVALID_SCHEME_ID
         end
     end
+end
+
+#! Returns a conservative upper bound on the number of cycles authenticate_transaction takes for
+#! the given signature scheme.
+#!
+#! Intended to be passed as the num_extra_cycles input of fee::pay_fee when fee payment happens
+#! right before authenticate_transaction. Unknown scheme ids return the largest bound; the
+#! authentication itself aborts on them later.
+#!
+#! Inputs:  [scheme_id]
+#! Outputs: [num_cycles]
+#!
+#! Where:
+#! - scheme_id is the signature scheme id (1 for ecdsa_k256_keccak, 2 for falcon512_poseidon2).
+#! - num_cycles is the estimated upper bound on authenticate_transaction's cycle count.
+#!
+#! Invocation: exec
+pub proc estimate_authentication_cycles
+    eq.ECDSA_K256_KECCAK_SCHEME_ID
+    # => [is_ecdsa]
+
+    push.FALCON_512_POSEIDON2_AUTH_CYCLES push.ECDSA_K256_KECCAK_AUTH_CYCLES
+    # => [ecdsa_cycles, falcon_cycles, is_ecdsa]
+
+    movup.2 cdrop
+    # => [num_cycles]
+end
+
+#! Returns a conservative upper bound on the number of cycles a multisig authentication flow
+#! takes when up to num_of_signers signatures are verified.
+#!
+#! Intended to be passed as the num_extra_cycles input of fee::pay_fee when fee payment happens
+#! right before the multisig authentication flow (summary creation, signature verification and
+#! replay-protection recording). Signature verification runs at most once per signer and every
+#! supported scheme's verification cost is bounded by the Falcon estimate (the most expensive
+#! scheme), so the bound is num_of_signers * FALCON_512_POSEIDON2_AUTH_CYCLES plus a base margin
+#! covering the rest of the flow.
+#!
+#! Approvers within one account may use different schemes (hybrid multisig): each approver's
+#! scheme id lives in a per-signer storage map that verify_signatures reads inside its loop, so
+#! there is no single per-account scheme to parameterize the estimate with (unlike
+#! estimate_authentication_cycles for singlesig). Summing per-signer estimates upfront would
+#! duplicate those map reads at a cost that itself grows with the approver count, so the bound
+#! conservatively assumes the most expensive scheme for every signer instead. This is a
+#! per-signer worst case: a multisig with many approvers but a low threshold, or one using the
+#! cheaper ECDSA scheme, only verifies a few (cheaper) signatures, so the estimate can overshoot
+#! the real cost by roughly the approver-to-verified ratio. Overestimation only ever raises the
+#! fee, and because the fee grows with ilog2 of the cycle count each doubling of the overshoot
+#! costs at most one extra verification_base_fee unit, so even a 10x overshoot costs only a few
+#! fee units.
+#!
+#! Inputs:  [num_of_signers]
+#! Outputs: [num_cycles]
+#!
+#! Where:
+#! - num_of_signers is the maximum number of signature verifications the authentication flow can
+#!   perform (e.g. the number of approvers).
+#! - num_cycles is the estimated upper bound on the authentication flow's cycle count.
+#!
+#! Invocation: exec
+pub proc estimate_multisig_authentication_cycles
+    mul.FALCON_512_POSEIDON2_AUTH_CYCLES add.MULTISIG_AUTH_BASE_CYCLES
+    # => [num_cycles]
 end
 
 #! Returns 1 if scheme_id is supported, else 0.
@@ -163,9 +232,9 @@ pub proc assert_supported_scheme_word
     dupw exec.assert_supported_scheme
     # => [0, 0, 0, SCHEME_ID_WORD]
 
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    assertz.err=ERR_INVALID_SCHEME_ID_WORD
     # => [SCHEME_ID_WORD]
 end
 
@@ -176,7 +245,7 @@ end
 #! the provided account storage map slot, verifies their signatures against the transaction message,
 #! and returns the number of successfully verified signatures.
 #!
-#! Note: Calls `active_account::get_initial_map_item` to access the transaction's initial storage
+#! Note: Calls `native_account::get_initial_map_item` to access the transaction's initial storage
 #! state rather than the current state. This is crucial when validating transactions that update
 #! the owner public key mapping - the previous signers must authorize the change to the new signers,
 #! not the new signers authorizing themselves.
@@ -185,7 +254,7 @@ end
 #!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
-@locals(18)
+@locals(5)
 pub proc verify_signatures
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
@@ -212,99 +281,90 @@ pub proc verify_signatures
         # Fetch public key from storage map.
         # -----------------------------------------------------------------------------------------
 
-        sub.1 dup dup loc_store.SIGNER_INDEX_LOC
-        # => [i-1, i-1, MSG]
+        sub.1 dup
+        # => [signer_idx, signer_idx, MSG]
 
         exec.create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, MSG]
+        # => [APPROVER_MAP_KEY, signer_idx, MSG]
 
         # Get public key from initial storage state
         loc_load.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
         loc_load.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
-        exec.active_account::get_initial_map_item
-        # => [OWNER_PUB_KEY, i-1, MSG]
-
-        loc_storew_le.CURRENT_PK_LOC
-        # => [OWNER_PUB_KEY, i-1, MSG]
+        exec.native_account::get_initial_map_item
+        # => [PK_COMM, signer_idx, MSG]
 
         # Check if signature exists for this signer.
         # -----------------------------------------------------------------------------------------
 
         movup.4 movdn.8
-        # => [OWNER_PUB_KEY, MSG, i-1]
+        # => [PK_COMM, MSG, signer_idx]
 
-        dupw.1 swapw
-        # => [OWNER_PUB_KEY, MSG, MSG, i-1]
+        dupw.1 dupw.1
+        # => [PK_COMM, MSG, PK_COMM, MSG, signer_idx]
 
         exec.poseidon2::merge
-        # => [SIG_KEY, MSG, i-1]
+        # => [SIG_KEY, PK_COMM, MSG, signer_idx]
 
         adv.has_mapkey
-        # => [SIG_KEY, MSG, i-1]
+        # => [SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        dropw
+        # => [PK_COMM, MSG, signer_idx]
 
         adv_push
-        # => [has_signature, SIG_KEY, MSG, i-1]
+        # => [has_signature, PK_COMM, MSG, signer_idx]
 
-        # if SIG_KEY => SIGNATURE exists in AdviceMap check the signature
+        # if a signature for this signer exists in the advice map, verify it
         if.true
-            # => [SIG_KEY, MSG, i-1]
+            # => [PK_COMM, MSG, signer_idx]
 
             dupw.1
-            # => [MSG, SIG_KEY, MSG, i-1]
-
-            swapw
-            # => [SIG_KEY, MSG, MSG, i-1]
+            # => [MSG, PK_COMM, MSG, signer_idx]
 
             # Verify the signature against the public key and message.
             # -----------------------------------------------------------------------------------------
 
-            loc_loadw_le.CURRENT_PK_LOC
-            # => [PK, MSG, MSG, i-1]
-
-            swapw
-            # => [MSG, PK, MSG, i-1]
-
             # Emit the authentication request event that pushes a signature for the message to the advice stack.
             emit.AUTH_REQUEST_EVENT
+            # => [MSG, PK_COMM, MSG, signer_idx]
 
             swapw
-            # => [PUB_KEY, MSG, MSG, i-1]
+            # => [PK_COMM, MSG, MSG, signer_idx]
 
-            # Build map key from the current signer index.
-            loc_load.SIGNER_INDEX_LOC exec.create_approver_map_key
-            # => [APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
+            dup.12 exec.create_approver_map_key
+            # => [APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
 
             loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
-            
-            # Get scheme_id for signer index i-1 from initial storage state.
-            exec.active_account::get_initial_map_item
-            # => [[scheme_id, 0, 0, 0], PUB_KEY, MSG, MSG, i-1]
+            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
+
+            # Get scheme_id for the signer index from initial storage state.
+            exec.native_account::get_initial_map_item
+            # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
 
             movdn.3 drop drop drop
-            # OS => [scheme_id, PUB_KEY, MSG, MSG, i-1]
+            # OS => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
             # AS => [SIGNATURE]
 
             exec.verify_signature_by_scheme
-            # => [MSG, i-1]
+            # => [MSG, signer_idx]
 
             loc_load.SUCCESSFUL_VERIFICATIONS_LOC
             add.1
             loc_store.SUCCESSFUL_VERIFICATIONS_LOC
-            # => [MSG, i-1]
+            # => [MSG, signer_idx]
         else
             dropw
-            # => [MSG, i-1]
+            # => [MSG, signer_idx]
         end
-        # => [MSG, i-1]
+        # => [MSG, signer_idx]
 
         movup.4
-        # => [i-1, MSG]
+        # => [signer_idx, MSG]
 
         dup neq.0
-        # => [should_continue, i-1, MSG]
+        # => [should_continue, signer_idx, MSG]
     end
-    # => [i-1, MSG]
+    # => [signer_idx, MSG]
 
     # Return successful signature verifications along with MSG
     # -----------------------------------------------------------------------------------------

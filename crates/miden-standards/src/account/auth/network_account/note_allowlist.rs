@@ -2,7 +2,6 @@ use alloc::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
-    AccountId,
     AccountStorage,
     StorageMap,
     StorageMapKey,
@@ -127,8 +126,11 @@ impl TryFrom<&AccountStorage> for NetworkAccountNoteAllowlist {
             return Err(NetworkAccountNoteAllowlistError::UnexpectedSlotType);
         };
 
+        // Only entries with a non-empty value mark a root as allowed, matching the MASM check
+        // (`word::eqz`), so the reconstructed view agrees with on-chain enforcement.
         let allowed_script_roots = map
             .entries()
+            .filter(|(_key, value)| **value != Word::empty())
             .map(|(key, _value)| NoteScriptRoot::from_raw(key.as_word()))
             .collect();
 
@@ -158,8 +160,6 @@ pub enum NetworkAccountNoteAllowlistError {
         NetworkAccountNoteAllowlist::slot_name()
     )]
     UnexpectedSlotType,
-    #[error("network account must have public account type, but account {0} does not")]
-    AccountNotPublic(AccountId),
 }
 
 // TESTS
@@ -168,9 +168,11 @@ pub enum NetworkAccountNoteAllowlistError {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::{AccountBuilder, StorageSlotContent};
+    use miden_protocol::asset::FungibleAsset;
 
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
+    use crate::account::fees::FeePolicyManager;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -206,6 +208,22 @@ mod tests {
         assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
     }
 
+    /// Reconstructing an allowlist whose every entry has been removed (all empty-valued) fails with
+    /// `EmptyAllowlist`, since such an account can no longer consume any note.
+    #[test]
+    fn try_from_fails_when_all_entries_removed() {
+        let removed = NoteScriptRoot::from_array([5, 6, 7, 8]);
+
+        let map =
+            StorageMap::with_entries([(StorageMapKey::new(removed.as_word()), Word::empty())])
+                .expect("map entries should have unique keys");
+        let slot = StorageSlot::with_map(NetworkAccountNoteAllowlist::slot_name().clone(), map);
+        let storage = AccountStorage::new(vec![slot]).expect("storage should be valid");
+
+        let result = NetworkAccountNoteAllowlist::try_from(&storage);
+        assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
+    }
+
     #[test]
     fn allowlist_round_trips_through_account_storage() {
         use alloc::collections::BTreeSet;
@@ -216,9 +234,12 @@ mod tests {
         let original_roots = BTreeSet::from_iter([root_a, root_b, root_c]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(
-                AuthNetworkAccount::with_allowed_notes(original_roots.clone())
-                    .expect("non-empty allowlist should construct"),
+            .with_components(
+                AuthNetworkAccount::new(
+                    original_roots.clone(),
+                    FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+                )
+                .expect("non-empty allowlist should construct"),
             )
             .with_component(BasicWallet)
             .build()
@@ -228,7 +249,9 @@ mod tests {
             .expect("allowlist should be reconstructable from account storage");
 
         // The map's ordering is determined by the StorageMapKey, so compare as sets.
-        let expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
+        let mut expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
+        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        expected.insert(crate::note::FeeSponsorshipNote::script_root());
         let actual: BTreeSet<NoteScriptRoot> =
             allowlist.allowed_script_roots().iter().copied().collect();
 

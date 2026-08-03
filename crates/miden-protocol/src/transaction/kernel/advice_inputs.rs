@@ -166,7 +166,7 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.nullifier_root());
         self.extend_stack(header.tx_commitment());
         self.extend_stack(header.tx_kernel_commitment());
-        self.extend_stack(header.validator_key().to_commitment());
+        self.extend_stack(header.validator_keys().commitment());
         self.extend_stack([
             header.block_num().into(),
             Felt::from(header.version()),
@@ -316,6 +316,7 @@ impl TransactionAdviceInputs {
     /// - For each note:
     ///     - The note's private arguments.
     ///     - The note's details (serial number, script root, and its storage / assets commitment).
+    ///     - The preimages of the note recipient's hash chain.
     ///     - The note's public metadata (sender account ID, note type, note tag, attachment
     ///       schemes).
     ///     - The note's storage (unpadded).
@@ -338,8 +339,8 @@ impl TransactionAdviceInputs {
             let recipient = note.recipient();
             let note_arg = tx_inputs.tx_args().get_note_args(note.id()).unwrap_or(&EMPTY_WORD);
 
-            // recipient storage
-            self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
+            // recipient chain entries
+            self.extend_map(recipient.to_advice_map_entries());
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_elements());
 

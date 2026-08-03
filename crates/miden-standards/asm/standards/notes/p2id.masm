@@ -2,8 +2,8 @@ use miden::protocol::active_account
 use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::note
-use miden::protocol::output_note
-use miden::standards::wallets::basic->basic_wallet
+use miden::standards::wallets::basic as basic_wallet
+use miden::standards::note::note_creator
 
 # ERRORS
 # =================================================================================================
@@ -59,23 +59,29 @@ pub proc main
     # => [account_id_suffix, account_id_prefix, target_account_id_suffix, target_account_id_prefix]
 
     # ensure account_id = target_account_id, fails otherwise
-    exec.account_id::is_equal assert.err=ERR_P2ID_TARGET_ACCT_MISMATCH
+    exec.account_id::eq assert.err=ERR_P2ID_TARGET_ACCT_MISMATCH
     # => []
 
-    exec.basic_wallet::add_assets_to_account
+    exec.basic_wallet::move_note_assets_to_account
     # => []
 end
 
-#! Creates a new P2ID output note from the given inputs.
+#! Computes the P2ID recipient and returns the note-creation arguments for the given inputs.
 #!
 #! This procedure handles:
 #! - Writing note storage to memory in the expected layout ([suffix, prefix] to match
 #!   existing P2ID storage format)
 #! - Obtaining the note script root via procref
-#! - Building the recipient and creating the note
+#! - Building the recipient
+#!
+#! Note creation itself is intentionally left to the caller. Use this procedure when the caller is
+#! already inside an account procedure and can create the note directly via
+#! `exec.output_note::create`. Otherwise use `p2id::create_output_note`, which routes creation
+#! through the account's `create_note` procedure and can therefore be used from note or transaction
+#! scripts.
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
-#! Outputs: [note_idx]
+#! Outputs: [tag, note_type, RECIPIENT]
 #!
 #! Where:
 #! - target_id_suffix is the suffix felt of the target account ID.
@@ -83,11 +89,11 @@ end
 #! - tag is the note tag to be included in the note.
 #! - note_type is the storage type of the note (1 = public, 2 = private).
 #! - SERIAL_NUM is the serial number of the note (4 elements).
-#! - note_idx is the index of the created note.
+#! - RECIPIENT is the computed recipient digest of the note (4 elements).
 #!
 #! Invocation: exec
 @locals(2)
-pub proc new
+pub proc prepare_note
     # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
     loc_store.TARGET_ACCOUNT_ID_SUFFIX_PTR loc_store.TARGET_ACCOUNT_ID_PREFIX_PTR
@@ -110,7 +116,43 @@ pub proc new
 
     movup.5 movup.5
     # => [tag, note_type, RECIPIENT]
+end
 
-    exec.output_note::create
+#! Creates a new P2ID output note from the given inputs and returns its index.
+#!
+#! Note creation must originate from the account context, so this procedure routes creation through
+#! the account's `note_creator::create_note` procedure. This lets `p2id::create_output_note` be used
+#! from contexts outside the account code, such as note or transaction scripts. Callers that are
+#! already inside an account procedure should instead use `p2id::prepare_note` together with
+#! `exec.output_note::create`.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::note::note_creator::create_note procedure.
+#!
+#! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - target_id_suffix is the suffix felt of the target account ID.
+#! - target_id_prefix is the prefix felt of the target account ID.
+#! - tag is the note tag to be included in the note.
+#! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
+#!   or off-chain).
+#! - SERIAL_NUM is the serial number of the note (4 elements).
+#! - note_idx is the index of the created note.
+#!
+#! Invocation: exec
+pub proc create_output_note
+    exec.prepare_note
+    # => [tag, note_type, RECIPIENT]
+
+    # pad the stack before `call`
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    call.note_creator::create_note
+    # => [note_idx, pad(15)]
+
+    movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 end

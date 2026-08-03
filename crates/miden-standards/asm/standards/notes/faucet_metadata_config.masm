@@ -1,0 +1,288 @@
+use miden::core::crypto::hashes::poseidon2
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+use miden::standards::faucets
+use miden::standards::faucets::fungible
+
+# CONSTANTS
+# =================================================================================================
+
+# Number of felts encoding a metadata string: 7 Words.
+const STRING_NUM_ELEMENTS = 28
+
+# Memory base at which the note storage is written by `active_note::get_storage`.
+const STORAGE_PTR = 0
+
+# Memory addresses of the FaucetMetadataConfig note storage. The selector is one felt padded out to
+# a full word with three zeros, so the 7-Word string payload of the metadata actions starts
+# word-aligned, as `poseidon2::hash_elements` requires.
+const SELECTOR_PTR = STORAGE_PTR
+const MAX_SUPPLY_PTR = STORAGE_PTR + 1
+const STRING_PTR = STORAGE_PTR + 4
+const STRING_END_PTR = STORAGE_PTR + 32
+
+# Config note selectors, stored in the first storage item. Keep in sync with
+# `FaucetMetadataConfig` on the Rust side.
+const SELECTOR_SET_MAX_SUPPLY = 0
+const SELECTOR_SET_DESCRIPTION = 1
+const SELECTOR_SET_LOGO_URI = 2
+const SELECTOR_SET_EXTERNAL_LINK = 3
+
+# Expected note storage item count per action.
+const NUM_ITEMS_SET_MAX_SUPPLY = 2
+const NUM_ITEMS_SET_STRING = 32
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH = "faucet metadata config note attachment target account does not match the consuming account"
+
+const ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR = "faucet metadata config note selector does not match a known action"
+
+const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet metadata config note storage item count does not match the selected action"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! FaucetMetadataConfig script: triggers a token metadata admin action against the consuming
+#! faucet, dispatched on a selector stored in the first note storage item.
+#!
+#! The three string setters live in the shared `miden::standards::faucets` module, which both the
+#! `FungibleFaucet` and `NonFungibleFaucet` components re-export, so those selectors work on either
+#! kind of faucet. `SetMaxSupply` is fungible-only: it calls
+#! `miden::standards::faucets::fungible::set_max_supply`, which a non-fungible faucet does not
+#! expose, so that selector aborts there.
+#!
+#! The selected action and its arguments are read from the note storage (fixed at note creation, so
+#! authorization is bound to the note sender):
+#! - `0` SetMaxSupply:    `[0, new_max_supply]`.
+#! - `1` SetDescription:  `[1, 0, 0, 0, description(28)]`.
+#! - `2` SetLogoUri:      `[2, 0, 0, 0, logo_uri(28)]`.
+#! - `3` SetExternalLink: `[3, 0, 0, 0, external_link(28)]`.
+#!
+#! The three string setters take the Poseidon2 commitment of their new value on the operand stack
+#! and read the preimage from the advice map. This script commits to the payload `get_storage` wrote
+#! to memory and inserts it into the advice map under that commitment, so the value is bound into
+#! the note commitment through the note storage and needs no out-of-band advice inputs.
+#!
+#! Authorization is enforced by the called setters via the account-wide `Authority` component
+#! (`assert_authorized`); this script only loads the arguments and calls them.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::faucets::{set_description, set_logo_uri, set_external_link}` for the string
+#!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
+#!   the `Authority` and `Pausable` companion components.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the selector is not a known action.
+#! - the number of storage items does not match the selected action.
+#! - the selected field's mutability flag is not set, or the account is paused.
+#! - the note sender is not authorized for the selected action (per the `Authority` component).
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items]
+
+    mem_load.SELECTOR_PTR
+    # => [selector, num_storage_items]
+
+    # dispatch on the selector to the matching action procedure
+    dup eq.SELECTOR_SET_MAX_SUPPLY
+    # => [is_set_max_supply, selector, num_storage_items]
+
+    if.true
+        drop
+        # => [num_storage_items]
+
+        exec.execute_set_max_supply
+    else
+        dup eq.SELECTOR_SET_DESCRIPTION
+        # => [is_set_description, selector, num_storage_items]
+
+        if.true
+            drop
+            # => [num_storage_items]
+
+            exec.execute_set_description
+        else
+            dup eq.SELECTOR_SET_LOGO_URI
+            # => [is_set_logo_uri, selector, num_storage_items]
+
+            if.true
+                drop
+                # => [num_storage_items]
+
+                exec.execute_set_logo_uri
+            else
+                eq.SELECTOR_SET_EXTERNAL_LINK
+                assert.err=ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR
+                # => [num_storage_items]
+
+                exec.execute_set_external_link
+            end
+        end
+    end
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Executes the SetMaxSupply action: sets the faucet's maximum supply.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_MAX_SUPPLY.
+#! - the max supply mutability flag is not set, the account is paused, the new cap exceeds the
+#!   maximum representable fungible asset amount, or it is below the current token supply (per
+#!   `fungible::set_max_supply`).
+#!
+#! Invocation: exec
+proc execute_set_max_supply
+    eq.NUM_ITEMS_SET_MAX_SUPPLY
+    assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # build the `set_max_supply` input window: [new_max_supply, pad(15)]
+    padw padw padw push.0.0.0
+    mem_load.MAX_SUPPLY_PTR
+    # => [new_max_supply, pad(15)]
+
+    call.fungible::set_max_supply
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Builds the input window the three string setters expect: pads the stack, commits to the stored
+#! string payload, and inserts the payload into the advice map under that commitment so the called
+#! setter can pipe it back out.
+#!
+#! The commitment uses `poseidon2::hash_elements`, whose first capacity element is
+#! `num_elements % 8` — the same padding rule `mem::pipe_preimage_to_memory` applies inside the
+#! setter, so the two agree for the 28-element payload.
+#!
+#! Inputs:
+#!   Operand stack: [num_storage_items]
+#! Outputs:
+#!   Operand stack: [STRING_COMMITMENT, pad(12)]
+#!   Advice map:    { STRING_COMMITMENT: [string_elements] }
+#!
+#! Where:
+#! - string_elements are the 28 felts (7 Words) encoding the new metadata string.
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_STRING.
+#!
+#! Invocation: exec
+proc prepare_string_call
+    eq.NUM_ITEMS_SET_STRING
+    assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # pad the window the setter expects below the commitment
+    padw padw padw
+    # => [pad(12)]
+
+    push.STRING_NUM_ELEMENTS push.STRING_PTR
+    exec.poseidon2::hash_elements
+    # => [STRING_COMMITMENT, pad(12)]
+
+    push.STRING_END_PTR push.STRING_PTR
+    movdn.5 movdn.5
+    # => [STRING_COMMITMENT, start_ptr, end_ptr, pad(12)]
+
+    adv.insert_mem
+    # OS => [STRING_COMMITMENT, start_ptr, end_ptr, pad(12)]
+    # AM => { STRING_COMMITMENT: mem[STRING_PTR..STRING_END_PTR] }
+
+    movup.4 drop movup.4 drop
+    # => [STRING_COMMITMENT, pad(12)]
+end
+
+#! Executes the SetDescription action: sets the faucet's token description.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_STRING.
+#! - the description mutability flag is not set, or the account is paused (per
+#!   `faucets::set_description`).
+#!
+#! Invocation: exec
+proc execute_set_description
+    exec.prepare_string_call
+    # => [DESCRIPTION_COMMITMENT, pad(12)]
+
+    call.faucets::set_description
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetLogoUri action: sets the faucet's token logo URI.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_STRING.
+#! - the logo URI mutability flag is not set, or the account is paused (per
+#!   `faucets::set_logo_uri`).
+#!
+#! Invocation: exec
+proc execute_set_logo_uri
+    exec.prepare_string_call
+    # => [LOGO_URI_COMMITMENT, pad(12)]
+
+    call.faucets::set_logo_uri
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetExternalLink action: sets the faucet's token external link.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_STRING.
+#! - the external link mutability flag is not set, or the account is paused (per
+#!   `faucets::set_external_link`).
+#!
+#! Invocation: exec
+proc execute_set_external_link
+    exec.prepare_string_call
+    # => [EXTERNAL_LINK_COMMITMENT, pad(12)]
+
+    call.faucets::set_external_link
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end

@@ -10,10 +10,8 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
   "RUSTSEC-2024-0436", # paste is unmaintained but no alternative available
-  "RUSTSEC-2025-0141", # bincode is unmaintained, replace with wincode (https://github.com/0xMiden/miden-vm/issues/2550)
-  "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained, ignore until `alloy-sol-macro` has migrated away
-  "RUSTSEC-2026-0194", # quick-xml, dev-only dep that is not upgradeable yet
-  "RUSTSEC-2026-0195", # quick-xml, dev-only dep that is not upgradeable yet
+  "RUSTSEC-2026-0194", # quick-xml has a vulnerability - ignore as we only depend on it for non-security-critical benchmarking functionality
+  "RUSTSEC-2026-0195", # quick-xml has a vulnerability - ignore as we only depend on it for non-security-critical benchmarking functionality
 ]
 yanked = "warn"
 
@@ -46,29 +44,25 @@ deny = [
 highlight = "all"
 multiple-versions = "deny"
 skip = [
-  { name = "block-buffer" },
   #{ name = "ansi_term", version = "=0.11.0" },
   { name = "cpufeatures" },
-  { name = "crypto-common" },
-  { name = "digest" },
-  { name = "keccak" },
+  { name = "itertools" },
+  { name = "num-bigint" },
   { name = "sha3" },
-  # Allow duplicate rand versions - miden-field uses 0.10, miden-vm uses 0.9
+  # Allow duplicate rand versions - miden-field uses 0.10, proptest uses 0.9.
+  { name = "getrandom" },
   { name = "rand" },
+  { name = "rand_chacha" },
   { name = "rand_core" },
 ]
 skip-tree = [
-  # Allow getrandom v0.2.x - legacy version used by nanorand
-  { name = "getrandom", version = "=0.2.*" },
-  # Allow rand_core v0.6.x - legacy version used by winterfell crates
-  { name = "rand_core", version = "=0.6.*" },
   # Allow rustc_version v0.2.x - build dependency version
   { name = "rustc_version", version = "=0.2.*" },
   # Allow unicode-width v0.1.x - used by miden-formatting vs textwrap conflict
   { name = "unicode-width", version = "=0.1.*" },
   # Allow syn v1.x and v2.x - our derive macros need v1.x while ecosystem uses v2.x
   { name = "syn", version = "=1.0.109" },
-  { name = "syn", version = "=2.0.117" },
+  { name = "syn", version = "=2.0.119" },
   # Allow spin v0.9.x - legacy version used by some dependencies
   { name = "spin", version = "=0.9.*" },
 ]

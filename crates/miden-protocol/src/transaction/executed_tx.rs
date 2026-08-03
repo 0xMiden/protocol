@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 
 use super::{
-    AccountDelta,
     AccountHeader,
     AccountId,
     AdviceInputs,
@@ -13,8 +12,7 @@ use super::{
     TransactionId,
     TransactionOutputs,
 };
-use crate::account::PartialAccount;
-use crate::asset::FungibleAsset;
+use crate::account::{AccountPatch, PartialAccount};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
 use crate::utils::serde::{
@@ -43,7 +41,7 @@ pub struct ExecutedTransaction {
     id: TransactionId,
     tx_inputs: TransactionInputs,
     tx_outputs: TransactionOutputs,
-    account_delta: AccountDelta,
+    account_patch: AccountPatch,
     tx_measurements: TransactionMeasurements,
 }
 
@@ -58,7 +56,7 @@ impl ExecutedTransaction {
     pub fn new(
         tx_inputs: TransactionInputs,
         tx_outputs: TransactionOutputs,
-        account_delta: AccountDelta,
+        account_patch: AccountPatch,
         tx_measurements: TransactionMeasurements,
     ) -> Self {
         // make sure account IDs are consistent across transaction inputs and outputs
@@ -71,14 +69,13 @@ impl ExecutedTransaction {
             tx_outputs.account().to_commitment(),
             tx_inputs.input_notes().commitment(),
             tx_outputs.output_notes().commitment(),
-            tx_outputs.fee(),
         );
 
         Self {
             id,
             tx_inputs,
             tx_outputs,
-            account_delta,
+            account_patch,
             tx_measurements,
         }
     }
@@ -116,11 +113,6 @@ impl ExecutedTransaction {
         self.tx_outputs.output_notes()
     }
 
-    /// Returns the fee of the transaction.
-    pub fn fee(&self) -> FungibleAsset {
-        self.tx_outputs.fee()
-    }
-
     /// Returns the block number at which the transaction will expire.
     pub fn expiration_block_num(&self) -> BlockNumber {
         self.tx_outputs.expiration_block_num()
@@ -136,9 +128,10 @@ impl ExecutedTransaction {
         self.tx_inputs.block_header()
     }
 
-    /// Returns a description of changes between the initial and final account states.
-    pub fn account_delta(&self) -> &AccountDelta {
-        &self.account_delta
+    /// Returns the patch of the transaction that describes the update from the initial to the final
+    /// account state.
+    pub fn account_patch(&self) -> &AccountPatch {
+        &self.account_patch
     }
 
     /// Returns a reference to the inputs for this transaction.
@@ -164,8 +157,8 @@ impl ExecutedTransaction {
     /// Returns individual components of this transaction.
     pub fn into_parts(
         self,
-    ) -> (TransactionInputs, TransactionOutputs, AccountDelta, TransactionMeasurements) {
-        (self.tx_inputs, self.tx_outputs, self.account_delta, self.tx_measurements)
+    ) -> (TransactionInputs, TransactionOutputs, AccountPatch, TransactionMeasurements) {
+        (self.tx_inputs, self.tx_outputs, self.account_patch, self.tx_measurements)
     }
 }
 
@@ -186,7 +179,7 @@ impl Serializable for ExecutedTransaction {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.tx_inputs.write_into(target);
         self.tx_outputs.write_into(target);
-        self.account_delta.write_into(target);
+        self.account_patch.write_into(target);
         self.tx_measurements.write_into(target);
     }
 }
@@ -195,10 +188,10 @@ impl Deserializable for ExecutedTransaction {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let tx_inputs = TransactionInputs::read_from(source)?;
         let tx_outputs = TransactionOutputs::read_from(source)?;
-        let account_delta = AccountDelta::read_from(source)?;
+        let account_patch = AccountPatch::read_from(source)?;
         let tx_measurements = TransactionMeasurements::read_from(source)?;
 
-        Ok(Self::new(tx_inputs, tx_outputs, account_delta, tx_measurements))
+        Ok(Self::new(tx_inputs, tx_outputs, account_patch, tx_measurements))
     }
 }
 
@@ -215,25 +208,12 @@ pub struct TransactionMeasurements {
     pub tx_script_processing: usize,
     pub epilogue: usize,
     pub auth_procedure: usize,
-    /// The number of cycles the epilogue took to execute after compute_fee determined the cycle
-    /// count.
-    ///
-    /// This is used to get the total number of cycles the transaction takes for use in
-    /// compute_fee itself.
-    pub after_tx_cycles_obtained: usize,
 }
 
 impl TransactionMeasurements {
     /// Returns the total number of cycles spent executing the transaction.
     pub fn total_cycles(&self) -> usize {
         self.prologue + self.notes_processing + self.tx_script_processing + self.epilogue
-    }
-
-    /// Returns the trace length of the transaction which is the next power of 2 of the total cycles
-    /// spent executing the transaction.
-    pub fn trace_length(&self) -> usize {
-        let total_cycles = self.total_cycles();
-        total_cycles.next_power_of_two()
     }
 }
 
@@ -245,7 +225,6 @@ impl Serializable for TransactionMeasurements {
         self.tx_script_processing.write_into(target);
         self.epilogue.write_into(target);
         self.auth_procedure.write_into(target);
-        self.after_tx_cycles_obtained.write_into(target);
     }
 }
 
@@ -257,7 +236,6 @@ impl Deserializable for TransactionMeasurements {
         let tx_script_processing = usize::read_from(source)?;
         let epilogue = usize::read_from(source)?;
         let auth_procedure = usize::read_from(source)?;
-        let after_tx_cycles_obtained = usize::read_from(source)?;
 
         Ok(Self {
             prologue,
@@ -266,7 +244,6 @@ impl Deserializable for TransactionMeasurements {
             tx_script_processing,
             epilogue,
             auth_procedure,
-            after_tx_cycles_obtained,
         })
     }
 }

@@ -1,8 +1,7 @@
-use alloc::collections::BTreeSet;
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -23,9 +22,21 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
+use super::{Approver, ApproverSet};
 use crate::account::account_component_code;
+use crate::procedure_root;
 
-account_component_code!(MULTISIG_CODE, "auth/multisig.masl");
+account_component_code!(MULTISIG_CODE, "miden-standards-auth-multisig.masp");
+
+// Initialize the procedure root of the `set_procedure_threshold` procedure only once. It gates
+// edits to per-procedure overrides, so [`AuthMultisig::new`] uses it to reject overrides that
+// exceed its own threshold.
+procedure_root!(
+    MULTISIG_SET_PROCEDURE_THRESHOLD,
+    AuthMultisig::NAME,
+    AuthMultisig::SET_PROCEDURE_THRESHOLD_PROC_NAME,
+    AuthMultisig::code()
+);
 
 // CONSTANTS
 // ================================================================================================
@@ -62,40 +73,17 @@ static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 /// Configuration for [`AuthMultisig`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigConfig {
-    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-    default_threshold: u32,
-    proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
+    approver_set: ApproverSet,
+    proc_thresholds: BTreeMap<AccountProcedureRoot, u32>,
 }
 
 impl AuthMultisigConfig {
-    /// Creates a new configuration with the given approvers and a default threshold.
-    ///
-    /// The `default_threshold` must be at least 1 and at most the number of approvers.
-    pub fn new(
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-        default_threshold: u32,
-    ) -> Result<Self, AccountError> {
-        if default_threshold == 0 {
-            return Err(AccountError::other("threshold must be at least 1"));
+    /// Creates a new configuration from the given approver set.
+    pub fn new(approver_set: ApproverSet) -> Self {
+        Self {
+            approver_set,
+            proc_thresholds: BTreeMap::new(),
         }
-        if default_threshold > approvers.len() as u32 {
-            return Err(AccountError::other(
-                "threshold cannot be greater than number of approvers",
-            ));
-        }
-
-        // Check for duplicate approvers
-        let unique_approvers: BTreeSet<_> = approvers.iter().map(|(pk, _)| pk).collect();
-
-        if unique_approvers.len() != approvers.len() {
-            return Err(AccountError::other("duplicate approver public keys are not allowed"));
-        }
-
-        Ok(Self {
-            approvers,
-            default_threshold,
-            proc_thresholds: vec![],
-        })
     }
 
     /// Attaches a per-procedure threshold map. Each procedure threshold must be at least 1 and
@@ -104,29 +92,42 @@ impl AuthMultisigConfig {
         mut self,
         proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
     ) -> Result<Self, AccountError> {
-        for (_, threshold) in &proc_thresholds {
-            if *threshold == 0 {
+        let num_approvers = self.approver_set.approvers().len() as u32;
+        let mut thresholds = BTreeMap::new();
+        for (proc_root, threshold) in proc_thresholds {
+            if threshold == 0 {
                 return Err(AccountError::other("procedure threshold must be at least 1"));
             }
-            if *threshold > self.approvers.len() as u32 {
+            if threshold > num_approvers {
                 return Err(AccountError::other(
                     "procedure threshold cannot be greater than number of approvers",
                 ));
             }
+            // The map keys the threshold by procedure root, so a repeated root is a caller mistake
+            // rather than a silent overwrite.
+            if thresholds.insert(proc_root, threshold).is_some() {
+                return Err(AccountError::other(
+                    "duplicate procedure roots are not allowed in the procedure threshold map",
+                ));
+            }
         }
-        self.proc_thresholds = proc_thresholds;
+        self.proc_thresholds = thresholds;
         Ok(self)
     }
 
-    pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
-        &self.approvers
+    pub fn approver_set(&self) -> &ApproverSet {
+        &self.approver_set
+    }
+
+    pub fn approvers(&self) -> &[Approver] {
+        self.approver_set.approvers()
     }
 
     pub fn default_threshold(&self) -> u32 {
-        self.default_threshold
+        self.approver_set.threshold().get()
     }
 
-    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
+    pub fn proc_thresholds(&self) -> &BTreeMap<AccountProcedureRoot, u32> {
         &self.proc_thresholds
     }
 }
@@ -134,10 +135,89 @@ impl AuthMultisigConfig {
 /// An [`AccountComponent`] implementing a multisig authentication.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
-/// per-procedure threshold overrides. Non-uniform thresholds (especially a threshold of one)
-/// should be used with caution for private multisig accounts; without a guardian, a single
-/// approver may advance state and withhold updates from other approvers, effectively locking
-/// them out.
+/// per-procedure threshold overrides.
+///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_multisig` pays the transaction fee via
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the payment asset. The
+/// payment asset and conversion rate are committed to via the transaction's auth args (see
+/// [`FeeConversionInfo`](super::FeeConversionInfo) and
+/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
+/// 1/1 for plain native payment). On chains with a zero verification base fee no note is
+/// created. The fee note is created before the transaction summary, so it is covered by the
+/// approver signatures. The auth args word (the commitment `hash(CONVERSION_INFO || SALT)`)
+/// continues to serve as the transaction summary salt; the uniqueness that replay protection
+/// relies on originates from the caller-chosen `SALT`: distinct salts produce distinct
+/// commitments and therefore distinct signed summaries, which `record_and_assert_new_tx`
+/// records and checks.
+///
+/// # Privacy
+///
+/// Approvers using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public key and signature
+/// at proving time and therefore do not get public-key privacy; approvers using
+/// [`Falcon512Poseidon2`][falcon] do. See [`Approver`](super::Approver) for details.
+///
+/// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
+/// [falcon]: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2
+///
+/// # Security: private accounts and state withholding
+///
+/// A private account's state lives off-chain; the chain only holds a commitment to it. Whoever
+/// advances the account must share the new state with the other approvers, otherwise those
+/// approvers can no longer reconstruct the state behind the on-chain commitment and are
+/// permanently locked out (and the signers retaining the state can drain its assets). This is a
+/// data-availability problem inherent to private state, not an authorization one: the threshold
+/// controls who *can* advance the state, not whether the resulting state is *shared*. A
+/// per-procedure threshold of one lets a single approver do this; more generally, any quorum
+/// smaller than the full approver set can advance the state and withhold it from the excluded
+/// approvers.
+///
+/// The only configurations that fully prevent withholding are a public account (state is on-chain,
+/// so nothing can be withheld), unanimity (`threshold == number of approvers`, so every approver
+/// signs and therefore sees every state transition), or pairing the multisig with a guardian via
+/// [`AuthGuardedMultisig`](super::AuthGuardedMultisig), whose guardian co-signs every transaction
+/// and forwards the new state. For a private `m`-of-`n` wallet among mutually distrusting
+/// approvers, prefer the guarded variant. The [`create_multisig_wallet`] helper enforces a related
+/// bound: on private accounts it rejects per-procedure thresholds below the default.
+///
+/// [`create_multisig_wallet`]: crate::account::wallets::create_multisig_wallet
+///
+/// # Security: growing the signer set does not re-scale overrides
+///
+/// Per-procedure threshold overrides are absolute signature counts, not ratios. Updating the signer
+/// set (via the `update_signers_and_threshold` account procedure) does not re-scale existing
+/// overrides: the only cross-check is that each override stays `<= num_approvers`, which keeps it
+/// reachable but never raises it. Growing the approver set therefore silently lowers the effective
+/// signing ratio of every override (e.g. a `2`-of-`2` override becomes `2`-of-`n`). To preserve the
+/// intended security level, re-evaluate the affected overrides and, where appropriate, raise them
+/// via `set_procedure_threshold` in the same transaction that grows the signer set.
+///
+/// # Security: a raised override is only as strong as the threshold of `set_procedure_threshold`
+///
+/// An override can demand *more* signatures for a sensitive operation than the default, but that
+/// extra protection is only as strong as the threshold guarding the procedure that can lower it,
+/// `set_procedure_threshold`. That guard is `set_procedure_threshold`'s own override if one is set,
+/// otherwise the default threshold; it is *not* necessarily the default. A group meeting that guard
+/// can strip a stronger override in two transactions: first they lower it, then, in a later
+/// transaction, they run the now-cheaper operation. Two transactions are required because the
+/// signatures needed are read from the state as of the start of the transaction, so a lowered
+/// override only takes effect in the next one.
+///
+/// For example, with 5 signers, a default of 2, `set_procedure_threshold` left at the default, and
+/// a transfer requiring 4: two signers cannot transfer directly, but they can lower the transfer's
+/// override to 2 in one transaction and transfer in the next.
+///
+/// It follows that setting an override higher than the threshold of `set_procedure_threshold`
+/// (which may be the default) is pointless, because the excess signatures can always be removed by
+/// that smaller group. To make a raised override hold, raise `set_procedure_threshold`'s own
+/// threshold to at least that value, so undoing the protection costs as many signatures as the
+/// operation it guards. [`AuthMultisig::new`] enforces this by rejecting any configuration whose
+/// override exceeds the threshold of `set_procedure_threshold`. Note that
+/// `update_signers_and_threshold` can also weaken an override by growing the signer set (see
+/// above), so protect it the same way where relevant.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
@@ -146,6 +226,9 @@ pub struct AuthMultisig {
 impl AuthMultisig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::multisig";
+
+    /// The name of the procedure that edits per-procedure threshold overrides.
+    const SET_PROCEDURE_THRESHOLD_PROC_NAME: &'static str = "set_procedure_threshold";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -157,8 +240,39 @@ impl AuthMultisig {
         &MULTISIG_CODE
     }
 
+    /// Returns the procedure root of the `set_procedure_threshold` account procedure.
+    pub fn set_procedure_threshold_root() -> AccountProcedureRoot {
+        *MULTISIG_SET_PROCEDURE_THRESHOLD
+    }
+
     /// Creates a new [`AuthMultisig`] component from the provided configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a per-procedure override exceeds the threshold that guards
+    /// `set_procedure_threshold` (its own override if set, otherwise the default threshold). Such
+    /// an override is not enforceable, since a group meeting that lower threshold can strip it
+    /// via `set_procedure_threshold`; see the type-level security notes.
     pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
+        // The threshold that must be met to edit overrides via `set_procedure_threshold`: its own
+        // override if configured, otherwise the default threshold.
+        let setter_threshold = config
+            .proc_thresholds()
+            .get(&Self::set_procedure_threshold_root())
+            .copied()
+            .unwrap_or_else(|| config.default_threshold());
+
+        for &threshold in config.proc_thresholds().values() {
+            if threshold > setter_threshold {
+                return Err(AccountError::other(format!(
+                    "per-procedure threshold override of {threshold} exceeds the threshold of \
+                     {setter_threshold} that guards set_procedure_threshold; such an override can \
+                     be removed by a smaller quorum. Raise the set_procedure_threshold override to \
+                     at least {threshold} to make it enforceable"
+                )));
+            }
+        }
+
         Ok(Self { config })
     }
 
@@ -280,10 +394,9 @@ impl From<AuthMultisig> for AccountComponent {
         ));
 
         // Approver public keys slot (map)
-        let map_entries =
-            multisig.config.approvers().iter().enumerate().map(|(i, (pub_key, _))| {
-                (StorageMapKey::from_index(i as u32), Word::from(*pub_key))
-            });
+        let map_entries = multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
+            (StorageMapKey::from_index(i as u32), Word::from(approver.pub_key()))
+        });
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
@@ -293,8 +406,11 @@ impl From<AuthMultisig> for AccountComponent {
 
         // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
         let scheme_id_entries =
-            multisig.config.approvers().iter().enumerate().map(|(i, (_, auth_scheme))| {
-                (StorageMapKey::from_index(i as u32), Word::from([*auth_scheme as u32, 0, 0, 0]))
+            multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
+                (
+                    StorageMapKey::from_index(i as u32),
+                    Word::from([approver.auth_scheme() as u32, 0, 0, 0]),
+                )
             });
 
         storage_slots.push(StorageSlot::with_map(
@@ -353,22 +469,22 @@ mod tests {
 
         // Create approvers list for multisig config
         let approvers = vec![
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
-            (sec_key_3.public_key().to_commitment(), sec_key_3.auth_scheme()),
+            Approver::new(sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            Approver::new(sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+            Approver::new(sec_key_3.public_key().to_commitment(), sec_key_3.auth_scheme()),
         ];
 
         let threshold = 2u32;
 
         // Create multisig component
-        let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), threshold).expect("invalid multisig config"),
-        )
-        .expect("multisig component creation failed");
+        let approver_set =
+            ApproverSet::new(approvers.clone(), threshold).expect("invalid approver set");
+        let multisig_component = AuthMultisig::new(AuthMultisigConfig::new(approver_set))
+            .expect("multisig component creation failed");
 
         // Build account with multisig component
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
@@ -381,27 +497,27 @@ mod tests {
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
         // Verify approver pub keys slot
-        for (i, (expected_pub_key, _)) in approvers.iter().enumerate() {
+        for (i, approver) in approvers.iter().enumerate() {
             let stored_pub_key = account
                 .storage()
                 .get_map_item(
                     AuthMultisig::approver_public_keys_slot(),
-                    Word::from([i as u32, 0, 0, 0]),
+                    StorageMapKey::from_index(i as u32),
                 )
                 .expect("approver public key storage map access failed");
-            assert_eq!(stored_pub_key, Word::from(*expected_pub_key));
+            assert_eq!(stored_pub_key, Word::from(approver.pub_key()));
         }
 
         // Verify approver scheme IDs slot
-        for (i, (_, expected_auth_scheme)) in approvers.iter().enumerate() {
+        for (i, approver) in approvers.iter().enumerate() {
             let stored_scheme_id = account
                 .storage()
                 .get_map_item(
                     AuthMultisig::approver_scheme_ids_slot(),
-                    Word::from([i as u32, 0, 0, 0]),
+                    StorageMapKey::from_index(i as u32),
                 )
                 .expect("approver scheme ID storage map access failed");
-            assert_eq!(stored_scheme_id, Word::from([*expected_auth_scheme as u32, 0, 0, 0]));
+            assert_eq!(stored_scheme_id, Word::from([approver.auth_scheme() as u32, 0, 0, 0]));
         }
     }
 
@@ -409,16 +525,16 @@ mod tests {
     #[test]
     fn test_multisig_component_minimum_threshold() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
+        let approvers = vec![Approver::new(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
         let threshold = 1u32;
 
-        let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), threshold).expect("invalid multisig config"),
-        )
-        .expect("multisig component creation failed");
+        let approver_set =
+            ApproverSet::new(approvers.clone(), threshold).expect("invalid approver set");
+        let multisig_component = AuthMultisig::new(AuthMultisigConfig::new(approver_set))
+            .expect("multisig component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
@@ -432,13 +548,13 @@ mod tests {
 
         let stored_pub_key = account
             .storage()
-            .get_map_item(AuthMultisig::approver_public_keys_slot(), Word::from([0u32, 0, 0, 0]))
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), StorageMapKey::from_index(0))
             .expect("approver pub keys storage map access failed");
         assert_eq!(stored_pub_key, Word::from(pub_key));
 
         let stored_scheme_id = account
             .storage()
-            .get_map_item(AuthMultisig::approver_scheme_ids_slot(), Word::from([0u32, 0, 0, 0]))
+            .get_map_item(AuthMultisig::approver_scheme_ids_slot(), StorageMapKey::from_index(0))
             .expect("approver scheme IDs storage map access failed");
         assert_eq!(
             stored_scheme_id,
@@ -446,46 +562,51 @@ mod tests {
         );
     }
 
-    /// Test multisig component error cases
+    /// Test that a per-procedure threshold exceeding the number of approvers is rejected.
     #[test]
-    fn test_multisig_component_error_cases() {
+    fn test_proc_threshold_too_high() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
+        let approvers = vec![Approver::new(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
+        let approver_set = ApproverSet::new(approvers, 1).expect("invalid approver set");
 
-        // Test threshold = 0 (should fail)
-        let result = AuthMultisigConfig::new(approvers.clone(), 0);
-        assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
-
-        // Test threshold > number of approvers (should fail)
-        let result = AuthMultisigConfig::new(approvers, 2);
+        let result = AuthMultisigConfig::new(approver_set)
+            .with_proc_thresholds(vec![(BasicWallet::receive_asset_root(), 2)]);
         assert!(
             result
                 .unwrap_err()
                 .to_string()
-                .contains("threshold cannot be greater than number of approvers")
+                .contains("procedure threshold cannot be greater than number of approvers")
         );
     }
 
-    /// Test multisig component with duplicate approvers (should fail)
+    /// Test that an override exceeding the threshold guarding `set_procedure_threshold` (here the
+    /// default, since it has no override of its own) is rejected by `AuthMultisig::new`, because a
+    /// smaller quorum could lower it.
     #[test]
-    fn test_multisig_component_duplicate_approvers() {
-        // Create secret keys for approvers
-        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
-        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
-
-        // Create approvers list with duplicate public keys
+    fn test_proc_threshold_above_set_procedure_threshold_rejected() {
         let approvers = vec![
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+            Approver::new(
+                AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment(),
+                auth::AuthScheme::EcdsaK256Keccak,
+            ),
+            Approver::new(
+                AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment(),
+                auth::AuthScheme::EcdsaK256Keccak,
+            ),
+            Approver::new(
+                AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment(),
+                auth::AuthScheme::EcdsaK256Keccak,
+            ),
         ];
+        let approver_set = ApproverSet::new(approvers, 2).expect("invalid approver set");
 
-        let result = AuthMultisigConfig::new(approvers, 2);
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate approver public keys are not allowed")
-        );
+        // The override (3) is within num_approvers, so `with_proc_thresholds` accepts it, but it
+        // exceeds the default threshold (2) that guards `set_procedure_threshold`.
+        let config = AuthMultisigConfig::new(approver_set)
+            .with_proc_thresholds(vec![(BasicWallet::receive_asset_root(), 3)])
+            .expect("an override within num_approvers is accepted by with_proc_thresholds");
+
+        let err = AuthMultisig::new(config).unwrap_err();
+        assert!(err.to_string().contains("exceeds the threshold"));
     }
 }

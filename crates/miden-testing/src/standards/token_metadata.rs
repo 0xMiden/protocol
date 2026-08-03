@@ -12,7 +12,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountId,
-    AccountIdVersion,
     AccountType,
     StorageSlotName,
 };
@@ -21,6 +20,7 @@ use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
+use miden_standards::account::access::Pausable;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
     Description,
@@ -40,7 +40,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::testing::note::NoteBuilder;
 
-use crate::{MockChain, TransactionContextBuilder, assert_transaction_executor_error};
+use crate::{MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
 // SHARED HELPERS
 // ================================================================================================
@@ -123,11 +123,11 @@ fn new_field_data() -> [Word; 7] {
 }
 
 fn owner_account_id() -> AccountId {
-    AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
 }
 
 fn non_owner_account_id() -> AccountId {
-    AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private)
+    AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32])
 }
 
 /// Build a minimal faucet metadata (no optional fields).
@@ -157,7 +157,7 @@ fn build_pol_faucet_metadata() -> FungibleFaucet {
 fn build_pol_faucet_account() -> Account {
     AccountBuilder::new([4u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(build_pol_faucet_metadata())
         .build()
         .unwrap()
@@ -186,11 +186,11 @@ async fn execute_tx_script(
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code.as_ref())?;
-    let tx_context = TransactionContextBuilder::new(account)
+    let mock_tx = TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
     Ok(())
 }
 
@@ -212,15 +212,17 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
         account,
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::get_name
                 push.{n0}
                 assert_eqw.err="name chunk 0 does not match"
@@ -247,14 +249,16 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
         account,
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::get_name
             padw assert_eqw.err="name chunk 0 should be empty"
             padw assert_eqw.err="name chunk 1 should be empty"
@@ -275,7 +279,8 @@ async fn faucet_get_decimals() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_decimals
                 push.{expected} assert_eq.err="decimals does not match"
                 push.0 assert_eq.err="clean stack: pad must be 0"
@@ -293,7 +298,8 @@ async fn faucet_get_token_symbol() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_token_symbol
                 push.{expected} assert_eq.err="token_symbol does not match"
                 push.0 assert_eq.err="clean stack: pad must be 0"
@@ -309,7 +315,8 @@ async fn faucet_get_token_supply() -> anyhow::Result<()> {
     execute_tx_script(
         build_pol_faucet_account(),
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::fungible::get_token_supply
             push.0 assert_eq.err="token_supply does not match"
             push.0 assert_eq.err="clean stack: pad must be 0"
@@ -326,7 +333,8 @@ async fn faucet_get_max_supply() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_max_supply
                 push.{expected} assert_eq.err="max_supply does not match"
                 push.0 assert_eq.err="clean stack: pad must be 0"
@@ -348,7 +356,8 @@ async fn faucet_get_token_config() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_token_config
                 push.0 assert_eq.err="token_supply does not match"
                 push.{expected_max_supply} assert_eq.err="max_supply does not match"
@@ -372,7 +381,8 @@ async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
         build_pol_faucet_account(),
         format!(
             r#"
-            begin
+            @transaction_script
+            pub proc main
                 call.::miden::standards::faucets::fungible::get_decimals
                 push.{expected_decimals} assert_eq.err="decimals does not match"
                 call.::miden::standards::faucets::fungible::get_token_symbol
@@ -404,14 +414,16 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
         account,
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::get_mutability_config
             push.1 assert_eq.err="desc_mutable should be 1"
             push.0 assert_eq.err="logo_mutable should be 0"
@@ -446,14 +458,16 @@ async fn is_field_mutable_checks(
     #[case] expected: u8,
 ) -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
+        .with_component(Pausable::unpaused())
         .build()?;
 
     execute_tx_script(
         account,
         format!(
-            "begin
+            "@transaction_script
+            pub proc main
                 call.{proc_path}
                 push.{expected}
                 assert_eq.err=\"{proc_path} returned unexpected value\"
@@ -484,7 +498,7 @@ fn faucet_with_metadata_storage_layout() {
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(faucet)
         .build()
         .unwrap();
@@ -524,8 +538,9 @@ fn verify_faucet_with_max_name_and_description(
 
     let mut builder = AccountBuilder::new(seed)
         .account_type(account_type)
-        .with_auth_component(NoAuth)
-        .with_component(faucet);
+        .with_component(NoAuth)
+        .with_component(faucet)
+        .with_component(Pausable::unpaused());
 
     for comp in extra_components {
         builder = builder.with_component(comp);
@@ -611,7 +626,8 @@ async fn test_field_setter_immutable_fails(
 
     let tx_script_code = format!(
         r#"
-        begin
+        @transaction_script
+        pub proc main
             call.::miden::standards::faucets::{proc_name}
         end
     "#
@@ -621,13 +637,13 @@ async fn test_field_setter_immutable_fails(
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(&tx_script_code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, immutable_error);
 
     Ok(())
@@ -682,15 +698,16 @@ async fn test_field_setter_owner_succeeds(
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
-        .extend_advice_map([(hash, field_advice_map_value(&new_data))])
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
+        .add_advice_map_entry(hash, field_advice_map_value(&new_data))
         .with_source_manager(source_manager)
         .build()?;
 
-    let executed = tx_context.execute().await?;
+    let executed = mock_tx.execute().await?;
     let mut updated_faucet = faucet_account.clone();
-    updated_faucet.apply_delta(executed.account_delta())?;
+    updated_faucet.apply_patch(executed.account_patch())?;
 
     for (i, expected) in new_data.iter().enumerate() {
         let chunk = updated_faucet.storage().get_item(slot_fn(i))?;
@@ -745,12 +762,13 @@ async fn test_field_setter_non_owner_fails(
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
@@ -860,7 +878,8 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let tx_script_code = r#"
-        begin
+        @transaction_script
+        pub proc main
             push.2000
             call.::miden::standards::faucets::fungible::set_max_supply
         end
@@ -870,13 +889,13 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, ERR_MAX_SUPPLY_NOT_MUTABLE);
 
     Ok(())
@@ -916,14 +935,15 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
         .with_source_manager(source_manager)
         .build()?;
 
-    let executed = tx_context.execute().await?;
+    let executed = mock_tx.execute().await?;
     let mut updated_faucet = faucet_account.clone();
-    updated_faucet.apply_delta(executed.account_delta())?;
+    updated_faucet.apply_patch(executed.account_patch())?;
 
     let restored = FungibleFaucet::try_from(updated_faucet.storage())?;
     assert_eq!(restored.max_supply().as_u64(), new_max_supply, "max_supply should be updated");
@@ -967,12 +987,13 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
         .script(note_script)
         .build()?;
 
-    let tx_context = mock_chain
-        .build_tx_context(faucet_account.id(), &[], &[note])?
+    let mock_tx = mock_chain
+        .build_transaction(faucet_account.id())
+        .unauthenticated_input_note(note)
         .with_source_manager(source_manager)
         .build()?;
 
-    let result = tx_context.execute().await;
+    let result = mock_tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())

@@ -124,7 +124,7 @@ impl PartialStorage {
     /// Returns an iterator over inner nodes of all storage map proofs contained in this
     /// partial storage.
     pub fn inner_nodes(&self) -> impl Iterator<Item = InnerNodeInfo> {
-        self.maps.iter().flat_map(|(_, map)| map.inner_nodes())
+        self.maps.values().flat_map(|map| map.inner_nodes())
     }
 
     /// Iterator over every [`PartialStorageMap`] in this partial storage.

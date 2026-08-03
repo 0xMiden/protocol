@@ -6,13 +6,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # Required for OIDC token exchange
 
 jobs:
   publish:
     if: ${{ github.repository_owner == '0xMiden' }}
     runs-on: ubuntu-latest
-    environment: release  # Optional: for enhanced security
+    environment: release # Optional: for enhanced security
+    permissions:
+      contents: read
+      id-token: write # Required for OIDC token exchange
 
     steps:
       - name: Checkout repository
@@ -37,3 +39,60 @@ jobs:
           skip-masm-root-check: ${{ vars.SKIP_MASM_ROOT_CHECK }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  # Upload the pre-compiled artifacts (miden-protocol.masp) on the
+  # GitHub release page.
+  # Used by midenup to speed up installs.
+  upload-artifacts:
+    name: upload pre-built miden-protocol library artifacts
+    if: ${{ github.repository_owner == '0xMiden' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Build packages and prepare artifacts
+        run: |
+          set -euo pipefail
+          # The build scripts write the `.masp` packages under their own `OUT_DIR`, whose
+          # location cargo reports in the JSON build log.
+          build_log=$(cargo build --release --locked -p miden-protocol -p miden-standards \
+            --message-format=json-render-diagnostics)
+          # `miden-protocol` has two build script units (it is also a build dependency of
+          # `miden-standards`), but both write identical packages, so the first match will do.
+          out_dir() {
+            jq -nr --arg key "/crates/$1#" \
+              'first(inputs | select(.reason == "build-script-executed" and (.package_id | contains($key))) | .out_dir)' \
+              <<<"$build_log"
+          }
+          protocol=$(out_dir miden-protocol)
+          standards=$(out_dir miden-standards)
+          cp "$protocol/assets/kernels/miden-tx-kernel.masp" miden-tx-kernel.masp
+          cp "$protocol/assets/miden-protocol.masp" miden-protocol.masp
+          cp "$standards/assets/miden-standards.masp" miden-standards.masp
+      - name: Attest packages
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            miden-tx-kernel.masp
+            miden-protocol.masp
+            miden-standards.masp
+      - name: Upload packages
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release upload ${RELEASE_TAG} miden-tx-kernel.masp miden-protocol.masp miden-standards.masp --clobber

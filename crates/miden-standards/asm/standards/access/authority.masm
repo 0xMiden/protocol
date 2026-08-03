@@ -5,49 +5,119 @@
 # future NFT metadata setters, ...) all consult this slot via `assert_authorized`.
 
 use miden::protocol::active_account
+use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
+
+# TYPE ALIASES
+# =================================================================================================
+
+# Authority kind stored in the first element of `AUTHORITY_SLOT`, dispatched on by
+# `assert_authorized`. Mirrors the Rust `Authority` enum.
+enum Authority : u8 {
+    AUTH_CONTROLLED = 0,
+    OWNER_CONTROLLED = 1,
+    RBAC_CONTROLLED = 2,
+}
 
 # CONSTANTS
 # =================================================================================================
 
-pub const AUTHORITY_SLOT = word("miden::standards::access::authority")
+# Value slot holding the authority configuration: [authority, is_frozen, 0, 0].
+# authority is the discriminator (0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled).
+# is_frozen is the global emergency switch (0 = not frozen, 1 = frozen). While frozen,
+# `assert_authorized` panics for every gated procedure regardless of role or owner membership.
+pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_config")
 
-const AUTH_CONTROLLED = 0
-const OWNER_CONTROLLED = 1
-const RBAC_CONTROLLED = 2
+# Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
+# Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
+pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
+
+# Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
+const UNFROZEN = 0
+const FROZEN = 1
 
 # ERRORS
 # =================================================================================================
 
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
+const ERR_AUTHORITY_FROZEN = "authority is frozen"
 
-# PUBLIC PROCEDURES
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Freezes the account's authority-gated surface as an emergency switch.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the account's emergency authority.
+#!
+#! Invocation: call
+@account_procedure
+pub proc freeze
+    exec.assert_sender_is_emergency_authority
+    # => [pad(16)]
+
+    push.FROZEN exec.write_frozen_flag
+    # => [pad(16)]
+end
+
+#! Unfreezes the account's authority-gated surface, clearing the emergency switch.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the account's emergency authority.
+#!
+#! Invocation: call
+@account_procedure
+pub proc unfreeze
+    exec.assert_sender_is_emergency_authority
+    # => [pad(16)]
+
+    push.UNFROZEN exec.write_frozen_flag
+    # => [pad(16)]
+end
+
+# PUBLIC HELPERS
 # =================================================================================================
 
 #! Asserts the caller is authorized to invoke an authority-gated procedure.
 #!
 #! - AuthControlled (0)  → no-op (the account's auth component already gated the call).
 #! - OwnerControlled (1) → calls `ownable2step::assert_sender_is_owner`.
-#! - RbacControlled (2)  → loads the role symbol from the authority slot and calls
-#!   `rbac::assert_sender_has_role`. Requires the
+#! - RbacControlled (2)  → if the calling procedure has a role configured in the authority
+#!   procedure-roles map (keyed by the procedure root obtained via `caller`), asserts the sender
+#!   holds that role; otherwise falls back to the `ADMIN` role check. Requires the
 #!   [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
 #!   installed on the account; otherwise linking the account fails.
+#!
+#! Because the calling procedure is identified via `caller`, `assert_authorized` MUST be invoked
+#! with `exec` (inlined) from the gated procedure, and the gated procedure MUST be a `call`
+#! entrypoint so that `caller` resolves to the gated procedure's own root.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
 #! - the authority is OwnerControlled and the sender is not the registered owner.
-#! - the authority is RbacControlled and the sender does not hold the configured role.
+#! - the authority is RbacControlled, a role is configured for the procedure, and the sender does
+#!   not hold it.
+#! - the authority is RbacControlled, no role is configured for the procedure, and the sender does
+#!   not hold ADMIN.
 #! - the authority is an unknown value.
 #!
 #! Invocation: exec
 pub proc assert_authorized
-    # Note: invariant — role_symbol felt is 0 unless authority == RBAC_CONTROLLED.
-    # Enforced by `From<Authority> for Word` in Rust.
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [authority, role_symbol, 0, 0]
+    # => [authority, is_frozen, 0, 0]
+
+    # Emergency switch: while frozen, block every gated procedure before any role/owner dispatch.
+    dup.1 assertz.err=ERR_AUTHORITY_FROZEN
+    # => [authority, is_frozen, 0, 0]
 
     dup eq.AUTH_CONTROLLED
     if.true
@@ -58,21 +128,147 @@ pub proc assert_authorized
         dup eq.OWNER_CONTROLLED
         if.true
             exec.ownable2step::assert_sender_is_owner
-            # => [authority, role_symbol, 0, 0]
+            # => [authority, is_frozen, 0, 0]
+
             dropw
             # => []
         else
             eq.RBAC_CONTROLLED
             if.true
-                # => [role_symbol, 0, 0]
-                exec.rbac::assert_sender_has_role
-                # => [0, 0]
-                drop drop
+                # => [is_frozen, 0, 0]
+
+                drop drop drop
+                # => []
+
+                exec.assert_authorized_rbac
                 # => []
             else
                 # Unknown authority — panic. Stack state irrelevant.
                 push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
             end
         end
+    end
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts the sender may toggle the emergency switch.
+#!
+#! Reads only the authority discriminant, so it bypasses the frozen flag and the authority can
+#! always toggle it. Dispatch:
+#! - OwnerControlled → the Ownable2Step owner.
+#! - RbacControlled  → the caller procedure's configured role in the procedure-roles map (freeze
+#!   and unfreeze may carry distinct roles, e.g. FREEZER / UNFREEZER), or ADMIN when unmapped.
+#! - AuthControlled  → panics (no owner slot and no role graph).
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the authority is OwnerControlled and the sender is not the owner.
+#! - the authority is RbacControlled and the sender does not hold the caller's role (or ADMIN when
+#!   the caller is unmapped).
+#! - the authority is AuthControlled or an unknown value.
+#!
+#! Invocation: exec
+proc assert_sender_is_emergency_authority
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, is_frozen, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [authority]
+
+    dup eq.OWNER_CONTROLLED
+    if.true
+        drop
+        # => []
+
+        exec.ownable2step::assert_sender_is_owner
+        # => []
+    else
+        eq.RBAC_CONTROLLED
+        if.true
+            # => []
+
+            exec.assert_authorized_rbac
+            # => []
+        else
+            # No emergency authority exists.
+            push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
+        end
+    end
+end
+
+#! Writes the is_frozen flag into the authority slot, preserving the authority discriminator.
+#!
+#! Inputs:  [frozen_flag]
+#! Outputs: []
+#!
+#! Where:
+#! - frozen_flag is the new emergency-switch state (0 = not frozen, 1 = frozen).
+#!
+#! Invocation: exec
+proc write_frozen_flag
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, old_is_frozen, 0, 0, frozen_flag]
+
+    movup.4 swap
+    # => [authority, frozen_flag, old_is_frozen, 0, 0]
+
+    movup.2 drop
+    # => [authority, frozen_flag, 0, 0]
+
+    push.AUTHORITY_SLOT[0..2] exec.native_account::set_item
+    # => [OLD_AUTHORITY_WORD]
+
+    dropw
+    # => []
+end
+
+#! Asserts the sender is authorized under the RbacControlled authority.
+#!
+#! Resolves the calling procedure's root via `caller` and looks up its assigned role in the
+#! procedure-roles map. If a role is configured, asserts the sender holds it; otherwise falls back
+#! to the ADMIN role check.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - a role is configured for the procedure and the sender does not hold it.
+#! - no role is configured for the procedure and the sender does not hold ADMIN.
+#!
+#! Invocation: exec
+proc assert_authorized_rbac
+    # Resolve the calling procedure's root and look up its assigned role in the map.
+    padw caller
+    # => [CALLER_ROOT]
+
+    push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, CALLER_ROOT]
+
+    exec.active_account::get_map_item
+    # => [mapped_role, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [mapped_role]
+
+    dup eq.0
+    # => [has_no_mapped_role, mapped_role]
+
+    if.true
+        # No role configured for this procedure, require ADMIN.
+        drop
+        # => []
+
+        exec.rbac::assert_sender_is_admin
+        # => []
+    else
+        # Assert the sender holds the configured role.
+        # => [mapped_role]
+
+        exec.rbac::assert_sender_has_role
+        # => []
     end
 end

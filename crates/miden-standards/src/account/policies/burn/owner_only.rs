@@ -9,7 +9,7 @@ use crate::procedure_root;
 
 account_component_code!(
     OWNER_ONLY_BURN_POLICY_CODE,
-    "faucets/policies/burn/owner_controlled/owner_only.masl"
+    "miden-standards-faucets-policies-burn-owner-controlled-owner-only.masp"
 );
 
 procedure_root!(
@@ -24,6 +24,10 @@ procedure_root!(
 /// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed burn-policies
 /// map includes [`BurnOwnerOnly::root`]. When active, only the account owner (as recorded by
 /// the `Ownable2Step` component) may trigger burn operations.
+///
+/// Companion components required:
+/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
+///   reads. Without it, the faucet builds successfully but every burn reverts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BurnOwnerOnly;
 

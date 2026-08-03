@@ -9,7 +9,7 @@ use crate::procedure_root;
 
 account_component_code!(
     OWNER_ONLY_MINT_POLICY_CODE,
-    "faucets/policies/mint/owner_controlled/owner_only.masl"
+    "miden-standards-faucets-policies-mint-owner-controlled-owner-only.masp"
 );
 
 procedure_root!(
@@ -24,6 +24,10 @@ procedure_root!(
 /// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed mint-policies
 /// map includes [`MintOwnerOnly::root`]. When active, only the account owner (as recorded by
 /// the `Ownable2Step` component) may trigger mint operations.
+///
+/// Companion components required:
+/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
+///   reads. Without it, the faucet builds successfully but every mint reverts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MintOwnerOnly;
 

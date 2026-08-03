@@ -1,8 +1,7 @@
 use alloc::boxed::Box;
 
 use crate::Word;
-use crate::account::AccountId;
-use crate::account::delta::AccountUpdateDetails;
+use crate::account::{AccountId, AccountUpdateDetails};
 use crate::errors::BatchAccountUpdateError;
 use crate::transaction::ProvenTransaction;
 use crate::utils::serde::{

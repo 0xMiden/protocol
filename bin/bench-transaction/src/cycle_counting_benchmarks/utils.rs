@@ -43,7 +43,6 @@ impl MeasurementsPrinter {
             epilogue: EpilogueMeasurements::from_parts(
                 measurements.epilogue,
                 measurements.auth_procedure,
-                measurements.after_tx_cycles_obtained,
             ),
             trace: TraceMeasurements::from(trace),
         }
@@ -54,27 +53,15 @@ impl MeasurementsPrinter {
 /// - `total` interval holds the total number of cycles required to execute the epilogue
 /// - `auth_procedure` interval holds the number of cycles required to execute the authentication
 ///   procedure
-/// - `after_tx_cycles_obtained` holds the number of cycles which was executed from the moment of
-///   the cycle count obtainment in the `epilogue::compute_fee` procedure to the end of the
-///   epilogue.
 #[derive(Debug, Clone, Serialize)]
 struct EpilogueMeasurements {
     total: usize,
     auth_procedure: usize,
-    after_tx_cycles_obtained: usize,
 }
 
 impl EpilogueMeasurements {
-    pub fn from_parts(
-        total: usize,
-        auth_procedure: usize,
-        after_tx_cycles_obtained: usize,
-    ) -> Self {
-        Self {
-            total,
-            auth_procedure,
-            after_tx_cycles_obtained,
-        }
+    pub fn from_parts(total: usize, auth_procedure: usize) -> Self {
+        Self { total, auth_procedure }
     }
 }
 
@@ -119,7 +106,7 @@ impl From<TraceLenSummary> for TraceMeasurements {
         );
         let ace_rows = chiplets.trace_len().saturating_sub(known + 1);
         Self {
-            core_rows: summary.main_trace_len(),
+            core_rows: summary.core_trace_len(),
             chiplets_rows: chiplets.trace_len(),
             range_rows: summary.range_trace_len(),
             chiplets_shape: ChipletsTraceShape {
@@ -162,7 +149,10 @@ pub fn write_bench_results_to_json(
 
 #[cfg(test)]
 mod tests {
+    use miden_processor::trace::{ChipletsLengths, TraceLenSummary};
     use serde::Deserialize;
+
+    use super::TraceMeasurements;
 
     /// Minimal mirror of the bench-tx.json `trace` section used to validate the committed file
     /// against the producer's contract.
@@ -211,14 +201,24 @@ mod tests {
             padded_chiplets: 32_768,
         },
         ScenarioExpectation {
-            name: "consume two P2ID notes",
+            name: "consume two P2ID notes with Falcon signing",
+            padded_core_side: 131_072,
+            padded_chiplets: 131_072,
+        },
+        ScenarioExpectation {
+            name: "consume two P2ID notes with ECDSA signing",
+            padded_core_side: 16_384,
+            padded_chiplets: 32_768,
+        },
+        ScenarioExpectation {
+            name: "create single P2ID note with Falcon signing",
             padded_core_side: 131_072,
             padded_chiplets: 65_536,
         },
         ScenarioExpectation {
-            name: "create single P2ID note",
-            padded_core_side: 131_072,
-            padded_chiplets: 65_536,
+            name: "create single P2ID note with ECDSA signing",
+            padded_core_side: 16_384,
+            padded_chiplets: 32_768,
         },
         ScenarioExpectation {
             name: "consume CLAIM note (L1 to Miden)",
@@ -228,7 +228,7 @@ mod tests {
         ScenarioExpectation {
             name: "consume CLAIM note (L2 to Miden)",
             padded_core_side: 65_536,
-            padded_chiplets: 65_536,
+            padded_chiplets: 131_072,
         },
         ScenarioExpectation {
             name: "consume B2AGG note (bridge-out)",
@@ -291,5 +291,21 @@ mod tests {
         for expected in COMMITTED_SCENARIO_EXPECTATIONS {
             assert_scenario(&parsed, expected);
         }
+    }
+
+    #[test]
+    fn trace_measurements_keep_core_rows_separate_from_total_trace_len() {
+        let summary = TraceLenSummary::new(10, 20, ChipletsLengths::from_parts(30, 40, 50, 60, 70));
+        assert_ne!(
+            summary.core_trace_len(),
+            summary.trace_len(),
+            "test setup must distinguish core rows from total trace length",
+        );
+
+        let measurements = TraceMeasurements::from(summary);
+
+        assert_eq!(measurements.core_rows, summary.core_trace_len());
+        assert_eq!(measurements.chiplets_rows, summary.chiplets_trace_len().trace_len());
+        assert_eq!(measurements.range_rows, summary.range_trace_len());
     }
 }

@@ -17,6 +17,7 @@ use crate::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionHeader,
+    TransactionVerifier,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -125,7 +126,7 @@ impl ProposedBatch {
     /// - There are duplicate transactions.
     /// - If any transaction's expiration block number is less than or equal to the batch's
     ///   reference block.
-    pub fn new(
+    fn new_batch_inner(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
         partial_blockchain: PartialBlockchain,
@@ -337,6 +338,59 @@ impl ProposedBatch {
         })
     }
 
+    /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
+    /// execution proof against the transaction kernel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
+    /// or if a transaction's proof fails to verify or does not meet `proof_security_level`.
+    pub fn new(
+        transactions: Vec<Arc<ProvenTransaction>>,
+        reference_block_header: BlockHeader,
+        partial_blockchain: PartialBlockchain,
+        unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+        proof_security_level: u32,
+    ) -> Result<Self, ProposedBatchError> {
+        let batch = Self::new_batch_inner(
+            transactions,
+            reference_block_header,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+        )?;
+
+        let verifier = TransactionVerifier::new(proof_security_level);
+        for tx in batch.transactions() {
+            verifier.verify(tx).map_err(|source| {
+                ProposedBatchError::TransactionVerificationFailed {
+                    transaction_id: tx.id(),
+                    source,
+                }
+            })?;
+        }
+
+        Ok(batch)
+    }
+
+    /// Creates a new [`ProposedBatch`] **without verifying the transactions' execution proofs**.
+    ///
+    /// Runs the same batch validation as [`Self::new`] but skips proof verification. Exposed for
+    /// tests that build batches from mock transactions carrying dummy proofs.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_unverified(
+        transactions: Vec<Arc<ProvenTransaction>>,
+        reference_block_header: BlockHeader,
+        partial_blockchain: PartialBlockchain,
+        unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+    ) -> Result<Self, ProposedBatchError> {
+        Self::new_batch_inner(
+            transactions,
+            reference_block_header,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+        )
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -373,6 +427,11 @@ impl ProposedBatch {
     /// The ID of this batch. See [`BatchId`] for details on how it is computed.
     pub fn id(&self) -> BatchId {
         self.id
+    }
+
+    /// Returns the header of the reference block this batch is proposed for.
+    pub fn reference_block_header(&self) -> &BlockHeader {
+        &self.reference_block_header
     }
 
     /// Returns the block number at which the batch will expire.
@@ -451,7 +510,8 @@ impl Deserializable for ProposedBatch {
         let unauthenticated_note_proofs =
             BTreeMap::<NoteId, NoteInclusionProof>::read_from(source)?;
 
-        ProposedBatch::new(
+        // Reconstruct structurally without verifying the transactions' proofs.
+        ProposedBatch::new_batch_inner(
             transactions,
             block_header,
             partial_blockchain,
@@ -472,9 +532,7 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::account::delta::AccountUpdateDetails;
-    use crate::account::{AccountIdVersion, AccountType};
-    use crate::asset::FungibleAsset;
+    use crate::account::{AccountType, AccountUpdateDetails};
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
     #[test]
@@ -501,13 +559,13 @@ mod tests {
         );
 
         let account_id =
-            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+            AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =
             [3; 32].try_into().expect("failed to create final account commitment");
-        let account_delta_commitment =
-            [4; 32].try_into().expect("failed to create account delta commitment");
+        let account_patch_commitment =
+            [4; 32].try_into().expect("failed to create account patch commitment");
         let block_num = reference_block_header.block_num();
         let block_ref = reference_block_header.commitment();
         let expiration_block_num = reference_block_header.block_num() + 1;
@@ -517,7 +575,7 @@ mod tests {
             account_id,
             initial_account_commitment,
             final_account_commitment,
-            account_delta_commitment,
+            account_patch_commitment,
             AccountUpdateDetails::Private,
         )
         .context("failed to build account update")?;
@@ -528,13 +586,12 @@ mod tests {
             Vec::<OutputNote>::new(),
             block_num,
             block_ref,
-            FungibleAsset::mock(100).unwrap_fungible(),
             expiration_block_num,
             proof,
         )
         .context("failed to build proven transaction")?;
 
-        let batch = ProposedBatch::new(
+        let batch = ProposedBatch::new_unverified(
             vec![Arc::new(tx)],
             reference_block_header,
             partial_blockchain,

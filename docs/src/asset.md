@@ -20,7 +20,7 @@ In Miden, assets serve as the primary means of expressing and transferring value
    Users can transact freely and privately with no single contract or entity controlling `Asset` transfers. This reduces the risk of censored transactions, resulting in a more open and resilient system.
 
 4. **Fee payment in native asset:**  
-   Transaction fees are paid in the chain's native asset as defined by the current reference block's fee parameters. See [Fees](fees.md).
+   Transaction fees are denominated in the chain's native asset as defined by the current reference block's fee parameters, and paid in the asset committed via the transaction's auth args (the native asset at rate 1/1, or a different asset at a committed conversion rate). See [Fees](fees.md).
 
 ## Native asset
 
@@ -28,7 +28,7 @@ In Miden, assets serve as the primary means of expressing and transferring value
 All data structures following the Miden asset model that can be exchanged.
 :::
 
-Native assets adhere to the Miden `Asset` model (encoding, issuance, storage). Every native `Asset` is encoded using 64 bytes (vault key and value), including both the [ID](./account/id) of the issuing account and the `Asset` details.
+Native assets adhere to the Miden `Asset` model (encoding, issuance, storage). Every native `Asset` is encoded using 64 bytes (asset ID and value), including both the [ID](./account/id) of the issuing account and the `Asset` details.
 
 ### Issuance
 
@@ -39,33 +39,30 @@ Accounts that issue assets are referred to as faucets. They can issue either fun
 </p>
 
 :::tip
-An account can technically issue different types of assets simultaneously, for example, both a fungible asset with [callbacks](#callbacks) disabled and a non-fungible asset with callbacks enabled. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
+An account can technically issue different types of assets simultaneously, for example, both a fungible and a non-fungible asset. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
 :::
 
 ### Encoding
 
-Every asset is stored as a key-value pair of two `Word`s: The vault key and the asset value.
+Every asset is stored as a key-value pair of two `Word`s: The asset ID and the asset value.
 
-While the asset value is unique to each type of asset, the vault key has a common structure for all types of assets:
+While the asset value is unique to each type of asset, the asset ID has a common structure for all types of assets:
 
 ```text
 [
-  asset_id_suffix (64 bits),
-  asset_id_prefix (64 bits),
-  [faucet_id_suffix (56 bits) | reserved (5 bits) | callback_flag (1 bit) | composition (2 bits)],
+  asset_class_suffix (64 bits),
+  asset_class_prefix (64 bits),
+  [faucet_id_suffix (56 bits) | reserved (6 bits) | composition (2 bits)],
   faucet_id_prefix (64 bits)
 ]
 ```
 
 - `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issue assets when the faucet ID matches its own ID.
-- `asset_id_suffix` and `asset_id_prefix` is an ID that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
-- `callback_flag` is the flag that determines whether callbacks are enabled (see also [callbacks](#callbacks)).
+- `asset_class_suffix` and `asset_class_prefix` is a class that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
 - `composition` describes how assets compose. Read on for more details.
 - `reserved` bits are reserved for future use and should be assumed to be undefined and therefore not relied upon.
 
-:::note
-The `callback_flag` and `composition` are also referred to as "asset metadata".
-:::
+Whether the asset triggers [callbacks](#callbacks) is not part of the asset ID: it is an immutable property of the issuing faucet's account ID.
 
 ### Composition
 
@@ -84,19 +81,19 @@ When an asset is added or removed from an account's vault or added to a note, th
 
 #### Identity
 
-Note that for example's sake, we use "USDC" as the _identifier_ of an asset, and so 10 USDC and 20 USDC are instances of the same type of asset. In practice, the identity of an asset is determined by its [vault key](#encoding).
+Note that for example's sake, we use "USDC" as the _identifier_ of an asset, and so 10 USDC and 20 USDC are instances of the same type of asset. In practice, the identity of an asset is determined by its [asset ID](#encoding).
 
 :::info
-Two assets are of the same type whenever their vault keys match.
+Two assets are of the same type whenever their asset IDs match.
 :::
 
 The transaction kernel relies on this rule and so creators of assets need to ensure that:
-- Instances of assets that should compose, should have identical vault keys.
-- Instances of assets that should _not_ compose, should have different vault keys.
+- Instances of assets that should compose, should have identical asset IDs.
+- Instances of assets that should _not_ compose, should have different asset IDs.
 
-The asset ID can be used by asset creators to ensure this. Let's look at the native fungible and non-fungible assets:
-- Fungible assets should _always_ compose and so by construction, their asset ID limbs are set to zero. This ensures two instances of a fungible asset have the same vault key.
-- Non-fungible assets should _never_ compose and so by construction, their asset ID limbs are set to parts of their hash value. In practice, this ensures that two instances of non-fungible assets have unique vault keys. The transaction kernel never attempts to compose these.
+The asset class can be used by asset creators to ensure this. Let's look at the native fungible and non-fungible assets:
+- Fungible assets should _always_ compose and so by construction, their asset class limbs are set to zero. This ensures two instances of a fungible asset have the same asset ID.
+- Non-fungible assets should _never_ compose and so by construction, their asset class limbs are set to parts of their hash value. In practice, this ensures that two instances of non-fungible assets have unique asset IDs. The transaction kernel never attempts to compose these.
 
 #### Composition
 
@@ -116,15 +113,14 @@ On the other hand, `Custom` would involve invoking `merge` and `split` implement
 
 ### Fungible Assets
 
-The native fungible asset has the following vault key and value layout:
+The native fungible asset has the following asset ID and value layout:
 
-- Vault key: `[0, 0, faucet_id_suffix | callback_flag | composition, faucet_id_prefix]`.
-  - Its `callback_flag` can be disabled or enabled.
+- Asset ID: `[0, 0, faucet_id_suffix | composition, faucet_id_prefix]`.
   - Its `composition` must be set to `Fungible`.
 - Value: `[amount, 0, 0, 0]`.
   - The amount is always $2^{63}-2^{31}$ or smaller, representing the maximum supply for any fungible `Asset`.
 
-Note how the `Fungible` composition variant together with the asset ID limbs set to zero, ensure that instances of fungible assets can always be merged and split.
+Note how the `Fungible` composition variant together with the asset class limbs set to zero, ensure that instances of fungible assets can always be merged and split.
 
 Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USDC).
 
@@ -132,18 +128,19 @@ Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USD
 
 The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes, which results in the asset value.
 
-- Vault key: `[hash0, hash1, faucet_id_suffix | callback_flag | composition, faucet_id_prefix]`.
-  - Its `callback_flag` can be disabled or enabled.
+- Asset ID: `[hash0, hash1, faucet_id_suffix | composition, faucet_id_prefix]`.
   - Its `composition` must be set to `None`.
 - Value: `[hash0, hash1, hash2, hash3]`.
 
-Note how the `None` composition variant together with the asset ID limbs set to hashes from the asset value, ensure that instances of non-fungible assets are never attempted to be merged or split by the transaction kernel.
+Note how the `None` composition variant together with the asset class limbs set to hashes from the asset value, ensure that instances of non-fungible assets are never attempted to be merged or split by the transaction kernel.
 
 Examples of such assets include NFTs like a DevCon ticket.
 
 ### Storage
 
-[Accounts](./account) and [notes](note) have vaults used to store assets. Accounts use a sparse Merkle tree as a vault while notes use a simple list. This enables an account to store a practically unlimited number of assets while a note can only store up to 64 assets.
+[Accounts](./account) and [notes](note) have vaults used to store assets. Accounts use a sparse Merkle tree as a vault while notes use a simple list. This enables an account to store a practically unlimited number of assets while a note can only store up to 16 assets.
+
+Asset IDs are hashed before being used as keys in the underlying sparse Merkle tree. Hashing the raw key ensures a uniform leaf distribution: in particular, it prevents non-fungible assets issued by the same faucet from sharing an SMT leaf (their raw asset IDs share the fourth element - the faucet ID prefix - which the SMT uses to determine leaf membership).
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-storage.png').default} style={{width: '70%'}} alt="Asset storage"/>
@@ -159,15 +156,9 @@ Asset callbacks allow a faucet to execute custom logic whenever one of its asset
 
 #### How callbacks work
 
-Callbacks involve two parts: a **per-asset flag** and **faucet-level callback procedures**.
+Callbacks involve two parts: a **faucet-level capability flag** and **faucet-level callback procedures**.
 
-**Per-asset callback flag.** Every asset carries a single-bit callback flag in its vault key. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever the asset is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely. This flag is set at asset creation time and the protocol does not prevent issuing assets with different flags from the same faucet. Technically, this gives faucets the ability to issue a callback-enabled and a callback-disabled variant of their assets.
-
-:::warning
-Two assets issued by the same faucet with _different_ callback flags are considered completely different assets by the protocol.
-:::
-
-It is recommended that faucets issue all of their assets with the same flag to ensure all assets issued by a faucet are treated as one type of asset. This is ensured when using `faucet::create_fungible_asset` or `faucet::create_non_fungible_asset`.
+**Faucet callback flag.** Whether a faucet's assets trigger callbacks is an immutable single-bit flag of the faucet's account ID, fixed at account creation. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever one of its assets is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely and no foreign-account read is performed. Because the flag lives in the account ID (which is carried in every asset ID) rather than in each asset, all assets issued by a faucet share the same callback behavior and cannot be fragmented.
 
 **Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one if its public account procedures in a well-known storage slot. Two callbacks are supported:
 
@@ -180,7 +171,7 @@ Account components that need to add callbacks to an account's storage should use
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet and the callback receives the asset key and value and is expected to return the processed asset value.
+The transaction kernel invokes the callback on the issuing faucet and the callback receives the asset ID and value and is expected to return the processed asset value.
 
 :::warning
 At this time, the processed asset value must be the same as the asset value, but in the future this limitation may be lifted.
@@ -189,14 +180,14 @@ At this time, the processed asset value must be the same as the asset value, but
 The **account callback** receives:
 
 ```
-Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
 ```
 
 The **note callback** receives the additional `note_idx` identifying which output note the asset is being added to:
 
 ```
-Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
 ```
 

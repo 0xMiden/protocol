@@ -1,0 +1,12 @@
+# The MASM code of the Code Inspection Account Component.
+#
+# See the `CodeInspection` Rust type's documentation for more details. This component exposes
+# read-only introspection over the account's own code so that external callers can verify what the
+# account can do. It carries no storage of its own.
+
+pub use {
+    get_code_commitment,
+    get_num_procedures,
+    get_procedure_root,
+    has_procedure,
+} from miden::standards::inspection::code_inspection

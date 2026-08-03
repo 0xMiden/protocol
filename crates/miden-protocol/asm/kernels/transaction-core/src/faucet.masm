@@ -1,0 +1,109 @@
+use miden::tx_kernel_core::account
+use miden::tx_kernel_core::asset
+use miden::tx_kernel_core::asset_vault
+use {INPUT_VAULT_ROOT_PTR} from miden::tx_kernel_core::memory
+
+# EVENTS
+# =================================================================================================
+
+# Event emitted before an asset is minted into the input vault.
+const ACCOUNT_VAULT_BEFORE_MINT_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_before_mint_asset"
+    )
+
+# Event emitted before an asset is burned from the input vault.
+const ACCOUNT_VAULT_BEFORE_BURN_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_before_burn_asset"
+    )
+
+# PUBLIC INTERFACE
+# ==================================================================================================
+
+#! Mint an asset from the faucet the transaction is being executed against.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to mint.
+#! - ASSET_VALUE is the value of the asset value to mint.
+#!
+#! Panics if:
+#! - the asset issuer is not the faucet the transaction is being executed against.
+#! - the asset is not well formed.
+#! - For fungible faucets if the total issuance after minting is greater than the maximum amount
+#!   allowed.
+#! - For non-fungible faucets if the non-fungible asset being minted already exists.
+pub proc mint
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # assert that the asset was issued by the faucet the transaction is being executed against and
+    # that the asset is well formed
+    exec.account::get_id
+    exec.asset::validate_origin
+    # => [ASSET_ID, ASSET_VALUE]
+
+    push.INPUT_VAULT_ROOT_PTR
+    movdn.8
+    # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
+
+    # emit event to signal that an asset is going to be minted into the input vault
+    emit.ACCOUNT_VAULT_BEFORE_MINT_ASSET_EVENT
+    # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
+
+    # add the asset to the input vault for asset preservation
+    exec.asset_vault::add_asset
+    # => [INITIAL_ASSET_VALUE, NEW_ASSET_VALUE]
+
+    # drop both values (not meaningful to the caller)
+    dropw dropw
+    # => []
+end
+
+#! Burn an asset from the faucet the transaction is being executed against.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to burn.
+#! - ASSET_VALUE is the value of the asset to burn.
+#!
+#! Panics if:
+#! - the asset issuer is not the faucet the transaction is being executed against.
+#! - the asset is not well formed.
+#! - For fungible faucets if the amount being burned is greater than the total input to the
+#!   transaction.
+#! - For non-fungible faucets if the non-fungible asset being burned does not exist or was not
+#!   provided as input to the transaction via a note or the accounts vault.
+pub proc burn
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # assert that the asset was issued by the faucet the transaction is being executed against and
+    # that the asset is well formed
+    exec.account::get_id
+    exec.asset::validate_origin
+    # => [ASSET_ID, ASSET_VALUE]
+
+    push.INPUT_VAULT_ROOT_PTR
+    movdn.8
+    # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
+
+    # emit event to signal that an asset is going to be burned from the input vault
+    emit.ACCOUNT_VAULT_BEFORE_BURN_ASSET_EVENT
+    # => [ASSET_ID, ASSET_VALUE, input_vault_root_ptr]
+
+    # remove the asset from the input vault for asset preservation
+    exec.asset_vault::remove_asset
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # drop both values (not meaningful to the caller)
+    dropw dropw
+    # => []
+end

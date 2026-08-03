@@ -26,25 +26,22 @@ pub use token_symbol::TokenSymbol;
 mod asset_callbacks;
 pub use asset_callbacks::AssetCallbacks;
 
-mod asset_callbacks_flag;
-pub use asset_callbacks_flag::AssetCallbackFlag;
-
 mod asset_composition;
 pub use asset_composition::AssetComposition;
 
 mod vault;
-pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
+pub use vault::{AssetClass, AssetId, AssetIdHash, AssetVault, AssetWitness, PartialVault};
 
 // ASSET
 // ================================================================================================
 
 /// A fungible or a non-fungible asset.
 ///
-/// All assets are encoded as the vault key of the asset and its value, each represented as one word
+/// All assets are encoded as the asset ID of the asset and its value, each represented as one word
 /// (4 elements). This makes it is easy to determine the type of an asset both inside and outside
 /// Miden VM. Specifically:
 ///
-/// The vault key of an asset contains the [`AssetComposition`] which describes how assets compose,
+/// The asset ID of an asset contains the [`AssetComposition`] which describes how assets compose,
 /// meaning whether they can be merged or split.
 ///
 /// This property guarantees that there can never be a collision between a fungible and a
@@ -55,8 +52,7 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 /// # Fungible assets
 ///
 /// - A fungible asset's value layout is: `[amount, 0, 0, 0]`.
-/// - A fungible asset's vault key layout is: `[0, 0, faucet_id_suffix_and_metadata,
-///   faucet_id_prefix]`.
+/// - A fungible asset's ID layout is: `[0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix]`.
 ///
 /// Where:
 /// - `amount` is the [`AssetAmount`] that the asset holds and cannot be greater than
@@ -64,19 +60,18 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 /// - the remaining elements in the value word must be zero.
 /// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetCallbackFlag`] and [`AssetComposition`]). See [`AssetVaultKey`] for
-///   more details on the key's layout.
-/// - the asset ID limbs must be zero, which means two instances of the same fungible asset have the
-///   same asset key and will be merged together when stored in the same account's vault.
+///   asset metadata ([`AssetComposition`]). See [`AssetId`] for more details on the ID's layout.
+/// - the asset class limbs must be zero, which means two instances of the same fungible asset have
+///   the same asset ID and will be merged together when stored in the same account's vault.
 ///
 /// It is impossible to find a collision between two fungible assets issued by different faucets as
-/// the faucet ID is part of the asset's vault key and this is guaranteed to be different for each
+/// the faucet ID is part of the asset's ID and this is guaranteed to be different for each
 /// faucet as per the faucet creation logic.
 ///
 /// # Non-fungible assets
 ///
 /// - A non-fungible asset's data layout is:      `[hash0, hash1, hash2, hash3]`.
-/// - A non-fungible asset's vault key layout is: `[hash0, hash1, faucet_id_suffix_and_metadata,
+/// - A non-fungible asset's ID layout is: `[hash0, hash1, faucet_id_suffix_and_metadata,
 ///   faucet_id_prefix]`.
 ///
 /// Where:
@@ -84,18 +79,17 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 ///   compresses an asset of an arbitrary length to 4 field elements.
 /// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetCallbackFlag`] and [`AssetComposition`]). See [`AssetVaultKey`] for
-///   more details on the key's layout.
-/// - The asset ID limbs are set to hashes from the asset's value (`hash0` and `hash1`).
+///   asset metadata ([`AssetComposition`]). See [`AssetId`] for more details on the ID's layout.
+/// - The asset class limbs are set to hashes from the asset's value (`hash0` and `hash1`).
 ///
 /// It is impossible to find a collision between two non-fungible assets issued by different faucets
-/// as the faucet ID is part of the asset's vault key and this is guaranteed to be different as per
+/// as the faucet ID is part of the asset's ID and this is guaranteed to be different as per
 /// the faucet creation logic.
 ///
 /// The collision resistance of non-fungible assets issued by the same faucet is ~2^64, due to the
-/// 128-bit asset ID that is unique per non-fungible asset. In other words, two non-fungible assets
-/// issued by the same faucet are very unlikely to have the same asset key and thus should not
-/// collide when stored in the same account's vault.
+/// 128-bit asset class that is unique per non-fungible asset. In other words, two non-fungible
+/// assets issued by the same faucet are very unlikely to have the same asset ID and thus should
+/// not collide when stored in the same account's vault.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Asset {
     Fungible(FungibleAsset),
@@ -103,19 +97,19 @@ pub enum Asset {
 }
 
 impl Asset {
-    /// Creates an asset from the provided key and value.
+    /// Creates an asset from the provided ID and value.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - [`FungibleAsset::from_key_value`] or [`NonFungibleAsset::from_key_value`] fails.
-    pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
-        match key.composition() {
+    /// - [`FungibleAsset::from_id_and_value`] or [`NonFungibleAsset::from_id_and_value`] fails.
+    pub fn from_id_and_value(id: AssetId, value: Word) -> Result<Self, AssetError> {
+        match id.composition() {
             AssetComposition::Fungible => {
-                FungibleAsset::from_key_value(key, value).map(Asset::Fungible)
+                FungibleAsset::from_id_and_value(id, value).map(Asset::Fungible)
             },
             AssetComposition::None => {
-                NonFungibleAsset::from_key_value(key, value).map(Asset::NonFungible)
+                NonFungibleAsset::from_id_and_value(id, value).map(Asset::NonFungible)
             },
             AssetComposition::Custom => {
                 Err(AssetError::UnsupportedAssetComposition(AssetComposition::Custom))
@@ -123,35 +117,25 @@ impl Asset {
         }
     }
 
-    /// Creates an asset from the provided key and value.
+    /// Creates an asset from the provided ID and value.
     ///
-    /// Prefer [`Self::from_key_value`] for more type safety.
+    /// Prefer [`Self::from_id_and_value`] for more type safety.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The provided key does not contain a valid faucet ID.
-    /// - [`Self::from_key_value`] fails.
-    pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
-        let vault_key = AssetVaultKey::try_from(key)?;
-        Self::from_key_value(vault_key, value)
-    }
-
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(self, callbacks: AssetCallbackFlag) -> Self {
-        match self {
-            Asset::Fungible(fungible_asset) => fungible_asset.with_callbacks(callbacks).into(),
-            Asset::NonFungible(non_fungible_asset) => {
-                non_fungible_asset.with_callbacks(callbacks).into()
-            },
-        }
+    /// - The provided ID does not contain a valid faucet ID.
+    /// - [`Self::from_id_and_value`] fails.
+    pub fn from_id_and_value_words(id: Word, value: Word) -> Result<Self, AssetError> {
+        let asset_id = AssetId::try_from(id)?;
+        Self::from_id_and_value(asset_id, value)
     }
 
     /// Returns true if this asset is the same as the specified asset.
     ///
-    /// Two assets are defined to be the same if their vault keys match.
+    /// Two assets are defined to be the same if their asset IDs match.
     pub fn is_same(&self, other: &Self) -> bool {
-        self.vault_key() == other.vault_key()
+        self.id() == other.id()
     }
 
     /// Returns true if this asset is a fungible asset.
@@ -172,17 +156,17 @@ impl Asset {
         }
     }
 
-    /// Returns the key which is used to store this asset in the account vault.
-    pub fn vault_key(&self) -> AssetVaultKey {
+    /// Returns the [`AssetId`] which uniquely identifies this asset in the account vault.
+    pub fn id(&self) -> AssetId {
         match self {
-            Self::Fungible(asset) => asset.vault_key(),
-            Self::NonFungible(asset) => asset.vault_key(),
+            Self::Fungible(asset) => asset.id(),
+            Self::NonFungible(asset) => asset.id(),
         }
     }
 
-    /// Returns the asset's key encoded to a [`Word`].
-    pub fn to_key_word(&self) -> Word {
-        self.vault_key().to_word()
+    /// Returns the asset's [`AssetId`] encoded to a [`Word`].
+    pub fn to_id_word(&self) -> Word {
+        self.id().to_word()
     }
 
     /// Returns the asset's value encoded to a [`Word`].
@@ -195,11 +179,11 @@ impl Asset {
 
     /// Returns the asset encoded as elements.
     ///
-    /// The first four elements contain the asset key and the last four elements contain the asset
+    /// The first four elements contain the asset ID and the last four elements contain the asset
     /// value.
     pub fn as_elements(&self) -> [Felt; 8] {
         let mut elements = [Felt::ZERO; 8];
-        elements[0..4].copy_from_slice(self.to_key_word().as_elements());
+        elements[0..4].copy_from_slice(self.to_id_word().as_elements());
         elements[4..8].copy_from_slice(self.to_value_word().as_elements());
         elements
     }
@@ -276,7 +260,7 @@ mod tests {
     use super::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::Felt;
     use crate::account::AccountId;
-    use crate::asset::{AssetCallbackFlag, AssetComposition, AssetId, AssetVaultKey};
+    use crate::asset::{AssetClass, AssetComposition, AssetId};
     use crate::errors::AssetError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -289,18 +273,19 @@ mod tests {
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
     };
 
-    /// Returns the metadata byte encoded in a vault-key word.
-    pub(super) fn asset_metadata(key: AssetVaultKey) -> u8 {
-        (key.to_word()[2].as_canonical_u64() & AssetVaultKey::METADATA_BYTE_MASK as u64) as u8
+    /// Returns the metadata byte encoded in an asset ID word.
+    pub(super) fn asset_metadata(id: AssetId) -> u8 {
+        (id.to_word()[2].as_canonical_u64() & AssetId::METADATA_BYTE_MASK as u64) as u8
     }
 
-    /// Overwrites the metadata byte of the third element of a key word.
-    pub(super) fn set_asset_metadata(key: AssetVaultKey, byte: u8) -> Word {
-        let mut key = key.to_word();
-        let raw = key[2].as_canonical_u64();
-        let new_raw = (raw & !(AssetVaultKey::METADATA_BYTE_MASK as u64)) | byte as u64;
-        key[2] = Felt::try_from(new_raw).expect("clearing lower bits should produce a valid felt");
-        key
+    /// Overwrites the metadata byte of the third element of an asset ID word.
+    pub(super) fn set_asset_metadata(id: AssetId, byte: u8) -> Word {
+        let mut id_word = id.to_word();
+        let raw = id_word[2].as_canonical_u64();
+        let new_raw = (raw & !(AssetId::METADATA_BYTE_MASK as u64)) | byte as u64;
+        id_word[2] =
+            Felt::try_from(new_raw).expect("clearing lower bits should produce a valid felt");
+        id_word
     }
 
     /// Tests the serialization roundtrip for assets for assets <-> bytes and assets <-> words.
@@ -318,8 +303,8 @@ mod tests {
             assert_eq!(fungible_asset, Asset::read_from_bytes(&fungible_asset.to_bytes()).unwrap());
             assert_eq!(
                 fungible_asset,
-                Asset::from_key_value_words(
-                    fungible_asset.to_key_word(),
+                Asset::from_id_and_value_words(
+                    fungible_asset.to_id_word(),
                     fungible_asset.to_value_word()
                 )?,
             );
@@ -339,8 +324,8 @@ mod tests {
             );
             assert_eq!(
                 non_fungible_asset,
-                Asset::from_key_value_words(
-                    non_fungible_asset.to_key_word(),
+                Asset::from_id_and_value_words(
+                    non_fungible_asset.to_id_word(),
                     non_fungible_asset.to_value_word()
                 )?
             );
@@ -360,15 +345,14 @@ mod tests {
         assert_eq!(non_fungible_bytes[0], AssetComposition::None.as_u8());
     }
 
-    /// `Asset::from_key_value` must reject a [`AssetComposition::Custom`] key with
+    /// `Asset::from_id_and_value` must reject a [`AssetComposition::Custom`] asset ID with
     /// `UnsupportedAssetComposition`.
     #[test]
-    fn test_from_key_value_rejects_custom_composition() -> anyhow::Result<()> {
-        let err = AssetVaultKey::new(
-            AssetId::default(),
+    fn test_from_id_and_value_rejects_custom_composition() -> anyhow::Result<()> {
+        let err = AssetId::new(
+            AssetClass::default(),
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
             AssetComposition::Custom,
-            AssetCallbackFlag::Disabled,
         )
         .unwrap_err();
 

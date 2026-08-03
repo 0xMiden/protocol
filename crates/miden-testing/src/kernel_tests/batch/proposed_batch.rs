@@ -1,5 +1,4 @@
 use alloc::sync::Arc;
-use core::slice;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
@@ -29,14 +28,15 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     RawOutputNote,
+    TransactionScript,
 };
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::LocalTransactionProver;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::proven_tx_builder::MockProvenTxBuilder;
 use crate::utils::create_p2any_note;
@@ -55,20 +55,20 @@ pub fn mock_output_note(num: u8) -> OutputNote {
     RawOutputNote::Full(mock_note(num)).into_output_note().unwrap()
 }
 
-struct TestSetup {
-    chain: MockChain,
-    account1: Account,
-    account2: Account,
-    note1: Note,
+pub struct TestSetup {
+    pub chain: MockChain,
+    pub account1: Account,
+    pub account2: Account,
+    pub note1: Note,
 }
 
-fn setup_chain() -> TestSetup {
+pub fn setup_chain() -> TestSetup {
     let mut builder = MockChain::builder();
     let account1 = generate_account(&mut builder);
     let account2 = generate_account(&mut builder);
     let note1 = builder
-        .add_p2id_note(account1.id(), account2.id(), &[], NoteType::Public)
-        .expect("adding p2id note1 should work");
+        .add_p2any_note(account1.id(), NoteType::Public, [])
+        .expect("adding p2any note1 should work");
     let mut chain = builder.build().expect("genesis should be valid");
     chain.prove_next_block().expect("valid setup");
 
@@ -106,14 +106,17 @@ pub async fn setup_circular_note_dependency_test()
     assert_eq!(note_x.metadata().sender(), note_y.metadata().sender());
     assert_ne!(note_x.id(), note_y.id());
 
-    let tx_script_y = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_y.clone())], None)?;
+    let tx_script_y = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_y.clone())],
+    )?);
     // TX 1: consume note_x -> create note_y.
     // The tx script creates note_y with the asset out of thin air.
     let executed_tx1 = chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note_x.clone())
         .tx_script(tx_script_y)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_y.clone())])
+        .expected_output_note(RawOutputNote::Full(note_y.clone()))
         .build()?
         .execute()
         .await?;
@@ -121,15 +124,18 @@ pub async fn setup_circular_note_dependency_test()
 
     // Apply the account delta from TX1 to obtain the updated account state for TX2.
     let mut updated_account = account.clone();
-    updated_account.apply_delta(executed_tx1.account_delta())?;
+    updated_account.apply_patch(executed_tx1.account_patch())?;
 
-    let tx_script_x = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+    let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_x.clone())],
+    )?);
     // TX 2: consume note_y -> create note_x (output via tx script).
     let executed_tx2 = chain
-        .build_tx_context(updated_account, &[], slice::from_ref(&note_y))?
+        .build_transaction(updated_account)
+        .unauthenticated_input_note(note_y)
         .tx_script(tx_script_x)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;
@@ -145,9 +151,13 @@ fn empty_transaction_batch() -> anyhow::Result<()> {
     let TestSetup { chain, .. } = setup_chain();
     let block1 = chain.block_header(1);
 
-    let error =
-        ProposedBatch::new(vec![], block1, chain.latest_partial_blockchain(), BTreeMap::default())
-            .unwrap_err();
+    let error = ProposedBatch::new_unverified(
+        vec![],
+        block1,
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )
+    .unwrap_err();
 
     assert_matches!(error, ProposedBatchError::EmptyTransactionBatch);
 
@@ -175,7 +185,7 @@ fn incorrectly_ordered_txs_rejected() -> anyhow::Result<()> {
             .build()?;
 
     // Provide the transactions in the wrong order, should be tx1, tx2.
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx2.clone(), tx1.clone()].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -212,7 +222,7 @@ fn note_created_and_consumed_in_same_batch() -> anyhow::Result<()> {
             .unauthenticated_notes(vec![note.clone()])
             .build()?;
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1, tx2].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -262,7 +272,7 @@ fn same_details_different_metadata_not_erased_from_batch() -> anyhow::Result<()>
             .unauthenticated_notes(vec![input_note.clone()])
             .build()?;
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1, tx2].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -314,7 +324,7 @@ fn two_p2id_inputs_same_details_different_metadata_in_same_batch() -> anyhow::Re
             .authenticated_notes(vec![note_300.clone(), note_301.clone()])
             .build()?;
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         vec![Arc::new(tx)],
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -345,7 +355,7 @@ fn duplicate_unauthenticated_input_notes() -> anyhow::Result<()> {
             .unauthenticated_notes(vec![note.clone()])
             .build()?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone(), tx2.clone()].into_iter().map(Arc::new).collect(),
         block1,
         chain.latest_partial_blockchain(),
@@ -384,7 +394,7 @@ fn duplicate_authenticated_input_notes() -> anyhow::Result<()> {
             .authenticated_notes(vec![note1.clone()])
             .build()?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone(), tx2.clone()].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -423,7 +433,7 @@ fn duplicate_mixed_input_notes() -> anyhow::Result<()> {
             .authenticated_notes(vec![note1.clone()])
             .build()?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone(), tx2.clone()].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -462,7 +472,7 @@ fn duplicate_output_notes() -> anyhow::Result<()> {
             .output_notes(vec![note0.clone()])
             .build()?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone(), tx2.clone()].into_iter().map(Arc::new).collect(),
         block1,
         chain.latest_partial_blockchain(),
@@ -493,8 +503,9 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
     let mut chain = builder.build()?;
 
     let tx = chain
-        .build_tx_context(account1.clone(), &[spawn_note.id()], &[])?
-        .extend_expected_output_notes(vec![
+        .build_transaction(account1.clone())
+        .authenticated_input_note(spawn_note.id())
+        .expected_output_notes(vec![
             RawOutputNote::Full(note1.clone()),
             RawOutputNote::Full(note2.clone()),
         ])
@@ -542,7 +553,7 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
     // Case 1: Error: A wrong proof is passed.
     // --------------------------------------------------------------------------------------------
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone()].into_iter().map(Arc::new).collect(),
         block3.header().clone(),
         partial_blockchain.clone(),
@@ -571,7 +582,7 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
         .filter(|header| header.block_num() != block1.header().block_num())
         .cloned();
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone()].into_iter().map(Arc::new).collect(),
         block3.header().clone(),
         PartialBlockchain::new(mmr, blocks)
@@ -594,7 +605,7 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
     // Case 3: Success: The correct proof is passed.
     // --------------------------------------------------------------------------------------------
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1].into_iter().map(Arc::new).collect(),
         block3.header().clone(),
         partial_blockchain,
@@ -643,7 +654,7 @@ fn authenticated_note_created_in_same_batch() -> anyhow::Result<()> {
             .authenticated_notes(vec![note1.clone()])
             .build()?;
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1, tx2].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -686,7 +697,7 @@ fn multiple_transactions_against_same_account() -> anyhow::Result<()> {
     .build()?;
 
     // Success: Transactions are correctly ordered.
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1.clone(), tx2.clone()].into_iter().map(Arc::new).collect(),
         block1.clone(),
         chain.latest_partial_blockchain(),
@@ -706,7 +717,7 @@ fn multiple_transactions_against_same_account() -> anyhow::Result<()> {
     );
 
     // Error: Transactions are incorrectly ordered.
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx2.clone(), tx1.clone()].into_iter().map(Arc::new).collect(),
         block1,
         chain.latest_partial_blockchain(),
@@ -764,7 +775,7 @@ fn input_and_output_notes_commitment() -> anyhow::Result<()> {
             .output_notes(vec![note2.clone(), note3.clone()])
             .build()?;
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1.clone(), tx2.clone()].into_iter().map(Arc::new).collect(),
         block1,
         chain.latest_partial_blockchain(),
@@ -813,7 +824,7 @@ fn batch_expiration() -> anyhow::Result<()> {
             .expiration_block_num(block1.block_num() + 1)
             .build()?;
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1, tx2].into_iter().map(Arc::new).collect(),
         block1.clone(),
         chain.latest_partial_blockchain(),
@@ -837,7 +848,7 @@ fn duplicate_transaction() -> anyhow::Result<()> {
             .expiration_block_num(BlockNumber::from(35))
             .build()?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone(), tx1.clone()].into_iter().map(Arc::new).collect(),
         block1,
         chain.latest_partial_blockchain(),
@@ -862,7 +873,7 @@ fn duplicate_transaction() -> anyhow::Result<()> {
 async fn cross_tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     let (chain, proven_tx1, proven_tx2) = setup_circular_note_dependency_test().await?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [proven_tx1, proven_tx2].into_iter().map(Arc::new).collect(),
         chain.latest_block_header(),
         chain.latest_partial_blockchain(),
@@ -896,7 +907,8 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
 
     // TX 1: consume note_x to move the asset to the vault.
     let executed_tx1 = chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note_x.clone())
         .build()?
         .execute()
         .await?;
@@ -904,17 +916,19 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
 
     // Apply the account delta from TX1 to obtain the updated account state for TX2.
     let mut updated_account = account.clone();
-    updated_account.apply_delta(executed_tx1.account_delta())?;
+    updated_account.apply_patch(executed_tx1.account_patch())?;
 
-    assert_eq!(updated_account.vault().get(asset.vault_key()).unwrap(), asset);
+    assert_eq!(updated_account.vault().get(asset.id()).unwrap(), asset);
 
-    let tx_script_x = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+    let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_x.clone())],
+    )?);
     // TX 2: create note_x with the asset from the account vault.
     let executed_tx2 = chain
-        .build_tx_context(updated_account, &[], &[])?
+        .build_transaction(updated_account)
         .tx_script(tx_script_x)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;
@@ -925,7 +939,7 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
     );
     let proven_tx2 = LocalTransactionProver::default().prove_dummy(executed_tx2)?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [proven_tx1, proven_tx2].into_iter().map(Arc::new).collect(),
         chain.latest_block_header(),
         chain.latest_partial_blockchain(),
@@ -958,7 +972,7 @@ fn expired_transaction() -> anyhow::Result<()> {
             .expiration_block_num(block1.block_num() + 3)
             .build()?;
 
-    let error = ProposedBatch::new(
+    let error = ProposedBatch::new_unverified(
         [tx1.clone(), tx2].into_iter().map(Arc::new).collect(),
         block1.clone(),
         chain.latest_partial_blockchain(),
@@ -1017,7 +1031,7 @@ fn noop_tx_before_state_updating_tx_against_same_account() -> anyhow::Result<()>
     .unauthenticated_notes(vec![note.clone()])
     .build()?;
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [noop_tx1, tx2].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),
@@ -1086,7 +1100,7 @@ fn mismatched_ref_block_commitment_rejected() -> anyhow::Result<()> {
     // chain_b's partial blockchain contains block 1, but with chain_b's commitment - not chain_a's.
     // ProposedBatch::new should reject this transaction because its ref_block_commitment doesn't
     // match the commitment of block 1 in the partial blockchain.
-    let result = ProposedBatch::new(
+    let result = ProposedBatch::new_unverified(
         vec![Arc::new(tx.clone())],
         chain_b_block2.header().clone(),
         chain_b.latest_partial_blockchain(),
@@ -1118,7 +1132,7 @@ fn mismatched_ref_block_commitment_rejected() -> anyhow::Result<()> {
         "tx and batch ref block num should match"
     );
 
-    let result = ProposedBatch::new(
+    let result = ProposedBatch::new_unverified(
         vec![Arc::new(tx.clone())],
         ref_block.clone(),
         partial_blockchain,
@@ -1179,7 +1193,7 @@ fn noop_tx_after_state_updating_tx_against_same_account() -> anyhow::Result<()> 
         noop_tx2.account_update().final_state_commitment()
     );
 
-    let batch = ProposedBatch::new(
+    let batch = ProposedBatch::new_unverified(
         [tx1, noop_tx2].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         chain.latest_partial_blockchain(),

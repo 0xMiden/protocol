@@ -1,6 +1,7 @@
-use miden_processor::{ExecutionError, Felt, ProcessorState};
+use miden_processor::{ContextId, ExecutionError, Felt, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
     ACCOUNT_STACK_TOP_PTR,
@@ -12,8 +13,11 @@ use miden_protocol::transaction::memory::{
     ACCT_STORAGE_SLOT_TYPE_OFFSET,
     ACCT_STORAGE_SLOT_VALUE_OFFSET,
     ACTIVE_INPUT_NOTE_PTR,
+    BLOCK_METADATA_PTR,
+    BLOCK_NUMBER_IDX,
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
+    TX_EXPIRATION_BLOCK_NUM_PTR,
 };
 
 use crate::errors::TransactionKernelError;
@@ -36,6 +40,10 @@ pub(super) trait TransactionKernelProcess {
 
     /// Returns the current number of output notes.
     fn get_num_output_notes(&self) -> u64;
+
+    /// Returns the transaction's expiration block delta from the kernel memory, or 0 if the
+    /// expiration has not been set.
+    fn get_expiration_block_delta(&self) -> Result<u16, TransactionKernelError>;
 
     fn get_vault_root(&self, vault_root_ptr: Felt) -> Result<Word, TransactionKernelError>;
 
@@ -145,6 +153,40 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
         self.get_mem_value(self.ctx(), NUM_OUTPUT_NOTES_PTR)
             .map(|num_output_notes| num_output_notes.as_canonical_u64())
             .unwrap_or(0)
+    }
+
+    fn get_expiration_block_delta(&self) -> Result<u16, TransactionKernelError> {
+        // The expiration block number and the block metadata live in the kernel context, while
+        // the events reading them may be emitted from an account context, so read from the root
+        // context explicitly.
+        let expiration_block_num = self
+            .get_mem_value(ContextId::root(), TX_EXPIRATION_BLOCK_NUM_PTR)
+            .ok_or_else(|| {
+                TransactionKernelError::other(
+                    "transaction expiration block number should be initialized",
+                )
+            })?
+            .as_canonical_u64();
+
+        // The kernel stores the expiration as an absolute block number defaulting to
+        // `BlockNumber::MAX`, which denotes an unset expiration (delta 0).
+        if expiration_block_num == BlockNumber::MAX.as_u64() {
+            return Ok(0);
+        }
+
+        let block_num = self
+            .get_mem_value(ContextId::root(), BLOCK_METADATA_PTR + BLOCK_NUMBER_IDX as u32)
+            .ok_or_else(|| {
+                TransactionKernelError::other("reference block number should be initialized")
+            })?
+            .as_canonical_u64();
+
+        expiration_block_num
+            .checked_sub(block_num)
+            .and_then(|delta| u16::try_from(delta).ok())
+            .ok_or_else(|| {
+                TransactionKernelError::other("expiration block delta should fit into a u16")
+            })
     }
 
     /// Returns the ID of the active note, or None if the note execution hasn't started yet or has

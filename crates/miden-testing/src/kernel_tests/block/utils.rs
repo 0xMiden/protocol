@@ -8,7 +8,7 @@ use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, Transa
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::LocalTransactionProver;
 
-use crate::{MockChain, TxContextInput};
+use crate::{MockChain, MockTransactionInput};
 
 // MOCK CHAIN BUILDER EXTENSION
 // ================================================================================================
@@ -17,13 +17,13 @@ use crate::{MockChain, TxContextInput};
 pub trait MockChainBlockExt {
     async fn create_authenticated_notes_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ExecutedTransaction>;
 
     async fn create_authenticated_notes_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ProvenTransaction>;
 
@@ -35,7 +35,7 @@ pub trait MockChainBlockExt {
 
     async fn create_expiring_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         expiration_block: BlockNumber,
     ) -> anyhow::Result<ProvenTransaction>;
 
@@ -45,17 +45,16 @@ pub trait MockChainBlockExt {
 impl MockChainBlockExt for MockChain {
     async fn create_authenticated_notes_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ExecutedTransaction> {
-        let notes = notes.into_iter().collect::<Vec<_>>();
-        let tx_context = self.build_tx_context(input, &notes, &[])?.build()?;
-        tx_context.execute().await.map_err(From::from)
+        let mock_tx = self.build_transaction(input).authenticated_input_notes(notes).build()?;
+        mock_tx.execute().await.map_err(From::from)
     }
 
     async fn create_authenticated_notes_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         notes: impl IntoIterator<Item = NoteId> + Send,
     ) -> anyhow::Result<ProvenTransaction> {
         let executed_tx = self.create_authenticated_notes_tx(input, notes).await?;
@@ -67,25 +66,28 @@ impl MockChainBlockExt for MockChain {
         account_id: AccountId,
         notes: &[Note],
     ) -> anyhow::Result<ProvenTransaction> {
-        let tx_context = self.build_tx_context(account_id, &[], notes)?.build()?;
-        let executed_tx = tx_context.execute().await?;
+        let mock_tx = self
+            .build_transaction(account_id)
+            .unauthenticated_input_notes(notes.iter().cloned())
+            .build()?;
+        let executed_tx = mock_tx.execute().await?;
         LocalTransactionProver::default().prove_dummy(executed_tx).map_err(From::from)
     }
 
     async fn create_expiring_proven_tx(
         &self,
-        input: impl Into<TxContextInput> + Send,
+        input: impl Into<MockTransactionInput> + Send,
         expiration_block: BlockNumber,
     ) -> anyhow::Result<ProvenTransaction> {
         let expiration_delta = expiration_block
             .checked_sub(self.latest_block_header().block_num().as_u32())
             .unwrap();
 
-        let tx_context = self
-            .build_tx_context(input, &[], &[])?
+        let mock_tx = self
+            .build_transaction(input)
             .tx_script(update_expiration_tx_script(expiration_delta.as_u32() as u16))
             .build()?;
-        let executed_tx = tx_context.execute().await?;
+        let executed_tx = mock_tx.execute().await?;
         LocalTransactionProver::default().prove_dummy(executed_tx).map_err(From::from)
     }
 
@@ -103,7 +105,8 @@ fn update_expiration_tx_script(expiration_delta: u16) -> TransactionScript {
         "
         use miden::protocol::tx
 
-        begin
+        @transaction_script
+        pub proc main
             push.{expiration_delta}
             exec.tx::update_expiration_block_delta
         end

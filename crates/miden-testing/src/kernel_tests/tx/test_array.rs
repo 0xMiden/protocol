@@ -11,10 +11,8 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_standards::code_builder::CodeBuilder;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
-use crate::{Auth, TransactionContextBuilder};
+use crate::{Auth, TestTransactionBuilder};
 
 /// The slot name used for testing the array component.
 const TEST_ARRAY_SLOT: &str = "test::array::data";
@@ -39,6 +37,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for array::get that uses exec internally.
         #! Inputs:  [index, pad(15)]
         #! Outputs: [VALUE, pad(12)]
+        @account_procedure
         pub proc test_get
             push.ARRAY_SLOT_NAME[0..2]
             exec.array::get
@@ -49,6 +48,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for array::set that uses exec internally.
         #! Inputs:  [index, VALUE, pad(11)]
         #! Outputs: [OLD_VALUE, pad(12)]
+        @account_procedure
         pub proc test_set
             push.ARRAY_SLOT_NAME[0..2]
             exec.array::set
@@ -57,14 +57,14 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         "#,
     );
 
-    // Build the wrapper component by linking against the array library
-    let wrapper_library = CodeBuilder::default()
+    // Build the wrapper component by linking against the array package
+    let wrapper_package = CodeBuilder::default()
         .compile_component_code("wrapper::component", wrapper_component_code)?;
 
     // Create the wrapper account component with a storage map to hold the array data
     let initial_value = Word::from([42u32, 42, 42, 42]);
     let wrapper_component = AccountComponent::new(
-        wrapper_library.clone(),
+        wrapper_package.clone(),
         vec![StorageSlot::with_map(
             slot_name.clone(),
             StorageMap::with_entries([(StorageMapKey::empty(), initial_value)])?,
@@ -73,8 +73,8 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     )?;
 
     // Build an account with the wrapper component that uses the array utility
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
 
@@ -89,9 +89,10 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     // 2. Sets index 0 to [43, 43, 43, 43]
     // 3. Gets the updated value at index 0 (should be [43, 43, 43, 43])
     let tx_script_code = r#"
-        use wrapper::component->wrapper
+        use wrapper::component as wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index 0 (should return [42, 42, 42, 42])
             push.0
             # => [index, pad(16)]
@@ -124,15 +125,15 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         end
         "#;
 
-    // Compile the transaction script with the wrapper library linked
+    // Compile the transaction script with the wrapper package linked
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&wrapper_library)?
+        .with_dynamically_linked_package(&wrapper_package)?
         .compile_tx_script(tx_script_code)?;
 
-    // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
+    // Create mock transaction and execute
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -154,6 +155,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for double_word_array::get that uses exec internally.
         #! Inputs:  [index, pad(15)]
         #! Outputs: [VALUE_0, VALUE_1, pad(8)]
+        @account_procedure
         pub proc test_get
             push.ARRAY_SLOT_NAME[0..2]
             exec.double_word_array::get
@@ -165,6 +167,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         #! Wrapper for double_word_array::set that uses exec internally.
         #! Inputs:  [index, VALUE_0, VALUE_1, pad(7)]
         #! Outputs: [OLD_VALUE_0, OLD_VALUE_1, pad(8)]
+        @account_procedure
         pub proc test_set
             push.ARRAY_SLOT_NAME[0..2]
             exec.double_word_array::set
@@ -173,13 +176,13 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         "#,
     );
 
-    let wrapper_library = CodeBuilder::default()
+    let wrapper_package = CodeBuilder::default()
         .compile_component_code("wrapper::component", wrapper_component_code)?;
 
     let initial_value_0 = Word::from([1u32, 2, 3, 4]);
     let initial_value_1 = Word::from([5u32, 6, 7, 8]);
     let wrapper_component = AccountComponent::new(
-        wrapper_library.clone(),
+        wrapper_package.clone(),
         vec![StorageSlot::with_map(
             slot_name.clone(),
             StorageMap::with_entries([
@@ -190,8 +193,8 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("wrapper::component"),
     )?;
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(wrapper_component)
         .build_existing()?;
 
@@ -204,9 +207,10 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     let updated_value_1 = Word::from([10u32, 10, 10, 10]);
     let tx_script_code = format!(
         r#"
-        use wrapper::component->wrapper
+        use wrapper::component as wrapper
 
-        begin
+        @transaction_script
+        pub proc main
             # Step 1: Get value at index {index} (should return the initial double-word)
             push.{index}
             call.wrapper::test_get
@@ -243,12 +247,12 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&wrapper_library)?
+        .with_dynamically_linked_package(&wrapper_package)?
         .compile_tx_script(tx_script_code)?;
 
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }

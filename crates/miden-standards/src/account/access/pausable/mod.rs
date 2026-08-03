@@ -22,7 +22,7 @@ pub use manager::PausableManager;
 // IS_PAUSED STORAGE
 // ================================================================================================
 
-account_component_code!(PAUSABLE_CODE, "access/pausable/mod.masl");
+account_component_code!(PAUSABLE_CODE, "miden-standards-access-pausable.masp");
 
 static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::pausable::is_paused")
@@ -122,7 +122,7 @@ impl Pausable {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::pausable";
 
-    pub const IS_PAUSED_PROC_NAME: &'static str = "is_paused";
+    const IS_PAUSED_PROC_NAME: &'static str = "is_paused";
 
     /// Creates a [`Pausable`] component with the given pause state.
     pub const fn new(state: bool) -> Self {

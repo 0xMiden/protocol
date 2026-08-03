@@ -1,14 +1,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::Path;
-use std::sync::Arc;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
-use miden_assembly::{Assembler, DefaultSourceManager, KernelLibrary, Library};
-use miden_core::events::EventId;
+use miden_assembly::{Path as MasmPath, ProjectTargetSelector};
+use miden_core_lib::CoreLibrary;
+use miden_mast_package::{Package, PackageExport};
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_protocol_build_utils::{
+    ErrorModule,
+    NamedError,
+    PROJECT_MANIFEST,
+    assemble_project,
+    extract_all_masm_errors,
+    extract_all_masm_events,
+    generate_error_file,
+    generate_event_file,
+};
 use regex::Regex;
-use walkdir::WalkDir;
 
 // CONSTANTS
 // ================================================================================================
@@ -17,13 +27,18 @@ const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_PROTOCOL_DIR: &str = "protocol";
 
-const SHARED_UTILS_DIR: &str = "shared_utils";
-const SHARED_MODULES_DIR: &str = "shared_modules";
+const ASM_PROTOCOL_UTILS_DIR: &str = "protocol_utils";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
+const ASM_TX_KERNEL_CORE_DIR: &str = "kernels/transaction-core";
+const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 
-const PROTOCOL_LIB_NAMESPACE: &str = "miden::protocol";
+// Executable target names, as declared in the respective `miden-project.toml` files.
+const TX_KERNEL_MAIN_TARGET: &str = "main";
+const TX_SCRIPT_MAIN_TARGET: &str = "tx-script-main";
+const BATCH_KERNEL_TARGET: &str = "miden-batch-kernel";
 
 const KERNEL_PROCEDURES_RS_FILE: &str = "procedures.rs";
+const TX_EVENTS_RS_FILE: &str = "transaction_events.rs";
 const TX_KERNEL_ERRORS_RS_FILE: &str = "tx_kernel_errors.rs";
 const PROTOCOL_LIB_ERRORS_RS_FILE: &str = "protocol_errors.rs";
 
@@ -51,43 +66,46 @@ const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/protocol directory into a Protocol library file (.masl) under
-///   miden::protocol namespace.
-/// - Compiles the contents of asm/kernels into the transaction kernel library.
+///
+/// Assembles the Miden projects defined by the `miden-project.toml` files in the `asm` directory
+/// into MAST packages (.masp files): the transaction kernel library and executables, the batch
+/// kernel executable, and the user-facing protocol library.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
 
-    // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
-    let src = Path::new(&crate_dir).join(ASM_DIR);
-    let dst = Path::new(&build_dir).to_path_buf();
-    shared::copy_directory(src, &dst, ASM_DIR)?;
-
-    // set source directory to {OUT_DIR}/asm
-    let source_dir = dst.join(ASM_DIR);
-
-    // copy the shared modules to the kernel and protocol library folders
-    copy_shared_modules(&source_dir)?;
+    let source_dir = Path::new(&crate_dir).join(ASM_DIR);
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
+    // The miden-core library is provided through an in-memory registry
+    let mut store = InMemoryPackageRegistry::default();
+    store.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
+
     // compile transaction kernel
-    let mut assembler = compile_tx_kernel(
-        &source_dir.join(ASM_TX_KERNEL_DIR),
-        &target_dir.join("kernels"),
-        &build_dir,
-    )?;
+    compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
 
     // compile protocol library
-    let protocol_lib = compile_protocol_lib(&source_dir, &target_dir, assembler.clone())?;
-    assembler.link_dynamic_library(protocol_lib)?;
+    let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
+    assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
+
+    // compile batch kernel
+    let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);
+    assemble_project(
+        manifest_path,
+        ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET),
+        &mut store,
+        &target_dir.join("kernels"),
+    )?;
 
     generate_error_constants(&source_dir, &build_dir)?;
 
-    generate_event_constants(&source_dir, &target_dir)?;
+    // extract the event definitions from the MASM sources and generate their constants
+    let events = extract_all_masm_events(&source_dir)?;
+    generate_event_file(target_dir.join(TX_EVENTS_RS_FILE), &events)?;
 
     Ok(())
 }
@@ -95,125 +113,125 @@ fn main() -> Result<()> {
 // COMPILE TRANSACTION KERNEL
 // ================================================================================================
 
-/// Reads the transaction kernel MASM source from the `source_dir`, compiles it, saves the results
-/// to the `target_dir`, and returns an [Assembler] instantiated with the compiled kernel.
+/// Assembles the transaction kernel project in `{source_dir}/kernels/transaction` and saves the
+/// resulting packages to the `target_dir`.
 ///
-/// Additionally it compiles the transaction script executor program, see the
-/// [compile_tx_script_main] procedure for details.
+/// The project is expected to have the following structure:
 ///
-/// `source_dir` is expected to have the following structure:
+/// - {project_dir}/lib/api.masm           -> defines exported procedures from the transaction
+///   kernel.
+/// - {project_dir}/bin/main.masm          -> defines the executable program of the transaction
+///   kernel.
+/// - {project_dir}/bin/tx_script_main.masm -> defines the executable program of the arbitrary
+///   transaction script.
 ///
-/// - {source_dir}/api.masm       -> defines exported procedures from the transaction kernel.
-/// - {source_dir}/main.masm      -> defines the executable program of the transaction kernel.
-/// - {source_dir}/tx_script_main -> defines the executable program of the arbitrary transaction
-///   script.
-/// - {source_dir}/lib            -> contains common modules used by both api.masm and main.masm.
+/// The following are written to the `target_dir`:
 ///
-/// The compiled files are written as follows:
+/// - the kernel library package, compiled from lib/api.masm.
+/// - the kernel executable package, compiled from bin/main.masm.
+/// - the transaction script executor package, compiled from bin/tx_script_main.masm.
 ///
-/// - {target_dir}/tx_kernel.masl             -> contains kernel library compiled from api.masm.
-/// - {target_dir}/tx_kernel.masb             -> contains the executable compiled from main.masm.
-/// - {target_dir}/tx_script_main.masb        -> contains the executable compiled from
-///   tx_script_main.masm.
-/// - src/transaction/procedures/kernel_v0.rs -> contains the kernel procedures table.
-fn compile_tx_kernel(source_dir: &Path, target_dir: &Path, build_dir: &str) -> Result<Assembler> {
-    let shared_utils_path = std::path::Path::new(ASM_DIR).join(SHARED_UTILS_DIR);
-    let kernel_path = miden_assembly::Path::kernel_path();
-
-    let mut assembler = build_assembler(None)?;
-    // add the shared util modules to the kernel lib under the ::$kernel::util namespace
-    assembler.compile_and_statically_link_from_dir(&shared_utils_path, kernel_path)?;
-
-    // assemble the kernel library and write it to the "tx_kernel.masl" file
-    let kernel_lib = assembler
-        .assemble_kernel_from_dir(source_dir.join("api.masm"), Some(source_dir.join("lib")))?;
-
-    // generate kernel `procedures.rs` file
-    generate_kernel_proc_hash_file(kernel_lib.clone(), build_dir)?;
-
-    let output_file = target_dir.join("tx_kernel").with_extension(Library::LIBRARY_EXTENSION);
-    kernel_lib.write_to_file(output_file).into_diagnostic()?;
-
-    let assembler = build_assembler(Some(kernel_lib))?;
-
-    // assemble the kernel program and write it to the "tx_kernel.masb" file
-    let mut main_assembler = assembler.clone();
-    // add the shared util modules to the kernel lib under the ::$kernel::util namespace
-    main_assembler.compile_and_statically_link_from_dir(&shared_utils_path, kernel_path)?;
-    main_assembler.compile_and_statically_link_from_dir(source_dir.join("lib"), kernel_path)?;
-
-    let main_file_path = source_dir.join("main.masm");
-    let kernel_main = main_assembler.clone().assemble_program(main_file_path)?;
-
-    let masb_file_path = target_dir.join("tx_kernel.masb");
-    kernel_main.write_to_file(masb_file_path).into_diagnostic()?;
-
-    // compile the transaction script main program
-    compile_tx_script_main(source_dir, target_dir, main_assembler)?;
-
-    #[cfg(any(feature = "testing", test))]
-    {
-        let mut kernel_lib_assembler = assembler.clone();
-        // Build kernel as a library and save it to file.
-        // This is needed in test assemblers to access individual procedures which would otherwise
-        // be hidden when using KernelLibrary (api.masm)
-
-        // add the shared util modules to the kernel lib under the ::$kernel::util namespace
-        kernel_lib_assembler
-            .compile_and_statically_link_from_dir(&shared_utils_path, kernel_path)?;
-
-        let test_lib = kernel_lib_assembler
-            .assemble_library_from_dir(source_dir.join("lib"), kernel_path)
-            .unwrap();
-
-        let masb_file_path =
-            target_dir.join("kernel_library").with_extension(Library::LIBRARY_EXTENSION);
-        (*test_lib).write_to_file(masb_file_path).into_diagnostic()?;
-    }
-
-    Ok(assembler)
-}
-
-/// Reads the transaction script executor MASM source from the `source_dir/tx_script_main.masm`,
-/// compiles it and saves the results to the `target_dir` as a `tx_script_main.masb` binary file.
-fn compile_tx_script_main(
+/// The kernel procedures table is written to `{build_dir}/procedures.rs`.
+fn compile_tx_kernel(
     source_dir: &Path,
     target_dir: &Path,
-    main_assembler: Assembler,
+    build_dir: &str,
+    store: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
-    // assemble the transaction script executor program and write it to the "tx_script_main.masb"
-    // file.
-    let tx_script_main_file_path = source_dir.join("tx_script_main.masm");
-    let tx_script_main = main_assembler.assemble_program(tx_script_main_file_path)?;
+    let manifest_path = source_dir.join(ASM_TX_KERNEL_DIR).join(PROJECT_MANIFEST);
 
-    let masb_file_path = target_dir.join("tx_script_main.masb");
-    tx_script_main.write_to_file(masb_file_path).into_diagnostic()
+    // assemble the kernel library and write its package to the `target_dir`
+    let kernel_package =
+        assemble_project(&manifest_path, ProjectTargetSelector::Library, store, target_dir)?;
+
+    // generate kernel `procedures.rs` file
+    generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
+
+    // Assemble the executable targets and write their packages to the `target_dir`.
+    //
+    // The kernel internals live in the `miden-tx-kernel-core` library, which both programs
+    // depend on and which is resolved as a project dependency during assembly.
+    for target_name in [TX_KERNEL_MAIN_TARGET, TX_SCRIPT_MAIN_TARGET] {
+        assemble_project(
+            &manifest_path,
+            ProjectTargetSelector::Executable(target_name),
+            store,
+            target_dir,
+        )?;
+    }
+
+    // Assemble the kernel internals as a plain library and write its package to the `target_dir`.
+    // This is needed in test assemblers to access individual internal procedures which are not
+    // part of the kernel's public syscall API (api.masm).
+    #[cfg(any(feature = "testing", test))]
+    {
+        let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
+        assemble_project(core_manifest, ProjectTargetSelector::Library, store, target_dir)?;
+    }
+
+    Ok(())
 }
 
 /// Generates kernel `procedures.rs` file based on the kernel library.
 ///
 /// The file is written to `{build_dir}/procedures.rs` and included via `include!` in the source.
-fn generate_kernel_proc_hash_file(kernel: KernelLibrary, build_dir: &str) -> Result<()> {
-    let (_, module_info, _) = kernel.into_parts();
-
+fn generate_kernel_proc_hash_file(kernel: &Package, build_dir: &str) -> Result<()> {
     let to_exclude = BTreeSet::from_iter(["exec_kernel_proc"]);
-    let offsets_filename =
-        Path::new(ASM_DIR).join(ASM_PROTOCOL_DIR).join("kernel_proc_offsets.masm");
+    let offsets_filename = Path::new(ASM_DIR)
+        .join(ASM_PROTOCOL_DIR)
+        .join("src")
+        .join("kernel_proc_offsets.masm");
     let offsets = parse_proc_offsets(&offsets_filename)?;
 
-    let generated_procs: BTreeMap<usize, String> = module_info
-        .procedures()
-        .filter(|(_, proc_info)| !to_exclude.contains::<str>(proc_info.name.as_ref()))
-        .map(|(_, proc_info)| {
-            let name = proc_info.name.to_string();
-
-            let Some(&offset) = offsets.get(&name) else {
-                panic!("Offset constant for function `{name}` not found in `{offsets_filename:?}`");
-            };
-
-            (offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest))
+    // Only direct `$kernel::<proc>` exports are dynamic kernel API procedures. Public support
+    // modules also appear in package exports as `$kernel::<module>::<proc>`, but those are not
+    // invoked through `exec_kernel_proc` and therefore do not belong in `KERNEL_PROCEDURES`.
+    let kernel_api_exports: Vec<_> = kernel
+        .manifest
+        .exports()
+        .filter_map(|export| match export {
+            PackageExport::Procedure(proc_info) => Some(proc_info),
+            _ => None,
         })
+        .filter(|proc_info| is_dynamic_kernel_api_export(&proc_info.path))
         .collect();
+
+    for proc_info in kernel_api_exports.iter() {
+        let name = proc_info.path.last().unwrap();
+        if to_exclude.contains::<str>(name) {
+            continue;
+        }
+
+        if !offsets.contains_key(name) {
+            return Err(miette::miette!(
+                "Offset constant for kernel procedure `{}` not found in `{offsets_filename:?}`",
+                proc_info.path,
+            ));
+        }
+    }
+
+    let generated_procs: BTreeMap<usize, String> = offsets
+        .iter()
+        .map(|(name, &offset)| {
+            let mut matching_exports =
+                kernel_api_exports.iter().filter(|proc_info| proc_info.path.last().unwrap() == name);
+            let proc_info = matching_exports.next().ok_or_else(|| {
+                miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` does not match any exported procedure"
+                )
+            })?;
+
+            if let Some(other_proc_info) = matching_exports.next() {
+                return Err(miette::miette!(
+                    "Kernel procedure offset `{name}` in `{offsets_filename:?}` matches multiple exported procedures: `{}` and `{}`",
+                    proc_info.path,
+                    other_proc_info.path,
+                ));
+            }
+
+            Ok((offset, format!("    // {name}\n    word!(\"{}\"),", proc_info.digest)))
+        })
+        .collect::<Result<_>>()?;
 
     let proc_count = generated_procs.len();
     let generated_procs: String = generated_procs.into_iter().enumerate().map(|(index, (offset, txt))| {
@@ -261,67 +279,11 @@ fn parse_proc_offsets(filename: impl AsRef<Path>) -> Result<BTreeMap<String, usi
     Ok(result)
 }
 
-// COMPILE PROTOCOL LIB
-// ================================================================================================
-
-/// Reads the MASM files from "{source_dir}/protocol" directory, compiles them into a Miden assembly
-/// library, saves the library into "{target_dir}/protocol.masl", and returns the compiled library.
-fn compile_protocol_lib(
-    source_dir: &Path,
-    target_dir: &Path,
-    mut assembler: Assembler,
-) -> Result<Library> {
-    let source_dir = source_dir.join(ASM_PROTOCOL_DIR);
-    let shared_path = Path::new(ASM_DIR).join(SHARED_UTILS_DIR);
-
-    // add the shared modules to the protocol lib under the miden::protocol::util namespace
-    // note that this module is not publicly exported, it is only available for linking the library
-    // itself
-    assembler.compile_and_statically_link_from_dir(&shared_path, PROTOCOL_LIB_NAMESPACE)?;
-
-    let protocol_lib = assembler.assemble_library_from_dir(source_dir, PROTOCOL_LIB_NAMESPACE)?;
-
-    let output_file = target_dir.join("protocol").with_extension(Library::LIBRARY_EXTENSION);
-    protocol_lib.write_to_file(output_file).into_diagnostic()?;
-
-    Ok(Arc::unwrap_or_clone(protocol_lib))
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns a new [Assembler] loaded with miden-core-lib and the specified kernel, if provided.
-fn build_assembler(kernel: Option<KernelLibrary>) -> Result<Assembler> {
-    kernel
-        .map(|kernel| Assembler::with_kernel(Arc::new(DefaultSourceManager::default()), kernel))
-        .unwrap_or_default()
-        .with_warnings_as_errors(true)
-        .with_dynamic_library(miden_core_lib::CoreLibrary::default())
-}
-
-/// Copies the content of the build `shared_modules` folder to the `lib` and `protocol` build
-/// folders. This is required to include the shared modules as APIs of the `kernel` and `protocol`
-/// libraries.
-///
-/// This is done to make it possible to import the modules in the `shared_modules` folder directly,
-/// i.e. "use $kernel::account_id".
-fn copy_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
-    // source is expected to be an `OUT_DIR/asm` folder
-    let shared_modules_dir = source_dir.as_ref().join(SHARED_MODULES_DIR);
-
-    for module_path in shared::get_masm_files(shared_modules_dir).unwrap() {
-        let module_name = module_path.file_name().unwrap();
-
-        // copy to kernel lib
-        let kernel_lib_folder = source_dir.as_ref().join(ASM_TX_KERNEL_DIR).join("lib");
-        fs::copy(&module_path, kernel_lib_folder.join(module_name)).into_diagnostic()?;
-
-        // copy to protocol lib
-        let protocol_lib_folder = source_dir.as_ref().join(ASM_PROTOCOL_DIR);
-        fs::copy(&module_path, protocol_lib_folder.join(module_name)).into_diagnostic()?;
-    }
-
-    Ok(())
+fn is_dynamic_kernel_api_export(path: &MasmPath) -> bool {
+    path.parent().is_some_and(|parent| parent.to_relative().as_str() == "$kernel")
 }
 
 // ERROR CONSTANTS FILE GENERATION
@@ -356,21 +318,26 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // For now these are duplicated in the tx kernel and protocol error module.
     // ------------------------------------------
 
-    let shared_utils_dir = asm_source_dir.join(SHARED_UTILS_DIR);
-    let shared_utils_errors = shared::extract_all_masm_errors(&shared_utils_dir)
-        .context("failed to extract all masm errors")?;
+    let shared_utils_dir = asm_source_dir.join(ASM_PROTOCOL_UTILS_DIR);
+    let shared_utils_errors =
+        extract_all_masm_errors(&shared_utils_dir).context("failed to extract all masm errors")?;
 
     // Transaction kernel errors
     // ------------------------------------------
 
     let tx_kernel_dir = asm_source_dir.join(ASM_TX_KERNEL_DIR);
-    let mut errors = shared::extract_all_masm_errors(&tx_kernel_dir)
-        .context("failed to extract all masm errors")?;
+    let mut errors =
+        extract_all_masm_errors(&tx_kernel_dir).context("failed to extract all masm errors")?;
+    // Most kernel error constants live in the tx kernel core library, which is a separate project.
+    let kernel_core_dir = asm_source_dir.join(ASM_TX_KERNEL_CORE_DIR);
+    errors.extend(
+        extract_all_masm_errors(&kernel_core_dir).context("failed to extract all masm errors")?,
+    );
     errors.extend_from_slice(&shared_utils_errors);
     validate_tx_kernel_category(&errors)?;
 
-    shared::generate_error_file(
-        shared::ErrorModule {
+    generate_error_file(
+        ErrorModule {
             file_path: Path::new(build_dir).join(TX_KERNEL_ERRORS_RS_FILE),
             array_name: TX_KERNEL_ERRORS_ARRAY_NAME,
             is_crate_local: true,
@@ -382,12 +349,12 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // ------------------------------------------
 
     let protocol_dir = asm_source_dir.join(ASM_PROTOCOL_DIR);
-    let mut errors = shared::extract_all_masm_errors(&protocol_dir)
-        .context("failed to extract all masm errors")?;
+    let mut errors =
+        extract_all_masm_errors(&protocol_dir).context("failed to extract all masm errors")?;
     errors.extend(shared_utils_errors);
 
-    shared::generate_error_file(
-        shared::ErrorModule {
+    generate_error_file(
+        ErrorModule {
             file_path: Path::new(build_dir).join(PROTOCOL_LIB_ERRORS_RS_FILE),
             array_name: PROTOCOL_LIB_ERRORS_ARRAY_NAME,
             is_crate_local: true,
@@ -400,7 +367,7 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
 
 /// Validates that all error names in the provided slice start with a known tx kernel error
 /// category.
-fn validate_tx_kernel_category(errors: &[shared::NamedError]) -> Result<()> {
+fn validate_tx_kernel_category(errors: &[NamedError]) -> Result<()> {
     for error in errors {
         if !TX_KERNEL_ERROR_CATEGORIES
             .iter()
@@ -414,377 +381,4 @@ fn validate_tx_kernel_category(errors: &[shared::NamedError]) -> Result<()> {
     }
 
     Ok(())
-}
-
-// EVENT CONSTANTS FILE GENERATION
-// ================================================================================================
-
-/// Reads all MASM files from the `asm_source_dir` and extracts event definitions,
-/// then generates the transaction_events.rs file with constants.
-fn generate_event_constants(asm_source_dir: &Path, target_dir: &Path) -> Result<()> {
-    // Extract all event definitions from MASM files
-    let events = extract_all_event_definitions(asm_source_dir)?;
-
-    // Generate the events file in OUT_DIR
-    let event_file_content = generate_event_file_content(&events).into_diagnostic()?;
-    let event_file_path = target_dir.join("transaction_events.rs");
-    fs::write(event_file_path, event_file_content).into_diagnostic()?;
-
-    Ok(())
-}
-
-/// Extract all `const X=event("x")` definitions from all MASM files
-fn extract_all_event_definitions(asm_source_dir: &Path) -> Result<BTreeMap<String, String>> {
-    // collect mappings event path to const variable name, we want a unique mapping
-    // which we use to generate the constants and enum variant names
-    let mut events = BTreeMap::new();
-
-    // Walk all MASM files
-    for entry in WalkDir::new(asm_source_dir) {
-        let entry = entry.into_diagnostic()?;
-        if !shared::is_masm_file(entry.path()).into_diagnostic()? {
-            continue;
-        }
-        let file_contents = fs::read_to_string(entry.path()).into_diagnostic()?;
-        extract_event_definitions_from_file(&mut events, &file_contents, entry.path())?;
-    }
-
-    Ok(events)
-}
-
-/// Extract event definitions from a single MASM file in form of `const ${X} = event("${x::path}")`.
-fn extract_event_definitions_from_file(
-    events: &mut BTreeMap<String, String>,
-    file_contents: &str,
-    file_path: &Path,
-) -> Result<()> {
-    let regex = Regex::new(r#"const\s*(\w+)\s*=\s*event\("([^"]+)"\)"#).unwrap();
-
-    for capture in regex.captures_iter(file_contents) {
-        let const_name = capture.get(1).expect("const name should be captured");
-        let event_path = capture.get(2).expect("event path should be captured");
-
-        let event_path = event_path.as_str();
-        let const_name = const_name.as_str();
-
-        let const_name_wo_suffix =
-            if let Some((const_name_wo_suffix, _)) = const_name.rsplit_once("_EVENT") {
-                const_name_wo_suffix.to_string()
-            } else {
-                const_name.to_owned()
-            };
-
-        if !event_path.starts_with("miden::") {
-            return Err(miette::miette!("unhandled `event_path={event_path}`"));
-        }
-
-        // Check for duplicates with different definitions
-        if let Some(existing_const_name) = events.get(event_path) {
-            if existing_const_name != &const_name_wo_suffix {
-                println!(
-                    "cargo:warning=Duplicate event definition found {event_path} with different definitions names:
-                    '{existing_const_name}' vs '{const_name}' in {}",
-                    file_path.display()
-                );
-            }
-        } else {
-            events.insert(event_path.to_owned(), const_name_wo_suffix.to_owned());
-        }
-    }
-
-    Ok(())
-}
-
-/// Generate the content of the transaction_events.rs file
-fn generate_event_file_content(
-    events: &BTreeMap<String, String>,
-) -> std::result::Result<String, std::fmt::Error> {
-    use std::fmt::Write;
-
-    let mut output = String::new();
-
-    writeln!(&mut output, "// This file is generated by build.rs, do not modify")?;
-    writeln!(&mut output)?;
-
-    // Generate constants
-    //
-    // Note: If we ever encounter two constants `const X`, that are both named `X` we will error
-    // when attempting to generate the rust code. Currently this is a side-effect, but we
-    // want to error out as early as possible:
-    // TODO: make the error out at build-time to be able to present better error hints
-    for (event_path, event_name) in events {
-        let value = EventId::from_name(event_path).as_felt().as_canonical_u64();
-        debug_assert!(!event_name.is_empty());
-        writeln!(&mut output, "const {event_name}_ID: u64 = {value};")?;
-        writeln!(
-            &mut output,
-            "static {event_name}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{event_path}\");"
-        )?;
-        writeln!(&mut output)?;
-    }
-
-    Ok(output)
-}
-
-/// This module should be kept in sync with the copy in miden-standards' build.rs.
-mod shared {
-    use std::collections::BTreeMap;
-    use std::fmt::Write;
-    use std::io::{self};
-    use std::path::{Path, PathBuf};
-
-    use fs_err as fs;
-    use miden_assembly::Report;
-    use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-    use regex::Regex;
-    use walkdir::WalkDir;
-
-    /// Recursively copies `src` into `dst`.
-    ///
-    /// This function will overwrite the existing files if re-executed.
-    pub fn copy_directory<T: AsRef<Path>, R: AsRef<Path>>(
-        src: T,
-        dst: R,
-        asm_dir: &str,
-    ) -> Result<()> {
-        let mut prefix = src.as_ref().canonicalize().unwrap();
-        // keep all the files inside the `asm` folder
-        prefix.pop();
-
-        let target_dir = dst.as_ref().join(asm_dir);
-        if target_dir.exists() {
-            // Clear existing asm files that were copied earlier which may no longer exist.
-            fs::remove_dir_all(&target_dir)
-                .into_diagnostic()
-                .wrap_err("failed to remove ASM directory")?;
-        }
-
-        // Recreate the directory structure.
-        fs::create_dir_all(&target_dir)
-            .into_diagnostic()
-            .wrap_err("failed to create ASM directory")?;
-
-        let dst = dst.as_ref();
-        let mut todo = vec![src.as_ref().to_path_buf()];
-
-        while let Some(goal) = todo.pop() {
-            for entry in fs::read_dir(goal).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    let src_dir = path.canonicalize().unwrap();
-                    let dst_dir = dst.join(src_dir.strip_prefix(&prefix).unwrap());
-                    if !dst_dir.exists() {
-                        fs::create_dir_all(&dst_dir).unwrap();
-                    }
-                    todo.push(src_dir);
-                } else {
-                    let dst_file = dst.join(path.strip_prefix(&prefix).unwrap());
-                    fs::copy(&path, dst_file).unwrap();
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Returns a vector with paths to all MASM files in the specified directory and its
-    /// subdirectories.
-    ///
-    /// All non-MASM files are skipped.
-    pub fn get_masm_files<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        let path = dir_path.as_ref();
-        if path.is_dir() {
-            for entry in WalkDir::new(path) {
-                let entry = entry.into_diagnostic()?;
-                let file_path = entry.path().to_path_buf();
-                if is_masm_file(&file_path).into_diagnostic()? {
-                    files.push(file_path);
-                }
-            }
-        } else {
-            println!("cargo:warn=The specified path is not a directory.");
-        }
-
-        Ok(files)
-    }
-
-    /// Returns true if the provided path resolves to a file with `.masm` extension.
-    ///
-    /// # Errors
-    /// Returns an error if the path could not be converted to a UTF-8 string.
-    pub fn is_masm_file(path: &Path) -> io::Result<bool> {
-        if let Some(extension) = path.extension() {
-            let extension = extension
-                .to_str()
-                .ok_or_else(|| io::Error::other("invalid UTF-8 filename"))?
-                .to_lowercase();
-            Ok(extension == "masm")
-        } else {
-            Ok(false)
-        }
-    }
-
-    /// Extract all masm errors from the given path and returns a map by error category.
-    pub fn extract_all_masm_errors(asm_source_dir: &Path) -> Result<Vec<NamedError>> {
-        // We use a BTree here to order the errors by their categories which is the first part after
-        // the ERR_ prefix and to allow for the same error to be defined multiple times in
-        // different files (as long as the constant name and error messages match).
-        let mut errors = BTreeMap::new();
-
-        // Walk all files of the kernel source directory.
-        for entry in WalkDir::new(asm_source_dir) {
-            let entry = entry.into_diagnostic()?;
-            if !is_masm_file(entry.path()).into_diagnostic()? {
-                continue;
-            }
-            let file_contents = std::fs::read_to_string(entry.path()).into_diagnostic()?;
-            extract_masm_errors(&mut errors, &file_contents)?;
-        }
-
-        let errors = errors
-            .into_iter()
-            .map(|(error_name, error)| NamedError { name: error_name, message: error.message })
-            .collect();
-
-        Ok(errors)
-    }
-
-    /// Extracts the errors from a single masm file and inserts them into the provided map.
-    pub fn extract_masm_errors(
-        errors: &mut BTreeMap<ErrorName, ExtractedError>,
-        file_contents: &str,
-    ) -> Result<()> {
-        let regex = Regex::new(r#"const\s*ERR_(?<name>.*)\s*=\s*"(?<message>.*)""#).unwrap();
-
-        for capture in regex.captures_iter(file_contents) {
-            let error_name = capture
-                .name("name")
-                .expect("error name should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-            let error_message = capture
-                .name("message")
-                .expect("error code should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-
-            if let Some(ExtractedError { message: existing_error_message, .. }) =
-                errors.get(&error_name)
-                && existing_error_message != &error_message
-            {
-                return Err(Report::msg(format!(
-                    "Transaction kernel error constant ERR_{error_name} is already defined elsewhere but its error message is different"
-                )));
-            }
-
-            // Enforce the "no trailing punctuation" rule from the Rust error guidelines on MASM
-            // errors.
-            if error_message.ends_with(".") {
-                return Err(Report::msg(format!(
-                    "Error messages should not end with a period: `ERR_{error_name}: {error_message}`"
-                )));
-            }
-
-            errors.insert(error_name, ExtractedError { message: error_message });
-        }
-
-        Ok(())
-    }
-
-    pub fn is_new_error_category<'a>(
-        last_error: &mut Option<&'a str>,
-        current_error: &'a str,
-    ) -> bool {
-        let is_new = match last_error {
-            Some(last_err) => {
-                let last_category =
-                    last_err.split("_").next().expect("there should be at least one entry");
-                let new_category =
-                    current_error.split("_").next().expect("there should be at least one entry");
-                last_category != new_category
-            },
-            None => false,
-        };
-
-        last_error.replace(current_error);
-
-        is_new
-    }
-
-    /// Generates the content of an error file for the given category and the set of errors and
-    /// writes it to the file at the path specified in the module.
-    pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Result<()> {
-        let mut output = String::new();
-
-        if module.is_crate_local {
-            writeln!(output, "use crate::errors::MasmError;\n").unwrap();
-        } else {
-            writeln!(output, "use miden_protocol::errors::MasmError;\n").unwrap();
-        }
-
-        writeln!(
-            output,
-            "// This file is generated by build.rs, do not modify manually.
-// It is generated by extracting errors from the MASM files in the `./asm` directory.
-//
-// To add a new error, define a constant in MASM of the pattern `const ERR_<CATEGORY>_...`.
-// Try to fit the error into a pre-existing category if possible (e.g. Account, Note, ...).
-"
-        )
-        .unwrap();
-
-        writeln!(
-            output,
-            "// {}
-// ================================================================================================
-",
-            module.array_name.replace("_", " ")
-        )
-        .unwrap();
-
-        let mut last_error = None;
-        for named_error in errors.iter() {
-            let NamedError { name, message } = named_error;
-
-            // Group errors into blocks separate by newlines.
-            if is_new_error_category(&mut last_error, name) {
-                writeln!(output).into_diagnostic()?;
-            }
-
-            writeln!(output, "/// Error Message: \"{message}\"").into_diagnostic()?;
-            writeln!(
-                output,
-                r#"pub const ERR_{name}: MasmError = MasmError::from_static_str("{message}");"#
-            )
-            .into_diagnostic()?;
-        }
-
-        fs::write(module.file_path, output).into_diagnostic()?;
-
-        Ok(())
-    }
-
-    pub type ErrorName = String;
-
-    #[derive(Debug, Clone)]
-    pub struct ExtractedError {
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct NamedError {
-        pub name: ErrorName,
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ErrorModule {
-        pub file_path: PathBuf,
-        pub array_name: &'static str,
-        pub is_crate_local: bool,
-    }
 }

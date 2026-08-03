@@ -1,0 +1,13 @@
+[package]
+name              = "miden-protocol"
+version.workspace = true
+
+[lib]
+namespace = "miden::protocol"
+path      = "src/mod.masm"
+
+[dependencies]
+miden-core.workspace           = true
+miden-protocol-utils.workspace = true
+# Linked as a kernel automatically, as `miden-tx-kernel` defines a kernel target.
+miden-tx-kernel.workspace = true

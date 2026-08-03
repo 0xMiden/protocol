@@ -1,9 +1,8 @@
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
-    AssetCallbackFlag,
+    AssetClass,
     AssetComposition,
     AssetId,
-    AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
@@ -12,12 +11,12 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS;
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO,
-    ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE,
+    ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO,
+    ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
-    ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1,
-    ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0,
-    ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE,
+    ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1,
+    ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0,
+    ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE,
     ERR_VAULT_ASSET_METADATA_NOT_U32,
     ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION,
 };
@@ -31,27 +30,27 @@ use miden_protocol::{Felt, Word};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::{TransactionContextBuilder, assert_execution_error};
+use crate::{TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
 async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
-        TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
-            .build()?;
-    let expected_asset = FungibleAsset::new(tx_context.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
+    let mock_tx =
+        TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
+    let expected_asset = FungibleAsset::new(mock_tx.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
         "
-        use $kernel::prologue
-        use miden::protocol::faucet
+        use miden::tx_kernel_core::prologue
+        use miden::standards::assets::fungible_asset
 
         begin
             exec.prologue::prepare_transaction
 
-            # create fungible asset
+            # create fungible asset for the active faucet
             push.{FUNGIBLE_ASSET_AMOUNT}
-            exec.faucet::create_fungible_asset
-            # => [ASSET_KEY, ASSET_VALUE]
+            exec.::miden::protocol::active_account::get_id
+            exec.fungible_asset::create
+            # => [ASSET_ID, ASSET_VALUE]
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
@@ -59,9 +58,9 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
         "
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word(0), expected_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(0), expected_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), expected_asset.to_value_word());
 
     Ok(())
@@ -69,8 +68,8 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
-        TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
+    let mock_tx =
+        TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
 
     let non_fungible_asset_details = NonFungibleAssetDetails::new(
@@ -81,15 +80,16 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use $kernel::prologue
-        use miden::protocol::faucet
+        use miden::tx_kernel_core::prologue
+        use miden::standards::assets::non_fungible_asset
 
         begin
             exec.prologue::prepare_transaction
 
             # push non-fungible asset data hash onto the stack
             push.{NON_FUNGIBLE_ASSET_DATA_HASH}
-            exec.faucet::create_non_fungible_asset
+            exec.::miden::protocol::active_account::get_id
+            exec.non_fungible_asset::create
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
@@ -98,9 +98,9 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_DATA_HASH = non_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
 
     Ok(())
@@ -109,42 +109,49 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 const METADATA_BYTE_NONE: u64 = 0;
 const METADATA_BYTE_FUNGIBLE: u64 = AssetComposition::Fungible as u64;
 
-/// Returns the third element of a synthesised asset key, packing the faucet ID suffix with the
+/// Returns the third element of a synthesised asset ID, packing the faucet ID suffix with the
 /// given metadata byte (lower 8 bits).
 fn key_suffix_with_metadata(account_id: AccountId, metadata_byte: u64) -> Felt {
     Felt::try_from(account_id.suffix().as_canonical_u64() | metadata_byte)
         .expect("metadata byte only occupies the lower 8 bits")
 }
 
+/// The kernel and standards `validate` procedures reject the same malformed non-fungible assets.
+///
+/// Both are exercised via the `namespace` matrix. The two procedures deliberately share the same
+/// error wording, so a single expectation matches both. The kernel proc additionally validates
+/// the account ID structure (which the standards proc leaves to the kernel); that difference is
+/// not covered by these shared cases.
 #[rstest::rstest]
-#[case::account_is_not_non_fungible_faucet(
-    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
-    AssetId::default(),
+#[case::composition_is_not_non_fungible(
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
+    AssetClass::new(Felt::from(2u32), Felt::from(3u32)),
     METADATA_BYTE_FUNGIBLE,
-    ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE
+    ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE
 )]
-#[case::asset_id_suffix_mismatch(
+#[case::asset_class_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(0u32), Felt::from(3u32)),
+    AssetClass::new(Felt::from(0u32), Felt::from(3u32)),
     METADATA_BYTE_NONE,
-    ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
+    ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0
 )]
-#[case::asset_id_prefix_mismatch(
+#[case::asset_class_prefix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(2u32), Felt::from(0u32)),
+    AssetClass::new(Felt::from(2u32), Felt::from(0u32)),
     METADATA_BYTE_NONE,
-    ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
+    ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1
 )]
 #[tokio::test]
 async fn test_validate_non_fungible_asset(
     #[case] account_id: AccountId,
-    #[case] asset_id: AssetId,
+    #[case] asset_class: AssetClass,
     #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
+    #[values("miden::tx_kernel_core", "miden::standards::assets")] namespace: &str,
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use $kernel::non_fungible_asset
+        use {namespace}::non_fungible_asset
 
         begin
             # a random asset value
@@ -153,9 +160,9 @@ async fn test_validate_non_fungible_asset(
 
             push.{account_id_prefix}
             push.{account_id_suffix}
-            push.{asset_id_prefix}
-            push.{asset_id_suffix}
-            # => [ASSET_KEY, ASSET_VALUE]
+            push.{asset_class_prefix}
+            push.{asset_class_suffix}
+            # => [ASSET_ID, ASSET_VALUE]
 
             exec.non_fungible_asset::validate
 
@@ -163,8 +170,8 @@ async fn test_validate_non_fungible_asset(
             swapdw dropw dropw
         end
         ",
-        asset_id_suffix = asset_id.suffix(),
-        asset_id_prefix = asset_id.prefix(),
+        asset_class_suffix = asset_class.suffix(),
+        asset_class_prefix = asset_class.prefix(),
         account_id_suffix = key_suffix_with_metadata(account_id, metadata_byte),
         account_id_prefix = account_id.prefix().as_felt(),
     );
@@ -176,38 +183,75 @@ async fn test_validate_non_fungible_asset(
     Ok(())
 }
 
+/// A well-formed non-fungible asset passes the standards-side `validate` and leaves the asset ID
+/// and value on the stack unchanged.
+#[tokio::test]
+async fn test_validate_non_fungible_asset_standards_succeeds() -> anyhow::Result<()> {
+    let non_fungible_asset_details = NonFungibleAssetDetails::new(
+        NonFungibleAsset::mock_issuer(),
+        NON_FUNGIBLE_ASSET_DATA.to_vec(),
+    );
+    let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
+
+    let code = format!(
+        "
+        use miden::standards::assets::non_fungible_asset
+
+        begin
+            push.{ASSET_VALUE}
+            push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE]
+
+            exec.non_fungible_asset::validate
+
+            # truncate the stack
+            swapdw dropw dropw
+        end
+        ",
+        ASSET_VALUE = non_fungible_asset.to_value_word(),
+        ASSET_ID = non_fungible_asset.to_id_word(),
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_id_word());
+    assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
+
+    Ok(())
+}
+
 #[rstest::rstest]
 #[case::account_is_not_fungible_faucet(
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
-    AssetId::default(),
+    AssetClass::default(),
     Word::empty(),
     METADATA_BYTE_NONE,
-    ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE
+    ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE
 )]
-#[case::asset_id_suffix_is_non_zero(
+#[case::asset_class_suffix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(1u32), Felt::from(0u32)),
+    AssetClass::new(Felt::from(1u32), Felt::from(0u32)),
     Word::empty(),
     METADATA_BYTE_FUNGIBLE,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
+    ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
 )]
-#[case::asset_id_prefix_is_non_zero(
+#[case::asset_class_prefix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(0u32), Felt::from(1u32)),
+    AssetClass::new(Felt::from(0u32), Felt::from(1u32)),
     Word::empty(),
     METADATA_BYTE_FUNGIBLE,
-    ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
+    ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
 )]
 #[case::non_amount_value_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::default(),
+    AssetClass::default(),
     Word::from([0, 1, 0, 0u32]),
     METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
 )]
 #[case::amount_exceeds_max(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::default(),
+    AssetClass::default(),
     Word::try_from([FungibleAsset::MAX_AMOUNT.as_u64() + 1, 0, 0, 0])?,
     METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
@@ -215,22 +259,22 @@ async fn test_validate_non_fungible_asset(
 #[tokio::test]
 async fn test_validate_fungible_asset(
     #[case] account_id: AccountId,
-    #[case] asset_id: AssetId,
+    #[case] asset_class: AssetClass,
     #[case] asset_value: Word,
     #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use $kernel::fungible_asset
+        use miden::tx_kernel_core::fungible_asset
 
         begin
             push.{ASSET_VALUE}
             push.{account_id_prefix}
             push.{account_id_suffix}
-            push.{asset_id_prefix}
-            push.{asset_id_suffix}
-            # => [ASSET_KEY, ASSET_VALUE]
+            push.{asset_class_prefix}
+            push.{asset_class_suffix}
+            # => [ASSET_ID, ASSET_VALUE]
 
             exec.fungible_asset::validate
 
@@ -238,8 +282,8 @@ async fn test_validate_fungible_asset(
             swapdw dropw dropw
         end
         ",
-        asset_id_suffix = asset_id.suffix(),
-        asset_id_prefix = asset_id.prefix(),
+        asset_class_suffix = asset_class.suffix(),
+        asset_class_prefix = asset_class.prefix(),
         account_id_suffix = key_suffix_with_metadata(account_id, metadata_byte),
         account_id_prefix = account_id.prefix().as_felt(),
         ASSET_VALUE = asset_value,
@@ -257,14 +301,14 @@ async fn test_validate_fungible_asset(
 #[case::valid_none(0, None)]
 // Valid: composition=Fungible, callbacks=disabled.
 #[case::valid_fungible(METADATA_BYTE_FUNGIBLE, None)]
-// Valid: composition=Custom, callbacks=disabled.
+// Valid: composition=Custom.
 #[case::valid_custom(AssetComposition::Custom as u64, None)]
-// Valid: composition=None, callbacks=enabled (bit 2 set).
-#[case::valid_callbacks_enabled((AssetCallbackFlag::Enabled as u64) << 2, None)]
 // Metadata is not a valid u32 (does not fit in 32 bits).
 #[case::not_u32(u32::MAX as u64 + 1, Some(ERR_VAULT_ASSET_METADATA_NOT_U32))]
 // Metadata is not a valid byte.
 #[case::not_u8(u16::MAX as u64, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
+// Reserved bit 2 is set.
+#[case::reserved_bit_2_set(0b100, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
 // Reserved bit 3 is set.
 #[case::reserved_bits_set(0b1000, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
 // Composition value 3 is the unused bit pattern within the 2-bit field.
@@ -276,7 +320,7 @@ async fn test_validate_asset_metadata(
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use $kernel::asset
+        use miden::tx_kernel_core::asset
 
         begin
             push.{asset_metadata}
@@ -298,38 +342,35 @@ async fn test_validate_asset_metadata(
 }
 
 #[rstest::rstest]
-#[case::fungible_without_callbacks(AssetComposition::Fungible, AssetCallbackFlag::Disabled)]
-#[case::non_fungible_with_callbacks(AssetComposition::None, AssetCallbackFlag::Enabled)]
+#[case::fungible(AssetComposition::Fungible)]
+#[case::non_fungible(AssetComposition::None)]
 #[tokio::test]
-async fn test_key_to_asset_metadata(
+async fn test_id_to_callbacks_and_composition(
     #[case] composition: AssetComposition,
-    #[case] callbacks: AssetCallbackFlag,
 ) -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, composition, callbacks)?;
+    let asset_id = AssetId::new(AssetClass::default(), faucet_id, composition)?;
 
     let code = format!(
         "
-        use $kernel::asset
+        use miden::tx_kernel_core::asset
 
         begin
-            push.{ASSET_KEY}
-            exec.asset::key_to_callbacks_enabled
-            # => [callbacks_enabled, ASSET_KEY]
-
+            push.{ASSET_ID}
+            exec.asset::id_to_has_callbacks
+            # => [has_callbacks, ASSET_ID]
             movdn.4
-            exec.asset::key_to_composition
-            # => [asset_composition, ASSET_KEY, callbacks_enabled]
+            # => [ASSET_ID, has_callbacks]
 
-            movdn.4 dropw
-            # => [asset_composition, callbacks_enabled]
+            exec.asset::id_to_composition
+            # => [asset_composition, ASSET_ID, has_callbacks]
 
-            # truncate stack
-            swapw dropw
-            # => [asset_composition, callbacks_enabled]
+            # drop the ASSET_ID and one padding element to keep the stack within 16 elements
+            movdn.4 dropw swap drop swap drop
+            # => [asset_composition, has_callbacks]
         end
         ",
-        ASSET_KEY = vault_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
     );
 
     let exec_output = CodeExecutor::with_default_host().run(&code).await?;
@@ -337,12 +378,13 @@ async fn test_key_to_asset_metadata(
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
         composition.as_u8() as u64,
-        "MASM asset::key_to_composition returned wrong value for {composition:?}"
+        "MASM asset::id_to_composition returned wrong value for {composition:?}"
     );
     assert_eq!(
         exec_output.get_stack_element(1).as_canonical_u64(),
-        callbacks.as_u8() as u64,
-        "MASM asset::key_to_callbacks_enabled returned wrong value for {callbacks:?}"
+        asset_id.faucet_id().asset_callback_flag().as_u8() as u64,
+        "MASM asset::id_to_has_callbacks returned wrong value for {:?}",
+        asset_id.faucet_id().asset_callback_flag()
     );
 
     Ok(())

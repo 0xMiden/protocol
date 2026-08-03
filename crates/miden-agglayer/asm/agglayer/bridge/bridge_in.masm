@@ -1,17 +1,19 @@
 use agglayer::bridge::bridge_config
 use agglayer::bridge::bridge_in_output
 use agglayer::bridge::leaf_utils
-use agglayer::common::utils
-use agglayer::common::asset_conversion
-use agglayer::common::eth_address
+use miden::standards::utils
+use miden::standards::assets::asset_amount
+use miden::standards::interop::eth
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::types::DoubleWord
-use miden::protocol::types::MemoryAddress
+use miden::standards::access::pausable
+use {DoubleWord} from miden::protocol::types
+use {MemoryAddress} from miden::protocol::types
+use {ONE_WORD} from miden::standards::utils
 
 # ERRORS
 # =================================================================================================
@@ -31,7 +33,7 @@ const ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH = "claim leaf destination netw
 # =================================================================================================
 
 # Claim Nullifier Flag
-const IS_CLAIMED_FLAG = [1, 0, 0, 0]
+const IS_CLAIMED_FLAG = ONE_WORD
 
 # Storage slots
 # -------------------------------------------------------------------------------------------------
@@ -102,9 +104,6 @@ const ORIGIN_TOKEN_ADDRESS_4 = CLAIM_LEAF_DATA_START_PTR + 6
 const DESTINATION_NETWORK_ID_MEM_ADDR = CLAIM_LEAF_DATA_START_PTR + 7
 
 const DESTINATION_ADDRESS_0 = CLAIM_LEAF_DATA_START_PTR + 8
-const DESTINATION_ADDRESS_1 = CLAIM_LEAF_DATA_START_PTR + 9
-const DESTINATION_ADDRESS_2 = CLAIM_LEAF_DATA_START_PTR + 10
-const DESTINATION_ADDRESS_3 = CLAIM_LEAF_DATA_START_PTR + 11
 const DESTINATION_ADDRESS_4 = CLAIM_LEAF_DATA_START_PTR + 12
 
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = CLAIM_LEAF_DATA_START_PTR + 13
@@ -164,6 +163,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! }
 #!
 #! Panics if:
+#! - the bridge is paused.
 #! - the leaf type is not 0 (not an asset claim).
 #! - the leaf destination network does not match the bridge's configured network ID.
 #! - the Merkle proof validation fails.
@@ -171,7 +171,10 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!
 #! Invocation: call
 @locals(2) # 0: dest_prefix, 1: dest_suffix
+@account_procedure
 pub proc claim
+    exec.pausable::assert_not_paused
+
     # Write output note faucet amount to memory
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
@@ -185,7 +188,7 @@ pub proc claim
     # => [pad(16)]
 
     exec.load_destination_address
-    exec.eth_address::to_account_id
+    exec.eth::to_account_id
     loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL loc_store.CLAIM_DEST_ID_PREFIX_LOCAL
     # => [pad(16)]
 
@@ -209,6 +212,12 @@ pub proc claim
     # => [origin_token_addr(5), origin_network, pad(16)]
 
     exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    # Defense-in-depth: the token lookup only proves a token route exists, so re-check the faucet
+    # registry to guarantee a claim only ever mints through a currently-registered faucet. This keeps
+    # deregistration an unconditional revocation even if a token_registry entry ever outlived it.
+    dup.1 dup.1 exec.bridge_config::assert_faucet_registered
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     dup.1 dup.1
@@ -443,7 +452,7 @@ end
 #! This procedure:
 #! 1. Reads the scale factor from the bridge's faucet_metadata_map.
 #! 2. Loads the raw U256 amount from the leaf data in memory.
-#! 3. Calls `verify_u256_to_native_amount_conversion` to assert that
+#! 3. Calls `verify_u256_to_asset_amount_conversion` to assert that
 #!    `faucet_mint_amount == floor(raw_amount / 10^scale)`.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
@@ -470,7 +479,7 @@ proc verify_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
     # Step 4: Verify that y = floor(x / 10^scale)
-    exec.asset_conversion::verify_u256_to_native_amount_conversion
+    exec.asset_amount::verify_u256_to_asset_amount_conversion
     # => []
 end
 
@@ -744,10 +753,9 @@ end
 #! Invocation: exec
 proc load_destination_address
     mem_load.DESTINATION_ADDRESS_4
-    mem_load.DESTINATION_ADDRESS_3
-    mem_load.DESTINATION_ADDRESS_2
-    mem_load.DESTINATION_ADDRESS_1
-    mem_load.DESTINATION_ADDRESS_0
+    # => [address_4]
+
+    padw mem_loadw_le.DESTINATION_ADDRESS_0
     # => [address[5]]
 end
 

@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use super::{
@@ -11,6 +12,7 @@ use super::{
     Serializable,
     Word,
 };
+use crate::Felt;
 
 /// Value that describes under which condition a note can be consumed.
 ///
@@ -32,7 +34,7 @@ pub struct NoteRecipient {
 
 impl NoteRecipient {
     pub fn new(serial_num: Word, script: NoteScript, storage: NoteStorage) -> Self {
-        let digest = compute_recipient_digest(serial_num, &script, &storage);
+        let (_, _, digest) = compute_recipient_chain(serial_num, &script, &storage);
         Self { serial_num, script, storage, digest }
     }
 
@@ -61,11 +63,30 @@ impl NoteRecipient {
         self.digest
     }
 
+    /// Returns the advice map entries opening every link of the recipient's hash chain.
+    ///
+    /// They allow the VM to recover the note's script root and storage commitment from the
+    /// recipient alone, which is all a note is committed to on chain.
+    pub fn to_advice_map_entries(&self) -> [(Word, Vec<Felt>); 5] {
+        let (serial_commitment, serial_script_commitment, digest) =
+            compute_recipient_chain(self.serial_num, &self.script, &self.storage);
+        let script_root = Word::from(self.script.root());
+        let script_encoded = <Vec<Felt>>::from(&self.script);
+
+        [
+            (serial_commitment, concat_words(self.serial_num, Word::empty())),
+            (serial_script_commitment, concat_words(serial_commitment, script_root)),
+            (digest, concat_words(serial_script_commitment, self.storage.commitment())),
+            (self.storage().commitment(), self.storage().to_elements()),
+            (script_root, script_encoded),
+        ]
+    }
+
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Reduces the size of the note script by stripping all debug info from it.
-    pub fn minify_script(&mut self) {
+    /// Removes debug info associated with the script, if any.
+    pub fn clear_debug_info(&mut self) {
         self.script.clear_debug_info();
     }
 
@@ -75,10 +96,25 @@ impl NoteRecipient {
     }
 }
 
-fn compute_recipient_digest(serial_num: Word, script: &NoteScript, storage: &NoteStorage) -> Word {
-    let serial_num_hash = Hasher::merge(&[serial_num, Word::empty()]);
-    let merge_script = Hasher::merge(&[serial_num_hash, script.root().into()]);
-    Hasher::merge(&[merge_script, storage.commitment()])
+/// Returns the links of the recipient's hash chain: the serial commitment, the serial-script
+/// commitment and the recipient digest itself.
+fn compute_recipient_chain(
+    serial_num: Word,
+    script: &NoteScript,
+    storage: &NoteStorage,
+) -> (Word, Word, Word) {
+    let serial_commitment = Hasher::merge(&[serial_num, Word::empty()]);
+    let serial_script_commitment = Hasher::merge(&[serial_commitment, script.root().into()]);
+    let recipient_digest = Hasher::merge(&[serial_script_commitment, storage.commitment()]);
+
+    (serial_commitment, serial_script_commitment, recipient_digest)
+}
+
+fn concat_words(first: Word, second: Word) -> Vec<Felt> {
+    let mut elements = Vec::with_capacity(2 * Word::NUM_ELEMENTS);
+    elements.extend(first);
+    elements.extend(second);
+    elements
 }
 
 // SERIALIZATION

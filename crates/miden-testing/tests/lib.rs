@@ -3,12 +3,14 @@ extern crate alloc;
 mod agglayer;
 mod auth;
 mod scripts;
+mod standards;
 mod wallet;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::utils::Serializable;
+use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -18,15 +20,11 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction};
+use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
-use miden_tx::{
-    LocalTransactionProver,
-    ProvingOptions,
-    TransactionVerifier,
-    TransactionVerifierError,
-};
+use miden_testing::MockChain;
+use miden_tx::{LocalTransactionProver, ProvingOptions};
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -43,7 +41,7 @@ pub async fn prove_and_verify_transaction(
 
     let proof_options = ProvingOptions::default();
     let prover = LocalTransactionProver::new(proof_options);
-    let proven_transaction = prover.prove(executed_transaction).await.unwrap();
+    let proven_transaction = prover.prove(executed_transaction).unwrap();
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
@@ -74,4 +72,23 @@ pub fn get_note_with_fungible_asset_and_script(
     let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
     Note::new(vault, metadata, recipient)
+}
+
+/// Consumes a single authenticated input note against `account_id` in its own transaction and
+/// commits the resulting block, so the note's effects are visible to subsequent transactions.
+#[cfg(test)]
+pub async fn consume_note(
+    mock_chain: &mut MockChain,
+    account_id: AccountId,
+    note: &Note,
+) -> anyhow::Result<()> {
+    let executed = mock_chain
+        .build_transaction(account_id)
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+    Ok(())
 }

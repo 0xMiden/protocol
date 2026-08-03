@@ -1,5 +1,3 @@
-use alloc::string::String;
-
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::errors::{AccountError, TokenSymbolError};
 use thiserror::Error;
@@ -8,9 +6,24 @@ use crate::account::access::Ownable2StepError;
 use crate::utils::FixedWidthStringError;
 
 mod fungible;
+mod non_fungible;
 mod token_metadata;
 
-pub use fungible::{FungibleFaucet, FungibleFaucetBuilder, create_fungible_faucet};
+pub use fungible::{
+    FungibleFaucet,
+    FungibleFaucetBuilder,
+    create_guarded_user_fungible_faucet,
+    create_multisig_user_fungible_faucet,
+    create_network_fungible_faucet,
+    create_singlesig_user_fungible_faucet,
+};
+pub use non_fungible::{
+    AssetStatus,
+    NonFungibleFaucet,
+    NonFungibleFaucetBuilder,
+    create_network_non_fungible_faucet,
+    create_user_non_fungible_faucet,
+};
 pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 
 // TOKEN METADATA ERROR
@@ -57,18 +70,28 @@ pub enum FungibleFaucetError {
         "account interface does not have the procedures of the basic fungible faucet component"
     )]
     MissingFungibleFaucetInterface,
-    #[error("unsupported authentication method: {0}")]
-    UnsupportedAuthMethod(String),
-    #[error("AccessControl::AuthControlled is incompatible with the chosen auth method: {0}")]
-    IncompatibleAuthControlledAuth(String),
-    #[error("unsupported combination of AccessControl and AuthMethod: {0}")]
-    UnsupportedAccessControlAuthCombination(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
     OwnershipError(#[source] Ownable2StepError),
+    #[error(transparent)]
+    TokenMetadata(#[from] TokenMetadataError),
+}
+
+// NON-FUNGIBLE FAUCET ERROR
+// ================================================================================================
+
+/// Non-fungible (NFT) faucet related errors.
+#[derive(Debug, Error)]
+pub enum NonFungibleFaucetError {
+    #[error("account creation failed")]
+    AccountCreationFailed(#[source] AccountError),
+    #[error("account is not a non-fungible faucet account")]
+    NotANonFungibleFaucetAccount,
+    #[error("asset status registry holds invalid status code {status}: must be 0, 1 or 2")]
+    InvalidAssetStatus { status: u64 },
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
 }

@@ -1,7 +1,9 @@
-mod account_delta_tracker;
+mod account_update_tracker;
+use account_update_tracker::AccountUpdateTracker;
 
-use account_delta_tracker::AccountDeltaTracker;
-mod storage_delta_tracker;
+mod storage_patch_tracker;
+
+mod vault_update_tracker;
 
 mod link_map;
 pub use link_map::{LinkMap, MemoryViewer};
@@ -26,20 +28,19 @@ mod tx_progress;
 mod tx_event;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::{EventError, EventHandlerRegistry};
-use miden_processor::mast::MastForest;
 use miden_processor::trace::RowIndex;
-use miden_processor::{Felt, MastForestStore, ProcessorState};
+use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
     AccountDelta,
     AccountHeader,
     AccountId,
+    AccountPatch,
     AccountStorageHeader,
     PartialAccount,
     StorageMapKey,
@@ -56,11 +57,18 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
+    TransactionSummaryUserParams,
 };
-pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};
+pub(crate) use tx_event::{
+    RecipientData,
+    TransactionEvent,
+    TransactionProgressEvent,
+    TxSummaryOrSignature,
+};
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
+use crate::host::tx_event::{AssetDelta, AssetPatch};
 
 // TRANSACTION BASE HOST
 // ================================================================================================
@@ -83,8 +91,8 @@ pub struct TransactionBaseHost<'store, STORE> {
 
     /// Account state changes accumulated during transaction execution.
     ///
-    /// The delta is updated by event handlers.
-    account_delta: AccountDeltaTracker,
+    /// The tracker is updated by event handlers.
+    update_tracker: AccountUpdateTracker,
 
     /// A map of the procedure MAST roots to the corresponding procedure indices for all the
     /// account codes involved in the transaction (for native and foreign accounts alike).
@@ -92,6 +100,9 @@ pub struct TransactionBaseHost<'store, STORE> {
 
     /// Input notes consumed by the transaction.
     input_notes: InputNotes<InputNote>,
+
+    /// The commitment to the reference block of the transaction.
+    ref_block_commitment: Word,
 
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
@@ -109,6 +120,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
+        ref_block_commitment: Word,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -129,10 +141,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             scripts_mast_store,
             initial_account_header: account.into(),
             initial_account_storage_header: account.storage().header().clone(),
-            account_delta: AccountDeltaTracker::new(account),
+            update_tracker: AccountUpdateTracker::new(account),
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
+            ref_block_commitment,
             core_lib_handlers,
         }
     }
@@ -173,13 +186,13 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Returns a reference to the account delta tracker of this transaction host.
-    pub fn account_delta_tracker(&self) -> &AccountDeltaTracker {
-        &self.account_delta
+    pub fn account_update_tracker(&self) -> &AccountUpdateTracker {
+        &self.update_tracker
     }
 
-    /// Clones the inner [`AccountDeltaTracker`] and converts it into an [`AccountDelta`].
+    /// Clones the inner [`AccountUpdateTracker`] and converts it into an [`AccountDelta`].
     pub fn build_account_delta(&self) -> AccountDelta {
-        self.account_delta_tracker().clone().into_delta()
+        self.account_update_tracker().clone().into_delta()
     }
 
     /// Returns the input notes consumed in this transaction.
@@ -194,10 +207,10 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
-        (self.account_delta.into_delta(), self.input_notes, output_notes)
+        (self.update_tracker.into_patch(), self.input_notes, output_notes)
     }
 
     // MUTATORS
@@ -259,6 +272,24 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     // EVENT HANDLERS
     // --------------------------------------------------------------------------------------------
+
+    /// Pushes an input note's index and a presence flag onto the advice stack.
+    ///
+    /// When the note is absent, index zero is returned with a cleared presence flag. The index is
+    /// an unauthenticated hint and must be validated by the VM before it is used.
+    pub fn on_input_note_index_lookup(&self, note_id: NoteId) -> Vec<AdviceMutation> {
+        let note_idx =
+            self.input_notes.iter().position(|input_note| input_note.id() == note_id).map(
+                |note_idx| {
+                    u16::try_from(note_idx).expect("maximum number of input notes fits in u16")
+                },
+            );
+
+        let is_found = Felt::from(note_idx.is_some() as u8);
+        let note_idx = Felt::from(note_idx.unwrap_or(0));
+
+        vec![AdviceMutation::extend_stack([note_idx, is_found])]
+    }
 
     /// Handles the event if the core lib event handler registry contains a handler with the emitted
     /// event ID.
@@ -342,11 +373,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn on_account_after_increment_nonce(
         &mut self,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        if self.account_delta.was_nonce_incremented() {
+        if self.update_tracker.was_nonce_incremented() {
             return Err(TransactionKernelError::NonceCanOnlyIncrementOnce);
         }
 
-        self.account_delta.increment_nonce();
+        self.update_tracker.increment_nonce();
 
         Ok(Vec::new())
     }
@@ -360,7 +391,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         slot_name: StorageSlotName,
         new_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta.storage().set_item(slot_name, new_value);
+        self.update_tracker.storage().set_item(slot_name, new_value)?;
 
         Ok(Vec::new())
     }
@@ -373,9 +404,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         old_map_value: Word,
         new_map_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
+        self.update_tracker
             .storage()
-            .set_map_item(slot_name, key, old_map_value, new_map_value);
+            .set_map_item(slot_name, key, old_map_value, new_map_value)?;
 
         Ok(Vec::new())
     }
@@ -383,28 +414,31 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // ACCOUNT VAULT UPDATE HANDLERS
     // --------------------------------------------------------------------------------------------
 
-    /// Tracks the addition of an asset to the account vault in the account delta.
-    pub fn on_account_vault_after_add_asset(
+    /// Resets the accumulating vault delta before the kernel iterates the asset delta.
+    pub fn on_account_before_asset_delta_computation(
         &mut self,
-        asset: Asset,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
-            .vault_delta_mut()
-            .add_asset(asset)
-            .map_err(TransactionKernelError::AccountDeltaAddAssetFailed)?;
+        self.update_tracker.reset_vault_delta();
 
         Ok(Vec::new())
     }
 
-    /// Tracks the removal of an asset from the account vault in the account delta.
+    /// Tracks the computation of an asset delta for the account delta.
+    pub fn on_account_on_asset_delta_computation(
+        &mut self,
+        delta: AssetDelta,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        self.update_tracker.update_asset_delta(delta);
+
+        Ok(Vec::new())
+    }
+
+    /// Tracks the update of an asset from the account vault in the account patch.
     pub fn on_account_vault_after_remove_asset(
         &mut self,
-        asset: Asset,
+        patch: AssetPatch,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
-            .vault_delta_mut()
-            .remove_asset(asset)
-            .map_err(TransactionKernelError::AccountDeltaRemoveAssetFailed)?;
+        self.update_tracker.update_asset_patch(patch)?;
 
         Ok(Vec::new())
     }
@@ -419,7 +453,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        salt: Word,
+        block_commitment: Word,
+        expiration_delta: u16,
+        user_params: TransactionSummaryUserParams,
     ) -> Result<TransactionSummary, TransactionKernelError> {
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();
@@ -459,7 +495,24 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        Ok(TransactionSummary::new(account_delta, input_notes, output_notes, salt))
+        let expected_block_commitment = self.ref_block_commitment;
+        if expected_block_commitment != block_commitment {
+            return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
+                format!(
+                    "expected block commitment to be {expected_block_commitment} but was {block_commitment}"
+                )
+                .into(),
+            ));
+        }
+
+        Ok(TransactionSummary::new(
+            account_delta,
+            input_notes,
+            output_notes,
+            block_commitment,
+            expiration_delta,
+            user_params,
+        ))
     }
 
     /// Returns the underlying store of the base host.
@@ -473,7 +526,7 @@ where
     STORE: MastForestStore,
 {
     /// Returns the [`MastForest`] that contains the procedure with the given `procedure_root`.
-    pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
+    pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
         // Search in the note MAST forest store, otherwise fall back to the user-provided store
         match self.scripts_mast_store.get(procedure_root) {
             Some(forest) => Some(forest),

@@ -1,0 +1,72 @@
+# miden::standards::inspection::code_inspection
+#
+# Read-only introspection over the active account's own code. These procedures wrap the
+# corresponding account-related kernel procedures so that they can be exposed in an account's
+# public interface via the `CodeInspection` account component. External callers (note scripts,
+# transaction scripts, or foreign accounts via FPI) can then `call` into them to verify what the
+# account can do without being granted access to the account's storage or vault.
+
+use miden::protocol::active_account
+
+#! Returns the binary flag indicating whether the procedure with the provided root is available on
+#! the active account.
+#!
+#! Inputs:  [PROC_ROOT, pad(12)]
+#! Outputs: [is_procedure_available, pad(15)]
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure of interest.
+#! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is
+#!   available on the active account.
+#!
+#! Invocation: call
+@account_procedure
+pub proc has_procedure
+    exec.active_account::has_procedure
+end
+
+#! Returns the commitment to the code of the active account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [CODE_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - CODE_COMMITMENT is the commitment of the active account's code.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_code_commitment
+    exec.active_account::get_code_commitment
+end
+
+#! Returns the number of procedures in the active account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [num_procedures, pad(15)]
+#!
+#! Where:
+#! - num_procedures is the number of procedures in the active account.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_num_procedures
+    exec.active_account::get_num_procedures
+end
+
+#! Returns the procedure root for the procedure at the specified index in the active account.
+#!
+#! Inputs:  [index, pad(15)]
+#! Outputs: [PROC_ROOT, pad(12)]
+#!
+#! Where:
+#! - index is the index of the procedure.
+#! - PROC_ROOT is the hash of the procedure.
+#!
+#! Panics if:
+#! - the procedure index is out of bounds.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_procedure_root
+    exec.active_account::get_procedure_root
+end

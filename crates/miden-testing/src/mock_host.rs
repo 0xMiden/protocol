@@ -4,15 +4,14 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::mast::MastForest;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
+use miden_processor::{BaseHost, Felt, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::transaction::TransactionEventId;
 use miden_protocol::vm::{EventId, EventName};
 use miden_protocol::{CoreLibrary, Word};
 use miden_tx::TransactionExecutorHost;
 use miden_tx::auth::UnreachableAuth;
 
-use crate::TransactionContext;
+use crate::MockTransaction;
 
 // MOCK HOST
 // ================================================================================================
@@ -21,7 +20,7 @@ use crate::TransactionContext;
 /// with the difference that it only handles a subset of the events that the executor host handles.
 ///
 /// Why don't we always forward requests to the executor host? In some tests, when using
-/// [`TransactionContext::execute_code`], we want to test that the transaction kernel fails
+/// [`MockTransaction::execute_code`], we want to test that the transaction kernel fails
 /// with a certain error when given invalid inputs, but the event handler in the executor host would
 /// prematurely abort the transaction due to the invalid inputs. To avoid this situation, the event
 /// handler can be disabled and we can test that the transaction kernel has the expected behavior
@@ -31,19 +30,22 @@ use crate::TransactionContext;
 /// testing a procedure in isolation and these are also turned off in this host.
 pub(crate) struct MockHost<'store> {
     /// The underlying [`TransactionExecutorHost`] that the mock host will forward requests to.
-    exec_host: TransactionExecutorHost<'store, 'static, TransactionContext, UnreachableAuth>,
+    exec_host: TransactionExecutorHost<'store, 'static, MockTransaction, UnreachableAuth>,
 
     /// The set of event IDs that the mock host will forward to the [`TransactionExecutorHost`].
     ///
     /// Event IDs that are not in this set are not handled. This can be useful in certain test
     /// scenarios.
     handled_events: BTreeSet<EventId>,
+
+    /// Overrides the input-note index response for tests that exercise host-claim validation.
+    input_note_index_response: Option<[Felt; 2]>,
 }
 
 impl<'store> MockHost<'store> {
     /// Returns a new [`MockHost`] instance with the provided inputs.
     pub fn new(
-        exec_host: TransactionExecutorHost<'store, 'static, TransactionContext, UnreachableAuth>,
+        exec_host: TransactionExecutorHost<'store, 'static, MockTransaction, UnreachableAuth>,
     ) -> Self {
         // CoreLibrary events are always handled.
         let core_lib_handlers = CoreLibrary::default()
@@ -56,16 +58,23 @@ impl<'store> MockHost<'store> {
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
+                &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
-                // TODO: It should be possible to remove this after implementing
-                // https://github.com/0xMiden/protocol/issues/1852.
-                &TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount,
             ]
             .map(TransactionEventId::event_id),
         );
 
-        Self { exec_host, handled_events }
+        Self {
+            exec_host,
+            handled_events,
+            input_note_index_response: None,
+        }
+    }
+
+    /// Overrides the input-note index response with `[note_idx, is_found]`.
+    pub fn set_input_note_index_response(&mut self, response: [Felt; 2]) {
+        self.input_note_index_response = Some(response);
     }
 
     // Adds the transaction events needed for Lazy loading to the set of handled events.
@@ -76,6 +85,8 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::AccountVaultBeforeGetAsset,
                 &TransactionEventId::AccountVaultBeforeAddAsset,
                 &TransactionEventId::AccountVaultBeforeRemoveAsset,
+                &TransactionEventId::AccountVaultBeforeMintAsset,
+                &TransactionEventId::AccountVaultBeforeBurnAsset,
                 &TransactionEventId::AccountStorageBeforeSetMapItem,
                 &TransactionEventId::AccountStorageBeforeGetMapItem,
             ]
@@ -101,7 +112,10 @@ impl<'store> BaseHost for MockHost<'store> {
 }
 
 impl<'store> Host for MockHost<'store> {
-    fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
         self.exec_host.get_mast_forest(node_digest)
     }
 
@@ -112,6 +126,12 @@ impl<'store> Host for MockHost<'store> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
 
         async move {
+            if event_id == TransactionEventId::InputNoteIndexLookup.event_id()
+                && let Some(response) = self.input_note_index_response
+            {
+                return Ok(vec![AdviceMutation::extend_stack(response)]);
+            }
+
             // If the host should handle the event, delegate to the tx executor host.
             if self.handled_events.contains(&event_id) {
                 self.exec_host.on_event(process).await

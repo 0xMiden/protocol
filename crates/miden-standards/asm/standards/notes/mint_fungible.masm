@@ -1,0 +1,143 @@
+use miden::protocol::active_note
+use miden::protocol::note
+use miden::standards::faucets::fungible as fungible
+
+# CONSTANTS
+# =================================================================================================
+
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use {NOTE_TYPE_PRIVATE} from miden::protocol::note
+
+# Memory base at which the note storage is written by `active_note::get_storage`.
+const STORAGE_PTR = 0
+
+# Fungible MINT note storage item counts.
+const FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE = 13
+const FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC = 20
+
+# Memory addresses of the fungible MINT note storage (private mode, 13 items total).
+const FUNGIBLE_PRIVATE_RECIPIENT_PTR = STORAGE_PTR
+const FUNGIBLE_PRIVATE_ASSET_ID_PTR = STORAGE_PTR + 4
+const FUNGIBLE_PRIVATE_ASSET_VALUE_PTR = STORAGE_PTR + 8
+const FUNGIBLE_PRIVATE_TAG_PTR = STORAGE_PTR + 12
+
+# Memory addresses of the fungible MINT note storage (public mode, 20+ items total).
+const FUNGIBLE_PUBLIC_SCRIPT_ROOT_PTR = STORAGE_PTR
+const FUNGIBLE_PUBLIC_SERIAL_NUM_PTR = STORAGE_PTR + 4
+const FUNGIBLE_PUBLIC_ASSET_ID_PTR = STORAGE_PTR + 8
+const FUNGIBLE_PUBLIC_ASSET_VALUE_PTR = STORAGE_PTR + 12
+const FUNGIBLE_PUBLIC_TAG_PTR = STORAGE_PTR + 16
+const FUNGIBLE_PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 20
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "fungible MINT script expects exactly 13 storage items for private or 20+ storage items for public output notes"
+
+#! Builds the fungible mint arguments for a PUBLIC output note from the note storage.
+#!
+#! Inputs:  [num_storage_items, pad(16)]
+#! Outputs: [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+#!
+#! Invocation: exec
+proc mint_public
+    movdn.8
+    # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
+
+    mem_loadw_le.FUNGIBLE_PUBLIC_SCRIPT_ROOT_PTR
+    # => [SCRIPT_ROOT, EMPTY_WORD, num_storage_items, pad(8)]
+
+    swapw mem_loadw_le.FUNGIBLE_PUBLIC_SERIAL_NUM_PTR
+    # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(8)]
+
+    # compute variable length note storage for the output note
+    movup.8 sub.FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC
+    # => [num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
+
+    push.FUNGIBLE_PUBLIC_OUTPUT_NOTE_STORAGE_PTR
+    # => [storage_ptr, num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
+
+    exec.note::compute_and_store_recipient
+    # => [RECIPIENT, pad(12)]
+
+    # push note_type and tag, then ASSET_VALUE and ASSET_ID on top
+    push.NOTE_TYPE_PUBLIC
+    # => [note_type, RECIPIENT, pad(12)]
+
+    mem_load.FUNGIBLE_PUBLIC_TAG_PTR
+    # => [tag, note_type, RECIPIENT, pad(12)]
+
+    padw mem_loadw_le.FUNGIBLE_PUBLIC_ASSET_VALUE_PTR
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+
+    padw mem_loadw_le.FUNGIBLE_PUBLIC_ASSET_ID_PTR
+    # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+end
+
+#! Builds the fungible mint arguments for a PRIVATE output note from the note storage.
+#!
+#! Inputs:  [num_storage_items, pad(16)]
+#! Outputs: [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+#!
+#! Panics if:
+#! - the number of storage items is not exactly 13.
+#!
+#! Invocation: exec
+proc mint_private
+    eq.FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [pad(16)]
+
+    mem_loadw_le.FUNGIBLE_PRIVATE_RECIPIENT_PTR
+    # => [RECIPIENT, pad(12)]
+
+    # push note_type and tag, then ASSET_VALUE and ASSET_ID on top
+    push.NOTE_TYPE_PRIVATE
+    # => [note_type, RECIPIENT, pad(12)]
+
+    mem_load.FUNGIBLE_PRIVATE_TAG_PTR
+    # => [tag, note_type, RECIPIENT, pad(12)]
+
+    padw mem_loadw_le.FUNGIBLE_PRIVATE_ASSET_VALUE_PTR
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+
+    padw mem_loadw_le.FUNGIBLE_PRIVATE_ASSET_ID_PTR
+    # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+end
+
+#! Mints the fungible asset stored in the active note by calling the consuming faucet's
+#! `mint_and_send` procedure. Selects the public or private output-note layout based on the number
+#! of note storage items (see `mint_public` / `mint_private`).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the number of storage items is not exactly 13 for private or less than 20 for public output
+#!   notes.
+#! - the asset stored in the note does not belong to the consuming faucet.
+#!
+#! Invocation: exec
+pub proc mint
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items, pad(16)]
+
+    dup
+    # => [num_storage_items, num_storage_items, pad(16)]
+
+    u32assert2.err=ERR_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    u32gte.FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC
+    # => [is_public_output_note, num_storage_items, pad(16)]
+
+    if.true
+        exec.mint_public
+    else
+        exec.mint_private
+    end
+    # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+
+    call.fungible::mint_and_send
+    # => [note_idx, pad(25)]
+
+    dropw dropw drop drop
+    # => [pad(16)]
+end

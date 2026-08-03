@@ -8,7 +8,7 @@ pub use miden_processor::{ExecutionOptions, MastForestStore};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
-use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     ExecutedTransaction,
@@ -19,7 +19,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
 };
-use miden_protocol::vm::StackOutputs;
+use miden_protocol::vm::{PackageDebugInfo, StackOutputs};
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
@@ -44,13 +44,6 @@ pub use notes_checker::{
 
 mod program_executor;
 pub use program_executor::ProgramExecutor;
-
-/// TODO: Decide whether to allow fee assets to have callbacks.
-///
-/// Since fee removal is a way of transferring assets, but we do not have a fee-removal callback,
-/// using a callback-enabled asset allows bypassing the callbacks. For now, assume fee assets are
-/// callback-disabled.
-const FEE_ASSET_CALLBACK_FLAG: AssetCallbackFlag = AssetCallbackFlag::Disabled;
 
 // TRANSACTION EXECUTOR
 // ================================================================================================
@@ -104,8 +97,6 @@ where
                 Some(MAX_TX_EXECUTION_CYCLES),
                 MIN_TX_EXECUTION_CYCLES,
                 ExecutionOptions::DEFAULT_CORE_TRACE_FRAGMENT_SIZE,
-                false,
-                false,
             )
             .expect("Must not fail while max cycles is more than min trace length"),
             _executor: PhantomData,
@@ -177,29 +168,6 @@ where
         Ok(self)
     }
 
-    /// Puts the [TransactionExecutor] into debug mode and returns the resulting executor.
-    ///
-    /// When transaction executor is in debug mode, all transaction-related code (note scripts,
-    /// account code) will be compiled and executed in debug mode. This will ensure that all debug
-    /// instructions present in the original source code are executed.
-    #[must_use]
-    pub fn with_debug_mode(mut self) -> Self {
-        self.exec_options = self.exec_options.with_debugging(true);
-        self
-    }
-
-    /// Enables tracing for the created instance of [TransactionExecutor] and returns the resulting
-    /// executor.
-    ///
-    /// When tracing is enabled, the executor will receive tracing events as various stages of the
-    /// transaction kernel complete. This enables collecting basic stats about how long different
-    /// stages of transaction execution take.
-    #[must_use]
-    pub fn with_tracing(mut self) -> Self {
-        self.exec_options = self.exec_options.with_tracing(true);
-        self
-    }
-
     // TRANSACTION EXECUTION
     // --------------------------------------------------------------------------------------------
 
@@ -231,12 +199,20 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        // instantiate the processor in debug mode only when debug mode is specified via execution
-        // options; this is important because in debug mode execution is almost 100x slower
+        // Use the package-debug execution API even when the embedded release kernel has no debug
+        // sections. This enables package-owned debug info for dynamically loaded scripts.
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
 
+        let program = TransactionKernel::main();
+        let kernel_debug_info = TransactionKernel::main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let output = processor
-            .execute(&TransactionKernel::main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(map_execution_error)?;
         let stack_outputs = output.stack;
@@ -280,8 +256,16 @@ where
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
+        let program = TransactionKernel::tx_script_main();
+        let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let output = processor
-            .execute(&TransactionKernel::tx_script_main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::tx_script_main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?;
         let stack_outputs = output.stack;
@@ -304,7 +288,7 @@ where
         input_notes: InputNotes<InputNote>,
         tx_args: TransactionArgs,
     ) -> Result<TransactionInputs, TransactionExecutorError> {
-        let (mut asset_vault_keys, mut ref_blocks) = validate_input_notes(&input_notes, block_ref)?;
+        let (mut asset_ids, mut ref_blocks) = validate_input_notes(&input_notes, block_ref)?;
         ref_blocks.insert(block_ref);
 
         let (account, block_header, blockchain) = self
@@ -314,29 +298,21 @@ where
             .map_err(TransactionExecutorError::FetchTransactionInputsFailed)?;
 
         let native_account_vault_root = account.vault().root();
-        let fee_asset_vault_key = AssetVaultKey::new_fungible(
-            block_header.fee_parameters().fee_faucet_id(),
-            FEE_ASSET_CALLBACK_FLAG,
-        );
 
         let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
             .map_err(TransactionExecutorError::InvalidTransactionInputs)?
             .with_tx_args(tx_args);
 
-        // Add the vault key for the fee asset to the list of asset vault keys which will need to be
-        // accessed at the end of the transaction.
-        asset_vault_keys.insert(fee_asset_vault_key);
-
-        // filter out any asset vault keys for which we already have witnesses in the advice inputs
-        asset_vault_keys.retain(|asset_key| {
-            !tx_inputs.has_vault_asset_witness(native_account_vault_root, asset_key)
+        // filter out any asset IDs for which we already have witnesses in the advice inputs
+        asset_ids.retain(|asset_id| {
+            !tx_inputs.has_vault_asset_witness(native_account_vault_root, asset_id)
         });
 
         // if any of the witnesses are missing, fetch them from the data store and add to tx_inputs
-        if !asset_vault_keys.is_empty() {
+        if !asset_ids.is_empty() {
             let asset_witnesses = self
                 .data_store
-                .get_vault_asset_witnesses(account_id, native_account_vault_root, asset_vault_keys)
+                .get_vault_asset_witnesses(account_id, native_account_vault_root, asset_ids)
                 .await
                 .map_err(TransactionExecutorError::FetchAssetWitnessFailed)?;
 
@@ -370,26 +346,6 @@ where
         let account_procedure_index_map =
             AccountProcedureIndexMap::new([tx_inputs.account().code()]);
 
-        let initial_fee_asset_balance = {
-            let vault_root = tx_inputs.account().vault().root();
-            let fee_parameters = tx_inputs.block_header().fee_parameters();
-            let fee_asset_vault_key = AssetVaultKey::new_fungible(
-                fee_parameters.fee_faucet_id(),
-                FEE_ASSET_CALLBACK_FLAG,
-            );
-
-            let fee_asset = tx_inputs
-                .read_vault_asset(vault_root, fee_asset_vault_key)
-                .map_err(TransactionExecutorError::FeeAssetRetrievalFailed)?;
-            match fee_asset {
-                Some(Asset::Fungible(fee_asset)) => fee_asset.amount().as_u64(),
-                Some(Asset::NonFungible(_)) => {
-                    return Err(TransactionExecutorError::FeeAssetMustBeFungible);
-                },
-                // If the asset was not found, its balance is zero.
-                None => 0,
-            }
-        };
         let host = TransactionExecutorHost::new(
             tx_inputs.account(),
             input_notes.clone(),
@@ -398,7 +354,7 @@ where
             account_procedure_index_map,
             self.authenticator,
             tx_inputs.block_header().block_num(),
-            initial_fee_asset_balance,
+            tx_inputs.block_header().commitment(),
             self.source_manager.clone(),
         );
 
@@ -418,11 +374,8 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     stack_outputs: StackOutputs,
     host: TransactionExecutorHost<STORE, AUTH>,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    // Note that the account delta does not contain the removed transaction fee, so it is the
-    // "pre-fee" delta of the transaction.
-
     let (
-        pre_fee_account_delta,
+        account_patch,
         _input_notes,
         output_notes,
         accessed_foreign_account_code,
@@ -435,20 +388,13 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
             .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
-    let pre_fee_delta_commitment = pre_fee_account_delta.to_commitment();
-    if tx_outputs.account_delta_commitment() != pre_fee_delta_commitment {
-        return Err(TransactionExecutorError::InconsistentAccountDeltaCommitment {
-            in_kernel_commitment: tx_outputs.account_delta_commitment(),
-            host_commitment: pre_fee_delta_commitment,
+    let patch_commitment = account_patch.to_commitment();
+    if tx_outputs.account_patch_commitment() != patch_commitment {
+        return Err(TransactionExecutorError::InconsistentAccountPatchCommitment {
+            in_kernel_commitment: tx_outputs.account_patch_commitment(),
+            host_commitment: patch_commitment,
         });
     }
-
-    // The full transaction delta is the pre fee delta with the fee asset removed.
-    let mut post_fee_account_delta = pre_fee_account_delta;
-    post_fee_account_delta
-        .vault_mut()
-        .remove_asset(Asset::from(tx_outputs.fee()))
-        .map_err(TransactionExecutorError::RemoveFeeAssetFromDelta)?;
 
     let initial_account = tx_inputs.account();
     let final_account = tx_outputs.account();
@@ -457,15 +403,6 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         return Err(TransactionExecutorError::InconsistentAccountId {
             input_id: initial_account.id(),
             output_id: final_account.id(),
-        });
-    }
-
-    // Make sure nonce delta was computed correctly.
-    let nonce_delta = final_account.nonce() - initial_account.nonce();
-    if nonce_delta != post_fee_account_delta.nonce_delta() {
-        return Err(TransactionExecutorError::InconsistentAccountNonceDelta {
-            expected: nonce_delta,
-            actual: post_fee_account_delta.nonce_delta(),
         });
     }
 
@@ -482,7 +419,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     Ok(ExecutedTransaction::new(
         tx_inputs,
         tx_outputs,
-        post_fee_account_delta,
+        account_patch,
         tx_progress.into(),
     ))
 }
@@ -490,7 +427,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 /// Validates that input notes were not created after the reference block.
 ///
 /// Returns the set of block numbers required to execute the provided notes and the set of asset
-/// vault keys that will be needed in the transaction prologue.
+/// asset IDs that will be needed in the transaction prologue.
 ///
 /// The transaction input vault is a copy of the account vault and to mutate the input vault (during
 /// the prologue, for asset preservation), witnesses for the note assets against the account vault
@@ -498,9 +435,9 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 fn validate_input_notes(
     notes: &InputNotes<InputNote>,
     block_ref: BlockNumber,
-) -> Result<(BTreeSet<AssetVaultKey>, BTreeSet<BlockNumber>), TransactionExecutorError> {
+) -> Result<(BTreeSet<AssetId>, BTreeSet<BlockNumber>), TransactionExecutorError> {
     let mut ref_blocks: BTreeSet<BlockNumber> = BTreeSet::new();
-    let mut asset_vault_keys: BTreeSet<AssetVaultKey> = BTreeSet::new();
+    let mut asset_ids: BTreeSet<AssetId> = BTreeSet::new();
 
     for input_note in notes.iter() {
         // Validate that notes were not created after the reference, and build the set of required
@@ -515,10 +452,10 @@ fn validate_input_notes(
             ref_blocks.insert(location.block_num());
         }
 
-        asset_vault_keys.extend(input_note.note().assets().iter().map(Asset::vault_key));
+        asset_ids.extend(input_note.note().assets().iter().map(Asset::id));
     }
 
-    Ok((asset_vault_keys, ref_blocks))
+    Ok((asset_ids, ref_blocks))
 }
 
 /// Validates that the number of cycles specified is within the allowed range.
@@ -538,6 +475,11 @@ fn validate_num_cycles(num_cycles: u32) -> Result<(), TransactionExecutorError> 
 ///
 /// - If the inner error is [`TransactionKernelError::Unauthorized`], it is remapped to
 ///   [`TransactionExecutorError::Unauthorized`].
+/// - If the inner error is [`TransactionKernelError::AuthRequestOutsideAuthProcedure`], it is
+///   remapped to [`TransactionExecutorError::AuthRequestOutsideAuthProcedure`].
+/// - If the inner error is
+///   [`TransactionKernelError::PrivilegedEventFromOutsideTransactionKernelContext`], it is remapped
+///   to [`TransactionExecutorError::PrivilegedEventFromOutsideTransactionKernelContext`].
 /// - Otherwise, the execution error is wrapped in
 ///   [`TransactionExecutorError::TransactionProgramExecutionFailed`].
 fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
@@ -547,15 +489,19 @@ fn map_execution_error(exec_err: ExecutionError) -> TransactionExecutorError {
                 Some(TransactionKernelError::Unauthorized(summary)) => {
                     TransactionExecutorError::Unauthorized(summary.clone())
                 },
-                Some(TransactionKernelError::InsufficientFee { account_balance, tx_fee }) => {
-                    TransactionExecutorError::InsufficientFee {
-                        account_balance: *account_balance,
-                        tx_fee: *tx_fee,
-                    }
-                },
                 Some(TransactionKernelError::MissingAuthenticator) => {
                     TransactionExecutorError::MissingAuthenticator
                 },
+                Some(TransactionKernelError::AuthRequestOutsideAuthProcedure) => {
+                    TransactionExecutorError::AuthRequestOutsideAuthProcedure
+                },
+                Some(
+                    TransactionKernelError::PrivilegedEventFromOutsideTransactionKernelContext(
+                        event_id,
+                    ),
+                ) => TransactionExecutorError::PrivilegedEventFromOutsideTransactionKernelContext(
+                    event_id.clone(),
+                ),
                 _ => TransactionExecutorError::TransactionProgramExecutionFailed(exec_err),
             }
         },
