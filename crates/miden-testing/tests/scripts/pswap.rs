@@ -90,30 +90,21 @@ fn assert_vault_patch(
     }
 }
 
-/// Asserts that the payback note matching `expected_payback` carries exactly `expected_assets`.
+/// Asserts that `expected` is among the transaction's output notes.
+///
+/// The note ID commits to the recipient, the assets and the metadata, so an asset that was
+/// deposited into a different output note leaves the expected note's ID absent.
 #[track_caller]
-fn assert_payback_assets(
-    output_notes: &RawOutputNotes,
-    expected_payback: &Note,
-    expected_assets: impl IntoIterator<Item = FungibleAsset>,
-) {
-    let recipient = expected_payback.recipient().digest();
-    let note = output_notes
-        .iter()
-        .find(|note| note.recipient_digest() == recipient)
-        .expect("payback note should be among the output notes");
-
-    let expected_assets = expected_assets.into_iter().collect::<Vec<_>>();
-    let actual_assets = note.assets().iter_fungible().collect::<Vec<_>>();
-
-    assert_eq!(
-        note.assets().num_assets(),
-        expected_assets.len(),
-        "payback note carries {} assets, expected {}",
-        note.assets().num_assets(),
-        expected_assets.len(),
+fn assert_output_note(output_notes: &RawOutputNotes, expected: &Note) {
+    assert!(
+        output_notes.iter().any(|note| note.id() == expected.id()),
+        "expected output note {} not found; output notes are {:?}",
+        expected.id(),
+        output_notes
+            .iter()
+            .map(|note| (note.id(), note.assets().iter_fungible().collect::<Vec<_>>()))
+            .collect::<Vec<_>>(),
     );
-    assert_eq!(actual_assets, expected_assets, "payback note carries the wrong assets");
 }
 
 // TESTS
@@ -649,8 +640,8 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
     let output_notes = executed_transaction.output_notes();
     assert_eq!(output_notes.num_notes(), 2);
 
-    assert_payback_assets(output_notes, &alice_p2id_note, [eth_25]);
-    assert_payback_assets(output_notes, &bob_p2id_note, [usdc_50]);
+    assert_output_note(output_notes, &alice_p2id_note);
+    assert_output_note(output_notes, &bob_p2id_note);
 
     // Charlie's vault should be unchanged
     assert!(
@@ -741,8 +732,8 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
         "expected exactly 2 P2ID output notes, no remainder"
     );
 
-    assert_payback_assets(output_notes, &alice_p2id_note, [alice_payback_eth]);
-    assert_payback_assets(output_notes, &bob_p2id_note, [bob_requested]);
+    assert_output_note(output_notes, &alice_p2id_note);
+    assert_output_note(output_notes, &bob_p2id_note);
 
     // Charlie's vault: -charlie_fill ETH and +his account-share of the offered USDC
     // (floor(offered * charlie_fill / total_fill)). The note_fill legs flow through inflight and
@@ -1145,8 +1136,8 @@ async fn pswap_note_fill_payback_not_first_output_note_test() -> anyhow::Result<
     );
 
     // Each payback carries exactly the asset its own creator requested.
-    assert_payback_assets(output_notes, &alice_p2id_note, [eth_25]);
-    assert_payback_assets(output_notes, &bob_p2id_note, [usdc_50]);
+    assert_output_note(output_notes, &alice_p2id_note);
+    assert_output_note(output_notes, &bob_p2id_note);
 
     // Pure note_fill on both legs: the assets flow between the notes inflight, never through
     // Charlie's vault.
@@ -1224,9 +1215,9 @@ async fn pswap_note_fill_payback_after_remainder_note_test() -> anyhow::Result<(
     let output_notes = executed_transaction.output_notes();
     assert_eq!(output_notes.num_notes(), 3, "expected two paybacks and one remainder");
 
-    assert_payback_assets(output_notes, &alice_p2id_note, [bob_offered]);
-    assert_payback_assets(output_notes, &alice_remainder, [alice_remainder_usdc]);
-    assert_payback_assets(output_notes, &bob_p2id_note, [bob_requested]);
+    assert_output_note(output_notes, &alice_p2id_note);
+    assert_output_note(output_notes, &alice_remainder);
+    assert_output_note(output_notes, &bob_p2id_note);
 
     assert!(
         executed_transaction.account_patch().vault().is_empty(),
