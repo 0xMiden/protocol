@@ -237,8 +237,8 @@ end
 #! - 0: read pointer into the note's asset slots
 #! - 1: number of asset slots left to iterate
 #! - 2: number of removed (i.e. previously remaining) assets
-#! - 4..516: buffer of the removed assets (MAX_ASSETS_PER_NOTE * ASSET_SIZE elements)
-@locals(516)
+#! - 4..132: buffer of the removed assets (MAX_ASSETS_PER_NOTE * ASSET_SIZE elements)
+@locals(132)
 pub proc remove_all_assets
     # initialize the number of remaining assets to zero; this is necessary because this procedure
     # can be invoked multiple times and locals may hold values from a previous invocation

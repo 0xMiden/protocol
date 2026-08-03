@@ -27,11 +27,12 @@ use miden_standards::errors::standards::{
     ERR_FEE_ASSET_ID_MISMATCH,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT,
     ERR_FUNGIBLE_ASSET_VALUE_MALFORMED,
-    ERR_SENDER_NOT_OWNER,
 };
+use miden_standards::note::ConstantFeePolicyConfigNote;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
+use super::constant_fee_policy_config::build_config_note;
 use super::fee_manager::{FEE_AMOUNT, fee_faucet_id, priced_root};
 use super::rbac::{build_note, test_account_id};
 use crate::consume_note;
@@ -39,8 +40,16 @@ use crate::consume_note;
 // HELPERS
 // ================================================================================================
 
+pub(super) fn owner_id() -> AccountId {
+    test_account_id(70)
+}
+
+pub(super) fn non_owner_id() -> AccountId {
+    test_account_id(71)
+}
+
 /// The fee asset the account is configured with, carrying `amount`.
-fn fee_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
+pub(super) fn fee_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?)
 }
 
@@ -75,27 +84,13 @@ fn build_set_note_fee_note_raw(
     )
 }
 
-/// Builds a `sender`-authored note scheduling `fee_asset` for `lookup_key`.
-fn build_set_note_fee_note(
-    sender: AccountId,
-    lookup_key: NoteScriptRoot,
-    fee_asset: FungibleAsset,
-) -> anyhow::Result<Note> {
-    build_set_note_fee_note_raw(
-        sender,
-        lookup_key,
-        fee_asset.to_id_word(),
-        fee_asset.to_value_word(),
-    )
-}
-
 /// Builds a network account composing `BasicConstantFeePolicy` (via the `FeePolicyManager`) +
 /// `ConstantFeeManager` + `Ownable2Step(owner)` + `Authority::OwnerControlled`.
 ///
 /// `priced_root()` is intentionally left unscheduled — the manager is the only way it gets a fee.
 /// Each `admin_note_root` is allowlisted and scheduled at a 0 fee so the network account can
 /// consume the admin notes for free.
-fn build_manageable_fee_account(
+pub(super) fn build_manageable_fee_account(
     owner: AccountId,
     admin_note_roots: BTreeSet<NoteScriptRoot>,
 ) -> anyhow::Result<Account> {
@@ -117,7 +112,7 @@ fn build_manageable_fee_account(
 }
 
 /// Reads the fee schedule entry stored for `lookup_key` in the account's committed state.
-fn committed_fee_schedule_entry(
+pub(super) fn committed_fee_schedule_entry(
     mock_chain: &MockChain,
     account_id: AccountId,
     lookup_key: NoteScriptRoot,
@@ -138,43 +133,31 @@ fn fee_asset_id_word() -> anyhow::Result<Word> {
 // TESTS
 // ================================================================================================
 
-/// The owner schedules a fee for a previously unscheduled note script root; the write lands in the
-/// fee schedule map as the set-marked entry `[fee, 0, 0, 1]`.
-#[tokio::test]
-async fn owner_set_note_fee_writes_schedule_entry() -> anyhow::Result<()> {
-    let owner = test_account_id(70);
-    let set_note = build_set_note_fee_note(owner, priced_root(), fee_asset(FEE_AMOUNT)?)?;
-    let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    consume_note(&mut mock_chain, account.id(), &set_note).await?;
-
-    let entry = committed_fee_schedule_entry(&mock_chain, account.id(), priced_root())?;
-    assert_eq!(entry, Word::from([FEE_AMOUNT as u32, 0, 0, 1]));
-
-    Ok(())
-}
+// The happy-path (`owner schedules a fee`) and non-owner-rejection cases are covered end-to-end by
+// the standardized note's own suite (`config_note_schedules_fee` /
+// `non_owner_config_note_is_rejected` in `constant_fee_policy_config.rs`); the tests below exercise
+// the remaining `set_note_fee` behaviors, using the standardized `ConstantFeePolicyConfigNote`
+// where a well-formed fee asset can express the case and a hand-crafted raw note only where it
+// cannot.
 
 /// Scheduling an explicit fee of 0 records a set-marked entry `[0, 0, 0, 1]`, distinguishing it
 /// from an unset key (which reads as the zero word).
 #[tokio::test]
 async fn owner_set_note_fee_zero_schedules_free_note() -> anyhow::Result<()> {
     let owner = test_account_id(70);
-    let set_note = build_set_note_fee_note(owner, priced_root(), fee_asset(0)?)?;
-    let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
+    let account = build_manageable_fee_account(
+        owner,
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
+    )?;
+    let config_note = build_config_note(owner, account.id(), fee_asset(0)?, 1)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    consume_note(&mut mock_chain, account.id(), &set_note).await?;
+    consume_note(&mut mock_chain, account.id(), &config_note).await?;
 
     let entry = committed_fee_schedule_entry(&mock_chain, account.id(), priced_root())?;
     assert_eq!(entry, Word::from([0u32, 0, 0, 1]));
@@ -182,17 +165,17 @@ async fn owner_set_note_fee_zero_schedules_free_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A later `set_note_fee` for the same key replaces the previously scheduled fee.
+/// A later config note for the same key replaces the previously scheduled fee.
 #[tokio::test]
 async fn owner_set_note_fee_overwrites_existing_entry() -> anyhow::Result<()> {
     let owner = test_account_id(70);
     let updated_fee = FEE_AMOUNT + 123;
-    let first = build_set_note_fee_note(owner, priced_root(), fee_asset(FEE_AMOUNT)?)?;
-    let second = build_set_note_fee_note(owner, priced_root(), fee_asset(updated_fee)?)?;
     let account = build_manageable_fee_account(
         owner,
-        BTreeSet::from([first.script().root(), second.script().root()]),
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
     )?;
+    let first = build_config_note(owner, account.id(), fee_asset(FEE_AMOUNT)?, 1)?;
+    let second = build_config_note(owner, account.id(), fee_asset(updated_fee)?, 2)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -210,53 +193,28 @@ async fn owner_set_note_fee_overwrites_existing_entry() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `Authority::OwnerControlled` rejects a non-owner sender: `set_note_fee` runs
-/// `authority::assert_authorized`, which fails when the note sender is not the Ownable2Step owner.
-#[tokio::test]
-async fn non_owner_set_note_fee_is_rejected() -> anyhow::Result<()> {
-    let owner = test_account_id(70);
-    let attacker_note =
-        build_set_note_fee_note(test_account_id(71), priced_root(), fee_asset(FEE_AMOUNT)?)?;
-    let account =
-        build_manageable_fee_account(owner, BTreeSet::from([attacker_note.script().root()]))?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let result = mock_chain
-        .build_transaction(account.id())
-        .authenticated_input_note(attacker_note.id())
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
-
-    Ok(())
-}
-
 /// `set_note_fee` rejects a fee asset whose ID does not match the account's configured fee asset:
-/// the owner schedules a fee in a different faucet's asset, which the fee-asset-ID check aborts.
+/// the config note carries a different faucet's asset, which the fee-asset-ID check aborts.
 #[tokio::test]
 async fn set_note_fee_with_wrong_fee_asset_is_rejected() -> anyhow::Result<()> {
     let owner = test_account_id(70);
     let wrong_asset =
         FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, FEE_AMOUNT)?;
-    let set_note = build_set_note_fee_note(owner, priced_root(), wrong_asset)?;
-    let account = build_manageable_fee_account(owner, BTreeSet::from([set_note.script().root()]))?;
+    let account = build_manageable_fee_account(
+        owner,
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
+    )?;
+    let config_note = build_config_note(owner, account.id(), wrong_asset, 1)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
         .build_transaction(account.id())
-        .authenticated_input_note(set_note.id())
+        .authenticated_input_note(config_note.id())
         .build()?
         .execute()
         .await;

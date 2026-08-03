@@ -47,8 +47,9 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// When consumed by the faucet that issued the asset, the note's asset is destroyed via the
 /// faucet's `receive_and_burn` procedure. The single BURN script works against both fungible and
 /// non-fungible faucets: it detects the faucet kind by reflection (via the `CodeInspection`
-/// component) and calls the matching `receive_and_burn`. BURN notes are always public so they can
-/// be executed by the network.
+/// component) and calls the matching `receive_and_burn`. BURN notes are always public so they are
+/// visible on-chain and discoverable by the network; whether consuming one requires a signature
+/// depends on the target faucet's auth component.
 ///
 /// Construct one with the [builder](BurnNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.

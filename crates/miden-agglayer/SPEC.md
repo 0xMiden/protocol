@@ -24,6 +24,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
+| **Role Admin** (offchain) | Holds the bridge's `ADMIN` role and manages role membership via RBAC_CONFIG notes. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). | Not an onchain entity; creates RBAC_CONFIG notes |
 
 ---
 
@@ -49,7 +50,7 @@ asset and the destination network/address. The bridge account consumes this note
 5. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (LET).
 6. Dispatches on the faucet's `is_native` flag (also read from the registry):
    - **Wrapped faucet (`is_native = false`):** the bridge does not hold the asset onchain; it
-     emits a public [`BURN`](#47-burn-generated) note targeting the faucet, which the faucet
+     emits a public [`BURN`](#48-burn-generated) note targeting the faucet, which the faucet
      consumes to burn the asset and decrement the faucet's token supply.
    - **Miden-native faucet (`is_native = true`):** the bridge does not hold mint/burn authority
      for the faucet, so it cannot emit a `BURN`. Instead it locks the asset by adding it to
@@ -59,8 +60,7 @@ asset and the destination network/address. The bridge account consumes this note
 The leaf appended to the LET can later be included in a Merkle proof on any
 AggLayer-connected chain to claim the bridged asset.
 
-TODO: The bridge currently has no emergency pause mechanism to halt operations
-([#2696](https://github.com/0xMiden/protocol/issues/2696)).
+The bridge supports an emergency pause; see [Section 2.5](#25-administration).
 
 ### 2.2 Bridge-in (AggLayer to Miden)
 
@@ -85,9 +85,9 @@ The `CLAIM` note is consumed by the bridge account:
    (`assert_faucet_registered`) so a claim only ever mints through a currently-registered faucet.
 7. Verifies the claim amount against the leaf's U256 amount and the faucet's scale factor.
 8. Dispatches on the faucet's `is_native` flag:
-   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#49-mint-generated)
+   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#410-mint-generated)
      note targeting the faucet. The faucet consumes the `MINT` note, mints the specified amount,
-     and creates a [`P2ID`](#48-p2id-generated) note delivering the minted assets to the
+     and creates a [`P2ID`](#49-p2id-generated) note delivering the minted assets to the
      recipient's Miden account.
    - **Miden-native faucet (`is_native = true`):** the bridge cannot mint via the faucet, so
      it removes the asset from its own vault (`native_account::remove_asset`) and emits a
@@ -159,9 +159,10 @@ to the empty word, the `GER_INJECTOR` role holder can re-register the same GER v
 `UPDATE_GER` note (re-insertion does not touch the removal chain). This is a security
 caveat worth calling out: a compromised or faulty `GER_INJECTOR` role holder can undo a `REMOVE_GER`
 emergency patch and re-open the very claim window the removal was meant to close. The
-split between the `GER_INJECTOR` and `GER_REMOVER` roles bounds this only if the offending role can be
-rotated out, which is not yet supported
-([#2706](https://github.com/0xMiden/protocol/issues/2706)). The removed-GER hash chain is
+split between the `GER_INJECTOR` and `GER_REMOVER` roles bounds this only for
+operational-key compromise: the `ADMIN` role can rotate the offending holder out via
+[`RBAC_CONFIG`](#47-rbac_config) notes (see [Section 2.5](#25-administration)). It does not
+bound a compromised `ADMIN`, which can grant itself either role. The removed-GER hash chain is
 therefore an append-only log of removal events, not a registry of currently revoked GERs
 - a GER listed in the chain may have been revived since its removal.
 
@@ -221,16 +222,48 @@ note sender holds that role (a role may have multiple holders). Procedures with 
 back to requiring the `ADMIN` role. The initial `ADMIN` member and the initial operational-role
 holders are seeded at account creation, so the bridge is born fully functional.
 
-TODO: On-chain role management — notes that call `grant_role` / `revoke_role` / `renounce_role` /
-`set_role_admin` — is not yet part of the bridge's accepted-note allowlist; it is planned as a
-follow-up to [#2706](https://github.com/0xMiden/protocol/issues/2706). The note scripts and Rust
-builders for these `Rbac` procedures are tracked more broadly by
-[#3046](https://github.com/0xMiden/protocol/issues/3046) (note configuration for standards
-components); once they exist, the bridge only needs to add their script roots to
-[`AggLayerBridge::allowed_notes`].
+Roles are managed on-chain via [`RBAC_CONFIG`](#47-rbac_config) notes, which dispatch to the
+RBAC component's `grant_role` / `revoke_role` / `set_role_admin` / `renounce_role` procedures.
+Authorization is enforced by those procedures against the note sender: a member of the target
+role's effective admin role for grant / revoke / set-admin, or the role holder itself for
+renounce. This makes every role rotatable after account creation, including `ADMIN` itself.
 
-TODO: No emergency pause mechanism exists
-([#2696](https://github.com/0xMiden/protocol/issues/2696)).
+Role management via notes comes with caveats. The generic hazards are documented on the
+miden-standards [`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs)
+component and the [`RBAC_CONFIG` note](../miden-standards/src/note/rbac_config.rs); the
+bridge-specific consequences are:
+
+- **`ADMIN` is the bridge's root authority.** It is the effective admin of all three
+  operational roles, and the auto-allowlisted `NETWORK_ACCOUNT_CONFIG` note dispatches the
+  `ADMIN`-defaulted note-, tx-script-, and allowed-fee-policy-update procedures, so a
+  compromised `ADMIN` key controls the whole bridge configuration (see
+  [Section 1](#1-entities-and-trust-model)). For the same
+  reason the `ADMIN` role must never be emptied: role rotation and every `ADMIN`-defaulted
+  procedure - the bridge's post-deployment configuration channel, including `unpause` - would
+  be lost forever, and on a paused bridge that would freeze claims and bridge-outs
+  permanently. Contain `ADMIN` compromise risk with strong key custody (e.g. a multisig
+  member account), not by decommissioning the role.
+- **Consumption order is not under the operator's control.** The bridge executes without a
+  signature gate, so any party chooses which pending note is consumed first; never have an
+  `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously.
+
+#### Emergency pause
+
+The bridge account installs the `miden-standards` `Pausable` and `PausableManager` components.
+Every agglayer bridge procedure except `remove_ger` starts with `pausable::assert_not_paused`,
+so while the bridge is paused it rejects all bridge-out, claim, GER-injection, and
+faucet-management operations. `remove_ger` is deliberately exempt: a paused bridge can still
+revoke a fraudulent GER, and because `update_ger` is paused the revoked GER cannot be
+re-injected until unpause. The management notes (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`,
+`PAUSE_CONFIG`) remain consumable while paused, so a paused bridge can still be administered.
+
+The pause is toggled via the standards [`PAUSE_CONFIG`](#411-pause_config-standards) note, which
+dispatches to `PausableManager`'s `pause` / `unpause`. These have no entry in the bridge's
+`Authority` procedure-to-role map, so authorization falls back to the `ADMIN` role.
+
+The pause complements the `Authority` freeze switch: freezing blocks every authority-gated
+procedure - including `remove_ger` - but not `claim` / `bridge_out`, while the pause is the
+inverse.
 
 ---
 
@@ -252,6 +285,11 @@ which is a thin wrapper that re-exports procedures from the `agglayer` library m
 The underlying library code lives in `asm/agglayer/bridge/` with supporting modules in
 `asm/agglayer/common/`.
 
+In addition to the `bridge` component, the account installs the standards access-control stack
+(`RoleBasedAccessControl`, `Authority`) and the emergency-pause stack (`Pausable`,
+`PausableManager`). All bridge procedures below except `remove_ger` panic while the bridge is
+paused.
+
 #### `bridge_out::bridge_out`
 
 | | |
@@ -260,7 +298,7 @@ The underlying library code lives in `asm/agglayer/bridge/` with supporting modu
 | **Inputs** | `[ASSET, dest_network_id, dest_addr(5), pad(4)]` |
 | **Outputs** | `[]` |
 | **Context** | Consuming a `B2AGG` note on the bridge account |
-| **Panics** | Faucet not in registry; destination network is Miden's AggLayer network ID |
+| **Panics** | Bridge is paused; faucet not in registry; destination network is Miden's AggLayer network ID |
 
 Bridges an asset out of Miden into the AggLayer:
 
@@ -278,7 +316,7 @@ Bridges an asset out of Miden into the AggLayer:
 | **Inputs** | `[origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused |
 
 Asserts that the note sender holds the `FAUCET_MNGR`
 role, then registers the faucet across three storage maps:
@@ -308,7 +346,7 @@ written, so a `token_registry` key never outlives the registration that created 
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused; faucet is not currently registered |
 
 Asserts the note sender holds the `FAUCET_MNGR` role and the faucet is currently registered (via
 `assert_faucet_registered`), then clears all of the faucet's entries:
@@ -333,7 +371,7 @@ role holder should warn users with notes in flight. As defense-in-depth, `claim`
 | **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
-| **Panics** | Note sender does not hold the `GER_INJECTOR` role; GER has already been registered in storage |
+| **Panics** | Note sender does not hold the `GER_INJECTOR` role; bridge is paused; GER has already been registered in storage |
 
 Asserts that the note sender holds the `GER_INJECTOR`
 role, then computes
@@ -350,7 +388,7 @@ in the map the procedure panics with `ERR_GER_ALREADY_REGISTERED`.
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | Leaf `destination_network` does not match the bridge's configured network ID; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Bridge is paused; leaf `destination_network` does not match the bridge's configured network ID; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
@@ -380,7 +418,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
    `bridge_config::get_faucet_scale`), using
    `miden::standards::assets::asset_amount::verify_u256_to_asset_amount_conversion`.
 8. If the faucet is not native, builds a MINT output note targeting the faucet (see
-   [Section 4.9](#49-mint-generated)). If the faucet is native (`is_native = 1`), unlocks the
+   [Section 4.10](#410-mint-generated)). If the faucet is native (`is_native = 1`), unlocks the
    asset from the bridge's vault and emits a `P2ID` note directly to the recipient
    (`bridge_in_output::unlock_and_send`), emitting no MINT note (see [Section 7](#7-faucet-registry)).
 
@@ -405,7 +443,8 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
 The privileged-role state is held by the access-control components installed on the bridge account
 (`RoleBasedAccessControl` role config/membership maps and the `Authority` procedure-to-role map),
-documented in `miden-standards`, rather than in dedicated bridge slots. See
+documented in `miden-standards`, rather than in dedicated bridge slots. Likewise, the emergency
+pause state lives in the `Pausable` component's own `is_paused` slot. See
 [Administration](#25-administration).
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
@@ -442,7 +481,7 @@ recipient. Requires the faucet's owner (the bridge account) to be the creator of
 `mint_and_send` executes the current access policy via
 `exec.policy_manager::execute_mint_policy`). `mint_and_send` then derives the asset to mint
 for the active faucet and panics if the stored `ASSET_ID` does not belong to that faucet,
-which binds the MINT note to its resolved faucet (see §4.8).
+which binds the MINT note to its resolved faucet (see §4.10).
 
 #### `agglayer_faucet::receive_and_burn`
 
@@ -815,7 +854,58 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 | **Issuer** | Holders of the `GER_REMOVER` role only -- **enforced** by `bridge_config::remove_ger` |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.7 BURN (generated)
+### 4.7 RBAC_CONFIG
+
+**Purpose:** Triggers a role-management action (`grant_role`, `revoke_role`, `set_role_admin`,
+`renounce_role`) on the bridge's RBAC component, enabling on-chain rotation of the `ADMIN`,
+`FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles (see
+[Section 2.5](#25-administration)). This is the `miden-standards` `RBAC_CONFIG` note
+(`RbacConfigNote` in Rust), not a bridge-specific script.
+
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | The account authorized for the selected action: a member of the role's effective admin role for `grant_role` / `revoke_role` / `set_role_admin`, or the role holder itself for `renounce_role` (enforced by the RBAC procedures) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::with_account_target(bridge)` |
+| `attachment` | `NetworkAccountTarget` (target: the managed account; execution hint: Always), added by the builder unless the caller supplies one. The script asserts the consuming account matches this target. |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* None (empty).
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `rbac_config.masm` (miden-standards) |
+| `storage` | 2-4 felts, selector-dispatched -- see layout below |
+
+**Storage layout (selector-dispatched):**
+
+| Selector (item 0) | Action | Items | Layout |
+|-------------------|--------|-------|--------|
+| `0` | `grant_role` | 4 | `[0, role_symbol, member_suffix, member_prefix]` |
+| `1` | `revoke_role` | 4 | `[1, role_symbol, member_suffix, member_prefix]` |
+| `2` | `set_role_admin` | 3 | `[2, role_symbol, admin_role_symbol]` (`0` reverts to the default `ADMIN` role) |
+| `3` | `renounce_role` | 2 | `[3, role_symbol]` |
+
+**Consumption:** Script asserts the consuming account matches the `NetworkAccountTarget` and
+that the storage item count matches the selector, then dispatches to the corresponding `rbac`
+procedure. Authorization is enforced by those procedures against the note sender.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Member of the role's effective admin role (grant / revoke / set-admin) or the role holder (renounce) -- **enforced** by the `rbac` procedures |
+| **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
+
+### 4.8 BURN (generated)
 
 **Purpose:** Created by `bridge_out::bridge_out` to burn the bridged asset on the faucet.
 
@@ -863,7 +953,7 @@ burned amount.
 | **Issuer** | Bridge account (created by `bridge_out::bridge_out`) |
 | **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.8 P2ID (generated)
+### 4.9 P2ID (generated)
 
 **Purpose:** Created by the faucet (via `mint_and_send`) when consuming a MINT note, to
 deliver minted assets to the recipient.
@@ -911,7 +1001,7 @@ script). All note assets are added to the consuming account via
 | **Issuer** | Faucet account (created by `mint_and_send`) |
 | **Consumer** | Destination account only -- **enforced** by P2ID script (checks `target_account_id`) |
 
-### 4.9 MINT (generated)
+### 4.10 MINT (generated)
 
 **Purpose:** Created by `bridge_in::claim` on the bridge account. Consumed by the faucet
 to mint and distribute assets to the recipient.
@@ -976,6 +1066,29 @@ note via `output_note::add_asset`.
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
 | **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_ID` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
+
+### 4.11 PAUSE_CONFIG (standards)
+
+**Purpose:** Toggles the bridge's emergency pause (see [Section 2.5](#25-administration)). This is
+the `miden-standards` `PAUSE_CONFIG` note (`pause_config.masm` / `PauseConfigNote`), not an
+agglayer-specific note; the bridge merely includes its script root in
+[`AggLayerBridge::allowed_notes`]. Its single storage felt is a selector: `0` dispatches to
+`PausableManager::pause`, `1` to `PausableManager::unpause`.
+
+**Consumption:** The script loads the selector and `call`s the matching `PausableManager`
+procedure, which runs `authority::assert_authorized` before flipping the pause state. On the
+bridge that procedure has no mapped role, so the note sender must hold the `ADMIN` role.
+
+The builder binds the note to the bridge via a `NetworkAccountTarget` attachment, which the
+script asserts against the consuming account; [`AggLayerBridge::pause_note`] wraps the builder
+with clearer error reporting for non-public targets.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Holders of the `ADMIN` role only -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (unmapped-procedure fallback) |
+| **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ---
 

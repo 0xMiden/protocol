@@ -8,7 +8,6 @@ mod multisig;
 mod network;
 mod no_auth;
 mod singlesig;
-mod singlesig_acl;
 mod sponsorship;
 
 // CONSTANTS
