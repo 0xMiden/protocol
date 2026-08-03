@@ -130,7 +130,8 @@ end
 #! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc upgrade(code_upgrade_commitment: word, storage_upgrade_commitment: word)
@@ -515,8 +516,14 @@ end
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
 #!
 #! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
-#! `exec.faucet::mint`) which trigger `authenticate_and_track_procedure`. Procedures that execute
-#! only local MASM instructions will return 0 even if they were executed.
+#! `exec.faucet::mint`) which trigger `authenticate_procedure`. Procedures that execute only local
+#! MASM instructions will return 0 even if they were executed.
+#!
+#! Note: Account procedures invoked while the epilogue runs the authentication procedure are not
+#! recorded as called - call tracking is suppressed for the auth run. The authentication procedure's
+#! own index is the exception (`incr_nonce` records it), but in a correct transaction it is never
+#! observed as called, since the auth procedure is queried by the epilogue's replay guard before it
+#! runs. `was_procedure_called`-based policies must in any case exclude the auth procedure.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [was_called]

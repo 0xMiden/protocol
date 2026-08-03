@@ -198,13 +198,24 @@ proc execute_auth_procedure
     padw dup.4 mem_loadw_le
     # => [AUTH_PROC_ROOT, auth_procedure_ptr, AUTH_ARGS, pad(12)]
 
-    # if auth procedure was called already, it must have been called by a user, which is disallowed
+    # if auth procedure was called already, it must have been called by a user, which is disallowed.
+    # this guard relies on procedure calls made from the account context being tracked, so it must be
+    # checked before the epilogue-auth-in-progress flag (which suppresses that tracking) is set below.
     exec.account::was_procedure_called
     assertz.err=ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT
     # => [auth_procedure_ptr, AUTH_ARGS, pad(12)]
 
+    # mark that the epilogue is now executing the auth procedure, so the call authenticator skips
+    # tracking the procedure calls it makes (which would otherwise pollute the was_called flags)
+    push.1 exec.memory::set_epilogue_auth_in_progress_flag
+    # => [auth_procedure_ptr, AUTH_ARGS, pad(12)]
+
     # execute the auth procedure
     dyncall
+    # => [OUTPUT_3, OUTPUT_2, OUTPUT_1, OUTPUT_0]
+
+    # clear the epilogue-auth-in-progress flag now that the auth procedure has returned
+    push.0 exec.memory::set_epilogue_auth_in_progress_flag
     # => [OUTPUT_3, OUTPUT_2, OUTPUT_1, OUTPUT_0]
 
     # clean up auth procedure outputs

@@ -50,17 +50,13 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
-use miden_protocol::transaction::memory::{
-    CODE_UPGRADE_COMMITMENT_PTR,
-    STORAGE_UPGRADE_COMMITMENT_PTR,
-};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::vm::Package;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_tx::LocalTransactionProver;
+use miden_tx::{LocalTransactionProver, TransactionKernelError};
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -868,46 +864,53 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that `native_account::upgrade` stores the code and storage upgrade commitments in the
-/// dedicated kernel memory region.
+/// Tests that `account_upgrade` is gated by the account context: invoking it from outside an
+/// account procedure (so that `caller` is not a procedure of the account) must be rejected by the
+/// authenticator. This models what an untrusted transaction script could attempt.
+///
+/// The authorized flow that stores the upgrade commitments through the standards `upgrade` account
+/// procedure is covered by
+/// `standards::account_upgrade::test_upgrade_manager_stores_commitments_when_authorized`.
 #[tokio::test]
-async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
-    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
-
+async fn test_native_account_upgrade_from_tx_script_is_rejected() -> anyhow::Result<()> {
     let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
     let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
 
-    let code = format!(
+    // A transaction script invokes `native_account::upgrade` directly. Its caller is the tx script,
+    // not a procedure of the account, so authentication must reject the invocation.
+    let tx_script_source = format!(
         r#"
         use miden::protocol::native_account
-        use miden::tx_kernel_core::prologue
 
-        begin
-            exec.prologue::prepare_transaction
-
+        @transaction_script
+        pub proc main
             push.{storage_upgrade_commitment}
             push.{code_upgrade_commitment}
             # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
 
             exec.native_account::upgrade
-            # => []
         end
         "#,
         code_upgrade_commitment = &code_upgrade_commitment,
         storage_upgrade_commitment = &storage_upgrade_commitment,
     );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_source)?;
 
-    let exec_output = &mock_tx.execute_code(&code).await?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
 
-    assert_eq!(
-        exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
-        code_upgrade_commitment,
-        "code upgrade commitment should be stored in kernel memory"
-    );
-    assert_eq!(
-        exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR),
-        storage_upgrade_commitment,
-        "storage upgrade commitment should be stored in kernel memory"
+    let execution_result = mock_tx.execute().await;
+
+    // The tx-script root is not a procedure of the account, so `authenticate_account_origin` fails
+    // while resolving the caller's procedure index.
+    assert_transaction_executor_error!(
+        execution_result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
     );
 
     Ok(())
@@ -1498,7 +1501,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
+async fn test_authenticate_procedure() -> anyhow::Result<()> {
     let mock_component = MockAccountComponent::with_empty_slots();
 
     let components: Vec<AccountComponent> =
@@ -1525,7 +1528,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 
                 # authenticate procedure
                 push.{root}
-                exec.account::authenticate_and_track_procedure
+                exec.account::authenticate_procedure
 
                 # truncate the stack
                 dropw
@@ -1547,6 +1550,66 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
             },
         }
     }
+
+    Ok(())
+}
+
+/// Verifies the conditional call-tracking of `authenticate_procedure`.
+///
+/// Whether a call is tracked is gated on the epilogue-auth-in-progress flag, so the test drives
+/// `authenticate_procedure` with a valid account procedure root while toggling that flag to emulate
+/// each context:
+/// - With the flag set (emulating the epilogue's auth run), the call must NOT be tracked. This is
+///   what lets the auth procedure read account state during the epilogue without polluting the
+///   `was_called` flags that `was_procedure_called`-based authenticators rely on.
+/// - With the flag cleared (a normal native call outside the epilogue's auth run), the call must be
+///   tracked.
+#[tokio::test]
+async fn test_authenticate_procedure_conditional_tracking() -> anyhow::Result<()> {
+    let mock_component = MockAccountComponent::with_empty_slots();
+
+    let components: Vec<AccountComponent> =
+        Auth::IncrNonce.into_iter().chain([mock_component.into()]).collect();
+    let account_code = AccountCode::from_components(&components).unwrap();
+
+    // a regular (non-auth) account procedure root to drive the authenticator with
+    let proc_root = *account_code.procedures()[1].mast_root();
+
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+
+    let code = format!(
+        r#"
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            # while the epilogue is executing the auth procedure, calls must NOT be tracked
+            push.1 exec.memory::set_epilogue_auth_in_progress_flag
+            push.{proc_root}
+            exec.account::authenticate_procedure
+            push.{proc_root}
+            exec.account::was_procedure_called
+            assertz.err="call during the epilogue auth run must not be tracked"
+
+            # outside the epilogue's auth run, a native call must be tracked
+            push.0 exec.memory::set_epilogue_auth_in_progress_flag
+            push.{proc_root}
+            exec.account::authenticate_procedure
+            push.{proc_root}
+            exec.account::was_procedure_called
+            assert.err="native call outside the auth procedure must be tracked"
+
+            # truncate the stack
+            dropw
+        end
+        "#,
+        proc_root = &proc_root,
+    );
+
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }

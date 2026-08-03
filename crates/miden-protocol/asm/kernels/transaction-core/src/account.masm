@@ -768,8 +768,23 @@ end
 # CODE
 # -------------------------------------------------------------------------------------------------
 
-#! Verifies that the procedure root is part of the account code and tracks whether it has been
-#! called.
+#! Verifies that the procedure root is part of the account code and conditionally tracks whether it
+#! has been called.
+#!
+#! The call is tracked only when both of the following hold:
+#! - the active account is the native account
+#! - the epilogue is not currently executing the account's authentication procedure
+#!
+#! Foreign accounts are skipped by choice, not by necessity: procedure call tracking lives in a
+#! separate account-memory region from a foreign account's committed on-chain state, which stays
+#! immutable throughout the transaction regardless. We simply decided that foreign accounts do not
+#! need procedure tracking for now; it could be enabled later if desired. Skipping tracking while the
+#! epilogue runs the auth procedure lets it freely read account state without polluting the
+#! `was_called` flags that `was_procedure_called`-based authenticators rely on. This condition is
+#! keyed on the epilogue-auth-in-progress flag rather than on the caller being the auth procedure:
+#! an auth procedure invoked from user code (e.g. a note script) during the main phase runs with the
+#! flag unset, so its calls are still tracked and the epilogue's replay guard
+#! (`ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT`) still fires.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: []
@@ -779,14 +794,27 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
-pub proc authenticate_and_track_procedure
+pub proc authenticate_procedure
     # verify that the procedure is part of the account code and get its index
     exec.assert_procedure_in_account
     # => [index]
 
-    # Set the was_called flag to 1 for this procedure
-    exec.set_was_procedure_called
-    # => []
+    # the call is tracked only if the active account is the native account and the epilogue is not
+    # currently executing the auth procedure
+    exec.memory::is_native_account
+    # => [is_native_account, index]
+
+    exec.memory::is_epilogue_auth_in_progress not and
+    # => [should_track, index]
+
+    if.true
+        # set the `was_called` flag to 1 for this procedure
+        exec.set_was_procedure_called
+        # => []
+    else
+        drop
+        # => []
+    end
 end
 
 #! Verifies that the procedure root is part of the account code and returns its index, WITHOUT
@@ -829,7 +857,12 @@ pub proc assert_auth_procedure
     push.0
     # => [index, PROC_ROOT]
 
-    # set was_called for the the auth procedure to true
+    # record the auth procedure (index 0) as called. This is unconditional (unlike the general call
+    # authenticator, which suppresses tracking during the epilogue auth run) because index 0 is what
+    # the epilogue's replay guard reads: reached via `incr_nonce`, this records index 0, so a
+    # main-phase invocation of the auth procedure trips the guard regardless of the auth-in-progress
+    # flag. In a correct transaction `incr_nonce` runs only from within the auth procedure, after the
+    # guard has already checked index 0, so the recorded value is never observed as 1.
     dup exec.set_was_procedure_called
     # => [index, PROC_ROOT]
 
@@ -1949,8 +1982,15 @@ end
 #! Checks if a native account procedure has been called during transaction execution.
 #!
 #! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
-#! `exec.faucet::mint`) which trigger `authenticate_and_track_procedure`. Procedures that execute
-#! only local MASM instructions will return 0 even if they were executed.
+#! `exec.faucet::mint`) which trigger `authenticate_procedure`. Procedures that execute only local
+#! MASM instructions will return 0 even if they were executed.
+#!
+#! Note: Account procedures invoked while the epilogue runs the authentication procedure are not
+#! recorded as called - call tracking is suppressed for the auth run. The authentication procedure's
+#! own index (0) is the exception: `incr_nonce` records it unconditionally. In a correct transaction
+#! this is never observed as 1, because the epilogue's replay guard checks index 0 before running the
+#! auth procedure and `incr_nonce` is only reachable from within it; index 0 reads back as 1 only when
+#! the auth procedure was invoked from the wrong context, which the guard then rejects.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [was_called]

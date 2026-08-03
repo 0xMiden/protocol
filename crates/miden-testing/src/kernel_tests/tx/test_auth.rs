@@ -1,7 +1,8 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
-use miden_protocol::account::{Account, AccountBuilder};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
@@ -99,6 +100,129 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
         execution_result,
         ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT
     );
+
+    Ok(())
+}
+
+/// Regression test for the epilogue's "auth procedure must not be called by user code" guard when
+/// the auth procedure does not increment the nonce.
+///
+/// The guard (`epilogue.masm`) relies on the auth procedure's own kernel calls being tracked: if a
+/// note or transaction script invokes the auth procedure during the main phase, the calls it makes
+/// set `was_called[0]`, and the epilogue aborts. Call-tracking is suppressed only while the
+/// epilogue-auth-in-progress flag is set, so a main-phase invocation (flag unset) is still
+/// tracked.
+///
+/// This uses an auth procedure that makes a gated kernel call (`get_initial_commitment`) but never
+/// increments the nonce - the case that a caller-index-based exemption would miss, since the only
+/// other writer of `was_called[0]` is the nonce increment.
+#[tokio::test]
+async fn test_non_incrementing_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
+    // An auth component whose auth procedure makes a gated kernel call but never increments the
+    // nonce.
+    let auth_src = "
+        use miden::protocol::native_account
+
+        @auth_script
+        pub proc auth_read_only
+            # a gated kernel call; invoked from user code during the main phase (epilogue-auth-in-
+            # progress flag unset) it records was_called[0], which the epilogue's replay guard rejects
+            exec.native_account::get_initial_commitment dropw
+            # deliberately never increment the nonce
+            dropw dropw dropw dropw
+        end
+    ";
+    let auth_code =
+        CodeBuilder::default().compile_component_code("mock::read_only_auth", auth_src)?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("mock::read_only_auth"),
+    )?;
+
+    let account = AccountBuilder::new([42; 32])
+        .with_component(auth_component.clone())
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    // A transaction script that invokes the account's auth procedure during the main phase.
+    let tx_script_source = "
+        @transaction_script
+        pub proc main
+            call.::mock::read_only_auth::auth_read_only
+        end
+    ";
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(auth_component.component_code())?
+        .compile_tx_script(tx_script_source)?;
+
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+
+    let execution_result = mock_tx.execute().await;
+
+    assert_transaction_executor_error!(
+        execution_result,
+        ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT
+    );
+
+    Ok(())
+}
+
+/// Future-proofing regression: a procedure invoked via `call` from the auth procedure must not be
+/// tracked, even though its own kernel calls are attributed to it (not to the auth procedure).
+///
+/// Tracking is suppressed for the whole epilogue auth run via the epilogue-auth-in-progress flag,
+/// so this holds regardless of how the auth procedure reaches the kernel. A
+/// caller-index-based exemption (skipping only index 0) would instead track the invoked procedure.
+/// The auth procedure asserts the non-tracking itself, so a regression makes the transaction fail.
+#[tokio::test]
+async fn test_procedure_called_from_auth_procedure_is_not_tracked() -> anyhow::Result<()> {
+    let component_src = "
+        use miden::protocol::native_account
+
+        @account_procedure
+        pub proc touch_state
+            # a gated kernel call; invoked via `call` from the auth procedure so that the call is
+            # attributed to `touch_state` (index != 0)
+            exec.native_account::get_initial_commitment dropw
+        end
+
+        @auth_script
+        pub proc auth_check_tracking
+            # invoke the helper via `call`
+            call.touch_state
+
+            # the helper must NOT be recorded as called, because tracking is suppressed while the
+            # auth procedure runs
+            procref.touch_state
+            exec.native_account::was_procedure_called
+            assertz.err=\"procedure called from the auth procedure must not be tracked\"
+
+            # increment the nonce so the transaction changes state and is valid
+            exec.native_account::incr_nonce drop
+
+            # clean up the auth args frame
+            dropw dropw dropw dropw
+        end
+    ";
+    let component_code =
+        CodeBuilder::default().compile_component_code("mock::flag_tracking_auth", component_src)?;
+    let component = AccountComponent::new(
+        component_code,
+        vec![],
+        AccountComponentMetadata::mock("mock::flag_tracking_auth"),
+    )?;
+
+    let account = AccountBuilder::new([7; 32])
+        .with_component(component)
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    let mock_tx = TestTransactionBuilder::new(account).build()?;
+
+    // If the helper were tracked, the auth procedure's `assertz` would fail and execution would
+    // err.
+    mock_tx.execute().await.context("auth-procedure call-tracking regression")?;
 
     Ok(())
 }
