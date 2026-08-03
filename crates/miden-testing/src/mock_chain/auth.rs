@@ -22,8 +22,6 @@ use miden_standards::account::auth::{
     AuthMultisigSmartConfig,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
-    AuthSingleSigAclConfig,
     GuardianConfig,
     SponsorshipPolicy,
 };
@@ -60,14 +58,6 @@ pub enum Auth {
     MultisigSmart {
         approver_set: ApproverSet,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-    },
-
-    /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthSingleSigAcl]. Any called procedure that is not
-    /// in `exempt_procedures` forces signature verification.
-    Acl {
-        exempt_procedures: BTreeSet<AccountProcedureRoot>,
-        auth_scheme: AuthScheme,
     },
 
     /// Creates a mock authentication mechanism for the account that only increments the nonce.
@@ -121,8 +111,7 @@ impl Auth {
     ///
     /// The authentication component is always the first component of the returned vector; variants
     /// that expand into multiple components (e.g. [`Auth::NetworkAccount`]) yield their companion
-    /// components after it. The authenticator is only `Some` when [`Auth::BasicAuth`] or
-    /// [`Auth::Acl`] is passed.
+    /// components after it. The authenticator is only `Some` when [`Auth::BasicAuth`] is passed.
     pub fn build_components(&self) -> (Vec<AccountComponent>, Option<BasicAuthenticator>) {
         match self {
             Auth::BasicAuth { auth_scheme } => {
@@ -169,23 +158,6 @@ impl Auth {
                     .into();
 
                 (vec![component], None)
-            },
-            Auth::Acl { exempt_procedures, auth_scheme } => {
-                let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
-                    .expect("failed to create secret key");
-                let pub_key = sec_key.public_key().to_commitment();
-
-                let component = AuthSingleSigAcl::new(
-                    Approver::new(pub_key, *auth_scheme),
-                    AuthSingleSigAclConfig::new(exempt_procedures.clone()).expect(
-                        "AuthSingleSigAcl component creation failed: too many exempt procedures",
-                    ),
-                )
-                .into();
-                let authenticator = BasicAuthenticator::new(&[sec_key]);
-
-                (vec![component], Some(authenticator))
             },
             Auth::IncrNonce => (vec![IncrNonceAuthComponent.into()], None),
             Auth::Noop => (vec![NoopAuthComponent.into()], None),

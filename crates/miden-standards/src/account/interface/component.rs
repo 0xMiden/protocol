@@ -34,9 +34,6 @@ pub enum AccountComponentInterface {
     /// [`AuthSingleSig`][crate::account::auth::AuthSingleSig] module.
     AuthSingleSig,
     /// Exposes procedures from the
-    /// [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] module.
-    AuthSingleSigAcl,
-    /// Exposes procedures from the
     /// [`AuthMultisig`][crate::account::auth::AuthMultisig] module.
     AuthMultisig,
     /// Exposes procedures from the
@@ -82,7 +79,6 @@ impl AccountComponentInterface {
                 "Role Based Access Control".to_string()
             },
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
-            AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthMultisigSmart => "Multisig Smart".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
@@ -106,7 +102,6 @@ impl AccountComponentInterface {
         matches!(
             self,
             AccountComponentInterface::AuthSingleSig
-                | AccountComponentInterface::AuthSingleSigAcl
                 | AccountComponentInterface::AuthMultisig
                 | AccountComponentInterface::AuthMultisigSmart
                 | AccountComponentInterface::AuthGuardedMultisig
