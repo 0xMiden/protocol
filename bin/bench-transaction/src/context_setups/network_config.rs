@@ -111,7 +111,7 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
 
     let note: Note = FaucetPolicyConfigNote::builder()
         .sender(owner.id())
-        .account(account.id())
+        .target(account.id())
         .config(FaucetPolicyConfig::SetMintPolicy {
             policy_root: MintPolicy::owner_only().root(),
         })
@@ -354,7 +354,7 @@ pub fn tx_consume_pause_config_note_network() -> Result<MockTransaction> {
 
     let note: Note = PauseConfigNote::builder()
         .sender(owner.id())
-        .account(account.id())
+        .target(account.id())
         .config(PauseConfig::Pause)
         .generate_serial_number(builder.rng_mut())
         .build()?
@@ -396,7 +396,7 @@ pub fn tx_consume_owner_config_note_network() -> Result<MockTransaction> {
 
     let note: Note = OwnerConfigNote::builder()
         .sender(owner.id())
-        .account(account.id())
+        .target(account.id())
         .config(OwnerConfig::TransferOwnership { new_owner: Some(new_owner) })
         .generate_serial_number(builder.rng_mut())
         .build()?
@@ -441,7 +441,7 @@ pub fn tx_consume_rbac_config_note_network() -> Result<MockTransaction> {
 
     let note: Note = RbacConfigNote::builder()
         .sender(admin.id())
-        .account(account.id())
+        .target(account.id())
         .config(RbacConfig::GrantRole {
             role: RoleSymbol::new("MINTER")?,
             account: member,
@@ -488,7 +488,7 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
 
     let note: Note = NetworkAccountConfigNote::builder()
         .sender(owner)
-        .account(account.id())
+        .target(account.id())
         .config(NetworkAccountConfig::AddAllowedNoteScript {
             script_root: NoteScriptRoot::from_array([1, 2, 3, 4]),
         })
@@ -537,7 +537,7 @@ pub fn tx_consume_constant_fee_policy_config_note_network() -> Result<MockTransa
 
     let note: Note = ConstantFeePolicyConfigNote::builder()
         .sender(owner)
-        .account(account.id())
+        .target(account.id())
         .note_script_root(NoteScriptRoot::from_array([1, 2, 3, 4]))
         .fee_asset(super::native_fee_asset(100)?)
         .serial_number(Word::from([1u32, 0, 0, 0]))

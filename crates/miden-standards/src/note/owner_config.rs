@@ -116,16 +116,18 @@ impl From<OwnerConfig> for NoteStorage {
 /// selected action: the current owner for `TransferOwnership` / `RenounceOwnership`, or the
 /// nominated owner for `AcceptOwnership`.
 ///
-/// OwnerConfig notes are network notes: the builder adds the [`NetworkAccountTarget`] attachment
-/// routing the note to `account` unless the caller supplies one, so the note is always a valid
-/// [`AccountTargetNetworkNote`].
+/// The note is bound to the target `account` by a [`NetworkAccountTarget`] attachment: the script
+/// asserts that the consuming account matches that target before dispatching, so the note cannot be
+/// consumed by a third-party account that merely accepts its sender. The binding also
+/// makes the note a valid [`AccountTargetNetworkNote`], routing it to `account` for network
+/// execution.
 ///
 /// Construct one with the [builder](OwnerConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
 pub struct OwnerConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: OwnerConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -135,32 +137,38 @@ pub struct OwnerConfigNote {
 impl OwnerConfigNote {
     /// Builds a new [`OwnerConfigNote`] that applies `config` to `account`.
     ///
-    /// A [`NetworkAccountTarget`] attachment routing the note to `account` is added automatically
-    /// unless the attachments already carry one, leaving the caller free to attach their own data
-    /// or to override the target's execution hint.
+    /// The note is bound to `account` by a [`NetworkAccountTarget`] attachment that the builder
+    /// appends unless the caller already supplied one for `account`.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the attachments carry a network account target that does not decode, or carry none and
-    ///   `account` is not public (see [`NetworkAccountTarget::new`]).
-    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
+    /// - `account` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
+    ///   which requires a public target).
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
+    ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: OwnerConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        NetworkAccountTarget::append_if_missing(&mut attachments, account).map_err(|err| {
-            NoteError::other_with_source("invalid network account target of OwnerConfig note", err)
+        // The note script asserts that the consuming account matches this target before
+        // dispatching.
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
+            NoteError::other_with_source(
+                "failed to bind the OwnerConfig note to its target account",
+                err,
+            )
         })?;
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -198,7 +206,7 @@ impl OwnerConfigNote {
 
     /// Returns the account ID of the managed account (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the management action carried by the note.
@@ -259,7 +267,7 @@ impl From<OwnerConfigNote> for Note {
         // OwnerConfig notes carry no assets and are always public for network execution; the action
         // and its arguments live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             OwnerConfigNote::script(),
@@ -296,7 +304,7 @@ mod tests {
     use miden_protocol::note::NoteAttachmentScheme;
 
     use super::*;
-    use crate::note::{NetworkNoteExt, NoteExecutionHint};
+    use crate::note::{NetworkAccountTargetError, NetworkNoteExt, NoteExecutionHint};
 
     fn account_id(seed: u8) -> AccountId {
         typed_account_id(seed, AccountType::Public)
@@ -316,7 +324,7 @@ mod tests {
 
         let note = OwnerConfigNote::builder()
             .sender(owner)
-            .account(managed)
+            .target(managed)
             .config(OwnerConfig::TransferOwnership { new_owner: Some(new_owner) })
             .generate_serial_number(&mut rng)
             .build()
@@ -340,7 +348,7 @@ mod tests {
 
         let note = OwnerConfigNote::builder()
             .sender(account_id(2))
-            .account(managed)
+            .target(managed)
             .config(OwnerConfig::AcceptOwnership)
             .generate_serial_number(&mut rng)
             .build()
@@ -354,32 +362,54 @@ mod tests {
         assert!(network_note.as_note().is_network_note());
     }
 
-    /// Caller-supplied attachments are kept, and a supplied network target takes precedence over
-    /// the one the builder would derive from the managed account.
+    /// Caller-supplied attachments are kept in their order, with the bound network target appended.
     #[test]
     fn builder_keeps_caller_attachments() {
         let mut rng = RandomCoin::new(Word::empty());
         let managed = account_id(1);
         let custom_scheme = NoteAttachmentScheme::new(64).unwrap();
         let custom = NoteAttachment::with_word(custom_scheme, Word::from([7u32, 0, 0, 0]));
-        let target = NetworkAccountTarget::new(managed, NoteExecutionHint::None).unwrap();
 
         let note = OwnerConfigNote::builder()
-            .attachments([custom.clone(), NoteAttachment::from(target)])
+            .attachment(custom.clone())
             .sender(account_id(2))
-            .account(managed)
+            .target(managed)
             .config(OwnerConfig::AcceptOwnership)
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
 
-        // The builder did not append a second network target.
+        // The target is appended, so the caller's attachment comes first.
         assert_eq!(note.attachments().num_attachments(), 2);
         assert_eq!(note.attachments().get(0), Some(&custom));
 
         let network_note = AccountTargetNetworkNote::from(note);
         assert_eq!(network_note.target_account_id(), managed);
-        assert_eq!(network_note.execution_hint(), NoteExecutionHint::None);
+    }
+
+    /// A caller-supplied `NetworkAccountTarget` for another account is rejected rather than
+    /// silently coexisting with the note's own target.
+    #[test]
+    fn builder_rejects_target_for_other_account() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let rogue_target =
+            NetworkAccountTarget::new(account_id(3), NoteExecutionHint::None).unwrap();
+
+        let err = OwnerConfigNote::builder()
+            .attachment(rogue_target)
+            .sender(account_id(2))
+            .target(account_id(1))
+            .config(OwnerConfig::AcceptOwnership)
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap_err();
+
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetMismatch { .. }
+            )
+        });
     }
 
     /// A non-public managed account cannot be a network target, so the builder rejects it.
@@ -390,13 +420,18 @@ mod tests {
 
         let err = OwnerConfigNote::builder()
             .sender(account_id(2))
-            .account(managed)
+            .target(managed)
             .config(OwnerConfig::AcceptOwnership)
             .generate_serial_number(&mut rng)
             .build()
             .unwrap_err();
 
-        assert_matches!(err, NoteError::Other { .. });
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetNotPublic { .. }
+            )
+        });
     }
 
     /// `TransferOwnership` storage is `[selector, new_owner_suffix, new_owner_prefix]`.

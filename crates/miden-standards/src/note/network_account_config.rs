@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountProcedureRoot};
@@ -23,8 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
-use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -147,7 +146,7 @@ impl From<NetworkAccountConfig> for NoteStorage {
 #[derive(Debug, Clone)]
 pub struct NetworkAccountConfigNote {
     sender: AccountId,
-    account: AccountId,
+    target: AccountId,
     config: NetworkAccountConfig,
     serial_number: Word,
     attachments: NoteAttachments,
@@ -165,26 +164,26 @@ impl NetworkAccountConfigNote {
     ///
     /// Returns an error if:
     /// - `account` does not have [`AccountType::Public`](miden_protocol::account::AccountType).
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
     /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
-        account: AccountId,
+        target: AccountId,
         config: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        // Bind consumption to the target account. Prepended so it is the canonical
-        // `NetworkAccountTarget` the note script reads.
-        let target = NetworkAccountTarget::new(account, NoteExecutionHint::Always)
-            .map_err(|err| NoteError::other(err.to_string()))?;
-        attachments.insert(0, NoteAttachment::from(target));
+        // Bind consumption to the target account: the note script rejects any other consumer.
+        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
+            NoteError::other_with_source("failed to bind the note to its target account", err)
+        })?;
 
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
-            account,
+            target,
             config,
             serial_number,
             attachments,
@@ -220,7 +219,7 @@ impl NetworkAccountConfigNote {
 
     /// Returns the account ID of the managed network account (the account the note is tagged for).
     pub fn account(&self) -> AccountId {
-        self.account
+        self.target
     }
 
     /// Returns the allowlist-mutation action carried by the note.
@@ -281,7 +280,7 @@ impl From<NetworkAccountConfigNote> for Note {
         // NetworkAccountConfig notes carry no assets and are always public for network
         // execution; the action and its script root live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(note.account));
+            .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
             NetworkAccountConfigNote::script(),
@@ -340,7 +339,7 @@ mod tests {
 
         let note = NetworkAccountConfigNote::builder()
             .sender(sender)
-            .account(account)
+            .target(account)
             .config(NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root(10) })
             .generate_serial_number(&mut rng)
             .build()

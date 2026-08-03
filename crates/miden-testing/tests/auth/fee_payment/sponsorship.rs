@@ -12,6 +12,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::{
     AuthNetworkAccount,
     FeeConversionInfo,
+    SponsorshipPolicy,
     commit_fee_conversion_info,
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
@@ -50,12 +51,14 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
 
 /// Builds an existing public network account (`AuthNetworkAccount` + `BasicWallet` +
 /// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
-/// through its active `BasicConstantFeePolicy`, and holds `assets` in its vault.
+/// through its active `BasicConstantFeePolicy`, holds `assets` in its vault, and bounds its
+/// sponsorship spending by `sponsorship_policy`.
 fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
     assets: impl IntoIterator<Item = Asset>,
+    sponsorship_policy: SponsorshipPolicy,
 ) -> anyhow::Result<Account> {
     let mut policy = BasicConstantFeePolicy::new();
     for (root, amount) in priced {
@@ -65,7 +68,8 @@ fn network_account(
         .active_fee_policy(policy.into())
         .fee_faucet_id(fee_faucet_id()?)
         .build();
-    let auth = AuthNetworkAccount::new(BTreeSet::from_iter(allowed_notes), fee_policy_manager)?;
+    let auth = AuthNetworkAccount::new(BTreeSet::from_iter(allowed_notes), fee_policy_manager)?
+        .with_sponsorship_policy(sponsorship_policy);
 
     Ok(AccountBuilder::new(seed)
         .account_type(AccountType::Public)
@@ -131,6 +135,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
         [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
         &[(P2idNote::script_root(), FEE_AMOUNT)],
         [],
+        SponsorshipPolicy::default(),
     )?;
     builder.add_account(target.clone())?;
 
@@ -223,6 +228,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
         [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
         &[(P2idNote::script_root(), FEE_AMOUNT)],
         [fee_asset(NETWORK_INITIAL_FEE_BALANCE)?],
+        SponsorshipPolicy::default(),
     )?;
     builder.add_account(network.clone())?;
     let mut mock_chain = builder.build()?;
@@ -323,11 +329,14 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
         [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
         &[(P2idNote::script_root(), FEE_AMOUNT)],
         [fee_asset(B_INITIAL_FEE_BALANCE)?],
+        SponsorshipPolicy::default(),
     )?;
 
     // probe network account A to learn its id (independent of allowlist storage), which the
     // spawned note names as sender; the spawn note is authored by A and consumed by A
-    let network_a_id = network_account([2; 32], [P2idNote::script_root()], &[], [])?.id();
+    let network_a_id =
+        network_account([2; 32], [P2idNote::script_root()], &[], [], SponsorshipPolicy::Unlimited)?
+            .id();
     let spawned_note = p2id_network_note(network_a_id, network_b.id(), payload_asset, &mut rng)?;
     let spawn_note = create_spawn_note([&spawned_note])?;
 
@@ -339,6 +348,7 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
         [spawn_note.script().root(), FeeSponsorshipNote::script_root()],
         &[(spawn_note.script().root(), 0)],
         [fee_asset(1_000_000)?, payload_asset],
+        SponsorshipPolicy::Unlimited,
     )?;
     assert_eq!(network_a.id(), network_a_id, "account id must not depend on the allowlist");
 

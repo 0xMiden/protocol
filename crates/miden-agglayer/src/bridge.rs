@@ -25,6 +25,7 @@ use miden_standards::note::{
     NoteExecutionHint,
     PauseConfig,
     PauseConfigNote,
+    RbacConfigNote,
 };
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
@@ -470,8 +471,11 @@ impl AggLayerBridge {
     /// means any transaction consuming a note outside this set is rejected before reaching
     /// `output_note::create`.
     ///
-    /// Besides the agglayer-specific notes, the bridge accepts the standards [`PauseConfigNote`]
-    /// so the `ADMIN` role can toggle the emergency pause.
+    /// Besides the agglayer-specific notes, the bridge accepts two standards notes: the
+    /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, and the
+    /// role-management [`RbacConfigNote`], which makes the bridge's RBAC role graph mutable
+    /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration
+    /// section of `SPEC.md` for the associated caveats).
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
@@ -483,6 +487,7 @@ impl AggLayerBridge {
             UpdateGerNote::script_root(),
             RemoveGerNote::script_root(),
             PauseConfigNote::script_root(),
+            RbacConfigNote::script_root(),
         ])
     }
 
@@ -492,8 +497,9 @@ impl AggLayerBridge {
     /// Builds a [`PauseConfigNote`] that toggles the emergency pause of the bridge account
     /// `bridge_id`. `sender` must hold the bridge's `ADMIN` role.
     ///
-    /// Use this instead of [`PauseConfigNote::builder`] directly: the builder attaches no
-    /// [`NetworkAccountTarget`], without which the note is never routed to the bridge.
+    /// Use this instead of [`PauseConfigNote::builder`] directly: it reports a non-public
+    /// `bridge_id` as [`AgglayerBridgeError::NonPublicPauseNoteTarget`] rather than as an opaque
+    /// note creation failure.
     ///
     /// # Errors
     /// Returns an error if `bridge_id` is not a public account, or if note creation fails.
@@ -508,7 +514,7 @@ impl AggLayerBridge {
 
         PauseConfigNote::builder()
             .sender(sender)
-            .account(bridge_id)
+            .target(bridge_id)
             .config(config)
             .attachment(attachment)
             .generate_serial_number(rng)

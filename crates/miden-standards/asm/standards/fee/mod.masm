@@ -342,13 +342,15 @@ end
 #! fee policy via an FPI call, which requires that target to be provisioned as a foreign account.
 #!
 #! Inputs:  [num_extra_cycles, CONVERSION_INFO]
-#! Outputs: []
+#! Outputs: [total_sponsored_fee_amount]
 #!
 #! Where:
 #! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
 #!   the end of the authentication procedure.
 #! - CONVERSION_INFO is [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den], or the empty
 #!   word if no conversion info was committed (only accepted when the computed fee is zero).
+#! - total_sponsored_fee_amount is the total amount the sponsorship step moved into sponsorship
+#!   notes.
 #!
 #! Panics if:
 #! - the sponsorship step fails (propagates the panics of
@@ -362,56 +364,62 @@ end
 #! - the maximum number of output notes is exceeded.
 #!
 #! Invocation: exec
-pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo)
+pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> felt
     # sponsor any network output notes before the fee is computed, so the sponsorship notes
     # this creates are counted by both the cycle estimate and compute_fee.
     exec.tx::get_fee_faucet_id exec.fungible_asset::create_id
     # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO]
 
     exec.fees::create_network_note_sponsorships
-    # => [num_extra_cycles, CONVERSION_INFO]
+    # => [total_sponsored_fee_amount, num_extra_cycles, CONVERSION_INFO]
+
+    movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, total_sponsored_fee_amount]
 
     exec.apply_cycle_margins
-    # => [num_estimated_extra_cycles, CONVERSION_INFO]
+    # => [num_estimated_extra_cycles, CONVERSION_INFO, total_sponsored_fee_amount]
 
     # no output notes are excluded from the fee computation
     padw movup.4
-    # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, CONVERSION_INFO]
+    # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, CONVERSION_INFO,
+    #     total_sponsored_fee_amount]
 
     exec.tx::compute_fee
-    # => [fee_amount, CONVERSION_INFO]
+    # => [fee_amount, CONVERSION_INFO, total_sponsored_fee_amount]
 
     dup eq.0
     if.true
         # a zero fee requires no fee note
         drop dropw
-        # => []
+        # => [total_sponsored_fee_amount]
     else
         movdn.4
-        # => [CONVERSION_INFO, fee_amount]
+        # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 
         # a non-zero fee requires committed conversion info
         exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
-        # => [CONVERSION_INFO, fee_amount]
+        # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 
         # convert the fee amount into the payment asset's amount
         # (CONVERSION_INFO reads [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den])
         movup.2 movup.3 movup.4
-        # => [fee_amount, rate_den, rate_num, faucet_id_suffix, faucet_id_prefix]
+        # => [fee_amount, rate_den, rate_num, faucet_id_suffix, faucet_id_prefix,
+        #     total_sponsored_fee_amount]
 
         movup.2 swap
-        # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix]
+        # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix,
+        #     total_sponsored_fee_amount]
 
         exec.convert_amount
-        # => [payment_amount, faucet_id_suffix, faucet_id_prefix]
+        # => [payment_amount, faucet_id_suffix, faucet_id_prefix, total_sponsored_fee_amount]
 
         movdn.2
-        # => [faucet_id_suffix, faucet_id_prefix, payment_amount]
+        # => [faucet_id_suffix, faucet_id_prefix, payment_amount, total_sponsored_fee_amount]
 
         exec.fungible_asset::create
-        # => [ASSET_ID, ASSET_VALUE]
+        # => [ASSET_ID, ASSET_VALUE, total_sponsored_fee_amount]
 
         exec.create_and_fund_fee_note
-        # => []
+        # => [total_sponsored_fee_amount]
     end
 end

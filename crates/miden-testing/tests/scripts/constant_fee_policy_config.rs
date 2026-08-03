@@ -49,7 +49,7 @@ pub(super) fn build_config_note(
 ) -> anyhow::Result<Note> {
     let note = ConstantFeePolicyConfigNote::builder()
         .sender(sender)
-        .account(account)
+        .target(account)
         .note_script_root(priced_root())
         .fee_asset(fee_asset)
         .serial_number(Word::from([serial_seed, 0, 0, 0]))

@@ -11,25 +11,20 @@ use super::{
     create_network_fungible_faucet,
     create_singlesig_user_fungible_faucet,
 };
-use crate::account::access::{AccessControl, PausableManager};
+use crate::account::access::{AccessControl, Authority};
 use crate::account::auth::{
     Approver,
     AuthGuardedMultisig,
     AuthMultisig,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
     GuardianConfig,
 };
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
-use crate::testing::faucet::{
-    user_faucet_guarded,
-    user_faucet_multisig,
-    user_faucet_single_sig_acl,
-};
+use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 use crate::tx_script::ExpirationTransactionScript;
 
 /// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
@@ -55,7 +50,7 @@ fn sample_faucet() -> FungibleFaucet {
 }
 
 #[test]
-fn user_fungible_faucet_with_single_sig_acl() {
+fn user_fungible_faucet_with_single_sig() {
     let pub_key_word = Word::new([Felt::ONE; 4]);
     let init_seed: [u8; 32] = [
         90, 110, 209, 94, 84, 105, 250, 242, 223, 203, 216, 124, 22, 159, 14, 132, 215, 85, 183,
@@ -68,7 +63,7 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let description_string = "A polygon token";
 
     let auth_component =
-        user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2);
+        AuthSingleSig::new(Approver::new(pub_key_word.into(), AuthScheme::Falcon512Poseidon2));
 
     let faucet_account = create_singlesig_user_fungible_faucet(
         init_seed,
@@ -81,35 +76,16 @@ fn user_fungible_faucet_with_single_sig_acl() {
 
     // The auth component's public key should be present.
     assert_eq!(
-        faucet_account.storage().get_item(AuthSingleSigAcl::public_key_slot()).unwrap(),
+        faucet_account.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),
         pub_key_word
     );
 
-    // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet -
-    // every authority-gated setter requires a signature. Probe the full former trigger set so
-    // a regression that put any of them back into the exempt map would surface here.
-    for probed_root in [
-        FungibleFaucet::mint_and_send_root(),
-        FungibleFaucet::set_max_supply_root(),
-        FungibleFaucet::set_description_root(),
-        FungibleFaucet::set_logo_uri_root(),
-        FungibleFaucet::set_external_link_root(),
-        TokenPolicyManager::set_mint_policy_root(),
-        TokenPolicyManager::set_burn_policy_root(),
-        TokenPolicyManager::set_send_policy_root(),
-        TokenPolicyManager::set_receive_policy_root(),
-        PausableManager::pause_root(),
-        PausableManager::unpause_root(),
-    ] {
-        let value = faucet_account
-            .storage()
-            .get_map_item(
-                AuthSingleSigAcl::exempt_procedure_roots_slot(),
-                StorageMapKey::from_raw(probed_root.as_word()),
-            )
-            .unwrap();
-        assert_eq!(value, Word::empty());
-    }
+    // Authority-gated setters are gated by the auth component itself, not by a separate owner /
+    // role check.
+    assert_eq!(
+        Authority::try_from_storage(faucet_account.storage()).unwrap(),
+        Authority::AuthControlled
+    );
 
     // Token config slot layout: [token_supply, max_supply, decimals, symbol]
     assert_eq!(

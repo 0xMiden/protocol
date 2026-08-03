@@ -3,13 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::Account;
 
-use crate::account::auth::{
-    AuthGuardedMultisig,
-    AuthMultisig,
-    AuthMultisigSmart,
-    AuthSingleSig,
-    AuthSingleSigAcl,
-};
+use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthMultisigSmart, AuthSingleSig};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 
 /// Helper function to extract public key commitments from every standard auth component
@@ -23,11 +17,6 @@ pub fn get_public_keys_from_account(account: &Account) -> Vec<Word> {
         match component {
             AccountComponentInterface::AuthSingleSig => {
                 if let Ok(key) = storage.get_item(AuthSingleSig::public_key_slot()) {
-                    keys.push(key);
-                }
-            },
-            AccountComponentInterface::AuthSingleSigAcl => {
-                if let Ok(key) = storage.get_item(AuthSingleSigAcl::public_key_slot()) {
                     keys.push(key);
                 }
             },
