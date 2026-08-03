@@ -91,11 +91,6 @@ fn assert_vault_patch(
 }
 
 /// Asserts that the payback note matching `expected_payback` carries exactly `expected_assets`.
-///
-/// The note is located by recipient digest, which commits to the creator and serial number but not
-/// to the assets, so each payback note is pinned to its own creator. Asserting that one note's
-/// complete asset set — rather than searching every output note for the asset — is what keeps an
-/// asset deposited into the wrong payback note from being masked by a correctly filled sibling.
 #[track_caller]
 fn assert_payback_assets(
     output_notes: &RawOutputNotes,
@@ -997,7 +992,7 @@ async fn pswap_note_min_fill_step_test(
 /// the dummy at idx 0 instead of the P2ID at idx 1, and the asset assertions
 /// below will fail.
 #[tokio::test]
-async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
+async fn pswap_account_fill_payback_not_first_output_note_test() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
@@ -1081,23 +1076,13 @@ async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Regression test for the `note_idx` stack-layout bug in `create_p2id_note`'s `has_note_fill`
-/// branch — the mirror of `pswap_note_idx_nonzero_regression_test`, which covers the sibling
-/// `has_account_fill` branch.
+/// Regression test verifying that each PSWAP payback note receives the asset its creator requested
+/// when the paybacks are not the transaction's first output notes.
 ///
-/// The buggy branch displaced `note_idx` eight positions down *before* building the asset. Since
-/// `fungible_asset::create` consumes three elements and produces eight, the index ended up at depth
-/// 16, so `output_note::add_asset` read a pad zero at depth 8 and credited the asset to output note
-/// 0. The branch stayed stack-depth neutral and 0 is a valid note index, so nothing asserted.
-///
-/// A SPAWN note consumed first emits an empty dummy at `note_idx == 0`, so both PSWAP paybacks are
-/// created at indices 1 and 2. That makes the misdirection directly observable: if the bug is
-/// reintroduced, both note_fill legs deposit into the dummy and both paybacks are left empty.
-/// Asserting on the dummy pins the defect rather than inferring it from a sibling payback, which is
-/// what the cross-swap tests alone cannot do — there, the note that wrongly received everything is
-/// itself a payback note.
+/// A SPAWN note consumed first emits an empty dummy note at index 0, so the two cross-swapped PSWAP
+/// notes create their paybacks at indices 1 and 2 and the dummy must stay empty.
 #[tokio::test]
-async fn pswap_note_fill_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
+async fn pswap_note_fill_payback_not_first_output_note_test() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
@@ -1173,18 +1158,14 @@ async fn pswap_note_fill_note_idx_nonzero_regression_test() -> anyhow::Result<()
     Ok(())
 }
 
-/// Covers a note_fill leg whose payback note is created at an index a remainder note sits in front
-/// of — the only shape where the paybacks of two cross-swapped PSWAP notes are not adjacent.
+/// /// Regression test verifying that each PSWAP payback note receives the asset its creator
+/// requested when a remainder note is created between the two paybacks.
 ///
-/// Alice is filled partially, so her leg emits a payback *and* a remainder before Bob's leg runs;
-/// Bob's payback is therefore output note 2, not 1. This is coverage the other note_fill tests do
-/// not have: every one of them is a full or over-fill, so no remainder is ever interleaved.
-///
-/// Unlike `pswap_note_fill_note_idx_nonzero_regression_test`, which pins "always writes to index
-/// 0", this pins the index being *right* rather than merely non-zero: an off-by-one would deposit
-/// Bob's USDC into Alice's remainder note, handing one maker's proceeds to the other.
+/// Alice's PSWAP is filled below its minimum, so it emits a payback and a remainder before Bob's
+/// payback is created at index 2, and each of the three output notes must carry exactly its own
+/// asset.
 #[tokio::test]
-async fn pswap_note_fill_with_interleaved_remainder_test() -> anyhow::Result<()> {
+async fn pswap_note_fill_payback_after_remainder_note_test() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
