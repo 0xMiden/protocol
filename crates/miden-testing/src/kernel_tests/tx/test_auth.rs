@@ -1,18 +1,15 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
-use miden_protocol::account::{Account, AccountBuilder};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::{Felt, ONE, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::account_component::{
-    AuthRequestProbeComponent,
-    ConditionalAuthComponent,
-    ERR_WRONG_ARGS_MSG,
-};
+use miden_standards::testing::account_component::{ConditionalAuthComponent, ERR_WRONG_ARGS_MSG};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
@@ -109,13 +106,46 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
 
 /// Regression test: signature production must not be forced from outside the authentication
 /// procedure.
+///
+/// The account exposes an `emit_auth_request` procedure that builds a real transaction summary and
+/// emits `AUTH_REQUEST` for it, exactly like the standard auth procedure - but it runs as a normal
+/// account procedure invoked from the transaction script, i.e. outside the epilogue authentication
+/// phase. No signature is pre-supplied, so the event drives production, which must be rejected with
+/// `AuthRequestOutsideAuthProcedure`.
 #[tokio::test]
 async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let account = builder.add_existing_account_from_components(
-        Auth::IncrNonce,
-        [AuthRequestProbeComponent.into()],
+    let probe_code = CodeBuilder::default().compile_component_code(
+        "mock::auth_request_probe",
+        "
+        use miden::standards::auth
+        use {AUTH_REQUEST_EVENT} from miden::protocol::auth
+
+        #! Inputs: [PK_COMM, scheme_id]
+        @account_procedure
+        pub proc emit_auth_request
+            # Prepend seven zero user params so the summary layout matches the auth procedure's.
+            push.0.0.0.0.0.0.0
+            exec.auth::create_tx_summary
+            exec.auth::hash_and_insert_tx_summary
+            # => [MESSAGE, PK_COMM, scheme_id]
+
+            # With no pre-supplied signature the host must produce one, which is only allowed inside
+            # the auth procedure; here it is not, so the transaction aborts.
+            emit.AUTH_REQUEST_EVENT
+
+            dropw dropw drop
+        end
+        ",
     )?;
+    let probe_component = AccountComponent::new(
+        probe_code,
+        vec![],
+        AccountComponentMetadata::new("mock::auth_request_probe"),
+    )?;
+
+    let mut builder = MockChain::builder();
+    let account =
+        builder.add_existing_account_from_components(Auth::IncrNonce, [probe_component.clone()])?;
     let chain = builder.build()?;
 
     // A dummy public key commitment; the request is rejected before any signature is verified.
@@ -134,7 +164,7 @@ async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> an
     );
 
     let tx_script = CodeBuilder::new()
-        .with_dynamically_linked_package(AuthRequestProbeComponent::code())?
+        .with_dynamically_linked_package(probe_component.component_code())?
         .compile_tx_script(&tx_script_source)?;
 
     let execution_result = chain
@@ -193,15 +223,16 @@ async fn test_auth_request_verification_outside_auth_procedure_is_allowed() -> a
 
     let tx_script = CodeBuilder::new().compile_tx_script(&tx_script_source)?;
 
-    let execution_result = chain
+    // The request must be honored (no `AuthRequestOutsideAuthProcedure`), so the transaction runs
+    // to completion under the trivial `IncrNonce` auth.
+    chain
         .build_transaction(account.id())
         .tx_script(tx_script)
         .add_signature(pub_key_commitment, message, signature)
         .build()?
         .execute()
-        .await;
-
-    assert_matches!(execution_result, Ok(_));
+        .await
+        .context("verifying an externally-supplied signature outside the auth procedure should be allowed")?;
 
     Ok(())
 }
