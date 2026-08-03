@@ -1,17 +1,19 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
+use miden_processor::ExecutionError;
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, Signature};
 use miden_protocol::account::{Account, AccountBuilder};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-use miden_protocol::{Felt, ONE, Word};
+use miden_protocol::{Felt, Hasher, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::{ConditionalAuthComponent, ERR_WRONG_ARGS_MSG};
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
+use miden_tx::{TransactionExecutorError, TransactionKernelError};
+use rstest::rstest;
 
 use crate::{Auth, MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
@@ -166,6 +168,68 @@ async fn test_auth_request_from_script_is_rejected() -> anyhow::Result<()> {
     assert_matches!(
         execution_result,
         Err(TransactionExecutorError::AuthRequestOutsideAuthProcedure)
+    );
+
+    Ok(())
+}
+
+/// Regression test: an advice map entry under a signature key must not be able to make the host
+/// allocate an encoded signature of an arbitrary length.
+#[rstest]
+#[case::empty(0)]
+#[case::too_long(Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS + 1)]
+#[tokio::test]
+async fn test_auth_request_with_invalid_encoded_signature_length_is_rejected(
+    #[case] num_felts: usize,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::basic_falcon())?;
+    let chain = builder.build()?;
+
+    // Emit the request from a script with a precomputed message, but plant a malformed entry where
+    // the host looks the signature up.
+    let message = Word::from([1u32, 2, 3, 4]);
+    let secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let pub_key_commitment = secret_key.public_key().to_commitment();
+    let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
+    let scheme_id = secret_key.auth_scheme().as_u8();
+
+    let tx_script_source = format!(
+        r#"
+        use {{AUTH_REQUEST_EVENT}} from miden::protocol::auth
+
+        @transaction_script
+        pub proc main
+            push.{scheme_id}
+            push.{pub_key_commitment}
+            push.{message}
+            # => [MESSAGE, PK_COMM, scheme_id]
+
+            emit.AUTH_REQUEST_EVENT
+
+            push.0 assert.err="auth request handler should have aborted"
+        end
+        "#
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(&tx_script_source)?;
+
+    let execution_result = chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .add_advice_map_entry(signature_key, vec![ZERO; num_felts])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        execution_result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::InvalidEncodedSignatureLength { actual, .. })
+                    if *actual == num_felts
+            )
     );
 
     Ok(())

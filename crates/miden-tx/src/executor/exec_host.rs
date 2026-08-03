@@ -222,7 +222,7 @@ where
             .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
-            .to_prepared_signature(message);
+            .to_encoded_signature(message);
 
         let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
