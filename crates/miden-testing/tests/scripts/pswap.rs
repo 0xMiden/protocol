@@ -1081,6 +1081,180 @@ async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Regression test for the `note_idx` stack-layout bug in `create_p2id_note`'s `has_note_fill`
+/// branch — the mirror of `pswap_note_idx_nonzero_regression_test`, which covers the sibling
+/// `has_account_fill` branch.
+///
+/// The buggy branch displaced `note_idx` eight positions down *before* building the asset. Since
+/// `fungible_asset::create` consumes three elements and produces eight, the index ended up at depth
+/// 16, so `output_note::add_asset` read a pad zero at depth 8 and credited the asset to output note
+/// 0. The branch stayed stack-depth neutral and 0 is a valid note index, so nothing asserted.
+///
+/// A SPAWN note consumed first emits an empty dummy at `note_idx == 0`, so both PSWAP paybacks are
+/// created at indices 1 and 2. That makes the misdirection directly observable: if the bug is
+/// reintroduced, both note_fill legs deposit into the dummy and both paybacks are left empty.
+/// Asserting on the dummy pins the defect rather than inferring it from a sibling payback, which is
+/// what the cross-swap tests alone cannot do — there, the note that wrongly received everything is
+/// itself a payback note.
+#[tokio::test]
+async fn pswap_note_fill_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
+
+    let usdc_50 = FungibleAsset::new(usdc_faucet.id(), 50)?;
+    let eth_25 = FungibleAsset::new(eth_faucet.id(), 25)?;
+
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let bob = AccountIdBuilder::new().build_with_seed([2; 32]);
+    // Charlie holds no assets: every fill below is a pure note_fill, so the two PSWAP notes fund
+    // each other inflight and Charlie's vault must stay untouched.
+    let charlie = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+
+    let (alice_pswap, alice_pswap_note) =
+        build_pswap_note(&mut builder, alice, usdc_50, eth_25, NoteType::Public)?;
+    let (bob_pswap, bob_pswap_note) =
+        build_pswap_note(&mut builder, bob, eth_25, usdc_50, NoteType::Public)?;
+
+    // Dummy output note emitted by the SPAWN note, so the paybacks land at idx 1 and 2. Sender must
+    // equal the transaction's native account (charlie) per `create_spawn_note`'s check. No assets,
+    // which is exactly what makes it a usable canary.
+    let dummy_note = NoteBuilder::new(charlie.id(), SmallRng::seed_from_u64(7777)).build()?;
+    let spawn_note = builder.add_spawn_note([&dummy_note])?;
+
+    let mock_chain = builder.build()?;
+
+    // Pure note fill on both legs (account_fill = 0).
+    let mut note_args_map = BTreeMap::new();
+    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(0, 25)?);
+    note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, 50)?);
+
+    let (alice_p2id_note, _) = alice_pswap.execute(charlie.id(), None, Some(eth_25))?;
+    let (bob_p2id_note, _) = bob_pswap.execute(charlie.id(), None, Some(usdc_50))?;
+
+    // Consume spawn first so neither payback can occupy output note 0.
+    let mock_tx = mock_chain
+        .build_transaction(charlie.id())
+        .authenticated_input_notes([spawn_note.id(), alice_pswap_note.id(), bob_pswap_note.id()])
+        .extend_note_args(note_args_map)
+        .expected_output_notes(vec![
+            RawOutputNote::Full(dummy_note.clone()),
+            RawOutputNote::Full(alice_p2id_note.clone()),
+            RawOutputNote::Full(bob_p2id_note.clone()),
+        ])
+        .build()?;
+
+    let executed_transaction = mock_tx.execute().await?;
+
+    let output_notes = executed_transaction.output_notes();
+    assert_eq!(output_notes.num_notes(), 3, "expected dummy + two paybacks");
+
+    // The dummy at idx 0 must stay empty. Anything here means a note_fill leg wrote its asset to
+    // the wrong output note index.
+    assert_eq!(
+        output_notes.get_note(0).assets().num_assets(),
+        0,
+        "SPAWN dummy should be empty; non-empty means a note_fill leg deposited into the wrong \
+         output note_idx",
+    );
+
+    // Each payback carries exactly the asset its own creator requested.
+    assert_payback_assets(output_notes, &alice_p2id_note, [eth_25]);
+    assert_payback_assets(output_notes, &bob_p2id_note, [usdc_50]);
+
+    // Pure note_fill on both legs: the assets flow between the notes inflight, never through
+    // Charlie's vault.
+    assert!(
+        executed_transaction.account_patch().vault().is_empty(),
+        "Charlie's vault should be unchanged"
+    );
+
+    Ok(())
+}
+
+/// Covers a note_fill leg whose payback note is created at an index a remainder note sits in front
+/// of — the only shape where the paybacks of two cross-swapped PSWAP notes are not adjacent.
+///
+/// Alice is filled partially, so her leg emits a payback *and* a remainder before Bob's leg runs;
+/// Bob's payback is therefore output note 2, not 1. This is coverage the other note_fill tests do
+/// not have: every one of them is a full or over-fill, so no remainder is ever interleaved.
+///
+/// Unlike `pswap_note_fill_note_idx_nonzero_regression_test`, which pins "always writes to index
+/// 0", this pins the index being *right* rather than merely non-zero: an off-by-one would deposit
+/// Bob's USDC into Alice's remainder note, handing one maker's proceeds to the other.
+#[tokio::test]
+async fn pswap_note_fill_with_interleaved_remainder_test() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
+
+    // Alice offers 100 USDC for at least 50 ETH; Bob offers 20 ETH for at least 40 USDC.
+    // Alice's leg is filled with Bob's 20 ETH — below her 50 ETH minimum, so it is a partial fill:
+    // payout = floor(100 * 20 / 50) = 40 USDC, leaving a 60 USDC remainder. Those 40 USDC exactly
+    // fill Bob's leg, which needs no remainder of its own. Both legs are pure note_fill, so the two
+    // notes fund each other inflight and Charlie's vault stays untouched.
+    let alice_offered = FungibleAsset::new(usdc_faucet.id(), 100)?;
+    let alice_requested = FungibleAsset::new(eth_faucet.id(), 50)?;
+    let bob_offered = FungibleAsset::new(eth_faucet.id(), 20)?;
+    let bob_requested = FungibleAsset::new(usdc_faucet.id(), 40)?;
+    let alice_remainder_usdc = FungibleAsset::new(usdc_faucet.id(), 60)?;
+
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let bob = AccountIdBuilder::new().build_with_seed([2; 32]);
+    let charlie = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+
+    let (alice_pswap, alice_pswap_note) =
+        build_pswap_note(&mut builder, alice, alice_offered, alice_requested, NoteType::Public)?;
+    let (bob_pswap, bob_pswap_note) =
+        build_pswap_note(&mut builder, bob, bob_offered, bob_requested, NoteType::Public)?;
+
+    let mock_chain = builder.build()?;
+
+    let mut note_args_map = BTreeMap::new();
+    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(0, 20)?);
+    note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, 40)?);
+
+    let (alice_p2id_note, alice_remainder) =
+        alice_pswap.execute(charlie.id(), None, Some(bob_offered))?;
+    let alice_remainder: Note = alice_remainder
+        .expect("fill below the minimum should produce a remainder")
+        .into();
+
+    let (bob_p2id_note, bob_remainder) =
+        bob_pswap.execute(charlie.id(), None, Some(bob_requested))?;
+    assert!(bob_remainder.is_none(), "bob's leg is filled exactly, so it has no remainder");
+
+    let mock_tx = mock_chain
+        .build_transaction(charlie.id())
+        .authenticated_input_notes([alice_pswap_note.id(), bob_pswap_note.id()])
+        .extend_note_args(note_args_map)
+        .expected_output_notes(vec![
+            RawOutputNote::Full(alice_p2id_note.clone()),
+            RawOutputNote::Full(alice_remainder.clone()),
+            RawOutputNote::Full(bob_p2id_note.clone()),
+        ])
+        .build()?;
+
+    let executed_transaction = mock_tx.execute().await?;
+
+    // Alice's payback + Alice's remainder + Bob's payback.
+    let output_notes = executed_transaction.output_notes();
+    assert_eq!(output_notes.num_notes(), 3, "expected two paybacks and one remainder");
+
+    assert_payback_assets(output_notes, &alice_p2id_note, [bob_offered]);
+    assert_payback_assets(output_notes, &alice_remainder, [alice_remainder_usdc]);
+    assert_payback_assets(output_notes, &bob_p2id_note, [bob_requested]);
+
+    assert!(
+        executed_transaction.account_patch().vault().is_empty(),
+        "Charlie's vault should be unchanged"
+    );
+
+    Ok(())
+}
+
 #[rstest]
 #[case(5)]
 #[case(7)]
