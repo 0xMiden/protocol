@@ -10,10 +10,10 @@ Scripts: `check-masm-root-stability.sh` and `check-masm-export-digests.rs` that 
 
 The baseline is the latest release tag and it is compared against the version about to be released. For both sides:
 
-- Every exported procedure digest of `ProtocolLib`, the kernel library, `StandardsLib` and the agglayer library.
-- The kernel commitment and the two kernel programs (they cover the prologue, epilogue and procedure ordering, which the library exports do not).
-- The agglayer bridge and faucet code commitments, and the agglayer note script roots - standalone artifacts not covered by a library root.
-- Per standard account component: each procedure root, plus a commitment over its whole procedure set.
+- Every exported procedure digest of the `ProtocolLib`, transaction kernel, `StandardsLib` and agglayer packages.
+- The kernel commitment and the two kernel programs (they cover the prologue, epilogue and procedure ordering, which the package exports do not).
+- The agglayer bridge and faucet code commitments, which no package export covers.
+- Per account component: each procedure root, plus a commitment over its whole procedure set.
 
 A changed or removed root fails. An added procedure is only a warning, but an addition to the kernel or to a component still fails because it changes the corresponding commitment.
 

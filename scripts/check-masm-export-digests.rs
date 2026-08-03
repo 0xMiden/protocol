@@ -70,19 +70,10 @@ fn compare_roots(previous: Roots, current: Roots) -> Result<(), String> {
 }
 
 mod current {
-    use miden_agglayer_current::{
-        B2AggNote,
-        ClaimNote,
-        ConfigAggBridgeNote,
-        UpdateGerNote,
-        agglayer_library,
-        bridge,
-        faucet,
-    };
+    use miden_agglayer_current::{AggLayerBridge, agglayer_package, bridge, faucet};
     use miden_protocol_current::account::AccountComponentCode;
-    use miden_protocol_current::assembly::Library;
-    use miden_protocol_current::note::NoteScriptRoot;
     use miden_protocol_current::transaction::TransactionKernel;
+    use miden_protocol_current::vm::Package;
     use miden_protocol_current::{Hasher, ProtocolLib};
     use miden_standards_current::StandardsLib;
     use miden_standards_current::account::access::{
@@ -98,28 +89,33 @@ mod current {
         AuthMultisigSmart,
         AuthNetworkAccount,
         AuthSingleSig,
-        AuthSingleSigAcl,
         NoAuth,
     };
-    use miden_standards_current::account::faucets::FungibleFaucet;
-    use miden_standards_current::account::metadata::AccountSchemaCommitment;
+    use miden_standards_current::account::faucets::{FungibleFaucet, NonFungibleFaucet};
+    use miden_standards_current::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
+    use miden_standards_current::account::inspection::{
+        AccountSchemaCommitment,
+        CodeInspection,
+    };
     use miden_standards_current::account::policies::{
-        AllowlistOwnerControlled,
+        AllowlistManager,
         BasicAllowlist,
         BasicBlocklist,
-        BlocklistOwnerControlled,
+        BlocklistManager,
         BurnAllowAll,
         BurnOwnerOnly,
+        MinBurnAmount,
         MintAllowAll,
         MintOwnerOnly,
         TokenPolicyManager,
         TransferAllowAll,
     };
-    use miden_standards_current::account::wallets::BasicWallet;
+    use miden_standards_current::account::upgrade::UpgradeManager;
+    use miden_standards_current::account::wallets::{BasicWallet, NoteCreator};
 
     use super::*;
 
-    // Every installable standard account component.
+    // Every installable account component.
     const COMPONENT_CODE: &[fn() -> &'static AccountComponentCode] = &[
         Authority::code,
         Ownable2Step::code,
@@ -128,55 +124,51 @@ mod current {
         RoleBasedAccessControl::code,
         NoAuth::code,
         AuthSingleSig::code,
-        AuthSingleSigAcl::code,
         AuthMultisig::code,
         AuthMultisigSmart::code,
         AuthGuardedMultisig::code,
         AuthNetworkAccount::code,
         BurnAllowAll::code,
         BurnOwnerOnly::code,
+        MinBurnAmount::code,
         MintAllowAll::code,
         MintOwnerOnly::code,
         TransferAllowAll::code,
-        AllowlistOwnerControlled::code,
+        AllowlistManager::code,
         BasicAllowlist::code,
         BasicBlocklist::code,
-        BlocklistOwnerControlled::code,
+        BlocklistManager::code,
         TokenPolicyManager::code,
+        BasicConstantFeePolicy::code,
+        ConstantFeeManager::code,
         FungibleFaucet::code,
+        NonFungibleFaucet::code,
         BasicWallet::code,
+        NoteCreator::code,
+        CodeInspection::code,
         AccountSchemaCommitment::code,
-    ];
-
-    // The agglayer note scripts are compiled into standalone artifacts, so no library root covers
-    // them. They need to be checked separately.
-    //
-    // TODO: this can be removed once the agglayer note scripts get added to the agglayer lib.
-    const AGGLAYER_NOTE_SCRIPT_ROOTS: &[(&str, fn() -> NoteScriptRoot)] = &[
-        ("agglayer::note_scripts::b2agg", B2AggNote::script_root),
-        ("agglayer::note_scripts::claim", ClaimNote::script_root),
-        ("agglayer::note_scripts::config_agg_bridge", ConfigAggBridgeNote::script_root),
-        ("agglayer::note_scripts::update_ger", UpdateGerNote::script_root),
+        UpgradeManager::code,
+        AggLayerBridge::code,
     ];
 
     pub fn collect_roots() -> Roots {
         let mut roots = Roots::new();
 
-        collect_library(ProtocolLib::default().as_ref(), &mut roots);
+        collect_package(ProtocolLib::default().as_ref(), &mut roots);
 
         // The transaction kernel is compiled into its own artifact so its roots are collected
         // separately.
-        collect_library(TransactionKernel::kernel().as_ref(), &mut roots);
+        collect_package(&TransactionKernel::package(), &mut roots);
 
         // Collect the kernel commitment since the order of the kernel procedure roots it
-        // hashes is not covered by the library.
+        // hashes is not covered by the package.
         roots.insert(
             "transaction_kernel::TX_KERNEL_COMMITMENT".to_string(),
             TransactionKernel.to_commitment().to_hex(),
         );
 
         // Collect the kernel programs since they include the prologue and epilogue that are not
-        // covered by the kernel library exports.
+        // covered by the kernel package exports.
         roots.insert(
             "transaction_kernel::MAIN_PROGRAM_ROOT".to_string(),
             TransactionKernel::main().hash().to_hex(),
@@ -186,12 +178,14 @@ mod current {
             TransactionKernel::tx_script_main().hash().to_hex(),
         );
 
-        collect_library(StandardsLib::default().as_ref(), &mut roots);
+        // The standards and agglayer note scripts are exports of these packages, so walking them
+        // covers the note script roots too.
+        collect_package(StandardsLib::default().as_ref(), &mut roots);
 
-        collect_library(&agglayer_library(), &mut roots);
+        collect_package(&agglayer_package(), &mut roots);
 
         // Collect the agglayer account code commitments since they are not covered by the
-        // library root.
+        // package exports.
         roots.insert(
             "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
             bridge::BRIDGE_CODE_COMMITMENT.to_hex(),
@@ -205,15 +199,11 @@ mod current {
             collect_component(code(), &mut roots);
         }
 
-        for (name, script_root) in AGGLAYER_NOTE_SCRIPT_ROOTS {
-            roots.insert((*name).to_string(), script_root().as_word().to_hex());
-        }
-
         roots
     }
 
-    fn collect_library(library: &Library, roots: &mut Roots) {
-        for module in library.module_infos() {
+    fn collect_package(package: &Package, roots: &mut Roots) {
+        for module in package.module_infos() {
             for (_, procedure) in module.procedures() {
                 roots.insert(
                     format!("{}::{}", module.path(), procedure.name),
@@ -226,7 +216,7 @@ mod current {
     // Collects the component's procedure roots plus a commitment over its procedure set as a whole,
     // keyed by the path of the component's module.
     fn collect_component(code: &AccountComponentCode, roots: &mut Roots) {
-        collect_library(code.as_ref(), roots);
+        collect_package(code.as_package(), roots);
 
         let mut elements = Vec::new();
         for root in code.procedure_roots() {
@@ -234,27 +224,17 @@ mod current {
         }
         let commitment = Hasher::hash_elements(&elements).to_hex();
 
-        for module in code.as_ref().module_infos() {
+        for module in code.as_package().module_infos() {
             roots.insert(format!("{}::CODE_COMMITMENT", module.path()), commitment.clone());
         }
     }
 }
 
 mod previous {
-    use miden_agglayer_previous::{
-        B2AggNote,
-        ClaimNote,
-        ConfigAggBridgeNote,
-        UpdateGerNote,
-        agglayer_library,
-        bridge,
-        faucet,
-    };
-    use miden_protocol_previous::account::component::StorageSchema;
-    use miden_protocol_previous::account::{AccountComponent, AccountComponentCode};
-    use miden_protocol_previous::assembly::Library;
-    use miden_protocol_previous::note::NoteScriptRoot;
+    use miden_agglayer_previous::{AggLayerBridge, agglayer_package, bridge, faucet};
+    use miden_protocol_previous::account::AccountComponentCode;
     use miden_protocol_previous::transaction::TransactionKernel;
+    use miden_protocol_previous::vm::Package;
     use miden_protocol_previous::{Hasher, ProtocolLib};
     use miden_standards_previous::StandardsLib;
     use miden_standards_previous::account::access::{
@@ -270,32 +250,33 @@ mod previous {
         AuthMultisigSmart,
         AuthNetworkAccount,
         AuthSingleSig,
-        AuthSingleSigAcl,
         NoAuth,
     };
-    use miden_standards_previous::account::faucets::FungibleFaucet;
-    use miden_standards_previous::account::metadata::AccountSchemaCommitment;
+    use miden_standards_previous::account::faucets::{FungibleFaucet, NonFungibleFaucet};
+    use miden_standards_previous::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
+    use miden_standards_previous::account::inspection::{
+        AccountSchemaCommitment,
+        CodeInspection,
+    };
     use miden_standards_previous::account::policies::{
-        AllowlistOwnerControlled,
+        AllowlistManager,
         BasicAllowlist,
         BasicBlocklist,
-        BlocklistOwnerControlled,
+        BlocklistManager,
         BurnAllowAll,
         BurnOwnerOnly,
+        MinBurnAmount,
         MintAllowAll,
         MintOwnerOnly,
         TokenPolicyManager,
         TransferAllowAll,
     };
-    use miden_standards_previous::account::wallets::BasicWallet;
+    use miden_standards_previous::account::upgrade::UpgradeManager;
+    use miden_standards_previous::account::wallets::{BasicWallet, NoteCreator};
 
     use super::*;
 
-    // Every installable standard account component that exposes a `code()` accessor. The
-    // `schema_commitment` component is collected separately since the released version has no such
-    // accessor.
-    //
-    // TODO: add `AccountSchemaCommitment::code` to this list once a release ships it.
+    // Every installable account component.
     const COMPONENT_CODE: &[fn() -> &'static AccountComponentCode] = &[
         Authority::code,
         Ownable2Step::code,
@@ -304,54 +285,51 @@ mod previous {
         RoleBasedAccessControl::code,
         NoAuth::code,
         AuthSingleSig::code,
-        AuthSingleSigAcl::code,
         AuthMultisig::code,
         AuthMultisigSmart::code,
         AuthGuardedMultisig::code,
         AuthNetworkAccount::code,
         BurnAllowAll::code,
         BurnOwnerOnly::code,
+        MinBurnAmount::code,
         MintAllowAll::code,
         MintOwnerOnly::code,
         TransferAllowAll::code,
-        AllowlistOwnerControlled::code,
+        AllowlistManager::code,
         BasicAllowlist::code,
         BasicBlocklist::code,
-        BlocklistOwnerControlled::code,
+        BlocklistManager::code,
         TokenPolicyManager::code,
+        BasicConstantFeePolicy::code,
+        ConstantFeeManager::code,
         FungibleFaucet::code,
+        NonFungibleFaucet::code,
         BasicWallet::code,
-    ];
-
-    // The agglayer note scripts are compiled into standalone artifacts, so no library root covers
-    // them. They need to be checked separately.
-    //
-    // TODO: this can be removed once the agglayer note scripts get added to the agglayer lib.
-    const AGGLAYER_NOTE_SCRIPT_ROOTS: &[(&str, fn() -> NoteScriptRoot)] = &[
-        ("agglayer::note_scripts::b2agg", B2AggNote::script_root),
-        ("agglayer::note_scripts::claim", ClaimNote::script_root),
-        ("agglayer::note_scripts::config_agg_bridge", ConfigAggBridgeNote::script_root),
-        ("agglayer::note_scripts::update_ger", UpdateGerNote::script_root),
+        NoteCreator::code,
+        CodeInspection::code,
+        AccountSchemaCommitment::code,
+        UpgradeManager::code,
+        AggLayerBridge::code,
     ];
 
     pub fn collect_roots() -> Roots {
         let mut roots = Roots::new();
 
-        collect_library(ProtocolLib::default().as_ref(), &mut roots);
+        collect_package(ProtocolLib::default().as_ref(), &mut roots);
 
         // The transaction kernel is compiled into its own artifact so its roots are collected
         // separately.
-        collect_library(TransactionKernel::kernel().as_ref(), &mut roots);
+        collect_package(&TransactionKernel::package(), &mut roots);
 
         // Collect the kernel commitment since the order of the kernel procedure roots it
-        // hashes is not covered by the library.
+        // hashes is not covered by the package.
         roots.insert(
             "transaction_kernel::TX_KERNEL_COMMITMENT".to_string(),
             TransactionKernel.to_commitment().to_hex(),
         );
 
         // Collect the kernel programs since they include the prologue and epilogue that are not
-        // covered by the kernel library exports.
+        // covered by the kernel package exports.
         roots.insert(
             "transaction_kernel::MAIN_PROGRAM_ROOT".to_string(),
             TransactionKernel::main().hash().to_hex(),
@@ -361,12 +339,14 @@ mod previous {
             TransactionKernel::tx_script_main().hash().to_hex(),
         );
 
-        collect_library(StandardsLib::default().as_ref(), &mut roots);
+        // The standards and agglayer note scripts are exports of these packages, so walking them
+        // covers the note script roots too.
+        collect_package(StandardsLib::default().as_ref(), &mut roots);
 
-        collect_library(&agglayer_library(), &mut roots);
+        collect_package(&agglayer_package(), &mut roots);
 
         // Collect the agglayer account code commitments since they are not covered by the
-        // library root.
+        // package exports.
         roots.insert(
             "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
             bridge::BRIDGE_CODE_COMMITMENT.to_hex(),
@@ -380,22 +360,11 @@ mod previous {
             collect_component(code(), &mut roots);
         }
 
-        let schema_commitment = AccountComponent::from(
-            // The schemas set the component's storage value, not its code, so any list works.
-            AccountSchemaCommitment::new(core::iter::empty::<&StorageSchema>())
-                .expect("an empty list of storage schemas has no conflicting definitions"),
-        );
-        collect_component(schema_commitment.component_code(), &mut roots);
-
-        for (name, script_root) in AGGLAYER_NOTE_SCRIPT_ROOTS {
-            roots.insert((*name).to_string(), script_root().as_word().to_hex());
-        }
-
         roots
     }
 
-    fn collect_library(library: &Library, roots: &mut Roots) {
-        for module in library.module_infos() {
+    fn collect_package(package: &Package, roots: &mut Roots) {
+        for module in package.module_infos() {
             for (_, procedure) in module.procedures() {
                 roots.insert(
                     format!("{}::{}", module.path(), procedure.name),
@@ -408,7 +377,7 @@ mod previous {
     // Collects the component's procedure roots plus a commitment over its procedure set as a whole,
     // keyed by the path of the component's module.
     fn collect_component(code: &AccountComponentCode, roots: &mut Roots) {
-        collect_library(code.as_ref(), roots);
+        collect_package(code.as_package(), roots);
 
         let mut elements = Vec::new();
         for root in code.procedure_roots() {
@@ -416,7 +385,7 @@ mod previous {
         }
         let commitment = Hasher::hash_elements(&elements).to_hex();
 
-        for module in code.as_ref().module_infos() {
+        for module in code.as_package().module_infos() {
             roots.insert(format!("{}::CODE_COMMITMENT", module.path()), commitment.clone());
         }
     }
