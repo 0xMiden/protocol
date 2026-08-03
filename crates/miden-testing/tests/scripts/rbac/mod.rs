@@ -996,3 +996,99 @@ async fn test_rbac_self_administered_role_survives_admin_renounce() -> anyhow::R
 
     Ok(())
 }
+
+/// Delegating to a memberless role does not put the delegated role out of `ADMIN`'s reach: a
+/// memberless role can authorize nothing, so authority falls back to `ADMIN` until the delegate
+/// gains its first member, at which point it takes over exclusively.
+#[tokio::test]
+async fn test_rbac_admin_retains_authority_while_delegated_admin_is_memberless()
+-> anyhow::Result<()> {
+    let admin = test_account_id(210);
+    let mint_admin_member = test_account_id(211);
+    let member = test_account_id(212);
+    let second_member = test_account_id(213);
+
+    let minter = role("MINTER");
+    let mint_admin = role("MINT_ADMIN");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    // MINTER is delegated to MINT_ADMIN, which has no members — an unpopulated or mistyped role.
+    let set_admin_note = build_note(admin, set_role_admin_script(&minter, Some(&mint_admin)))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &set_admin_note).await?;
+    assert_eq!(get_role_config(&updated, &mint_admin)?.0, Felt::ZERO);
+
+    // ADMIN keeps authority over MINTER while MINTER's delegated admin is memberless.
+    let grant_minter_note = build_note(admin, grant_role_script(&minter, member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_minter_note).await?;
+    assert!(is_role_member(&updated, &minter, member)?);
+
+    // Once MINT_ADMIN gains a member it administers MINTER exclusively, locking ADMIN out again.
+    let grant_admin_note = build_note(admin, grant_role_script(&mint_admin, mint_admin_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_admin_note).await?;
+
+    let admin_grant_note = build_note(admin, grant_role_script(&minter, second_member))?;
+    let result = mock_chain
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(admin_grant_note)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    let delegate_grant_note =
+        build_note(mint_admin_member, grant_role_script(&minter, second_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &delegate_grant_note).await?;
+    assert!(is_role_member(&updated, &minter, second_member)?);
+
+    Ok(())
+}
+
+/// Regression test: a delegated role does not become permanently unmanageable when its admin chain
+/// empties out. Authority over the roles a memberless role administers falls back to `ADMIN`, which
+/// can then manage the delegated role, re-point its delegation, and repopulate the dead admin role.
+#[tokio::test]
+async fn test_rbac_admin_recovers_role_from_dead_admin_chain() -> anyhow::Result<()> {
+    let admin = test_account_id(214);
+    let mint_admin_member = test_account_id(215);
+    let member = test_account_id(216);
+
+    let minter = role("MINTER");
+    let mint_admin = role("MINT_ADMIN");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    // ADMIN delegates MINTER to MINT_ADMIN and seeds MINT_ADMIN, so MINTER is exclusively
+    // MINT_ADMIN's and out of ADMIN's reach.
+    let set_admin_note = build_note(admin, set_role_admin_script(&minter, Some(&mint_admin)))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &set_admin_note).await?;
+    let grant_admin_note = build_note(admin, grant_role_script(&mint_admin, mint_admin_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_admin_note).await?;
+
+    // MINT_ADMIN administers itself, so once it empties no live role administers it either.
+    let self_admin_note = build_note(admin, set_role_admin_script(&mint_admin, Some(&mint_admin)))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &self_admin_note).await?;
+
+    // MINT_ADMIN's last member renounces, so MINTER's effective admin is memberless.
+    let renounce_note = build_note(mint_admin_member, renounce_role_script(&mint_admin))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_note).await?;
+    assert_eq!(get_role_config(&updated, &mint_admin)?.0, Felt::ZERO);
+
+    // ADMIN regains authority over MINTER: it can manage membership...
+    let grant_minter_note = build_note(admin, grant_role_script(&minter, member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_minter_note).await?;
+    assert!(is_role_member(&updated, &minter, member)?);
+
+    // ...and re-point the delegation back to itself.
+    let clear_note = build_note(admin, set_role_admin_script(&minter, None))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &clear_note).await?;
+    assert_eq!(get_role_config(&updated, &minter)?.1, Felt::ZERO);
+
+    // The dead admin role is recoverable too: its own effective admin is memberless, so ADMIN can
+    // repopulate it.
+    let regrant_note = build_note(admin, grant_role_script(&mint_admin, mint_admin_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &regrant_note).await?;
+    assert!(is_role_member(&updated, &mint_admin, mint_admin_member)?);
+
+    Ok(())
+}
