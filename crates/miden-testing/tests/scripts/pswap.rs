@@ -681,7 +681,6 @@ async fn pswap_note_combined_account_fill_and_note_fill_test(
     let charlie_vault_eth = FungibleAsset::new(eth_faucet.id(), charlie_fill)?;
     // Alice's P2ID carries the whole fill (charlie_fill + bob_fill ETH); the creator banks any
     // amount above her requested minimum.
-    let alice_payback_eth = FungibleAsset::new(eth_faucet.id(), charlie_fill + bob_fill)?;
     let charlie_payout_usdc = FungibleAsset::new(usdc_faucet.id(), charlie_payout_amount)?;
 
     let alice = AccountIdBuilder::new().build_with_seed([4; 32]);
@@ -1171,7 +1170,6 @@ async fn pswap_note_fill_payback_after_remainder_note_test() -> anyhow::Result<(
     let alice_requested = FungibleAsset::new(eth_faucet.id(), 50)?;
     let bob_offered = FungibleAsset::new(eth_faucet.id(), 20)?;
     let bob_requested = FungibleAsset::new(usdc_faucet.id(), 40)?;
-    let alice_remainder_usdc = FungibleAsset::new(usdc_faucet.id(), 60)?;
 
     let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
     let bob = AccountIdBuilder::new().build_with_seed([2; 32]);
