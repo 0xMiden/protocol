@@ -406,6 +406,27 @@ fn create_set_min_burn_amount_note_script(new_min_burn_amount: u64) -> String {
     )
 }
 
+/// Builds a note script that invokes `get_min_burn_amount` via `call` and asserts it returns the
+/// expected threshold using the 16-felt call ABI. The getter expects `[pad(16)]`, so the script
+/// pads the stack before the call.
+fn create_get_min_burn_amount_note_script(expected_min_burn_amount: u64) -> String {
+    format!(
+        r#"
+        use miden::standards::faucets::policies::burn::min_burn_amount
+
+        @note_script
+        pub proc main
+            padw padw padw padw
+            call.min_burn_amount::get_min_burn_amount
+            # => [min_burn_amount, pad(15), pad(16)]
+            push.{expected_min_burn_amount}
+            assert_eq.err="get_min_burn_amount returned an unexpected threshold or violated the call ABI"
+            dropw dropw dropw drop drop drop
+        end
+        "#
+    )
+}
+
 // TESTS MINT FUNGIBLE ASSET
 // ================================================================================================
 
@@ -2098,6 +2119,83 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
         final_token_supply,
         AssetAmount::new(initial_token_supply.as_u64() - burn_amount).unwrap()
     );
+
+    Ok(())
+}
+
+/// Tests that the configured minimum burn amount can be read through the faucet's public interface
+/// via `call`, both as initially configured and after the owner updates it. The getter aborts the
+/// transaction unless it returns the expected threshold, so successful execution proves the value.
+#[tokio::test]
+async fn test_network_faucet_get_min_burn_amount_uses_the_call_abi() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
+
+    let faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    // Reads the initially configured threshold of 50.
+    let initial_get_note_script = create_get_min_burn_amount_note_script(50);
+    let mut rng = RandomCoin::new([Felt::from(630u32); 4].into());
+    let initial_get_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(initial_get_note_script.as_str())
+        .build()?;
+
+    // Owner lowers the minimum burn amount from 50 to 5.
+    let set_note_script = create_set_min_burn_amount_note_script(5);
+    let mut rng = RandomCoin::new([Felt::from(631u32); 4].into());
+    let set_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(set_note_script.as_str())
+        .build()?;
+
+    // Reads the updated threshold of 5.
+    let updated_get_note_script = create_get_min_burn_amount_note_script(5);
+    let mut rng = RandomCoin::new([Felt::from(632u32); 4].into());
+    let updated_get_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(updated_get_note_script.as_str())
+        .build()?;
+
+    builder.add_output_note(RawOutputNote::Full(initial_get_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(updated_get_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let initial_get_transaction = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(initial_get_note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&initial_get_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    let set_transaction = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&set_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(updated_get_note.id())
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }
