@@ -98,6 +98,14 @@ where
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
     /// Whether execution is currently inside the authentication procedure.
+    ///
+    /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
+    /// `EpilogueAuthProcEnd` events, so this flag is `true` only while the registered auth
+    /// procedure is running. It is used to reject signature *production* requested from any other
+    /// context (e.g. untrusted note or transaction scripts): an `AuthRequest` with no pre-supplied
+    /// signature makes the authenticator sign with the account's key and must never be honored
+    /// outside the auth procedure. Verifying an externally-supplied signature does not touch the
+    /// private key and is always allowed.
     in_auth_procedure: bool,
 
     /// The source manager to track source code file span information, improving any MASM related
