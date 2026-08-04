@@ -24,6 +24,13 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.release.target_commitish }}
 
+      # Ahead of the token mint deliberately: this needs no credential, and a
+      # slow registry would otherwise eat into the token's short lifetime.
+      - name: Check for unpublished new crates
+        run: make check-crates-published
+        env:
+          RUSTUP_TOOLCHAIN: stable
+
       - name: Authenticate with crates.io
         uses: rust-lang/crates-io-auth-action@63a7064947ceca9989005e118db3a5fecdc9259f # v1.0.0
         id: auth
