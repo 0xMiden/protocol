@@ -37,7 +37,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
 use miden_standards::interop::eth::{EthAddress, EthEmbeddedAccountId};
-use miden_standards::note::P2idNote;
+use miden_standards::note::{FeeSponsorshipNote, P2idNote, StandardNote};
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
@@ -49,8 +49,13 @@ use super::test_utils::{
     MIDEN_NETWORK_ID,
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
+    VERIFICATION_BASE_FEE,
+    add_fee_sponsorship,
+    assert_transaction_paid_fee,
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
+    create_existing_priced_bridge,
+    create_existing_priced_faucet,
 };
 
 // CONSTANTS
@@ -125,14 +130,25 @@ fn merkle_proof_verification_code(
 ///   `claim_asset_vectors_l1_tx.json`, produced by simulating a `bridgeAsset()` call.
 /// - [`ClaimDataSource::L2ToMiden`]: uses rollup deposit data from
 ///   `claim_asset_vectors_l2_tx.json`, produced by simulating a rollup deposit.
+///
+/// The additional fee-enabled L1 case installs production-priced policies on the bridge and
+/// faucet, pairs every network input with its sponsorship, and verifies that each network-account
+/// transaction pays a non-zero fee before the final destination balance assertion.
 #[rstest::rstest]
-#[case::l1_to_miden(ClaimDataSource::L1ToMiden)]
-#[case::l2_to_miden(ClaimDataSource::L2ToMiden)]
+#[case::l1_to_miden(ClaimDataSource::L1ToMiden, false)]
+#[case::l2_to_miden(ClaimDataSource::L2ToMiden, false)]
+#[case::l1_to_miden_with_fees(ClaimDataSource::L1ToMiden, true)]
 #[tokio::test]
-async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
+async fn test_bridge_in_claim_to_p2id(
+    #[case] data_source: ClaimDataSource,
+    #[case] fees_enabled: bool,
+) -> anyhow::Result<()> {
     use miden_agglayer::AggLayerBridge;
 
     let mut builder = MockChain::builder();
+    if fees_enabled {
+        builder = builder.verification_base_fee(VERIFICATION_BASE_FEE);
+    }
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
@@ -155,14 +171,24 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account_with_roles(
-        bridge_seed,
-        bridge_admin_account_id(),
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-        MIDEN_NETWORK_ID,
-    );
+    let bridge_account = if fees_enabled {
+        create_existing_priced_bridge(
+            bridge_seed,
+            bridge_admin_account_id(),
+            faucet_manager.id(),
+            ger_injector.id(),
+            ger_remover.id(),
+        )?
+    } else {
+        create_existing_bridge_account_with_roles(
+            bridge_seed,
+            bridge_admin_account_id(),
+            faucet_manager.id(),
+            ger_injector.id(),
+            ger_remover.id(),
+            MIDEN_NETWORK_ID,
+        )
+    };
     assert_eq!(AggLayerBridge::network_id(&bridge_account)?, MIDEN_NETWORK_ID);
     builder.add_account(bridge_account.clone())?;
 
@@ -182,14 +208,25 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
 
-    let agglayer_faucet = create_existing_agglayer_faucet_with_callbacks(
-        agglayer_faucet_seed,
-        token_symbol,
-        decimals,
-        max_supply,
-        Felt::ZERO,
-        bridge_account.id(),
-    );
+    let agglayer_faucet = if fees_enabled {
+        create_existing_priced_faucet(
+            agglayer_faucet_seed,
+            token_symbol,
+            decimals,
+            max_supply,
+            Felt::ZERO,
+            bridge_account.id(),
+        )?
+    } else {
+        create_existing_agglayer_faucet_with_callbacks(
+            agglayer_faucet_seed,
+            token_symbol,
+            decimals,
+            max_supply,
+            Felt::ZERO,
+            bridge_account.id(),
+        )
+    };
     builder.add_account(agglayer_faucet.clone())?;
 
     // Get the destination account ID from the leaf data.
@@ -265,28 +302,52 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
+    let (config_sponsorship, update_ger_sponsorship, claim_sponsorship) = if fees_enabled {
+        let config_sponsorship =
+            add_fee_sponsorship(&mut builder, &config_note, bridge_account.id())?;
+        let update_ger_sponsorship =
+            add_fee_sponsorship(&mut builder, &update_ger_note, bridge_account.id())?;
+        let claim_sponsorship =
+            add_fee_sponsorship(&mut builder, &claim_note, bridge_account.id())?;
+        (Some(config_sponsorship), Some(update_ger_sponsorship), Some(claim_sponsorship))
+    } else {
+        (None, None, None)
+    };
+
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
     // --------------------------------------------------------------------------------------------
     let mut mock_chain = builder.clone().build()?;
 
     // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
     // --------------------------------------------------------------------------------------------
-    let config_mock_tx = mock_chain
+    let mut config_mock_tx = mock_chain
         .build_transaction(bridge_account.id())
-        .authenticated_input_note(config_note.id())
-        .build()?;
+        .authenticated_input_note(config_note.id());
+    if let Some(sponsorship) = &config_sponsorship {
+        config_mock_tx = config_mock_tx.authenticated_input_note(sponsorship.id());
+    }
+    let config_mock_tx = config_mock_tx.build()?;
     let config_executed = config_mock_tx.execute().await?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&config_executed);
+    }
 
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
     // TX1: EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let update_ger_mock_tx = mock_chain
+    let mut update_ger_mock_tx = mock_chain
         .build_transaction(bridge_account.id())
-        .authenticated_input_note(update_ger_note.id())
-        .build()?;
+        .authenticated_input_note(update_ger_note.id());
+    if let Some(sponsorship) = &update_ger_sponsorship {
+        update_ger_mock_tx = update_ger_mock_tx.authenticated_input_note(sponsorship.id());
+    }
+    let update_ger_mock_tx = update_ger_mock_tx.build()?;
     let update_ger_executed = update_ger_mock_tx.execute().await?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&update_ger_executed);
+    }
 
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
@@ -294,16 +355,22 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // TX2: EXECUTE CLAIM NOTE AGAINST BRIDGE (validates proof, creates MINT note)
     // --------------------------------------------------------------------------------------------
     let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
-    let claim_mock_tx = mock_chain
+    let mut claim_mock_tx = mock_chain
         .build_transaction(bridge_account.id())
         .unauthenticated_input_note(claim_note)
-        .foreign_accounts(vec![faucet_foreign_inputs])
-        .build()?;
+        .foreign_accounts(vec![faucet_foreign_inputs]);
+    if let Some(sponsorship) = &claim_sponsorship {
+        claim_mock_tx = claim_mock_tx.authenticated_input_note(sponsorship.id());
+    }
+    let claim_mock_tx = claim_mock_tx.build()?;
 
     let claim_executed = claim_mock_tx
         .execute()
         .await
         .context("TX2: CLAIM note execution against bridge failed")?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&claim_executed);
+    }
 
     // VERIFY CGI CHAIN HASH WAS SUCCESSFULLY UPDATED
     // --------------------------------------------------------------------------------------------
@@ -323,8 +390,25 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
-    assert_eq!(claim_executed.output_notes().num_notes(), 1);
-    let mint_output_note = claim_executed.output_notes().get_note(0);
+    let mint_output_note = claim_executed
+        .output_notes()
+        .iter()
+        .find(|note| {
+            note.recipient().map(|recipient| recipient.script().root())
+                == Some(StandardNote::MINT.script_root())
+        })
+        .expect("CLAIM should create a MINT note");
+    let mint_sponsorship_id = fees_enabled.then(|| {
+        claim_executed
+            .output_notes()
+            .iter()
+            .find(|note| {
+                note.recipient().map(|recipient| recipient.script().root())
+                    == Some(FeeSponsorshipNote::script_root())
+            })
+            .expect("fee-enabled CLAIM should sponsor its MINT note")
+            .id()
+    });
 
     // Verify the MINT note was sent by the bridge
     assert_eq!(mint_output_note.metadata().sender(), bridge_account.id());
@@ -336,23 +420,35 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // TX3: EXECUTE MINT NOTE AGAINST AGGFAUCET (mints asset, creates P2ID note)
     // --------------------------------------------------------------------------------------------
-    let mint_mock_tx = mock_chain
+    let mut mint_mock_tx = mock_chain
         .build_transaction(agglayer_faucet.id())
         .authenticated_input_note(mint_output_note.id())
-        .add_note_script(P2idNote::script())
-        .build()?;
+        .add_note_script(P2idNote::script());
+    if let Some(sponsorship_id) = mint_sponsorship_id {
+        mint_mock_tx = mint_mock_tx.authenticated_input_note(sponsorship_id);
+    }
+    let mint_mock_tx = mint_mock_tx.build()?;
 
     let mint_executed = mint_mock_tx
         .execute()
         .await
         .context("TX3: MINT note execution against faucet failed")?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&mint_executed);
+    }
 
     // VERIFY P2ID NOTE WAS CREATED BY THE FAUCET
     // --------------------------------------------------------------------------------------------
 
     // Check that exactly one P2ID note was created by the faucet
-    assert_eq!(mint_executed.output_notes().num_notes(), 1);
-    let output_note = mint_executed.output_notes().get_note(0);
+    let output_note = mint_executed
+        .output_notes()
+        .iter()
+        .find(|note| {
+            note.recipient().map(|recipient| recipient.script().root())
+                == Some(StandardNote::P2ID.script_root())
+        })
+        .expect("MINT should create a P2ID note");
 
     // Verify note metadata properties
     assert_eq!(output_note.metadata().sender(), agglayer_faucet.id());

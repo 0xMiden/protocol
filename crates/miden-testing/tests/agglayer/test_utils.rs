@@ -1,6 +1,5 @@
 extern crate alloc;
 
-use miden_agglayer::agglayer_package;
 pub use miden_agglayer::testing::{
     ClaimDataSource,
     LEAF_VALUE_VECTORS_JSON,
@@ -12,6 +11,7 @@ pub use miden_agglayer::testing::{
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
 };
+use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles, agglayer_package};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
@@ -24,13 +24,19 @@ use miden_processor::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::note::Note;
+use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{ProtocolLib, Word};
+use miden_protocol::{Felt, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 use miden_standards::account::access::PausableStorage;
+use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder};
+use miden_tx::NetworkNotePricer;
 
 // TEST NETWORK ID
 // ================================================================================================
@@ -38,6 +44,9 @@ use miden_testing::{Auth, MockChain, MockChainBuilder};
 /// The AggLayer network ID encoded as `destination_network` in the bundled Solidity-generated claim
 /// test vectors.
 pub const MIDEN_NETWORK_ID: u32 = 77;
+
+/// Non-zero base fee used by the AggLayer fee-enabled end-to-end cases.
+pub const VERIFICATION_BASE_FEE: u32 = 500;
 
 // PAUSE STATE
 // ================================================================================================
@@ -69,6 +78,89 @@ pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Returns the native fee faucet used by [`MockChainBuilder`] by default.
+pub fn fee_faucet_id() -> AccountId {
+    ACCOUNT_ID_FEE_FAUCET
+        .try_into()
+        .expect("mock-chain fee faucet ID should be valid")
+}
+
+/// Returns the production note pricer configured for the fee-enabled AggLayer test chain.
+pub fn network_note_pricer() -> NetworkNotePricer {
+    NetworkNotePricer::builder()
+        .fee_parameters(FeeParameters::new(fee_faucet_id(), VERIFICATION_BASE_FEE))
+        .build()
+}
+
+/// Adds the sponsorship paired with `feature_note`, using the production price of its script.
+pub fn add_fee_sponsorship(
+    builder: &mut MockChainBuilder,
+    feature_note: &Note,
+    target: AccountId,
+) -> anyhow::Result<Note> {
+    let fee = network_note_pricer().price(feature_note.script().root())?;
+    let sponsorship: Note = FeeSponsorshipNote::builder()
+        .sender(feature_note.metadata().sender())
+        .target_account(target)
+        .feature_note_id(feature_note.id())
+        .asset(FungibleAsset::new(fee_faucet_id(), fee.as_u64())?)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
+    Ok(sponsorship)
+}
+
+/// Asserts that a fee-enabled transaction charged a non-zero fee and emitted its TX_FEE note.
+pub fn assert_transaction_paid_fee(executed: &ExecutedTransaction) {
+    assert!(executed.compute_fee().as_u64() > 0, "transaction fee should be non-zero");
+    assert!(
+        executed.output_notes().iter().any(|note| {
+            note.recipient().map(|recipient| recipient.script().root())
+                == Some(StandardNote::TX_FEE.script_root())
+        }),
+        "fee-enabled transaction should emit a TX_FEE note"
+    );
+}
+
+/// Builds an existing AggLayer bridge with its production-priced fee policy.
+pub fn create_existing_priced_bridge(
+    seed: Word,
+    admin: AccountId,
+    faucet_manager: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+) -> anyhow::Result<Account> {
+    let roles =
+        BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
+    Ok(AggLayerBridge::account_builder(seed, admin, roles, MIDEN_NETWORK_ID)
+        .with_fee_policy_manager(network_note_pricer().agglayer_bridge_fee_policy_manager()?)
+        .build_existing())
+}
+
+/// Builds an existing AggLayer faucet with its production-priced fee policy.
+pub fn create_existing_priced_faucet(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    initial_supply: Felt,
+    bridge_account_id: AccountId,
+) -> anyhow::Result<Account> {
+    Ok(
+        AggLayerFaucet::account_builder(
+            seed,
+            token_symbol,
+            decimals,
+            max_supply,
+            bridge_account_id,
+        )
+        .with_initial_supply(initial_supply)
+        .with_fee_policy_manager(network_note_pricer().agglayer_faucet_fee_policy_manager()?)
+        .build_existing(),
+    )
+}
 
 /// Execute a program with a default host and optional advice inputs.
 pub async fn execute_program_with_default_host(

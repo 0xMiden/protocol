@@ -35,7 +35,12 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::policies::MintPolicy;
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, StandardNote};
+use miden_standards::note::{
+    FeeSponsorshipNote,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+    StandardNote,
+};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use rand::rngs::StdRng;
@@ -45,11 +50,20 @@ use super::merkle_tree_frontier::MerkleTreeFrontier32;
 use super::test_utils::{
     MIDEN_NETWORK_ID,
     SOLIDITY_MTF_VECTORS,
+    VERIFICATION_BASE_FEE,
+    add_fee_sponsorship,
+    assert_transaction_paid_fee,
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
+    create_existing_priced_bridge,
+    create_existing_priced_faucet,
 };
 
-/// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MTF roots.
+/// Tests the complete B2AGG-to-BURN bridge-out lifecycle.
+///
+/// The fee-free case consumes all 32 vectors and pins every Solidity MTF root. The fee-enabled
+/// case consumes one vector with production-priced policies, sponsorships, and non-zero fee
+/// payments on the bridge and faucet transactions.
 ///
 /// This test exercises the complete bridge-out lifecycle:
 /// 1. Creates a bridge account (empty faucet registry) and an agglayer faucet with conversion
@@ -64,24 +78,32 @@ use super::test_utils::{
 ///    - Creates a BURN note addressed to the faucet
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
 /// 6. Consumes the BURN note with the faucet to burn the tokens
+#[rstest::rstest]
+#[case::fee_free(32, false)]
+#[case::fees_enabled(1, true)]
 #[tokio::test]
-async fn bridge_out_consecutive() -> anyhow::Result<()> {
+async fn bridge_out_consecutive(
+    #[case] note_count: usize,
+    #[case] fees_enabled: bool,
+) -> anyhow::Result<()> {
     let vectors = &*SOLIDITY_MTF_VECTORS;
-    let note_count = 32usize;
-    assert_eq!(vectors.amounts.len(), note_count, "amount vectors should contain 32 entries");
-    assert_eq!(vectors.roots.len(), note_count, "root vectors should contain 32 entries");
+    assert!(vectors.amounts.len() >= note_count, "not enough amount vectors");
+    assert!(vectors.roots.len() >= note_count, "not enough root vectors");
     assert_eq!(
         vectors.destination_networks.len(),
-        note_count,
-        "destination network vectors should contain 32 entries"
+        vectors.amounts.len(),
+        "destination network and amount vector lengths should match"
     );
     assert_eq!(
         vectors.destination_addresses.len(),
-        note_count,
-        "destination address vectors should contain 32 entries"
+        vectors.amounts.len(),
+        "destination address and amount vector lengths should match"
     );
 
     let mut builder = MockChain::builder();
+    if fees_enabled {
+        builder = builder.verification_base_fee(VERIFICATION_BASE_FEE);
+    }
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
@@ -98,19 +120,31 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let mut bridge_account = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
-        bridge_admin_account_id(),
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-        MIDEN_NETWORK_ID,
-    );
+    let bridge_seed = builder.rng_mut().draw_word();
+    let mut bridge_account = if fees_enabled {
+        create_existing_priced_bridge(
+            bridge_seed,
+            bridge_admin_account_id(),
+            faucet_manager.id(),
+            ger_injector.id(),
+            ger_remover.id(),
+        )?
+    } else {
+        create_existing_bridge_account_with_roles(
+            bridge_seed,
+            bridge_admin_account_id(),
+            faucet_manager.id(),
+            ger_injector.id(),
+            ger_remover.id(),
+            MIDEN_NETWORK_ID,
+        )
+    };
     builder.add_account(bridge_account.clone())?;
 
     let expected_amounts = vectors
         .amounts
         .iter()
+        .take(note_count)
         .map(|amount| amount.parse::<u64>().expect("valid amount decimal string"))
         .collect::<Vec<_>>();
     let total_burned: u64 = expected_amounts.iter().sum();
@@ -126,14 +160,26 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         &vectors.token_symbol,
         vectors.token_decimals,
     );
-    let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
-        &vectors.token_symbol,
-        vectors.token_decimals,
-        FungibleAsset::MAX_AMOUNT.into(),
-        Felt::new_unchecked(total_burned),
-        bridge_account.id(),
-    );
+    let faucet_seed = builder.rng_mut().draw_word();
+    let faucet = if fees_enabled {
+        create_existing_priced_faucet(
+            faucet_seed,
+            &vectors.token_symbol,
+            vectors.token_decimals,
+            FungibleAsset::MAX_AMOUNT.into(),
+            Felt::new_unchecked(total_burned),
+            bridge_account.id(),
+        )?
+    } else {
+        create_existing_agglayer_faucet(
+            faucet_seed,
+            &vectors.token_symbol,
+            vectors.token_decimals,
+            FungibleAsset::MAX_AMOUNT.into(),
+            Felt::new_unchecked(total_burned),
+            bridge_account.id(),
+        )
+    };
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by faucet manager)
@@ -173,47 +219,79 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         notes.push(note);
     }
 
+    let config_sponsorship = if fees_enabled {
+        Some(add_fee_sponsorship(&mut builder, &config_note, bridge_account.id())?)
+    } else {
+        None
+    };
+    let mut b2agg_sponsorships = Vec::new();
+    if fees_enabled {
+        for note in &notes {
+            b2agg_sponsorships.push(add_fee_sponsorship(&mut builder, note, bridge_account.id())?);
+        }
+    }
+
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
     // STEP 1: REGISTER FAUCET VIA CONFIG_AGG_BRIDGE NOTE
     // --------------------------------------------------------------------------------------------
-    let config_executed = mock_chain
+    let mut config_tx = mock_chain
         .build_transaction(bridge_account.id())
-        .authenticated_input_note(config_note.id())
-        .build()?
-        .execute()
-        .await?;
+        .authenticated_input_note(config_note.id());
+    if let Some(sponsorship) = &config_sponsorship {
+        config_tx = config_tx.authenticated_input_note(sponsorship.id());
+    }
+    let config_executed = config_tx.build()?.execute().await?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&config_executed);
+    }
     bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
-    // STEP 2: CONSUME 32 B2AGG NOTES AND VERIFY FRONTIER EVOLUTION
+    // STEP 2: CONSUME B2AGG NOTES AND VERIFY FRONTIER EVOLUTION
     // --------------------------------------------------------------------------------------------
-    let mut burn_note_ids = Vec::with_capacity(note_count);
+    let mut burn_notes = Vec::with_capacity(note_count);
 
     for (i, note) in notes.iter().enumerate() {
         // creating the BURN note requires reading its note fee from the target account
         let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-        let executed_tx = mock_chain
+        let mut b2agg_tx = mock_chain
             .build_transaction(bridge_account.clone())
             .authenticated_input_note(note.id())
-            .foreign_accounts(vec![faucet_inputs])
-            .build()?
-            .execute()
-            .await?;
+            .foreign_accounts(vec![faucet_inputs]);
+        if let Some(sponsorship) = b2agg_sponsorships.get(i) {
+            b2agg_tx = b2agg_tx.authenticated_input_note(sponsorship.id());
+        }
+        let executed_tx = b2agg_tx.build()?.execute().await?;
+        if fees_enabled {
+            assert_transaction_paid_fee(&executed_tx);
+        }
 
-        assert_eq!(
-            executed_tx.output_notes().num_notes(),
-            1,
-            "Expected one BURN note after consume #{}",
-            i + 1
-        );
-        let burn_note = match executed_tx.output_notes().get_note(0) {
-            RawOutputNote::Full(note) => note,
-            _ => panic!("Expected OutputNote::Full variant for BURN note"),
+        let burn_output = executed_tx
+            .output_notes()
+            .iter()
+            .find(|output| {
+                output.recipient().map(|recipient| recipient.script().root())
+                    == Some(StandardNote::BURN.script_root())
+            })
+            .expect("B2AGG should create a BURN note");
+        let RawOutputNote::Full(burn_note) = burn_output else {
+            panic!("B2AGG should create the full BURN note")
         };
-        burn_note_ids.push(burn_note.id());
+        let burn_sponsorship_id = fees_enabled.then(|| {
+            executed_tx
+                .output_notes()
+                .iter()
+                .find(|output| {
+                    output.recipient().map(|recipient| recipient.script().root())
+                        == Some(FeeSponsorshipNote::script_root())
+                })
+                .expect("fee-enabled B2AGG should sponsor its BURN note")
+                .id()
+        });
+        burn_notes.push((burn_note.id(), burn_sponsorship_id));
 
         let expected_asset = Asset::from(FungibleAsset::new(faucet.id(), expected_amounts[i])?);
         assert!(
@@ -279,17 +357,20 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
 
     let mut faucet = faucet;
-    for burn_note_id in burn_note_ids {
-        let burn_executed_tx = mock_chain
-            .build_transaction(faucet.id())
-            .authenticated_input_note(burn_note_id)
-            .build()?
-            .execute()
-            .await?;
+    for (burn_note_id, sponsorship_id) in burn_notes {
+        let mut burn_tx =
+            mock_chain.build_transaction(faucet.id()).authenticated_input_note(burn_note_id);
+        if let Some(sponsorship_id) = sponsorship_id {
+            burn_tx = burn_tx.authenticated_input_note(sponsorship_id);
+        }
+        let burn_executed_tx = burn_tx.build()?.execute().await?;
+        if fees_enabled {
+            assert_transaction_paid_fee(&burn_executed_tx);
+        }
         assert_eq!(
             burn_executed_tx.output_notes().num_notes(),
-            0,
-            "Burn transaction should not create output notes"
+            usize::from(fees_enabled),
+            "Burn transaction should only create its fee note when fees are enabled"
         );
         faucet.apply_patch(burn_executed_tx.account_patch())?;
         mock_chain.add_pending_executed_transaction(&burn_executed_tx)?;

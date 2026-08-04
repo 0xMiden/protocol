@@ -260,6 +260,8 @@ pub struct AggLayerFaucetAccountBuilder {
     token_symbol: String,
     decimals: u8,
     max_supply: Felt,
+    #[cfg(any(feature = "testing", test))]
+    initial_supply: Felt,
     bridge_account_id: AccountId,
     fee_policy_manager: Option<FeePolicyManager>,
 }
@@ -277,6 +279,8 @@ impl AggLayerFaucetAccountBuilder {
             token_symbol: token_symbol.into(),
             decimals,
             max_supply,
+            #[cfg(any(feature = "testing", test))]
+            initial_supply: Felt::ZERO,
             bridge_account_id,
             fee_policy_manager: None,
         }
@@ -293,16 +297,29 @@ impl AggLayerFaucetAccountBuilder {
         self
     }
 
+    /// Sets the initial outstanding supply of an existing faucet test fixture.
+    #[cfg(any(feature = "testing", test))]
+    #[must_use]
+    pub fn with_initial_supply(mut self, initial_supply: Felt) -> Self {
+        self.initial_supply = initial_supply;
+        self
+    }
+
     fn into_account_builder(self) -> AccountBuilder {
         let fee_policy_manager = self
             .fee_policy_manager
             .expect("AggLayer faucet account requires a fee policy manager");
+        #[cfg(any(feature = "testing", test))]
+        let initial_supply = self.initial_supply;
+        #[cfg(not(any(feature = "testing", test)))]
+        let initial_supply = Felt::ZERO;
+
         create_agglayer_faucet_builder(
             self.seed,
             &self.token_symbol,
             self.decimals,
             self.max_supply,
-            Felt::ZERO,
+            initial_supply,
             self.bridge_account_id,
             fee_policy_manager,
         )

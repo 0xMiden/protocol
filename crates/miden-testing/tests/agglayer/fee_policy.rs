@@ -1,33 +1,18 @@
 use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountId, StorageMapKey};
+use miden_protocol::account::{Account, StorageMapKey};
 use miden_protocol::asset::AssetId;
-use miden_protocol::block::FeeParameters;
-use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
-use miden_tx::NetworkNotePricer;
 
-const VERIFICATION_BASE_FEE: u32 = 500;
-const MIDEN_NETWORK_ID: u32 = 77;
-
-fn fee_faucet_id() -> AccountId {
-    AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
-        .expect("testing fee faucet ID should be valid")
-}
-
-fn pricer() -> NetworkNotePricer {
-    NetworkNotePricer::builder()
-        .fee_parameters(FeeParameters::new(fee_faucet_id(), VERIFICATION_BASE_FEE))
-        .build()
-}
+use super::test_utils::{MIDEN_NETWORK_ID, fee_faucet_id, network_note_pricer};
 
 fn assert_priced_account(
     account: &Account,
     roots: std::collections::BTreeSet<miden_protocol::note::NoteScriptRoot>,
 ) -> anyhow::Result<()> {
-    let pricer = pricer();
+    let pricer = network_note_pricer();
     let network_account = NetworkAccount::new(account.clone())?;
     assert_eq!(network_account.allowed_notes().allowed_script_roots(), &roots);
 
@@ -54,7 +39,7 @@ fn assert_priced_account(
 
 #[test]
 fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Result<()> {
-    let pricer = pricer();
+    let pricer = network_note_pricer();
     let admin = bridge_admin_account_id();
 
     let bridge_roots = AggLayerBridge::fee_policy_notes();
