@@ -5,19 +5,25 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-use miden_assembly::{Assembler, ProjectTargetSelector, Report};
+use miden_assembly::{ProjectTargetSelector, Report};
 use miden_core::Word;
 use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_mast_package::Package;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
-use miden_project::Workspace;
 use miden_protocol::ProtocolLib;
 use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol_build_utils::{
+    ErrorModule,
+    PROJECT_MANIFEST,
+    assemble_project,
+    assemble_workspace,
+    extract_all_masm_errors,
+    generate_error_file,
+};
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::AuthNetworkAccount;
@@ -37,15 +43,6 @@ const ASM_DIR: &str = "asm";
 const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_COMPONENTS_DIR: &str = "components";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
-
-/// Name of the manifest file defining a Miden project.
-const PROJECT_MANIFEST: &str = "miden-project.toml";
-
-/// The build profile used when assembling the Miden projects.
-///
-/// Packages are assembled with the debug-info (`dev`) so published packages carry debug
-/// information; consumers can strip it as needed.
-const BUILD_PROFILE: &str = "dev";
 
 const AGGLAYER_ERRORS_RS_FILE: &str = "agglayer_errors.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
@@ -81,19 +78,15 @@ fn main() -> Result<()> {
     // in-memory registry.
     let mut registry = build_registry()?;
 
-    let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let assembler = Assembler::new(source_manager.clone()).with_warnings_as_errors(true);
-
     // compile agglayer library (includes note scripts) and seed it into the registry
-    compile_agglayer_package(&source_dir, &target_dir, assembler.clone(), &mut registry)?;
+    compile_agglayer_package(&source_dir, &target_dir, &mut registry)?;
 
-    // compile account components (thin wrappers per component) and return their packages
-    let component_packages = compile_account_components(
-        &source_dir.join(ASM_COMPONENTS_DIR),
-        &target_dir.join(ASM_COMPONENTS_DIR),
-        &assembler,
+    // compile account components (thin wrappers per component); their packages are returned so
+    // their code commitments can be computed below
+    let component_packages = assemble_workspace(
+        source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
-        source_manager,
+        &target_dir.join(ASM_COMPONENTS_DIR),
     )?;
 
     // generate agglayer specific constants
@@ -137,54 +130,16 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
 fn compile_agglayer_package(
     source_dir: &Path,
     target_dir: &Path,
-    assembler: Assembler,
     registry: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_AGGLAYER_DIR).join(PROJECT_MANIFEST);
 
-    let package = assembler
-        .for_project_at_path(manifest_path, registry)?
-        .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-
-    package.write_masp_file(target_dir).into_diagnostic()?;
+    let package =
+        assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
 
     registry.cache_package(package).into_diagnostic()?;
 
     Ok(())
-}
-
-// COMPILE ACCOUNT COMPONENTS
-// ================================================================================================
-
-/// Assembles each member of the account-components workspace in `source_dir` into a package and
-/// saves it to `target_dir`. Each file is named after its package (e.g.
-/// `miden-agglayer-bridge.masp`), so the include path used by `lib.rs` is the package name.
-///
-/// Returns the assembled component packages so their code commitments can be computed.
-fn compile_account_components(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: &Assembler,
-    registry: &mut InMemoryPackageRegistry,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<Vec<Arc<Package>>> {
-    let manifest =
-        source_manager.load_file(&source_dir.join(PROJECT_MANIFEST)).into_diagnostic()?;
-    let workspace = Workspace::load(manifest, source_manager.as_ref())?;
-
-    let mut packages = Vec::new();
-    for component in workspace.members() {
-        let package = assembler
-            .clone()
-            .for_project(component.clone(), registry)?
-            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
-
-        package.write_masp_file(target_dir).into_diagnostic()?;
-
-        packages.push(package);
-    }
-
-    Ok(packages)
 }
 
 // GENERATE AGGLAYER CONSTANTS
@@ -314,7 +269,7 @@ fn generate_agglayer_constants(
     }
 
     // write the resulting constants to the target directory
-    shared::write_if_changed(target_file, file_contents.as_bytes())?;
+    write_if_changed(target_file, file_contents.as_bytes())?;
 
     Ok(())
 }
@@ -347,10 +302,10 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // Miden agglayer errors
     // ------------------------------------------
 
-    let errors = shared::extract_all_masm_errors(asm_source_dir)
-        .context("failed to extract all masm errors")?;
-    shared::generate_error_file(
-        shared::ErrorModule {
+    let errors =
+        extract_all_masm_errors(asm_source_dir).context("failed to extract all masm errors")?;
+    generate_error_file(
+        ErrorModule {
             file_path: Path::new(build_dir).join(AGGLAYER_ERRORS_RS_FILE),
             array_name: AGGLAYER_ERRORS_ARRAY_NAME,
             is_crate_local: false,
@@ -429,7 +384,7 @@ pub proc load_zeros_to_memory\n",
 
     if option_env!("REGENERATE_CANONICAL_ZEROS").is_some() {
         // Regeneration mode: write the file
-        shared::write_if_changed(&file_path, &zero_constants)?;
+        write_if_changed(&file_path, &zero_constants)?;
     } else {
         // Validation mode: ensure the committed file matches
         let committed = fs::read_to_string(&file_path)
@@ -446,210 +401,17 @@ pub proc load_zeros_to_memory\n",
     Ok(())
 }
 
-/// This module should be kept in sync with the copy in miden-protocol's and miden-standards'
-/// build.rs.
-mod shared {
-    use std::collections::BTreeMap;
-    use std::fmt::Write;
-    use std::io::{self};
-    use std::path::{Path, PathBuf};
-
-    use fs_err as fs;
-    use miden_assembly::Report;
-    use miden_assembly::diagnostics::{IntoDiagnostic, Result};
-    use regex::Regex;
-    use walkdir::WalkDir;
-
-    /// Returns true if the provided path resolves to a file with `.masm` extension.
-    ///
-    /// # Errors
-    /// Returns an error if the path could not be converted to a UTF-8 string.
-    pub fn is_masm_file(path: &Path) -> io::Result<bool> {
-        if let Some(extension) = path.extension() {
-            let extension = extension
-                .to_str()
-                .ok_or_else(|| io::Error::other("invalid UTF-8 filename"))?
-                .to_lowercase();
-            Ok(extension == "masm")
-        } else {
-            Ok(false)
+/// Writes `contents` to `path` only if the file doesn't exist or its current contents
+/// differ. This avoids updating the file's mtime when nothing changed, which prevents
+/// cargo from treating the crate as dirty on the next build.
+pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
+    let path = path.as_ref();
+    let new_contents = contents.as_ref();
+    if path.exists() {
+        let existing = std::fs::read(path).into_diagnostic()?;
+        if existing == new_contents {
+            return Ok(());
         }
     }
-
-    /// Extract all masm errors from the given path and returns a map by error category.
-    pub fn extract_all_masm_errors(asm_source_dir: &Path) -> Result<Vec<NamedError>> {
-        // We use a BTree here to order the errors by their categories which is the first part after
-        // the ERR_ prefix and to allow for the same error to be defined multiple times in
-        // different files (as long as the constant name and error messages match).
-        let mut errors = BTreeMap::new();
-
-        // Walk all files of the kernel source directory.
-        for entry in WalkDir::new(asm_source_dir) {
-            let entry = entry.into_diagnostic()?;
-            if !is_masm_file(entry.path()).into_diagnostic()? {
-                continue;
-            }
-            let file_contents = std::fs::read_to_string(entry.path()).into_diagnostic()?;
-            extract_masm_errors(&mut errors, &file_contents)?;
-        }
-
-        let errors = errors
-            .into_iter()
-            .map(|(error_name, error)| NamedError { name: error_name, message: error.message })
-            .collect();
-
-        Ok(errors)
-    }
-
-    /// Extracts the errors from a single masm file and inserts them into the provided map.
-    pub fn extract_masm_errors(
-        errors: &mut BTreeMap<ErrorName, ExtractedError>,
-        file_contents: &str,
-    ) -> Result<()> {
-        let regex = Regex::new(r#"const\s*ERR_(?<name>.*)\s*=\s*"(?<message>.*)""#).unwrap();
-
-        for capture in regex.captures_iter(file_contents) {
-            let error_name = capture
-                .name("name")
-                .expect("error name should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-            let error_message = capture
-                .name("message")
-                .expect("error code should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-
-            if let Some(ExtractedError { message: existing_error_message, .. }) =
-                errors.get(&error_name)
-                && existing_error_message != &error_message
-            {
-                return Err(Report::msg(format!(
-                    "Transaction kernel error constant ERR_{error_name} is already defined elsewhere but its error message is different"
-                )));
-            }
-
-            // Enforce the "no trailing punctuation" rule from the Rust error guidelines on MASM
-            // errors.
-            if error_message.ends_with(".") {
-                return Err(Report::msg(format!(
-                    "Error messages should not end with a period: `ERR_{error_name}: {error_message}`"
-                )));
-            }
-
-            errors.insert(error_name, ExtractedError { message: error_message });
-        }
-
-        Ok(())
-    }
-
-    pub fn is_new_error_category<'a>(
-        last_error: &mut Option<&'a str>,
-        current_error: &'a str,
-    ) -> bool {
-        let is_new = match last_error {
-            Some(last_err) => {
-                let last_category =
-                    last_err.split("_").next().expect("there should be at least one entry");
-                let new_category =
-                    current_error.split("_").next().expect("there should be at least one entry");
-                last_category != new_category
-            },
-            None => false,
-        };
-
-        last_error.replace(current_error);
-
-        is_new
-    }
-
-    /// Generates the content of an error file for the given category and the set of errors and
-    /// writes it to the category's file.
-    pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Result<()> {
-        let mut output = String::new();
-
-        if module.is_crate_local {
-            writeln!(output, "use crate::errors::MasmError;\n").unwrap();
-        } else {
-            writeln!(output, "use miden_protocol::errors::MasmError;\n").unwrap();
-        }
-
-        writeln!(
-            output,
-            "// This file is generated by build.rs, do not modify manually.
-// It is generated by extracting errors from the MASM files in the `./asm` directory.
-//
-// To add a new error, define a constant in MASM of the pattern `const ERR_<CATEGORY>_...`.
-// Try to fit the error into a pre-existing category if possible (e.g. Account, Note, ...).
-"
-        )
-        .unwrap();
-
-        writeln!(
-            output,
-            "// {}
-// ================================================================================================
-",
-            module.array_name.replace("_", " ")
-        )
-        .unwrap();
-
-        let mut last_error = None;
-        for named_error in errors.iter() {
-            let NamedError { name, message } = named_error;
-
-            // Group errors into blocks separate by newlines.
-            if is_new_error_category(&mut last_error, name) {
-                writeln!(output).into_diagnostic()?;
-            }
-
-            writeln!(output, "/// Error Message: \"{message}\"").into_diagnostic()?;
-            writeln!(
-                output,
-                r#"pub const ERR_{name}: MasmError = MasmError::from_static_str("{message}");"#
-            )
-            .into_diagnostic()?;
-        }
-
-        fs::write(module.file_path, output).into_diagnostic()?;
-
-        Ok(())
-    }
-
-    /// Writes `contents` to `path` only if the file doesn't exist or its current contents
-    /// differ. This avoids updating the file's mtime when nothing changed, which prevents
-    /// cargo from treating the crate as dirty on the next build.
-    pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
-        let path = path.as_ref();
-        let new_contents = contents.as_ref();
-        if path.exists() {
-            let existing = std::fs::read(path).into_diagnostic()?;
-            if existing == new_contents {
-                return Ok(());
-            }
-        }
-        std::fs::write(path, new_contents).into_diagnostic()
-    }
-
-    pub type ErrorName = String;
-
-    #[derive(Debug, Clone)]
-    pub struct ExtractedError {
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct NamedError {
-        pub name: ErrorName,
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ErrorModule {
-        pub file_path: PathBuf,
-        pub array_name: &'static str,
-        pub is_crate_local: bool,
-    }
+    std::fs::write(path, new_contents).into_diagnostic()
 }
