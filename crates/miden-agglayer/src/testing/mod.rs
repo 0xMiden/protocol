@@ -30,6 +30,7 @@ use crate::{
     GlobalIndex,
     LeafData,
     MetadataHash,
+    testing_zero_fee_policy_manager,
 };
 
 // BRIDGE ACCOUNT HELPERS
@@ -56,8 +57,7 @@ pub fn create_existing_bridge_account_with_roles(
     ger_remover: AccountId,
     network_id: u32,
 ) -> Account {
-    let fee_policy_manager =
-        crate::testing_zero_fee_policy_manager(crate::AggLayerBridge::fee_policy_notes());
+    let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerBridge::fee_policy_notes());
     let roles = BridgeRoles::new(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
