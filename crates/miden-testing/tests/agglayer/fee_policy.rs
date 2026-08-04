@@ -6,13 +6,18 @@ use miden_protocol::asset::AssetId;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 
-use super::test_utils::{MIDEN_NETWORK_ID, fee_faucet_id, network_note_pricer};
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    VERIFICATION_BASE_FEE,
+    fee_faucet_id,
+    network_note_pricer,
+};
 
 fn assert_priced_account(
     account: &Account,
     roots: std::collections::BTreeSet<miden_protocol::note::NoteScriptRoot>,
 ) -> anyhow::Result<()> {
-    let pricer = network_note_pricer();
+    let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
     let network_account = NetworkAccount::new(account.clone())?;
     assert_eq!(network_account.allowed_notes().allowed_script_roots(), &roots);
 
@@ -39,7 +44,7 @@ fn assert_priced_account(
 
 #[test]
 fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Result<()> {
-    let pricer = network_note_pricer();
+    let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
     let admin = bridge_admin_account_id();
 
     let bridge_roots = AggLayerBridge::fee_policy_notes();

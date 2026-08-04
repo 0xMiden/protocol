@@ -22,7 +22,6 @@ use miden_agglayer::{
     UpdateGerNote,
     agglayer_package,
     create_existing_agglayer_faucet,
-    create_existing_agglayer_faucet_with_callbacks,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -135,20 +134,18 @@ fn merkle_proof_verification_code(
 /// faucet, pairs every network input with its sponsorship, and verifies that each network-account
 /// transaction pays a non-zero fee before the final destination balance assertion.
 #[rstest::rstest]
-#[case::l1_to_miden(ClaimDataSource::L1ToMiden, false)]
-#[case::l2_to_miden(ClaimDataSource::L2ToMiden, false)]
-#[case::l1_to_miden_with_fees(ClaimDataSource::L1ToMiden, true)]
+#[case::l1_to_miden(ClaimDataSource::L1ToMiden, 0)]
+#[case::l2_to_miden(ClaimDataSource::L2ToMiden, 0)]
+#[case::l1_to_miden_with_fees(ClaimDataSource::L1ToMiden, VERIFICATION_BASE_FEE)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(
     #[case] data_source: ClaimDataSource,
-    #[case] fees_enabled: bool,
+    #[case] verification_base_fee: u32,
 ) -> anyhow::Result<()> {
     use miden_agglayer::AggLayerBridge;
 
-    let mut builder = MockChain::builder();
-    if fees_enabled {
-        builder = builder.verification_base_fee(VERIFICATION_BASE_FEE);
-    }
+    let fees_enabled = verification_base_fee > 0;
+    let mut builder = MockChain::builder().verification_base_fee(verification_base_fee);
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
@@ -171,24 +168,14 @@ async fn test_bridge_in_claim_to_p2id(
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = if fees_enabled {
-        create_existing_priced_bridge(
-            bridge_seed,
-            bridge_admin_account_id(),
-            faucet_manager.id(),
-            ger_injector.id(),
-            ger_remover.id(),
-        )?
-    } else {
-        create_existing_bridge_account_with_roles(
-            bridge_seed,
-            bridge_admin_account_id(),
-            faucet_manager.id(),
-            ger_injector.id(),
-            ger_remover.id(),
-            MIDEN_NETWORK_ID,
-        )
-    };
+    let bridge_account = create_existing_priced_bridge(
+        bridge_seed,
+        bridge_admin_account_id(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+        verification_base_fee,
+    )?;
     assert_eq!(AggLayerBridge::network_id(&bridge_account)?, MIDEN_NETWORK_ID);
     builder.add_account(bridge_account.clone())?;
 
@@ -208,25 +195,15 @@ async fn test_bridge_in_claim_to_p2id(
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
 
-    let agglayer_faucet = if fees_enabled {
-        create_existing_priced_faucet(
-            agglayer_faucet_seed,
-            token_symbol,
-            decimals,
-            max_supply,
-            Felt::ZERO,
-            bridge_account.id(),
-        )?
-    } else {
-        create_existing_agglayer_faucet_with_callbacks(
-            agglayer_faucet_seed,
-            token_symbol,
-            decimals,
-            max_supply,
-            Felt::ZERO,
-            bridge_account.id(),
-        )
-    };
+    let agglayer_faucet = create_existing_priced_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+        verification_base_fee,
+    )?;
     builder.add_account(agglayer_faucet.clone())?;
 
     // Get the destination account ID from the leaf data.
@@ -303,12 +280,24 @@ async fn test_bridge_in_claim_to_p2id(
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let (config_sponsorship, update_ger_sponsorship, claim_sponsorship) = if fees_enabled {
-        let config_sponsorship =
-            add_fee_sponsorship(&mut builder, &config_note, bridge_account.id())?;
-        let update_ger_sponsorship =
-            add_fee_sponsorship(&mut builder, &update_ger_note, bridge_account.id())?;
-        let claim_sponsorship =
-            add_fee_sponsorship(&mut builder, &claim_note, bridge_account.id())?;
+        let config_sponsorship = add_fee_sponsorship(
+            &mut builder,
+            &config_note,
+            bridge_account.id(),
+            verification_base_fee,
+        )?;
+        let update_ger_sponsorship = add_fee_sponsorship(
+            &mut builder,
+            &update_ger_note,
+            bridge_account.id(),
+            verification_base_fee,
+        )?;
+        let claim_sponsorship = add_fee_sponsorship(
+            &mut builder,
+            &claim_note,
+            bridge_account.id(),
+            verification_base_fee,
+        )?;
         (Some(config_sponsorship), Some(update_ger_sponsorship), Some(claim_sponsorship))
     } else {
         (None, None, None)

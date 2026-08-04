@@ -79,13 +79,14 @@ use super::test_utils::{
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
 /// 6. Consumes the BURN note with the faucet to burn the tokens
 #[rstest::rstest]
-#[case::fee_free(32, false)]
-#[case::fees_enabled(1, true)]
+#[case::fee_free(32, 0)]
+#[case::fees_enabled(1, VERIFICATION_BASE_FEE)]
 #[tokio::test]
 async fn bridge_out_consecutive(
     #[case] note_count: usize,
-    #[case] fees_enabled: bool,
+    #[case] verification_base_fee: u32,
 ) -> anyhow::Result<()> {
+    let fees_enabled = verification_base_fee > 0;
     let vectors = &*SOLIDITY_MTF_VECTORS;
     assert!(vectors.amounts.len() >= note_count, "not enough amount vectors");
     assert!(vectors.roots.len() >= note_count, "not enough root vectors");
@@ -100,10 +101,7 @@ async fn bridge_out_consecutive(
         "destination address and amount vector lengths should match"
     );
 
-    let mut builder = MockChain::builder();
-    if fees_enabled {
-        builder = builder.verification_base_fee(VERIFICATION_BASE_FEE);
-    }
+    let mut builder = MockChain::builder().verification_base_fee(verification_base_fee);
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
@@ -121,24 +119,14 @@ async fn bridge_out_consecutive(
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let mut bridge_account = if fees_enabled {
-        create_existing_priced_bridge(
-            bridge_seed,
-            bridge_admin_account_id(),
-            faucet_manager.id(),
-            ger_injector.id(),
-            ger_remover.id(),
-        )?
-    } else {
-        create_existing_bridge_account_with_roles(
-            bridge_seed,
-            bridge_admin_account_id(),
-            faucet_manager.id(),
-            ger_injector.id(),
-            ger_remover.id(),
-            MIDEN_NETWORK_ID,
-        )
-    };
+    let mut bridge_account = create_existing_priced_bridge(
+        bridge_seed,
+        bridge_admin_account_id(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+        verification_base_fee,
+    )?;
     builder.add_account(bridge_account.clone())?;
 
     let expected_amounts = vectors
@@ -161,25 +149,15 @@ async fn bridge_out_consecutive(
         vectors.token_decimals,
     );
     let faucet_seed = builder.rng_mut().draw_word();
-    let faucet = if fees_enabled {
-        create_existing_priced_faucet(
-            faucet_seed,
-            &vectors.token_symbol,
-            vectors.token_decimals,
-            FungibleAsset::MAX_AMOUNT.into(),
-            Felt::new_unchecked(total_burned),
-            bridge_account.id(),
-        )?
-    } else {
-        create_existing_agglayer_faucet(
-            faucet_seed,
-            &vectors.token_symbol,
-            vectors.token_decimals,
-            FungibleAsset::MAX_AMOUNT.into(),
-            Felt::new_unchecked(total_burned),
-            bridge_account.id(),
-        )
-    };
+    let faucet = create_existing_priced_faucet(
+        faucet_seed,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+        FungibleAsset::MAX_AMOUNT.into(),
+        Felt::new_unchecked(total_burned),
+        bridge_account.id(),
+        verification_base_fee,
+    )?;
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by faucet manager)
@@ -220,14 +198,24 @@ async fn bridge_out_consecutive(
     }
 
     let config_sponsorship = if fees_enabled {
-        Some(add_fee_sponsorship(&mut builder, &config_note, bridge_account.id())?)
+        Some(add_fee_sponsorship(
+            &mut builder,
+            &config_note,
+            bridge_account.id(),
+            verification_base_fee,
+        )?)
     } else {
         None
     };
     let mut b2agg_sponsorships = Vec::new();
     if fees_enabled {
         for note in &notes {
-            b2agg_sponsorships.push(add_fee_sponsorship(&mut builder, note, bridge_account.id())?);
+            b2agg_sponsorships.push(add_fee_sponsorship(
+                &mut builder,
+                note,
+                bridge_account.id(),
+                verification_base_fee,
+            )?);
         }
     }
 

@@ -87,9 +87,9 @@ pub fn fee_faucet_id() -> AccountId {
 }
 
 /// Returns the production note pricer configured for the fee-enabled AggLayer test chain.
-pub fn network_note_pricer() -> NetworkNotePricer {
+pub fn network_note_pricer(verification_base_fee: u32) -> NetworkNotePricer {
     NetworkNotePricer::builder()
-        .fee_parameters(FeeParameters::new(fee_faucet_id(), VERIFICATION_BASE_FEE))
+        .fee_parameters(FeeParameters::new(fee_faucet_id(), verification_base_fee))
         .build()
 }
 
@@ -98,8 +98,9 @@ pub fn add_fee_sponsorship(
     builder: &mut MockChainBuilder,
     feature_note: &Note,
     target: AccountId,
+    verification_base_fee: u32,
 ) -> anyhow::Result<Note> {
-    let fee = network_note_pricer().price(feature_note.script().root())?;
+    let fee = network_note_pricer(verification_base_fee).price(feature_note.script().root())?;
     let sponsorship: Note = FeeSponsorshipNote::builder()
         .sender(feature_note.metadata().sender())
         .target_account(target)
@@ -131,11 +132,14 @@ pub fn create_existing_priced_bridge(
     faucet_manager: AccountId,
     ger_injector: AccountId,
     ger_remover: AccountId,
+    verification_base_fee: u32,
 ) -> anyhow::Result<Account> {
     let roles =
         BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
     Ok(AggLayerBridge::account_builder(seed, admin, roles, MIDEN_NETWORK_ID)
-        .with_fee_policy_manager(network_note_pricer().agglayer_bridge_fee_policy_manager()?)
+        .with_fee_policy_manager(
+            network_note_pricer(verification_base_fee).agglayer_bridge_fee_policy_manager()?,
+        )
         .build_existing())
 }
 
@@ -147,6 +151,7 @@ pub fn create_existing_priced_faucet(
     max_supply: Felt,
     initial_supply: Felt,
     bridge_account_id: AccountId,
+    verification_base_fee: u32,
 ) -> anyhow::Result<Account> {
     Ok(
         AggLayerFaucet::account_builder(
@@ -157,7 +162,9 @@ pub fn create_existing_priced_faucet(
             bridge_account_id,
         )
         .with_initial_supply(initial_supply)
-        .with_fee_policy_manager(network_note_pricer().agglayer_faucet_fee_policy_manager()?)
+        .with_fee_policy_manager(
+            network_note_pricer(verification_base_fee).agglayer_faucet_fee_policy_manager()?,
+        )
         .build_existing(),
     )
 }
