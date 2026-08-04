@@ -126,7 +126,7 @@ end
 #! `exec.output_note::create`.
 #!
 #! Requires that the account exposes:
-#! - the `miden::standards::note::note_creator::create_note` procedure.
+#! - `miden::standards::note::note_creator::create_note` procedure.
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 #! Outputs: [note_idx]

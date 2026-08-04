@@ -795,7 +795,7 @@ end
 #! Requires that the account exposes:
 #! - `miden::standards::wallets::basic::receive_asset` procedure.
 #! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
-#! - the `miden::standards::note::note_creator::create_note` procedure.
+#! - `miden::standards::note::note_creator::create_note` procedure.
 #!
 #! Inputs:  [NOTE_ARGS]
 #! Outputs: []

@@ -112,7 +112,7 @@ end
 #! The created note is always public and carries the unique TX_FEE_NOTE_TAG note tag.
 #!
 #! Requires that the account exposes:
-#! - the `miden::standards::note::note_creator::create_note` procedure.
+#! - `miden::standards::note::note_creator::create_note` procedure.
 #!
 #! Inputs:  [SERIAL_NUM]
 #! Outputs: [note_idx]
