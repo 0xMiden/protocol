@@ -20,7 +20,7 @@ pub const MIN_BURN_AMOUNT_SLOT = word("miden::standards::faucets::policies::burn
 # CONSTANTS — errors
 # =================================================================================================
 
-const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must exceed specified minimum burn amount"
+const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must meet or exceed specified minimum burn amount"
 
 # POLICY PROCEDURES
 # =================================================================================================
