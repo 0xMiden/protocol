@@ -20,7 +20,7 @@ pub use miden_standards::interop::eth::{
     EthAmountError,
     EthEmbeddedAccountId,
 };
-use miden_standards::note::{BurnNote, MintNote};
+use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote, NetworkAccountConfigNote};
 use thiserror::Error;
 
 use super::agglayer_faucet_component_package;
@@ -159,6 +159,18 @@ impl AggLayerFaucet {
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([MintNote::script_root(), BurnNote::script_root()])
+    }
+
+    /// Returns every input-note script root whose fee must be scheduled on an AggLayer faucet.
+    ///
+    /// This is the faucet's explicit allowlist plus the configuration and sponsorship notes that
+    /// [`AuthNetworkAccount`](miden_standards::account::auth::AuthNetworkAccount) adds to every
+    /// standard network account.
+    pub fn fee_policy_notes() -> BTreeSet<NoteScriptRoot> {
+        let mut notes = Self::allowed_notes();
+        notes.insert(NetworkAccountConfigNote::script_root());
+        notes.insert(FeeSponsorshipNote::script_root());
+        notes
     }
 
     /// Extracts the underlying [`FungibleFaucet`] component (which holds the token metadata)

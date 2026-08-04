@@ -6,6 +6,7 @@ use miden_protocol::block::FeeParameters;
 use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
 
@@ -113,6 +114,28 @@ impl NetworkNotePricer {
         AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
+    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] prices every supplied
+    /// note script root from its benchmarked consumption cost.
+    ///
+    /// The manager charges in the fee asset configured by [`Self::fee_parameters`], keeping the
+    /// policy's bare fee amounts and their denomination together. Each root is priced through
+    /// [`Self::price`], so the fee includes the default safety margin and the recursively priced
+    /// notes created by consuming it.
+    pub fn basic_constant_fee_policy_manager(
+        &self,
+        note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+    ) -> Result<FeePolicyManager, NotePricingError> {
+        let mut policy = BasicConstantFeePolicy::new();
+        for root in note_script_roots {
+            policy = policy.with_fee(root, self.price(root)?);
+        }
+
+        Ok(FeePolicyManager::builder()
+            .fee_faucet_id(self.fee_parameters.fee_faucet_id())
+            .active_fee_policy(policy.into())
+            .build())
+    }
+
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently
     /// being priced to cut off self-recursion.
     fn price_recursive(
@@ -149,9 +172,9 @@ impl NetworkNotePricer {
 mod tests {
     use miden_agglayer::ClaimNote;
     use miden_agglayer::costs::CLAIM_CONSUMPTION_CYCLES;
-    use miden_protocol::MAX_TX_EXECUTION_CYCLES;
-    use miden_protocol::account::AccountId;
+    use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotContent};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, Word};
     use miden_standards::note::SwapNote;
     use miden_standards::note::costs::{
         MINT_CONSUMPTION_CYCLES,
@@ -333,5 +356,48 @@ mod tests {
             + pricer.fee(fee_inputs(MINT_CONSUMPTION_CYCLES)).unwrap().as_u64()
             + pricer.fee(fee_inputs(P2ID_CONSUMPTION_CYCLES)).unwrap().as_u64();
         assert_eq!(pricer.price(ClaimNote::script_root()).unwrap().as_u64(), expected);
+    }
+
+    #[test]
+    fn basic_constant_fee_policy_manager_prices_every_root_in_the_native_fee_asset() {
+        let pricer = pricer(500, 0);
+        let roots = [SwapNote::script_root(), ClaimNote::script_root()];
+        let expected_fees = roots.map(|root| pricer.price(root).unwrap());
+
+        let manager = pricer.basic_constant_fee_policy_manager(roots).unwrap();
+        assert_eq!(manager.active_fee_policy(), BasicConstantFeePolicy::root());
+        assert_eq!(
+            manager.fee_asset_id(),
+            miden_protocol::asset::AssetId::new_fungible(pricer.fee_parameters().fee_faucet_id())
+        );
+
+        let component = manager
+            .into_fee_policy_components()
+            .next()
+            .expect("the active policy should contribute its component");
+        let slot = component
+            .storage_slots()
+            .iter()
+            .find(|slot| slot.name() == BasicConstantFeePolicy::fee_schedule_slot_name())
+            .expect("the basic constant fee policy should carry its fee schedule");
+        let StorageSlotContent::Map(schedule) = slot.content() else {
+            panic!("the fee schedule should be a map");
+        };
+
+        for (root, fee) in roots.into_iter().zip(expected_fees) {
+            assert_eq!(
+                schedule.get(&StorageMapKey::new(root.as_word())),
+                Word::new([fee.into(), Felt::ZERO, Felt::ZERO, Felt::ONE])
+            );
+        }
+    }
+
+    #[test]
+    fn basic_constant_fee_policy_manager_rejects_unknown_roots() {
+        let unknown = NoteScriptRoot::from_array([9, 9, 9, 9]);
+        assert!(matches!(
+            pricer(500, 0).basic_constant_fee_policy_manager([unknown]),
+            Err(NotePricingError::UnknownNoteScriptRoot(root)) if root == unknown
+        ));
     }
 }

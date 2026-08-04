@@ -18,6 +18,7 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::interop::eth::{EthAddress, EthAmount};
 use serde::Deserialize;
 
@@ -56,6 +57,29 @@ pub fn create_existing_bridge_account_with_roles(
     ger_remover: AccountId,
     network_id: u32,
 ) -> Account {
+    let fee_policy_manager =
+        crate::testing_zero_fee_policy_manager(crate::AggLayerBridge::fee_policy_notes());
+    create_existing_bridge_account_with_roles_and_fee_policy(
+        seed,
+        admin,
+        faucet_manager,
+        ger_injector,
+        ger_remover,
+        network_id,
+        fee_policy_manager,
+    )
+}
+
+/// Creates an existing bridge account with role holders and an explicit fee policy manager.
+pub fn create_existing_bridge_account_with_roles_and_fee_policy(
+    seed: Word,
+    admin: AccountId,
+    faucet_manager: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+    network_id: u32,
+    fee_policy_manager: FeePolicyManager,
+) -> Account {
     let roles = BridgeRoles::new(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
@@ -63,7 +87,7 @@ pub fn create_existing_bridge_account_with_roles(
     )
     .expect("single-holder role sets are non-empty");
 
-    create_bridge_account_builder(seed, admin, roles, network_id)
+    create_bridge_account_builder(seed, admin, roles, network_id, fee_policy_manager)
         .build_existing()
         .expect("bridge account should be valid")
 }

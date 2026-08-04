@@ -20,6 +20,8 @@ use miden_protocol::note::{Note, NoteScriptRoot};
 #[cfg(any(feature = "testing", test))]
 use miden_standards::account::access::PausableStorage;
 use miden_standards::note::{
+    FeeSponsorshipNote,
+    NetworkAccountConfigNote,
     NetworkAccountTarget,
     NetworkAccountTargetError,
     NoteExecutionHint,
@@ -489,6 +491,18 @@ impl AggLayerBridge {
             PauseConfigNote::script_root(),
             RbacConfigNote::script_root(),
         ])
+    }
+
+    /// Returns every input-note script root whose fee must be scheduled on an AggLayer bridge.
+    ///
+    /// This is the bridge's explicit allowlist plus the configuration and sponsorship notes that
+    /// [`AuthNetworkAccount`](miden_standards::account::auth::AuthNetworkAccount) adds to every
+    /// standard network account.
+    pub fn fee_policy_notes() -> BTreeSet<NoteScriptRoot> {
+        let mut notes = Self::allowed_notes();
+        notes.insert(NetworkAccountConfigNote::script_root());
+        notes.insert(FeeSponsorshipNote::script_root());
+        notes
     }
 
     // PAUSE NOTE

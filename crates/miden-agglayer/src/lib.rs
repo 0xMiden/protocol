@@ -7,8 +7,12 @@ use alloc::collections::BTreeSet;
 use miden_core::{Felt, Word};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::{AssetAmount, TokenSymbol};
-use miden_protocol::note::{NoteScript, NoteScriptRoot};
+#[cfg(any(feature = "testing", test))]
+use miden_protocol::asset::AssetAmount;
+use miden_protocol::asset::TokenSymbol;
+use miden_protocol::note::NoteScript;
+#[cfg(any(feature = "testing", test))]
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{
     Authority,
@@ -18,7 +22,9 @@ use miden_standards::account::access::{
     RoleBasedAccessControl,
 };
 use miden_standards::account::auth::NetworkAccount;
-use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+#[cfg(any(feature = "testing", test))]
+use miden_standards::account::fees::BasicConstantFeePolicy;
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicy,
@@ -154,24 +160,13 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
-/// Returns the `FeePolicyManager` installed on the agglayer bridge and faucet accounts so their
-/// auth procedure can collect sponsored fees and answer sponsorship fee estimates. The active
-/// policy schedules an explicit 0 fee for every note script in `auth`'s allowlist, so it charges
-/// and collects nothing while still letting fee estimation resolve every note the account can
-/// consume; a real fee faucet and schedule are configured when fees are enabled on these accounts.
-///
-/// Because every scheduled fee is 0, the fee asset (and hence the placeholder faucet id below)
-/// never funds a transfer; only the components' procedure code contributes to the account code
-/// commitment, which `build.rs` mirrors when computing the compile-time commitment constants (the
-/// fee schedule entries and the manager's fee asset id are storage, so they do not affect the
-/// commitment).
-fn agglayer_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
-    // A placeholder public faucet id; see the note above on why its value is immaterial.
+/// Returns a zero-fee policy manager for tests that exercise AggLayer behavior independently of
+/// fee sponsorship. Production constructors require their deployment-time manager explicitly.
+#[cfg(any(feature = "testing", test))]
+fn testing_zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
     let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
         .expect("placeholder fee faucet id is valid");
 
-    // The basic constant fee policy aborts fee estimation for note scripts without a schedule
-    // entry, so enumerate the allowlist and schedule each as free.
     let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
     for note_script in allowed_notes {
         basic_constant_fee_policy =
@@ -211,8 +206,8 @@ fn create_bridge_account_builder(
     admin: AccountId,
     roles: BridgeRoles,
     network_id: u32,
+    fee_policy_manager: FeePolicyManager,
 ) -> AccountBuilder {
-    let fee_policy_manager = agglayer_fee_policy_manager(AggLayerBridge::allowed_notes());
     NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
         .expect("bridge note allowlist is non-empty")
         .with_component(AggLayerBridge::new(network_id))
@@ -228,14 +223,17 @@ fn create_bridge_account_builder(
 ///
 /// This creates a new account suitable for production use. `admin` bootstraps the `ADMIN` role
 /// (role administration); the initial operational-role holders are seeded from `roles` (see
-/// [`BridgeRoles`]). `network_id` is the AggLayer network ID assigned to the Miden chain.
+/// [`BridgeRoles`]). `network_id` is the AggLayer network ID assigned to the Miden chain. The
+/// supplied `fee_policy_manager` must price every root returned by
+/// [`AggLayerBridge::fee_policy_notes`].
 pub fn create_bridge_account(
     seed: Word,
     admin: AccountId,
     roles: BridgeRoles,
     network_id: u32,
+    fee_policy_manager: FeePolicyManager,
 ) -> Account {
-    create_bridge_account_builder(seed, admin, roles, network_id)
+    create_bridge_account_builder(seed, admin, roles, network_id, fee_policy_manager)
         .build()
         .expect("bridge account should be valid")
 }
@@ -262,6 +260,7 @@ fn create_agglayer_faucet_builder(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
+    fee_policy_manager: FeePolicyManager,
 ) -> AccountBuilder {
     let agglayer_component =
         create_agglayer_faucet_component(token_symbol, decimals, max_supply, token_supply);
@@ -276,7 +275,6 @@ fn create_agglayer_faucet_builder(
         .active_receive_policy(TransferPolicy::allow_all())
         .build();
 
-    let fee_policy_manager = agglayer_fee_policy_manager(AggLayerFaucet::allowed_notes());
     NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
         .expect("faucet note allowlist is non-empty")
         .with_component(agglayer_component)
@@ -288,13 +286,15 @@ fn create_agglayer_faucet_builder(
 
 /// Creates a new agglayer faucet account with the specified configuration.
 ///
-/// This creates a new account suitable for production use.
+/// This creates a new account suitable for production use. The supplied `fee_policy_manager` must
+/// price every root returned by [`AggLayerFaucet::fee_policy_notes`].
 pub fn create_agglayer_faucet(
     seed: Word,
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
     bridge_account_id: AccountId,
+    fee_policy_manager: FeePolicyManager,
 ) -> Account {
     create_agglayer_faucet_builder(
         seed,
@@ -303,6 +303,7 @@ pub fn create_agglayer_faucet(
         max_supply,
         Felt::ZERO,
         bridge_account_id,
+        fee_policy_manager,
     )
     .build()
     .expect("agglayer faucet account should be valid")
@@ -320,6 +321,7 @@ pub fn create_existing_agglayer_faucet(
     token_supply: Felt,
     bridge_account_id: AccountId,
 ) -> Account {
+    let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes());
     create_agglayer_faucet_builder(
         seed,
         token_symbol,
@@ -327,6 +329,31 @@ pub fn create_existing_agglayer_faucet(
         max_supply,
         token_supply,
         bridge_account_id,
+        fee_policy_manager,
+    )
+    .build_existing()
+    .expect("agglayer faucet account should be valid")
+}
+
+/// Creates an existing agglayer faucet with an explicitly configured fee policy manager.
+#[cfg(any(feature = "testing", test))]
+pub fn create_existing_agglayer_faucet_with_fee_policy(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    token_supply: Felt,
+    bridge_account_id: AccountId,
+    fee_policy_manager: FeePolicyManager,
+) -> Account {
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        token_supply,
+        bridge_account_id,
+        fee_policy_manager,
     )
     .build_existing()
     .expect("agglayer faucet account should be valid")
@@ -347,6 +374,7 @@ pub fn create_existing_agglayer_faucet_with_callbacks(
 ) -> Account {
     use miden_protocol::account::AssetCallbackFlag;
 
+    let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes());
     create_agglayer_faucet_builder(
         seed,
         token_symbol,
@@ -354,6 +382,7 @@ pub fn create_existing_agglayer_faucet_with_callbacks(
         max_supply,
         token_supply,
         bridge_account_id,
+        fee_policy_manager,
     )
     .with_asset_callbacks(AssetCallbackFlag::Enabled)
     .build_existing()
