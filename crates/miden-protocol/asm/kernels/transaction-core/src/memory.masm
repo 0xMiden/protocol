@@ -61,13 +61,6 @@ pub const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
 
 # The memory address at which the flag indicating that the epilogue is running the account's
 # authentication procedure is stored.
-#
-# This binary flag holds 1 only while the epilogue executes the authentication procedure, and 0
-# otherwise. It is deliberately not set when the auth procedure is reached any other way (e.g.
-# invoked from a note or transaction script during the main phase). It lets the call authenticator
-# skip tracking procedure calls made during the epilogue's auth run, without weakening the epilogue
-# guard that detects auth procedures invoked from other contexts (that guard is checked before this
-# flag is set, so a main-phase invocation is still tracked).
 const EPILOGUE_AUTH_IN_PROGRESS_FLAG_PTR = 15
 
 # Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
@@ -999,13 +992,11 @@ end
 #! Sets the flag indicating whether the epilogue is currently executing the authentication
 #! procedure.
 #!
-#! The stored value is assumed to be binary (0 or 1); its only callers push a literal 0 or 1.
-#!
-#! Inputs:  [flag]
+#! Inputs:  [is_epilogue_auth_in_progress_flag]
 #! Outputs: []
 #!
 #! Where:
-#! - flag is the binary value to store (1 while the epilogue runs the auth procedure, 0 otherwise).
+#! - is_epilogue_auth_in_progress_flag is 1 while the epilogue runs the auth procedure, 0 otherwise.
 pub proc set_epilogue_auth_in_progress_flag
     mem_store.EPILOGUE_AUTH_IN_PROGRESS_FLAG_PTR
     # => []

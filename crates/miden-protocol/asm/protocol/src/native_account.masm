@@ -515,15 +515,13 @@ end
 
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
 #!
-#! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
-#! `exec.faucet::mint`) which trigger `authenticate_procedure`. Procedures that execute only local
-#! MASM instructions will return 0 even if they were executed.
-#!
-#! Note: Account procedures invoked while the epilogue runs the authentication procedure are not
-#! recorded as called - call tracking is suppressed for the auth run. The authentication procedure's
-#! own index is the exception (`incr_nonce` records it), but in a correct transaction it is never
-#! observed as called, since the auth procedure is queried by the epilogue's replay guard before it
-#! runs. `was_procedure_called`-based policies must in any case exclude the auth procedure.
+#! Notice that `was_procedure_called` returns 0 in the following cases:
+#! - a procedure with provided root was called but it only uses local masm instructions.
+#! - a procedure with provided root is an authentication procedure: it should never be called
+#!   inside a user code, so, in case the executing program is correct, it should always return 0.
+#!   Otherwise such program will panic. It returns 1 only when queried from within the auth
+#!   procedure itself, after the nonce was incremented.
+#! - a procedure with provided root was called as part of the authentication procedure.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [was_called]

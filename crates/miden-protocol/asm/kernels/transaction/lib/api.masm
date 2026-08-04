@@ -65,8 +65,8 @@ const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
 #! conditionally tracks the call.
 #!
 #! The call is tracked (i.e. the caller procedure is recorded as called) only when the active
-#! account is the native account and the account's authentication procedure is not currently
-#! executing. See `account::authenticate_procedure` for the rationale.
+#! account is the native account and the epilogue is not currently executing the account's
+#! authentication procedure.
 #!
 #! Inputs:  []
 #! Outputs: []
