@@ -147,8 +147,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     let tx_script = SendNotesTransactionScript::new(
         &sponsor.code().interface(sponsor.id()),
         &[PartialNote::from(network_note.clone())],
-    )?
-    .into();
+    )?;
 
     let (auth_args, advice_value) = native_conversion_info();
     let foreign_target = mock_chain.get_foreign_account_inputs(target.id())?;
@@ -156,7 +155,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     let executed = mock_chain
         .build_transaction(sponsor.id())
         .foreign_accounts([foreign_target])
-        .tx_script(tx_script)
+        .send_notes_script(&tx_script)
         .auth_args(auth_args)
         .add_advice_map_entry(auth_args, advice_value)
         .expected_output_note(RawOutputNote::Full(network_note.clone()))
@@ -240,14 +239,13 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     let tx_script = SendNotesTransactionScript::new(
         &sponsor.code().interface(sponsor.id()),
         &[PartialNote::from(network_note.clone())],
-    )?
-    .into();
+    )?;
     let (auth_args, advice_value) = native_conversion_info();
     let foreign_network = mock_chain.get_foreign_account_inputs(network.id())?;
     let creation_tx = mock_chain
         .build_transaction(sponsor.id())
         .foreign_accounts([foreign_network])
-        .tx_script(tx_script)
+        .send_notes_script(&tx_script)
         .auth_args(auth_args)
         .add_advice_map_entry(auth_args, advice_value)
         .expected_output_note(RawOutputNote::Full(network_note.clone()))

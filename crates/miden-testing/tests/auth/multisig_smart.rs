@@ -222,7 +222,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 ) -> anyhow::Result<()> {
     use miden_processor::crypto::random::RandomCoin;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-    use miden_protocol::transaction::{RawOutputNote, TransactionScript};
+    use miden_protocol::transaction::RawOutputNote;
     use miden_standards::note::P2idNote;
     use miden_standards::tx_script::SendNotesTransactionScript;
 
@@ -248,10 +248,10 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         .build()?
         .into();
 
-    let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
+    let send_note_script = SendNotesTransactionScript::new(
         &multisig_account.code_interface(),
         &[output_note.clone().into()],
-    )?);
+    )?;
 
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -259,7 +259,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
     let result = mock_chain
         .build_transaction(multisig_account.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .tx_script(send_note_script)
+        .send_notes_script(&send_note_script)
         .auth_args(Word::from([Felt::new_unchecked(2); 4]))
         .build()?
         .execute()
