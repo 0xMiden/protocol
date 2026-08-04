@@ -24,13 +24,13 @@ use serde::Deserialize;
 
 use crate::claim_note::{ProofData, SmtNode};
 use crate::{
+    AggLayerBridge,
     BridgeRoles,
     CgiChainHash,
     ExitRoot,
     GlobalIndex,
     LeafData,
     MetadataHash,
-    create_bridge_account_builder,
 };
 
 // BRIDGE ACCOUNT HELPERS
@@ -87,9 +87,9 @@ pub fn create_existing_bridge_account_with_roles_and_fee_policy(
     )
     .expect("single-holder role sets are non-empty");
 
-    create_bridge_account_builder(seed, admin, roles, network_id, fee_policy_manager)
+    AggLayerBridge::account_builder(seed, admin, roles, network_id)
+        .with_fee_policy_manager(fee_policy_manager)
         .build_existing()
-        .expect("bridge account should be valid")
 }
 
 // EMBEDDED TEST VECTOR JSON FILES

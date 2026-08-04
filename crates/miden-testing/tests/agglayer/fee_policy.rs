@@ -1,12 +1,5 @@
-use miden_agglayer::testing::{
-    bridge_admin_account_id,
-    create_existing_bridge_account_with_roles_and_fee_policy,
-};
-use miden_agglayer::{
-    AggLayerBridge,
-    AggLayerFaucet,
-    create_existing_agglayer_faucet_with_fee_policy,
-};
+use miden_agglayer::testing::bridge_admin_account_id;
+use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, StorageMapKey};
 use miden_protocol::asset::AssetId;
@@ -61,29 +54,25 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
     let admin = bridge_admin_account_id();
 
     let bridge_roots = AggLayerBridge::fee_policy_notes();
-    let bridge_manager = pricer.basic_constant_fee_policy_manager(bridge_roots.clone())?;
-    let bridge = create_existing_bridge_account_with_roles_and_fee_policy(
-        Word::default(),
-        admin,
-        admin,
-        admin,
-        admin,
-        MIDEN_NETWORK_ID,
-        bridge_manager,
-    );
+    let bridge_manager = pricer.agglayer_bridge_fee_policy_manager()?;
+    let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;
+    let bridge = AggLayerBridge::account_builder(Word::default(), admin, roles, MIDEN_NETWORK_ID)
+        .with_fee_policy_manager(bridge_manager)
+        .build_existing();
     assert_priced_account(&bridge, bridge_roots)?;
 
     let faucet_roots = AggLayerFaucet::fee_policy_notes();
-    let faucet_manager = pricer.basic_constant_fee_policy_manager(faucet_roots.clone())?;
-    let faucet = create_existing_agglayer_faucet_with_fee_policy(
+    let faucet_manager = pricer.agglayer_faucet_fee_policy_manager()?;
+    let faucet = AggLayerFaucet::account_builder(
         Word::from([1u32, 0, 0, 0]),
         "AGG",
         6,
         1_000u32.into(),
-        0u32.into(),
         bridge.id(),
-        faucet_manager,
-    );
+    )
+    .with_token_supply(0u32.into())
+    .with_fee_policy_manager(faucet_manager)
+    .build_existing();
     assert_priced_account(&faucet, faucet_roots)?;
 
     Ok(())
