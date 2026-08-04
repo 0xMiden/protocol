@@ -180,7 +180,7 @@ impl TransactionArgs {
     ///
     /// The advice inputs' map is extended with the following key:
     ///
-    /// - hash(pub_key, message) |-> signature (prepared for VM execution).
+    /// - hash(pub_key, message) |-> signature (encoded for VM execution).
     pub fn add_signature(
         &mut self,
         pub_key: PublicKeyCommitment,
@@ -190,7 +190,7 @@ impl TransactionArgs {
         let pk_word: Word = pub_key.into();
         self.advice_inputs
             .map
-            .insert(Hasher::merge(&[pk_word, message]), signature.to_prepared_signature(message));
+            .insert(Hasher::merge(&[pk_word, message]), signature.to_encoded_signature(message));
     }
 
     /// Populates the advice inputs with the specified note recipient details.

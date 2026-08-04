@@ -2,24 +2,24 @@
 // Values are maxima across the benchmarked paths; see `miden_standards::note::costs` for the
 // caveats on what they do and do not cover.
 
-/// Cycles of consuming a P2ID note: 1 asset 18366, 16 assets 57084 (maximum).
-pub const P2ID_CONSUMPTION_CYCLES: u32 = 57084;
+/// Cycles of consuming a P2ID note: 1 asset 18379, 16 assets 57097 (maximum).
+pub const P2ID_CONSUMPTION_CYCLES: u32 = 57097;
 
-/// Cycles of consuming a P2IDE note: claim 18491, claim with 16 assets 57209 (maximum), reclaim
-/// 18646.
-pub const P2IDE_CONSUMPTION_CYCLES: u32 = 57209;
+/// Cycles of consuming a P2IDE note: claim 18504, claim with 16 assets 57222 (maximum), reclaim
+/// 18659.
+pub const P2IDE_CONSUMPTION_CYCLES: u32 = 57222;
 
-/// Cycles of consuming a SWAP note: public payback 22360 (maximum), private payback 21849.
-pub const SWAP_CONSUMPTION_CYCLES: u32 = 22360;
+/// Cycles of consuming a SWAP note: public payback 22373 (maximum), private payback 21862.
+pub const SWAP_CONSUMPTION_CYCLES: u32 = 22373;
 
-/// Cycles of consuming a PSWAP note: full fill 24923, partial fill 28864 (maximum).
-pub const PSWAP_CONSUMPTION_CYCLES: u32 = 28864;
+/// Cycles of consuming a PSWAP note: full fill 24936, partial fill 28877 (maximum).
+pub const PSWAP_CONSUMPTION_CYCLES: u32 = 28877;
 
 /// Cycles of consuming a MINT note: fungible faucet 31652, non-fungible faucet 34531 (maximum).
 pub const MINT_CONSUMPTION_CYCLES: u32 = 34531;
 
 /// Cycles of consuming a BURN note (single benchmarked path).
-pub const BURN_CONSUMPTION_CYCLES: u32 = 28348;
+pub const BURN_CONSUMPTION_CYCLES: u32 = 28361;
 
 /// Cycles of consuming a CONSTANT_FEE_POLICY_CONFIG note (single benchmarked path).
 pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 19716;
@@ -49,4 +49,4 @@ pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 21199;
 pub const NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 18837;
 
 /// Cycles of consuming a FEE_SPONSORSHIP note (single benchmarked path).
-pub const FEE_SPONSORSHIP_CONSUMPTION_CYCLES: u32 = 21091;
+pub const FEE_SPONSORSHIP_CONSUMPTION_CYCLES: u32 = 21173;

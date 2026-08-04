@@ -98,6 +98,15 @@ impl Default for Auth {
 }
 
 impl Auth {
+    /// Returns [`Auth::BasicAuth`] with [`AuthScheme::Falcon512Poseidon2`].
+    ///
+    /// Prefer ECDSA over Falcon for tests where the auth scheme itself is not under test.
+    pub fn basic_falcon() -> Self {
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        }
+    }
+
     /// Returns [`Auth::BasicAuth`] with [`AuthScheme::EcdsaK256Keccak`].
     ///
     /// ECDSA verifies much faster than Falcon, making it the better choice for tests where the
