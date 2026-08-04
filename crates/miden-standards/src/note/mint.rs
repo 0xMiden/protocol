@@ -47,10 +47,9 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// The single MINT script works against both fungible and non-fungible faucets: it detects the
 /// faucet kind by reflection (via the `CodeInspection` component) and calls the matching
 /// `mint_and_send`. The script reads the asset (a fungible asset, or a non-fungible commitment)
-/// directly from the note's storage. For fungible faucets the embedded `ASSET_ID` binds the note
-/// to one faucet, so a MINT note bound to faucet A cannot be redirected to faucet B. MINT notes are
-/// always public (for network execution) and carry no assets; the output note minted on
-/// consumption can be private or public depending on the [`MintNoteStorage`] variant.
+/// directly from the note's storage. MINT notes are always public (for network execution) and carry
+/// no assets; the output note minted on consumption can be private or public depending on the
+/// [`MintNoteStorage`] variant.
 ///
 /// Construct one with the [builder](MintNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
@@ -65,6 +64,9 @@ pub struct MintNote {
 #[bon::bon]
 impl MintNote {
     /// Builds a new [`MintNote`] that mints the asset embedded in `mint_storage`.
+    ///
+    /// The faucet the note is bound to comes from `mint_storage` itself, so no attachment is
+    /// involved: see [`MintNoteStorage`] for how each variant carries it.
     ///
     /// # Errors
     ///
@@ -106,13 +108,13 @@ impl MintNote {
 
     /// Expected number of storage items of a non-fungible MINT note (private mode).
     ///
-    /// Layout: RECIPIENT(4) + COMMITMENT(4) + tag(1).
-    pub const NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE: usize = 9;
+    /// Layout: RECIPIENT(4) + COMMITMENT(4) + tag(1) + FAUCET_ID(2).
+    pub const NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE: usize = 11;
 
     /// Minimum number of storage items of a non-fungible MINT note (public mode).
     ///
-    /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + COMMITMENT(4) + tag(1) + padding(3) + variable
-    /// output-note storage. The variable portion starts at offset 16 (word-aligned).
+    /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + COMMITMENT(4) + tag(1) + FAUCET_ID(2) + padding(1)
+    /// + variable output-note storage. The variable portion starts at offset 16 (word-aligned).
     pub const NON_FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 16;
 
     // PUBLIC ACCESSORS
@@ -215,15 +217,17 @@ impl From<MintNote> for Note {
 /// The MINT note serves both fungible and non-fungible faucets. The fungible variants embed a
 /// [`FungibleAsset`] (`ASSET_ID` + `ASSET_VALUE`, 8 felts) so the faucet executing the note can be
 /// checked against the asset's faucet ID at mint time. The non-fungible variants embed a
-/// [`NonFungibleAsset`], whose value word (`ASSET_VALUE`, 4 felts) is the asset commitment and
-/// whose faucet ID routes the note.
+/// [`NonFungibleAsset`], whose value word (`ASSET_VALUE`, 4 felts) is the asset commitment. A
+/// non-fungible `ASSET_ID` is derived from the consuming account at mint time and so matches any
+/// faucet, so the faucet ID is stored explicitly (as `suffix, prefix`) to serve as the bind the
+/// `ASSET_ID` cannot.
 ///
 /// - Fungible private (13 items): RECIPIENT + ASSET_ID + ASSET_VALUE + tag.
 /// - Fungible public (20+ items): SCRIPT_ROOT + SERIAL_NUM + ASSET_ID + ASSET_VALUE + tag +
 ///   padding(3) + variable output-note storage (word-aligned at offset 20).
-/// - Non-fungible private (9 items): RECIPIENT + COMMITMENT + tag.
-/// - Non-fungible public (16+ items): SCRIPT_ROOT + SERIAL_NUM + COMMITMENT + tag + padding(3) +
-///   variable output-note storage (word-aligned at offset 16).
+/// - Non-fungible private (11 items): RECIPIENT + COMMITMENT + tag + FAUCET_ID.
+/// - Non-fungible public (16+ items): SCRIPT_ROOT + SERIAL_NUM + COMMITMENT + tag + FAUCET_ID +
+///   padding(1) + variable output-note storage (word-aligned at offset 16).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MintNoteStorage {
     FungiblePrivate {
@@ -340,7 +344,14 @@ impl From<MintNoteStorage> for NoteStorage {
                     Vec::with_capacity(MintNote::NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE);
                 storage_values.extend_from_slice(recipient_digest.as_elements());
                 storage_values.extend_from_slice(asset.to_value_word().as_elements());
-                storage_values.push(tag.into());
+                // the faucet ID follows the tag; the script asserts it against the consuming
+                // account, which is what binds the note to one faucet.
+                let faucet_id = asset.faucet_id();
+                storage_values.extend_from_slice(&[
+                    tag.into(),
+                    faucet_id.suffix(),
+                    faucet_id.prefix().as_felt(),
+                ]);
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
@@ -349,9 +360,16 @@ impl From<MintNoteStorage> for NoteStorage {
                 storage_values.extend_from_slice(recipient.script().root().as_elements());
                 storage_values.extend_from_slice(recipient.serial_num().as_elements());
                 storage_values.extend_from_slice(asset.to_value_word().as_elements());
-                // tag followed by 3 padding felts so the variable storage that follows starts at
-                // a word-aligned offset (16).
-                storage_values.extend_from_slice(&[tag.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+                // tag, then the faucet ID (which binds the note to one faucet, as above), then one
+                // padding felt so the variable storage that follows starts at a word-aligned
+                // offset (16).
+                let faucet_id = asset.faucet_id();
+                storage_values.extend_from_slice(&[
+                    tag.into(),
+                    faucet_id.suffix(),
+                    faucet_id.prefix().as_felt(),
+                    Felt::ZERO,
+                ]);
                 storage_values.extend_from_slice(recipient.storage().items());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")

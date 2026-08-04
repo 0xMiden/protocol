@@ -21,6 +21,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_NFT_ALREADY_ISSUED,
+    ERR_NON_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage};
@@ -33,13 +34,24 @@ use miden_testing::{
 };
 use rand::RngExt;
 
-/// Builds an existing non-fungible faucet with allow-all policies (so a tx-script mint is gated
-/// only by the test auth) and an owner-controlled authority.
+/// Builds an existing public non-fungible faucet with allow-all policies (so a tx-script mint is
+/// gated only by the test auth) and an owner-controlled authority.
 fn build_nft_faucet(
     builder: &mut MockChainBuilder,
     symbol: &str,
     owner: AccountId,
     mint_policy: MintPolicy,
+) -> anyhow::Result<Account> {
+    build_nft_faucet_with_type(builder, symbol, owner, mint_policy, AccountType::Public)
+}
+
+/// [`build_nft_faucet`] with an explicit account type, so tests can cover a private faucet.
+fn build_nft_faucet_with_type(
+    builder: &mut MockChainBuilder,
+    symbol: &str,
+    owner: AccountId,
+    mint_policy: MintPolicy,
+    account_type: AccountType,
 ) -> anyhow::Result<Account> {
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new(symbol)?)
@@ -54,7 +66,7 @@ fn build_nft_faucet(
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
-        .account_type(AccountType::Public)
+        .account_type(account_type)
         .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
@@ -282,6 +294,119 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     assert_eq!(note.recipient_digest(), recipient_digest);
     let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
     assert_eq!(note.assets().num_assets(), 1);
+    assert_eq!(note.assets().iter().next(), Some(&expected_asset));
+
+    Ok(())
+}
+
+/// The non-fungible MINT note is bound to its faucet, so a decoy faucet cannot consume a note meant
+/// for another one. A non-fungible `ASSET_ID` is derived from the consuming account at mint time,
+/// so it cannot bind the note the way the fungible path's stored `ASSET_ID` does; the faucet ID
+/// stored alongside the commitment supplies that bind instead.
+///
+/// The decoy carries the same components and an allow-all mint policy, so nothing else would reject
+/// it: it aborts at the faucet check. Because the transaction aborts, the note's nullifier is not
+/// spent and the note remains available to the faucet it was created for.
+#[tokio::test]
+async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([12; 32]);
+    let target = build_nft_faucet(&mut builder, "EC", owner, MintPolicy::allow_all())?;
+    let decoy = build_nft_faucet(&mut builder, "DEC", owner, MintPolicy::allow_all())?;
+    let mock_chain = builder.build()?;
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"token minted by the wrong faucet",
+        Word::from([9, 9, 9, 9u32]),
+    );
+    let sender = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([13; 32]);
+
+    // the asset names `target` as its faucet, which is what the note storage binds it to
+    let storage = MintNoteStorage::new_non_fungible_private(
+        Word::from([5, 5, 5, 5u32]),
+        NonFungibleAsset::from_parts(target.id(), commitment),
+        NoteTag::default(),
+    );
+    let mut rng = RandomCoin::new([Felt::from(55u32); 4].into());
+    let mint_note: Note = MintNote::builder()
+        .sender(sender)
+        .mint_storage(storage)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+
+    let result = mock_chain
+        .build_transaction(decoy.id())
+        .unauthenticated_input_note(mint_note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_NON_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    );
+
+    Ok(())
+}
+
+/// A private faucet can consume a non-fungible MINT note, and is bound by it just as a public one
+/// is. Storing the faucet ID in the note keeps the bind a plain value comparison, so it carries no
+/// requirement on the faucet's account type - matching the fungible path, whose stored `ASSET_ID`
+/// comparison is likewise type-agnostic.
+#[tokio::test]
+async fn nft_mint_via_note_succeeds_for_a_private_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([14; 32]);
+    let faucet = build_nft_faucet_with_type(
+        &mut builder,
+        "EC",
+        owner,
+        MintPolicy::allow_all(),
+        AccountType::Private,
+    )?;
+    let mock_chain = builder.build()?;
+    assert!(faucet.id().is_private());
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"token minted by a private faucet",
+        Word::from([2, 4, 6, 8u32]),
+    );
+    let recipient_digest = Word::from([3, 3, 3, 3u32]);
+    let sender = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([15; 32]);
+
+    let storage = MintNoteStorage::new_non_fungible_private(
+        recipient_digest,
+        NonFungibleAsset::from_parts(faucet.id(), commitment),
+        NoteTag::default(),
+    );
+    let mut rng = RandomCoin::new([Felt::from(66u32); 4].into());
+    let mint_note: Note = MintNote::builder()
+        .sender(sender)
+        .mint_storage(storage)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+
+    let executed = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(mint_note)
+        .build()?
+        .execute()
+        .await?;
+
+    let expected_asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
+    assert_eq!(executed.output_notes().num_notes(), 1);
+    let note = executed.output_notes().get_note(0);
+    assert_eq!(note.recipient_digest(), recipient_digest);
     assert_eq!(note.assets().iter().next(), Some(&expected_asset));
 
     Ok(())

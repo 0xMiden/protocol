@@ -31,8 +31,7 @@ const ERR_MINT_UNSUPPORTED_FAUCET = "the consuming account exposes neither a fun
 #! Panics if:
 #! - the account does not expose the `has_procedure` procedure.
 #! - the account exposes neither faucet's `mint_and_send` procedure.
-#! - the number of storage items does not match the detected faucet kind (13 / 20+ for fungible,
-#!   9 / 16+ for non-fungible).
+#! - the number of storage items does not match the detected faucet kind.
 #! - the asset stored in the note does not belong to the consuming faucet.
 @note_script
 pub proc main
