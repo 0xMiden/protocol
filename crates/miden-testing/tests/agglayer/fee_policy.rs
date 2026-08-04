@@ -58,15 +58,15 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
     let admin = bridge_admin_account_id();
 
     let bridge_roots = AggLayerBridge::fee_policy_notes();
-    let bridge_manager = pricer.agglayer_bridge_fee_policy_manager()?;
+    let bridge_fee_manager = pricer.agglayer_bridge_fee_policy_manager()?;
     let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;
     let bridge = AggLayerBridge::account_builder(Word::default(), admin, roles, MIDEN_NETWORK_ID)
-        .with_fee_policy_manager(bridge_manager)
+        .with_fee_policy_manager(bridge_fee_manager)
         .build_existing();
     assert_priced_account(&bridge, bridge_roots)?;
 
     let faucet_roots = AggLayerFaucet::fee_policy_notes();
-    let faucet_manager = pricer.agglayer_faucet_fee_policy_manager()?;
+    let faucet_fee_manager = pricer.agglayer_faucet_fee_policy_manager()?;
     let faucet = AggLayerFaucet::account_builder(
         Word::from([1u32, 0, 0, 0]),
         "AGG",
@@ -74,7 +74,7 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
         1_000u32.into(),
         bridge.id(),
     )
-    .with_fee_policy_manager(faucet_manager)
+    .with_fee_policy_manager(faucet_fee_manager)
     .build_existing();
     assert_priced_account(&faucet, faucet_roots)?;
 
