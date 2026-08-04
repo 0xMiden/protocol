@@ -188,9 +188,9 @@ impl NetworkNotePricer {
 mod tests {
     use miden_agglayer::ClaimNote;
     use miden_agglayer::costs::CLAIM_CONSUMPTION_CYCLES;
-    use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotContent};
+    use miden_protocol::MAX_TX_EXECUTION_CYCLES;
+    use miden_protocol::account::AccountId;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-    use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, Word};
     use miden_standards::note::SwapNote;
     use miden_standards::note::costs::{
         MINT_CONSUMPTION_CYCLES,
@@ -378,7 +378,6 @@ mod tests {
     fn basic_constant_fee_policy_manager_prices_every_root_in_the_native_fee_asset() {
         let pricer = pricer(500, 0);
         let roots = [SwapNote::script_root(), ClaimNote::script_root()];
-        let expected_fees = roots.map(|root| pricer.price(root).unwrap());
 
         let manager = pricer.basic_constant_fee_policy_manager(roots).unwrap();
         assert_eq!(manager.active_fee_policy(), BasicConstantFeePolicy::root());
@@ -386,26 +385,6 @@ mod tests {
             manager.fee_asset_id(),
             miden_protocol::asset::AssetId::new_fungible(pricer.fee_parameters().fee_faucet_id())
         );
-
-        let component = manager
-            .into_fee_policy_components()
-            .next()
-            .expect("the active policy should contribute its component");
-        let slot = component
-            .storage_slots()
-            .iter()
-            .find(|slot| slot.name() == BasicConstantFeePolicy::fee_schedule_slot_name())
-            .expect("the basic constant fee policy should carry its fee schedule");
-        let StorageSlotContent::Map(schedule) = slot.content() else {
-            panic!("the fee schedule should be a map");
-        };
-
-        for (root, fee) in roots.into_iter().zip(expected_fees) {
-            assert_eq!(
-                schedule.get(&StorageMapKey::new(root.as_word())),
-                Word::new([fee.into(), Felt::ZERO, Felt::ZERO, Felt::ONE])
-            );
-        }
     }
 
     #[test]

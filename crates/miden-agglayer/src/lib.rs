@@ -142,7 +142,7 @@ fn agglayer_faucet_component_package() -> Package {
 /// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")
 /// - `decimals`: Number of decimal places for the token
 /// - `max_supply`: Maximum supply of the token
-/// - `token_supply`: Initial outstanding token supply (0 for new faucets)
+/// - `initial_supply`: Initial outstanding token supply (0 for new faucets)
 ///
 /// # Returns
 /// Returns an [`AccountComponent`] configured for agglayer faucet operations.
@@ -153,10 +153,10 @@ fn create_agglayer_faucet_component(
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
-    token_supply: Felt,
+    initial_supply: Felt,
 ) -> AccountComponent {
     let symbol = TokenSymbol::new(token_symbol).expect("token symbol should be valid");
-    AggLayerFaucet::new(symbol, decimals, max_supply, token_supply)
+    AggLayerFaucet::new(symbol, decimals, max_supply, initial_supply)
         .expect("agglayer faucet metadata should be valid")
         .into()
 }
@@ -260,11 +260,8 @@ pub struct AggLayerFaucetAccountBuilder {
     token_symbol: String,
     decimals: u8,
     max_supply: Felt,
-    token_supply: Felt,
     bridge_account_id: AccountId,
     fee_policy_manager: Option<FeePolicyManager>,
-    #[cfg(any(feature = "testing", test))]
-    asset_callbacks: Option<miden_protocol::account::AssetCallbackFlag>,
 }
 
 impl AggLayerFaucetAccountBuilder {
@@ -280,11 +277,8 @@ impl AggLayerFaucetAccountBuilder {
             token_symbol: token_symbol.into(),
             decimals,
             max_supply,
-            token_supply: Felt::ZERO,
             bridge_account_id,
             fee_policy_manager: None,
-            #[cfg(any(feature = "testing", test))]
-            asset_callbacks: None,
         }
     }
 
@@ -299,46 +293,19 @@ impl AggLayerFaucetAccountBuilder {
         self
     }
 
-    /// Sets the initial outstanding token supply for tests that build an existing faucet.
-    #[cfg(any(feature = "testing", test))]
-    #[must_use]
-    pub fn with_token_supply(mut self, token_supply: Felt) -> Self {
-        self.token_supply = token_supply;
-        self
-    }
-
-    /// Configures asset callbacks for tests that build an existing faucet.
-    #[cfg(any(feature = "testing", test))]
-    #[must_use]
-    pub fn with_asset_callbacks(
-        mut self,
-        asset_callbacks: miden_protocol::account::AssetCallbackFlag,
-    ) -> Self {
-        self.asset_callbacks = Some(asset_callbacks);
-        self
-    }
-
     fn into_account_builder(self) -> AccountBuilder {
         let fee_policy_manager = self
             .fee_policy_manager
             .expect("AggLayer faucet account requires a fee policy manager");
-        let builder = create_agglayer_faucet_builder(
+        create_agglayer_faucet_builder(
             self.seed,
             &self.token_symbol,
             self.decimals,
             self.max_supply,
-            self.token_supply,
+            Felt::ZERO,
             self.bridge_account_id,
             fee_policy_manager,
-        );
-
-        #[cfg(any(feature = "testing", test))]
-        let builder = match self.asset_callbacks {
-            Some(asset_callbacks) => builder.with_asset_callbacks(asset_callbacks),
-            None => builder,
-        };
-
-        builder
+        )
     }
 
     /// Builds a new AggLayer faucet account.
@@ -455,12 +422,12 @@ fn create_agglayer_faucet_builder(
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
-    token_supply: Felt,
+    initial_supply: Felt,
     bridge_account_id: AccountId,
     fee_policy_manager: FeePolicyManager,
 ) -> AccountBuilder {
     let agglayer_component =
-        create_agglayer_faucet_component(token_symbol, decimals, max_supply, token_supply);
+        create_agglayer_faucet_component(token_symbol, decimals, max_supply, initial_supply);
 
     // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
     // via `set_burn_policy`.
@@ -507,31 +474,21 @@ pub fn create_existing_agglayer_faucet(
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
-    token_supply: Felt,
+    initial_supply: Felt,
     bridge_account_id: AccountId,
 ) -> Account {
     let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes());
-    AggLayerFaucet::account_builder(seed, token_symbol, decimals, max_supply, bridge_account_id)
-        .with_token_supply(token_supply)
-        .with_fee_policy_manager(fee_policy_manager)
-        .build_existing()
-}
-
-/// Creates an existing agglayer faucet with an explicitly configured fee policy manager.
-#[cfg(any(feature = "testing", test))]
-pub fn create_existing_agglayer_faucet_with_fee_policy(
-    seed: Word,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    token_supply: Felt,
-    bridge_account_id: AccountId,
-    fee_policy_manager: FeePolicyManager,
-) -> Account {
-    AggLayerFaucet::account_builder(seed, token_symbol, decimals, max_supply, bridge_account_id)
-        .with_token_supply(token_supply)
-        .with_fee_policy_manager(fee_policy_manager)
-        .build_existing()
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        initial_supply,
+        bridge_account_id,
+        fee_policy_manager,
+    )
+    .build_existing()
+    .expect("agglayer faucet account should be valid")
 }
 
 /// Creates an existing agglayer faucet account with the specified configuration and the asset
@@ -544,17 +501,24 @@ pub fn create_existing_agglayer_faucet_with_callbacks(
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
-    token_supply: Felt,
+    initial_supply: Felt,
     bridge_account_id: AccountId,
 ) -> Account {
     use miden_protocol::account::AssetCallbackFlag;
 
     let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes());
-    AggLayerFaucet::account_builder(seed, token_symbol, decimals, max_supply, bridge_account_id)
-        .with_token_supply(token_supply)
-        .with_fee_policy_manager(fee_policy_manager)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
-        .build_existing()
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        initial_supply,
+        bridge_account_id,
+        fee_policy_manager,
+    )
+    .with_asset_callbacks(AssetCallbackFlag::Enabled)
+    .build_existing()
+    .expect("agglayer faucet account should be valid")
 }
 
 // TESTS

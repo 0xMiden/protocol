@@ -224,10 +224,18 @@ impl AuthNetworkAccount {
         mut allowed_notes: BTreeSet<NoteScriptRoot>,
         fee_policy_manager: FeePolicyManager,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
-        allowed_notes.insert(NetworkAccountConfigNote::script_root());
-        allowed_notes.insert(FeeSponsorshipNote::script_root());
+        allowed_notes.extend(Self::default_allowed_note_scripts());
         Ok(Self::custom(allowed_notes, fee_policy_manager)?
             .with_allowed_tx_scripts([ExpirationTransactionScript::script_root()]))
+    }
+
+    /// Returns the note script roots added to the allowlist of every standard network account.
+    ///
+    /// Callers that derive configuration from a network account's complete allowlist, such as a
+    /// root-keyed fee schedule, should include these roots in addition to their account-specific
+    /// roots.
+    pub fn default_allowed_note_scripts() -> [NoteScriptRoot; 2] {
+        [NetworkAccountConfigNote::script_root(), FeeSponsorshipNote::script_root()]
     }
 
     /// Creates a raw [`AuthNetworkAccount`] component from the given note-script allowlist, with an

@@ -5,6 +5,7 @@ use miden_protocol::account::{Account, AccountId, StorageMapKey};
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::FeeParameters;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_tx::NetworkNotePricer;
 
@@ -24,9 +25,12 @@ fn pricer() -> NetworkNotePricer {
 
 fn assert_priced_account(
     account: &Account,
-    roots: impl IntoIterator<Item = miden_protocol::note::NoteScriptRoot>,
+    roots: std::collections::BTreeSet<miden_protocol::note::NoteScriptRoot>,
 ) -> anyhow::Result<()> {
     let pricer = pricer();
+    let network_account = NetworkAccount::new(account.clone())?;
+    assert_eq!(network_account.allowed_notes().allowed_script_roots(), &roots);
+
     assert_eq!(
         account.storage().get_item(FeePolicyManager::active_fee_policy_slot())?,
         BasicConstantFeePolicy::root().as_word()
@@ -70,7 +74,6 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
         1_000u32.into(),
         bridge.id(),
     )
-    .with_token_supply(0u32.into())
     .with_fee_policy_manager(faucet_manager)
     .build_existing();
     assert_priced_account(&faucet, faucet_roots)?;
