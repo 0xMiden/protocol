@@ -65,8 +65,7 @@ pub struct MintNote {
 impl MintNote {
     /// Builds a new [`MintNote`] that mints the asset embedded in `mint_storage`.
     ///
-    /// The faucet the note is bound to comes from `mint_storage` itself, so no attachment is
-    /// involved: see [`MintNoteStorage`] for how each variant carries it.
+    /// The faucet the note is bound to comes from [`MintNoteStorage`].
     ///
     /// # Errors
     ///
@@ -108,13 +107,13 @@ impl MintNote {
 
     /// Expected number of storage items of a non-fungible MINT note (private mode).
     ///
-    /// Layout: RECIPIENT(4) + COMMITMENT(4) + tag(1) + FAUCET_ID(2).
+    /// Layout: RECIPIENT + COMMITMENT + tag(1) + faucet_id(2).
     pub const NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE: usize = 11;
 
     /// Minimum number of storage items of a non-fungible MINT note (public mode).
     ///
-    /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + COMMITMENT(4) + tag(1) + FAUCET_ID(2) + padding(1)
-    /// + variable output-note storage. The variable portion starts at offset 16 (word-aligned).
+    /// Layout: SCRIPT_ROOT + SERIAL_NUM + COMMITMENT + tag(1) + faucet_id(2) + padding(1) +
+    /// variable output-note storage. The variable portion starts at offset 16 (word-aligned).
     pub const NON_FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 16;
 
     // PUBLIC ACCESSORS
@@ -225,8 +224,8 @@ impl From<MintNote> for Note {
 /// - Fungible private (13 items): RECIPIENT + ASSET_ID + ASSET_VALUE + tag.
 /// - Fungible public (20+ items): SCRIPT_ROOT + SERIAL_NUM + ASSET_ID + ASSET_VALUE + tag +
 ///   padding(3) + variable output-note storage (word-aligned at offset 20).
-/// - Non-fungible private (11 items): RECIPIENT + COMMITMENT + tag + FAUCET_ID.
-/// - Non-fungible public (16+ items): SCRIPT_ROOT + SERIAL_NUM + COMMITMENT + tag + FAUCET_ID +
+/// - Non-fungible private (11 items): RECIPIENT + COMMITMENT + tag + faucet_id.
+/// - Non-fungible public (16+ items): SCRIPT_ROOT + SERIAL_NUM + COMMITMENT + tag + faucet_id +
 ///   padding(1) + variable output-note storage (word-aligned at offset 16).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MintNoteStorage {

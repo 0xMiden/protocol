@@ -14,8 +14,6 @@ use {NOTE_TYPE_PRIVATE} from miden::protocol::note
 const STORAGE_PTR = 0
 
 # Non-fungible MINT note storage item counts.
-# Keep in sync with `MintNote::NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE` and
-# `MintNote::NON_FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC`.
 const NFT_NUM_STORAGE_ITEMS_PRIVATE = 11
 const NFT_MIN_NUM_STORAGE_ITEMS_PUBLIC = 16
 
@@ -150,18 +148,14 @@ end
 #! `mint_and_send` procedure. Selects the public or private output-note layout based on the number
 #! of note storage items (see `mint_public` / `mint_private`).
 #!
-#! Both layouts store the faucet ID the note was created for, which
-#! `assert_faucet_id_is_active_account` asserts against the consuming account before anything is
-#! minted, so a faucet other than that one aborts before the nullifier is spent and the note stays
-#! available to its faucet.
-#!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the number of storage items is not exactly 11 for private or less than 16 for public output
 #!   notes.
-#! - the asset stored in the note does not belong to the consuming faucet.
+#! - the consuming account is not the faucet ID stored in the note, which is what binds the note to
+#!   its faucet.
 #!
 #! Invocation: exec
 pub proc mint
