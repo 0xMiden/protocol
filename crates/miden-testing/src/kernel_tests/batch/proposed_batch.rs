@@ -28,7 +28,6 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     RawOutputNote,
-    TransactionScript,
 };
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -106,16 +105,16 @@ pub async fn setup_circular_note_dependency_test()
     assert_eq!(note_x.metadata().sender(), note_y.metadata().sender());
     assert_ne!(note_x.id(), note_y.id());
 
-    let tx_script_y = TransactionScript::from(SendNotesTransactionScript::new(
+    let tx_script_y = SendNotesTransactionScript::new(
         &account.code_interface(),
         &[PartialNote::from(note_y.clone())],
-    )?);
+    )?;
     // TX 1: consume note_x -> create note_y.
     // The tx script creates note_y with the asset out of thin air.
     let executed_tx1 = chain
         .build_transaction(account.clone())
         .unauthenticated_input_note(note_x.clone())
-        .tx_script(tx_script_y)
+        .send_notes_script(&tx_script_y)
         .expected_output_note(RawOutputNote::Full(note_y.clone()))
         .build()?
         .execute()
@@ -126,15 +125,15 @@ pub async fn setup_circular_note_dependency_test()
     let mut updated_account = account.clone();
     updated_account.apply_patch(executed_tx1.account_patch())?;
 
-    let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
+    let tx_script_x = SendNotesTransactionScript::new(
         &account.code_interface(),
         &[PartialNote::from(note_x.clone())],
-    )?);
+    )?;
     // TX 2: consume note_y -> create note_x (output via tx script).
     let executed_tx2 = chain
         .build_transaction(updated_account)
         .unauthenticated_input_note(note_y)
-        .tx_script(tx_script_x)
+        .send_notes_script(&tx_script_x)
         .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
@@ -920,14 +919,14 @@ async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()>
 
     assert_eq!(updated_account.vault().get(asset.id()).unwrap(), asset);
 
-    let tx_script_x = TransactionScript::from(SendNotesTransactionScript::new(
+    let tx_script_x = SendNotesTransactionScript::new(
         &account.code_interface(),
         &[PartialNote::from(note_x.clone())],
-    )?);
+    )?;
     // TX 2: create note_x with the asset from the account vault.
     let executed_tx2 = chain
         .build_transaction(updated_account)
-        .tx_script(tx_script_x)
+        .send_notes_script(&tx_script_x)
         .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()

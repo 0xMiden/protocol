@@ -5,7 +5,7 @@ use core::error::Error;
 
 use miden_processor::ExecutionError;
 use miden_processor::serde::DeserializationError;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::{AccountId, StorageMapKey};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
@@ -242,6 +242,11 @@ pub enum TransactionKernelError {
         data: Vec<Felt>,
         source: DeserializationError,
     },
+    #[error(
+        "encoded signature under advice map key {signature_key} has {actual} elements, but a valid encoded signature has between 1 and {max} elements",
+        max = Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
+    )]
+    InvalidEncodedSignatureLength { signature_key: Word, actual: usize },
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]
