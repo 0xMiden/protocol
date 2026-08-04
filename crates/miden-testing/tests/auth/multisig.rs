@@ -15,7 +15,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::{RawOutputNote, TransactionScript};
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
@@ -1350,16 +1350,16 @@ async fn test_multisig_proc_threshold_overrides(
         .generate_serial_number(&mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])))
         .build()?
         .into();
-    let send_note_transaction_script = TransactionScript::from(SendNotesTransactionScript::new(
+    let send_note_transaction_script = SendNotesTransactionScript::new(
         &multisig_account.code_interface(),
         &[output_note.clone().into()],
-    )?);
+    )?;
 
     // Build base mock transaction for note sending
     let mock_tx_builder2 = mock_chain
         .build_transaction(multisig_account.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .tx_script(send_note_transaction_script)
+        .send_notes_script(&send_note_transaction_script)
         .auth_args(salt2);
 
     // Execute transaction without signatures to get tx summary
