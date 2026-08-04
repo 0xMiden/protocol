@@ -1,7 +1,8 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::asset::{Asset, AssetVault};
+use crate::account::delta::AssetDeltaOperation;
+use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
@@ -58,13 +59,7 @@ pub use patch::{
 };
 
 pub mod delta;
-pub use delta::{
-    AccountDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-};
+pub use delta::{AccountDelta, AccountVaultDelta, AssetDelta};
 
 pub mod storage;
 pub use storage::{
@@ -417,24 +412,11 @@ impl TryFrom<Account> for AccountDelta {
         let storage_patch = AccountStoragePatch::from_raw(slot_deltas)
             .expect("number of slot patches is bounded by the account's storage slots");
 
-        let mut fungible_delta = FungibleAssetDelta::default();
-        let mut non_fungible_delta = NonFungibleAssetDelta::default();
-        for asset in vault.assets() {
-            // SAFETY: All assets in the account vault should be representable in the delta.
-            match asset {
-                Asset::Fungible(fungible_asset) => {
-                    fungible_delta
-                        .add(fungible_asset)
-                        .expect("delta should allow representing valid fungible assets");
-                },
-                Asset::NonFungible(non_fungible_asset) => {
-                    non_fungible_delta
-                        .add(non_fungible_asset)
-                        .expect("delta should allow representing valid non-fungible assets");
-                },
-            }
-        }
-        let vault_delta = AccountVaultDelta::new(fungible_delta, non_fungible_delta);
+        // SAFETY: The assets in the account vault are unique, so no asset is changed twice.
+        let vault_delta = AccountVaultDelta::new(
+            vault.assets().map(|asset| AssetDelta::new(AssetDeltaOperation::Add, asset)),
+        )
+        .expect("assets in the account vault should be unique");
 
         // The nonce of the account is the nonce delta since adding the nonce_delta to 0 would
         // result in the nonce.

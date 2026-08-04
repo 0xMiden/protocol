@@ -42,6 +42,7 @@ use miden_protocol::account::{
     AccountId,
     AccountPatch,
     AccountStorageHeader,
+    AssetDelta,
     PartialAccount,
     StorageMapKey,
     StorageSlotHeader,
@@ -68,7 +69,7 @@ pub(crate) use tx_event::{
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
-use crate::host::tx_event::{AssetDelta, AssetPatch};
+use crate::host::tx_event::AssetPatch;
 
 // TRANSACTION BASE HOST
 // ================================================================================================

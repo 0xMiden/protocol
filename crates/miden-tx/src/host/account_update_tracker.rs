@@ -1,9 +1,16 @@
 use miden_protocol::Felt;
-use miden_protocol::account::{AccountCode, AccountDelta, AccountId, AccountPatch, PartialAccount};
+use miden_protocol::account::{
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    AccountPatch,
+    AssetDelta,
+    PartialAccount,
+};
 
 use crate::TransactionKernelError;
 use crate::host::storage_patch_tracker::StoragePatchTracker;
-use crate::host::tx_event::{AssetDelta, AssetPatch};
+use crate::host::tx_event::AssetPatch;
 use crate::host::vault_update_tracker::VaultUpdateTracker;
 
 // ACCOUNT DELTA TRACKER
