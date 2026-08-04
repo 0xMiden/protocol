@@ -1148,7 +1148,7 @@ async fn pswap_note_fill_payback_not_first_output_note_test() -> anyhow::Result<
     Ok(())
 }
 
-/// /// Regression test verifying that each PSWAP payback note receives the asset its creator
+/// Regression test verifying that each PSWAP payback note receives the asset its creator
 /// requested when a remainder note is created between the two paybacks.
 ///
 /// Alice's PSWAP is filled below its minimum, so it emits a payback and a remainder before Bob's
