@@ -596,7 +596,8 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;
@@ -845,7 +846,8 @@ async fn test_multisig_update_signers_remove_owner(
         .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
@@ -1035,7 +1037,8 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
         .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
     let salt = Word::from([Felt::new_unchecked(8); 4]);
 
     let result = mock_chain
@@ -1104,7 +1107,8 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
         ",
     )?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
     let salt = Word::from([Felt::new_unchecked(9); 4]);
 
     let result = mock_chain
@@ -1195,7 +1199,8 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
         .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;
@@ -1706,7 +1711,8 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
     );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     // Same transaction: first reduce num_approvers to 1, then try to set a per-procedure
     // override of 2 — which exceeds the *current* num_approvers and must be rejected.

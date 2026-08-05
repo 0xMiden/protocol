@@ -368,7 +368,8 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;
@@ -630,7 +631,8 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script("@transaction_script\npub proc main\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
@@ -854,7 +856,8 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         .with_dynamically_linked_package(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;

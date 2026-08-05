@@ -173,8 +173,10 @@ impl TransactionInputs {
     ///
     /// Note: the advice stack from the provided advice inputs is discarded.
     pub fn set_advice_inputs(&mut self, new_advice_inputs: AdviceInputs) {
-        let AdviceInputs { map, store, .. } = new_advice_inputs;
-        self.advice_inputs = AdviceInputs { stack: Default::default(), map, store };
+        let (_stack, map, store) = new_advice_inputs.into_parts();
+        let mut advice_inputs = AdviceInputs::default().with_merkle_store(store);
+        advice_inputs.map = map;
+        self.advice_inputs = advice_inputs;
         self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
     }
 

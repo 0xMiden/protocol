@@ -6,23 +6,23 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*git *)",
-            "command": ".claude/hooks/pre_commit_lint.py"
+            "command": ".claude/hooks/pre_commit_lint.py",
+            "if": "Bash(*git *)"
           },
           {
             "type": "command",
-            "if": "Bash(*git *)",
-            "command": ".claude/hooks/pre_push_test.py"
+            "command": ".claude/hooks/pre_push_test.py",
+            "if": "Bash(*git *)"
           },
           {
             "type": "command",
-            "if": "Bash(*gh *)",
-            "command": ".claude/hooks/pre_pr_draft.py"
+            "command": ".claude/hooks/pre_pr_draft.py",
+            "if": "Bash(*gh *)"
           },
           {
             "type": "command",
-            "if": "Bash(*gh *)",
-            "command": ".claude/hooks/pre_pr_review.py"
+            "command": ".claude/hooks/pre_pr_review.py",
+            "if": "Bash(*gh *)"
           }
         ]
       }
@@ -33,16 +33,21 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*git *)",
-            "command": ".claude/hooks/post_commit_review.py"
+            "command": ".claude/hooks/post_commit_review.py",
+            "if": "Bash(*git *)"
           },
           {
             "type": "command",
-            "if": "Bash(*gh *)",
-            "command": ".claude/hooks/post_pr_create_changelog.py"
+            "command": ".claude/hooks/post_pr_create_changelog.py",
+            "if": "Bash(*gh *)"
           }
         ]
       }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git -c 'user.name=Claude \\(Opus\\)' -c user.email=noreply@anthropic.com -c commit.gpgsign=false commit -q -m ' *)"
     ]
   }
 }

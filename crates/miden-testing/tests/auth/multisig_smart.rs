@@ -317,7 +317,8 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     let mut advice_map = AdviceMap::default();
     advice_map.insert(multisig_config_hash, multisig_config_data);
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     let update_signers_script = compile_multisig_smart_tx_script(
         "
@@ -414,7 +415,8 @@ async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> a
 
     let mut advice_map = AdviceMap::default();
     advice_map.insert(multisig_config_hash, multisig_config_data);
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let mut advice_inputs = AdviceInputs::default();
+    advice_inputs.map = advice_map;
 
     let update_signers_script = compile_multisig_smart_tx_script(
         "

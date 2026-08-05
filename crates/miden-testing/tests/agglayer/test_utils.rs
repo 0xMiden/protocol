@@ -13,7 +13,10 @@ pub use miden_agglayer::testing::{
     create_existing_bridge_account_with_roles,
 };
 use miden_core_lib::CoreLibrary;
+use miden_crypto::Felt;
+use miden_crypto::hash::keccak::Keccak256;
 use miden_processor::advice::AdviceInputs;
+use miden_processor::utils::bytes_to_packed_u32_elements;
 use miden_processor::{
     DefaultHost,
     ExecutionError,
@@ -38,6 +41,16 @@ use miden_testing::{Auth, MockChain, MockChainBuilder};
 /// The AggLayer network ID encoded as `destination_network` in the bundled Solidity-generated claim
 /// test vectors.
 pub const MIDEN_NETWORK_ID: u32 = 77;
+
+// KECCAK-256
+// ================================================================================================
+
+/// Returns the Keccak-256 digest of `preimage` as the eight packed u32 field elements the
+/// AggLayer MASM code works with.
+pub fn keccak256_felts(preimage: &[u8]) -> alloc::vec::Vec<Felt> {
+    let digest = <[u8; 32]>::from(Keccak256::hash(preimage));
+    bytes_to_packed_u32_elements(&digest)
+}
 
 // PAUSE STATE
 // ================================================================================================
