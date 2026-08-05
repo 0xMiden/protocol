@@ -174,7 +174,7 @@ Account components that need to add callbacks to an account's storage should use
 The transaction kernel invokes the callback on the issuing faucet and the callback receives the asset ID and value and is expected to return the processed asset value.
 
 :::warning
-At this time, the processed asset value must be the same as the asset value, but in the future this limitation may be lifted.
+At this time, the processed asset value must be the same as the asset value, but in the future this limitation may be lifted. The transaction kernel enforces this: if a callback returns a value different from the one it received, the transaction is aborted.
 :::
 
 The **account callback** receives:
