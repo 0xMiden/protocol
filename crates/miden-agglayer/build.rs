@@ -25,9 +25,13 @@ use miden_protocol_build_utils::{
     generate_error_file,
 };
 use miden_standards::StandardsLib;
-use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use miden_standards::account::access::{AccessControl, Pausable, PausableManager};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{
+    BasicConstantFeePolicy,
+    ConstantFeeManager,
+    FeePolicyManager,
+};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -232,11 +236,19 @@ fn generate_agglayer_constants(
             });
             components.push(AccountComponent::from(Pausable::unpaused()));
             components.push(AccountComponent::from(PausableManager));
+            components
+                .push(AccountComponent::from(ConstantFeeManager::for_basic_constant_fee_policy()));
         } else if component_name == "faucet" {
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
-            components.push(AccountComponent::from(Authority::OwnerControlled));
+            // The faucet installs the same RBAC access-control stack as the bridge, so its
+            // ADMIN role can reprice the fee schedule and administer its policies. Minting and
+            // burning remain gated on the Ownable2Step owner, which the policies check directly.
+            components.extend(AccessControl::Rbac {
+                admin: dummy_owner,
+                procedure_roles: std::collections::BTreeMap::new(),
+            });
             // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
             //
@@ -252,6 +264,8 @@ fn generate_agglayer_constants(
                 .build();
 
             components.extend(token_policy_manager);
+            components
+                .push(AccountComponent::from(ConstantFeeManager::for_basic_constant_fee_policy()));
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

@@ -21,6 +21,7 @@ use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_standards::account::access::PausableStorage;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::note::{
+    ConstantFeePolicyConfigNote,
     NetworkAccountTarget,
     NetworkAccountTargetError,
     NoteExecutionHint,
@@ -472,11 +473,13 @@ impl AggLayerBridge {
     /// means any transaction consuming a note outside this set is rejected before reaching
     /// `output_note::create`.
     ///
-    /// Besides the agglayer-specific notes, the bridge accepts two standards notes: the
-    /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, and the
+    /// Besides the agglayer-specific notes, the bridge accepts three standards notes: the
+    /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, the
     /// role-management [`RbacConfigNote`], which makes the bridge's RBAC role graph mutable
     /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration
-    /// section of `SPEC.md` for the associated caveats).
+    /// section of `SPEC.md` for the associated caveats), and the
+    /// [`ConstantFeePolicyConfigNote`], so the `ADMIN` role can reprice the bridge's fee
+    /// schedule after deployment (see [`Self::fee_policy_notes`]).
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
@@ -489,6 +492,7 @@ impl AggLayerBridge {
             RemoveGerNote::script_root(),
             PauseConfigNote::script_root(),
             RbacConfigNote::script_root(),
+            ConstantFeePolicyConfigNote::script_root(),
         ])
     }
 

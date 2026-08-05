@@ -7,8 +7,8 @@ use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
-use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
+use miden_standards::note::{ConstantFeePolicyConfigNote, StandardNote};
 
 // NETWORK NOTE PRICER
 // ================================================================================================
@@ -121,13 +121,25 @@ impl NetworkNotePricer {
     /// policy's bare fee amounts and their denomination together. Each root is priced through
     /// [`Self::price`], so the fee includes the default safety margin and the recursively priced
     /// notes created by consuming it.
+    ///
+    /// [`ConstantFeePolicyConfigNote`] is the sole exception: it is always scheduled free.
+    /// Consuming one is the only way to reach `set_note_fee`, so pricing it would let the schedule
+    /// put the very note that repairs it out of reach, bricking fee management (see that note's
+    /// operational notes).
     pub fn basic_constant_fee_policy_manager(
         &self,
         note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> Result<FeePolicyManager, NotePricingError> {
+        let config_note_root = ConstantFeePolicyConfigNote::script_root();
+
         let mut policy = BasicConstantFeePolicy::new();
         for root in note_script_roots {
-            policy = policy.with_fee(root, self.price(root)?);
+            let fee = if root == config_note_root {
+                AssetAmount::ZERO
+            } else {
+                self.price(root)?
+            };
+            policy = policy.with_fee(root, fee);
         }
 
         Ok(FeePolicyManager::builder()
@@ -394,5 +406,19 @@ mod tests {
             pricer(500, 0).basic_constant_fee_policy_manager([unknown]),
             Err(NotePricingError::UnknownNoteScriptRoot(root)) if root == unknown
         ));
+    }
+
+    /// The constant-fee config note is scheduled free even though it has a benchmarked cost of its
+    /// own, so a repricing note can always be consumed. The zero in the schedule is an override,
+    /// not an artifact of the note being costless; asserting the underlying price is non-zero keeps
+    /// the two apart. The scheduled zero itself is asserted against real account storage in the
+    /// AggLayer `fee_policy` tests.
+    #[test]
+    fn config_note_carries_a_real_price_but_is_scheduled_free() {
+        let pricer = pricer(500, 0);
+        let config_note_root = ConstantFeePolicyConfigNote::script_root();
+
+        assert!(pricer.price(config_note_root).unwrap().as_u64() > 0);
+        assert!(pricer.basic_constant_fee_policy_manager([config_note_root]).is_ok());
     }
 }

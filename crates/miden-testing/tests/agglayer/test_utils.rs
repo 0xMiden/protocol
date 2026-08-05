@@ -150,7 +150,8 @@ pub fn create_existing_priced_bridge(
     )
 }
 
-/// Returns a builder for an existing AggLayer faucet with its production-priced fee policy.
+/// Returns a builder for an existing AggLayer faucet with its production-priced fee policy,
+/// administered by [`bridge_admin_account_id`].
 ///
 /// Callers finish with `build_existing`, after opting into any account settings the scenario
 /// needs (e.g. asset callbacks).
@@ -170,6 +171,7 @@ pub fn priced_faucet_builder(
         token_symbol,
         decimals,
         max_supply,
+        bridge_admin_account_id(),
         bridge_account_id,
         fee_policy_manager,
     )

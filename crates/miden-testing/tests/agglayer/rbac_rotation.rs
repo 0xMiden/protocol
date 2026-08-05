@@ -31,6 +31,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::note::{
+    ConstantFeePolicyConfigNote,
     FeeSponsorshipNote,
     NetworkAccountConfigNote,
     PauseConfig,
@@ -228,6 +229,7 @@ fn bridge_allowed_notes_pin() {
         RemoveGerNote::script_root(),
         PauseConfigNote::script_root(),
         RbacConfigNote::script_root(),
+        ConstantFeePolicyConfigNote::script_root(),
     ]);
     assert_eq!(AggLayerBridge::allowed_notes(), expected);
 

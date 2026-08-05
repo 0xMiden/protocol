@@ -21,7 +21,7 @@ pub use miden_standards::interop::eth::{
     EthAmountError,
     EthEmbeddedAccountId,
 };
-use miden_standards::note::{BurnNote, MintNote};
+use miden_standards::note::{BurnNote, ConstantFeePolicyConfigNote, MintNote};
 use thiserror::Error;
 
 use super::agglayer_faucet_component_package;
@@ -154,12 +154,20 @@ impl AggLayerFaucet {
 
     /// Returns the set of input-note script roots that AggLayer faucet accounts accept.
     ///
-    /// The faucet's [`AuthNetworkAccount`] component is initialized with this allowlist so only
-    /// MINT and BURN notes can drive the faucet.
+    /// The faucet's [`AuthNetworkAccount`] component is initialized with this allowlist, so the
+    /// faucet is driven only by MINT and BURN notes plus the [`ConstantFeePolicyConfigNote`]
+    /// through which the `ADMIN` role reprices its fee schedule after deployment. The bridge
+    /// sizes the sponsorship of every MINT and BURN note it creates from that schedule, so a
+    /// schedule frozen at its deployment prices stalls bridging as soon as the chain's
+    /// verification base fee moves.
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
-        BTreeSet::from([MintNote::script_root(), BurnNote::script_root()])
+        BTreeSet::from([
+            MintNote::script_root(),
+            BurnNote::script_root(),
+            ConstantFeePolicyConfigNote::script_root(),
+        ])
     }
 
     /// Returns every input-note script root whose fee must be scheduled on an AggLayer faucet.
