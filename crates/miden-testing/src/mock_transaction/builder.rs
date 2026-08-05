@@ -17,6 +17,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
@@ -203,6 +204,16 @@ impl<'chain> MockTransactionBuilder<'chain> {
     pub fn tx_script_args(mut self, tx_script_args: Word) -> Self {
         self.tx_script_args = tx_script_args;
         self
+    }
+
+    /// Sets the transaction script and script arguments required to execute the provided
+    /// [`SendNotesTransactionScript`].
+    ///
+    /// The script's advice map entries are embedded in its MAST forest, so they load with the
+    /// script and need not be set here.
+    pub fn send_notes_script(self, script: &SendNotesTransactionScript) -> Self {
+        self.tx_script(script.tx_script().clone())
+            .tx_script_args(script.tx_script_args())
     }
 
     /// Sets the desired auth arguments.

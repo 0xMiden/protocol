@@ -131,6 +131,12 @@ check-no-std: ## Check the no-std target without any features for errors without
 check-features: ## Checks all feature combinations compile without warnings using cargo-hack
 	@scripts/check-features.sh
 
+
+.PHONY: check-crates-published
+check-crates-published: ## Checks every publishable workspace member already exists on crates.io
+	@scripts/check-crates-published.sh
+
+
 # --- building ------------------------------------------------------------------------------------
 
 .PHONY: build
