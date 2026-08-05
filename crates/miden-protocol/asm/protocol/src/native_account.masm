@@ -516,12 +516,16 @@ end
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
 #!
 #! Notice that `was_procedure_called` returns 0 in the following cases:
-#! - a procedure with provided root was called but it only uses local masm instructions.
-#! - a procedure with provided root is an authentication procedure: it should never be called
-#!   inside a user code, so, in case the executing program is correct, it should always return 0.
-#!   Otherwise such program will panic. It returns 1 only when queried from within the auth
-#!   procedure itself, after the nonce was incremented.
-#! - a procedure with provided root was called as part of the authentication procedure.
+#! - the procedure with the provided root is the authentication procedure and it hasn't
+#!   started executing yet. Note that it would return 1 if it was invoked by a user,
+#!   but this would eventually result in the transaction aborting, so this statement is
+#!   true for correct transactions.
+#! - a procedure with the provided root was called as part of the authentication procedure. The
+#!   rationale for this approach is that procedure tracking is intended to be used by the auth
+#!   procedure to check which procedures were called during the transaction and make fine-grained
+#!   decisions based on this. The auth procedure does not need to authenticate procedure invocations
+#!   originating from itself, and so these are not tracked to avoid polluting the set of tracked
+#!   procedures.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [was_called]

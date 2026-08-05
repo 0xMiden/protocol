@@ -919,10 +919,6 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
 /// Tests that `account_upgrade` is gated by the account context: invoking it from outside an
 /// account procedure (so that `caller` is not a procedure of the account) must be rejected by the
 /// authenticator. This models what an untrusted transaction script could attempt.
-///
-/// The authorized flow that stores the upgrade commitments through the standards `upgrade` account
-/// procedure is covered by
-/// `standards::account_upgrade::test_upgrade_manager_stores_commitments_when_authorized`.
 #[tokio::test]
 async fn test_native_account_upgrade_from_tx_script_is_rejected() -> anyhow::Result<()> {
     let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);

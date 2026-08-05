@@ -992,11 +992,11 @@ end
 #! Sets the flag indicating whether the epilogue is currently executing the authentication
 #! procedure.
 #!
-#! Inputs:  [is_epilogue_auth_in_progress_flag]
+#! Inputs:  [is_epilogue_auth_in_progress]
 #! Outputs: []
 #!
 #! Where:
-#! - is_epilogue_auth_in_progress_flag is 1 while the epilogue runs the auth procedure, 0 otherwise.
+#! - is_epilogue_auth_in_progress is 1 while the epilogue runs the auth procedure, 0 otherwise.
 pub proc set_epilogue_auth_in_progress_flag
     mem_store.EPILOGUE_AUTH_IN_PROGRESS_FLAG_PTR
     # => []
