@@ -516,6 +516,8 @@ end
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
 #!
 #! Notice that `was_procedure_called` returns 0 in the following cases:
+#! - the procedure with the provided root is `get_id`, which is intentionally left untracked and
+#!   therefore always reads 0 here, even when it was called.
 #! - the procedure with the provided root is the authentication procedure and it hasn't
 #!   started executing yet. Note that it would return 1 if it was invoked by a user,
 #!   but this would eventually result in the transaction aborting, so this statement is
