@@ -6,12 +6,13 @@
 # set of output notes. See `send_notes::common` for the payload layout.
 #
 # Every note record must contain exactly one asset, which is minted by the faucet as part of
-# note creation. Unlike the fungible faucet, `non_fungible::mint_and_send` derives the asset from
-# the faucet itself, so only the asset's value word (its commitment) is read from the record.
+# note creation. Unlike the fungible faucet, `non_fungible_faucet::mint_and_send` derives the
+# asset from the faucet itself, so only the asset's value word (its commitment) is read from the
+# record.
 
-use miden::standards::faucets::non_fungible
+use miden::standards::faucets::non_fungible as non_fungible_faucet
 use miden::standards::tx_scripts::send_notes::common
-use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET, WORD_NUM_ELEMENTS} from miden::standards::tx_scripts::send_notes::common
+use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, PAYLOAD_ADDR, TAG_OFFSET, WORD_NUM_ELEMENTS} from miden::standards::tx_scripts::send_notes::common
 
 # CONSTANTS
 # =================================================================================================
@@ -53,7 +54,10 @@ const ERR_SEND_NOTES_FAUCET_NOTE_REQUIRES_ONE_ASSET = "faucet note must contain 
 #! Invocation: call
 @transaction_script
 pub proc main
-    exec.common::load_payload
+    push.PAYLOAD_ADDR
+    # => [payload_addr, PAYLOAD_COMMITMENT, pad(11)]
+
+    exec.common::write_payload_to_memory
     # => [pad(16)]
 
     exec.process_notes
@@ -121,7 +125,7 @@ proc process_notes
         padw loc_load.PROCESS_NOTES_READ_PTR_LOC add.ASSET_VALUE_OFFSET mem_loadw_le
         # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6), notes_left, pad(16)]
 
-        call.non_fungible::mint_and_send
+        call.non_fungible_faucet::mint_and_send
         # => [note_idx, pad(15), notes_left, pad(16)]
 
         loc_store.PROCESS_NOTES_NOTE_IDX_LOC
