@@ -5,7 +5,6 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::transaction::TransactionScript;
-use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::multisig_smart::{
     ProcedurePolicy,
@@ -314,10 +313,8 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
-
-    let mut advice_map = AdviceMap::default();
-    advice_map.insert(multisig_config_hash, multisig_config_data);
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, multisig_config_data)]);
 
     let update_signers_script = compile_multisig_smart_tx_script(
         "
@@ -411,10 +408,8 @@ async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> a
         auth_scheme,
     );
     let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
-
-    let mut advice_map = AdviceMap::default();
-    advice_map.insert(multisig_config_hash, multisig_config_data);
-    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, multisig_config_data)]);
 
     let update_signers_script = compile_multisig_smart_tx_script(
         "

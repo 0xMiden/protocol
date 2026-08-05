@@ -129,7 +129,9 @@ impl<'store> Host for MockHost<'store> {
             if event_id == TransactionEventId::InputNoteIndexLookup.event_id()
                 && let Some(response) = self.input_note_index_response
             {
-                return Ok(vec![AdviceMutation::extend_stack(response)]);
+                return Ok(vec![AdviceMutation::extend_advice_stack(
+                    response.into_iter().collect(),
+                )]);
             }
 
             // If the host should handle the event, delegate to the tx executor host.

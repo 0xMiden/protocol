@@ -43,9 +43,11 @@ impl TransactionMastStore {
         let kernel = TransactionKernel::package();
         store.insert_package(kernel.as_ref());
 
-        // load miden-core-lib MAST forest
+        // load miden-core-lib MAST forests (the core package and its precompiles dependency)
         let miden_core_lib = CoreLibrary::default();
-        store.insert_package(miden_core_lib.as_ref());
+        for package in miden_core_lib.packages() {
+            store.insert_package(package.as_ref());
+        }
 
         // load protocol lib MAST forest
         let protocol_lib = ProtocolLib::default();

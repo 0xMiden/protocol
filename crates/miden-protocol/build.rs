@@ -81,9 +81,12 @@ fn main() -> Result<()> {
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
-    // The miden-core library is provided through an in-memory registry
+    // The miden-core library and its miden-precompiles dependency are provided through an
+    // in-memory registry
     let mut store = InMemoryPackageRegistry::default();
-    store.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
+    for package in CoreLibrary::default().packages() {
+        store.cache_package(package).into_diagnostic()?;
+    }
 
     // compile transaction kernel
     compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
