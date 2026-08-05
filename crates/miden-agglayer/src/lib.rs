@@ -6,7 +6,13 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 
 use miden_core::{Felt, Word};
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AssetCallbackFlag,
+};
 use miden_protocol::assembly::Path;
 #[cfg(any(feature = "testing", test))]
 use miden_protocol::asset::AssetAmount;
@@ -182,47 +188,24 @@ fn testing_zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> F
 
 /// Builder for an AggLayer bridge account.
 ///
-/// Configure the production fee policy with [`Self::with_fee_policy_manager`] before building.
+/// The deployment configuration a bridge cannot be built without is taken by
+/// [`AggLayerBridge::account_builder`]; this type carries the settings that have a default.
 pub struct AggLayerBridgeAccountBuilder {
     seed: Word,
     admin: AccountId,
     roles: BridgeRoles,
     network_id: u32,
-    fee_policy_manager: Option<FeePolicyManager>,
+    fee_policy_manager: FeePolicyManager,
 }
 
 impl AggLayerBridgeAccountBuilder {
-    fn new(seed: Word, admin: AccountId, roles: BridgeRoles, network_id: u32) -> Self {
-        Self {
-            seed,
-            admin,
-            roles,
-            network_id,
-            fee_policy_manager: None,
-        }
-    }
-
-    /// Configures the manager that prices the notes consumed by the bridge account.
-    ///
-    /// Production callers should normally use
-    /// `NetworkNotePricer::agglayer_bridge_fee_policy_manager` to construct this value from the
-    /// network's current fee parameters.
-    #[must_use]
-    pub fn with_fee_policy_manager(mut self, fee_policy_manager: FeePolicyManager) -> Self {
-        self.fee_policy_manager = Some(fee_policy_manager);
-        self
-    }
-
     fn into_account_builder(self) -> AccountBuilder {
-        let fee_policy_manager = self
-            .fee_policy_manager
-            .expect("AggLayer bridge account requires a fee policy manager");
         create_bridge_account_builder(
             self.seed,
             self.admin,
             self.roles,
             self.network_id,
-            fee_policy_manager,
+            self.fee_policy_manager,
         )
     }
 
@@ -242,61 +225,44 @@ impl AggLayerBridgeAccountBuilder {
 
 impl AggLayerBridge {
     /// Returns a builder for a bridge account with the specified deployment configuration.
+    ///
+    /// `fee_policy_manager` prices the notes the bridge consumes and must cover every root
+    /// returned by [`AggLayerBridge::fee_policy_notes`]; production callers should normally
+    /// construct it with `NetworkNotePricer::agglayer_bridge_fee_policy_manager` from the
+    /// network's current fee parameters.
     pub fn account_builder(
         seed: Word,
         admin: AccountId,
         roles: BridgeRoles,
         network_id: u32,
+        fee_policy_manager: FeePolicyManager,
     ) -> AggLayerBridgeAccountBuilder {
-        AggLayerBridgeAccountBuilder::new(seed, admin, roles, network_id)
+        AggLayerBridgeAccountBuilder {
+            seed,
+            admin,
+            roles,
+            network_id,
+            fee_policy_manager,
+        }
     }
 }
 
 /// Builder for an AggLayer faucet account.
 ///
-/// Configure the production fee policy with [`Self::with_fee_policy_manager`] before building.
+/// The deployment configuration a faucet cannot be built without is taken by
+/// [`AggLayerFaucet::account_builder`]; this type carries the settings that have a default.
 pub struct AggLayerFaucetAccountBuilder {
     seed: Word,
     token_symbol: String,
     decimals: u8,
     max_supply: Felt,
-    #[cfg(any(feature = "testing", test))]
     initial_supply: Felt,
+    asset_callbacks: AssetCallbackFlag,
     bridge_account_id: AccountId,
-    fee_policy_manager: Option<FeePolicyManager>,
+    fee_policy_manager: FeePolicyManager,
 }
 
 impl AggLayerFaucetAccountBuilder {
-    fn new(
-        seed: Word,
-        token_symbol: &str,
-        decimals: u8,
-        max_supply: Felt,
-        bridge_account_id: AccountId,
-    ) -> Self {
-        Self {
-            seed,
-            token_symbol: token_symbol.into(),
-            decimals,
-            max_supply,
-            #[cfg(any(feature = "testing", test))]
-            initial_supply: Felt::ZERO,
-            bridge_account_id,
-            fee_policy_manager: None,
-        }
-    }
-
-    /// Configures the manager that prices the notes consumed by the faucet account.
-    ///
-    /// Production callers should normally use
-    /// `NetworkNotePricer::agglayer_faucet_fee_policy_manager` to construct this value from the
-    /// network's current fee parameters.
-    #[must_use]
-    pub fn with_fee_policy_manager(mut self, fee_policy_manager: FeePolicyManager) -> Self {
-        self.fee_policy_manager = Some(fee_policy_manager);
-        self
-    }
-
     /// Sets the initial outstanding supply of an existing faucet test fixture.
     #[cfg(any(feature = "testing", test))]
     #[must_use]
@@ -305,24 +271,24 @@ impl AggLayerFaucetAccountBuilder {
         self
     }
 
-    fn into_account_builder(self) -> AccountBuilder {
-        let fee_policy_manager = self
-            .fee_policy_manager
-            .expect("AggLayer faucet account requires a fee policy manager");
-        #[cfg(any(feature = "testing", test))]
-        let initial_supply = self.initial_supply;
-        #[cfg(not(any(feature = "testing", test)))]
-        let initial_supply = Felt::ZERO;
+    /// Sets whether the assets issued by the faucet trigger callbacks.
+    #[must_use]
+    pub fn with_asset_callbacks(mut self, asset_callbacks: AssetCallbackFlag) -> Self {
+        self.asset_callbacks = asset_callbacks;
+        self
+    }
 
+    fn into_account_builder(self) -> AccountBuilder {
         create_agglayer_faucet_builder(
             self.seed,
             &self.token_symbol,
             self.decimals,
             self.max_supply,
-            initial_supply,
+            self.initial_supply,
             self.bridge_account_id,
-            fee_policy_manager,
+            self.fee_policy_manager,
         )
+        .with_asset_callbacks(self.asset_callbacks)
     }
 
     /// Builds a new AggLayer faucet account.
@@ -343,20 +309,29 @@ impl AggLayerFaucetAccountBuilder {
 
 impl AggLayerFaucet {
     /// Returns a builder for a faucet account with the specified deployment configuration.
+    ///
+    /// `fee_policy_manager` prices the notes the faucet consumes and must cover every root
+    /// returned by [`AggLayerFaucet::fee_policy_notes`]; production callers should normally
+    /// construct it with `NetworkNotePricer::agglayer_faucet_fee_policy_manager` from the
+    /// network's current fee parameters.
     pub fn account_builder(
         seed: Word,
         token_symbol: &str,
         decimals: u8,
         max_supply: Felt,
         bridge_account_id: AccountId,
+        fee_policy_manager: FeePolicyManager,
     ) -> AggLayerFaucetAccountBuilder {
-        AggLayerFaucetAccountBuilder::new(
+        AggLayerFaucetAccountBuilder {
             seed,
-            token_symbol,
+            token_symbol: token_symbol.into(),
             decimals,
             max_supply,
+            initial_supply: Felt::ZERO,
+            asset_callbacks: AssetCallbackFlag::Disabled,
             bridge_account_id,
-        )
+            fee_policy_manager,
+        }
     }
 }
 
@@ -414,9 +389,7 @@ pub fn create_bridge_account(
     network_id: u32,
     fee_policy_manager: FeePolicyManager,
 ) -> Account {
-    AggLayerBridge::account_builder(seed, admin, roles, network_id)
-        .with_fee_policy_manager(fee_policy_manager)
-        .build()
+    AggLayerBridge::account_builder(seed, admin, roles, network_id, fee_policy_manager).build()
 }
 
 /// Creates a complete agglayer faucet account builder with the specified configuration.
@@ -477,12 +450,19 @@ pub fn create_agglayer_faucet(
     bridge_account_id: AccountId,
     fee_policy_manager: FeePolicyManager,
 ) -> Account {
-    AggLayerFaucet::account_builder(seed, token_symbol, decimals, max_supply, bridge_account_id)
-        .with_fee_policy_manager(fee_policy_manager)
-        .build()
+    AggLayerFaucet::account_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        bridge_account_id,
+        fee_policy_manager,
+    )
+    .build()
 }
 
-/// Creates an existing agglayer faucet account with the specified configuration.
+/// Creates an existing agglayer faucet account with the specified configuration, priced by a
+/// zero-fee policy.
 ///
 /// This creates an existing account suitable for testing scenarios.
 #[cfg(any(feature = "testing", test))]
@@ -494,48 +474,16 @@ pub fn create_existing_agglayer_faucet(
     initial_supply: Felt,
     bridge_account_id: AccountId,
 ) -> Account {
-    let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes());
-    create_agglayer_faucet_builder(
+    AggLayerFaucet::account_builder(
         seed,
         token_symbol,
         decimals,
         max_supply,
-        initial_supply,
         bridge_account_id,
-        fee_policy_manager,
+        testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes()),
     )
+    .with_initial_supply(initial_supply)
     .build_existing()
-    .expect("agglayer faucet account should be valid")
-}
-
-/// Creates an existing agglayer faucet account with the specified configuration and the asset
-/// callback flag enabled.
-///
-/// This creates an existing account suitable for testing scenarios.
-#[cfg(any(feature = "testing", test))]
-pub fn create_existing_agglayer_faucet_with_callbacks(
-    seed: Word,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    initial_supply: Felt,
-    bridge_account_id: AccountId,
-) -> Account {
-    use miden_protocol::account::AssetCallbackFlag;
-
-    let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes());
-    create_agglayer_faucet_builder(
-        seed,
-        token_symbol,
-        decimals,
-        max_supply,
-        initial_supply,
-        bridge_account_id,
-        fee_policy_manager,
-    )
-    .with_asset_callbacks(AssetCallbackFlag::Enabled)
-    .build_existing()
-    .expect("agglayer faucet account should be valid")
 }
 
 // TESTS

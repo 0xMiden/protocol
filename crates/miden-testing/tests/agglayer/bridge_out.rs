@@ -56,8 +56,11 @@ use super::test_utils::{
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
     create_existing_priced_bridge,
-    create_existing_priced_faucet,
+    priced_faucet_builder,
 };
+
+/// Number of frontier evolutions pinned by the bundled Solidity MTF test vectors.
+const SOLIDITY_MTF_VECTOR_COUNT: usize = 32;
 
 /// Tests the complete B2AGG-to-BURN bridge-out lifecycle.
 ///
@@ -79,7 +82,7 @@ use super::test_utils::{
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
 /// 6. Consumes the BURN note with the faucet to burn the tokens
 #[rstest::rstest]
-#[case::fee_free(32, 0)]
+#[case::fee_free(SOLIDITY_MTF_VECTOR_COUNT, 0)]
 #[case::fees_enabled(1, VERIFICATION_BASE_FEE)]
 #[tokio::test]
 async fn bridge_out_consecutive(
@@ -88,17 +91,18 @@ async fn bridge_out_consecutive(
 ) -> anyhow::Result<()> {
     let fees_enabled = verification_base_fee > 0;
     let vectors = &*SOLIDITY_MTF_VECTORS;
-    assert!(vectors.amounts.len() >= note_count, "not enough amount vectors");
-    assert!(vectors.roots.len() >= note_count, "not enough root vectors");
-    assert_eq!(
-        vectors.destination_networks.len(),
-        vectors.amounts.len(),
-        "destination network and amount vector lengths should match"
-    );
-    assert_eq!(
-        vectors.destination_addresses.len(),
-        vectors.amounts.len(),
-        "destination address and amount vector lengths should match"
+    // the bundled fixture pins 32 frontier evolutions; the fee-free case consumes all of them.
+    for (name, len) in [
+        ("amount", vectors.amounts.len()),
+        ("root", vectors.roots.len()),
+        ("destination network", vectors.destination_networks.len()),
+        ("destination address", vectors.destination_addresses.len()),
+    ] {
+        assert_eq!(len, SOLIDITY_MTF_VECTOR_COUNT, "{name} vectors should contain 32 entries");
+    }
+    assert!(
+        note_count <= SOLIDITY_MTF_VECTOR_COUNT,
+        "cannot consume more notes than vectors"
     );
 
     let mut builder = MockChain::builder().verification_base_fee(verification_base_fee);
@@ -149,7 +153,7 @@ async fn bridge_out_consecutive(
         vectors.token_decimals,
     );
     let faucet_seed = builder.rng_mut().draw_word();
-    let faucet = create_existing_priced_faucet(
+    let faucet = priced_faucet_builder(
         faucet_seed,
         &vectors.token_symbol,
         vectors.token_decimals,
@@ -157,7 +161,8 @@ async fn bridge_out_consecutive(
         Felt::new_unchecked(total_burned),
         bridge_account.id(),
         verification_base_fee,
-    )?;
+    )?
+    .build_existing();
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by faucet manager)

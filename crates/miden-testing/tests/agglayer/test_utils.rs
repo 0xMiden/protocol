@@ -11,7 +11,13 @@ pub use miden_agglayer::testing::{
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
 };
-use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles, agglayer_package};
+use miden_agglayer::{
+    AggLayerBridge,
+    AggLayerFaucet,
+    AggLayerFaucetAccountBuilder,
+    BridgeRoles,
+    agglayer_package,
+};
 use miden_core_lib::CoreLibrary;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
@@ -136,15 +142,19 @@ pub fn create_existing_priced_bridge(
 ) -> anyhow::Result<Account> {
     let roles =
         BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
-    Ok(AggLayerBridge::account_builder(seed, admin, roles, MIDEN_NETWORK_ID)
-        .with_fee_policy_manager(
-            network_note_pricer(verification_base_fee).agglayer_bridge_fee_policy_manager()?,
-        )
-        .build_existing())
+    let fee_policy_manager =
+        network_note_pricer(verification_base_fee).agglayer_bridge_fee_policy_manager()?;
+    Ok(
+        AggLayerBridge::account_builder(seed, admin, roles, MIDEN_NETWORK_ID, fee_policy_manager)
+            .build_existing(),
+    )
 }
 
-/// Builds an existing AggLayer faucet with its production-priced fee policy.
-pub fn create_existing_priced_faucet(
+/// Returns a builder for an existing AggLayer faucet with its production-priced fee policy.
+///
+/// Callers finish with `build_existing`, after opting into any account settings the scenario
+/// needs (e.g. asset callbacks).
+pub fn priced_faucet_builder(
     seed: Word,
     token_symbol: &str,
     decimals: u8,
@@ -152,21 +162,18 @@ pub fn create_existing_priced_faucet(
     initial_supply: Felt,
     bridge_account_id: AccountId,
     verification_base_fee: u32,
-) -> anyhow::Result<Account> {
-    Ok(
-        AggLayerFaucet::account_builder(
-            seed,
-            token_symbol,
-            decimals,
-            max_supply,
-            bridge_account_id,
-        )
-        .with_initial_supply(initial_supply)
-        .with_fee_policy_manager(
-            network_note_pricer(verification_base_fee).agglayer_faucet_fee_policy_manager()?,
-        )
-        .build_existing(),
+) -> anyhow::Result<AggLayerFaucetAccountBuilder> {
+    let fee_policy_manager =
+        network_note_pricer(verification_base_fee).agglayer_faucet_fee_policy_manager()?;
+    Ok(AggLayerFaucet::account_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        bridge_account_id,
+        fee_policy_manager,
     )
+    .with_initial_supply(initial_supply))
 }
 
 /// Execute a program with a default host and optional advice inputs.

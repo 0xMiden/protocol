@@ -1,8 +1,11 @@
+use alloc::collections::BTreeSet;
+
 use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
 use miden_protocol::Word;
 use miden_protocol::account::{Account, StorageMapKey};
 use miden_protocol::asset::AssetId;
+use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 
@@ -13,10 +16,7 @@ use super::test_utils::{
     network_note_pricer,
 };
 
-fn assert_priced_account(
-    account: &Account,
-    roots: std::collections::BTreeSet<miden_protocol::note::NoteScriptRoot>,
-) -> anyhow::Result<()> {
+fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> anyhow::Result<()> {
     let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
     let network_account = NetworkAccount::new(account.clone())?;
     assert_eq!(network_account.allowed_notes().allowed_script_roots(), &roots);
@@ -50,9 +50,14 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
     let bridge_roots = AggLayerBridge::fee_policy_notes();
     let bridge_fee_manager = pricer.agglayer_bridge_fee_policy_manager()?;
     let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;
-    let bridge = AggLayerBridge::account_builder(Word::default(), admin, roles, MIDEN_NETWORK_ID)
-        .with_fee_policy_manager(bridge_fee_manager)
-        .build_existing();
+    let bridge = AggLayerBridge::account_builder(
+        Word::default(),
+        admin,
+        roles,
+        MIDEN_NETWORK_ID,
+        bridge_fee_manager,
+    )
+    .build_existing();
     assert_priced_account(&bridge, bridge_roots)?;
 
     let faucet_roots = AggLayerFaucet::fee_policy_notes();
@@ -63,8 +68,8 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
         6,
         1_000u32.into(),
         bridge.id(),
+        faucet_fee_manager,
     )
-    .with_fee_policy_manager(faucet_fee_manager)
     .build_existing();
     assert_priced_account(&faucet, faucet_roots)?;
 

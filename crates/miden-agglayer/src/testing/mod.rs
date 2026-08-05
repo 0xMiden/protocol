@@ -65,8 +65,7 @@ pub fn create_existing_bridge_account_with_roles(
     )
     .expect("single-holder role sets are non-empty");
 
-    AggLayerBridge::account_builder(seed, admin, roles, network_id)
-        .with_fee_policy_manager(fee_policy_manager)
+    AggLayerBridge::account_builder(seed, admin, roles, network_id, fee_policy_manager)
         .build_existing()
 }
 
