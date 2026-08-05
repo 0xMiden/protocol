@@ -60,7 +60,7 @@ use miden_protocol::vm::Package;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_tx::LocalTransactionProver;
+use miden_tx::{LocalTransactionProver, TransactionKernelError};
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -868,8 +868,8 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that `native_account::upgrade` stores the code and storage upgrade commitments in the
-/// dedicated kernel memory region.
+/// Tests that `native_account::upgrade`, invoked from an account procedure, stores the code and
+/// storage upgrade commitments in the dedicated kernel memory region.
 #[tokio::test]
 async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
@@ -877,9 +877,11 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
     let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
     let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
 
+    // `upgrade` is invoked through the mock account's `upgrade` procedure, so the caller is a
+    // procedure of the account and the authenticator accepts it.
     let code = format!(
         r#"
-        use miden::protocol::native_account
+        use mock::account as mock_account
         use miden::tx_kernel_core::prologue
 
         begin
@@ -887,10 +889,11 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
 
             push.{storage_upgrade_commitment}
             push.{code_upgrade_commitment}
-            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
-            exec.native_account::upgrade
-            # => []
+            call.mock_account::upgrade
+            # => [pad(16)]
+            dropw dropw dropw dropw
         end
         "#,
         code_upgrade_commitment = &code_upgrade_commitment,
@@ -908,6 +911,54 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
         exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR),
         storage_upgrade_commitment,
         "storage upgrade commitment should be stored in kernel memory"
+    );
+
+    Ok(())
+}
+
+/// Tests that `account_upgrade` is gated by the account context: invoking it from outside an
+/// account procedure (so that `caller` is not a procedure of the account) must be rejected by the
+/// authenticator. This models what an untrusted transaction script could attempt.
+#[tokio::test]
+async fn test_native_account_upgrade_from_tx_script_is_rejected() -> anyhow::Result<()> {
+    let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
+    let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
+
+    // A transaction script invokes `native_account::upgrade` directly. Its caller is the tx script,
+    // not a procedure of the account, so authentication must reject the invocation.
+    let tx_script_source = format!(
+        r#"
+        use miden::protocol::native_account
+
+        @transaction_script
+        pub proc main
+            push.{storage_upgrade_commitment}
+            push.{code_upgrade_commitment}
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+            exec.native_account::upgrade
+        end
+        "#,
+        code_upgrade_commitment = &code_upgrade_commitment,
+        storage_upgrade_commitment = &storage_upgrade_commitment,
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_source)?;
+
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+
+    let execution_result = mock_tx.execute().await;
+
+    // The tx-script root is not a procedure of the account, so `authenticate_account_origin` fails
+    // while resolving the caller's procedure index.
+    assert_transaction_executor_error!(
+        execution_result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
     );
 
     Ok(())
@@ -1498,7 +1549,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
+async fn test_authenticate_procedure() -> anyhow::Result<()> {
     let mock_component = MockAccountComponent::with_empty_slots();
 
     let components: Vec<AccountComponent> =
@@ -1525,7 +1576,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 
                 # authenticate procedure
                 push.{root}
-                exec.account::authenticate_and_track_procedure
+                exec.account::authenticate_procedure
 
                 # truncate the stack
                 dropw

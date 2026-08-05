@@ -94,6 +94,10 @@ pub const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR: MemoryAddress =
 // values, could be executed as foreign.
 pub const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR: MemoryAddress = 14;
 
+// The memory address at which the flag indicating that the epilogue is running the account's
+// authentication procedure is stored.
+pub const EPILOGUE_AUTH_IN_PROGRESS_FLAG_PTR: MemoryAddress = 15;
+
 // Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
 // This root is updated during the `prepare_fpi_call` kernel procedure.
 pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 16;

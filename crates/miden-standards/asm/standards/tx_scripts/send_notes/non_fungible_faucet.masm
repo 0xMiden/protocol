@@ -82,7 +82,7 @@ end
 #! - any payload count is not a valid u32.
 #! - any note record does not contain exactly one asset.
 #! - the account does not expose the non-fungible faucet interface.
-#! - an asset commitment has already been issued by this faucet.
+#! - a token ID derived from an asset value has already been issued by this faucet.
 #! - an attachment's elements are missing from the advice map.
 #!
 #! Locals:

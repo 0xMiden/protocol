@@ -33,6 +33,8 @@ const ERR_MERGE_OVERFLOW="merged u32 limbs do not fit in a field element"
 #!
 #! Inputs:  [value]
 #! Outputs: [swapped]
+#!
+#! Invocation: exec
 pub proc swap_u32_bytes
     # part0 = (value & 0xFF) << 24
     dup u32and.0xFF u32shl.24
@@ -66,6 +68,8 @@ end
 #! Panics if:
 #! - the merged value does not split back into the input limbs (an input is not a valid u32, or
 #!   the combined value was reduced modulo the field prime).
+#!
+#! Invocation: exec
 pub proc merge_u32_limbs
     # keep copies for the round-trip check
     dup.1 dup.1
@@ -98,6 +102,8 @@ end
 #! Outputs: [WORD_1, WORD_2, ptr]
 #!
 #! Total cycles: 28
+#!
+#! Invocation: exec
 pub proc mem_store_double_word(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
@@ -113,6 +119,8 @@ end
 #!
 #! Inputs:  [WORD_1, WORD_2, ptr]
 #! Outputs: []
+#!
+#! Invocation: exec
 pub proc mem_store_double_word_unaligned(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
@@ -141,6 +149,8 @@ end
 #!
 #! Inputs:  [ptr]
 #! Outputs: [WORD_1, WORD_2]
+#!
+#! Invocation: exec
 pub proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
     padw dup.4 add.4 mem_loadw_le
     # => [WORD_2, ptr]
@@ -157,6 +167,8 @@ end
 #!
 #! Inputs:  [ptr]
 #! Outputs: [WORD_1, WORD_2]
+#!
+#! Invocation: exec
 pub proc mem_load_double_word_unaligned(mem_ptr: MemoryAddress) -> DoubleWord
     # Load WORD_2 first so it ends up underneath WORD_1 on the final stack.
     dup add.7 mem_load
