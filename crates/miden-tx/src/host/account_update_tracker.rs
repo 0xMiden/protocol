@@ -69,8 +69,10 @@ impl AccountUpdateTracker {
         self.vault.update_patch(patch)
     }
 
-    /// Updates the vault delta.
-    pub fn update_asset_delta(&mut self, delta: AssetDelta) {
+    /// Updates the vault delta, overwriting the previous delta of the same asset.
+    ///
+    /// Returns the overwritten delta, if the asset was already present.
+    pub fn update_asset_delta(&mut self, delta: AssetDelta) -> Option<AssetDelta> {
         self.vault.update_delta(delta)
     }
 

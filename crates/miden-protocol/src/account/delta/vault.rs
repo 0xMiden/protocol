@@ -104,8 +104,10 @@ impl AccountVaultDelta {
     }
 
     /// Inserts an asset delta, overwriting the previous delta of the same asset.
-    pub fn insert(&mut self, asset_delta: AssetDelta) {
-        self.delta.insert(asset_delta.asset_id(), asset_delta);
+    ///
+    /// Returns the overwritten delta, if the asset was already present.
+    pub fn insert(&mut self, asset_delta: AssetDelta) -> Option<AssetDelta> {
+        self.delta.insert(asset_delta.asset_id(), asset_delta)
     }
 
     /// Returns true if this vault delta contains no updates.

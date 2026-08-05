@@ -42,9 +42,11 @@ impl VaultUpdateTracker {
         Ok(())
     }
 
-    /// Inserts an asset delta.
-    pub fn update_delta(&mut self, delta: AssetDelta) {
-        self.delta.insert(delta);
+    /// Inserts an asset delta, overwriting the previous delta of the same asset.
+    ///
+    /// Returns the overwritten delta, if the asset was already present.
+    pub fn update_delta(&mut self, delta: AssetDelta) -> Option<AssetDelta> {
+        self.delta.insert(delta)
     }
 
     /// Clears the accumulating vault delta.
