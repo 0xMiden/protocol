@@ -1,5 +1,11 @@
 # Changelog
 
+## TBD
+
+### Changes
+
+- [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
+
 ## v0.16.0 (2026-08-04)
 
 ### Features
