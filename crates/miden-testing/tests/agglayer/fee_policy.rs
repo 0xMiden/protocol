@@ -10,14 +10,23 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
-use miden_standards::note::{ConstantFeePolicyConfigNote, NetworkAccountConfigNote};
+use miden_standards::note::{
+    BurnNote,
+    ConstantFeePolicyConfigNote,
+    FeeSponsorshipNote,
+    MintNote,
+    NetworkAccountConfigNote,
+    PauseConfig,
+};
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
 use super::test_utils::{
     MIDEN_NETWORK_ID,
     VERIFICATION_BASE_FEE,
+    add_fee_sponsorship,
     fee_faucet_id,
+    is_bridge_paused,
     network_note_pricer,
 };
 use crate::consume_note;
@@ -89,6 +98,23 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
     assert_priced_account(&faucet, faucet_roots)?;
 
     Ok(())
+}
+
+/// Pins the faucet's input-note allowlist. The allowlist decides which notes can drive an account
+/// that holds an `ADMIN` role, so it should not grow silently.
+#[test]
+fn faucet_allowed_notes_pin() {
+    let expected = BTreeSet::from([
+        MintNote::script_root(),
+        BurnNote::script_root(),
+        ConstantFeePolicyConfigNote::script_root(),
+    ]);
+    assert_eq!(AggLayerFaucet::allowed_notes(), expected);
+
+    let mut effective = expected;
+    effective.insert(NetworkAccountConfigNote::script_root());
+    effective.insert(FeeSponsorshipNote::script_root());
+    assert_eq!(AggLayerFaucet::fee_policy_notes(), effective);
 }
 
 // POST-DEPLOYMENT FEE SCHEDULE UPDATES
@@ -257,6 +283,55 @@ async fn non_admin_cannot_reprice_the_fee_schedule(
         committed_fee(&mock_chain, account.id())?,
         Word::from([deployed_fee as u32, 0, 0, 1]),
         "a rejected config note must leave the schedule untouched"
+    );
+
+    Ok(())
+}
+
+/// A paused bridge can still be repriced. `set_note_fee` belongs to the standards
+/// `ConstantFeeManager`, not to the bridge component, so it carries no
+/// `pausable::assert_not_paused` - repricing stays available alongside the other management
+/// notes while every bridging entry point is halted.
+///
+/// The pause note needs a `FEE_SPONSORSHIP` covering its scheduled fee, because a priced schedule
+/// requires every consumed note's fee to be prepaid regardless of the chain's own base fee. The
+/// repricing note needs none: it is scheduled free precisely so that repricing can never be
+/// gated on someone funding a sponsorship for it.
+#[tokio::test]
+async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
+    const REPRICED_FEE: u64 = 4_242;
+
+    let admin = bridge_admin_account_id();
+    let bridge = build_managed_account(ManagedAccount::Bridge)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(bridge.clone())?;
+    let pause =
+        AggLayerBridge::pause_note(PauseConfig::Pause, admin, bridge.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(pause.clone()));
+    let pause_sponsorship =
+        add_fee_sponsorship(&mut builder, &pause, bridge.id(), VERIFICATION_BASE_FEE)?;
+    let reprice = build_repricing_note(admin, bridge.id(), REPRICED_FEE, 4)?;
+    builder.add_output_note(RawOutputNote::Full(reprice.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let paused = mock_chain
+        .build_transaction(bridge.id())
+        .authenticated_input_note(pause.id())
+        .authenticated_input_note(pause_sponsorship.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&paused)?;
+    mock_chain.prove_next_block()?;
+    assert!(is_bridge_paused(&mock_chain, bridge.id())?, "the bridge should be paused");
+
+    consume_note(&mut mock_chain, bridge.id(), &reprice).await?;
+    assert_eq!(
+        committed_fee(&mock_chain, bridge.id())?,
+        Word::from([REPRICED_FEE as u32, 0, 0, 1]),
+        "a paused bridge should still accept a repricing note"
     );
 
     Ok(())

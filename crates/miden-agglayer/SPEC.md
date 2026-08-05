@@ -24,7 +24,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Role Admin** (offchain) | Holds the bridge's `ADMIN` role and manages role membership via RBAC_CONFIG notes. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). | Not an onchain entity; creates RBAC_CONFIG notes |
+| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and on each faucet. Manages bridge role membership via RBAC_CONFIG notes and reprices both accounts' fee schedules via CONSTANT_FEE_POLICY_CONFIG notes. Root authority: effective admin of every operational role unless delegated, and on a faucet it can additionally retarget the `Ownable2Step` owner, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
 
 ---
 
@@ -255,7 +255,8 @@ so while the bridge is paused it rejects all bridge-out, claim, GER-injection, a
 faucet-management operations. `remove_ger` is deliberately exempt: a paused bridge can still
 revoke a fraudulent GER, and because `update_ger` is paused the revoked GER cannot be
 re-injected until unpause. The management notes (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`,
-`PAUSE_CONFIG`) remain consumable while paused, so a paused bridge can still be administered.
+`PAUSE_CONFIG`, `CONSTANT_FEE_POLICY_CONFIG`) remain consumable while paused, so a paused bridge
+can still be administered.
 
 The pause is toggled via the standards [`PAUSE_CONFIG`](#411-pause_config-standards) note, which
 dispatches to `PausableManager`'s `pause` / `unpause`. These have no entry in the bridge's
@@ -264,6 +265,39 @@ dispatches to `PausableManager`'s `pause` / `unpause`. These have no entry in th
 The pause complements the `Authority` freeze switch: freezing blocks every authority-gated
 procedure - including `remove_ger` - but not `claim` / `bridge_out`, while the pause is the
 inverse.
+
+#### Fee schedule administration
+
+Both network accounts are deployed with a `BasicConstantFeePolicy` whose schedule prices every
+note they can consume from that note's benchmarked consumption cost under the chain's
+`FeeParameters` (`NetworkNotePricer::agglayer_bridge_fee_policy_manager` /
+`agglayer_faucet_fee_policy_manager`). A schedule entry is a bare amount denominated in the
+chain's fee asset, so it is only correct for the verification base fee it was priced under.
+
+Because that base fee is a chain parameter which moves independently of these accounts, both
+install the `miden-standards` `ConstantFeeManager` and allowlist the
+[`CONSTANT_FEE_POLICY_CONFIG`](#412-constant_fee_policy_config-standards) note, which dispatches
+to its `set_note_fee`. Neither account maps that procedure in its `Authority` procedure-to-role
+map, so authorization falls back to the `ADMIN` role, exactly as for the pause toggles. Without
+it a schedule would be frozen at its deployment prices for the account's whole lifetime.
+
+Repricing the faucet matters as much as repricing the bridge. When the bridge creates a `MINT` or
+`BURN` note it sizes that note's fee sponsorship by reading the *faucet's* schedule as a foreign
+account, so a faucet left at stale prices makes the bridge under-sponsor the note it has just
+created, and the faucet's transaction can no longer pay its own fee. A frozen faucet schedule
+therefore stalls bridging, not merely faucet administration.
+
+The config note's own script root is deliberately scheduled at zero on both accounts, even though
+it has a benchmarked cost like any other note. Consuming one is the only route to `set_note_fee`,
+so a priced entry could raise the config note's own fee past what a sponsor covers and put the
+schedule permanently out of reach.
+
+That reach is not hypothetical: a priced schedule requires every consumed note's fee to be
+prepaid. A note whose schedule entry is non-zero can only be consumed together with
+`FEE_SPONSORSHIP` notes bound to it that cover that entry, independently of the chain's own
+verification base fee. Operators therefore fund a sponsorship alongside each management note
+(`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`, `PAUSE_CONFIG`), and repricing is the one
+administrative action that never needs one.
 
 ---
 
@@ -454,7 +488,8 @@ access-control components at account creation time.
 ### 3.2 Faucet Account Component
 
 The faucet account has the `agglayer_faucet` component (`components/faucet.masm`),
-which is a thin wrapper, on top of `Ownable2Step` + `OwnerControlled`, that re-exports the
+which is a thin wrapper, on top of `Ownable2Step` + the RBAC access-control stack
+(`RoleBasedAccessControl` + `Authority::RbacControlled`), that re-exports the
 standard Miden fungible-faucet procedures:
 
 - `mint_and_send` (from `miden::standards::faucets::fungible::mint_and_send`)
@@ -501,12 +536,25 @@ This is a re-export of `miden::standards::faucets::fungible::receive_and_burn`. 
 |-----------|-----------|----------------|---------|
 | Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
 
-**Companion component storage slots:** The faucet account also includes storage from
-companion components required by `fungible::mint_and_send`:
+**Companion component storage slots:** The faucet account also includes storage from its
+companion components - those required by `fungible::mint_and_send`, plus the access-control and
+fee-administration stack:
 
 - `Ownable2Step` owner config slot: stores the bridge account ID as owner.
-- `OwnerControlled` slots (3): `active_policy_proc_root`, `allowed_policy_proc_roots`,
-  `policy_authority`.
+- `TokenPolicyManager` slots: `active_policy_proc_root`, `allowed_policy_proc_roots` per policy
+  kind.
+- `RoleBasedAccessControl` role storage, seeded with the deployment `ADMIN` member, and the
+  `Authority` config slot (`RbacControlled`) with an empty procedure-to-role map.
+- `ConstantFeeManager` value slot: the ID of the fee schedule slot it reprices.
+
+**Access control:** minting and burning are gated on the `Ownable2Step` owner (the bridge), which
+`MintOwnerOnly` / `BurnOwnerOnly` assert directly via `ownable2step::assert_sender_is_owner`
+rather than through `Authority`. Everything else on the faucet - its fee schedule, its mint / burn
+/ transfer policies and its metadata - is authority-gated and so resolves to the `ADMIN` role
+through the unmapped-procedure fallback. The two authorities are therefore separate: `ADMIN`
+administers the faucet's configuration without being able to mint, and the bridge mints without
+being able to reconfigure. Note that `ADMIN` can retarget the `Ownable2Step` owner, so it must be
+held by a strongly authenticated account (see [Section 1](#1-entities-and-trust-model)).
 
 ---
 
@@ -1089,6 +1137,40 @@ with clearer error reporting for non-public targets.
 |------|------------|
 | **Issuer** | Holders of the `ADMIN` role only -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (unmapped-procedure fallback) |
 | **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
+
+---
+
+### 4.12 CONSTANT_FEE_POLICY_CONFIG (standards)
+
+**Purpose:** Reprices one entry of a network account's `BasicConstantFeePolicy` fee schedule
+after deployment (see [Section 2.5](#25-administration)). This is the `miden-standards`
+`CONSTANT_FEE_POLICY_CONFIG` note (`constant_fee_policy_config.masm` /
+`ConstantFeePolicyConfigNote`), not an agglayer-specific note; both the bridge and the faucet
+include its script root in their allowlists. Its storage is
+`[NOTE_SCRIPT_ROOT, FEE_ASSET_ID, FEE_ASSET_VALUE]`: the schedule key to rewrite, and the fee to
+schedule for it.
+
+**Consumption:** The script asserts the consuming account matches its `NetworkAccountTarget`
+attachment, then `call`s `ConstantFeeManager::set_note_fee`, which runs
+`authority::assert_authorized` before writing the schedule entry. The supplied asset's ID must
+match the account's configured fee asset ID. On both AggLayer accounts `set_note_fee` has no
+mapped role, so the note sender must hold the `ADMIN` role.
+
+`set_note_fee` carries no `pausable::assert_not_paused`, so a paused bridge can still be
+repriced, consistent with the other management notes.
+
+Because the note is allowlisted and scheduled free, anyone can author one targeting either
+account; unauthorized or mis-targeted notes abort at the target and authorization checks with no
+state change, but since the transaction aborts no nullifier is produced and such notes remain as
+permanently-unconsumable entries that may require operator-side filtering. This is inherent to
+every allowlisted network-note root, not specific to this note.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Holders of the `ADMIN` role only -- **enforced** by `ConstantFeeManager::set_note_fee` via `authority::assert_authorized` (unmapped-procedure fallback) |
+| **Consumer** | Bridge or faucet account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ---
 

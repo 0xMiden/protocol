@@ -193,12 +193,12 @@ fn generate_agglayer_constants(
             AccountComponent::new(Arc::unwrap_or_clone(package), vec![], dummy_metadata.clone())
                 .unwrap();
 
-        // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
-        // policies alongside the agglayer faucet component, since
-        // fungible::mint_and_send requires these for access control.
+        // The faucet account includes an Ownable2Step component alongside the agglayer faucet
+        // component, since fungible::mint_and_send gates minting on the owner, plus the RBAC
+        // access-control stack that gates everything else.
         //
-        // Use a dummy owner for commitment computation - the actual owner is set at runtime. Only
-        // the component code (not storage) contributes to the code commitment.
+        // Use a dummy owner and admin for commitment computation - the real ones are set at
+        // runtime. Only the component code (not storage) contributes to the code commitment.
         let dummy_owner = miden_protocol::account::AccountId::try_from(
             miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
         )
