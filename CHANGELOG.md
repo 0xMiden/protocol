@@ -59,6 +59,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] Bounded the length of the encoded signature that the transaction host's `AuthRequest` event handler takes from the advice map, so an entry planted under a signature key can no longer make the host allocate an arbitrary amount of memory ([#3472](https://github.com/0xMiden/protocol/pull/3472)).
 - [BREAKING] Renamed `Signature::to_prepared_signature` to `Signature::to_encoded_signature` ([#3472](https://github.com/0xMiden/protocol/pull/3472)).
 - Clarified the `ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT` error message to better match the actual validated constraint ([#3474](https://github.com/0xMiden/protocol/pull/3474)).
+- Added the missing `Invocation: exec` label to the document comments of the public `miden-standards` MASM procedures([#3503](https://github.com/0xMiden/protocol/pull/3503)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 
