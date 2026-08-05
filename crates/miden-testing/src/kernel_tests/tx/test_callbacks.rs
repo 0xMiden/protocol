@@ -384,12 +384,12 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 /// Tests that the account callback cannot change the value of an asset added to the account
 /// vault, even when offsetting rewrites would leave the aggregate totals intact.
 ///
-/// The two consumed notes add 200 and 100 units to the vault; the callback rewrites every
-/// addition to 150 units. Because the vault aggregates amounts per asset ID, the final vault -
-/// and thus the epilogue's conservation check - is identical either way. Unlike the note path,
-/// there is also no host-side backstop: `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT` is emitted after
-/// the callback with the processed value, so the host never disagrees with the kernel. The
-/// callback-boundary assertion is therefore the only enforcement on this path.
+/// The two consumed notes add 200 and 100 units to the vault; the callback swaps the amounts by
+/// rewriting them to 100 and 200 units. Because the vault aggregates amounts per asset ID, the
+/// final vault - and thus the epilogue's conservation check - is identical either way. Unlike the
+/// note path, there is also no host-side backstop: `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT` is
+/// emitted after the callback with the processed value, so the host never disagrees with the
+/// kernel. The callback-boundary assertion is therefore the only enforcement on this path.
 #[tokio::test]
 async fn test_callback_cannot_rewrite_value_added_to_account() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -401,9 +401,9 @@ async fn test_callback_cannot_rewrite_value_added_to_account() -> anyhow::Result
     #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc on_before_asset_added_to_account
-        # Drop the asset ID and replace the input amount with 150.
+        # Drop the asset ID and swap amounts 200 and 100 while preserving their total.
         dropw
-        push.150 swap drop
+        neg add.300
         # => [PROCESSED_ASSET_VALUE, pad(8)]
     end
     "#;
@@ -679,8 +679,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 /// Tests that callbacks cannot redistribute value between output notes while preserving the
 /// transaction-wide total.
 ///
-/// Without a callback-boundary equality check, the callback below turns additions of 200 and 100
-/// units into 150 units each. The epilogue's aggregate asset-conservation check would still see 300
+/// Without a callback-boundary equality check, the callback below swaps additions of 200 and 100
+/// units. The epilogue's aggregate asset-conservation check would still see 300
 /// input and 300 output units, so it cannot enforce the per-callback invariant.
 ///
 /// The executor also notices the rewrite today: `NOTE_BEFORE_ADD_ASSET_EVENT` is emitted before the
@@ -698,9 +698,9 @@ async fn test_callback_cannot_redistribute_value_between_output_notes() -> anyho
     #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
     @account_procedure
     pub proc on_before_asset_added_to_note
-        # Drop the asset ID and replace the input amount with 150.
+        # Drop the asset ID and swap amounts 200 and 100 while preserving their total.
         dropw
-        push.150 swap drop
+        neg add.300
         # => [PROCESSED_ASSET_VALUE, note_idx, pad(7)]
     end
     "#;

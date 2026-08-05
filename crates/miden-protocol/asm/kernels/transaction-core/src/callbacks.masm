@@ -149,7 +149,7 @@ proc invoke_callback
         # => [ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
 
         # save the original asset value for the post-callback equality check
-        dupw.1 loc_storew_le.CALLBACK_ASSET_VALUE_LOC dropw
+        swapw loc_storew_le.CALLBACK_ASSET_VALUE_LOC swapw
         # => [ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
 
         # pad the stack to 16 for the call
