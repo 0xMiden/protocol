@@ -109,37 +109,45 @@ account_component_code!(
     "miden-standards-faucets-non-fungible-faucet.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`NonFungibleFaucet::NAME`], which mirrors the standards-side MASM module path.
+const NON_FUNGIBLE_FAUCET_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::non_fungible_faucet";
+
 procedure_root!(
     NON_FUNGIBLE_FAUCET_MINT_AND_SEND,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::MINT_AND_SEND_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_DESCRIPTION,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_DESCRIPTION_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_LOGO_URI,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_LOGO_URI_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_CONTRACT_URI,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_CONTRACT_URI_PROC_NAME,
     NonFungibleFaucet::code()
 );
@@ -215,7 +223,7 @@ impl NonFungibleFaucet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::faucets::non_fungible_faucet";
+    pub const NAME: &'static str = "miden::standards::faucets::non_fungible";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {

@@ -32,9 +32,17 @@ account_component_code!(
     "miden-standards-fees-policies-basic-constant-fee.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`BasicConstantFeePolicy::NAME`], which mirrors the standards-side MASM module path.
+const BASIC_CONSTANT_FEE_LIBRARY_PATH: &str =
+    "miden::standards::components::fees::policies::basic_constant_fee";
+
 procedure_root!(
     BASIC_CONSTANT_FEE_POLICY_ROOT,
-    BasicConstantFeePolicy::NAME,
+    BASIC_CONSTANT_FEE_LIBRARY_PATH,
     BasicConstantFeePolicy::PROC_NAME,
     BasicConstantFeePolicy::code()
 );
@@ -94,8 +102,7 @@ impl BasicConstantFeePolicy {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::fees::policies::basic_constant_fee";
+    pub const NAME: &'static str = "miden::standards::fees::policies::basic_constant_fee";
 
     pub(crate) const PROC_NAME: &str = "compute_note_fee";
 
