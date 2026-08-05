@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
@@ -494,24 +494,21 @@ impl TransactionEvent {
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
                 let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
-                let auth_request = if let Some(signature) = process
-                    .advice_provider()
-                    .get_mapped_values(&signature_key)
-                    .map(|slice| slice.to_vec())
-                {
-                    TransactionEvent::AuthRequest {
-                        pub_key_commitment,
-                        tx_summary_or_signature: TxSummaryOrSignature::Signature(signature),
-                    }
-                } else {
-                    let tx_summary = extract_tx_summary(base_host, process, message)?;
-                    TransactionEvent::AuthRequest {
-                        pub_key_commitment,
-                        tx_summary_or_signature: TxSummaryOrSignature::TxSummary(tx_summary),
-                    }
-                };
+                let tx_summary_or_signature =
+                    match process.advice_provider().get_mapped_values(&signature_key) {
+                        Some(encoded_signature) => TxSummaryOrSignature::from_encoded_signature(
+                            signature_key,
+                            encoded_signature,
+                        )?,
+                        None => TxSummaryOrSignature::TxSummary(extract_tx_summary(
+                            base_host, process, message,
+                        )?),
+                    };
 
-                Some(auth_request)
+                Some(TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary_or_signature,
+                })
             },
 
             TransactionEventId::Unauthorized => {
@@ -591,6 +588,34 @@ impl TransactionEvent {
 pub(crate) enum TxSummaryOrSignature {
     TxSummary(TransactionSummary),
     Signature(Vec<Felt>),
+}
+
+impl TxSummaryOrSignature {
+    /// Copies the encoded signature found in the advice map under the given key.
+    ///
+    /// The length is validated before the copy is made. Because any transaction can insert
+    /// arbitrary entries into the advice map, an entry under a signature key is untrusted input
+    /// and must not be able to make the host allocate an unbounded amount of memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the encoded signature is empty or longer than any
+    /// [`Signature`] variant can produce.
+    fn from_encoded_signature(
+        signature_key: Word,
+        encoded_signature: &[Felt],
+    ) -> Result<Self, TransactionKernelError> {
+        if encoded_signature.is_empty()
+            || encoded_signature.len() > Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
+        {
+            return Err(TransactionKernelError::InvalidEncodedSignatureLength {
+                signature_key,
+                actual: encoded_signature.len(),
+            });
+        }
+
+        Ok(TxSummaryOrSignature::Signature(encoded_signature.to_vec()))
+    }
 }
 
 // ASSET PATCH AND DELTA
