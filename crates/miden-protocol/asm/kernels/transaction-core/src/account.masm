@@ -768,8 +768,12 @@ end
 # CODE
 # -------------------------------------------------------------------------------------------------
 
-#! Verifies that the procedure root is part of the account code and tracks whether it has been
-#! called.
+#! Verifies that the procedure root is part of the account code and conditionally tracks whether it
+#! has been called.
+#!
+#! The call is tracked only when both of the following hold:
+#! - the active account is the native account
+#! - the epilogue is not currently executing the account's authentication procedure
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: []
@@ -779,38 +783,52 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
-pub proc authenticate_and_track_procedure
+pub proc authenticate_procedure
     # verify that the procedure is part of the account code and get its index
     exec.assert_procedure_in_account
-    # => [index]
+    # => [proc_idx]
 
-    # Set the was_called flag to 1 for this procedure
-    exec.set_was_procedure_called
-    # => []
+    # the call is tracked only if the active account is the native account and the epilogue is not
+    # currently executing the auth procedure
+    exec.memory::is_native_account
+    # => [is_native_account, proc_idx]
+
+    exec.memory::is_epilogue_auth_in_progress not and
+    # => [should_track, proc_idx]
+
+    if.true
+        # set the `was_called` flag to 1 for this procedure
+        exec.set_was_procedure_called
+        # => []
+    else
+        drop
+        # => []
+    end
 end
 
 #! Verifies that the procedure root is part of the account code and returns its index, WITHOUT
 #! tracking the call.
 #!
 #! Inputs:  [PROC_ROOT]
-#! Outputs: [index]
+#! Outputs: [proc_idx]
 #!
 #! Where:
 #! - PROC_ROOT is the hash of the procedure to authenticate.
+#! - proc_idx is the index of the requested account procedure.
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
 pub proc assert_procedure_in_account
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
-    # => [index, PROC_ROOT]
+    # => [proc_idx, PROC_ROOT]
 
     dup movdn.5 exec.get_procedure_root
-    # => [MEM_PROC_ROOT, PROC_ROOT, index]
+    # => [MEM_PROC_ROOT, PROC_ROOT, proc_idx]
 
     # verify that PROC_ROOT and MEM_PROC_ROOT fetched from memory match
     assert_eqw.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
-    # => [index]
+    # => [proc_idx]
 end
 
 #! Asserts that the specified procedure root is the root of the authentication procedure for an
@@ -827,13 +845,13 @@ end
 pub proc assert_auth_procedure
     # authentication procedure is always at index 0
     push.0
-    # => [index, PROC_ROOT]
+    # => [auth_proc_idx, PROC_ROOT]
 
-    # set was_called for the the auth procedure to true
+    # set was_called for the auth procedure to true
     dup exec.set_was_procedure_called
-    # => [index, PROC_ROOT]
+    # => [auth_proc_idx, PROC_ROOT]
 
-    # get procedure root from memory stored at index
+    # get procedure root from memory stored at index 0
     exec.get_procedure_root
     # => [MEM_PROC_ROOT, PROC_ROOT]
 
@@ -1946,11 +1964,20 @@ proc refresh_storage_commitment
     end
 end
 
-#! Checks if a native account procedure has been called during transaction execution.
+#! This procedure returns 1 if the procedure with the provided root invoked account-restricted
+#! kernel APIs outside the authentication procedure. Otherwise it returns 0.
 #!
-#! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
-#! `exec.faucet::mint`) which trigger `authenticate_and_track_procedure`. Procedures that execute
-#! only local MASM instructions will return 0 even if they were executed.
+#! Notice that `was_procedure_called` returns 0 in the following cases:
+#! - the procedure with the provided root is the authentication procedure and it hasn't
+#!   started executing yet. Note that it would return 1 if it was invoked by a user,
+#!   but this would eventually result in the transaction aborting, so this statement is
+#!   true for correct transactions.
+#! - the procedure with the provided root was called as part of the authentication procedure. The
+#!   rationale for this approach is that procedure tracking is intended to be used by the auth
+#!   procedure to check which procedures were called during the transaction and make fine-grained
+#!   decisions based on this. The auth procedure does not need to authenticate procedure invocations
+#!   originating from itself, and so these are not tracked to avoid polluting the set of tracked
+#!   procedures.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [was_called]
