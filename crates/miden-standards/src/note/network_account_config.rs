@@ -54,7 +54,8 @@ static NETWORK_ACCOUNT_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// The action is encoded into the note's storage (see [`NoteStorage`] conversion below). Because
 /// the storage is fixed at note creation and bound into the note commitment, the authorized party
 /// is the note sender: the consuming account's `AuthNetworkAccount` procedures authorize the sender
-/// through the account-wide `Authority` component.
+/// through the account-wide [`Authority`](crate::account::access::Authority) component, which the
+/// account must install in an owner- or role-controlled mode, see [`NetworkAccountConfigNote`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkAccountConfig {
     /// Adds `script_root` to the note script allowlist.
@@ -134,7 +135,13 @@ impl From<NetworkAccountConfig> for NoteStorage {
 /// A single note script dispatches on a selector in the note's storage to one of the
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component's allowlist or
 /// fee-policy procedures. Authorization is enforced by those procedures through the account-wide
-/// `Authority` component against the note sender.
+/// [`Authority`](crate::account::access::Authority) component, which resolves the note sender only
+/// under [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
+/// [`RbacControlled`](crate::account::access::Authority::RbacControlled). The account must install
+/// one of those two, because
+/// [`AuthControlled`](crate::account::access::Authority::AuthControlled) makes `assert_authorized`
+/// a no-op, and since the `AuthNetworkAccount` auth scheme is intentionally permissionless for
+/// allowlisted notes, that would leave these mutations callable by anyone.
 ///
 /// For the consuming network account to accept this note, its own script root must be in the
 /// account's note script allowlist. Every

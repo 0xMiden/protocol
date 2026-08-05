@@ -35,14 +35,22 @@ const ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause config note s
 #! PauseConfig script: triggers a `PausableManager` admin action against the consuming account,
 #! dispatched on a selector stored in the first note storage item.
 #!
-#! The selected action is read from the note storage (fixed at note creation, so authorization is
-#! bound to the note sender):
+#! The selected action is read from the note storage and is fixed at note creation:
 #! - `0` Pause:   `[0]`.
 #! - `1` Unpause: `[1]`.
 #!
 #! Authorization is enforced by the called `PausableManager` procedures via the account-wide
-#! `Authority` component (`assert_authorized`), which resolves the note sender against the
-#! configured owner or role; this script only dispatches to them.
+#! `Authority` component (`assert_authorized`); this script only dispatches to them. What that
+#! check means depends on the installed authority:
+#! - OwnerControlled → resolves the note sender against the Ownable2Step owner.
+#! - RbacControlled  → resolves the note sender against the role configured for the called
+#!   procedure, or ADMIN when it is unmapped.
+#! - AuthControlled  → no sender check at all: `assert_authorized` is a no-op and the account's
+#!   auth component is the sole gate. Such an account MUST authenticate the `pause` and `unpause`
+#!   procedure roots (see the AuthControlled safety invariant on the `Authority` component),
+#!   otherwise both actions are permissionless and any party can author this note. A single script
+#!   root serves both actions and the selector lives in the note storage, so allowlisting that root
+#!   grants both.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::access::pausable::manager::{pause, unpause}` (the `PausableManager`
@@ -55,7 +63,7 @@ const ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause config note s
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the note sender is not authorized for the selected action (per the `Authority` component).
+#! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
 pub proc main
     dropw
@@ -102,7 +110,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_PAUSE.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_pause
@@ -129,7 +137,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_UNPAUSE.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_unpause

@@ -38,14 +38,23 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 #! AllowlistConfig script: triggers an `AllowlistManager` admin action against the consuming
 #! account, dispatched on a selector stored in the first note storage item.
 #!
-#! The selected action and its arguments are read from the note storage (fixed at note creation,
-#! so authorization is bound to the note sender):
+#! The selected action and its arguments are read from the note storage and are fixed at note
+#! creation:
 #! - `0` AllowAccount:    `[0, account_suffix, account_prefix]`.
 #! - `1` DisallowAccount: `[1, account_suffix, account_prefix]`.
 #!
 #! Authorization is enforced by the called `AllowlistManager` procedures via the account-wide
-#! `Authority` component (`assert_authorized`), which resolves the note sender against the
-#! configured owner or role; this script only loads the arguments and calls them.
+#! `Authority` component (`assert_authorized`); this script only loads the arguments and calls
+#! them. What that check means depends on the installed authority:
+#! - OwnerControlled → resolves the note sender against the Ownable2Step owner.
+#! - RbacControlled  → resolves the note sender against the role configured for the called
+#!   procedure, or ADMIN when it is unmapped.
+#! - AuthControlled  → no sender check at all: `assert_authorized` is a no-op and the account's
+#!   auth component is the sole gate. Such an account MUST authenticate the `allow_account` and
+#!   `disallow_account` procedure roots (see the AuthControlled safety invariant on the `Authority`
+#!   component), otherwise both actions are permissionless and any party can author this note.
+#!   A single script root serves both actions and the selector lives in the note storage, so
+#!   allowlisting that root grants both.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::transfer::allowlist::manager::{allow_account,
@@ -59,7 +68,7 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the note sender is not authorized for the selected action (per the `Authority` component).
+#! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
 pub proc main
     dropw
@@ -106,7 +115,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_ALLOW_ACCOUNT.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_allow_account
@@ -135,7 +144,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_DISALLOW_ACCOUNT.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_disallow_account

@@ -103,6 +103,9 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - the authority is AuthControlled: never. This is a no-op, so the account's auth component is
+#!   the sole gate and MUST authenticate every authority-gated procedure root, otherwise those
+#!   procedures are permissionless.
 #! - the authority is OwnerControlled and the sender is not the registered owner.
 #! - the authority is RbacControlled, a role is configured for the procedure, and the sender does
 #!   not hold it.

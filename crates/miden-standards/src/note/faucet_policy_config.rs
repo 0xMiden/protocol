@@ -51,10 +51,11 @@ static FAUCET_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// `set_*_policy` procedure aborts). Obtain a root from a policy type, e.g.
 /// `MintPolicy::owner_only().root()` or `MintOwnerOnly::root()`.
 ///
-/// The action is encoded into the note's storage (see [`NoteStorage`] conversion below). Because
-/// the storage is fixed at note creation and bound into the note commitment, the authorized party
-/// is the note sender: the consuming faucet's `TokenPolicyManager` procedures authorize the sender
-/// through the account-wide `Authority` component.
+/// The action is encoded into the note's storage (see [`NoteStorage`] conversion below) and is
+/// fixed at note creation, bound into the note commitment. The consuming faucet's
+/// `TokenPolicyManager` procedures authorize the action through the account-wide
+/// [`Authority`](crate::account::access::Authority) component; who that authorizes depends on the
+/// installed authority, see [`FaucetPolicyConfigNote`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaucetPolicyConfig {
     /// Switch the active mint policy to `policy_root`.
@@ -122,14 +123,25 @@ impl From<FaucetPolicyConfig> for NoteStorage {
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the component's
 /// setters (`set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`).
-/// Authorization is enforced by those procedures through the account-wide `Authority` component
-/// against the note sender, so the note carries no assets and its authorization is bound to
-/// `sender` at creation time.
+/// Authorization is enforced by those procedures through the account-wide
+/// [`Authority`](crate::account::access::Authority) component, so the note carries no assets.
 ///
-/// The note is always public (for network execution) and tagged for `account` — the faucet
-/// carrying the `TokenPolicyManager` component whose policy is being switched. The `sender` is the
-/// account authorized for the action per the faucet's `Authority` configuration (the owner under
-/// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
+/// Under [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) and
+/// [`RbacControlled`](crate::account::access::Authority::RbacControlled) that check resolves the
+/// note sender (the [`Ownable2Step`](crate::account::access::Ownable2Step) owner, or a member of
+/// the role configured for the called setter), so authorization is bound to `sender` at creation
+/// time.
+///
+/// Under [`AuthControlled`](crate::account::access::Authority::AuthControlled) there is no sender
+/// check: `assert_authorized` is a no-op and the faucet's own auth component is the sole gate. Such
+/// a faucet MUST authenticate every `set_*_policy` procedure root (see the `AuthControlled` safety
+/// invariant on [`Authority`](crate::account::access::Authority)), otherwise the policy switches
+/// are permissionless and any party can author this note. [`Self::script_root`] serves all four
+/// setters and the selector lives in the note storage, so allowlisting that root grants all of
+/// them.
+///
+/// The note is always public (for network execution) and tagged for `account`, the faucet carrying
+/// the `TokenPolicyManager` component whose policy is being switched.
 ///
 /// The note is bound to the target `account` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
@@ -208,7 +220,8 @@ impl FaucetPolicyConfigNote {
         FAUCET_POLICY_CONFIG_SCRIPT.root()
     }
 
-    /// Returns the account ID of the note's sender (the account authorized for the action).
+    /// Returns the account ID of the note's sender (the authorizing party under an owner- or
+    /// role-controlled `Authority`).
     pub fn sender(&self) -> AccountId {
         self.sender
     }
