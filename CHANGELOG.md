@@ -16,7 +16,7 @@
 ## TBD
 
 ### Changes
-- Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#TBD](https://github.com/0xMiden/protocol/pull/TBD)).
+- Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
 
 ## v0.16.0 (2026-08-04)
 
