@@ -45,10 +45,10 @@ pub const MIDEN_NETWORK_ID: u32 = 77;
 // KECCAK-256
 // ================================================================================================
 
-/// Returns the Keccak-256 digest of `preimage` as the eight packed u32 field elements the
+/// Returns the Keccak-256 digest of `data` as the eight packed u32 field elements the
 /// AggLayer MASM code works with.
-pub fn keccak256_felts(preimage: &[u8]) -> alloc::vec::Vec<Felt> {
-    let digest = <[u8; 32]>::from(Keccak256::hash(preimage));
+pub fn hash_with_keccak256_to_elements(data: &[u8]) -> alloc::vec::Vec<Felt> {
+    let digest = <[u8; 32]>::from(Keccak256::hash(data));
     bytes_to_packed_u32_elements(&digest)
 }
 

@@ -6,7 +6,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
-use super::test_utils::{BridgeSetup, keccak256_felts, setup_bridge};
+use super::test_utils::{BridgeSetup, hash_with_keccak256_to_elements, setup_bridge};
 
 const GER_BYTES: [u8; 32] = [
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
@@ -19,7 +19,7 @@ fn fold_removed_ger_chain(prev_chain: [u8; 32], ger_bytes: [u8; 32]) -> [u8; 32]
     let mut preimage = [0u8; 64];
     preimage[..32].copy_from_slice(&prev_chain);
     preimage[32..].copy_from_slice(&ger_bytes);
-    let chain_felts = keccak256_felts(&preimage);
+    let chain_felts = hash_with_keccak256_to_elements(&preimage);
     let mut chain_bytes = [0u8; 32];
     for (i, felt) in chain_felts.iter().enumerate() {
         let limb = u32::try_from(felt.as_canonical_u64()).expect("felt fits in u32");

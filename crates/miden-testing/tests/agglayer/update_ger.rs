@@ -24,7 +24,7 @@ use super::test_utils::{
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
     execute_program_with_default_host,
-    keccak256_felts,
+    hash_with_keccak256_to_elements,
 };
 
 // EXIT ROOT TEST VECTORS
@@ -141,7 +141,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         // Computed GER using keccak256
         let ger_preimage: Vec<u8> =
             [mainnet_exit_root_bytes.as_ref(), rollup_exit_root_bytes.as_ref()].concat();
-        let computed_ger_felts: Vec<Felt> = keccak256_felts(&ger_preimage);
+        let computed_ger_felts: Vec<Felt> = hash_with_keccak256_to_elements(&ger_preimage);
 
         assert_eq!(
             computed_ger_felts, expected_ger_felts,
@@ -225,7 +225,8 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     ger_preimage.extend_from_slice(&rollup_exit_root);
 
     // Compute expected GER using keccak256
-    let expected_ger_felts: [Felt; 8] = keccak256_felts(&ger_preimage).try_into().unwrap();
+    let expected_ger_felts: [Felt; 8] =
+        hash_with_keccak256_to_elements(&ger_preimage).try_into().unwrap();
 
     let ger_bytes: [u8; 32] = packed_u32_elements_to_bytes(&expected_ger_felts).try_into().unwrap();
 
