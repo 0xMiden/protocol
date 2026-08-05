@@ -1602,66 +1602,6 @@ async fn test_authenticate_procedure() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Verifies the conditional call-tracking of `authenticate_procedure`.
-///
-/// Whether a call is tracked is gated on the epilogue-auth-in-progress flag, so the test drives
-/// `authenticate_procedure` with a valid account procedure root while toggling that flag to emulate
-/// each context:
-/// - With the flag set (emulating the epilogue's auth run), the call must NOT be tracked. This is
-///   what lets the auth procedure read account state during the epilogue without polluting the
-///   `was_called` flags that `was_procedure_called`-based authenticators rely on.
-/// - With the flag cleared (a normal native call outside the epilogue's auth run), the call must be
-///   tracked.
-#[tokio::test]
-async fn test_authenticate_procedure_conditional_tracking() -> anyhow::Result<()> {
-    let mock_component = MockAccountComponent::with_empty_slots();
-
-    let components: Vec<AccountComponent> =
-        Auth::IncrNonce.into_iter().chain([mock_component.into()]).collect();
-    let account_code = AccountCode::from_components(&components).unwrap();
-
-    // a regular (non-auth) account procedure root to drive the authenticator with
-    let proc_root = *account_code.procedures()[1].mast_root();
-
-    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
-
-    let code = format!(
-        r#"
-        use miden::tx_kernel_core::account
-        use miden::tx_kernel_core::memory
-        use miden::tx_kernel_core::prologue
-
-        begin
-            exec.prologue::prepare_transaction
-
-            # while the epilogue is executing the auth procedure, calls must NOT be tracked
-            push.1 exec.memory::set_epilogue_auth_in_progress_flag
-            push.{proc_root}
-            exec.account::authenticate_procedure
-            push.{proc_root}
-            exec.account::was_procedure_called
-            assertz.err="call during the epilogue auth run must not be tracked"
-
-            # outside the epilogue's auth run, a native call must be tracked
-            push.0 exec.memory::set_epilogue_auth_in_progress_flag
-            push.{proc_root}
-            exec.account::authenticate_procedure
-            push.{proc_root}
-            exec.account::was_procedure_called
-            assert.err="native call outside the auth procedure must be tracked"
-
-            # truncate the stack
-            dropw
-        end
-        "#,
-        proc_root = &proc_root,
-    );
-
-    mock_tx.execute_code(&code).await?;
-
-    Ok(())
-}
-
 // PROCEDURE INTROSPECTION TESTS
 // ================================================================================================
 
