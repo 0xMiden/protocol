@@ -144,6 +144,7 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - the invocation does not originate from the native account's account context.
 #! - the note index is greater or equal to the total number of input notes.
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
@@ -191,6 +192,7 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - the invocation does not originate from the native account's account context.
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec

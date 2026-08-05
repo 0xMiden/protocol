@@ -5,7 +5,7 @@ use {MemoryAddress} from miden::protocol::types
 # ERRORS
 # =================================================================================================
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
+const ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
 
 # PROCEDURES
 # =================================================================================================
@@ -157,8 +157,8 @@ pub proc write_indexed_attachment_to_memory(
     dest_ptr: MemoryAddress
 ) -> u16
     # assert attachment_idx < num_attachments
-    dup.2 swap u32assert2.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
-    u32lt assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
+    dup.2 swap u32assert2.err=ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
     # => [attachment_commitments_ptr, attachment_idx, dest_ptr]
 
     # compute the memory address of the attachment commitment:
