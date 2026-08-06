@@ -159,6 +159,7 @@ end
 #! Panics if:
 #! - the account is paused.
 #! - the active send policy predicate fails.
+#! - the active send policy returns an asset value different from the one it received.
 #!
 #! Invocation: call
 @account_procedure
@@ -230,6 +231,7 @@ end
 #! Panics if:
 #! - the account is paused.
 #! - the active receive policy predicate fails.
+#! - the active receive policy returns an asset value different from the one it received.
 #!
 #! Invocation: call
 @account_procedure
@@ -522,6 +524,7 @@ end
 #! Panics if:
 #! - the account is paused.
 #! - the invoked policy predicate fails.
+#! - the invoked policy returns an asset value different from the one it received.
 #!
 #! Invocation: exec
 @locals(4)

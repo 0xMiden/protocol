@@ -8,8 +8,8 @@
 use miden::protocol::asset
 use miden::standards::note::note_creator
 use miden::standards::tx_scripts::send_notes::common
-use miden::standards::wallets::basic
-use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, TAG_OFFSET} from miden::standards::tx_scripts::send_notes::common
+use miden::standards::wallets::basic as basic_wallet
+use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, PAYLOAD_ADDR, TAG_OFFSET} from miden::standards::tx_scripts::send_notes::common
 
 # CONSTANTS
 # =================================================================================================
@@ -46,7 +46,10 @@ const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID = "send notes payload attachment co
 #! Invocation: call
 @transaction_script
 pub proc main
-    exec.common::load_payload
+    push.PAYLOAD_ADDR
+    # => [payload_addr, PAYLOAD_COMMITMENT, pad(11)]
+
+    exec.common::write_payload_to_memory
     # => [pad(16)]
 
     exec.process_notes
@@ -136,7 +139,7 @@ proc process_notes
             loc_load.PROCESS_NOTES_ITEM_PTR_LOC exec.asset::load
             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), assets_left, notes_left, pad(16)]
 
-            call.basic::move_asset_to_note
+            call.basic_wallet::move_asset_to_note
             # => [pad(16), assets_left, notes_left, pad(16)]
 
             dropw dropw dropw dropw

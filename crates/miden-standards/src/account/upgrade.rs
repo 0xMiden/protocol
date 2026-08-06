@@ -9,9 +9,16 @@ use crate::procedure_root;
 
 account_component_code!(UPGRADE_MANAGER_CODE, "miden-standards-upgrade-manager.masp");
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`UpgradeManager::NAME`],
+/// which mirrors the standards-side MASM module path.
+const UPGRADE_MANAGER_LIBRARY_PATH: &str = "miden::standards::components::upgrade::manager";
+
 procedure_root!(
     UPGRADE_MANAGER_UPGRADE,
-    UpgradeManager::NAME,
+    UPGRADE_MANAGER_LIBRARY_PATH,
     UpgradeManager::UPGRADE_PROC_NAME,
     UpgradeManager::code()
 );
@@ -37,7 +44,7 @@ pub struct UpgradeManager;
 
 impl UpgradeManager {
     /// The name of the component.
-    const NAME: &'static str = "miden::standards::components::upgrade::manager";
+    const NAME: &'static str = "miden::standards::upgrade::manager";
 
     const UPGRADE_PROC_NAME: &'static str = "upgrade";
 

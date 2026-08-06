@@ -1,5 +1,11 @@
 # Changelog
 
+## TBD
+
+### Changes
+
+- [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
+
 ## v0.16.0 (2026-08-04)
 
 ### Features
@@ -29,6 +35,7 @@
 Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide an input-note index hint. Successful lookups authenticate it against the `NoteId` cached by the transaction prologue, while reported misses are validated by a full scan ([#3424](https://github.com/0xMiden/protocol/pull/3424)).
 - [BREAKING] Transaction summaries now bind the reference block, expiration delta, and seven user parameters; the Rust and MASM APIs changed accordingly ([#3210](https://github.com/0xMiden/protocol/issues/3210)).
 - Moved account-patch commitment validation from `AccountUpdateDetails::validate()` into `TxAccountUpdate::new()` and consolidated all `ProvenTransaction` invariant checks in `from_parts()`, fixing a deserialization bypass of the circular-note check ([#3412](https://github.com/0xMiden/protocol/pull/3412)).
+- [BREAKING] Unified the two account-origin authenticators in the transaction kernel's `api.masm` into a single `authenticate_account_origin` procedure that conditionally tracks the call ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
 - [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
 - [BREAKING] Renamed the remaining "library" APIs to use "package" terminology: `NoteScript::from_library` / `from_library_reference` and `TransactionScript::from_library` / `from_library_reference` are now `from_package` / `from_package_reference`, `TransactionKernel::library` is now `TransactionKernel::core_package`, `agglayer_library` is now `agglayer_package`, and the `CodeBuilder` linking methods and testing helpers follow suit (e.g. `link_static_package` / `link_dynamic_package` / `with_kernel_core_package`, `assemble_test_package`). Also removed the redundant `AccountComponent::from_library` in favor of `from_package` ([#TBD](https://github.com/0xMiden/protocol/pull/3382)).
@@ -49,17 +56,22 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] Changed the `FaucetPolicyActionNote` storage layout from `[selector, POLICY_ROOT]` to `[POLICY_ROOT, selector]` to optimize instruction counts ([#3448](https://github.com/0xMiden/protocol/pull/3448)).
 - Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
 - [BREAKING] Removed the `AuthSingleSigAcl` auth component, the `Auth::Acl` `miden-testing` mock-chain variant, and the `user_faucet_single_sig_acl` testing helper: the exempt (no-signature) branch let fee-charging accounts be drained via calls to exempt procedures. The plain `AuthSingleSig` component (every call requires a signature) remains available and now backs the "singlesig user faucet" factories; a `BurnNote` targeted at a singlesig user faucet, previously exempt via `receive_and_burn`, now requires the owner's signature to be consumed ([#3360](https://github.com/0xMiden/protocol/issues/3360)).
+- [BREAKING] Updated `miden-vm` dependencies to v0.29. Notable downstream changes: `CoreLibrary` now bundles a separate `miden-precompiles` package that must also be seeded into the package registry (`CoreLibrary::packages()`), the advice stack moved behind the typed `AdviceStack` API on `AdviceInputs`, `Kernel` was renamed to `KernelDescriptor` (with `Package::to_kernel` becoming `to_kernel_descriptor` and `Package::module_infos` becoming `module_descriptors`), and `miden_verifier::verify` now takes an `ExecutionClaim` and verifies bundled precompile proofs itself, replacing `verify_with_precompiles` ([#3492](https://github.com/0xMiden/protocol/pull/3492)).
 
 ### Fixes
 
+- [BREAKING] The transaction kernel now asserts that asset callbacks return the asset value they received, aborting with `ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT` otherwise; previously, offsetting callback transformations could redistribute value between outputs while passing the epilogue's aggregate conservation check. The kernel commitment changes ([#3442](https://github.com/0xMiden/protocol/issues/3442)).
 - Restricted indexed input-note asset removal to the native account's context while preserving active-note self-removal. As a consequence, note scripts and transaction scripts can no longer remove input-note assets by index directly, and neither can foreign accounts invoked through FPI; indexed removal must go through a procedure of the native account ([#3445](https://github.com/0xMiden/protocol/issues/3445)).
 - Fixed `faucet::mint` and `faucet::burn` failing when the asset's witness in the input vault had not already been loaded, which happened when minting into a faucet whose vault held other assets, or when burning an asset the transaction had not otherwise accessed; both procedures now request the witness from the host before updating the input vault ([#3409](https://github.com/0xMiden/protocol/pull/3409)).
 - Enforced the canonical encoding of `Authority` role map values on read: `Authority::try_from_storage` now rejects a procedure-role value word whose reserved felts (`value[1..=3]`) are non-zero, matching the value-slot check and completing the fix started in [#3209](https://github.com/0xMiden/protocol/pull/3209) ([#3415](https://github.com/0xMiden/protocol/pull/3415)).
 - [BREAKING] Bound the non-fungible MINT note to its faucet ([#3482](https://github.com/0xMiden/protocol/pull/3482)).
+- Fixed `CodeInspection`'s `get_code_commitment`, `get_num_procedures` and `get_procedure_root` and the `min_burn_amount` burn policy's `get_min_burn_amount` returning above the 16-element stack depth ([#3470](https://github.com/0xMiden/protocol/pull/3470)).
 - Fixed the PSWAP note-fill asset to its own payback note ([#3469](https://github.com/0xMiden/protocol/pull/3469)).
 - [BREAKING] Bounded the length of the encoded signature that the transaction host's `AuthRequest` event handler takes from the advice map, so an entry planted under a signature key can no longer make the host allocate an arbitrary amount of memory ([#3472](https://github.com/0xMiden/protocol/pull/3472)).
 - [BREAKING] Renamed `Signature::to_prepared_signature` to `Signature::to_encoded_signature` ([#3472](https://github.com/0xMiden/protocol/pull/3472)).
 - Clarified the `ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT` error message to better match the actual validated constraint ([#3474](https://github.com/0xMiden/protocol/pull/3474)).
+- Fixed misleading `NonFungibleFaucet` documentation, it is now stated as an off-chain convention([#3484](https://github.com/0xMiden/protocol/pull/3484)).
+- Added the missing `Invocation: exec` label to the document comments of the public `miden-standards` MASM procedures([#3503](https://github.com/0xMiden/protocol/pull/3503)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 

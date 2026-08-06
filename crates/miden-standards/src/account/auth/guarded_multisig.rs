@@ -214,7 +214,7 @@ pub struct AuthGuardedMultisig {
 
 impl AuthGuardedMultisig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::guarded_multisig";
+    pub const NAME: &'static str = "miden::standards::auth::guarded_multisig";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {

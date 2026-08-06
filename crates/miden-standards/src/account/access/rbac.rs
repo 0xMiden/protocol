@@ -141,7 +141,7 @@ pub struct RoleBasedAccessControl {
 
 impl RoleBasedAccessControl {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::access::rbac";
+    pub const NAME: &'static str = "miden::standards::access::rbac";
 
     /// The built-in default admin role symbol. A role whose delegated admin is unset is
     /// administered by members of this role.
