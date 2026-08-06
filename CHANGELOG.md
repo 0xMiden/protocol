@@ -68,6 +68,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Clarified the `ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT` error message to better match the actual validated constraint ([#3474](https://github.com/0xMiden/protocol/pull/3474)).
 - Fixed misleading `NonFungibleFaucet` documentation, it is now stated as an off-chain convention([#3484](https://github.com/0xMiden/protocol/pull/3484)).
 - Added the missing `Invocation: exec` label to the document comments of the public `miden-standards` MASM procedures([#3503](https://github.com/0xMiden/protocol/pull/3503)).
+- Exempted the issuing faucet from its own `BasicBlocklist` / `BasicAllowlist` transfer policy, so a self-entry no longer disables the faucet's minting ([#3508](https://github.com/0xMiden/protocol/pull/3508)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 
