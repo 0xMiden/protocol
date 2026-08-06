@@ -258,11 +258,11 @@ impl RoleBasedAccessControl {
 
         // Check the effective admin of every role, not just of the explicitly delegated ones: a
         // role left with the default admin is just as frozen when `ADMIN` can never hold members.
-        for config in roles.values() {
-            let admin = config.admin.clone().unwrap_or_else(Self::admin_role);
+        for role_config in roles.values() {
+            let admin = role_config.admin.clone().unwrap_or_else(Self::admin_role);
             if !reaches_populated_role(&admin, &roles) {
                 return Err(RoleBasedAccessControlError::UnmanageableRole {
-                    role: config.role.clone(),
+                    role: role_config.role.clone(),
                     admin,
                 });
             }
@@ -398,8 +398,8 @@ fn reaches_populated_role(role: &RoleSymbol, configs: &BTreeMap<RoleSymbol, Role
 
     while visited.insert(current.clone()) {
         current = match configs.get(&current) {
-            Some(config) if !config.members.is_empty() => return true,
-            Some(config) => config.admin.clone().unwrap_or_else(|| admin_role.clone()),
+            Some(role) if !role.members.is_empty() => return true,
+            Some(role) => role.admin.clone().unwrap_or_else(|| admin_role.clone()),
             None => admin_role.clone(),
         };
     }
