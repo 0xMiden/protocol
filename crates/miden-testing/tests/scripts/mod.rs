@@ -11,6 +11,7 @@ mod faucet_policy_config;
 mod fee_collection;
 mod fee_manager;
 mod fee_sponsorship;
+mod min_burn_amount_config;
 mod non_fungible_faucet;
 mod ownable2step;
 mod p2id;

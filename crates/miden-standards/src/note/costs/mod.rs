@@ -37,6 +37,7 @@ use crate::note::{
     FaucetMetadataConfigNote,
     FaucetPolicyConfigNote,
     FeeSponsorshipNote,
+    MinBurnAmountConfigNote,
     MintNote,
     NetworkAccountConfigNote,
     OwnerConfigNote,
@@ -128,6 +129,7 @@ impl StandardNote {
             StandardNote::FAUCET_METADATA_CONFIG => {
                 Some(NoteCost::of::<FaucetMetadataConfigNote>())
             },
+            StandardNote::MIN_BURN_AMOUNT_CONFIG => Some(NoteCost::of::<MinBurnAmountConfigNote>()),
             StandardNote::ALLOWLIST_CONFIG => Some(NoteCost::of::<AllowlistConfigNote>()),
             StandardNote::BLOCKLIST_CONFIG => Some(NoteCost::of::<BlocklistConfigNote>()),
             StandardNote::PAUSE_CONFIG => Some(NoteCost::of::<PauseConfigNote>()),
@@ -170,6 +172,10 @@ mod tests {
             (
                 FaucetMetadataConfigNote::script_root(),
                 FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES,
+            ),
+            (
+                MinBurnAmountConfigNote::script_root(),
+                MIN_BURN_AMOUNT_CONFIG_CONSUMPTION_CYCLES,
             ),
             (AllowlistConfigNote::script_root(), ALLOWLIST_CONFIG_CONSUMPTION_CYCLES),
             (BlocklistConfigNote::script_root(), BLOCKLIST_CONFIG_CONSUMPTION_CYCLES),
