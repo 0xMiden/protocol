@@ -93,7 +93,7 @@ impl IntoIterator for AccessControl {
 pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
-pub use rbac::{RoleBasedAccessControl, RoleBasedAccessControlError, RoleSeed};
+pub use rbac::{RoleBasedAccessControl, RoleBasedAccessControlError, RoleConfig};
 
 // HELPERS
 // ================================================================================================

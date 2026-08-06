@@ -19,7 +19,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScriptRoot};
 #[cfg(any(feature = "testing", test))]
 use miden_standards::account::access::PausableStorage;
-use miden_standards::account::access::RoleSeed;
+use miden_standards::account::access::RoleConfig;
 use miden_standards::note::{
     NetworkAccountTarget,
     NetworkAccountTargetError,
@@ -231,16 +231,14 @@ impl BridgeRoles {
 
     /// Returns the role seeds used to seed the account's RBAC component. Each role is left
     /// administered by the `ADMIN` role.
-    pub(crate) fn role_seeds(&self) -> Vec<RoleSeed> {
+    pub(crate) fn role_seeds(&self) -> Vec<RoleConfig> {
         [
             (AggLayerBridge::faucet_manager_role(), &self.faucet_managers),
             (AggLayerBridge::ger_injector_role(), &self.ger_injectors),
             (AggLayerBridge::ger_remover_role(), &self.ger_removers),
         ]
         .into_iter()
-        .map(|(role, members)| {
-            RoleSeed::builder().role(role).members(members.iter().copied()).build()
-        })
+        .map(|(role, members)| RoleConfig::new(role).with_members(members.iter().copied()))
         .collect()
     }
 }

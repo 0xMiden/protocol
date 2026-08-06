@@ -16,7 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{AccessControl, RoleBasedAccessControl, RoleSeed};
+use miden_standards::account::access::{AccessControl, RoleBasedAccessControl, RoleConfig};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
     ERR_ROLE_SYMBOL_ZERO,
@@ -937,9 +937,9 @@ fn test_rbac_builder_seeds_admin_and_operator_roles() -> anyhow::Result<()> {
         .with_components(Auth::IncrNonce)
         .with_component(
             RoleBasedAccessControl::builder()
-                .role(RoleSeed::builder().role(admin_role.clone()).member(admin).build())
-                .role(RoleSeed::builder().role(minter_role.clone()).member(minter).build())
-                .role(RoleSeed::builder().role(burner_role.clone()).member(burner).build())
+                .role(RoleConfig::new(admin_role.clone()).with_member(admin))
+                .role(RoleConfig::new(minter_role.clone()).with_member(minter))
+                .role(RoleConfig::new(burner_role.clone()).with_member(burner))
                 .build()?,
         )
         .build_existing()?;
@@ -973,20 +973,13 @@ async fn test_rbac_seeded_delegated_admin_excludes_admin() -> anyhow::Result<()>
         .with_components(Auth::IncrNonce)
         .with_component(
             RoleBasedAccessControl::builder()
-                .role(RoleSeed::builder().role(admin_role).member(admin).build())
+                .role(RoleConfig::new(admin_role).with_member(admin))
                 .role(
-                    RoleSeed::builder()
-                        .role(manager_role.clone())
-                        .member(manager)
-                        .admin(manager_role.clone())
-                        .build(),
+                    RoleConfig::new(manager_role.clone())
+                        .with_member(manager)
+                        .with_admin(manager_role.clone()),
                 )
-                .role(
-                    RoleSeed::builder()
-                        .role(pauser_role.clone())
-                        .admin(manager_role.clone())
-                        .build(),
-                )
+                .role(RoleConfig::new(pauser_role.clone()).with_admin(manager_role.clone()))
                 .build()?,
         )
         .build_existing()?;
