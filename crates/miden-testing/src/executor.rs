@@ -152,8 +152,9 @@ impl CodeExecutor<DefaultHost> {
 
         let mut host = DefaultHost::default();
 
+        // passing &core_lib to load_library() also loads the relevant event handlers into the host
         let core_lib = CoreLibrary::default();
-        host.load_library(core_lib.mast_forest()).unwrap();
+        host.load_library(&core_lib).unwrap();
 
         let standards_lib = StandardsLib::default();
         host.load_library(standards_lib.mast_forest()).unwrap();

@@ -19,9 +19,17 @@ account_component_code!(
     "miden-standards-faucets-policies-transfer-basic-allowlist.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BasicAllowlist::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BASIC_ALLOWLIST_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::basic_allowlist";
+
 procedure_root!(
     BASIC_ALLOWLIST_TRANSFER_POLICY_ROOT,
-    BasicAllowlist::NAME,
+    BASIC_ALLOWLIST_LIBRARY_PATH,
     BasicAllowlist::PROC_NAME,
     BasicAllowlist::code()
 );
@@ -42,8 +50,7 @@ pub struct BasicAllowlist(AllowlistStorage);
 
 impl BasicAllowlist {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::basic_allowlist";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::basic_allowlist";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

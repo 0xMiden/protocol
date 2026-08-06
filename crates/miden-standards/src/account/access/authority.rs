@@ -33,16 +33,23 @@ use crate::procedure_root;
 
 account_component_code!(AUTHORITY_CODE, "miden-standards-access-authority.masp");
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`Authority::NAME`], which
+/// mirrors the standards-side MASM module path.
+const AUTHORITY_LIBRARY_PATH: &str = "miden::standards::components::access::authority";
+
 procedure_root!(
     AUTHORITY_FREEZE,
-    Authority::NAME,
+    AUTHORITY_LIBRARY_PATH,
     Authority::FREEZE_PROC_NAME,
     Authority::code()
 );
 
 procedure_root!(
     AUTHORITY_UNFREEZE,
-    Authority::NAME,
+    AUTHORITY_LIBRARY_PATH,
     Authority::UNFREEZE_PROC_NAME,
     Authority::code()
 );
@@ -128,7 +135,7 @@ pub enum Authority {
 
 impl Authority {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::access::authority";
+    pub const NAME: &'static str = "miden::standards::access::authority";
 
     /// Name of the owner-gated procedure that freezes the authority-gated surface.
     const FREEZE_PROC_NAME: &'static str = "freeze";

@@ -32,10 +32,17 @@ pub use note_creator::NoteCreator;
 
 account_component_code!(BASIC_WALLET_CODE, "miden-standards-wallets-basic-wallet.masp");
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BasicWallet::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BASIC_WALLET_LIBRARY_PATH: &str = "miden::standards::components::wallets::basic_wallet";
+
 // Initialize the procedure root of the `receive_asset` procedure of the Basic Wallet only once.
 procedure_root!(
     BASIC_WALLET_RECEIVE_ASSET,
-    BasicWallet::NAME,
+    BASIC_WALLET_LIBRARY_PATH,
     BasicWallet::RECEIVE_ASSET_PROC_NAME,
     BasicWallet::code()
 );
@@ -44,7 +51,7 @@ procedure_root!(
 // once.
 procedure_root!(
     BASIC_WALLET_MOVE_ASSET_TO_NOTE,
-    BasicWallet::NAME,
+    BASIC_WALLET_LIBRARY_PATH,
     BasicWallet::MOVE_ASSET_TO_NOTE_PROC_NAME,
     BasicWallet::code()
 );
@@ -52,7 +59,7 @@ procedure_root!(
 // Initialize the procedure root of the `create_note` procedure of the Basic Wallet only once.
 procedure_root!(
     BASIC_WALLET_CREATE_NOTE,
-    BasicWallet::NAME,
+    BASIC_WALLET_LIBRARY_PATH,
     BasicWallet::CREATE_NOTE_PROC_NAME,
     BasicWallet::code()
 );
@@ -79,7 +86,7 @@ impl BasicWallet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::wallets::basic_wallet";
+    pub const NAME: &'static str = "miden::standards::wallets::basic_wallet";
 
     const RECEIVE_ASSET_PROC_NAME: &str = "receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "move_asset_to_note";

@@ -9,16 +9,24 @@ account_component_code!(
     "miden-standards-faucets-policies-transfer-blocklist-manager.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`BlocklistManager::NAME`], which mirrors the standards-side MASM module path.
+const BLOCKLIST_MANAGER_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::blocklist::manager";
+
 procedure_root!(
     BLOCKLIST_MANAGER_BLOCK_ACCOUNT,
-    BlocklistManager::NAME,
+    BLOCKLIST_MANAGER_LIBRARY_PATH,
     BlocklistManager::BLOCK_ACCOUNT_PROC_NAME,
     BlocklistManager::code()
 );
 
 procedure_root!(
     BLOCKLIST_MANAGER_UNBLOCK_ACCOUNT,
-    BlocklistManager::NAME,
+    BLOCKLIST_MANAGER_LIBRARY_PATH,
     BlocklistManager::UNBLOCK_ACCOUNT_PROC_NAME,
     BlocklistManager::code()
 );
@@ -47,7 +55,7 @@ pub struct BlocklistManager;
 impl BlocklistManager {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::blocklist::manager";
+        "miden::standards::faucets::policies::transfer::blocklist::manager";
 
     const BLOCK_ACCOUNT_PROC_NAME: &'static str = "block_account";
     const UNBLOCK_ACCOUNT_PROC_NAME: &'static str = "unblock_account";

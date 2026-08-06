@@ -168,7 +168,7 @@ impl TransactionKernel {
         // TODO: make static
         let program_hash = Self::main().hash();
         let kernel = Self::package()
-            .to_kernel()
+            .to_kernel_descriptor()
             .expect("transaction kernel package should describe a valid kernel");
 
         ProgramInfo::new(program_hash, kernel)

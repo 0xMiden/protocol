@@ -458,7 +458,7 @@ mod tests {
     /// untrusted encoded signatures they accept.
     #[rstest]
     #[case::falcon512_poseidon2(AuthScheme::Falcon512Poseidon2, 2058)]
-    #[case::ecdsa_k256_keccak(AuthScheme::EcdsaK256Keccak, 33)]
+    #[case::ecdsa_k256_keccak(AuthScheme::EcdsaK256Keccak, 32)]
     fn encoded_signature_does_not_exceed_max_num_felts(
         #[case] auth_scheme: AuthScheme,
         #[case] expected_num_felts: usize,

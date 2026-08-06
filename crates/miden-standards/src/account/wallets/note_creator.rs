@@ -9,10 +9,17 @@ use crate::procedure_root;
 
 account_component_code!(NOTE_CREATOR_CODE, "miden-standards-wallets-note-creator.masp");
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`NoteCreator::NAME`],
+/// which mirrors the standards-side MASM module path.
+const NOTE_CREATOR_LIBRARY_PATH: &str = "miden::standards::components::wallets::note_creator";
+
 // Initialize the procedure root of the `create_note` procedure of the Note Creator only once.
 procedure_root!(
     NOTE_CREATOR_CREATE_NOTE,
-    NoteCreator::NAME,
+    NOTE_CREATOR_LIBRARY_PATH,
     NoteCreator::CREATE_NOTE_PROC_NAME,
     NoteCreator::code()
 );
@@ -34,7 +41,7 @@ impl NoteCreator {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::note::note_creator";
+    pub const NAME: &'static str = "miden::standards::note::note_creator";
 
     const CREATE_NOTE_PROC_NAME: &str = "create_note";
 
