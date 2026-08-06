@@ -30,6 +30,9 @@ pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 28369;
 /// Cycles of consuming a FAUCET_METADATA_CONFIG note (single benchmarked path).
 pub const FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES: u32 = 27190;
 
+/// Cycles of consuming a MIN_BURN_AMOUNT_CONFIG note (single benchmarked path).
+pub const MIN_BURN_AMOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 25943;
+
 /// Cycles of consuming an ALLOWLIST_CONFIG note (single benchmarked path).
 pub const ALLOWLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 26477;
 

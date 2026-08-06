@@ -2,6 +2,10 @@
 
 ## TBD
 
+### Features
+
+- Added the `MinBurnAmountConfigNote` standard note, which updates the threshold of a consuming faucet's `MinBurnAmount` burn policy via its authority-gated `set_min_burn_amount` procedure.
+
 ### Changes
 
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
