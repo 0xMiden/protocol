@@ -9,16 +9,24 @@ account_component_code!(
     "miden-standards-faucets-policies-transfer-allowlist-manager.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`AllowlistManager::NAME`], which mirrors the standards-side MASM module path.
+const ALLOWLIST_MANAGER_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::allowlist::manager";
+
 procedure_root!(
     ALLOWLIST_MANAGER_ALLOW_ACCOUNT,
-    AllowlistManager::NAME,
+    ALLOWLIST_MANAGER_LIBRARY_PATH,
     AllowlistManager::ALLOW_ACCOUNT_PROC_NAME,
     AllowlistManager::code()
 );
 
 procedure_root!(
     ALLOWLIST_MANAGER_DISALLOW_ACCOUNT,
-    AllowlistManager::NAME,
+    ALLOWLIST_MANAGER_LIBRARY_PATH,
     AllowlistManager::DISALLOW_ACCOUNT_PROC_NAME,
     AllowlistManager::code()
 );
@@ -47,7 +55,7 @@ pub struct AllowlistManager;
 impl AllowlistManager {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::allowlist::manager";
+        "miden::standards::faucets::policies::transfer::allowlist::manager";
 
     const ALLOW_ACCOUNT_PROC_NAME: &'static str = "allow_account";
     const DISALLOW_ACCOUNT_PROC_NAME: &'static str = "disallow_account";
