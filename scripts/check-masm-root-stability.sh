@@ -45,6 +45,17 @@ latest_release_tag_on_head() {
         || true
 }
 
+# Escape hatch, for when the root changes are intended: it names the single version it applies to,
+# so a value that is left behind goes stale instead of disabling the check for every later release.
+if [[ -n "${SKIP_MASM_ROOT_CHECK_FOR_VERSION:-}" ]]; then
+    if [[ "$SKIP_MASM_ROOT_CHECK_FOR_VERSION" == "$workspace_version" ]]; then
+        echo "SKIP_MASM_ROOT_CHECK_FOR_VERSION is set to the version being released (${workspace_version}); skipping MAST root stability check"
+        exit 0
+    fi
+
+    echo "::warning::ignoring stale SKIP_MASM_ROOT_CHECK_FOR_VERSION: it is set to ${SKIP_MASM_ROOT_CHECK_FOR_VERSION} but the version being released is ${workspace_version}"
+fi
+
 # Skip check for pre-release versions
 if [[ "$workspace_version" == *[-+]* ]]; then
     echo "workspace version ${workspace_version} is a pre-release; skipping MAST root stability check"
@@ -83,6 +94,9 @@ sed -E "s/tag = \"v[0-9]+\\.[0-9]+\\.[0-9]+\"/tag = \"${baseline_tag}\"/g" \
 chmod +x "$check_script"
 
 echo "Checking MAST root stability against $baseline_tag"
-RUSTC_WRAPPER= rustup run nightly cargo -Zscript "$check_script"
+if ! RUSTC_WRAPPER= rustup run nightly cargo -Zscript "$check_script"; then
+    echo "::error::MAST roots changed since ${baseline_tag}; if releasing them is intended, set the SKIP_MASM_ROOT_CHECK_FOR_VERSION repository variable to ${workspace_version} and re-run the release"
+    exit 1
+fi
 
 echo "MAST roots are stable against $baseline_tag"

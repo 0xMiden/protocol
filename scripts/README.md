@@ -19,4 +19,4 @@ A changed or removed root fails. An added procedure is only a warning, but an ad
 
 ## Escape-hatch
 
-There is an escape-hatch for when the root change is intended: setting the `SKIP_MASM_ROOT_CHECK` repository variable to `true` skips the check.
+There is an escape-hatch for when the root change is intended: set the `SKIP_MASM_ROOT_CHECK_FOR_VERSION` repository variable to the version being released, eg. `0.16.1`. The check is skipped only while the workspace version matches it, so a value that is left behind goes stale instead of disabling the check for every later release. A stale value is reported as a warning in the check output.

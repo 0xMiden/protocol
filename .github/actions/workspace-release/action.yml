@@ -14,10 +14,10 @@ inputs:
     description: "Branch to verify HEAD against (used when verify-branch-head is true)"
     required: false
     default: "main"
-  skip-masm-root-check:
-    description: "Skip the MAST root stability check. Use only for release recovery if root changes are intended."
+  skip-masm-root-check-for-version:
+    description: "Skip the MAST root stability check for this version. Use only for release recovery if root changes are intended. Set the version being released, eg. 0.16.1, and re-run."
     required: false
-    default: "false"
+    default: ""
 
 runs:
   using: "composite"
@@ -96,10 +96,12 @@ runs:
 
     # The script itself decides whether the check applies: it only compares MAST roots when
     # the workspace version is in the same Cargo-compatible release line as the latest release
-    # tag (i.e. a patch release), so it is safe to run on every ref and in both modes.
+    # tag (i.e. a patch release), so it is safe to run on every ref and in both modes. It also
+    # owns the escape hatch, so the reason for a skip always shows up in its own output.
     - name: Check MAST root stability
-      if: ${{ inputs.skip-masm-root-check != 'true' }}
       shell: bash
+      env:
+        SKIP_MASM_ROOT_CHECK_FOR_VERSION: ${{ inputs.skip-masm-root-check-for-version }}
       run: |
         rustup toolchain install nightly --profile minimal --no-self-update
         chmod +x scripts/check-masm-root-stability.sh

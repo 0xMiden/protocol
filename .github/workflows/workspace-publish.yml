@@ -34,9 +34,9 @@ jobs:
           mode: "publish"
           verify-branch-head: "true"
           release-branch: ${{ github.event.release.target_commitish }}
-          # Escape hatch: set the SKIP_MASM_ROOT_CHECK repository variable to "true" to unblock a
-          # release if root changes are intended.
-          skip-masm-root-check: ${{ vars.SKIP_MASM_ROOT_CHECK }}
+          # Escape hatch: set the SKIP_MASM_ROOT_CHECK_FOR_VERSION repository variable to the
+          # version being released, eg. 0.16.1, to unblock it if its root changes are intended.
+          skip-masm-root-check-for-version: ${{ vars.SKIP_MASM_ROOT_CHECK_FOR_VERSION }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
