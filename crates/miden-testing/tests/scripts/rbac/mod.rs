@@ -2,7 +2,7 @@ extern crate alloc;
 
 mod config;
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 
 use miden_processor::crypto::random::RandomCoin;
@@ -16,7 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{AccessControl, RoleBasedAccessControl};
+use miden_standards::account::access::{AccessControl, RoleBasedAccessControl, RoleSeed};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
     ERR_ROLE_SYMBOL_ZERO,
@@ -920,11 +920,10 @@ async fn test_rbac_admin_can_renounce_admin_role() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `RoleBasedAccessControl::with_role_members` seeds the `ADMIN` role plus arbitrary operator
-/// roles at construction. Each seeded operator role's delegated admin is left unset (0), and a role
-/// mapped to an empty member set is dropped.
+/// The component builder seeds the `ADMIN` role plus arbitrary operator roles at construction,
+/// each with its own delegated admin.
 #[test]
-fn test_rbac_with_role_members_seeds_admin_and_operator_roles() -> anyhow::Result<()> {
+fn test_rbac_builder_seeds_admin_and_operator_roles() -> anyhow::Result<()> {
     let admin = test_account_id(201);
     let minter = test_account_id(202);
     let burner = test_account_id(203);
@@ -932,19 +931,17 @@ fn test_rbac_with_role_members_seeds_admin_and_operator_roles() -> anyhow::Resul
     let admin_role = RoleBasedAccessControl::admin_role();
     let minter_role = role("MINTER");
     let burner_role = role("BURNER");
-    let empty_role = role("EMPTY");
 
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_components(Auth::IncrNonce)
-        .with_component(RoleBasedAccessControl::new(
-            BTreeSet::from([admin]),
-            BTreeMap::from([
-                (minter_role.clone(), BTreeSet::from([minter])),
-                (burner_role.clone(), BTreeSet::from([burner])),
-                (empty_role.clone(), BTreeSet::new()),
-            ]),
-        ))
+        .with_component(
+            RoleBasedAccessControl::builder()
+                .role(RoleSeed::builder().role(admin_role.clone()).member(admin).build())
+                .role(RoleSeed::builder().role(minter_role.clone()).member(minter).build())
+                .role(RoleSeed::builder().role(burner_role.clone()).member(burner).build())
+                .build()?,
+        )
         .build_existing()?;
 
     // ADMIN is seeded and administers itself (delegated admin unset).
@@ -956,8 +953,66 @@ fn test_rbac_with_role_members_seeds_admin_and_operator_roles() -> anyhow::Resul
     assert_eq!(get_role_config(&account, &minter_role)?, (Felt::ONE, Felt::ZERO));
     assert!(is_role_member(&account, &burner_role, burner)?);
 
-    // A role mapped to an empty member set is dropped.
-    assert_eq!(get_role_config(&account, &empty_role)?.0, Felt::ZERO);
+    Ok(())
+}
+
+/// A role seeded with a delegated admin is administered by that role from genesis: `ADMIN` cannot
+/// grant or revoke it, while the delegated admin's members can.
+#[tokio::test]
+async fn test_rbac_seeded_delegated_admin_excludes_admin() -> anyhow::Result<()> {
+    let admin = test_account_id(211);
+    let manager = test_account_id(212);
+    let pauser = test_account_id(213);
+
+    let admin_role = RoleBasedAccessControl::admin_role();
+    let manager_role = role("DOM_MANAGER");
+    let pauser_role = role("DOM_PAUSER");
+
+    let account = AccountBuilder::new([11; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(
+            RoleBasedAccessControl::builder()
+                .role(RoleSeed::builder().role(admin_role).member(admin).build())
+                .role(
+                    RoleSeed::builder()
+                        .role(manager_role.clone())
+                        .member(manager)
+                        .admin(manager_role.clone())
+                        .build(),
+                )
+                .role(
+                    RoleSeed::builder()
+                        .role(pauser_role.clone())
+                        .admin(manager_role.clone())
+                        .build(),
+                )
+                .build()?,
+        )
+        .build_existing()?;
+
+    // DOM_PAUSER has no members yet, but its delegated admin is already in place.
+    assert_eq!(
+        get_role_config(&account, &pauser_role)?,
+        (Felt::ZERO, manager_role.as_element())
+    );
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    // ADMIN cannot grant DOM_PAUSER: the role is out of its reach from genesis.
+    let admin_grant = build_note(admin, grant_role_script(&pauser_role, pauser))?;
+    let tx = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(admin_grant)
+        .build()?;
+    assert_transaction_executor_error!(tx.execute().await, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    // A DOM_MANAGER member can.
+    let manager_grant = build_note(manager, grant_role_script(&pauser_role, pauser))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &manager_grant).await?;
+    assert!(is_role_member(&updated, &pauser_role, pauser)?);
 
     Ok(())
 }

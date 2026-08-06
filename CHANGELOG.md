@@ -1,5 +1,11 @@
 # Changelog
 
+## TBD
+
+### Changes
+
+- [BREAKING] Replaced `RoleBasedAccessControl::new` with a validating `RoleBasedAccessControl::builder()` over `RoleSeed`s, which seeds each role's members together with its delegated admin, so exclusive delegation is established at account creation instead of through on-chain `set_role_admin` calls ([#XXXX](https://github.com/0xMiden/protocol/pull/XXXX)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features
