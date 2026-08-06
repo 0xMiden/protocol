@@ -1160,7 +1160,7 @@ mapped role, so the note sender must hold the `ADMIN` role.
 repriced, consistent with the other management notes.
 
 Because the note is allowlisted and scheduled free, anyone can author one targeting either
-account; unauthorized or mis-targeted notes abort at the target and authorization checks with no
+account; unauthorized or misdirected notes abort at the target and authorization checks with no
 state change, but since the transaction aborts no nullifier is produced and such notes remain as
 permanently-unconsumable entries that may require operator-side filtering. This is inherent to
 every allowlisted network-note root, not specific to this note.
