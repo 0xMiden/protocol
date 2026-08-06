@@ -1,5 +1,5 @@
 use alloc::collections::BTreeMap;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
@@ -65,7 +65,8 @@ impl TransactionArgs {
     /// Returns new [TransactionArgs] instantiated with the provided transaction script, advice
     /// map and foreign account inputs.
     pub fn new(advice_map: AdviceMap) -> Self {
-        let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+        let mut advice_inputs = AdviceInputs::default();
+        advice_inputs.map = advice_map;
 
         Self {
             tx_script: None,

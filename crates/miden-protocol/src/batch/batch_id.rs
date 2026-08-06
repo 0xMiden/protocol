@@ -1,5 +1,3 @@
-use alloc::string::String;
-
 use miden_crypto_derive::WordWrapper;
 
 use crate::Word;

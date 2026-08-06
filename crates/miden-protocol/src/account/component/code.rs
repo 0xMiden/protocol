@@ -168,7 +168,7 @@ mod tests {
 
         let package_namespace = component_code
             .as_package()
-            .module_infos()
+            .module_descriptors()
             .next()
             .expect("package should have one module")
             .path()

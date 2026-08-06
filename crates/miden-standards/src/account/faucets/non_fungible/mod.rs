@@ -77,11 +77,11 @@ const STATUS_BURNED: u8 = 2;
 /// and reported as `NotIssued`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetStatus {
-    /// The commitment has never been issued by this faucet.
+    /// The token ID has never been issued by this faucet.
     NotIssued,
-    /// An NFT has been issued for the commitment and has not been burned.
+    /// An NFT has been issued for the token ID and has not been burned.
     Issued,
-    /// The commitment was issued and later burned; it is permanently consumed and can never be
+    /// The token ID was issued and later burned; it is permanently consumed and can never be
     /// issued again.
     Burned,
 }
@@ -154,11 +154,17 @@ procedure_root!(
 
 /// An [`AccountComponent`] implementing a non-fungible (NFT) faucet.
 ///
-/// The asset value is the off-chain commitment `hash(user_data, salt)`; the NFT's token ID is
-/// `(hash0, hash1)` - the asset class the protocol derives from those first two elements, which
-/// uniquely identifies each NFT within the faucet. Uniqueness is enforced on-chain by an
-/// asset-status registry keyed by `[hash0, hash1, 0, 0]`: a commitment can be issued at most once,
-/// and once burned it is permanently consumed.
+/// The asset value is an opaque word chosen by the caller. By convention the minter sets it to the
+/// off-chain commitment [`compute_asset_commitment`] produces, but the faucet validates neither
+/// that construction nor knowledge of a preimage - see that method's documentation.
+///
+/// The NFT's token ID is `(hash0, hash1)` - the asset class the protocol derives from the value's
+/// first two elements, which uniquely identifies each NFT within the faucet. The one property
+/// enforced on-chain is token ID uniqueness, via an asset-status registry keyed by
+/// `[hash0, hash1, 0, 0]`: a token ID can be issued at most once, and once burned it is permanently
+/// consumed. Which values may be issued is decided entirely by the active mint policy, which
+/// receives the full asset value; a permissive policy such as `allow_all` lets any caller claim any
+/// token ID.
 ///
 /// It re-exports the procedures from `miden::standards::faucets::non_fungible` plus the shared
 /// token metadata accessors. The procedures are:
@@ -169,6 +175,8 @@ procedure_root!(
 ///
 /// `mint_and_send` is gated by the active mint policy from the associated [`TokenPolicyManager`];
 /// `receive_and_burn` is gated by the active burn policy.
+///
+/// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
 #[derive(Debug, Clone)]
 pub struct NonFungibleFaucet {
     symbol: TokenSymbol,
@@ -305,19 +313,32 @@ impl NonFungibleFaucet {
         self.metadata.external_link()
     }
 
-    /// Computes the off-chain asset commitment `hash(user_data, salt)` used as the NFT asset
-    /// value.
+    /// Computes the off-chain asset commitment `hash(user_data, salt)` that the minter is expected
+    /// to use as the NFT asset value.
     ///
     /// This must be computed off-chain: computing it on-chain would leak the salt and make the
     /// underlying `user_data` invertible. The faucet never sees `user_data` or `salt` — only
     /// this commitment word.
+    ///
+    /// Using this helper is a convention, not an enforced property. `mint_and_send` accepts any
+    /// word: it cannot check that a value is a hash output, that a salt was used, or that the
+    /// minter knows a preimage. Consequently a minted asset value attests to nothing the faucet
+    /// verified. Integrators that rely on the value identifying specific off-chain data must
+    /// recompute the commitment from the `user_data` and `salt` they received and compare it to
+    /// the on-chain asset value themselves. Where issuance itself must be controlled - e.g. so a
+    /// published commitment cannot be claimed by a third party - install a restrictive mint policy
+    /// such as `owner_only` rather than `allow_all`; the policy hook receives the full asset value.
     pub fn compute_asset_commitment(user_data: &[u8], salt: Word) -> Word {
         let data_digest = Hasher::hash(user_data);
         Hasher::merge(&[data_digest, salt])
     }
 
-    /// Reads the issuance [`AssetStatus`] of the asset identified by `asset_commitment` (as
-    /// produced by [`compute_asset_commitment`]) from the faucet account's `storage`.
+    /// Reads the issuance [`AssetStatus`] of the token ID derived from `asset_commitment` (the
+    /// asset value, by convention produced by [`compute_asset_commitment`]) from the faucet
+    /// account's `storage`.
+    ///
+    /// The status is keyed by the token ID - elements 0 and 1 of the value - so two values that
+    /// differ only in elements 2 and 3 share a single status entry.
     ///
     /// # Errors
     ///
