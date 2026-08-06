@@ -1,9 +1,11 @@
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use alloy_sol_types::{SolValue, sol};
 use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_crypto::hash::keccak::Keccak256;
 use miden_protocol::Felt;
+use miden_standards::account::faucets::FungibleFaucet;
 
 // ================================================================================================
 // METADATA HASH
@@ -40,6 +42,18 @@ impl MetadataHash {
     pub fn from_token_info(name: &str, symbol: &str, decimals: u8) -> Self {
         let encoded = encode_token_metadata(name, symbol, decimals);
         Self::from_abi_encoded(&encoded)
+    }
+
+    /// Computes the metadata hash from a faucet's own token metadata.
+    ///
+    /// Preferred over [`Self::from_token_info`] when the faucet exists, since it derives the hash
+    /// registered on the bridge from the very values held in faucet storage: the two cannot drift.
+    pub fn from_fungible_faucet(faucet: &FungibleFaucet) -> Self {
+        Self::from_token_info(
+            faucet.token_name().as_str(),
+            &faucet.symbol().to_string(),
+            faucet.decimals(),
+        )
     }
 
     /// Returns the raw 32-byte array.
@@ -122,6 +136,25 @@ mod tests {
 
         let hash_from_info = MetadataHash::from_token_info("Test Token", "TEST", 18);
         assert_eq!(hash, hash_from_info, "from_abi_encoded and from_token_info must agree");
+    }
+
+    /// A faucet's own metadata yields the same hash as passing its name, symbol and decimals
+    /// individually. This is the invariant that lets the bridge recompute the registered hash
+    /// from faucet storage (see issue #2586).
+    #[test]
+    fn test_metadata_hash_from_fungible_faucet_matches_token_info() {
+        let faucet = crate::agglayer_faucet_metadata(
+            "Test Token",
+            "TEST",
+            12,
+            Felt::from(1000u32),
+            Felt::ZERO,
+        );
+
+        assert_eq!(
+            MetadataHash::from_fungible_faucet(&faucet),
+            MetadataHash::from_token_info("Test Token", "TEST", 12),
+        );
     }
 
     fn hex_to_vec(hex: &str) -> std::vec::Vec<u8> {

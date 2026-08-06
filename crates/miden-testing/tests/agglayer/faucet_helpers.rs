@@ -1,11 +1,13 @@
 extern crate alloc;
 
-use miden_agglayer::AggLayerFaucet;
+use miden_agglayer::MetadataHash;
 use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
+use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::faucets::FungibleFaucet;
 use miden_testing::{Auth, MockChain};
 
 use super::test_utils::{
@@ -14,8 +16,13 @@ use super::test_utils::{
     create_existing_bridge_account_with_roles,
 };
 
+/// An agglayer faucet is a standard [`FungibleFaucet`] owned by the bridge.
+///
+/// This pins the two properties the bridge depends on: the faucet exposes the standard fungible
+/// faucet interface with its token metadata intact - including the real token *name*, which the
+/// AggLayer metadata hash is computed over - and its `Ownable2Step` owner is the bridge account.
 #[test]
-fn test_faucet_helper_methods() -> anyhow::Result<()> {
+fn agglayer_faucet_is_a_bridge_owned_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
@@ -40,6 +47,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
     );
     builder.add_account(bridge_account.clone())?;
 
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -47,6 +55,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
 
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        token_name,
         token_symbol,
         decimals,
         max_supply,
@@ -55,7 +64,28 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
         bridge_account.id(),
     );
 
-    assert_eq!(AggLayerFaucet::owner_account_id(&faucet)?, bridge_account.id());
+    // The account carries the standard fungible faucet interface, so `try_from` (which checks the
+    // procedure roots before decoding storage) succeeds.
+    let metadata = FungibleFaucet::try_from(&faucet)?;
+
+    // Every field round-trips, most importantly the token name: it used to be derived from the
+    // symbol, which made the on-chain metadata hash unverifiable (issue #2585).
+    assert_eq!(metadata.token_name().as_str(), token_name);
+    assert_eq!(metadata.symbol().to_string(), token_symbol);
+    assert_eq!(metadata.decimals(), decimals);
+    assert_eq!(metadata.max_supply(), AssetAmount::try_from(max_supply)?);
+    assert_eq!(metadata.token_supply(), AssetAmount::try_from(token_supply)?);
+
+    // The metadata hash the bridge registers is reproducible from faucet storage alone. This is
+    // the invariant issue #2586 moves on-chain.
+    assert_eq!(
+        MetadataHash::from_fungible_faucet(&metadata),
+        MetadataHash::from_token_info(token_name, token_symbol, decimals),
+    );
+
+    // Mint and burn authorization is bound to the bridge through `Ownable2Step`.
+    let ownership = Ownable2Step::try_from_storage(faucet.storage())?;
+    assert_eq!(ownership.owner(), Some(bridge_account.id()));
 
     Ok(())
 }

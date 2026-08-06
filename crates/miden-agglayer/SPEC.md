@@ -21,7 +21,7 @@ implementation are called out inline with `TODO (Future)` markers.
 |--------|-------------|--------------|
 | **User** | End-user Miden account that holds assets and initiates bridge-out deposits, or receives assets from a bridge-in claim. | Any account with `basic_wallet` component |
 | **AggLayer Bridge** | Onchain bridge account that manages the Local Exit Tree (LET), faucet registry, and GER state. Consumes B2AGG, CONFIG, and UPDATE_GER notes. | Network-mode account with a single `bridge` component |
-| **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
+| **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, owned by the bridge |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Creates config notes |
 | **Bridge Admin (`BRIDGE_ADMIN`)** (offchain) | Holds the bridge account's built-in `ADMIN` role. Manages bridge roles, restores a paused bridge, and controls allowlists and fee-policy selection. | Creates RBAC_CONFIG, PAUSE_CONFIG, and NETWORK_ACCOUNT_CONFIG notes |
@@ -480,19 +480,28 @@ holders are seeded into the access-control components at account creation time.
 
 ### 3.2 Faucet Account Component
 
-The faucet account has the `agglayer_faucet` component (`components/faucet.masm`),
-which is a thin wrapper, on top of `Ownable2Step` + the RBAC access-control stack
-(`RoleBasedAccessControl` + `Authority::RbacControlled`), that re-exports the
-standard Miden fungible-faucet procedures:
+The faucet account carries no AggLayer-specific component. It is the standard `FungibleFaucet`
+component (`miden-standards/asm/components/faucets/fungible_faucet/fungible_faucet.masm`),
+installed on top of `Ownable2Step` + the RBAC access-control stack (`RoleBasedAccessControl` +
+`Authority::RbacControlled`), so the AggLayer faucet is an ordinary network fungible faucet whose
+owner happens to be the bridge.
 
-- `mint_and_send` (from `miden::standards::faucets::fungible::mint_and_send`)
-- `receive_and_burn` (from `miden::standards::faucets::fungible::receive_and_burn`)
-- `has_procedure` (from the `CodeInspection` component, so the unified MINT/BURN note scripts
-  can reflectively detect the faucet kind)
+The procedures the bridge protocol relies on are:
 
-The underlying library code lives in `asm/agglayer/faucet/mod.masm`.
+- `mint_and_send` - bridge-in, gated by the active mint policy (`owner_only`)
+- `receive_and_burn` - bridge-out, gated by the active burn policy
+- `has_procedure` - so the unified MINT/BURN note scripts can reflectively detect the faucet kind
 
-#### `agglayer_faucet::mint_and_send`
+The component additionally exposes the standard token-config and metadata accessors -
+`get_name`, `get_token_symbol`, `get_decimals`, `get_token_supply`, `get_max_supply`,
+`get_token_config`, `is_max_supply_mutable`, `get_mutability_config`, the `is_*_mutable` views,
+and the `set_max_supply` / `set_description` / `set_logo_uri` / `set_external_link` setters. The
+getters are what allow the bridge to recompute `keccak256(abi.encode(name, symbol, decimals))`
+from faucet storage via FPI. The setters are authority-gated (so they fall to `FAUCET_ADMIN`) and,
+with the faucet's note allowlist limited to MINT and BURN, unreachable until the admin explicitly
+allowlists a note that calls them.
+
+#### `fungible::mint_and_send`
 
 | | |
 |-|-|
@@ -502,7 +511,7 @@ The underlying library code lives in `asm/agglayer/faucet/mod.masm`.
 | **Context** | Consuming a `MINT` note on the faucet account |
 | **Panics** | Faucet owner verification fails; minting exceeds supply; the asset stored in the MINT note does not belong to the consuming faucet |
 
-Re-export of `miden::standards::faucets::fungible::mint_and_send`. Mints the asset
+Mints the asset
 identified by `ASSET_ID` / `ASSET_VALUE` and creates an output note with the given
 recipient. Requires the faucet's owner (the bridge account) to be the creator of this note
 (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's
@@ -511,9 +520,9 @@ recipient. Requires the faucet's owner (the bridge account) to be the creator of
 for the active faucet and panics if the stored `ASSET_ID` does not belong to that faucet,
 which binds the MINT note to its resolved faucet (see §4.10).
 
-#### `agglayer_faucet::receive_and_burn`
+#### `fungible::receive_and_burn`
 
-This is a re-export of `miden::standards::faucets::fungible::receive_and_burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
+Burns the fungible asset from the active note, decreasing the faucet's token supply.
 
 | | |
 |-|-|
@@ -525,9 +534,20 @@ This is a re-export of `miden::standards::faucets::fungible::receive_and_burn`. 
 
 #### Faucet Account Storage
 
+The faucet contributes the full standard `FungibleFaucet` slot set (25 value slots):
+
 | Slot name | Slot type | Value encoding | Purpose |
 |-----------|-----------|----------------|---------|
-| Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
+| `token_config` | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard fungible faucet token configuration |
+| `token_name_0` .. `token_name_1` | Value | Fixed-width string chunks | Token name, up to 32 UTF-8 bytes. Part of the AggLayer metadata hash preimage |
+| `mutability_config` | Value | Boolean flags | Whether description / logo URI / external link / max supply may be updated. All `false` for AggLayer faucets |
+| `token_description_0` .. `_6` | Value | Fixed-width string chunks | Optional description; empty for AggLayer faucets |
+| `logo_uri_0` .. `_6` | Value | Fixed-width string chunks | Optional logo URI; empty for AggLayer faucets |
+| `external_link_0` .. `_6` | Value | Fixed-width string chunks | Optional external link; empty for AggLayer faucets |
+
+Conversion metadata (origin token address, origin network, scale, metadata hash) is **not** stored
+here. It lives on the bridge in `faucet_metadata_map`, written at registration time (see
+[Section 7](#7-faucet-registry)).
 
 **Companion component storage slots:**
 
@@ -1420,9 +1440,10 @@ be referenced by a `B2AGG` (bridge-out) or `CLAIM` (bridge-in) note. Registratio
 same flow for both kinds; the `is_native` flag in the `CONFIG_AGG_BRIDGE` note storage tells
 the bridge which dispatch path to take for each future bridge operation against that faucet.
 
-The `AggLayerFaucet` Rust struct (`src/faucet.rs`) holds only
-token metadata — symbol, decimals, max supply, and token supply
-(TODO Missing token name ([#2585](https://github.com/0xMiden/protocol/issues/2585))).
+The faucet holds only token metadata — name, symbol, decimals, max supply, and token supply.
+Because the name is stored alongside the symbol and decimals, the full metadata hash preimage
+`abi.encode(name, symbol, decimals)` is recoverable from faucet storage, which is what makes
+registration-time verification possible.
 Conversion metadata (origin address, origin network, scale, and metadata hash) is
 *not* stored on the faucet; it is carried by the `CONFIG_AGG_BRIDGE` note at registration
 time and written directly into the bridge's `faucet_metadata_map`. The metadata hash is

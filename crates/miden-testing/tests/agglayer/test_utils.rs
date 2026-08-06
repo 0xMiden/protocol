@@ -11,7 +11,13 @@ pub use miden_agglayer::testing::{
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
 };
-use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles, agglayer_package};
+use miden_agglayer::{
+    AggLayerBridge,
+    BridgeRoles,
+    agglayer_faucet_account_builder,
+    agglayer_faucet_allowed_notes,
+    agglayer_package,
+};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::Keccak256;
 use miden_processor::advice::AdviceInputs;
@@ -172,6 +178,7 @@ pub fn create_existing_priced_bridge(
 
 pub fn priced_faucet_builder(
     seed: Word,
+    token_name: &str,
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
@@ -180,10 +187,11 @@ pub fn priced_faucet_builder(
     verification_base_fee: u32,
 ) -> anyhow::Result<AccountBuilder> {
     let pricer = network_note_pricer(verification_base_fee);
-    let fee_policy = pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?;
+    let fee_policy = pricer.basic_constant_fee_policy(agglayer_faucet_allowed_notes())?;
     let faucet_admin = bridge_admin_account_id();
-    Ok(AggLayerFaucet::account_builder(
+    Ok(agglayer_faucet_account_builder(
         seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,

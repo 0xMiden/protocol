@@ -28,6 +28,7 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SEND
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::SponsorshipPolicy;
+use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
@@ -498,6 +499,7 @@ pub async fn tx_consume_claim_note(
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -509,6 +511,7 @@ pub async fn tx_consume_claim_note(
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
@@ -706,6 +709,7 @@ pub async fn tx_consume_b2agg_note(
 
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "AggLayer Token",
         "AGG",
         8,
         FungibleAsset::MAX_AMOUNT.into(),
@@ -716,7 +720,8 @@ pub async fn tx_consume_b2agg_note(
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
-    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
+    // Derive the registered hash from the faucet's own stored metadata so the two cannot drift.
+    let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet.id(),
@@ -791,6 +796,7 @@ fn setup_faucet_registration(
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "AggLayer Token",
         "AGG",
         8,
         FungibleAsset::MAX_AMOUNT.into(),

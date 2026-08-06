@@ -5,7 +5,7 @@
 //! 1. The account rejects any transaction that executes a tx script.
 //! 2. The account rejects any input note whose script root is not in its
 //!    [`allowed_notes`](miden_agglayer::AggLayerBridge::allowed_notes) /
-//!    [`allowed_notes`](miden_agglayer::AggLayerFaucet::allowed_notes) set.
+//!    [`agglayer_faucet_allowed_notes`](miden_agglayer::agglayer_faucet_allowed_notes) set.
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
@@ -165,6 +165,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
 
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "Test Token",
         "TEST",
         8,
         Felt::new(1_000_000).unwrap(),
@@ -207,6 +208,7 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
 
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "Test Token",
         "TEST",
         8,
         Felt::new(1_000_000).unwrap(),
