@@ -608,6 +608,88 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     Ok(())
 }
 
+/// Tests that callbacks cannot redistribute value between output notes while preserving the
+/// transaction-wide total.
+///
+/// The callback below attempts to swap additions of 200 and 100 units by leaving replacement
+/// values in its return frame. The kernel must ignore that frame and continue with the original
+/// values it retained before the callback.
+#[tokio::test]
+async fn test_callback_cannot_redistribute_value_between_output_notes() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let note_callback_masm = r#"
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+    #! Outputs: [pad(16)]
+    @account_procedure
+    pub proc on_before_asset_added_to_note
+        # Attempt to return a replacement value by swapping amounts 200 and 100.
+        dropw
+        neg add.300
+        # => [WOULD_BE_REPLACEMENT_VALUE, note_idx, pad(7)]
+    end
+    "#;
+
+    let faucet = add_faucet_with_callbacks(&mut builder, None, Some(note_callback_masm))?;
+    let input_asset = FungibleAsset::new(faucet.id(), 300)?;
+    let first_moved_asset = FungibleAsset::new(faucet.id(), 200)?;
+    let second_moved_asset = FungibleAsset::new(faucet.id(), 100)?;
+    let input_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[input_asset.into()],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        r#"
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            push.{first_asset_value}
+            push.{asset_id}
+            exec.util::create_default_note_with_moved_asset
+
+            push.{second_asset_value}
+            push.{asset_id}
+            exec.util::create_default_note_with_moved_asset
+        end
+        "#,
+        first_asset_value = first_moved_asset.to_value_word(),
+        second_asset_value = second_moved_asset.to_value_word(),
+        asset_id = first_moved_asset.to_id_word(),
+    ))?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let executed = mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_note(input_note.id())
+        .tx_script(tx_script)
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    let output_notes = executed.output_notes();
+    assert_eq!(output_notes.num_notes(), 2);
+    assert_eq!(
+        output_notes.get_note(0).assets().iter().next(),
+        Some(&Asset::Fungible(first_moved_asset))
+    );
+    assert_eq!(
+        output_notes.get_note(1).assets().iter().next(),
+        Some(&Asset::Fungible(second_moved_asset))
+    );
+
+    Ok(())
+}
+
 /// Tests that consuming a callbacks-enabled asset succeeds when the issuing faucet is itself the
 /// target of the callback.
 ///
