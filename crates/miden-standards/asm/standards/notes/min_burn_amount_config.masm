@@ -1,0 +1,84 @@
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+use miden::standards::faucets::policies::burn::min_burn_amount
+
+# CONSTANTS
+# =================================================================================================
+
+# Memory base at which the note storage is written by `active_note::get_storage`.
+const STORAGE_PTR = 0
+
+# Memory address of the new minimum burn amount in the MinBurnAmountConfig note storage.
+const MIN_BURN_AMOUNT_PTR = STORAGE_PTR
+
+# Expected note storage item count: the new minimum burn amount.
+const NUM_STORAGE_ITEMS = 1
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "min burn amount config note attachment target account does not match the consuming account"
+
+const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn amount config note storage item count is not the expected count"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! MinBurnAmountConfig script: updates the minimum burn amount of the consuming faucet's
+#! `MinBurnAmount` burn policy by calling its `set_min_burn_amount` procedure.
+#!
+#! The new threshold is read from the note storage (fixed at note creation, so authorization is
+#! bound to the note sender):
+#! - `[new_min_burn_amount]`.
+#!
+#! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
+#! script asserts the consuming account matches that target before doing anything else, so the note
+#! cannot be consumed by any other account that happens to accept its sender.
+#!
+#! Authorization is enforced by the called `set_min_burn_amount` procedure via the account-wide
+#! `Authority` component, which resolves the note sender against the configured owner or role; this
+#! script only forwards the stored threshold to it.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::faucets::policies::burn::min_burn_amount::set_min_burn_amount` (the
+#!   `MinBurnAmount` burn policy component), backed by an `Authority` companion component.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items is not NUM_STORAGE_ITEMS.
+#! - the note sender is not authorized (per the `Authority` component).
+@note_script
+pub proc main
+    # drop the note script args
+    dropw
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items, pad(16)]
+
+    eq.NUM_STORAGE_ITEMS
+    assert.err=ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [pad(16)]
+
+    # build the `set_min_burn_amount` input window [new_min_burn_amount, pad(15)]
+    padw padw padw push.0.0.0
+    mem_load.MIN_BURN_AMOUNT_PTR
+    # => [new_min_burn_amount, pad(15), pad(16)]
+
+    call.min_burn_amount::set_min_burn_amount
+    # => [pad(16), pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => [pad(16)]
+end
