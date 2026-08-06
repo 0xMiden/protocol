@@ -67,37 +67,14 @@ fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> 
 
 #[test]
 fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Result<()> {
-    let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
-    let admin = bridge_admin_account_id();
-
-    let bridge_roots = AggLayerBridge::fee_policy_notes();
-    let bridge_fee_manager = pricer.agglayer_bridge_fee_policy_manager()?;
-    let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;
-    let bridge = AggLayerBridge::account_builder(
-        Word::default(),
-        admin,
-        roles,
-        MIDEN_NETWORK_ID,
-        bridge_fee_manager,
+    assert_priced_account(
+        &build_managed_account(ManagedAccount::Bridge)?,
+        AggLayerBridge::fee_policy_notes(),
+    )?;
+    assert_priced_account(
+        &build_managed_account(ManagedAccount::Faucet)?,
+        AggLayerFaucet::fee_policy_notes(),
     )
-    .build_existing();
-    assert_priced_account(&bridge, bridge_roots)?;
-
-    let faucet_roots = AggLayerFaucet::fee_policy_notes();
-    let faucet_fee_manager = pricer.agglayer_faucet_fee_policy_manager()?;
-    let faucet = AggLayerFaucet::account_builder(
-        Word::from([1u32, 0, 0, 0]),
-        "AGG",
-        6,
-        1_000u32.into(),
-        admin,
-        bridge.id(),
-        faucet_fee_manager,
-    )
-    .build_existing();
-    assert_priced_account(&faucet, faucet_roots)?;
-
-    Ok(())
 }
 
 /// Pins the faucet's input-note allowlist. The allowlist decides which notes can drive an account
@@ -310,7 +287,8 @@ async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
         AggLayerBridge::pause_note(PauseConfig::Pause, admin, bridge.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(pause.clone()));
     let pause_sponsorship =
-        add_fee_sponsorship(&mut builder, &pause, bridge.id(), VERIFICATION_BASE_FEE)?;
+        add_fee_sponsorship(&mut builder, &pause, bridge.id(), VERIFICATION_BASE_FEE)?
+            .expect("a non-zero base fee should produce a sponsorship");
     let reprice = build_repricing_note(admin, bridge.id(), REPRICED_FEE, 4)?;
     builder.add_output_note(RawOutputNote::Full(reprice.clone()));
     let mut mock_chain = builder.build()?;

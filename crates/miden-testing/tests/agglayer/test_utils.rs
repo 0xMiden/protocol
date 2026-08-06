@@ -35,7 +35,7 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::Note;
+use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
@@ -111,13 +111,29 @@ pub fn network_note_pricer(verification_base_fee: u32) -> NetworkNotePricer {
         .build()
 }
 
+/// Returns the first output note of `executed` created from `script_root`.
+pub fn find_output_note(
+    executed: &ExecutedTransaction,
+    script_root: NoteScriptRoot,
+) -> Option<&RawOutputNote> {
+    executed.output_notes().iter().find(|note| {
+        note.recipient().map(|recipient| recipient.script().root()) == Some(script_root)
+    })
+}
+
 /// Adds the sponsorship paired with `feature_note`, using the production price of its script.
+///
+/// Returns `None` on a chain with a zero verification base fee, where nothing needs sponsoring.
 pub fn add_fee_sponsorship(
     builder: &mut MockChainBuilder,
     feature_note: &Note,
     target: AccountId,
     verification_base_fee: u32,
-) -> anyhow::Result<Note> {
+) -> anyhow::Result<Option<Note>> {
+    if verification_base_fee == 0 {
+        return Ok(None);
+    }
+
     let fee = network_note_pricer(verification_base_fee).price(feature_note.script().root())?;
     let sponsorship: Note = FeeSponsorshipNote::builder()
         .sender(feature_note.metadata().sender())
@@ -128,17 +144,14 @@ pub fn add_fee_sponsorship(
         .build()?
         .into();
     builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
-    Ok(sponsorship)
+    Ok(Some(sponsorship))
 }
 
 /// Asserts that a fee-enabled transaction charged a non-zero fee and emitted its TX_FEE note.
 pub fn assert_transaction_paid_fee(executed: &ExecutedTransaction) {
     assert!(executed.compute_fee().as_u64() > 0, "transaction fee should be non-zero");
     assert!(
-        executed.output_notes().iter().any(|note| {
-            note.recipient().map(|recipient| recipient.script().root())
-                == Some(StandardNote::TX_FEE.script_root())
-        }),
+        find_output_note(executed, StandardNote::TX_FEE.script_root()).is_some(),
         "fee-enabled transaction should emit a TX_FEE note"
     );
 }
