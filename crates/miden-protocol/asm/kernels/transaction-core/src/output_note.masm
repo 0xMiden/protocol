@@ -259,13 +259,13 @@ pub proc add_asset
     # invoke the callback
     exec.callbacks::on_before_asset_added_to_note
     swapw
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     movup.8 exec.memory::get_output_note_ptr dup
-    # => [note_ptr, note_ptr, ASSET_ID, PROCESSED_ASSET_VALUE]
+    # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]
 
     movdn.9 movdn.9
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, note_ptr, note_ptr]
+    # => [ASSET_ID, ASSET_VALUE, note_ptr, note_ptr]
 
     # add the asset to the note
     exec.add_asset_raw

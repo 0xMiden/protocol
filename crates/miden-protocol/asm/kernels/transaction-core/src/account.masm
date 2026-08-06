@@ -649,19 +649,19 @@ pub proc add_asset_to_vault
 
     exec.callbacks::on_before_asset_added_to_account
     swapw
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
     # duplicate the asset ID for the later event and delta update
     swapw dupw.1
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, ASSET_ID]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
 
     # push the account vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.8
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
+    # => [ASSET_ID, ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
 
     # emit event to signal that an asset is going to be added to the account vault
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
+    # => [ASSET_ID, ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
 
     # add the asset to the account vault
     exec.asset_vault::add_asset
