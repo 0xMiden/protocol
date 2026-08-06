@@ -3,6 +3,9 @@
 # Basic blocklist transfer policy: rejects transfers whose native account is blocked on the
 # issuing faucet. Delegates the per-account state to the sibling `blocklist` primitive
 # (storage + helpers).
+#
+# The issuing faucet is exempt from its own blocklist, so the list only ever governs third-party
+# transfers.
 
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
@@ -24,17 +27,24 @@ use miden::standards::faucets::policies::transfer::blocklist
 #!   send (note) callback. This policy does not inspect it; it passes through unchanged.
 #!
 #! Panics if:
-#! - the native account is blocked on the issuing faucet.
+#! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
 #!
 #! Invocation: call
 @account_procedure
 pub proc check_policy
-    exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    exec.native_account::is_issuer_of
+    # => [is_issuer, ASSET_VALUE, custom_data, pad(7)]
 
-    exec.blocklist::assert_not_blocked
-    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # the issuing faucet is exempt.
+    not
+    # => [should_check_blocklist, ASSET_VALUE, custom_data, pad(7)]
 
-    dropw
+    if.true
+        exec.native_account::get_id
+        # => [account_id_suffix, account_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
+        exec.blocklist::assert_not_blocked
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    end
     # => [ASSET_VALUE, pad(12)]
 end

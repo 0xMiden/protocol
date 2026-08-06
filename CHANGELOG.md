@@ -2,9 +2,17 @@
 
 ## TBD
 
+### Features
+
+- Added the `miden::protocol::native_account::is_issuer_of` procedure ([#3496](https://github.com/0xMiden/protocol/issues/3496)).
+
 ### Changes
 
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
+
+### Fixes
+
+- Added a check to exempt the issuing faucet from its own `BasicBlocklist` / `BasicAllowlist` transfer policy ([#3496](https://github.com/0xMiden/protocol/issues/3496)).
 
 ## v0.16.0 (2026-08-04)
 
