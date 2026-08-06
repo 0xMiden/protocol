@@ -2,10 +2,6 @@
 
 ## TBD
 
-### Features
-
-- Added the `MinBurnAmountConfigNote` standard note, which updates the threshold of a consuming faucet's `MinBurnAmount` burn policy via its authority-gated `set_min_burn_amount` procedure.
-
 ### Changes
 
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
@@ -29,6 +25,7 @@
 - Added the standardized `ConstantFeePolicyConfigNote`, which schedules a fee for a note script root by calling a consuming network account's `ConstantFeeManager::set_note_fee`, and registered it as `StandardNote::CONSTANT_FEE_POLICY_CONFIG` ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 - [BREAKING] Added an emergency pause to the AggLayer bridge via the standards `Pausable`/`PausableManager` components: all bridge entry points except `remove_ger` abort while paused, and the `ADMIN`-gated standards `PAUSE_CONFIG` note toggles the state; the bridge code commitment and note allowlist change ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
+- Added the `MinBurnAmountConfigNote` standard note ([#3511](https://github.com/0xMiden/protocol/pull/3511)).
 
 ### Changes
 
