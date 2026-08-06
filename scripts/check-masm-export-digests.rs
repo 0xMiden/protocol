@@ -72,9 +72,10 @@ fn compare_roots(previous: Roots, current: Roots) -> Result<(), String> {
 mod current {
     use miden_agglayer_current::{AggLayerBridge, agglayer_package, bridge, faucet};
     use miden_protocol_current::account::AccountComponentCode;
+    use miden_protocol_current::account::component::AUTH_SCRIPT_ATTRIBUTE;
     use miden_protocol_current::transaction::TransactionKernel;
     use miden_protocol_current::vm::Package;
-    use miden_protocol_current::{Hasher, ProtocolLib};
+    use miden_protocol_current::{Felt, Hasher, ProtocolLib};
     use miden_standards_current::StandardsLib;
     use miden_standards_current::account::access::{
         Authority,
@@ -93,10 +94,7 @@ mod current {
     };
     use miden_standards_current::account::faucets::{FungibleFaucet, NonFungibleFaucet};
     use miden_standards_current::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
-    use miden_standards_current::account::inspection::{
-        AccountSchemaCommitment,
-        CodeInspection,
-    };
+    use miden_standards_current::account::inspection::{AccountSchemaCommitment, CodeInspection};
     use miden_standards_current::account::policies::{
         AllowlistManager,
         BasicAllowlist,
@@ -219,8 +217,12 @@ mod current {
         collect_package(code.as_package(), roots);
 
         let mut elements = Vec::new();
-        for root in code.procedure_roots() {
+        // Both iterators walk the component's exports, so they are in the same order.
+        for (root, export) in code.procedure_roots().zip(code.exports()) {
             elements.extend_from_slice(root.as_elements());
+            // Add whether the export is an auth script since changing that would result in a
+            // different account code commitment even if all individual roots are the same.
+            elements.push(Felt::from(export.attributes.has(AUTH_SCRIPT_ATTRIBUTE) as u8));
         }
         let commitment = Hasher::hash_elements(&elements).to_hex();
 
@@ -233,9 +235,10 @@ mod current {
 mod previous {
     use miden_agglayer_previous::{AggLayerBridge, agglayer_package, bridge, faucet};
     use miden_protocol_previous::account::AccountComponentCode;
+    use miden_protocol_previous::account::component::AUTH_SCRIPT_ATTRIBUTE;
     use miden_protocol_previous::transaction::TransactionKernel;
     use miden_protocol_previous::vm::Package;
-    use miden_protocol_previous::{Hasher, ProtocolLib};
+    use miden_protocol_previous::{Felt, Hasher, ProtocolLib};
     use miden_standards_previous::StandardsLib;
     use miden_standards_previous::account::access::{
         Authority,
@@ -254,10 +257,7 @@ mod previous {
     };
     use miden_standards_previous::account::faucets::{FungibleFaucet, NonFungibleFaucet};
     use miden_standards_previous::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
-    use miden_standards_previous::account::inspection::{
-        AccountSchemaCommitment,
-        CodeInspection,
-    };
+    use miden_standards_previous::account::inspection::{AccountSchemaCommitment, CodeInspection};
     use miden_standards_previous::account::policies::{
         AllowlistManager,
         BasicAllowlist,
@@ -380,8 +380,12 @@ mod previous {
         collect_package(code.as_package(), roots);
 
         let mut elements = Vec::new();
-        for root in code.procedure_roots() {
+        // Both iterators walk the component's exports, so they are in the same order.
+        for (root, export) in code.procedure_roots().zip(code.exports()) {
             elements.extend_from_slice(root.as_elements());
+            // Add whether the export is an auth script since changing that would result in a
+            // different account code commitment even if all individual roots are the same.
+            elements.push(Felt::from(export.attributes.has(AUTH_SCRIPT_ATTRIBUTE) as u8));
         }
         let commitment = Hasher::hash_elements(&elements).to_hex();
 
