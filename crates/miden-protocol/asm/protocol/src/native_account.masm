@@ -1,8 +1,6 @@
 use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::core::word
-use miden::protocol_utils::account_id
-use miden::protocol_utils::asset
 use {AccountId, AccountProcedureRoot, Asset, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId}
     from miden::protocol::types
 
@@ -40,27 +38,6 @@ pub proc get_id() -> AccountId
     # clean the stack
     swapdw dropw dropw swapw dropw movdn.3 movdn.3 drop drop
     # => [account_id_suffix, account_id_prefix]
-end
-
-#! Returns whether the native account of the transaction is the faucet that issued the given asset.
-#!
-#! Inputs:  [ASSET_ID]
-#! Outputs: [is_issuer]
-#!
-#! Where:
-#! - ASSET_ID is the asset ID whose issuing faucet is compared against the native account.
-#! - is_issuer is 1 if the native account issued the asset, 0 otherwise.
-#!
-#! Invocation: exec
-pub proc is_issuer_of(asset_id: AssetId) -> Bool
-    exec.asset::id_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix]
-
-    exec.get_id
-    # => [account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix]
-
-    exec.account_id::eq
-    # => [is_issuer]
 end
 
 #! Increments the nonce of the native account by one and returns the new nonce.

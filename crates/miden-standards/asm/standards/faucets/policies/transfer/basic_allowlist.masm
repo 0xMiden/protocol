@@ -7,6 +7,8 @@
 # The issuing faucet is exempt from its own allowlist, so the list only ever governs third-party
 # transfers.
 
+use miden::protocol::account_id
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::allowlist
 
@@ -34,18 +36,31 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! Invocation: call
 @account_procedure
 pub proc check_policy
-    exec.native_account::is_issuer_of
-    # => [is_issuer, ASSET_VALUE, custom_data, pad(7)]
+    exec.asset::id_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 
-    # the issuing faucet is exempt.
+    exec.native_account::get_id
+    # => [account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE,
+    #     custom_data, pad(7)]
+
+    dupw exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix,
+    #     ASSET_VALUE, custom_data, pad(7)]
+
+    # the issuing faucet is exempt
     not
-    # => [should_check_allowlist, ASSET_VALUE, custom_data, pad(7)]
+    # => [should_check_allowlist, account_id_suffix, account_id_prefix, faucet_id_suffix,
+    #     faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 
     if.true
-        exec.native_account::get_id
+        # drop the faucet ID, keeping the native account ID for the allowlist lookup
+        movup.3 drop movup.2 drop
         # => [account_id_suffix, account_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 
         exec.allowlist::assert_allowed
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    else
+        dropw
         # => [ASSET_VALUE, custom_data, pad(7)]
     end
     # => [ASSET_VALUE, pad(12)]
