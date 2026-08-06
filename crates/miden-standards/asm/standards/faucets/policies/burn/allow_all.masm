@@ -5,12 +5,15 @@
 
 #! Burn policy that accepts every burn request.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE]
-#! Outputs: []
-#! Invocation: dynexec
-# TODO(call invocation)
+#! Invoked as the active burn policy via `TokenPolicyManager`, which applies the account-wide
+#! pause check and restores the asset for its caller once this predicate returns.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
 @account_procedure
 pub proc check_policy
     dropw dropw
-    # => []
+    # => [pad(16)]
 end

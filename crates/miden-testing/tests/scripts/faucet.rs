@@ -3,11 +3,15 @@ extern crate alloc;
 use alloc::sync::Arc;
 use std::collections::BTreeSet;
 
+use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
+use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountComponent,
     AccountId,
     AccountProcedureRoot,
     AccountType,
@@ -339,6 +343,70 @@ fn build_existing_faucet_with_reserved_only_transfer_policy(
         .with_component(Authority::OwnerControlled)
         .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a burn policy component named `name` whose `check_policy` body is `body`, so tests can
+/// plug arbitrary (including misbehaving) policy code into the burn dispatch path. `name` appears
+/// in the procedure's MAST path, so callers should name the policy after what its body does.
+fn custom_burn_policy(name: &str, body: &str) -> anyhow::Result<BurnPolicy> {
+    let masm_source = format!(
+        r#"
+        #! Test-only burn policy.
+        #!
+        #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+        #! Outputs: [pad(16)]
+        #!
+        #! Invocation: call
+        @account_procedure
+        pub proc check_policy
+            {body}
+        end
+        "#
+    );
+
+    let code = CodeBuilder::default().compile_component_code(name, &masm_source)?;
+    let root = code
+        .get_procedure_root_by_path(format!("{name}::check_policy").as_str())
+        .expect("custom burn policy should export check_policy");
+    let component = AccountComponent::new(code, vec![], AccountComponentMetadata::mock(name))?;
+
+    Ok(BurnPolicy::custom(root, [component])?)
+}
+
+/// Builds a network fungible faucet with the given active burn policy.
+fn build_network_faucet_with_burn_policy(
+    builder: &mut MockChainBuilder,
+    token_symbol: &str,
+    max_supply: u64,
+    owner: AccountId,
+    token_supply: u64,
+    burn_policy: BurnPolicy,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new(token_symbol)?)
+        .symbol(TokenSymbol::new(token_symbol)?)
+        .decimals(10)
+        .max_supply(AssetAmount::new(max_supply)?)
+        .token_supply(AssetAmount::new(token_supply)?)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(burn_policy)
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
+        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused());
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
@@ -2045,6 +2113,109 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     assert_eq!(
         final_token_supply,
         AssetAmount::new(initial_token_supply.as_u64() - burn_amount).unwrap()
+    );
+
+    Ok(())
+}
+
+/// The burn policy is a predicate: whatever it leaves on the stack is discarded and the faucet
+/// burns exactly the asset the caller supplied.
+#[tokio::test]
+async fn burn_policy_cannot_substitute_the_burnt_asset() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([7; 32]);
+
+    // the policy corrupts the top element of ASSET_ID, leaving the stack depth untouched
+    let policy = custom_burn_policy("test::faucets::policies::burn::asset_mutating", "add.1")?;
+    let mut faucet = build_network_faucet_with_burn_policy(
+        &mut builder,
+        "SUB",
+        200,
+        owner_account_id,
+        100,
+        policy,
+    )?;
+
+    let burn_amount = 40u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let mut rng = RandomCoin::new([Felt::from(701u32); 4].into());
+    let burn_note: Note = BurnNote::builder()
+        .sender(owner_account_id)
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
+
+    let executed_transaction = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    faucet.apply_patch(executed_transaction.account_patch())?;
+    let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
+    assert_eq!(
+        final_token_supply,
+        AssetAmount::new(initial_token_supply.as_u64() - burn_amount).unwrap()
+    );
+
+    Ok(())
+}
+
+/// Burn policies are dispatched with `dyncall`, so they must honor the `call` ABI. A policy that
+/// returns at the wrong operand stack depth aborts the transaction instead of silently shifting
+/// the faucet's frame.
+#[tokio::test]
+async fn burn_policy_violating_call_abi_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([8; 32]);
+
+    // the policy leaves an extra element on the stack, so it returns at depth 17
+    let policy = custom_burn_policy("test::faucets::policies::burn::unbalanced_stack", "push.42")?;
+    let faucet = build_network_faucet_with_burn_policy(
+        &mut builder,
+        "ABI",
+        200,
+        owner_account_id,
+        100,
+        policy,
+    )?;
+
+    let fungible_asset = FungibleAsset::new(faucet.id(), 40).unwrap();
+    let mut rng = RandomCoin::new([Felt::from(801u32); 4].into());
+    let burn_note: Note = BurnNote::builder()
+        .sender(owner_account_id)
+        .asset(fungible_asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(burn_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::InvalidStackDepthOnReturn { .. },
+            ..
+        }
     );
 
     Ok(())

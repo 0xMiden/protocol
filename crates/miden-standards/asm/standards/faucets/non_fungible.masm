@@ -201,7 +201,6 @@ pub proc mint_and_send
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # assert the policy did not modify the asset value: for an NFT the value must remain exactly
-    # the word the caller supplied, so a policy that mutates it is rejected
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ORIG_ASSET_VALUE, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
@@ -282,36 +281,37 @@ pub proc receive_and_burn
     # validate the asset to burn is well-formed before processing it
     # note that the asset's origin is validated by the kernel
     exec.non_fungible_asset::validate
-    # => [ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
-    # => [ASSET_ID, ASSET_VALUE, pad(16)]
+    # Run the active burn policy over the asset.
+    exec.policy_manager::execute_burn_policy
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # build the status key from the token ID without disturbing [ASSET_ID, ASSET_VALUE]
     dupw.1
-    # => [ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
 
     exec.non_fungible_asset::value_into_asset_class
-    # => [token_id_suffix, token_id_prefix, ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [token_id_suffix, token_id_prefix, ASSET_ID, ASSET_VALUE, pad(8)]
 
     exec.create_status_key
-    # => [STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(8)]
 
     # write BURNED and assert the token ID was ISSUED (old status element)
     push.STATUS_BURNED exec.build_status_value
-    # => [STATUS_VALUE, STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [STATUS_VALUE, STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(8)]
 
     swapw
-    # => [STATUS_KEY, STATUS_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [STATUS_KEY, STATUS_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
 
     push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_STATUS_WORD, ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [OLD_STATUS_WORD, ASSET_ID, ASSET_VALUE, pad(8)]
 
     movdn.3 drop drop drop
-    # => [old_status, ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [old_status, ASSET_ID, ASSET_VALUE, pad(8)]
 
     eq.STATUS_ISSUED assert.err=ERR_NFT_NOT_ISSUED
-    # => [ASSET_ID, ASSET_VALUE, pad(16)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # burn the asset (validates faucet origin), consuming [ASSET_ID, ASSET_VALUE]
     exec.faucet::burn

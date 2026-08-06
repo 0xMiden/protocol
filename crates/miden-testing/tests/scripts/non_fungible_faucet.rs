@@ -2,8 +2,18 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
+use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
+use miden_processor::operation::OperationError;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    AssetCallbackFlag,
+};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::note::{Note, NoteTag, NoteType};
@@ -21,6 +31,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_NFT_ALREADY_ISSUED,
+    ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage};
@@ -29,6 +40,7 @@ use miden_testing::{
     Auth,
     MockChain,
     MockChainBuilder,
+    MockTransaction,
     assert_transaction_executor_error,
 };
 use rand::RngExt;
@@ -109,6 +121,53 @@ async fn execute_nft_mint(
     Ok(mock_tx.execute().await?)
 }
 
+/// Builds a mint policy component named `name` whose `check_policy` body is `body`, so tests can
+/// plug arbitrary (including misbehaving) policy code into the mint dispatch path. `name` appears
+/// in the procedure's MAST path, so callers should name the policy after what its body does.
+fn custom_mint_policy(name: &str, body: &str) -> anyhow::Result<MintPolicy> {
+    let masm_source = format!(
+        r#"
+        #! Test-only mint policy.
+        #!
+        #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+        #! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+        #!
+        #! Invocation: call
+        @account_procedure
+        pub proc check_policy
+            {body}
+        end
+        "#
+    );
+
+    let code = CodeBuilder::default().compile_component_code(name, &masm_source)?;
+    let root = code
+        .get_procedure_root_by_path(format!("{name}::check_policy").as_str())
+        .expect("custom mint policy should export check_policy");
+    let component = AccountComponent::new(code, vec![], AccountComponentMetadata::mock(name))?;
+
+    Ok(MintPolicy::custom(root, [component])?)
+}
+
+/// Builds (but does not execute) an NFT mint transaction, so failure-path tests can assert on the
+/// raw [`miden_testing::MockTransaction::execute`] error.
+fn build_nft_mint_tx(
+    mock_chain: &MockChain,
+    faucet: &Account,
+    commitment: Word,
+    recipient: Word,
+) -> anyhow::Result<MockTransaction> {
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let code = nft_mint_script(commitment, recipient);
+    let tx_script =
+        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(code)?;
+    mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()
+}
+
 /// Minting an NFT for a fresh commitment produces exactly one output note.
 #[tokio::test]
 async fn nft_mint_succeeds() -> anyhow::Result<()> {
@@ -171,6 +230,64 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(tx, ERR_NFT_ALREADY_ISSUED);
+
+    Ok(())
+}
+
+/// A mint policy that mutates the asset value is rejected: for an NFT the value must remain
+/// exactly the word the caller supplied.
+///
+/// The faucet enforces this by comparing the policy's output against a copy stashed in a procedure
+/// local before dispatch. The policy is `dyncall`-invoked, so it runs in its own memory context
+/// and cannot reach that local to forge the comparison.
+#[tokio::test]
+async fn nft_mint_policy_modifying_asset_value_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
+
+    // the policy increments the top element of ASSET_VALUE, leaving the stack depth untouched
+    let policy =
+        custom_mint_policy("test::faucets::policies::mint::asset_value_mutating", "add.1")?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
+    let mock_chain = builder.build()?;
+
+    let commitment =
+        NonFungibleFaucet::compute_asset_commitment(b"mutated token", Word::from([5, 5, 5, 5u32]));
+    let recipient = Word::from([6, 6, 6, 6u32]);
+
+    let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE);
+
+    Ok(())
+}
+
+/// Mint policies are dispatched with `dyncall`, so they must honor the `call` ABI. A policy that
+/// returns at the wrong operand stack depth aborts the transaction instead of silently shifting
+/// the faucet's frame.
+#[tokio::test]
+async fn nft_mint_policy_violating_call_abi_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([6; 32]);
+
+    // the policy leaves an extra element on the stack, so it returns at depth 17
+    let policy = custom_mint_policy("test::faucets::policies::mint::unbalanced_stack", "push.42")?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
+    let mock_chain = builder.build()?;
+
+    let commitment =
+        NonFungibleFaucet::compute_asset_commitment(b"abi token", Word::from([7, 7, 7, 7u32]));
+    let recipient = Word::from([8, 8, 8, 8u32]);
+
+    let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::InvalidStackDepthOnReturn { .. },
+            ..
+        }
+    );
 
     Ok(())
 }
