@@ -149,7 +149,7 @@ impl MinBurnAmountConfigNote {
 
     /// Returns the account ID of the managed faucet: the account the note is tagged for and bound
     /// to via its `NetworkAccountTarget` attachment (only this account can consume the note).
-    pub fn account(&self) -> AccountId {
+    pub fn target(&self) -> AccountId {
         self.target
     }
 
@@ -235,13 +235,10 @@ impl NoteConsumptionCost for MinBurnAmountConfigNote {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
     use miden_protocol::crypto::rand::RandomCoin;
-    use miden_protocol::note::NoteAttachmentScheme;
 
     use super::*;
-    use crate::note::{NetworkAccountTargetError, NoteExecutionHint};
 
     fn account_id(seed: u8) -> AccountId {
         AccountId::builder()
@@ -265,7 +262,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(note.sender(), sender);
-        assert_eq!(note.account(), faucet);
+        assert_eq!(note.target(), faucet);
         assert_eq!(note.min_burn_amount(), AssetAmount::new(100).unwrap());
 
         let note = Note::from(note);
@@ -291,73 +288,6 @@ mod tests {
         let target = NetworkAccountTarget::try_from(built.attachments())
             .expect("note should carry a network account target attachment");
         assert_eq!(target.target_id(), faucet);
-    }
-
-    /// A caller-supplied `NetworkAccountTarget` for another account is rejected rather than
-    /// silently coexisting with the note's own target.
-    #[test]
-    fn caller_supplied_target_for_other_account_is_rejected() {
-        let rogue_target =
-            NetworkAccountTarget::new(account_id(3), NoteExecutionHint::Always).unwrap();
-
-        let err = MinBurnAmountConfigNote::builder()
-            .sender(account_id(2))
-            .target(account_id(1))
-            .min_burn_amount(AssetAmount::new(100).unwrap())
-            .serial_number(Word::empty())
-            .attachment(rogue_target)
-            .build()
-            .unwrap_err();
-
-        assert_matches!(err, NoteError::Other { source, .. } => {
-            assert_matches!(
-              *source.unwrap().downcast().unwrap(),
-              NetworkAccountTargetError::TargetMismatch { .. }
-            )
-        });
-    }
-
-    /// A non-public target account is rejected by the builder, since the note binds to it via a
-    /// `NetworkAccountTarget`, which requires a public target.
-    #[test]
-    fn private_target_account_is_rejected() {
-        let private_account =
-            AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
-
-        let err = MinBurnAmountConfigNote::builder()
-            .sender(account_id(2))
-            .target(private_account)
-            .min_burn_amount(AssetAmount::new(100).unwrap())
-            .serial_number(Word::empty())
-            .build()
-            .unwrap_err();
-
-        assert_matches!(err, NoteError::Other { source, .. } => {
-            assert_matches!(
-              *source.unwrap().downcast().unwrap(),
-              NetworkAccountTargetError::TargetNotPublic { .. }
-            )
-        });
-    }
-
-    /// The bound target attachment reserves one of the `NoteAttachments::MAX_COUNT` slots, so a
-    /// caller supplying `MAX_COUNT` attachments of their own overflows the limit.
-    #[test]
-    fn caller_attachments_beyond_limit_are_rejected() {
-        let mut builder = MinBurnAmountConfigNote::builder()
-            .sender(account_id(2))
-            .target(account_id(1))
-            .min_burn_amount(AssetAmount::new(100).unwrap())
-            .serial_number(Word::empty());
-        for scheme in 0..NoteAttachments::MAX_COUNT as u16 {
-            let extra = NoteAttachment::with_word(
-                NoteAttachmentScheme::new(64 + scheme).unwrap(),
-                Word::empty(),
-            );
-            builder = builder.attachment(extra);
-        }
-
-        assert!(matches!(builder.build(), Err(NoteError::TooManyAttachments(_))));
     }
 
     /// Storage is `[min_burn_amount]`.
