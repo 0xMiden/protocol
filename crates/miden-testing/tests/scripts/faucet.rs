@@ -347,9 +347,7 @@ fn build_existing_faucet_with_reserved_only_transfer_policy(
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
 
-/// Builds a burn policy component named `name` whose `check_policy` body is `body`, so tests can
-/// plug arbitrary (including misbehaving) policy code into the burn dispatch path. `name` appears
-/// in the procedure's MAST path, so callers should name the policy after what its body does.
+/// Builds a custom burn policy component.
 fn custom_burn_policy(name: &str, body: &str) -> anyhow::Result<BurnPolicy> {
     let masm_source = format!(
         r#"
@@ -2127,7 +2125,6 @@ async fn burn_policy_cannot_substitute_the_burnt_asset() -> anyhow::Result<()> {
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([7; 32]);
 
-    // the policy corrupts the top element of ASSET_ID, leaving the stack depth untouched
     let policy = custom_burn_policy("test::faucets::policies::burn::asset_mutating", "add.1")?;
     let mut faucet = build_network_faucet_with_burn_policy(
         &mut builder,
@@ -2170,9 +2167,7 @@ async fn burn_policy_cannot_substitute_the_burnt_asset() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Burn policies are dispatched with `dyncall`, so they must honor the `call` ABI. A policy that
-/// returns at the wrong operand stack depth aborts the transaction instead of silently shifting
-/// the faucet's frame.
+/// Burn policies are dispatched with `dyncall`.
 #[tokio::test]
 async fn burn_policy_violating_call_abi_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -2180,7 +2175,6 @@ async fn burn_policy_violating_call_abi_fails() -> anyhow::Result<()> {
     let owner_account_id =
         AccountId::builder().account_type(AccountType::Private).build_with_seed([8; 32]);
 
-    // the policy leaves an extra element on the stack, so it returns at depth 17
     let policy = custom_burn_policy("test::faucets::policies::burn::unbalanced_stack", "push.42")?;
     let faucet = build_network_faucet_with_burn_policy(
         &mut builder,

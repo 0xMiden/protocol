@@ -331,12 +331,6 @@ end
 
 #! Executes active burn policy for the provided asset by dynamic invocation.
 #!
-#! The policy is invoked via `dyncall`, so it runs in its own memory context and cannot reach the
-#! caller's procedure locals. The inputs below are forwarded to it as its call frame verbatim,
-#! which requires the caller's operand stack to be exactly the frame of its own `call` boundary:
-#! this procedure must be `exec`'d from an account procedure with the burn asset on top of an
-#! otherwise untouched call frame.
-#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [ASSET_ID, ASSET_VALUE, pad(8)]
 #!
@@ -351,7 +345,6 @@ pub proc execute_burn_policy
     exec.pausable::assert_not_paused
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    # stash the asset: the policy's call frame returns only padding
     loc_storew_le.BURN_ASSET_ID_PTR swapw loc_storew_le.BURN_ASSET_VALUE_PTR swapw
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
@@ -371,7 +364,6 @@ pub proc execute_burn_policy
     dyncall
     # => [pad(16)]
 
-    # restore the asset the caller supplied, overwriting the policy's padding in place
     loc_loadw_le.BURN_ASSET_ID_PTR swapw loc_loadw_le.BURN_ASSET_VALUE_PTR swapw
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 end

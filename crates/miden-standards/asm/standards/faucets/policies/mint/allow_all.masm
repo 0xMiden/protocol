@@ -5,9 +5,6 @@
 
 #! Mint policy that accepts every mint request.
 #!
-#! Invoked as the active mint policy via `TokenPolicyManager`, which applies the account-wide
-#! pause check.
-#!
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 #! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 #!

@@ -121,9 +121,7 @@ async fn execute_nft_mint(
     Ok(mock_tx.execute().await?)
 }
 
-/// Builds a mint policy component named `name` whose `check_policy` body is `body`, so tests can
-/// plug arbitrary (including misbehaving) policy code into the mint dispatch path. `name` appears
-/// in the procedure's MAST path, so callers should name the policy after what its body does.
+/// Builds a custom mint policy component.
 fn custom_mint_policy(name: &str, body: &str) -> anyhow::Result<MintPolicy> {
     let masm_source = format!(
         r#"
@@ -236,16 +234,11 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
 
 /// A mint policy that mutates the asset value is rejected: for an NFT the value must remain
 /// exactly the word the caller supplied.
-///
-/// The faucet enforces this by comparing the policy's output against a copy stashed in a procedure
-/// local before dispatch. The policy is `dyncall`-invoked, so it runs in its own memory context
-/// and cannot reach that local to forge the comparison.
 #[tokio::test]
 async fn nft_mint_policy_modifying_asset_value_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
 
-    // the policy increments the top element of ASSET_VALUE, leaving the stack depth untouched
     let policy =
         custom_mint_policy("test::faucets::policies::mint::asset_value_mutating", "add.1")?;
     let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
@@ -262,9 +255,7 @@ async fn nft_mint_policy_modifying_asset_value_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Mint policies are dispatched with `dyncall`, so they must honor the `call` ABI. A policy that
-/// returns at the wrong operand stack depth aborts the transaction instead of silently shifting
-/// the faucet's frame.
+/// Mint policies are dispatched with `dyncall`.
 #[tokio::test]
 async fn nft_mint_policy_violating_call_abi_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();

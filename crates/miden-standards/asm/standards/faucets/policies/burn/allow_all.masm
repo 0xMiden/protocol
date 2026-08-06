@@ -5,9 +5,6 @@
 
 #! Burn policy that accepts every burn request.
 #!
-#! Invoked as the active burn policy via `TokenPolicyManager`, which applies the account-wide
-#! pause check and restores the asset for its caller once this predicate returns.
-#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!

@@ -283,7 +283,6 @@ pub proc receive_and_burn
     exec.non_fungible_asset::validate
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    # Run the active burn policy over the asset.
     exec.policy_manager::execute_burn_policy
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 

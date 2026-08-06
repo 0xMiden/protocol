@@ -401,8 +401,6 @@ end
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
-    # Run the active burn policy over the asset. The policy is `dyncall`-invoked and receives this
-    # procedure's call frame verbatim, so the asset must be passed in place rather than copied.
     exec.policy_manager::execute_burn_policy
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
