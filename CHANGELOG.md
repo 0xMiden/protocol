@@ -6,6 +6,8 @@
 
 ### Changes
 
+- [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
+
 ### Fixes
 
 ## v0.16.0 (2026-08-06)
