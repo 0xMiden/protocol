@@ -23,7 +23,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
-use miden_protocol::transaction::{RawOutputNote, TransactionScript};
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -34,7 +34,6 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_ACCOUNT_IS_BLOCKED, ERR_SENDER_LACKS_ROLE};
 use miden_standards::testing::note::NoteBuilder;
@@ -47,6 +46,7 @@ use miden_testing::{
 };
 
 use super::rbac::{build_grant_role_note, role, test_account_id};
+use super::transfer_policy::{add_faucet_with_wallet, assert_minted_note, build_mint_note};
 use crate::consume_note;
 
 // HELPERS
@@ -109,68 +109,6 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
         account_builder,
         AccountState::Exists,
     )
-}
-
-/// Builds a fungible faucet that can also receive assets (via [`BasicWallet`]), so it can be the
-/// recipient of a *foreign* faucet's asset and thus be subject to that faucet's transfer policy.
-fn add_faucet_with_wallet(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("OTH")?)
-        .symbol("OTH".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([44u8; 32])
-        .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Disabled)
-        .with_component(faucet)
-        .with_component(BasicWallet)
-        .with_component(Authority::AuthControlled)
-        .with_components(
-            TokenPolicyManager::builder()
-                .active_mint_policy(MintPolicy::allow_all())
-                .active_burn_policy(BurnPolicy::allow_all())
-                .build(),
-        );
-
-    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
-}
-
-/// Builds a transaction script that mints `amount` units of `faucet_id`'s own asset into a new
-/// private output note via `mint_and_send`.
-fn build_mint_tx_script(faucet_id: AccountId, amount: u64) -> anyhow::Result<TransactionScript> {
-    let recipient = Word::from([0u32, 1, 2, 3]);
-    let tag = NoteTag::default();
-    let note_type = NoteType::Private;
-
-    // `mint_and_send` takes the full asset (ASSET_ID + ASSET_VALUE) the MINT note carries.
-    let asset = FungibleAsset::new(faucet_id, amount)?;
-
-    let tx_script_code = format!(
-        r#"
-        @transaction_script
-        pub proc main
-            push.0.0
-
-            push.{recipient}
-            push.{note_type}
-            push.{tag}
-            push.{asset_value}
-            push.{asset_id}
-
-            call.::miden::standards::faucets::fungible::mint_and_send
-
-            dropw dropw dropw dropw
-        end
-        "#,
-        note_type = note_type as u8,
-        tag = u32::from(tag),
-        asset_value = asset.to_value_word(),
-        asset_id = asset.to_id_word(),
-    );
-
-    Ok(CodeBuilder::default().compile_tx_script(&tx_script_code)?)
 }
 
 /// Builds a `sender`-authored note whose script invokes
@@ -505,29 +443,41 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
 /// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
 /// installs the asset-callback slots (here via the basic blocklist transfer policy).
 #[tokio::test]
-async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
+async fn mint_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
+    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
+    let mint = build_mint_note(owner_id, faucet.id(), target.id(), 100, 10)?;
     let executed = mock_chain
         .build_transaction(faucet.id())
-        .tx_script(build_mint_tx_script(faucet.id(), 100)?)
+        .unauthenticated_input_note(mint.note.clone())
         .build()?
         .execute()
         .await?;
 
-    assert_eq!(executed.output_notes().num_notes(), 1);
+    assert_minted_note(&executed, &mint)?;
+
     Ok(())
 }
 
 /// Verifies that `block_account` on the faucet's own ID does not disable its minting.
+///
+/// Minting crosses the send policy: the faucet adds the minted asset to an output note, which the
+/// kernel routes through `on_before_asset_added_to_note` with the faucet itself as the native
+/// account. Because the issuer is exempt from its own blocklist, the self-entry is inert.
+///
+/// The entry is written through the regular admin path, so this covers any writer - the standard
+/// config note, a custom note, or a direct manager call - because the exemption lives in the
+/// `check_policy` read path rather than in a guard on the write path.
 #[tokio::test]
-async fn mint_and_send_succeeds_after_faucet_blocks_itself() -> anyhow::Result<()> {
+async fn mint_succeeds_after_faucet_blocks_itself() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
+    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let block_faucet_note = build_admin_note(owner_id, faucet.id(), "block_account", 9)?;
     builder.add_output_note(RawOutputNote::Full(block_faucet_note.clone()));
@@ -537,14 +487,15 @@ async fn mint_and_send_succeeds_after_faucet_blocks_itself() -> anyhow::Result<(
 
     consume_note(&mut mock_chain, faucet.id(), &block_faucet_note).await?;
 
+    let mint = build_mint_note(owner_id, faucet.id(), target.id(), 100, 10)?;
     let executed = mock_chain
         .build_transaction(faucet.id())
-        .tx_script(build_mint_tx_script(faucet.id(), 100)?)
+        .unauthenticated_input_note(mint.note.clone())
         .build()?
         .execute()
         .await?;
 
-    assert_eq!(executed.output_notes().num_notes(), 1);
+    assert_minted_note(&executed, &mint)?;
 
     Ok(())
 }
