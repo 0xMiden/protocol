@@ -276,6 +276,14 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [DELTA_COMMITMENT, pad(12)]
     end
 
+    #! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+    #! Outputs: [pad(16)]
+    @account_procedure
+    pub proc upgrade
+        exec.native_account::upgrade
+        # => [pad(16)]
+    end
+
     #! Inputs:  [PROC_ROOT, pad(12)]
     #! Outputs: [was_called, pad(15)]
     @account_procedure

@@ -19,7 +19,9 @@ use miden_agglayer::{
     agglayer_package,
 };
 use miden_core_lib::CoreLibrary;
+use miden_crypto::hash::keccak::Keccak256;
 use miden_processor::advice::AdviceInputs;
+use miden_processor::utils::bytes_to_packed_u32_elements;
 use miden_processor::{
     DefaultHost,
     ExecutionError,
@@ -53,6 +55,16 @@ pub const MIDEN_NETWORK_ID: u32 = 77;
 
 /// Non-zero base fee used by the AggLayer fee-enabled end-to-end cases.
 pub const VERIFICATION_BASE_FEE: u32 = 500;
+
+// KECCAK-256
+// ================================================================================================
+
+/// Returns the Keccak-256 digest of `data` as the eight packed u32 field elements the
+/// AggLayer MASM code works with.
+pub fn hash_with_keccak256_to_elements(data: &[u8]) -> Vec<Felt> {
+    let digest = <[u8; 32]>::from(Keccak256::hash(data));
+    bytes_to_packed_u32_elements(&digest)
+}
 
 // PAUSE STATE
 // ================================================================================================

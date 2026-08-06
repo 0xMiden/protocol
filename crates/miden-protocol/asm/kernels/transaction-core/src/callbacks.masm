@@ -7,8 +7,14 @@ use miden::core::word
 # CONSTANTS
 # ==================================================================================================
 
+const ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT =
+    "asset callback output value must match its input value"
+
 # The index of the local memory slot that contains the procedure root of the callback.
 const CALLBACK_PROC_ROOT_LOC = 0
+
+# The index of the local memory slot that contains the original asset value passed to the callback.
+const CALLBACK_ASSET_VALUE_LOC = 4
 
 # The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
 # is stored.
@@ -42,7 +48,11 @@ pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT =
 #! - ASSET_ID is the asset ID of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
 #! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
-#!   ASSET_VALUE if callbacks are disabled.
+#!   ASSET_VALUE if callbacks are disabled. The callback is required to return the asset
+#!   value it received, so this is always equal to ASSET_VALUE.
+#!
+#! Panics if:
+#! - the callback returns an asset value different from the one it received.
 pub proc on_before_asset_added_to_account
     # derive the callback flag from the asset metadata, carried in the asset ID
     exec.asset::id_to_has_callbacks
@@ -80,7 +90,11 @@ end
 #! - ASSET_VALUE is the value of the asset being added.
 #! - note_idx is the index of the output note the asset is being added to.
 #! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
-#!   ASSET_VALUE if callbacks are disabled.
+#!   ASSET_VALUE if callbacks are disabled. The callback is required to return the asset
+#!   value it received, so this is always equal to ASSET_VALUE.
+#!
+#! Panics if:
+#! - the callback returns an asset value different from the one it received.
 pub proc on_before_asset_added_to_note
     # derive the callback flag from the asset metadata, carried in the asset ID
     exec.asset::id_to_has_callbacks
@@ -114,8 +128,12 @@ end
 #! - ASSET_ID is the asset ID of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
 #! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
-#!   ASSET_VALUE if no callback is configured.
-@locals(4)
+#!   ASSET_VALUE if no callback is configured. The callback is required to return the asset
+#!   value it received, so this is always equal to ASSET_VALUE.
+#!
+#! Panics if:
+#! - the callback returns an asset value different from the one it received.
+@locals(8)
 proc invoke_callback
     exec.maybe_start_faucet_callback_context
     # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
@@ -128,6 +146,10 @@ proc invoke_callback
     if.true
         # prepare for dyncall by storing procedure root in local memory
         loc_storew_le.CALLBACK_PROC_ROOT_LOC dropw
+        # => [ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
+
+        # save the original asset value for the post-callback equality check
+        swapw loc_storew_le.CALLBACK_ASSET_VALUE_LOC swapw
         # => [ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
 
         # pad the stack to 16 for the call
@@ -143,6 +165,11 @@ proc invoke_callback
 
         # truncate the stack after the call
         swapdw dropw dropw swapw dropw
+        # => [PROCESSED_ASSET_VALUE, was_foreign_context_started]
+
+        # assert that the callback returned the asset value unchanged
+        dupw padw loc_loadw_le.CALLBACK_ASSET_VALUE_LOC
+        assert_eqw.err=ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT
         # => [PROCESSED_ASSET_VALUE, was_foreign_context_started]
     else
         # drop proc root, asset ID and custom_data

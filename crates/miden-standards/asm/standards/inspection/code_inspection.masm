@@ -37,6 +37,11 @@ end
 @account_procedure
 pub proc get_code_commitment
     exec.active_account::get_code_commitment
+    # => [CODE_COMMITMENT, pad(16)]
+
+    # drop the excess padding to restore the stack depth for the call boundary
+    swapw dropw
+    # => [CODE_COMMITMENT, pad(12)]
 end
 
 #! Returns the number of procedures in the active account.
@@ -51,6 +56,11 @@ end
 @account_procedure
 pub proc get_num_procedures
     exec.active_account::get_num_procedures
+    # => [num_procedures, pad(16)]
+
+    # drop the excess padding to restore the stack depth for the call boundary
+    swap drop
+    # => [num_procedures, pad(15)]
 end
 
 #! Returns the procedure root for the procedure at the specified index in the active account.
@@ -69,4 +79,9 @@ end
 @account_procedure
 pub proc get_procedure_root
     exec.active_account::get_procedure_root
+    # => [PROC_ROOT, pad(15)]
+
+    # drop the excess padding to restore the stack depth for the call boundary.
+    swapw dropw
+    # => [PROC_ROOT, pad(12)]
 end

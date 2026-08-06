@@ -71,25 +71,62 @@ async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that attempting to call the auth procedure manually from user code fails.
+/// Tests that the epilogue's replay guard rejects a user-invoked auth procedure that increments the
+/// nonce or makes a direct gated kernel call - the two ways a main-phase invocation sets
+/// `was_called[0]`, which the guard reads before running the auth procedure.
+///
+/// The two cases take different paths: the incrementing body sets `was_called[0]` through
+/// `assert_auth_procedure` (unconditional), the non-incrementing body through
+/// `authenticate_procedure` for its gated call (tracked because the epilogue-auth-in-progress flag
+/// is unset during the main phase). The non-incrementing case is the one a caller-index-based
+/// exemption would miss.
+///
+/// The guard is best-effort: it only fires when the auth procedure reaches the kernel as index 0 (a
+/// direct gated call or `incr_nonce`). An auth procedure invoked from user code that does neither -
+/// only local MASM, or reaching the kernel via `call.<helper>` (which records the helper's index) -
+/// goes undetected. This is benign: the helper is already directly callable from user code so
+/// nothing escalates, and the escalation paths stay closed (`incr_nonce` is the only
+/// auth-origin-gated procedure and trips the guard, and signature production is rejected
+/// host-side).
+#[rstest]
+#[case::incrementing("exec.native_account::incr_nonce drop")]
+#[case::non_incrementing("exec.native_account::get_initial_commitment dropw")]
 #[tokio::test]
-async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
-    let (auth_components, _) = Auth::IncrNonce.build_components();
-    let auth_component = auth_components.into_iter().next().expect("auth component is yielded");
+async fn test_auth_procedure_called_from_wrong_context(
+    #[case] auth_body: &str,
+) -> anyhow::Result<()> {
+    let auth_src = format!(
+        "
+        use miden::protocol::native_account
+
+        @auth_script
+        pub proc auth
+            {auth_body}
+            # clear the 16-element call frame
+            dropw dropw dropw dropw
+        end
+        "
+    );
+    let auth_code =
+        CodeBuilder::default().compile_component_code("mock::wrong_context_auth", &auth_src)?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("mock::wrong_context_auth"),
+    )?;
 
     let account = AccountBuilder::new([42; 32])
         .with_component(auth_component.clone())
         .with_component(BasicWallet)
         .build_existing()?;
 
-    // Create a transaction script that calls the auth procedure
+    // A transaction script that invokes the account's auth procedure during the main phase.
     let tx_script_source = "
         @transaction_script
         pub proc main
-            call.::incr_nonce::auth_incr_nonce
+            call.::mock::wrong_context_auth::auth
         end
     ";
-
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_package(auth_component.component_code())?
         .compile_tx_script(tx_script_source)?;
@@ -102,6 +139,88 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
         execution_result,
         ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT
     );
+
+    Ok(())
+}
+
+/// Verifies conditional call-tracking end to end: a procedure called from a transaction script
+/// (main phase) is tracked, while a procedure called from the auth procedure is not. The auth
+/// procedure performs both assertions itself, so a regression fails the transaction.
+///
+/// Tracking is suppressed for the whole epilogue auth run via the epilogue-auth-in-progress flag,
+/// regardless of how the auth procedure reaches the kernel - a caller-index-based exemption
+/// (skipping only index 0) would instead track a procedure the auth procedure invokes via `call`.
+#[tokio::test]
+async fn test_call_tracking_across_tx_script_and_auth_procedure() -> anyhow::Result<()> {
+    let component_src = "
+        use miden::protocol::native_account
+
+        # called from the transaction script during the main phase -> must be tracked
+        @account_procedure
+        pub proc proc_from_script
+            exec.native_account::get_initial_commitment dropw
+        end
+
+        # invoked via `call` from the auth procedure -> must NOT be tracked. uses the SAME gated call
+        # as `proc_from_script` (whose positive assertion proves that call is tracked when not
+        # suppressed, so this negative assertion is not vacuous), with a trailing no-op to give it a
+        # distinct root and hence a distinct was_called flag
+        @account_procedure
+        pub proc proc_from_auth
+            exec.native_account::get_initial_commitment dropw
+            push.0 drop
+        end
+
+        @auth_script
+        pub proc auth
+            # invoke `proc_from_auth` via `call` so its gated call is attributed to it (index != 0)
+            call.proc_from_auth
+
+            # a procedure called from the auth procedure must NOT be tracked
+            procref.proc_from_auth
+            exec.native_account::was_procedure_called
+            assertz.err=\"procedure called from the auth procedure must not be tracked\"
+
+            # a procedure called from the transaction script must be tracked
+            procref.proc_from_script
+            exec.native_account::was_procedure_called
+            assert.err=\"procedure called from the transaction script must be tracked\"
+
+            # increment the nonce so the transaction changes state and is valid
+            exec.native_account::incr_nonce drop
+
+            # clean up the auth args frame
+            dropw dropw dropw dropw
+        end
+    ";
+    let component_code =
+        CodeBuilder::default().compile_component_code("mock::tracking_auth", component_src)?;
+    let component = AccountComponent::new(
+        component_code,
+        vec![],
+        AccountComponentMetadata::mock("mock::tracking_auth"),
+    )?;
+
+    let account = AccountBuilder::new([7; 32])
+        .with_component(component.clone())
+        .with_component(BasicWallet)
+        .build_existing()?;
+
+    // The transaction script calls `proc_from_script` during the main phase.
+    let tx_script_source = "
+        @transaction_script
+        pub proc main
+            call.::mock::tracking_auth::proc_from_script
+        end
+    ";
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(component.component_code())?
+        .compile_tx_script(tx_script_source)?;
+
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+
+    // If either tracking assertion in the auth procedure failed, execution would err.
+    mock_tx.execute().await.context("call-tracking regression")?;
 
     Ok(())
 }
