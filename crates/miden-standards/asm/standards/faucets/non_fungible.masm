@@ -283,7 +283,8 @@ pub proc receive_and_burn
     exec.non_fungible_asset::validate
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    exec.policy_manager::execute_burn_policy
+    # the burn policy consumes the asset, so keep a copy for the burn itself
+    dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # build the status key from the token ID without disturbing [ASSET_ID, ASSET_VALUE]

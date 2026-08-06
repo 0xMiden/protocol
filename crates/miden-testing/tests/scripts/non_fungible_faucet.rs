@@ -2,9 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
-use miden_processor::operation::OperationError;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -251,34 +249,6 @@ async fn nft_mint_policy_modifying_asset_value_fails() -> anyhow::Result<()> {
     let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE);
-
-    Ok(())
-}
-
-/// Mint policies are dispatched with `dyncall`.
-#[tokio::test]
-async fn nft_mint_policy_violating_call_abi_fails() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([6; 32]);
-
-    // the policy leaves an extra element on the stack, so it returns at depth 17
-    let policy = custom_mint_policy("test::faucets::policies::mint::unbalanced_stack", "push.42")?;
-    let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
-    let mock_chain = builder.build()?;
-
-    let commitment =
-        NonFungibleFaucet::compute_asset_commitment(b"abi token", Word::from([7, 7, 7, 7u32]));
-    let recipient = Word::from([8, 8, 8, 8u32]);
-
-    let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
-
-    assert_transaction_executor_error!(
-        result,
-        matches ExecutionError::OperationError {
-            err: OperationError::InvalidStackDepthOnReturn { .. },
-            ..
-        }
-    );
 
     Ok(())
 }

@@ -40,10 +40,6 @@ const ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::po
 # Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR=0
 
-# Local memory pointers used to preserve the burn asset across the burn policy's call frame.
-const BURN_ASSET_ID_PTR=4
-const BURN_ASSET_VALUE_PTR=8
-
 # ERRORS
 # =================================================================================================
 
@@ -297,8 +293,12 @@ end
 #! and non-fungible faucets. The policy may adjust the asset value and the output note's `tag`,
 #! `note_type`, and `RECIPIENT`.
 #!
-#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
-#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#! The policy is invoked via `dyncall`. The inputs are padded to a full call frame beforehand and
+#! the padding is truncated afterwards, so the policy sees exactly the ten values below and cannot
+#! observe or mutate anything deeper on the caller's stack.
+#!
+#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
+#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
 #! - the account is paused (`exec.pausable::assert_not_paused` is a no-op when the [`Pausable`]
@@ -310,16 +310,23 @@ end
 @locals(4)
 pub proc execute_mint_policy
     exec.pausable::assert_not_paused
-    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
     exec.get_mint_policy_root
-    # => [MINT_POLICY_ROOT, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+    # => [MINT_POLICY_ROOT, ASSET_VALUE, tag, note_type, RECIPIENT]
 
     exec.word::testz
     assertz.err=ERR_ACTIVE_MINT_POLICY_NOT_SET
-    # => [MINT_POLICY_ROOT, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+    # => [MINT_POLICY_ROOT, ASSET_VALUE, tag, note_type, RECIPIENT]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
+
+    # pad the ten inputs into a full call frame by sinking six zeros underneath them
+    push.0.0.0.0.0.0
+    repeat.6
+        movdn.15
+    end
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     locaddr.POLICY_PROC_ROOT_PTR
@@ -327,12 +334,21 @@ pub proc execute_mint_policy
 
     dyncall
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # truncate the call frame's padding
+    movupw.3 dropw movup.11 drop movup.10 drop
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 end
 
 #! Executes active burn policy for the provided asset by dynamic invocation.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_ID, ASSET_VALUE, pad(8)]
+#! The policy is invoked via `dyncall`. The asset is padded to a full call frame beforehand and the
+#! frame is dropped afterwards, so the policy sees exactly the asset and cannot observe or mutate
+#! anything deeper on the caller's stack. The policy is a predicate: it consumes the asset and
+#! returns nothing, so callers that still need the asset must keep their own copy.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
 #!
 #! Panics if:
 #! - the account is paused.
@@ -340,22 +356,23 @@ end
 #! - active burn policy predicate fails.
 #!
 #! Invocation: exec
-@locals(12)
+@locals(4)
 pub proc execute_burn_policy
     exec.pausable::assert_not_paused
-    # => [ASSET_ID, ASSET_VALUE, pad(8)]
-
-    loc_storew_le.BURN_ASSET_ID_PTR swapw loc_storew_le.BURN_ASSET_VALUE_PTR swapw
-    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE]
 
     exec.get_burn_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_ID, ASSET_VALUE, pad(8)]
+    # => [BURN_POLICY_ROOT, ASSET_ID, ASSET_VALUE]
 
     exec.word::testz
     assertz.err=ERR_ACTIVE_BURN_POLICY_NOT_SET
-    # => [BURN_POLICY_ROOT, ASSET_ID, ASSET_VALUE, pad(8)]
+    # => [BURN_POLICY_ROOT, ASSET_ID, ASSET_VALUE]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # pad the asset into a full call frame
+    padw padw swapdw
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     locaddr.POLICY_PROC_ROOT_PTR
@@ -364,8 +381,9 @@ pub proc execute_burn_policy
     dyncall
     # => [pad(16)]
 
-    loc_loadw_le.BURN_ASSET_ID_PTR swapw loc_loadw_le.BURN_ASSET_VALUE_PTR swapw
-    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+    # drop the call frame the predicate returns
+    dropw dropw dropw dropw
+    # => []
 end
 
 # HELPER PROCEDURES
