@@ -90,12 +90,11 @@ impl TransactionAdviceInputs {
 
     /// Consumes self and returns an iterator of [`AdviceMutation`]s in arbitrary order.
     pub fn into_advice_mutations(self) -> impl Iterator<Item = AdviceMutation> {
+        let (stack, map, store) = self.0.into_parts();
         [
-            AdviceMutation::ExtendMap { other: self.0.map },
-            AdviceMutation::ExtendMerkleStore {
-                infos: self.0.store.inner_nodes().collect(),
-            },
-            AdviceMutation::ExtendStack { values: self.0.stack },
+            AdviceMutation::ExtendMap { other: map },
+            AdviceMutation::ExtendMerkleStore { infos: store.inner_nodes().collect() },
+            AdviceMutation::ExtendStack { stack },
         ]
         .into_iter()
     }
@@ -422,7 +421,10 @@ impl TransactionAdviceInputs {
 
     /// Extends the stack with the given elements.
     fn extend_stack(&mut self, iter: impl IntoIterator<Item = Felt>) {
-        self.0.stack.extend(iter);
+        // `AdviceInputs` exposes its stack only as a typed `AdviceStack`, so appending goes
+        // through `extend`, which appends the other instance's stack elements to ours.
+        self.0
+            .extend(AdviceInputs::default().with_advice_stack(iter.into_iter().collect()));
     }
 
     /// Extends the [`MerkleStore`](crate::crypto::merkle::MerkleStore) with the given

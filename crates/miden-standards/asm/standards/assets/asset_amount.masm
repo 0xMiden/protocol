@@ -27,6 +27,8 @@ const MAX_SCALING_FACTOR=18
 #!
 #! Panics if:
 #! - scale > 18 (overflow protection)
+#!
+#! Invocation: exec
 pub proc pow10
     u32assert.err=ERR_SCALE_AMOUNT_EXCEEDED_LIMIT
     # => [scale]
@@ -110,6 +112,8 @@ pub proc scale_asset_amount_to_u256
 end
 
 #! Reverse the limbs and change the byte endianness of the result.
+#!
+#! Invocation: exec
 pub proc reverse_limbs_and_change_byte_endianness
     # reverse the felts within each word
     # [a, b, c, d, e, f, g, h] -> [h, g, f, e, d, c, b, a]
@@ -253,6 +257,8 @@ end
 #! - x < y * 10^scale_exp (underflow)
 #! - z does not fit in 64 bits
 #! - (z1, z0) >= 10^scale_exp (remainder too large)
+#!
+#! Invocation: exec
 pub proc verify_u128_to_asset_amount_conversion
     # => [x0, x1, x2, x3, scale_exp, y]
 
@@ -374,6 +380,8 @@ end
 #! - x < y * 10^scale_exp (underflow)
 #! - z does not fit in 64 bits
 #! - (z1, z0) >= 10^scale_exp (remainder too large)
+#!
+#! Invocation: exec
 pub proc verify_u256_to_asset_amount_conversion
 
     # reverse limbs and byte endianness

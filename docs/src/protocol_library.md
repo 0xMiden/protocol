@@ -80,7 +80,7 @@ Notice that the initial-state getters can only be executed against the native ac
 | `get_initial_asset`            | Returns the asset associated with the provided asset ID in the native account's vault at the beginning of the transaction.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[ASSET_VALUE]` | Native & Account |
 | `has_initial_asset`            | Returns a boolean indicating whether the native account's vault contained an asset with the provided asset ID at the beginning of the transaction.<br/><br/>**Inputs:** `[ASSET_ID]`<br/>**Outputs:** `[has_asset]` | Native & Account |
 | `get_initial_vault_root`       | Returns the vault root of the native account at the beginning of the transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[INIT_VAULT_ROOT]`                                                          | Native & Account |
-| `was_procedure_called`         | Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.<br/><br/>**Inputs:** `[PROC_ROOT]`<br/>**Outputs:** `[was_called]`                                                     | Native & Account |
+| `was_procedure_called`         | Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise. Call tracking is suppressed while the epilogue runs the authentication procedure, so procedures it invokes are not recorded as called (`was_procedure_called`-based policies must exclude the auth procedure itself).<br/><br/>**Inputs:** `[PROC_ROOT]`<br/>**Outputs:** `[was_called]`                                                     | Native & Account |
 
 ## Active Note Procedures (`miden::protocol::active_note`)
 

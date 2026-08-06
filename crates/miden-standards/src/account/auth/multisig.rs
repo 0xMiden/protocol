@@ -28,12 +28,19 @@ use crate::procedure_root;
 
 account_component_code!(MULTISIG_CODE, "miden-standards-auth-multisig.masp");
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`AuthMultisig::NAME`],
+/// which mirrors the standards-side MASM module path.
+const MULTISIG_LIBRARY_PATH: &str = "miden::standards::components::auth::multisig";
+
 // Initialize the procedure root of the `set_procedure_threshold` procedure only once. It gates
 // edits to per-procedure overrides, so [`AuthMultisig::new`] uses it to reject overrides that
 // exceed its own threshold.
 procedure_root!(
     MULTISIG_SET_PROCEDURE_THRESHOLD,
-    AuthMultisig::NAME,
+    MULTISIG_LIBRARY_PATH,
     AuthMultisig::SET_PROCEDURE_THRESHOLD_PROC_NAME,
     AuthMultisig::code()
 );
@@ -225,7 +232,7 @@ pub struct AuthMultisig {
 
 impl AuthMultisig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::multisig";
+    pub const NAME: &'static str = "miden::standards::auth::multisig";
 
     /// The name of the procedure that edits per-procedure threshold overrides.
     const SET_PROCEDURE_THRESHOLD_PROC_NAME: &'static str = "set_procedure_threshold";

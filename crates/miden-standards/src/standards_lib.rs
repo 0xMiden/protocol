@@ -68,7 +68,7 @@ mod tests {
     fn test_compile() {
         let path = Path::new("::miden::standards::faucets::fungible::mint_and_send");
         let miden = StandardsLib::default();
-        let exists = miden.0.module_infos().any(|module| {
+        let exists = miden.0.module_descriptors().any(|module| {
             module
                 .procedures()
                 .any(|(_, proc)| module.path().join(&proc.name).as_path() == path)

@@ -1,4 +1,3 @@
-use alloc::string::String;
 use alloc::sync::Arc;
 
 use miden_core::mast::MastForest;

@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_core::program::Kernel;
+use miden_core::program::KernelDescriptor;
 
 use crate::batch::{BatchId, ProposedBatch};
 use crate::utils::serde::Deserializable;
@@ -43,9 +43,9 @@ impl BatchKernel {
 
     /// Returns [`ProgramInfo`] for the batch kernel program.
     ///
-    /// The batch kernel does not expose syscalls, so the associated [`Kernel`] is empty.
+    /// The batch kernel does not expose syscalls, so the associated [`KernelDescriptor`] is empty.
     pub fn program_info() -> ProgramInfo {
-        ProgramInfo::new(Self::main().hash(), Kernel::default())
+        ProgramInfo::new(Self::main().hash(), KernelDescriptor::default())
     }
 
     // INPUT BUILDERS

@@ -4,13 +4,28 @@
 # keyed by the token ID, and the `mint_and_send` / `receive_and_burn` procedures wrapping the
 # active mint/burn policies from the `TokenPolicyManager`.
 #
-# Identity model: the asset value is the off-chain commitment `hash(user_data, salt)`; the
-# protocol derives the asset ID's asset class from the value's first two elements. For an NFT
+# Identity model (an off-chain convention, not an enforced property): the asset value is an opaque
+# word supplied by the caller, expected to be the off-chain commitment `hash(user_data, salt)`.
+# The faucet never sees `user_data` or `salt` and validates nothing about the value: it is not
+# checked to be a hash output, to have been salted, or to be backed by a preimage the caller
+# knows. A value copied from another party's published commitment is accepted identically to a
+# correctly constructed one. The binding between a value and its `user_data` must be verified
+# off-chain by whoever relies on it; a minted asset value is not an attestation the faucet has
+# validated.
+#
+# The protocol derives the asset ID's asset class from the value's first two elements. For an NFT
 # faucet every asset has a unique class, so that class is really a unique identifier of each NFT
 # within the faucet - its token ID. This file therefore calls those two elements
-# (token_id_suffix, token_id_prefix). Uniqueness is enforced on-chain by the status registry
-# keyed by `[token_id_suffix, token_id_prefix, 0, 0]`: a commitment can be issued at most once
-# and, once burned, is permanently consumed.
+# (token_id_suffix, token_id_prefix).
+#
+# What the faucet does enforce is token ID uniqueness, via the status registry keyed by
+# `[token_id_suffix, token_id_prefix, 0, 0]`: a token ID can be issued at most once and, once
+# burned, is permanently consumed. The key covers only the first two elements, so two values
+# differing only in elements 2 and 3 share a token ID and only the first can ever be issued.
+# Deciding which values may be issued is the mint policy's job: the policy hook receives the full
+# asset value, so a faucet that needs issuance restricted must install a policy that enforces it.
+# Under a permissive policy such as `allow_all`, any caller can claim any token ID, permanently
+# consuming a commitment another party intended to mint.
 #
 # Shared token metadata (name, description, logo_uri, external_link) lives in the parent
 # `miden::standards::faucets` namespace.
@@ -38,7 +53,7 @@ pub const ASSET_STATUS_SLOT = word("miden::standards::faucets::non_fungible::ass
 const STATUS_ISSUED = 1
 const STATUS_BURNED = 2
 
-# The local memory address holding the asset commitment across the mint flow.
+# The local memory address holding the asset value across the mint flow.
 const ASSET_VALUE_LOCAL = 0
 const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
 const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
@@ -130,7 +145,7 @@ end
 #! Outputs: [status, pad(15)]
 #!
 #! Where:
-#! - token_id_suffix, token_id_prefix are the first two elements of the asset commitment.
+#! - token_id_suffix, token_id_prefix are the first two elements of the asset value.
 #! - status is 0 if not issued, 1 if issued, 2 if burned.
 #!
 #! Invocation: call
@@ -147,17 +162,23 @@ end
 # MINT AND SEND
 # =================================================================================================
 
-#! Mints a non-fungible asset for the provided commitment and sends it to the recipient.
+#! Mints a non-fungible asset for the provided asset value and sends it to the recipient.
 #!
-#! The asset value is the off-chain commitment `hash(user_data, salt)`. The active mint policy
-#! runs over the asset value, the commitment is marked issued in the status registry (asserting
-#! it was not already issued), and an output note carrying the asset is created.
+#! ASSET_VALUE is accepted opaquely. The caller is expected to pass the off-chain commitment
+#! `hash(user_data, salt)`, but this procedure validates neither that construction nor knowledge
+#! of a preimage - any word is accepted. Restricting which values may be minted is the active
+#! mint policy's responsibility; the policy receives the full asset value.
+#!
+#! The active mint policy runs over the asset value, the token ID derived from it is marked issued
+#! in the status registry (asserting it was not already issued), and an output note carrying the
+#! asset is created.
 #!
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
-#! - ASSET_VALUE is the asset commitment.
+#! - ASSET_VALUE is the asset value, by convention an off-chain commitment. It is validated only
+#!   by the active mint policy.
 #! - tag, note_type configure the output note.
 #! - RECIPIENT is the recipient of the asset.
 #! - note_idx is the index of the created note.
@@ -165,13 +186,13 @@ end
 #! Panics if:
 #! - the active mint policy validation fails.
 #! - the faucet is paused.
-#! - the asset commitment has already been issued.
+#! - the token ID derived from ASSET_VALUE has already been issued.
 #!
 #! Invocation: call
 @locals(4)
 @account_procedure
 pub proc mint_and_send
-    # stash the commitment for the status key and the asset creation
+    # stash the asset value for the status key and the asset creation
     dupw loc_storew_le.ASSET_VALUE_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
@@ -179,15 +200,15 @@ pub proc mint_and_send
     exec.policy_manager::execute_mint_policy
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
-    # assert the policy did not modify the asset value: for an NFT the value must remain the
-    # unmodified commitment, so a policy that mutates it is rejected
+    # assert the policy did not modify the asset value: for an NFT the value must remain exactly
+    # the word the caller supplied, so a policy that mutates it is rejected
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ORIG_ASSET_VALUE, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     assert_eqw.err=ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    # build the status key from the token ID (commitment elements 0 and 1)
+    # build the status key from the token ID (asset value elements 0 and 1)
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(10)]
 
@@ -197,7 +218,7 @@ pub proc mint_and_send
     exec.create_status_key
     # => [STATUS_KEY, tag, note_type, RECIPIENT, pad(10)]
 
-    # build the ISSUED status value and write it, asserting the commitment was not already issued
+    # build the ISSUED status value and write it, asserting the token ID was not already issued
     push.STATUS_ISSUED exec.build_status_value
     # => [STATUS_VALUE, STATUS_KEY, tag, note_type, RECIPIENT, pad(10)]
 
@@ -214,7 +235,7 @@ pub proc mint_and_send
     exec.output_note::create dup
     # => [note_idx, note_idx, pad(15)]
 
-    # build the asset from the commitment, mint it, add it to the note
+    # build the asset from the asset value, mint it, add it to the note
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, note_idx, note_idx, pad(15)]
 
@@ -243,9 +264,9 @@ end
 
 #! Burns the non-fungible asset supplied by the caller.
 #!
-#! Burning removes the asset from circulation and marks the commitment BURNED in the status
-#! registry (asserting it was ISSUED). A burned commitment is permanently consumed and can never
-#! be issued again.
+#! Burning removes the asset from circulation and marks the asset's token ID BURNED in the status
+#! registry (asserting it was ISSUED). A burned token ID is permanently consumed and can never be
+#! issued again.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
@@ -276,7 +297,7 @@ pub proc receive_and_burn
     exec.create_status_key
     # => [STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
 
-    # write BURNED and assert the commitment was ISSUED (old status element)
+    # write BURNED and assert the token ID was ISSUED (old status element)
     push.STATUS_BURNED exec.build_status_value
     # => [STATUS_VALUE, STATUS_KEY, ASSET_ID, ASSET_VALUE, pad(16)]
 
