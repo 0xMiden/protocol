@@ -186,6 +186,9 @@ procedure_root!(
     AggLayerBridge::code()
 );
 
+// BRIDGE ROLES
+// ================================================================================================
+
 /// The accounts that initially hold each of the bridge's privileged RBAC roles.
 ///
 /// Used to seed the bridge account's RBAC role membership at creation. Each role gates a distinct
@@ -195,13 +198,13 @@ procedure_root!(
 /// - `GER_REMOVER` gates `remove_ger`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRoles {
-    faucet_managers: BTreeSet<AccountId>,
-    ger_injectors: BTreeSet<AccountId>,
-    ger_removers: BTreeSet<AccountId>,
+    roles: Vec<RoleConfig>,
 }
 
 impl BridgeRoles {
     /// Creates the initial bridge role membership from the holders of each role.
+    ///
+    /// The roles are left administered by the `ADMIN` role.
     ///
     /// # Errors
     ///
@@ -212,6 +215,7 @@ impl BridgeRoles {
         ger_injectors: BTreeSet<AccountId>,
         ger_removers: BTreeSet<AccountId>,
     ) -> Result<Self, AgglayerBridgeError> {
+        let mut roles = Vec::new();
         for (role, members) in [
             (AggLayerBridge::faucet_manager_role(), &faucet_managers),
             (AggLayerBridge::ger_injector_role(), &ger_injectors),
@@ -220,28 +224,24 @@ impl BridgeRoles {
             if members.is_empty() {
                 return Err(AgglayerBridgeError::EmptyBridgeRole(role));
             }
+            roles.push(RoleConfig::new(role).with_members(members.iter().copied()));
         }
 
-        Ok(Self {
-            faucet_managers,
-            ger_injectors,
-            ger_removers,
-        })
-    }
-
-    /// Returns the role seeds used to seed the account's RBAC component. Each role is left
-    /// administered by the `ADMIN` role.
-    pub(crate) fn role_seeds(&self) -> Vec<RoleConfig> {
-        [
-            (AggLayerBridge::faucet_manager_role(), &self.faucet_managers),
-            (AggLayerBridge::ger_injector_role(), &self.ger_injectors),
-            (AggLayerBridge::ger_remover_role(), &self.ger_removers),
-        ]
-        .into_iter()
-        .map(|(role, members)| RoleConfig::new(role).with_members(members.iter().copied()))
-        .collect()
+        Ok(Self { roles })
     }
 }
+
+impl IntoIterator for BridgeRoles {
+    type Item = RoleConfig;
+    type IntoIter = alloc::vec::IntoIter<RoleConfig>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.roles.into_iter()
+    }
+}
+
+// AGG LAYER BRIDGE
+// ================================================================================================
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///

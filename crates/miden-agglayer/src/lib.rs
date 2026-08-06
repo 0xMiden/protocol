@@ -220,7 +220,7 @@ fn create_bridge_account_builder(
         .with_component(
             RoleBasedAccessControl::builder()
                 .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
-                .roles(roles.role_seeds())
+                .roles(roles)
                 .build()
                 .expect("the bridge seeds distinct non-empty roles administered by ADMIN"),
         )
