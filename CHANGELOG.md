@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added the `miden::protocol::native_account::is_issuer_of` procedure ([#3496](https://github.com/0xMiden/protocol/issues/3496)).
+- Added the `miden::protocol::native_account::is_issuer_of` procedure ([#3508](https://github.com/0xMiden/protocol/pull/3508)).
 
 ### Changes
 
@@ -12,7 +12,7 @@
 
 ### Fixes
 
-- Added a check to exempt the issuing faucet from its own `BasicBlocklist` / `BasicAllowlist` transfer policy ([#3496](https://github.com/0xMiden/protocol/issues/3496)).
+- Added a check to exempt the issuing faucet from its own `BasicBlocklist` / `BasicAllowlist` transfer policy ([#3508](https://github.com/0xMiden/protocol/pull/3508)).
 
 ## v0.16.0 (2026-08-04)
 
