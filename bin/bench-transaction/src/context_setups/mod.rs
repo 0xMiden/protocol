@@ -189,6 +189,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork => {
             network_config::tx_consume_faucet_metadata_config_note_network()
         },
+        ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork => {
+            network_config::tx_consume_min_burn_amount_config_note_network()
+        },
         ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
             network_config::tx_consume_allowlist_config_note_network()
         },

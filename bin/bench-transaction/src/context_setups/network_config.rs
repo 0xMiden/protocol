@@ -52,6 +52,7 @@ use miden_standards::note::{
     FaucetMetadataConfigNote,
     FaucetPolicyConfig,
     FaucetPolicyConfigNote,
+    MinBurnAmountConfigNote,
     NetworkAccountConfig,
     NetworkAccountConfigNote,
     OwnerConfig,
@@ -174,6 +175,65 @@ pub fn tx_consume_faucet_metadata_config_note_network() -> Result<MockTransactio
         .config(FaucetMetadataConfig::SetDescription {
             description: Description::new("benchmarked token description")?,
         })
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// MIN BURN AMOUNT CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming a MIN_BURN_AMOUNT_CONFIG note.
+///
+/// The faucet carries a `TokenPolicyManager` whose active burn policy is `min_burn_amount`, gated
+/// by the owner wallet via `Authority::OwnerControlled` (mirrors the account fixture of the
+/// `min_burn_amount_config` test suite). The benchmarked action raises the configured threshold.
+pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send min burn amount config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::new(100)?))
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
+        .with_components(token_policy_manager)
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([MinBurnAmountConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let note: Note = MinBurnAmountConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .min_burn_amount(AssetAmount::new(500)?)
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();
