@@ -23,7 +23,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -35,6 +35,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_ACCOUNT_IS_NOT_ALLOWED, ERR_SENDER_LACKS_ROLE};
 use miden_standards::testing::note::NoteBuilder;
@@ -60,9 +61,6 @@ fn dummy_owner() -> AccountId {
 /// plus the [`AllowlistManager`] component. With `Authority::OwnerControlled` the admin
 /// procedures are gated by the Ownable2Step owner, so the owner can invoke `allow_account` /
 /// `disallow_account` via owner-authored notes.
-///
-/// The faucet starts with an empty allowlist — every transfer (and every mint that emits a
-/// note) will fail until the owner calls `allow_account` to add the relevant accounts.
 fn add_faucet_with_owner_allowlist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -147,6 +145,65 @@ fn build_admin_note(
         .code(script_code.as_str())
         .build()
         .map_err(Into::into)
+}
+
+/// Builds a fungible faucet that can also receive assets (via [`BasicWallet`]), so it can be the
+/// recipient of a *foreign* faucet's asset and thus be subject to that faucet's transfer policy.
+fn add_faucet_with_wallet(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("OTH")?)
+        .symbol("OTH".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([44u8; 32])
+        .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Disabled)
+        .with_component(faucet)
+        .with_component(BasicWallet)
+        .with_component(Authority::AuthControlled)
+        .with_components(
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .build(),
+        );
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a transaction script that mints `amount` units of the faucet's own asset into a new
+/// private output note via `mint_and_send`.
+fn build_mint_tx_script(amount: u64) -> anyhow::Result<TransactionScript> {
+    let recipient = Word::from([0u32, 1, 2, 3]);
+    let tag = NoteTag::default();
+    let note_type = NoteType::Private;
+
+    let tx_script_code = format!(
+        r#"
+        @transaction_script
+        pub proc main
+            push.0 push.0
+
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            push.{amount}
+
+            exec.::miden::protocol::active_account::get_id
+            exec.::miden::standards::assets::fungible_asset::create
+
+            call.::miden::standards::faucets::fungible::mint_and_send
+
+            dropw dropw dropw dropw
+        end
+        "#,
+        note_type = note_type as u8,
+        tag = u32::from(tag),
+    );
+
+    Ok(CodeBuilder::default().compile_tx_script(&tx_script_code)?)
 }
 
 // TESTS
@@ -439,64 +496,87 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
 }
 
 /// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
-/// installs the asset-callback slots (here via [`TransferPolicy::with_basic_allowlist`]) once the
-/// faucet itself is allowlisted so it can satisfy the send policy when minting.
+/// installs the asset-callback slots (here via [`TransferPolicy::with_basic_allowlist`]) while
+/// the allowlist is empty.
 #[tokio::test]
 async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    // The send policy is invoked from `on_before_asset_added_to_note`, where the native
-    // account is the note creator (the faucet itself when minting). Seed the faucet's own
-    // ID into the allowlist via an admin note so the mint can proceed.
-    let allow_faucet_note = build_admin_note(owner_id, faucet.id(), "allow_account", 9)?;
-    builder.add_output_note(RawOutputNote::Full(allow_faucet_note.clone()));
+    let mock_chain = builder.build()?;
 
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    consume_note(&mut mock_chain, faucet.id(), &allow_faucet_note).await?;
-
-    let recipient = Word::from([0u32, 1, 2, 3]);
-    let amount: u64 = 100;
-    let tag = NoteTag::default();
-    let note_type = NoteType::Private;
-
-    let tx_script_code = format!(
-        r#"
-        @transaction_script
-        pub proc main
-            push.0 push.0
-
-            push.{recipient}
-            push.{note_type}
-            push.{tag}
-            push.{amount}
-
-            exec.::miden::protocol::active_account::get_id
-            exec.::miden::standards::assets::fungible_asset::create
-
-            call.::miden::standards::faucets::fungible::mint_and_send
-
-            dropw dropw dropw dropw
-        end
-        "#,
-        recipient = recipient,
-        note_type = note_type as u8,
-        tag = u32::from(tag),
-        amount = amount,
-    );
-
-    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
     let executed = mock_chain
         .build_transaction(faucet.id())
-        .tx_script(tx_script)
+        .tx_script(build_mint_tx_script(100)?)
         .build()?
         .execute()
         .await?;
 
     assert_eq!(executed.output_notes().num_notes(), 1);
+    Ok(())
+}
+
+/// Verifies that `disallow_account` on the faucet's own ID does not take minting away.
+#[tokio::test]
+async fn mint_and_send_succeeds_after_faucet_disallows_itself() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
+
+    let disallow_faucet_note = build_admin_note(owner_id, faucet.id(), "disallow_account", 9)?;
+    builder.add_output_note(RawOutputNote::Full(disallow_faucet_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    consume_note(&mut mock_chain, faucet.id(), &disallow_faucet_note).await?;
+
+    let executed = mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(build_mint_tx_script(100)?)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed.output_notes().num_notes(), 1);
+
+    Ok(())
+}
+
+/// Verifies that the issuer exemption is keyed on the transferred asset rather than on the
+/// native account being a faucet.
+///
+/// `other_faucet` is itself a faucet, but it is not the issuer of the asset it transfers, so it
+/// is still filtered by the issuing faucet's allowlist.
+#[tokio::test]
+async fn transfer_of_foreign_asset_by_a_faucet_is_not_exempt() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let issuer = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
+    let other_faucet = add_faucet_with_wallet(&mut builder)?;
+
+    let asset = FungibleAsset::new(issuer.id(), 100)?;
+    let p2id_note = builder.add_p2id_note(
+        issuer.id(),
+        other_faucet.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mock_chain = builder.build()?;
+    let issuer_inputs = mock_chain.get_foreign_account_inputs(issuer.id())?;
+
+    let result = mock_chain
+        .build_transaction(other_faucet.id())
+        .authenticated_input_note(p2id_note.id())
+        .foreign_accounts(vec![issuer_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_ALLOWED);
+
     Ok(())
 }
 
