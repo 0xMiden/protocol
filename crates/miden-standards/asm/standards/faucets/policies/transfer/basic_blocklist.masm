@@ -28,12 +28,12 @@ use miden::standards::faucets::policies::transfer::blocklist
 #! Invocation: call
 @account_procedure
 pub proc check_policy
+    dropw dropw drop
+    # => [pad(16)]
+
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # => [account_id_suffix, account_id_prefix, pad(16)]
 
     exec.blocklist::assert_not_blocked
-    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-
-    dropw dropw drop
     # => [pad(16)]
 end

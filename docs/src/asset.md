@@ -171,7 +171,7 @@ Account components that need to add callbacks to an account's storage should use
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback receives the asset ID and value, but cannot replace the value: it either completes successfully or aborts the transaction. The kernel retains the original asset value and uses it after the callback.
+The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback receives the asset ID and value for inspection. The callback either completes successfully or aborts the transaction.
 
 The **account callback** receives:
 
