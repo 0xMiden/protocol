@@ -1,5 +1,3 @@
-use alloc::string::String;
-
 use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH};
 use miden_crypto_derive::WordWrapper;
 
@@ -10,7 +8,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word};
+use crate::{Hasher, Word};
 
 // STORAGE MAP KEY
 // ================================================================================================

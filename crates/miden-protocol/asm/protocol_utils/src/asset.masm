@@ -1,0 +1,302 @@
+# ERRORS
+# =================================================================================================
+
+const ERR_VAULT_ASSET_METADATA_NOT_U32 = "asset metadata is not a u32"
+
+const ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS = "reserved asset metadata bits are non-zero"
+
+const ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION = "unknown asset metadata composition value"
+
+# CONSTANTS
+# =================================================================================================
+
+# Specifies the maximum amount a fungible asset can represent.
+#
+# This is 2^63 - 2^31. See account_update.masm for more details.
+pub const FUNGIBLE_ASSET_MAX_AMOUNT = 0x7fffffff80000000
+
+# The number of elements in an asset, i.e. asset ID and value.
+pub const ASSET_SIZE = 8
+
+# The offset of the asset value in an asset stored in memory.
+pub const ASSET_VALUE_MEMORY_OFFSET = 4
+
+#! The mask for the composition bits in the asset metadata.
+const COMPOSITION_MASK = 3 # 0b11
+
+# The flag representing the AssetComposition::None composition.
+pub const COMPOSITION_NONE = 0
+
+# The flag representing the AssetComposition::Fungible composition.
+pub const COMPOSITION_FUNGIBLE = 1
+
+# The flag representing the AssetComposition::Custom composition.
+pub const COMPOSITION_CUSTOM = 2
+
+#! The composition value that is not valid.
+const COMPOSITION_INVALID = 3
+
+#! The u32 mask for the reserved bits in the asset metadata.
+const METADATA_RESERVED_MASK = 0xfffffffc # lower 8 bits: 0b1111_1100
+
+# PROCEDURES
+# =================================================================================================
+
+#! Stores an asset ID and value into memory at the given pointer.
+#!
+#! The memory range pointer..pointer+8 will be overwritten.
+#!
+#! Inputs: [ptr, ASSET_ID, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ptr is the memory address where the asset will be stored.
+#! - ASSET_ID is the 4-element word representing the asset ID.
+#! - ASSET_VALUE is the 4-element word representing the asset value.
+pub proc store
+    # store asset ID
+    movdn.4 dup.4
+    # => [ptr, ASSET_ID, ptr, ASSET_VALUE]
+
+    mem_storew_le dropw
+    # => [ptr, ASSET_VALUE]
+
+    # store asset value
+    add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
+    # => []
+end
+
+#! Loads an asset ID and value from memory given a pointer to the asset.
+#!
+#! Inputs: [ptr]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ptr is the memory address of the asset.
+#! - ASSET_ID is the 4-element word representing the asset ID.
+#! - ASSET_VALUE is the 4-element word representing the asset value.
+pub proc load
+    # load asset value
+    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+    # => [ASSET_VALUE, ptr]
+
+    # load asset ID
+    padw movup.8 mem_loadw_le
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Returns the faucet ID from an asset ID.
+#!
+#! WARNING: The faucet ID is not validated.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+#!
+#! Where:
+#! - faucet_id is the account ID in the asset ID.
+#! - ASSET_ID is the asset ID from which to extract the faucet ID.
+pub proc id_to_faucet_id
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    dup.3 dup.3
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_ID]
+
+    exec.split_suffix_and_metadata drop
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+end
+
+#! Returns the faucet ID from an asset ID and consumes it.
+#!
+#! WARNING: The faucet ID is not validated.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix]
+#!
+#! Where:
+#! - faucet_id is the account ID in the asset ID.
+#! - ASSET_ID is the asset ID from which to extract the faucet ID.
+pub proc id_into_faucet_id
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    drop drop
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    exec.split_suffix_and_metadata drop
+    # => [faucet_id_suffix, faucet_id_prefix]
+end
+
+#! Returns the asset class from an asset ID.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [asset_class_suffix, asset_class_prefix, ASSET_ID]
+#!
+#! Where:
+#! - asset_class is the asset class in the asset ID.
+#! - ASSET_ID is the asset ID from which to extract the asset class.
+pub proc id_to_asset_class
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix]
+    dup.1 dup.1
+    # => [asset_class_suffix, asset_class_prefix, ASSET_ID]
+end
+
+#! Returns the asset class from an asset ID and consumes it.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [asset_class_suffix, asset_class_prefix]
+#!
+#! Where:
+#! - asset_class is the asset class in the asset ID.
+#! - ASSET_ID is the asset ID from which to extract the asset class.
+pub proc id_into_asset_class
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix, faucet_id_prefix]
+    movup.2 drop movup.2 drop
+    # => [asset_class_suffix, asset_class_prefix]
+end
+
+#! Splits the merged faucet ID suffix and the asset metadata.
+#!
+#! Inputs:  [faucet_id_suffix_and_metadata]
+#! Outputs: [asset_metadata, faucet_id_suffix]
+#!
+#! Where:
+#! - faucet_id_suffix_and_metadata is the faucet ID suffix merged with the asset metadata.
+#! - faucet_id_suffix is the suffix of the account ID.
+#! - asset_metadata is the asset metadata.
+pub proc split_suffix_and_metadata
+    u32split
+    # => [suffix_metadata_lo, suffix_metadata_hi]
+
+    dup movdn.2
+    # => [suffix_metadata_lo, suffix_metadata_hi, suffix_metadata_lo]
+
+    # clear lower 8 bits of the lo part to get the actual ID suffix
+    u32and.0xffffff00 swap
+    # => [suffix_metadata_hi, suffix_metadata_lo', suffix_metadata_lo]
+
+    # reassemble the ID suffix by multiplying the hi part with 2^32 and adding the lo part
+    mul.0x0100000000 add
+    # => [faucet_id_suffix, suffix_metadata_lo]
+
+    # extract lower 8 bits of the lo part to get the metadata
+    swap u32and.0xff
+    # => [asset_metadata, faucet_id_suffix]
+end
+
+#! Validates that asset metadata is well formed and consumes it.
+#!
+#! Inputs:  [asset_metadata]
+#! Outputs: []
+#!
+#! Panics if:
+#! - asset_metadata is not a valid u32
+#! - has reserved bits 3-7 set.
+#! - encodes an unknown asset composition.
+pub proc validate_metadata
+    # assert that the metadata fits in a u8
+    u32split swap
+    # => [hi, asset_metadata]
+    eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NOT_U32
+    # => [asset_metadata]
+
+    # assert the reserved bits are all zero (bits 3..32)
+    dup u32and.METADATA_RESERVED_MASK
+    eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS
+    # => [asset_metadata]
+
+    exec.metadata_into_composition
+    # => [asset_composition]
+
+    # assert the value is NOT the invalid composition, which implies it must be one of the valid
+    # ones
+    neq.COMPOSITION_INVALID assert.err=ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION
+    # => []
+end
+
+#! Creates asset metadata from the provided composition.
+#!
+#! Inputs:  [asset_composition]
+#! Outputs: [asset_metadata]
+#!
+#! Where:
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
+#! - asset_metadata is the asset metadata.
+#!
+#! Panics if:
+#! - the resulting metadata byte has invalid reserved bits set.
+proc create_metadata
+    # the asset metadata is currently just the composition
+    dup exec.validate_metadata
+    # => [asset_metadata]
+end
+
+#! Extracts the asset composition from asset metadata.
+#!
+#! WARNING: asset_metadata is assumed to be a byte (in particular a valid u32)
+#!
+#! Inputs:  [asset_metadata]
+#! Outputs: [asset_composition]
+#!
+#! Where:
+#! - asset_metadata is the asset metadata.
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
+proc metadata_into_composition
+    # extract composition bits from the metadata
+    u32and.COMPOSITION_MASK
+    # => [asset_composition]
+end
+
+#! Returns the asset composition from an asset ID.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [asset_composition, ASSET_ID]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID from which to extract the composition.
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
+pub proc id_to_composition
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    dup.2
+    # => [faucet_id_suffix_and_metadata, ASSET_ID]
+
+    exec.split_suffix_and_metadata swap drop
+    # => [asset_metadata, ASSET_ID]
+
+    exec.metadata_into_composition
+    # => [asset_composition, ASSET_ID]
+end
+
+#! Returns the asset composition from an asset ID and consumes it.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [asset_composition]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID from which to extract the composition.
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
+pub proc id_into_composition
+    # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    drop drop
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    exec.split_suffix_and_metadata
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
+
+    movdn.2 drop drop
+    # => [asset_metadata]
+
+    exec.metadata_into_composition
+    # => [asset_composition]
+end
+
+#! Returns the balance of the given fungible asset and consumes it.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [balance]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - balance is the amount of the fungible asset.
+pub proc fungible_value_into_amount
+    movdn.3 drop drop drop
+    # => [balance]
+end

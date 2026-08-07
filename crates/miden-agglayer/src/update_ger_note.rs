@@ -3,43 +3,26 @@
 //! This module provides helpers for creating UPDATE_GER notes,
 //! which are used to update the Global Exit Root in the bridge account.
 
-extern crate alloc;
-
-use alloc::string::ToString;
-use alloc::vec;
-
-use miden_assembly::Library;
-use miden_assembly::serde::Deserializable;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachments,
-    NoteRecipient,
-    NoteScript,
-    NoteScriptRoot,
-    NoteStorage,
-    NoteType,
-    PartialNoteMetadata,
-};
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_standards::note::costs::NoteConsumptionCost;
 use miden_utils_sync::LazyLock;
 
-use crate::ExitRoot;
+use crate::costs::UPDATE_GER_CONSUMPTION_CYCLES;
+use crate::ger_note::create_ger_note;
+use crate::{ExitRoot, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the UPDATE_GER note script procedure in the agglayer package.
+const UPDATE_GER_SCRIPT_PATH: &str = "::agglayer::notes::update_ger::main";
+
 // Initialize the UPDATE_GER note script only once
-static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/update_ger.masl"));
-    let library =
-        Library::read_from_bytes(bytes).expect("shipped UPDATE_GER script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped UPDATE_GER script is well-formed")
-});
+static UPDATE_GER_SCRIPT: LazyLock<NoteScript> =
+    LazyLock::new(|| note_script(UPDATE_GER_SCRIPT_PATH));
 
 // UPDATE_GER NOTE
 // ================================================================================================
@@ -91,24 +74,15 @@ impl UpdateGerNote {
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 8 felts: GER[0..7]
-        let storage_values = ger.to_elements().to_vec();
+        create_ger_note(ger, sender_account_id, target_account_id, Self::script(), rng)
+    }
+}
 
-        let note_storage = NoteStorage::new(storage_values)?;
+// NOTE CONSUMPTION COST
+// ================================================================================================
 
-        // Generate a serial number for the note
-        let serial_num = rng.draw_word();
-
-        let recipient = NoteRecipient::new(serial_num, Self::script(), note_storage);
-
-        let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
-            .map_err(|e| NoteError::other(e.to_string()))?;
-        let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
-        let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
-
-        // UPDATE_GER notes don't carry assets
-        let assets = NoteAssets::new(vec![])?;
-
-        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+impl NoteConsumptionCost for UpdateGerNote {
+    fn consumption_cycles() -> u32 {
+        UPDATE_GER_CONSUMPTION_CYCLES
     }
 }

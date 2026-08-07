@@ -5,19 +5,32 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::{Assembler, Library, Report};
+use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+use miden_assembly::{ProjectTargetSelector, Report};
 use miden_core::Word;
+use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
+use miden_mast_package::Package;
+use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
+use miden_protocol::ProtocolLib;
 use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
-use miden_standards::account::access::Authority;
+use miden_protocol_build_utils::{
+    ErrorModule,
+    PROJECT_MANIFEST,
+    assemble_project,
+    assemble_workspace,
+    extract_all_masm_errors,
+    generate_error_file,
+};
+use miden_standards::StandardsLib;
+use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyRegistration,
+    BurnPolicy,
+    MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -27,10 +40,9 @@ use miden_standards::account::policies::{
 
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
-const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
 const ASM_AGGLAYER_DIR: &str = "agglayer";
-const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
 const ASM_COMPONENTS_DIR: &str = "components";
+const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
 
 const AGGLAYER_ERRORS_RS_FILE: &str = "agglayer_errors.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
@@ -40,9 +52,9 @@ const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
-/// - Compiles the contents of asm/agglayer directory into a single agglayer.masl library.
-/// - Compiles the contents of asm/components directory into individual per-component .masl files.
-/// - Compiles the contents of asm/note_scripts directory into individual `.masl` libraries.
+/// - Compiles the contents of the asm/agglayer directory into a single agglayer package. Note
+///   scripts are included in this library.
+/// - Compiles the contents of the asm/components directory into individual per-component packages.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
@@ -50,161 +62,83 @@ fn main() -> Result<()> {
 
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
+    let crate_path = Path::new(&crate_dir);
 
     // validate (or regenerate) canonical zeros in `asm/agglayer/bridge/canonical_zeros.masm`
-    let crate_path = Path::new(&crate_dir);
     ensure_canonical_zeros(&crate_path.join(ASM_DIR).join(ASM_AGGLAYER_BRIDGE_DIR))?;
 
     // Read MASM sources directly from the crate's asm/ directory.
+    // No copy to OUT_DIR is needed because this crate doesn't mutate the source tree.
     let source_dir = crate_path.join(ASM_DIR);
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
-    // compile agglayer library
-    let agglayer_lib =
-        compile_agglayer_lib(&source_dir, &target_dir, TransactionKernel::assembler())?;
+    // The miden-core, miden-protocol and miden-standards libraries are provided through an
+    // in-memory registry.
+    let mut registry = build_registry()?;
 
-    let mut assembler = TransactionKernel::assembler();
-    assembler.link_static_library(agglayer_lib)?;
+    // compile agglayer library (includes note scripts) and seed it into the registry
+    compile_agglayer_package(&source_dir, &target_dir, &mut registry)?;
 
-    // compile account components (thin wrappers per component) and return their libraries
-    let component_libraries = compile_account_components(
-        &source_dir.join(ASM_COMPONENTS_DIR),
+    // compile account components (thin wrappers per component); their packages are returned so
+    // their code commitments can be computed below
+    let component_packages = assemble_workspace(
+        source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
+        &mut registry,
         &target_dir.join(ASM_COMPONENTS_DIR),
-        assembler.clone(),
-    )?;
-
-    // compile note scripts
-    compile_note_scripts(
-        &source_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        &target_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        assembler.clone(),
     )?;
 
     // generate agglayer specific constants
     let constants_out_path = Path::new(&build_dir).join(AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME);
-    generate_agglayer_constants(constants_out_path, component_libraries)?;
+    generate_agglayer_constants(constants_out_path, component_packages)?;
 
     generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
 
+// ASSEMBLER & REGISTRY
+// ================================================================================================
+
+/// Builds a package registry seeded with the protocol library and its transitive `miden-tx-kernel`
+/// and `miden-core` dependencies, plus the standards library, so that the dependencies declared by
+/// the agglayer projects can be resolved during project assembly.
+fn build_registry() -> Result<InMemoryPackageRegistry> {
+    let mut registry = InMemoryPackageRegistry::default();
+
+    // The protocol package declares dependencies on the kernel and core packages, and the agglayer
+    // projects depend on the standards package, so all of these must be available in the registry
+    // for project dependency resolution to succeed.
+    for package in CoreLibrary::default().packages().into_iter().chain([
+        ProtocolLib::default().package(),
+        TransactionKernel::package(),
+        StandardsLib::default().package(),
+    ]) {
+        registry.cache_package(package).into_diagnostic()?;
+    }
+
+    Ok(registry)
+}
+
 // COMPILE AGGLAYER LIB
 // ================================================================================================
 
-/// Reads the MASM files from "{source_dir}/agglayer" directory, compiles them into a Miden
-/// assembly library, saves the library into "{target_dir}/agglayer.masl", and returns the compiled
-/// library.
-fn compile_agglayer_lib(
+/// Assembles the agglayer library project in "{source_dir}/agglayer" into a package, saves it to
+/// the `target_dir`, and seeds it into the `registry` so the account components can resolve it.
+fn compile_agglayer_package(
     source_dir: &Path,
     target_dir: &Path,
-    mut assembler: Assembler,
-) -> Result<Library> {
-    let source_dir = source_dir.join(ASM_AGGLAYER_DIR);
-
-    // Add the miden-standards library to the assembler so agglayer components can use it
-    let standards_lib = miden_standards::StandardsLib::default();
-    assembler.link_static_library(standards_lib)?;
-
-    let agglayer_lib = assembler.assemble_library_from_dir(source_dir, "agglayer")?;
-
-    let output_file = target_dir.join("agglayer").with_extension(Library::LIBRARY_EXTENSION);
-    agglayer_lib.write_to_file(output_file).into_diagnostic()?;
-
-    Ok(Arc::unwrap_or_clone(agglayer_lib))
-}
-
-// COMPILE EXECUTABLE MODULES
-// ================================================================================================
-
-/// Reads all MASM files from `{source_dir}`, compiles each file as a note script library with
-/// [`Assembler::assemble_library`], and writes the serialized library as `.masl` via
-/// [`Library::write_to_file`].
-fn compile_note_scripts(
-    source_dir: &Path,
-    note_scripts_target_dir: &Path,
-    mut assembler: Assembler,
+    registry: &mut InMemoryPackageRegistry,
 ) -> Result<()> {
-    fs::create_dir_all(note_scripts_target_dir)
-        .into_diagnostic()
-        .wrap_err("failed to create note_scripts directory")?;
+    let manifest_path = source_dir.join(ASM_AGGLAYER_DIR).join(PROJECT_MANIFEST);
 
-    // Add the miden-standards library to the assembler so note scripts can use it
-    let standards_lib = miden_standards::StandardsLib::default();
-    assembler.link_static_library(standards_lib)?;
+    let package =
+        assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
 
-    for note_file_path in shared::get_masm_files(source_dir).unwrap() {
-        // compile the note script library from the provided MASM file
-        let note_library = assembler.clone().assemble_library([note_file_path.clone()])?;
+    registry.cache_package(package).into_diagnostic()?;
 
-        let note_file_name = note_file_path
-            .file_name()
-            .expect("file name should exist")
-            .to_str()
-            .ok_or_else(|| Report::msg("failed to convert file name to &str"))?;
-        let mut masl_file_path = note_scripts_target_dir.join(note_file_name);
-        masl_file_path.set_extension(Library::LIBRARY_EXTENSION);
-
-        // write the note script library to the output dir
-        note_library
-            .write_to_file(&masl_file_path)
-            .map_err(|e| Report::msg(format!("{e:#}")))?;
-    }
     Ok(())
-}
-
-// COMPILE ACCOUNT COMPONENTS
-// ================================================================================================
-
-/// Compiles the account components in `source_dir` into MASL libraries, stores the compiled
-/// files in `target_dir`, and returns a vector of compiled component libraries along with their
-/// names.
-///
-/// Each `.masm` file in the components directory is a thin wrapper that re-exports specific
-/// procedures from the main agglayer library. This ensures each component (bridge, faucet)
-/// only exposes the procedures relevant to its role.
-///
-/// The assembler must already have the agglayer library linked so that `pub use` re-exports
-/// can resolve.
-fn compile_account_components(
-    source_dir: &Path,
-    target_dir: &Path,
-    assembler: Assembler,
-) -> Result<Vec<(String, Library)>> {
-    if !target_dir.exists() {
-        fs::create_dir_all(target_dir).unwrap();
-    }
-
-    let mut component_libraries = Vec::new();
-
-    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
-        let component_name = masm_file_path
-            .file_stem()
-            .expect("masm file should have a file stem")
-            .to_str()
-            .expect("file stem should be valid UTF-8")
-            .to_owned();
-
-        let component_source_code = fs::read_to_string(&masm_file_path)
-            .expect("reading the component's MASM source code should succeed");
-
-        let named_source = NamedSource::new(component_name.clone(), component_source_code);
-
-        let component_library = assembler
-            .clone()
-            .assemble_library([named_source])
-            .expect("library assembly should succeed");
-
-        let component_file_path =
-            target_dir.join(&component_name).with_extension(Library::LIBRARY_EXTENSION);
-        component_library.write_to_file(&component_file_path).into_diagnostic()?;
-
-        component_libraries.push((component_name, Arc::unwrap_or_clone(component_library)));
-    }
-
-    Ok(component_libraries)
 }
 
 // GENERATE AGGLAYER CONSTANTS
@@ -217,7 +151,7 @@ fn compile_account_components(
 /// - AggLayer Faucet code commitment.
 fn generate_agglayer_constants(
     target_file: impl AsRef<Path>,
-    component_libraries: Vec<(String, Library)>,
+    component_packages: Vec<Arc<Package>>,
 ) -> Result<()> {
     let mut file_contents = String::new();
 
@@ -239,28 +173,65 @@ fn generate_agglayer_constants(
     // code commitment, so it doesn't matter what does this metadata holds.
     let dummy_metadata = AccountComponentMetadata::new("dummy");
 
-    // iterate over the AggLayer Bridge and AggLayer Faucet libraries
-    for (lib_name, content_library) in component_libraries {
+    // iterate over the AggLayer Bridge and AggLayer Faucet packages
+    for package in component_packages {
+        // Derive the short component name (e.g. "bridge" / "faucet") from the package name
+        // (e.g. "miden-agglayer-bridge").
+        let component_name = package
+            .name
+            .rsplit('-')
+            .next()
+            .expect("component package name should be non-empty")
+            .to_owned();
+
         let agglayer_component =
-            AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
+            AccountComponent::new(Arc::unwrap_or_clone(package), vec![], dummy_metadata.clone())
+                .unwrap();
 
         // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
         // policies alongside the agglayer faucet component, since
         // fungible::mint_and_send requires these for access control.
         //
+        // Use a dummy owner for commitment computation - the actual owner is set at runtime. Only
+        // the component code (not storage) contributes to the code commitment.
+        let dummy_owner = miden_protocol::account::AccountId::try_from(
+            miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        )
+        .unwrap();
+
+        // Both the bridge and the faucet install a FeePolicyManager (see
+        // `agglayer_fee_policy_manager` in lib.rs). Only its procedure code affects the commitment,
+        // so the fee faucet id backing the policy is immaterial here. The manager's active policy,
+        // allowed policies and fee asset initialize the fee-policy slots the auth component owns,
+        // but those are storage (not code) and so do not affect the commitment either.
+        let fee_policy_manager = FeePolicyManager::builder()
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
+            .fee_faucet_id(dummy_owner)
+            .build();
+
         // The allowlist lives in storage, not code, and here we only care about the code commitment
         // of the accounts, so we can init the allowlists with dummy values.
         let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
-        let auth_component = AuthNetworkAccount::with_allowed_notes(placeholder_allowlist)
+        let auth_component = AuthNetworkAccount::new(placeholder_allowlist, fee_policy_manager)
             .expect("placeholder allowlist is non-empty");
-        let mut components: Vec<AccountComponent> =
-            vec![AccountComponent::from(auth_component), agglayer_component];
-        if lib_name == "faucet" {
-            // Use a dummy owner for commitment computation - the actual owner is set at runtime
-            let dummy_owner = miden_protocol::account::AccountId::try_from(
-                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-            )
-            .unwrap();
+
+        // The auth component expands into itself followed by the fee policy manager's components,
+        // matching `NetworkAccount::builder`, which installs them via `with_components` before the
+        // account-specific components below.
+        let mut components: Vec<AccountComponent> = auth_component.into_iter().collect();
+        components.push(agglayer_component);
+        if component_name == "bridge" {
+            // The bridge installs the RBAC access-control stack (RoleBasedAccessControl +
+            // Authority::RbacControlled), matching `create_bridge_account_builder` in lib.rs. An
+            // empty admin / role config suffices here since only component code affects the
+            // commitment.
+            components.extend(AccessControl::Rbac {
+                admin: dummy_owner,
+                procedure_roles: std::collections::BTreeMap::new(),
+            });
+            components.push(AccountComponent::from(Pausable::unpaused()));
+            components.push(AccountComponent::from(PausableManager));
+        } else if component_name == "faucet" {
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
@@ -271,17 +242,13 @@ fn generate_agglayer_constants(
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
             // is registered as Reserved so the owner can open burns at runtime via
             // `set_burn_policy`.
-            let token_policy_manager = TokenPolicyManager::new()
-                .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-                .expect("active mint policy is registered exactly once")
-                .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-                .expect("active burn policy is registered exactly once")
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
-                .expect("reserved burn policy registration does not conflict")
-                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-                .expect("active send policy is registered exactly once")
-                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-                .expect("active receive policy is registered exactly once");
+            let token_policy_manager = TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::owner_only())
+                .active_burn_policy(BurnPolicy::owner_only())
+                .allowed_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(TransferPolicy::allow_all())
+                .active_receive_policy(TransferPolicy::allow_all())
+                .build();
 
             components.extend(token_policy_manager);
         }
@@ -295,13 +262,13 @@ fn generate_agglayer_constants(
         writeln!(
             file_contents,
             "pub const {}_CODE_COMMITMENT: Word = miden_protocol::word!(\"{code_commitment}\");",
-            lib_name.to_uppercase(),
+            component_name.to_uppercase(),
         )
         .unwrap();
     }
 
     // write the resulting constants to the target directory
-    shared::write_if_changed(target_file, file_contents.as_bytes())?;
+    write_if_changed(target_file, file_contents.as_bytes())?;
 
     Ok(())
 }
@@ -334,10 +301,10 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // Miden agglayer errors
     // ------------------------------------------
 
-    let errors = shared::extract_all_masm_errors(asm_source_dir)
-        .context("failed to extract all masm errors")?;
-    shared::generate_error_file(
-        shared::ErrorModule {
+    let errors =
+        extract_all_masm_errors(asm_source_dir).context("failed to extract all masm errors")?;
+    generate_error_file(
+        ErrorModule {
             file_path: Path::new(build_dir).join(AGGLAYER_ERRORS_RS_FILE),
             array_name: AGGLAYER_ERRORS_ARRAY_NAME,
             is_crate_local: false,
@@ -398,7 +365,7 @@ fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
-use ::agglayer::common::utils::mem_store_double_word
+use {mem_store_double_word} from miden::standards::utils
 
 
 #! Inputs:  [zeros_ptr]
@@ -416,7 +383,7 @@ pub proc load_zeros_to_memory\n",
 
     if option_env!("REGENERATE_CANONICAL_ZEROS").is_some() {
         // Regeneration mode: write the file
-        shared::write_if_changed(&file_path, &zero_constants)?;
+        write_if_changed(&file_path, &zero_constants)?;
     } else {
         // Validation mode: ensure the committed file matches
         let committed = fs::read_to_string(&file_path)
@@ -433,235 +400,17 @@ pub proc load_zeros_to_memory\n",
     Ok(())
 }
 
-/// This module should be kept in sync with the copy in miden-protocol's and miden-standards'
-/// build.rs.
-mod shared {
-    use std::collections::BTreeMap;
-    use std::fmt::Write;
-    use std::io::{self};
-    use std::path::{Path, PathBuf};
-
-    use fs_err as fs;
-    use miden_assembly::Report;
-    use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
-    use regex::Regex;
-    use walkdir::WalkDir;
-
-    /// Returns a vector with paths to all MASM files in the specified directory.
-    ///
-    /// All non-MASM files are skipped.
-    pub fn get_masm_files<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        let path = dir_path.as_ref();
-        if path.is_dir() {
-            let entries = fs::read_dir(path)
-                .into_diagnostic()
-                .wrap_err_with(|| format!("failed to read directory {}", path.display()))?;
-            for entry in entries {
-                let file = entry.into_diagnostic().wrap_err("failed to read directory entry")?;
-                let file_path = file.path();
-                if is_masm_file(&file_path).into_diagnostic()? {
-                    files.push(file_path);
-                }
-            }
-        } else {
-            println!("cargo:warn=The specified path is not a directory.");
-        }
-
-        Ok(files)
-    }
-
-    /// Returns true if the provided path resolves to a file with `.masm` extension.
-    ///
-    /// # Errors
-    /// Returns an error if the path could not be converted to a UTF-8 string.
-    pub fn is_masm_file(path: &Path) -> io::Result<bool> {
-        if let Some(extension) = path.extension() {
-            let extension = extension
-                .to_str()
-                .ok_or_else(|| io::Error::other("invalid UTF-8 filename"))?
-                .to_lowercase();
-            Ok(extension == "masm")
-        } else {
-            Ok(false)
+/// Writes `contents` to `path` only if the file doesn't exist or its current contents
+/// differ. This avoids updating the file's mtime when nothing changed, which prevents
+/// cargo from treating the crate as dirty on the next build.
+pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
+    let path = path.as_ref();
+    let new_contents = contents.as_ref();
+    if path.exists() {
+        let existing = std::fs::read(path).into_diagnostic()?;
+        if existing == new_contents {
+            return Ok(());
         }
     }
-
-    /// Extract all masm errors from the given path and returns a map by error category.
-    pub fn extract_all_masm_errors(asm_source_dir: &Path) -> Result<Vec<NamedError>> {
-        // We use a BTree here to order the errors by their categories which is the first part after
-        // the ERR_ prefix and to allow for the same error to be defined multiple times in
-        // different files (as long as the constant name and error messages match).
-        let mut errors = BTreeMap::new();
-
-        // Walk all files of the kernel source directory.
-        for entry in WalkDir::new(asm_source_dir) {
-            let entry = entry.into_diagnostic()?;
-            if !is_masm_file(entry.path()).into_diagnostic()? {
-                continue;
-            }
-            let file_contents = std::fs::read_to_string(entry.path()).into_diagnostic()?;
-            extract_masm_errors(&mut errors, &file_contents)?;
-        }
-
-        let errors = errors
-            .into_iter()
-            .map(|(error_name, error)| NamedError { name: error_name, message: error.message })
-            .collect();
-
-        Ok(errors)
-    }
-
-    /// Extracts the errors from a single masm file and inserts them into the provided map.
-    pub fn extract_masm_errors(
-        errors: &mut BTreeMap<ErrorName, ExtractedError>,
-        file_contents: &str,
-    ) -> Result<()> {
-        let regex = Regex::new(r#"const\s*ERR_(?<name>.*)\s*=\s*"(?<message>.*)""#).unwrap();
-
-        for capture in regex.captures_iter(file_contents) {
-            let error_name = capture
-                .name("name")
-                .expect("error name should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-            let error_message = capture
-                .name("message")
-                .expect("error code should be captured")
-                .as_str()
-                .trim()
-                .to_owned();
-
-            if let Some(ExtractedError { message: existing_error_message, .. }) =
-                errors.get(&error_name)
-                && existing_error_message != &error_message
-            {
-                return Err(Report::msg(format!(
-                    "Transaction kernel error constant ERR_{error_name} is already defined elsewhere but its error message is different"
-                )));
-            }
-
-            // Enforce the "no trailing punctuation" rule from the Rust error guidelines on MASM
-            // errors.
-            if error_message.ends_with(".") {
-                return Err(Report::msg(format!(
-                    "Error messages should not end with a period: `ERR_{error_name}: {error_message}`"
-                )));
-            }
-
-            errors.insert(error_name, ExtractedError { message: error_message });
-        }
-
-        Ok(())
-    }
-
-    pub fn is_new_error_category<'a>(
-        last_error: &mut Option<&'a str>,
-        current_error: &'a str,
-    ) -> bool {
-        let is_new = match last_error {
-            Some(last_err) => {
-                let last_category =
-                    last_err.split("_").next().expect("there should be at least one entry");
-                let new_category =
-                    current_error.split("_").next().expect("there should be at least one entry");
-                last_category != new_category
-            },
-            None => false,
-        };
-
-        last_error.replace(current_error);
-
-        is_new
-    }
-
-    /// Generates the content of an error file for the given category and the set of errors and
-    /// writes it to the category's file.
-    pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Result<()> {
-        let mut output = String::new();
-
-        if module.is_crate_local {
-            writeln!(output, "use crate::errors::MasmError;\n").unwrap();
-        } else {
-            writeln!(output, "use miden_protocol::errors::MasmError;\n").unwrap();
-        }
-
-        writeln!(
-            output,
-            "// This file is generated by build.rs, do not modify manually.
-// It is generated by extracting errors from the MASM files in the `./asm` directory.
-//
-// To add a new error, define a constant in MASM of the pattern `const ERR_<CATEGORY>_...`.
-// Try to fit the error into a pre-existing category if possible (e.g. Account, Note, ...).
-"
-        )
-        .unwrap();
-
-        writeln!(
-            output,
-            "// {}
-// ================================================================================================
-",
-            module.array_name.replace("_", " ")
-        )
-        .unwrap();
-
-        let mut last_error = None;
-        for named_error in errors.iter() {
-            let NamedError { name, message } = named_error;
-
-            // Group errors into blocks separate by newlines.
-            if is_new_error_category(&mut last_error, name) {
-                writeln!(output).into_diagnostic()?;
-            }
-
-            writeln!(output, "/// Error Message: \"{message}\"").into_diagnostic()?;
-            writeln!(
-                output,
-                r#"pub const ERR_{name}: MasmError = MasmError::from_static_str("{message}");"#
-            )
-            .into_diagnostic()?;
-        }
-
-        fs::write(module.file_path, output).into_diagnostic()?;
-
-        Ok(())
-    }
-
-    /// Writes `contents` to `path` only if the file doesn't exist or its current contents
-    /// differ. This avoids updating the file's mtime when nothing changed, which prevents
-    /// cargo from treating the crate as dirty on the next build.
-    pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
-        let path = path.as_ref();
-        let new_contents = contents.as_ref();
-        if path.exists() {
-            let existing = std::fs::read(path).into_diagnostic()?;
-            if existing == new_contents {
-                return Ok(());
-            }
-        }
-        std::fs::write(path, new_contents).into_diagnostic()
-    }
-
-    pub type ErrorName = String;
-
-    #[derive(Debug, Clone)]
-    pub struct ExtractedError {
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct NamedError {
-        pub name: ErrorName,
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ErrorModule {
-        pub file_path: PathBuf,
-        pub array_name: &'static str,
-        pub is_crate_local: bool,
-    }
+    std::fs::write(path, new_contents).into_diagnostic()
 }

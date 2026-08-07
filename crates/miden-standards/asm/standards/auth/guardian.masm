@@ -4,10 +4,11 @@
 #
 # A state guardian can help coordinate state availability for private accounts.
 
-use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth::tx_policy
 use miden::standards::auth::signature
+use {ZERO_WORD} from miden::standards::utils
 
 # IMPORTANT SECURITY NOTES
 # --------------------------------------------------------------------------------
@@ -43,14 +44,15 @@ const GUARDIAN_PUBLIC_KEYS_SLOT = word("miden::standards::auth::guardian::pub_ke
 const GUARDIAN_SCHEME_ID_SLOT = word("miden::standards::auth::guardian::scheme")
 
 # Single-entry storage map key where guardian signer data is stored.
-const GUARDIAN_MAP_KEY = [0, 0, 0, 0]
+const GUARDIAN_MAP_KEY = ZERO_WORD
 
 # ERRORS
-# -------------------------------------------------------------------------------------------------
+# =================================================================================================
+
 const ERR_INVALID_GUARDIAN_SIGNATURE = "invalid guardian signature"
 
 # PUBLIC INTERFACE
-# ================================================================================================
+# =================================================================================================
 
 #! Updates the guardian public key.
 #!
@@ -64,6 +66,7 @@ const ERR_INVALID_GUARDIAN_SIGNATURE = "invalid guardian signature"
 #!
 #! Invocation: call
 @locals(1)
+@account_procedure
 pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_public_key: word)
     # Validate supported signature scheme before committing it to storage.
     dup exec.signature::assert_supported_scheme
@@ -76,7 +79,7 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     # => [GUARDIAN_MAP_KEY, NEW_GUARDIAN_PUBLIC_KEY]
 
     push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
-    # => [guardian_pubkeys_slot_prefix, guardian_pubkeys_slot_suffix,
+    # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix,
     #     GUARDIAN_MAP_KEY, NEW_GUARDIAN_PUBLIC_KEY]
 
     exec.native_account::set_map_item
@@ -96,7 +99,7 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     # => [GUARDIAN_MAP_KEY, NEW_GUARDIAN_SCHEME_ID_WORD]
 
     push.GUARDIAN_SCHEME_ID_SLOT[0..2]
-    # => [guardian_scheme_slot_prefix, guardian_scheme_slot_suffix,
+    # => [guardian_scheme_slot_suffix, guardian_scheme_slot_prefix,
     #     GUARDIAN_MAP_KEY, NEW_GUARDIAN_SCHEME_ID_WORD]
 
     exec.native_account::set_map_item
@@ -105,6 +108,9 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     dropw
     # => []
 end
+
+# PUBLIC HELPERS
+# =================================================================================================
 
 #! Conditionally verifies a guardian signature.
 #!
@@ -125,11 +131,14 @@ pub proc verify_signature(msg: word)
     # => [was_update_guardian_public_key_called, MSG]
 
     if.true
-        exec.tx_policy::assert_only_one_non_auth_procedure_called
-        # => [MSG]
-
+        # Check the notes first: creating an output note requires calling `create_note`, which
+        # would also trip `assert_only_one_non_auth_procedure_called`. Running that check last lets
+        # the more specific input/output-note errors surface when notes are present.
         exec.tx_policy::assert_no_input_notes
         exec.tx_policy::assert_no_output_notes
+        # => [MSG]
+
+        exec.tx_policy::assert_only_one_non_auth_procedure_called
         # => [MSG]
 
         dropw
@@ -139,11 +148,11 @@ pub proc verify_signature(msg: word)
         # => [1, MSG]
 
         push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
-        # => [guardian_pubkeys_slot_prefix, guardian_pubkeys_slot_suffix, 1, MSG]
+        # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, 1, MSG]
 
         push.GUARDIAN_SCHEME_ID_SLOT[0..2]
-        # => [guardian_scheme_slot_prefix, guardian_scheme_slot_suffix,
-        #     guardian_pubkeys_slot_prefix, guardian_pubkeys_slot_suffix, 1, MSG]
+        # => [guardian_scheme_slot_suffix, guardian_scheme_slot_prefix,
+        #     guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, 1, MSG]
 
         exec.signature::verify_signatures
         # => [num_verified_signatures, MSG]

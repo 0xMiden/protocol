@@ -1,0 +1,451 @@
+use miden::tx_kernel_core::account
+use miden::tx_kernel_core::memory
+use miden::core::word
+use miden::protocol_utils::mem
+use {MAX_OUTPUT_NOTES_PER_TX} from miden::tx_kernel_core::constants
+
+# CONSTANTS
+# =================================================================================================
+
+# Max value for U16, used as the upper limit for expiration block delta
+const EXPIRY_UPPER_LIMIT = 0xFFFF + 1
+
+# Max U32 value, used for initializing the expiration block number
+const MAX_BLOCK_NUM = 0xFFFFFFFF
+
+#! The maximum number of VM cycles a program is allowed to take (see ExecutionOptions::MAX_CYCLES).
+const MAX_CYCLES = 0x20000000
+
+# ERRORS
+# =================================================================================================
+
+const ERR_TX_INVALID_EXPIRATION_DELTA =
+    "transaction expiration block delta must be within 0x1 and 0xFFFF"
+
+const ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32 =
+    "the number of extra cycles passed to compute_fee must be a u32"
+
+const ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX =
+    "the number of estimated cycles exceeds the maximum possible cycles"
+
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COUNT_EXCEEDS_MAX =
+    "the number of excluded output notes exceeds the maximum number of output notes per transaction"
+
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COMMITMENT_MISMATCH =
+    "the excluded output note indices do not match the exclude notes commitment"
+
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_NOT_U32 = "an excluded output note index is not a u32"
+
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_OUT_OF_BOUNDS =
+    "an excluded output note index is not less than the number of output notes"
+
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_UNSORTED =
+    "the excluded output note indices must be sorted in ascending order and free of duplicates"
+
+# PROCEDURES
+# =================================================================================================
+
+pub use {get_block_commitment} from miden::tx_kernel_core::memory
+
+pub use {get_blk_num as get_block_number} from miden::tx_kernel_core::memory
+
+pub use {get_blk_timestamp as get_block_timestamp} from miden::tx_kernel_core::memory
+
+pub use {get_input_notes_commitment} from miden::tx_kernel_core::memory
+
+pub use {compute_output_notes_commitment as get_output_notes_commitment}
+    from miden::tx_kernel_core::note
+
+pub use {get_num_input_notes} from miden::tx_kernel_core::memory
+
+pub use {get_num_output_notes} from miden::tx_kernel_core::memory
+
+pub use {get_tx_script_root} from miden::tx_kernel_core::memory
+
+#! Updates the transaction expiration block delta.
+#!
+#! The input block_height_delta is added to the block reference number in order to output an upper
+#! limit at which the transaction will be considered valid (not expired).
+#! This value can be later decreased, but not increased.
+#!
+#! Inputs:  [block_height_delta]
+#! Outputs: []
+#!
+#! Where:
+#! - block_height_delta is the desired expiration time delta (1 to 0xFFFF).
+pub proc update_expiration_block_delta
+    # Ensure block_height_delta is between 1 and 0xFFFF (inclusive)
+    dup neq.0 assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
+    # => [block_height_delta]
+
+    dup u32assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
+    # => [block_height_delta, block_height_delta]
+
+    u32lt.EXPIRY_UPPER_LIMIT assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
+    # => [block_height_delta]
+
+    exec.get_block_number add
+    # => [absolute_expiration_num]
+
+    # Load the current stored delta from memory
+    dup exec.memory::get_expiration_block_num
+    # => [stored_expiration_block_num, absolute_expiration_num, absolute_expiration_num]
+
+    # Check if block_height_delta is greater
+    u32lt
+    if.true
+        # Set new expiration delta
+        exec.memory::set_expiration_block_num
+    else
+        drop
+    end
+end
+
+#! Gets the transaction expiration delta.
+#!
+#! Inputs:  []
+#! Outputs: [block_height_delta]
+#!
+#! Where:
+#! - block_height_delta is the stored expiration time delta (1 to 0xFFFF).
+pub proc get_expiration_delta
+    exec.memory::get_expiration_block_num
+    # => [stored_expiration_block_num]
+
+    dup eq.MAX_BLOCK_NUM
+    if.true
+        # The delta was not set
+        drop push.0
+    else
+        # Calculate the delta
+        exec.get_block_number sub
+    end
+end
+
+#! Starts a foreign account context.
+#!
+#! This allows calling procedures on an account different from the native account. It loads the
+#! foreign account into memory, unless already loaded. It pushes the foreign account onto the
+#! account stack, which makes the foreign account the active account.
+#!
+#! Inputs:
+#!   Operand stack: [foreign_account_id_suffix, foreign_account_id_prefix]
+#!   Advice map: {
+#!     FOREIGN_ACCOUNT_ID_KEY: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
+#!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
+#!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
+#!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+#! - FOREIGN_ACCOUNT_ID_KEY is the map key constructed from the foreign_account_id as done by
+#!   account::create_id_key.
+#! - account_nonce is the nonce of the foreign account.
+#! - VAULT_ROOT is the commitment of the foreign account's vault.
+#! - STORAGE_ROOT is the commitment of the foreign account's storage.
+#! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
+#!   [0, slot_type, slot_id_suffix, slot_id_prefix, SLOT_VALUE].
+#! - CODE_COMMITMENT is the commitment of the foreign account's code.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
+#!
+#! Panics if:
+#! - foreign context is created against the native account.
+#!
+#! Invocation: exec
+pub proc start_foreign_context
+    # get the memory address and a flag whether this account was already loaded.
+    exec.account::get_account_data_ptr
+    # OS => [was_loaded, ptr, foreign_account_id_suffix, foreign_account_id_prefix]
+
+    if.true
+        exec.memory::push_ptr_to_account_stack drop drop
+        # OS => []
+    else
+        exec.memory::push_ptr_to_account_stack
+        # OS => [foreign_account_id_suffix, foreign_account_id_prefix]
+
+        # load the advice data into the active account memory section
+        exec.account::load_foreign_account
+        # => []
+
+        # make sure that the state of the loaded foreign account corresponds to its commitment in
+        # the account database
+        exec.account::validate_active_foreign_account
+        # => []
+    end
+    # => []
+end
+
+#! Ends a foreign account context.
+#!
+#! This pops the top of the account stack, making the previous account the active account.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the active account is the native account.
+#!
+#! Invocation: dynexec
+pub proc end_foreign_context
+    exec.memory::pop_ptr_from_account_stack
+    # => []
+end
+
+#! Resets the foreign procedure info (foreign account ID and foreign procedure root) in the kernel
+#! memory to zeros.
+#!
+#! Inputs:  []
+#! Outputs: []
+pub proc clear_fpi_memory
+    # set the upcoming foreign account ID to zero
+    push.0 push.0 exec.memory::set_fpi_account_id
+    # => []
+
+    # set the upcoming foreign procedure root to zero
+    padw exec.memory::set_fpi_procedure_root dropw
+    # => []
+end
+
+#! Computes the fee required for the current transaction.
+#!
+#! The number of cycles a transaction will take to verify depends logarithmically on the number of
+#! cycles that were proven. This is estimated by taking log2 of the estimated number of cycles the
+#! transaction will take to execute, rounded up to the next power of two.
+#!
+#! Since compute_fee can be called before the transaction finishes, the caller can pass
+#! num_extra_cycles to account for cycles that are still going to be spent after this call (e.g. for
+#! signature verification).
+#!
+#! Inputs:  [num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
+#! Outputs: [fee_amount]
+#!
+#! Where:
+#! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
+#!   before computing the fee.
+#! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
+#!   excluded from the fee computation, or the empty word if no notes are excluded. Excluding notes
+#!   does not affect the fee yet, since notes are not part of the fee.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
+#!
+#! Panics if:
+#! - num_extra_cycles is not a u32.
+#! - the list of notes to exclude is invalid (commitment mismatch, indices out of bounds, is
+#!   unsorted or contains duplicates).
+#!
+#! Invocation: exec
+pub proc compute_fee
+    # make sure the number of extra cycles is a u32 so the addition below cannot overflow the field
+    u32assert.err=ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32
+    # => [num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    # get the number of cycles the transaction has taken to execute up to this point and add the
+    # estimated number of extra cycles
+    clk add
+    # => [num_estimated_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    # assert the estimated cycles do not exceed the max possible cycles
+    u32assert.err=ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX
+    dup u32lte.MAX_CYCLES assert.err=ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX
+    # => [num_estimated_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    # ilog2 rounds down, but we need to round up, so we add 1 afterwards. Technically we don't need
+    # to do this if num_estimated_cycles is already a power of two, but because we're estimating part
+    # of the cycle count anyway, this is not a correctness concern currently.
+    ilog2 add.1
+    # => [num_estimated_verification_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    exec.memory::get_verification_base_fee
+    # => [verification_base_fee, num_estimated_verification_cycles, EXCLUDE_NOTES_COMMITMENT]
+
+    mul
+    # => [verification_fee_amount, EXCLUDE_NOTES_COMMITMENT]
+
+    # validate the notes to exclude and compute the output notes fee
+    movdn.4 exec.compute_output_notes_fee
+    # => [output_note_fee_amount, verification_fee_amount]
+
+    add
+    # => [fee_amount]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Computes the fee for the output notes.
+#!
+#! Currently always returns 0.
+#!
+#! Allocates 1024 elements of local memory for the largest possible exclude notes list of
+#! MAX_OUTPUT_NOTES_PER_TX (1024) indices.
+#!
+#! Inputs:  [EXCLUDE_NOTES_COMMITMENT]
+#! Outputs: [output_note_fee_amount]
+#!
+#! Panics if:
+#! - the number of committed indices exceeds the maximum number of output notes per transaction.
+#! - the committed indices do not match EXCLUDE_NOTES_COMMITMENT.
+#! - an excluded index is out of bounds, or the indices are not sorted in ascending order and
+#!   duplicate-free.
+#!
+#! Invocation: exec
+@locals(1024)
+proc compute_output_notes_fee
+    locaddr.0 movdn.4
+    # => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
+
+    exec.write_exclude_notes
+    # => [num_excluded_notes]
+
+    # nothing to validate if there are no excluded indices
+    locaddr.0
+    # => [exclude_notes_ptr, num_excluded_notes]
+
+    exec.assert_exclude_notes_sorted_and_unique
+    # => []
+
+    # TODO: Iterate output notes and compute their fee contribution unless their note index is in
+    # exclude notes.
+
+    # the output note fee is currently always 0
+    push.0
+    # => [output_note_fee_amount = 0]
+end
+
+#! Writes the output note indices committed to by the provided commitment from the advice provider
+#! to the provided pointer and validates them against that commitment.
+#!
+#! The committed value is an arbitrary-length list of output note indices (e.g. `[1, 3, 5]`). The
+#! commitment is recomputed while writing the indices to memory via
+#! `mem::pipe_elements_preimage_to_memory`.
+#!
+#! Inputs:  [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
+#! Outputs: [num_excluded_notes]
+#!
+#! Where:
+#! - EXCLUDE_NOTES_COMMITMENT is a commitment to the list of output note indices to exclude from the
+#!   fee computation, or the empty word if no notes are excluded.
+#!
+#! Panics if:
+#! - the number of committed indices exceeds the maximum number of output notes per transaction.
+#! - the committed indices do not match EXCLUDE_NOTES_COMMITMENT.
+#!
+#! Invocation: exec
+proc write_exclude_notes
+    # an empty commitment means there are no notes to exclude
+    exec.word::testz
+    # => [is_empty, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
+
+    if.true
+        dropw drop
+        push.0
+        # => [num_excluded_notes = 0]
+    else
+        # load the committed indices from the advice map onto the advice stack, padded to the next
+        # multiple of 8 so they can be written with `pipe_elements_preimage_to_memory`. The padding
+        # zeros do not affect the commitment.
+        adv.push_mapvaln.8
+        # OS => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
+        # AS => [num_excluded_notes, [INDICES]]
+
+        # move the number of indices to the operand stack
+        adv_push
+        # OS => [num_excluded_notes, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
+        # AS => [[INDICES]]
+
+        # assert the number of indices does not exceed MAX_OUTPUT_NOTES_PER_TX
+        dup u32assert.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COUNT_EXCEEDS_MAX
+        u32lte.MAX_OUTPUT_NOTES_PER_TX assert.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COUNT_EXCEEDS_MAX
+        # OS => [num_excluded_notes, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
+
+        dup movdn.6
+        # OS => [num_excluded_notes, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr, num_excluded_notes]
+
+        # write the indices to local memory and compute their commitment
+        movup.5 swap
+        # OS => [num_excluded_notes, exclude_notes_ptr, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
+
+        exec.mem::pipe_elements_preimage_to_memory
+        # OS => [COMPUTED_COMMITMENT, EXCLUDE_NOTES_COMMITMENT, num_excluded_notes]
+
+        # validate that the loaded indices match their commitment
+        assert_eqw.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COMMITMENT_MISMATCH
+        # => [num_excluded_notes]
+    end
+end
+
+#! Asserts that the excluded output note indices stored at `exclude_notes_ptr` are valid, that is:
+#! each index is a u32 less than the number of output notes created so far, and the indices are
+#! strictly increasing (which makes them sorted and free of duplicates).
+#!
+#! Inputs:  [exclude_notes_ptr, num_excluded_notes]
+#! Outputs: []
+#!
+#! Where:
+#! - exclude_notes_ptr is the pointer to the first excluded index; the indices are stored
+#!   contiguously, one per memory element.
+#! - num_excluded_notes is the number of excluded indices stored at exclude_notes_ptr.
+#!
+#! Panics if:
+#! - an excluded index is not a u32, or is not less than the number of output notes.
+#! - the excluded indices are not sorted in ascending order and free of duplicates.
+#!
+#! Invocation: exec
+proc assert_exclude_notes_sorted_and_unique
+    dup.1 neq.0
+    # => [has_non_zero_entries, exclude_notes_ptr, num_excluded_notes]
+
+    if.true
+        # get the last value in the list which is guaranteed to be the maximum per the validation below
+        dup dup.2 sub.1
+        # => [highest_idx, exclude_notes_ptr, exclude_notes_ptr, num_excluded_notes]
+
+        add mem_load
+        # => [max_note_idx, exclude_notes_ptr, num_excluded_notes]
+
+        exec.get_num_output_notes
+        # => [num_output_notes, max_note_idx, exclude_notes_ptr, num_excluded_notes]
+
+        # assert max_note_idx < num_output_notes
+        u32assert2.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_NOT_U32
+        u32lt assert.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_OUT_OF_BOUNDS
+        # => [exclude_notes_ptr, num_excluded_notes]
+    end
+    # => [exclude_notes_ptr, num_excluded_notes]
+
+    # validate sorting and uniqueness only if we have two or more entries
+    # a list with 0 or 1 entries cannot be unsorted or contain duplicates
+    swap dup u32gte.2
+    # => [should_loop, num_excluded_notes, exclude_notes_ptr]
+
+    while.true
+        # assert that exclude_notes[current_idx] > exclude_notes[current_idx - 1]
+        sub.1
+        # => [current_idx, exclude_notes_ptr]
+
+        # load current
+        dup.1 dup.1 add mem_load
+        # => [current, current_idx, exclude_notes_ptr]
+
+        # load prev
+        dup.2 dup.2 add sub.1 mem_load
+        # => [prev, current, current_idx, exclude_notes_ptr]
+
+        # assert current > prev, which enforces both sorting and uniqueness
+        u32assert2.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_NOT_U32
+        u32gt assert.err=ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_UNSORTED
+        # => [current_idx, exclude_notes_ptr]
+
+        # continue iterating if the current index is > 1
+        dup neq.1
+        # => [should_loop, current_idx, exclude_notes_ptr]
+    end
+    # => [current_idx, exclude_notes_ptr]
+
+    drop drop
+    # => []
+end

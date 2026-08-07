@@ -1,82 +1,295 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
 
 use crate::account::{
     AccountStorage,
-    AccountStorageDelta,
+    AccountStoragePatch,
     StorageMap,
-    StorageMapDelta,
     StorageMapKey,
+    StorageMapPatch,
+    StorageMapPatchEntries,
     StorageSlot,
-    StorageSlotDelta,
     StorageSlotName,
+    StorageSlotPatch,
+    StorageValuePatch,
 };
 use crate::utils::sync::LazyLock;
 
-// ACCOUNT STORAGE DELTA
+// ACCOUNT STORAGE PATCH
 // ================================================================================================
 
-impl AccountStorageDelta {
+impl AccountStoragePatch {
     // CONSTRUCTORS
     // ----------------------------------------------------------------------------------------
 
-    /// Creates an [`AccountStorageDelta`] from the given iterators.
+    /// Creates an [`AccountStoragePatch`] of `Update` patches from the given iterators.
+    ///
+    /// Cleared and updated values are recorded as [`StorageValuePatch::Update`]; the provided map
+    /// patches are stored as-is.
     pub fn from_iters(
         cleared_values: impl IntoIterator<Item = StorageSlotName>,
         updated_values: impl IntoIterator<Item = (StorageSlotName, Word)>,
-        updated_maps: impl IntoIterator<Item = (StorageSlotName, StorageMapDelta)>,
+        updated_maps: impl IntoIterator<Item = (StorageSlotName, StorageMapPatch)>,
     ) -> Self {
-        let deltas =
-            cleared_values
-                .into_iter()
-                .map(|slot_name| (slot_name, StorageSlotDelta::with_empty_value()))
-                .chain(updated_values.into_iter().map(|(slot_name, slot_value)| {
-                    (slot_name, StorageSlotDelta::Value(slot_value))
-                }))
-                .chain(
-                    updated_maps.into_iter().map(|(slot_name, map_delta)| {
-                        (slot_name, StorageSlotDelta::Map(map_delta))
-                    }),
-                )
-                .collect();
-
-        Self::from_raw(deltas)
-    }
-
-    // MUTATORS
-    // -------------------------------------------------------------------------------------------
-
-    pub fn add_cleared_items(mut self, items: impl IntoIterator<Item = StorageSlotName>) -> Self {
-        items
+        let patches: BTreeMap<_, _> = cleared_values
             .into_iter()
-            .for_each(|slot_name| self.set_item(slot_name, Word::empty()).expect("TODO"));
+            .map(|slot_name| {
+                (
+                    slot_name,
+                    StorageSlotPatch::Value(StorageValuePatch::Update { value: Word::empty() }),
+                )
+            })
+            .chain(updated_values.into_iter().map(|(slot_name, value)| {
+                (slot_name, StorageSlotPatch::Value(StorageValuePatch::Update { value }))
+            }))
+            .chain(
+                updated_maps
+                    .into_iter()
+                    .map(|(slot_name, map_patch)| (slot_name, StorageSlotPatch::Map(map_patch))),
+            )
+            .collect();
+
+        Self::from_raw(patches).expect("number of slot patches should be within limits")
+    }
+
+    /// Returns a new [`AccountStoragePatchBuilder`] for ergonomically constructing a patch in
+    /// tests.
+    pub fn builder() -> AccountStoragePatchBuilder {
+        AccountStoragePatchBuilder::new()
+    }
+
+    // ACCESSORS
+    // -------------------------------------------------------------------------------------------
+    //
+    // These accessors are op-specific: each returns the payload only if the slot is patched with
+    // the matching operation, letting a test assert both the operation and the value in one call.
+
+    /// Returns the value of the slot if it is patched with a [`StorageValuePatch::Create`], or
+    /// `None` if the slot is absent, a map slot, or patched with a different operation.
+    pub fn created_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Value(StorageValuePatch::Create { value })) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// Returns the value of the slot if it is patched with a [`StorageValuePatch::Update`], or
+    /// `None` if the slot is absent, a map slot, or patched with a different operation.
+    pub fn updated_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Value(StorageValuePatch::Update { value })) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if the slot is patched with a [`StorageValuePatch::Remove`], and `false` if
+    /// the slot is absent, a map slot, or patched with a different operation.
+    pub fn is_value_removed(&self, slot_name: &StorageSlotName) -> bool {
+        matches!(self.get(slot_name), Some(StorageSlotPatch::Value(StorageValuePatch::Remove)))
+    }
+
+    /// Returns the entries of the slot if it is patched with a [`StorageMapPatch::Create`], or
+    /// `None` if the slot is absent, a value slot, or patched with a different operation.
+    pub fn created_map(&self, slot_name: &StorageSlotName) -> Option<&StorageMapPatchEntries> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Map(StorageMapPatch::Create { entries })) => Some(entries),
+            _ => None,
+        }
+    }
+
+    /// Returns the entries of the slot if it is patched with a [`StorageMapPatch::Update`], or
+    /// `None` if the slot is absent, a value slot, or patched with a different operation.
+    pub fn updated_map(&self, slot_name: &StorageSlotName) -> Option<&StorageMapPatchEntries> {
+        match self.get(slot_name) {
+            Some(StorageSlotPatch::Map(StorageMapPatch::Update { entries })) => Some(entries),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if the slot is patched with a [`StorageMapPatch::Remove`], and `false` if the
+    /// slot is absent, a value slot, or patched with a different operation.
+    pub fn is_map_removed(&self, slot_name: &StorageSlotName) -> bool {
+        matches!(self.get(slot_name), Some(StorageSlotPatch::Map(StorageMapPatch::Remove)))
+    }
+
+    /// Returns the value for `key` if the slot is patched with a [`StorageMapPatch::Create`], or
+    /// `None` if the slot, key, or entries are absent.
+    pub fn created_map_item(
+        &self,
+        slot_name: &StorageSlotName,
+        key: &StorageMapKey,
+    ) -> Option<Word> {
+        self.created_map(slot_name)?.as_map().get(key).copied()
+    }
+
+    /// Returns the value for `key` if the slot is patched with a [`StorageMapPatch::Update`], or
+    /// `None` if the slot, key, or entries are absent.
+    pub fn updated_map_item(
+        &self,
+        slot_name: &StorageSlotName,
+        key: &StorageMapKey,
+    ) -> Option<Word> {
+        self.updated_map(slot_name)?.as_map().get(key).copied()
+    }
+}
+
+// ACCOUNT STORAGE PATCH BUILDER
+// ================================================================================================
+
+/// A builder for ergonomically constructing an [`AccountStoragePatch`] in test code.
+///
+/// Because it is meant for test code, the methods panic on misuse instead of returning errors:
+/// - Value slots (and whole-slot removals) may be set only once.
+/// - Map slots accumulate across calls, but a key may not be overwritten while it holds a non-empty
+///   value. Overwriting a key whose current value is [`Word::empty`] (a cleared entry) is allowed.
+#[derive(Clone, Debug, Default)]
+pub struct AccountStoragePatchBuilder {
+    patches: BTreeMap<StorageSlotName, StorageSlotPatch>,
+}
+
+impl AccountStoragePatchBuilder {
+    /// Creates a new, empty builder.
+    pub fn new() -> Self {
+        Self { patches: BTreeMap::new() }
+    }
+
+    /// Records the creation of a value slot with the provided value.
+    pub fn create_value(self, slot_name: StorageSlotName, value: Word) -> Self {
+        self.set_unique_slot(
+            slot_name,
+            StorageSlotPatch::Value(StorageValuePatch::Create { value }),
+        )
+    }
+
+    /// Records the update of a value slot to the provided value.
+    pub fn update_value(self, slot_name: StorageSlotName, value: Word) -> Self {
+        self.set_unique_slot(
+            slot_name,
+            StorageSlotPatch::Value(StorageValuePatch::Update { value }),
+        )
+    }
+
+    /// Records the removal of a value slot.
+    pub fn remove_value(self, slot_name: StorageSlotName) -> Self {
+        self.set_unique_slot(slot_name, StorageSlotPatch::Value(StorageValuePatch::Remove))
+    }
+
+    /// Records the creation of a map slot with the provided entries.
+    ///
+    /// May be called repeatedly for the same slot to accumulate entries.
+    pub fn create_map(
+        self,
+        slot_name: StorageSlotName,
+        entries: impl IntoIterator<Item = (StorageMapKey, Word)>,
+    ) -> Self {
+        self.insert_map_entries(slot_name, true, entries)
+    }
+
+    /// Records the update of a map slot with the provided entries.
+    ///
+    /// May be called repeatedly for the same slot to accumulate entries.
+    pub fn update_map(
+        self,
+        slot_name: StorageSlotName,
+        entries: impl IntoIterator<Item = (StorageMapKey, Word)>,
+    ) -> Self {
+        self.insert_map_entries(slot_name, false, entries)
+    }
+
+    /// Records the removal of a map slot.
+    pub fn remove_map(self, slot_name: StorageSlotName) -> Self {
+        self.set_unique_slot(slot_name, StorageSlotPatch::Map(StorageMapPatch::Remove))
+    }
+
+    /// Consumes the builder and returns the assembled [`AccountStoragePatch`].
+    pub fn build(self) -> AccountStoragePatch {
+        AccountStoragePatch::from_raw(self.patches)
+            .expect("number of slot patches should be within limits")
+    }
+
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Inserts a slot patch that may be set only once, panicking if the slot name is already used.
+    fn set_unique_slot(mut self, slot_name: StorageSlotName, patch: StorageSlotPatch) -> Self {
+        if self.patches.insert(slot_name.clone(), patch).is_some() {
+            panic!("storage slot `{slot_name}` was already set");
+        }
 
         self
     }
 
-    pub fn add_updated_values(
+    /// Inserts map entries into a created (`create == true`) or updated map slot, accumulating into
+    /// any existing entries.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slot was already set as a different slot or map operation type, or if a key is
+    /// already set to a non-empty value.
+    fn insert_map_entries(
         mut self,
-        items: impl IntoIterator<Item = (StorageSlotName, Word)>,
+        slot_name: StorageSlotName,
+        create: bool,
+        entries: impl IntoIterator<Item = (StorageMapKey, Word)>,
     ) -> Self {
-        items.into_iter().for_each(|(slot_name, slot_value)| {
-            self.set_item(slot_name, slot_value).expect("TODO")
+        let slot_patch = self.patches.entry(slot_name.clone()).or_insert_with(|| {
+            let entries = StorageMapPatchEntries::new();
+            let map_patch = if create {
+                StorageMapPatch::Create { entries }
+            } else {
+                StorageMapPatch::Update { entries }
+            };
+            StorageSlotPatch::Map(map_patch)
         });
 
-        self
-    }
+        let existing_entries = match slot_patch {
+            StorageSlotPatch::Map(StorageMapPatch::Create { entries }) if create => entries,
+            StorageSlotPatch::Map(StorageMapPatch::Update { entries }) if !create => entries,
+            _ => panic!(
+                "storage slot `{slot_name}` was already set as a different slot or map operation type"
+            ),
+        };
 
-    pub fn add_updated_maps(
-        mut self,
-        items: impl IntoIterator<Item = (StorageSlotName, StorageMapDelta)>,
-    ) -> Self {
-        items.into_iter().for_each(|(slot_name, map_delta)| {
-            for (key, value) in map_delta.entries() {
-                self.set_map_item(slot_name.clone(), *key, *value).expect("TODO")
+        for (key, value) in entries {
+            if existing_entries
+                .as_map()
+                .get(&key)
+                .is_some_and(|current| *current != Word::empty())
+            {
+                panic!("map key `{key:?}` in storage slot `{slot_name}` was already set");
             }
-        });
+            existing_entries.insert(key, value);
+        }
 
         self
+    }
+}
+
+impl StorageMapPatch {
+    /// Creates a new [`StorageMapPatch::Update`] from the provided iterators of cleared and updated
+    /// entries.
+    pub fn from_iters(
+        cleared_keys: impl IntoIterator<Item = StorageMapKey>,
+        updated_entries: impl IntoIterator<Item = (StorageMapKey, Word)>,
+    ) -> Self {
+        StorageMapPatch::Update {
+            entries: StorageMapPatchEntries::from_iters(cleared_keys, updated_entries),
+        }
+    }
+}
+
+impl StorageMapPatchEntries {
+    /// Creates a new set of map patch entries from the provided iterators of cleared and updated
+    /// entries.
+    pub fn from_iters(
+        cleared_keys: impl IntoIterator<Item = StorageMapKey>,
+        updated_entries: impl IntoIterator<Item = (StorageMapKey, Word)>,
+    ) -> Self {
+        Self::from_raw(BTreeMap::from_iter(
+            cleared_keys.into_iter().map(|key| (key, Word::empty())).chain(updated_entries),
+        ))
     }
 }
 

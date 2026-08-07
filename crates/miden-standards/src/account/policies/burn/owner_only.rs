@@ -9,12 +9,20 @@ use crate::procedure_root;
 
 account_component_code!(
     OWNER_ONLY_BURN_POLICY_CODE,
-    "faucets/policies/burn/owner_controlled/owner_only.masl"
+    "miden-standards-faucets-policies-burn-owner-controlled-owner-only.masp"
 );
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BurnOwnerOnly::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BURN_OWNER_ONLY_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::burn::owner_controlled::owner_only";
 
 procedure_root!(
     OWNER_ONLY_POLICY_ROOT,
-    BurnOwnerOnly::NAME,
+    BURN_OWNER_ONLY_LIBRARY_PATH,
     BurnOwnerOnly::PROC_NAME,
     BurnOwnerOnly::code()
 );
@@ -24,13 +32,17 @@ procedure_root!(
 /// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed burn-policies
 /// map includes [`BurnOwnerOnly::root`]. When active, only the account owner (as recorded by
 /// the `Ownable2Step` component) may trigger burn operations.
+///
+/// Companion components required:
+/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
+///   reads. Without it, the faucet builds successfully but every burn reverts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BurnOwnerOnly;
 
 impl BurnOwnerOnly {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::burn::owner_controlled::owner_only";
+        "miden::standards::faucets::policies::burn::owner_controlled::owner_only";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

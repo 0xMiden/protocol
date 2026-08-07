@@ -9,10 +9,12 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
+use miden_processor::ExecutionError;
+use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetComposition, AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetComposition, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -20,13 +22,14 @@ use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueN
 use crate::account::{
     AccountCode,
     AccountIdPrefix,
+    AccountProcedureRoot,
     AccountStorage,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetId;
+use crate::asset::AssetClass;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
@@ -113,8 +116,12 @@ pub enum AccountError {
     AccountCodeMultipleAuthComponents,
     #[error("account code must contain at least one non-auth procedure")]
     AccountCodeNoProcedures,
+    #[error("account procedure {0} is not contained in the provided mast forest")]
+    AccountCodeProcedureNotInMastForest(AccountProcedureRoot),
     #[error("account code contains {0} procedures but it may contain at most {max} procedures", max = AccountCode::MAX_NUM_PROCEDURES)]
     AccountCodeTooManyProcedures(usize),
+    #[error("account code contains a duplicate procedure with root {0}")]
+    AccountCodeDuplicateProcedureRoot(Word),
     #[error("failed to assemble account component:\n{}", PrintDiagnostic::new(.0))]
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
@@ -129,12 +136,8 @@ pub enum AccountError {
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
     #[error("account header data has length {actual} but it must be of length {expected}")]
     HeaderDataIncorrectLength { actual: usize, expected: usize },
-    #[error("active account nonce {current} plus increment {increment} overflows a felt to {new}")]
-    NonceOverflow {
-        current: Felt,
-        increment: Felt,
-        new: Felt,
-    },
+    #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
+    NonceMustIncrease { current: Felt, new: Felt },
     #[error(
         "digest of the seed has {actual} trailing zeroes but must have at least {expected} trailing zeroes"
     )]
@@ -149,6 +152,10 @@ pub enum AccountError {
         "an account with a seed cannot be converted into a delta since it represents an unregistered account"
     )]
     DeltaFromAccountWithSeed,
+    #[error(
+        "an account with a seed cannot be converted into a patch since it represents an unregistered account"
+    )]
+    PatchFromAccountWithSeed,
     #[error("seed converts to an invalid account ID")]
     SeedConvertsToInvalidAccountId(#[source] AccountIdError),
     #[error("storage map root {0} not found in the account storage")]
@@ -168,13 +175,24 @@ pub enum AccountError {
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
-        "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
+        "failed to apply full state patch to existing account; full state patches can be converted to accounts directly"
     )]
-    ApplyFullStateDeltaToAccount,
+    ApplyFullStatePatchToAccount,
+    #[error("patch is for account ID {patch_id} but is being applied to account {account_id}")]
+    PatchAccountIdMismatch {
+        account_id: AccountId,
+        patch_id: AccountId,
+    },
     #[error("only account deltas representing a full account can be converted to a full account")]
     PartialStateDeltaToAccount,
+    #[error("assets cannot be removed from a new account with an empty asset vault")]
+    AssetsRemovedFromNewAccount,
+    #[error("only account patches representing a full account can be converted to a full account")]
+    PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
     MaxNumStorageMapLeavesExceeded(#[source] MerkleError),
+    #[error("unknown storage patch operation tag {0}")]
+    UnknownStoragePatchOperation(u8),
     /// This variant can be used by methods that are not inherent to the account but want to return
     /// this error type.
     #[error("{error_msg}")]
@@ -247,6 +265,23 @@ pub enum StorageSlotNameError {
     TooShort,
     #[error("slot names must contain at most {} characters", StorageSlotName::MAX_LENGTH)]
     TooLong,
+}
+
+// ACCOUNT CODE INTERFACE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum AccountCodeInterfaceError {
+    #[error(
+        "account code interface must contain at least {} procedures, but only {actual} were given",
+        AccountCode::MIN_NUM_PROCEDURES
+    )]
+    TooFewProcedures { actual: usize },
+    #[error(
+        "account code interface contains {actual} procedures but it may contain at most {} procedures",
+        AccountCode::MAX_NUM_PROCEDURES
+    )]
+    TooManyProcedures { actual: usize },
 }
 
 // ACCOUNT COMPONENT NAME ERROR
@@ -407,19 +442,76 @@ pub enum AccountDeltaError {
     #[error("non-empty account storage or vault delta with zero nonce delta is not allowed")]
     NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
     #[error(
-        "account nonce increment {current} plus the other nonce increment {increment} overflows a felt to {new}"
-    )]
-    NonceIncrementOverflow {
-        current: Felt,
-        increment: Felt,
-        new: Felt,
-    },
-    #[error(
         "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
     )]
     NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
+    #[error("a full state delta must only contain storage create operations")]
+    FullStateDeltaContainsNonCreateOp,
+}
+
+#[derive(Debug, Error)]
+pub enum AccountPatchError {
+    #[error("final nonce can never be set to zero")]
+    FinalNonceIsZero,
+
+    #[error(
+        "state change to an account (store, vault or code) require that the final nonce is incremented"
+    )]
+    StateChangeRequiresNonceUpdate,
+
+    #[error("account code must be provided for new accounts (with nonce = 1)")]
+    CodeMustBeProvidedForNewAccounts,
+
+    #[error("a full state patch must only contain storage create operations")]
+    FullStatePatchContainsNonCreateStorageOp,
+
+    #[error("storage slot {0} was used as different slot types")]
+    StorageSlotUsedAsDifferentTypes(StorageSlotName),
+
+    #[error("storage slot name {0} is assigned to more than one slot patch")]
+    DuplicateStorageSlotName(StorageSlotName),
+
+    #[error("number of storage slot patches is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
+    TooManyStorageSlotPatches(usize),
+
+    #[error(
+        "a full state patch cannot be merged on top of another patch; it must be the merge base"
+    )]
+    MergeIncomingFullStatePatch,
+
+    #[error("failed to merge storage patch for slot {0}: cannot create a slot twice")]
+    StoragePatchMergeDoubleCreate(StorageSlotName),
+
+    #[error(
+        "failed to merge storage patch for slot {0}: cannot create a slot after it was updated, which indicates it already exists"
+    )]
+    StoragePatchMergeCreateAfterUpdate(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot update slot after it was removed")]
+    StoragePatchMergeUpdateAfterRemove(StorageSlotName),
+
+    #[error("failed to merge storage patch for slot {0}: cannot remove a slot twice")]
+    StoragePatchMergeDoubleRemove(StorageSlotName),
+
+    #[error(
+        "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"
+    )]
+    NonceMustIncrementByOne { current: Felt, new: Felt },
+
+    #[error(
+        "patch is for account ID {actual} but is being merged into patch for account {expected}"
+    )]
+    AccountIdMismatch { expected: AccountId, actual: AccountId },
+
+    #[error(
+        "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
+    )]
+    IncompatibleAccountUpdates {
+        left_update_type: &'static str,
+        right_update_type: &'static str,
+    },
 }
 
 // STORAGE MAP ERROR
@@ -454,8 +546,8 @@ pub enum BatchAccountUpdateError {
         "final state commitment in account update from transaction {0} does not match initial state of current update"
     )]
     AccountUpdateInitialStateMismatch(TransactionId),
-    #[error("failed to merge account delta from transaction {0}")]
-    TransactionUpdateMergeError(TransactionId, #[source] Box<AccountDeltaError>),
+    #[error("failed to merge account patch from transaction {0}")]
+    TransactionUpdateMergeError(TransactionId, #[source] Box<AccountPatchError>),
 }
 
 // ASSET ERROR
@@ -471,30 +563,29 @@ pub enum AssetError {
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
     #[error(
-        "cannot combine fungible assets with different vault keys: {original_key} and {other_key}"
+        "cannot combine fungible assets with different asset IDs: {original_id} and {other_id}"
     )]
-    FungibleAssetInconsistentVaultKeys {
-        original_key: AssetVaultKey,
-        other_key: AssetVaultKey,
-    },
+    FungibleAssetInconsistentIds { original_id: AssetId, other_id: AssetId },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+        "asset class prefix and suffix in a non-fungible asset ID must match indices 0 and 1 in the value, but asset class was {asset_class} and value was {value}"
     )]
-    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
-    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
-    FungibleAssetIdMustBeZero(AssetId),
+    NonFungibleAssetClassMustMatchValue { asset_class: AssetClass, value: Word },
+    #[error("asset class prefix and suffix in a fungible asset ID must be zero but was {0}")]
+    FungibleAssetClassMustBeZero(AssetClass),
     #[error(
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error("smt proof in asset witness contains invalid key or value")]
+    #[error("smt proof in asset witness contains invalid ID or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
-    #[error("unknown native asset callbacks encoding: {0}")]
-    UnknownAssetCallbackFlag(u8),
+    #[error("asset ID {id} is not present in the provided asset witness SMT proof")]
+    AssetWitnessMissingId { id: AssetId },
     #[error("unknown asset composition encoding: {0}")]
     UnknownAssetComposition(u8),
+    #[error("unknown asset delta operation encoding: {0}")]
+    UnknownAssetDeltaOperation(u8),
     #[error("asset composition {0:?} is not supported at this operational site")]
     UnsupportedAssetComposition(AssetComposition),
     #[error(
@@ -615,8 +706,13 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
-    #[error("provided SMT entry {entry} is not a valid asset")]
-    InvalidAssetInSmt { entry: Word, source: AssetError },
+    #[error("partial vault contains invalid asset value {value} at ID {id}")]
+    InvalidAssetForId {
+        id: AssetId,
+        value: Word,
+        #[source]
+        source: AssetError,
+    },
     #[error("failed to add asset proof")]
     FailedToAddProof(#[source] MerkleError),
     #[error("asset is not tracked in the partial vault")]
@@ -628,11 +724,11 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
-    #[error("library does not contain a procedure with @note_script attribute")]
+    #[error("package does not contain a procedure with @note_script attribute")]
     NoteScriptNoProcedureWithAttribute,
-    #[error("library contains multiple procedures with @note_script attribute")]
+    #[error("package contains multiple procedures with @note_script attribute")]
     NoteScriptMultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in library")]
+    #[error("procedure at path '{0}' not found in package")]
     NoteScriptProcedureNotFound(Box<str>),
     #[error("procedure at path '{0}' does not have @note_script attribute")]
     NoteScriptProcedureMissingAttribute(Box<str>),
@@ -781,6 +877,14 @@ pub enum TransactionScriptError {
     AssemblyError(Report),
     #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
     PackageNotProgram(Report),
+    #[error("package does not contain a procedure with @transaction_script attribute")]
+    NoProcedureWithAttribute,
+    #[error("package contains multiple procedures with @transaction_script attribute")]
+    MultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in package")]
+    ProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
+    ProcedureMissingAttribute(Box<str>),
 }
 
 // TRANSACTION INPUT ERROR
@@ -853,8 +957,6 @@ pub enum TransactionOutputError {
     DuplicateOutputNote(NoteId),
     #[error("final account commitment is not in the advice map")]
     FinalAccountCommitmentMissingInAdviceMap,
-    #[error("fee asset is not a fungible asset")]
-    FeeAssetNotFungibleAsset(#[source] AssetError),
     #[error("failed to parse final account header")]
     FinalAccountHeaderParseFailure(#[source] AccountError),
     #[error(
@@ -887,6 +989,19 @@ pub enum OutputNoteError {
         "public note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
     )]
     NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
+}
+
+// TRANSACTION SUMMARY ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionSummaryError {
+    #[error("expiration delta element {0} does not fit into a u16")]
+    ExpirationDeltaTooLarge(Felt),
+    #[error(
+        "transaction summary preimage contains {actual} elements but expected {expected} elements"
+    )]
+    InvalidPreimageLength { actual: usize, expected: usize },
 }
 
 // TRANSACTION EVENT PARSING ERROR
@@ -932,8 +1047,8 @@ pub enum ProvenTransactionError {
     PrivateAccountWithDetails(AccountId),
     #[error("account {0} with public state is missing its account details")]
     PublicStateAccountMissingDetails(AccountId),
-    #[error("new account {id} with public state must be accompanied by a full state delta")]
-    NewPublicStateAccountRequiresFullStateDelta { id: AccountId, source: AccountError },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
     #[error(
         "existing account {0} with public state should only provide delta updates instead of full details"
     )]
@@ -949,8 +1064,13 @@ pub enum ProvenTransactionError {
     },
     #[error("proven transaction neither changed the account state, nor consumed any notes")]
     EmptyTransaction,
-    #[error("failed to validate account delta in transaction account update")]
-    AccountDeltaCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error(
+        "expected account patch commitment {expected_patch_commitment} but found {actual_patch_commitment}"
+    )]
+    AccountPatchCommitmentMismatch {
+        expected_patch_commitment: Word,
+        actual_patch_commitment: Word,
+    },
     #[error("note with id {0} is both created and consumed by the transaction")]
     NoteCreatedAndConsumed(NoteId),
 }
@@ -960,6 +1080,12 @@ pub enum ProvenTransactionError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    #[error("failed to verify transaction {transaction_id} in transaction batch")]
+    TransactionVerificationFailed {
+        transaction_id: TransactionId,
+        source: TransactionVerifierError,
+    },
+
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
     )]
@@ -1017,7 +1143,7 @@ pub enum ProposedBatchError {
         created_by: TransactionId,
     },
 
-    #[error("failed to merge transaction delta into account {account_id}")]
+    #[error("failed to merge transaction patch into account {account_id}")]
     AccountUpdateError {
         account_id: AccountId,
         source: BatchAccountUpdateError,
@@ -1075,11 +1201,6 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
-    #[error("failed to verify transaction {transaction_id} in transaction batch")]
-    TransactionVerificationFailed {
-        transaction_id: TransactionId,
-        source: Box<dyn Error + Send + Sync + 'static>,
-    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]
@@ -1087,6 +1208,21 @@ pub enum ProvenBatchError {
         batch_expiration_block_num: BlockNumber,
         reference_block_num: BlockNumber,
     },
+    #[error("batch kernel execution failed")]
+    BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel produced an invalid output stack")]
+    BatchKernelOutputInvalid(#[source] BatchOutputError),
+}
+
+// BATCH OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BatchOutputError {
+    #[error("batch kernel output stack is invalid: {0}")]
+    OutputStackInvalid(String),
+    #[error("batch expiration block number {0} does not fit into a u32")]
+    ExpirationBlockNumberTooLarge(Felt),
 }
 
 // PROPOSED BLOCK ERROR
@@ -1223,10 +1359,10 @@ pub enum ProposedBlockError {
     #[error("note with nullifier {0} is already spent")]
     NullifierSpent(Nullifier),
 
-    #[error("failed to merge transaction delta into account {account_id}")]
+    #[error("failed to merge transaction patch into account {account_id}")]
     AccountUpdateError {
         account_id: AccountId,
-        source: Box<AccountDeltaError>,
+        source: Box<AccountPatchError>,
     },
 
     #[error("failed to track account witness")]
@@ -1294,4 +1430,15 @@ pub enum NullifierTreeError {
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
     InvalidAuthSchemeIdentifier(String),
+}
+
+// TRANSACTION VERIFIER ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionVerifierError {
+    #[error("failed to verify transaction")]
+    TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
+    InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

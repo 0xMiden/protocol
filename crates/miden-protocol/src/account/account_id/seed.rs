@@ -1,8 +1,12 @@
 use alloc::vec::Vec;
 
 use crate::account::account_id::AccountIdVersion;
-use crate::account::account_id::v1::{compute_digest, validate_prefix};
-use crate::account::{AccountIdV1, AccountType};
+use crate::account::account_id::v1::{
+    compute_digest,
+    extract_asset_callback_flag,
+    validate_prefix,
+};
+use crate::account::{AccountIdV1, AccountType, AssetCallbackFlag};
 use crate::errors::AccountError;
 use crate::{Felt, Word};
 
@@ -15,6 +19,7 @@ use crate::{Felt, Word};
 pub(super) fn compute_account_seed(
     init_seed: [u8; 32],
     account_type: AccountType,
+    asset_callbacks: AssetCallbackFlag,
     version: AccountIdVersion,
     code_commitment: Word,
     storage_commitment: Word,
@@ -22,6 +27,7 @@ pub(super) fn compute_account_seed(
     compute_account_seed_single(
         init_seed,
         account_type,
+        asset_callbacks,
         version,
         code_commitment,
         storage_commitment,
@@ -31,6 +37,7 @@ pub(super) fn compute_account_seed(
 fn compute_account_seed_single(
     init_seed: [u8; 32],
     account_type: AccountType,
+    asset_callbacks: AssetCallbackFlag,
     version: AccountIdVersion,
     code_commitment: Word,
     storage_commitment: Word,
@@ -55,6 +62,7 @@ fn compute_account_seed_single(
 
         if let Ok((computed_account_type, computed_version)) = validate_prefix(prefix)
             && computed_account_type == account_type
+            && extract_asset_callback_flag(prefix.as_canonical_u64()) == asset_callbacks
             && computed_version == version
             && is_suffix_msb_zero
         {

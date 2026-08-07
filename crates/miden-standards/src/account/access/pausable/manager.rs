@@ -7,18 +7,26 @@ use crate::procedure_root;
 // PAUSABLE MANAGER COMPONENT
 // ================================================================================================
 
-account_component_code!(PAUSABLE_MANAGER_CODE, "access/pausable/manager.masl");
+account_component_code!(PAUSABLE_MANAGER_CODE, "miden-standards-access-pausable-manager.masp");
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`PausableManager::NAME`], which mirrors the standards-side MASM module path.
+const PAUSABLE_MANAGER_LIBRARY_PATH: &str =
+    "miden::standards::components::access::pausable::manager";
 
 procedure_root!(
     PAUSABLE_MANAGER_PAUSE,
-    PausableManager::NAME,
+    PAUSABLE_MANAGER_LIBRARY_PATH,
     PausableManager::PAUSE_PROC_NAME,
     PausableManager::code()
 );
 
 procedure_root!(
     PAUSABLE_MANAGER_UNPAUSE,
-    PausableManager::NAME,
+    PAUSABLE_MANAGER_LIBRARY_PATH,
     PausableManager::UNPAUSE_PROC_NAME,
     PausableManager::code()
 );
@@ -27,29 +35,27 @@ procedure_root!(
 /// [`crate::account::access::Authority`] component via `exec.authority::assert_authorized`.
 ///
 /// `PausableManager` works uniformly with every standard access scheme:
-/// - [`crate::account::access::AccessControl::AuthControlled`] →
-///   [`crate::account::access::Authority::AuthControlled`] gates pause / unpause via the account's
-///   own auth component.
+/// - [`crate::account::access::Authority::AuthControlled`] — installed directly by the user-account
+///   faucet factories (e.g. [`crate::account::faucets::create_singlesig_user_fungible_faucet`]);
+///   gates pause / unpause via the account's own auth component.
 /// - [`crate::account::access::AccessControl::Ownable2Step`] →
 ///   [`crate::account::access::Authority::OwnerControlled`] requires the Ownable2Step owner.
 /// - [`crate::account::access::AccessControl::Rbac`] →
-///   [`crate::account::access::Authority::RbacControlled { role }`] requires the single configured
-///   role for both pause and unpause (no PAUSER / UNPAUSER separation — emergency pause is a
-///   coarse-grained capability).
+///   [`crate::account::access::Authority::RbacControlled`] for roles per procedure.
 ///
 /// Companion components required:
 /// - [`crate::account::access::Authority`] — installed automatically by the
-///   [`crate::account::access::AccessControl`] enum.
+///   [`crate::account::access::AccessControl`] enum (or directly by user-faucet factories).
 /// - [`super::Pausable`] — provides the `is_paused` storage slot that pause / unpause write to.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PausableManager;
 
 impl PausableManager {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::access::pausable::manager";
+    pub const NAME: &'static str = "miden::standards::access::pausable::manager";
 
-    pub const PAUSE_PROC_NAME: &'static str = "pause";
-    pub const UNPAUSE_PROC_NAME: &'static str = "unpause";
+    const PAUSE_PROC_NAME: &'static str = "pause";
+    const UNPAUSE_PROC_NAME: &'static str = "unpause";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {

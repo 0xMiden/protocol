@@ -1,22 +1,23 @@
 # Generic transfer policy procedures shared by policy manager flows.
 
-use miden::standards::access::pausable
-
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Transfer policy that accepts every non-paused transfer.
+#! Transfer policy that accepts every transfer.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`.
+#! Invoked as the active send or receive policy via `TokenPolicyManager`, which applies the
+#! account-wide pause check.
 #!
-#! Calls `exec.pausable::assert_not_paused` before allowing the transfer. The `Pausable` component
-#! is REQUIRED on accounts using TokenPolicyManager.
+#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE]
+#! Where:
+#! - custom_data is `0` for the receive (account) callback and the output note index for the
+#!   send (note) callback. This policy does not inspect it; it passes through unchanged.
 #!
 #! Invocation: call
+@account_procedure
 pub proc check_policy
-    exec.pausable::assert_not_paused
     dropw
+    # => [ASSET_VALUE, pad(12)]
 end

@@ -1,0 +1,8 @@
+# ACCOUNT ID
+# =================================================================================================
+
+# Re-exported from the `miden::protocol_utils` library, where the implementation lives. This keeps
+# the procedures available under the public `miden::protocol::account_id` path.
+
+pub use {eq, eqz, shape_suffix, testz, validate, validate_structure}
+    from miden::protocol_utils::account_id

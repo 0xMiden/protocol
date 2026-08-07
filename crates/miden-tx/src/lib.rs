@@ -32,8 +32,8 @@ pub use prover::{
     TransactionProverHost,
 };
 
-mod verifier;
-pub use verifier::TransactionVerifier;
+mod pricer;
+pub use pricer::{NetworkNotePricer, NotePricingError};
 
 mod errors;
 pub use errors::{
@@ -43,11 +43,11 @@ pub use errors::{
     TransactionExecutorError,
     TransactionKernelError,
     TransactionProverError,
-    TransactionVerifierError,
 };
 
 pub mod auth;
 
 // RE-EXPORTS
 // ================================================================================================
+pub use miden_processor::LoadedMastForest;
 pub use miden_protocol::utils;

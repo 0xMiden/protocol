@@ -2,10 +2,9 @@
 //!
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
-use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotDelta};
+use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
@@ -15,7 +14,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
 
 use super::Word;
-use crate::{Auth, MockChain, TransactionContextBuilder};
+use crate::{MockChain, TestTransactionBuilder};
 
 // ASSET LAZY LOADING
 // ================================================================================================
@@ -41,32 +40,33 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
         "
       use mock::account
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET_VALUE1}
-          push.{FUNGIBLE_ASSET_KEY1}
+          push.{FUNGIBLE_ASSET_ID1}
           call.account::add_asset dropw dropw
 
           push.{FUNGIBLE_ASSET_VALUE2}
-          push.{FUNGIBLE_ASSET_KEY2}
+          push.{FUNGIBLE_ASSET_ID2}
           call.account::add_asset dropw dropw
       end
       ",
-        FUNGIBLE_ASSET_KEY1 = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET_ID1 = fungible_asset1.to_id_word(),
         FUNGIBLE_ASSET_VALUE1 = fungible_asset1.to_value_word(),
-        FUNGIBLE_ASSET_KEY2 = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET_ID2 = fungible_asset2.to_id_word(),
         FUNGIBLE_ASSET_VALUE2 = fungible_asset2.to_value_word()
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
-    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_input_notes(vec![asset_note])
+        .input_note(asset_note)
         .with_source_manager(source_manager)
         .build()?;
-    let account = tx_context.account().clone();
-    let tx = tx_context.execute().await?;
+    let account = mock_tx.account().clone();
+    let tx = mock_tx.execute().await?;
 
     let mut account_vault = account.vault().clone();
     account_vault.add_asset(fungible_asset1.into())?;
@@ -93,7 +93,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
       use mock::account
       use mock::util
 
-      begin
+      @transaction_script
+      pub proc main
           push.{FUNGIBLE_ASSET1_VALUE}
           push.{FUNGIBLE_ASSET1_KEY}
           call.account::remove_asset
@@ -121,13 +122,13 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           # => []
       end
       ",
-        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_id_word(),
         FUNGIBLE_ASSET1_VALUE = fungible_asset1.to_value_word(),
-        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_id_word(),
         FUNGIBLE_ASSET2_VALUE = fungible_asset2.to_value_word(),
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -136,40 +137,20 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
         crate::Auth::IncrNonce,
         [fungible_asset1, fungible_asset2].map(Asset::from),
     )?;
-    let tx_context = builder
+    let mock_tx = builder
         .build()?
-        .build_tx_context(account, &[], &[])?
+        .build_transaction(account)
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
-    let account = tx_context.account().clone();
-    let tx = tx_context.execute().await?;
+    let account = mock_tx.account().clone();
+    let tx = mock_tx.execute().await?;
 
     let mut account_vault = account.vault().clone();
     account_vault.remove_asset(fungible_asset1.into())?;
     account_vault.remove_asset(fungible_asset2.into())?;
 
     assert_eq!(tx.final_account().vault_root(), account_vault.root());
-
-    Ok(())
-}
-
-/// Tests that a transaction against an account with a non-empty vault successfully loads the fee
-/// asset during the epilogue.
-///
-/// The non-empty vault is important for the test because the advice provider's merkle store has all
-/// merkle paths for an empty vault by default, and so there would be nothing to load.
-#[tokio::test]
-async fn loading_fee_asset_succeeds() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder().fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?);
-    let account = builder.add_existing_mock_account_with_assets(
-        Auth::IncrNonce,
-        [
-            FungibleAsset::mock(23),
-            FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 50)?.into(),
-        ],
-    )?;
-    builder.build()?.build_tx_context(account, &[], &[])?.build()?.execute().await?;
 
     Ok(())
 }
@@ -203,7 +184,8 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Update an existing key.
           push.{value0}
           push.{existing_key}
@@ -223,26 +205,20 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx = TransactionContextBuilder::with_existing_mock_account()
+    let tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?
         .execute()
         .await?;
 
-    let map_delta = tx
-        .account_delta()
-        .storage()
-        .get(mock_map_slot)
-        .cloned()
-        .map(StorageSlotDelta::unwrap_map)
-        .unwrap();
-    assert_eq!(map_delta.entries().get(&existing_key).unwrap(), &value0);
-    assert_eq!(map_delta.entries().get(&non_existent_key).unwrap(), &value1);
+    let storage_patch = tx.account_patch().storage();
+    assert_eq!(storage_patch.updated_map_item(mock_map_slot, &existing_key), Some(value0));
+    assert_eq!(storage_patch.updated_map_item(mock_map_slot, &non_existent_key), Some(value1));
 
     Ok(())
 }
@@ -269,7 +245,8 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-      begin
+      @transaction_script
+      pub proc main
           # Fetch value from existing key.
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]
@@ -292,11 +269,11 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    TransactionContextBuilder::with_existing_mock_account()
+    TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?

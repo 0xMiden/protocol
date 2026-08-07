@@ -1,0 +1,69 @@
+use {FAUCET_BURN_ASSET_OFFSET, FAUCET_MINT_ASSET_OFFSET} from miden::protocol::kernel_proc_offsets
+use {Asset} from miden::protocol::types
+
+#! Mint an asset from the faucet the transaction is being executed against.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to mint.
+#! - ASSET_VALUE is the value of the asset that was minted.
+#!
+#! Panics if:
+#! - the asset issuer is not the faucet the transaction is being executed against.
+#! - the asset is not well formed.
+#! - for fungible faucets if the total issuance after minting is greater than the maximum amount
+#!   allowed.
+#! - for non-fungible faucets if the non-fungible asset being minted already exists.
+#!
+#! Invocation: exec
+pub proc mint(asset: Asset)
+    # pad the stack
+    padw padw swapdw movup.8 drop
+    # => [ASSET_ID, ASSET_VALUE, pad(7)]
+
+    push.FAUCET_MINT_ASSET_OFFSET
+    # => [offset, ASSET_ID, ASSET_VALUE, pad(7)]
+
+    syscall.exec_kernel_proc
+    # => [pad(16)]
+
+    # clean the stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Burn an asset from the faucet the transaction is being executed against.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to burn.
+#! - ASSET_VALUE is the value of the asset to burn.
+#!
+#! Panics if:
+#! - the asset issuer is not the faucet the transaction is being executed against.
+#! - the asset is not well formed.
+#! - for fungible faucets if the amount being burned is greater than the total input to the
+#!   transaction.
+#! - for non-fungible faucets if the non-fungible asset being burned does not exist or was not
+#!   provided as input to the transaction via a note or the accounts vault.
+#!
+#! Invocation: exec
+pub proc burn(asset: Asset)
+    # pad the stack
+    padw padw swapdw movup.8 drop
+    # => [ASSET_ID, ASSET_VALUE, pad(7)]
+
+    push.FAUCET_BURN_ASSET_OFFSET
+    # => [offset, ASSET_ID, ASSET_VALUE, pad(7)]
+
+    syscall.exec_kernel_proc
+    # => [pad(16)]
+
+    # clean the stack
+    dropw dropw dropw dropw
+    # => []
+end

@@ -1,9 +1,8 @@
-use alloc::string::String;
 use core::fmt::Display;
 
 use miden_crypto_derive::WordWrapper;
 
-use super::{Felt, NoteDetailsCommitment, NoteMetadata};
+use super::{NoteDetailsCommitment, NoteMetadata};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

@@ -9,15 +9,64 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::interop::eth::{EthAddress, EthAmount};
 use serde::Deserialize;
 
 use crate::claim_note::{ProofData, SmtNode};
-use crate::{CgiChainHash, EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
+use crate::{
+    BridgeRoles,
+    CgiChainHash,
+    ExitRoot,
+    GlobalIndex,
+    LeafData,
+    MetadataHash,
+    create_bridge_account_builder,
+};
+
+// BRIDGE ACCOUNT HELPERS
+// ================================================================================================
+
+/// Returns the fixed dummy account ID commonly seeded as the bridge's built-in `ADMIN` role
+/// member in tests.
+///
+/// Tests that exercise `ADMIN`-gated procedures (e.g. the pause toggles or role rotation) must
+/// use the seeded admin's ID as the note sender.
+pub fn bridge_admin_account_id() -> AccountId {
+    AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap()
+}
+
+/// Creates an existing bridge account seeded with the provided account as the built-in `ADMIN`
+/// role member and a single holder per operational role.
+///
+/// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
+pub fn create_existing_bridge_account_with_roles(
+    seed: Word,
+    admin: AccountId,
+    faucet_manager: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+    network_id: u32,
+) -> Account {
+    let roles = BridgeRoles::new(
+        BTreeSet::from([faucet_manager]),
+        BTreeSet::from([ger_injector]),
+        BTreeSet::from([ger_remover]),
+    )
+    .expect("single-holder role sets are non-empty");
+
+    create_bridge_account_builder(seed, admin, roles, network_id)
+        .build_existing()
+        .expect("bridge account should be valid")
+}
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================

@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::assembly::Assembler;
 use crate::asset::FungibleAsset;
 use crate::note::{
     Note,
@@ -14,6 +13,7 @@ use crate::note::{
     PartialNoteMetadata,
 };
 use crate::testing::account_id::ACCOUNT_ID_SENDER;
+use crate::testing::assembler::assemble_test_package;
 
 pub const DEFAULT_NOTE_SCRIPT: &str = "\
 @note_script
@@ -42,8 +42,11 @@ impl Note {
 
 impl NoteScript {
     pub fn mock() -> Self {
-        let assembler = Assembler::default();
-        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
-        Self::from_library(&library).unwrap()
+        let package = assemble_test_package(
+            "miden-testing-note",
+            "miden::testing::note",
+            DEFAULT_NOTE_SCRIPT,
+        );
+        Self::from_package(&package).unwrap()
     }
 }

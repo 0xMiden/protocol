@@ -1,4 +1,4 @@
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
@@ -7,11 +7,15 @@ use core::num::TryFromIntError;
 use miden_core::mast::MastNodeExt;
 use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
+use miden_mast_package::debug_info::PackageDebugInfo;
+use miden_processor::LoadedMastForest;
 
 use super::Felt;
-use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
-use crate::assembly::{Library, Path};
+use crate::assembly::Path;
+use crate::assembly::mast::{MastForest, MastNodeId};
 use crate::errors::NoteError;
+use crate::package::{loaded_mast_forest, package_debug_info};
+use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -19,10 +23,10 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::{AdviceMap, Program};
+use crate::vm::AdviceMap;
 use crate::{PrettyPrint, Word};
 
-/// The attribute name used to mark the entrypoint procedure in a note script library.
+/// The attribute name used to mark the entrypoint procedure in a note script package.
 const NOTE_SCRIPT_ATTRIBUTE: &str = "note_script";
 
 // NOTE SCRIPT ROOT
@@ -68,27 +72,16 @@ impl Deserializable for NoteScriptRoot {
 ///
 /// A note's script represents a program which must be executed for a note to be consumed. As such
 /// it defines the rules and side effects of consuming a given note.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct NoteScript {
     mast: Arc<MastForest>,
     entrypoint: MastNodeId,
+    package_debug_info: Option<Arc<PackageDebugInfo>>,
 }
 
 impl NoteScript {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns a new [NoteScript] instantiated from the provided program.
-    ///
-    /// TODO: since the note script now should be created from `Library`, not `Program`, this
-    /// constructor should be removed:
-    /// (<https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577>).
-    pub fn new(code: Program) -> Self {
-        Self {
-            entrypoint: code.entrypoint(),
-            mast: code.mast_forest().clone(),
-        }
-    }
 
     /// Returns a new [NoteScript] deserialized from the provided bytes.
     ///
@@ -104,29 +97,35 @@ impl NoteScript {
     /// Panics if the specified entrypoint is not in the provided MAST forest.
     pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
         assert!(mast.get_node_by_id(entrypoint).is_some());
-        Self { mast, entrypoint }
+        Self {
+            mast,
+            entrypoint,
+            package_debug_info: None,
+        }
     }
 
-    /// Returns a new [NoteScript] instantiated from the provided library.
+    /// Returns a new [NoteScript] instantiated from the provided package.
     ///
-    /// The library must contain exactly one procedure with the `@note_script` attribute,
+    /// The package must contain exactly one procedure with the `@note_script` attribute,
     /// which will be used as the entrypoint.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The library does not contain a procedure with the `@note_script` attribute.
-    /// - The library contains multiple procedures with the `@note_script` attribute.
-    pub fn from_library(library: &Library) -> Result<Self, NoteError> {
+    /// - The package does not contain a procedure with the `@note_script` attribute.
+    /// - The package contains multiple procedures with the `@note_script` attribute.
+    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
         let mut entrypoint = None;
 
-        for export in library.exports() {
+        for export in package.manifest.exports() {
             if let Some(proc_export) = export.as_procedure() {
                 // Check for @note_script attribute
                 if proc_export.attributes.has(NOTE_SCRIPT_ATTRIBUTE) {
                     if entrypoint.is_some() {
                         return Err(NoteError::NoteScriptMultipleProceduresWithAttribute);
                     }
-                    entrypoint = Some(proc_export.node);
+                    entrypoint = Some(
+                        proc_export.node.ok_or(NoteError::NoteScriptNoProcedureWithAttribute)?,
+                    );
                 }
             }
         }
@@ -134,31 +133,33 @@ impl NoteScript {
         let entrypoint = entrypoint.ok_or(NoteError::NoteScriptNoProcedureWithAttribute)?;
 
         Ok(Self {
-            mast: library.mast_forest().clone(),
+            mast: package.mast_forest().clone(),
             entrypoint,
+            package_debug_info: package_debug_info(package),
         })
     }
 
     /// Returns a new [NoteScript] containing only a reference to a procedure in the provided
-    /// library.
+    /// package.
     ///
-    /// This method is useful when a library contains multiple note scripts and you need to
+    /// This method is useful when a package contains multiple note scripts and you need to
     /// extract a specific one by its fully qualified path (e.g.,
     /// `miden::standards::notes::burn::main`).
     ///
     /// The procedure at the specified path must have the `@note_script` attribute.
     ///
     /// Note: This method creates a minimal [MastForest] containing only an external node
-    /// referencing the procedure's digest, rather than copying the entire library. The actual
+    /// referencing the procedure's digest, rather than copying the entire package. The actual
     /// procedure code will be resolved at runtime via the `MastForestStore`.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The library does not contain a procedure at the specified path.
+    /// - The package does not contain a procedure at the specified path.
     /// - The procedure at the specified path does not have the `@note_script` attribute.
-    pub fn from_library_reference(library: &Library, path: &Path) -> Result<Self, NoteError> {
+    pub fn from_package_reference(package: &Package, path: &Path) -> Result<Self, NoteError> {
         // Find the export matching the path
-        let export = library
+        let export = package
+            .manifest
             .exports()
             .find(|e| e.path().as_ref() == path)
             .ok_or_else(|| NoteError::NoteScriptProcedureNotFound(path.to_string().into()))?;
@@ -172,26 +173,17 @@ impl NoteScript {
             return Err(NoteError::NoteScriptProcedureMissingAttribute(path.to_string().into()));
         }
 
-        // Get the digest of the procedure from the library
-        let digest = library.mast_forest()[proc_export.node].digest();
+        // Get the digest of the procedure from the package
+        let digest = proc_export.digest;
 
         // Create a minimal MastForest with just an external node referencing the digest
         let (mast, entrypoint) = create_external_node_forest(digest);
 
-        Ok(Self { mast: Arc::new(mast), entrypoint })
-    }
-
-    /// Creates an [`NoteScript`] from a [`Package`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The package contains a library which does not contain a procedure with the `@note_script`
-    ///   attribute.
-    /// - The package contains a library which contains multiple procedures with the `@note_script`
-    ///   attribute.
-    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
-        Ok(NoteScript::from_library(&package.mast))?
+        Ok(Self {
+            mast: Arc::new(mast),
+            entrypoint,
+            package_debug_info: package_debug_info(package),
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -207,19 +199,19 @@ impl NoteScript {
         self.mast.clone()
     }
 
+    /// Returns the MAST forest and package-owned debug information backing this note script.
+    pub fn loaded_mast_forest(&self) -> LoadedMastForest {
+        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
+    }
+
     /// Returns an entrypoint node ID of the current script.
     pub fn entrypoint(&self) -> MastNodeId {
         self.entrypoint
     }
 
-    /// Clears all debug info from this script's [`MastForest`]: decorators, error codes, and
-    /// procedure names.
-    ///
-    /// See [`MastForest::clear_debug_info`] for more details.
+    /// Removes debug info from this note script, if any.
     pub fn clear_debug_info(&mut self) {
-        let mut mast = self.mast.clone();
-        Arc::make_mut(&mut mast).clear_debug_info();
-        self.mast = mast;
+        self.package_debug_info = None;
     }
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
@@ -232,14 +224,22 @@ impl NoteScript {
             return self;
         }
 
-        let mut mast = (*self.mast).clone();
-        mast.advice_map_mut().extend(advice_map);
+        let mast = (*self.mast).clone().with_advice_map(advice_map);
         Self {
             mast: Arc::new(mast),
             entrypoint: self.entrypoint,
+            package_debug_info: self.package_debug_info,
         }
     }
 }
+
+impl PartialEq for NoteScript {
+    fn eq(&self, other: &Self) -> bool {
+        self.mast == other.mast && self.entrypoint == other.entrypoint
+    }
+}
+
+impl Eq for NoteScript {}
 
 // CONVERSIONS INTO NOTE SCRIPT
 // ================================================================================================
@@ -312,7 +312,7 @@ impl TryFrom<&[Felt]> for NoteScript {
                 })?;
             data.extend(element.to_le_bytes())
         }
-        data.shrink_to(len as usize);
+        data.truncate(len as usize);
 
         // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
         let mast = MastForest::read_from_bytes(&data)?;
@@ -376,38 +376,22 @@ impl Display for NoteScript {
     }
 }
 
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Creates a minimal [MastForest] containing only an external node referencing the given digest.
-///
-/// This is useful for creating lightweight references to procedures without copying entire
-/// libraries. The external reference will be resolved at runtime, assuming the source library
-/// is loaded into the VM's MastForestStore.
-fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
-    let mut mast = MastForest::new();
-    let node_id = ExternalNodeBuilder::new(digest)
-        .add_to_forest(&mut mast)
-        .expect("adding external node to empty forest should not fail");
-    mast.make_root(node_id);
-    (mast, node_id)
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
+
     use super::{Felt, NoteScript, Vec};
-    use crate::assembly::Assembler;
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
     fn test_note_script_to_from_felt() {
-        let assembler = Assembler::default();
         let script_src = DEFAULT_NOTE_SCRIPT;
-        let library = assembler.assemble_library([script_src]).unwrap();
-        let note_script = NoteScript::from_library(&library).unwrap();
+        let package =
+            assemble_test_package("test-note-script-roundtrip", "test::note_roundtrip", script_src);
+        let note_script = NoteScript::from_package(&package).unwrap();
 
         let encoded: Vec<Felt> = (&note_script).into();
         let decoded: NoteScript = encoded.try_into().unwrap();
@@ -416,14 +400,29 @@ mod tests {
     }
 
     #[test]
+    fn test_note_script_preserves_package_debug_info() {
+        let package = assemble_test_package(
+            "test-note-script-debug-info",
+            "test::note_debug_info",
+            DEFAULT_NOTE_SCRIPT,
+        );
+        let note_script = NoteScript::from_package(&package).unwrap();
+
+        assert!(note_script.loaded_mast_forest().package_debug_info().unwrap().is_some());
+    }
+
+    #[test]
     fn test_note_script_with_advice_map() {
         use miden_core::advice::AdviceMap;
 
         use crate::Word;
 
-        let assembler = Assembler::default();
-        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
-        let script = NoteScript::from_library(&library).unwrap();
+        let package = assemble_test_package(
+            "test-note-script-with-advice-map",
+            "test::note_with_advice_map",
+            DEFAULT_NOTE_SCRIPT,
+        );
+        let script = NoteScript::from_package(&package).unwrap();
 
         assert!(script.mast().advice_map().is_empty());
 

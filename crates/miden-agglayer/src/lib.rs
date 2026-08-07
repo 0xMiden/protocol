@@ -2,37 +2,53 @@
 
 extern crate alloc;
 
-use miden_assembly::Library;
-use miden_assembly::serde::Deserializable;
+use alloc::collections::BTreeSet;
+
 use miden_core::{Felt, Word};
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::TokenSymbol;
-use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::auth::AuthNetworkAccount;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
+use miden_protocol::assembly::Path;
+use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::note::{NoteScript, NoteScriptRoot};
+use miden_protocol::vm::Package;
+use miden_standards::account::access::{
+    Authority,
+    Ownable2Step,
+    Pausable,
+    PausableManager,
+    RoleBasedAccessControl,
+    RoleConfig,
+};
+use miden_standards::account::auth::NetworkAccount;
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyRegistration,
+    BurnPolicy,
+    MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
 use miden_utils_sync::LazyLock;
 
+pub mod agglayer_note;
 pub mod b2agg_note;
 pub mod bridge;
 pub mod claim_note;
 pub mod config_note;
+pub mod costs;
+pub mod deregister_note;
 pub mod errors;
 pub mod eth_types;
 pub mod faucet;
-#[cfg(feature = "testing")]
+mod ger_note;
+pub mod remove_ger_note;
+#[cfg(any(feature = "testing", test))]
 pub mod testing;
 pub mod update_ger_note;
 pub mod utils;
 
+pub use agglayer_note::AgglayerNote;
 pub use b2agg_note::B2AggNote;
-pub use bridge::{AggLayerBridge, AgglayerBridgeError};
+pub use bridge::{AggLayerBridge, AgglayerBridgeError, BridgeRoles, RemovedGerHashChain};
 pub use claim_note::{
     CgiChainHash,
     ClaimNote,
@@ -44,52 +60,68 @@ pub use claim_note::{
     SmtNode,
 };
 pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
+pub use deregister_note::DeregisterAggFaucetNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
-pub use eth_types::{
-    EthAddress,
-    EthAmount,
-    EthAmountError,
-    EthEmbeddedAccountId,
-    GlobalIndex,
-    GlobalIndexError,
-    MetadataHash,
-};
+pub use eth_types::{GlobalIndex, GlobalIndexError, MetadataHash};
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
+pub use remove_ger_note::RemoveGerNote;
 pub use update_ger_note::UpdateGerNote;
 pub use utils::Keccak256Output;
 
 // AGGLAYER ACCOUNT COMPONENTS
 // ================================================================================================
 
-static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masl"));
-    Library::read_from_bytes(bytes).expect("shipped AggLayer library is well-formed")
+static AGGLAYER_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-agglayer.masp"));
+    Package::read_from_bytes_trusted(bytes).expect("shipped AggLayer package is well-formed")
 });
 
-static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masl"));
-    Library::read_from_bytes(bytes).expect("shipped bridge component library is well-formed")
+static BRIDGE_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped bridge component package is well-formed")
 });
 
-static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masl"));
-    Library::read_from_bytes(bytes).expect("shipped faucet component library is well-formed")
+static FAUCET_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
+    Package::read_from_bytes_trusted(bytes)
+        .expect("shipped faucet component package is well-formed")
 });
 
-/// Returns the AggLayer Library containing all agglayer modules.
-pub fn agglayer_library() -> Library {
-    AGGLAYER_LIBRARY.clone()
+/// Returns the AggLayer package containing all agglayer modules, including the note scripts.
+///
+/// The note scripts this crate builds are external references into this package rather than
+/// self-contained copies of it, so it must be registered with the MAST store of any executor that
+/// runs AggLayer notes. This mirrors the standard note scripts, which are external references into
+/// the standards library. `TransactionMastStore::new` preloads both packages, so the in-repo
+/// prover and test executors resolve AggLayer notes automatically; a downstream executor that
+/// supplies its own `DataStore` must register this package into it (e.g. via
+/// `TransactionMastStore::insert_package`), exactly as it must already register the standards
+/// package to run standard notes.
+pub fn agglayer_package() -> Package {
+    AGGLAYER_PACKAGE.clone()
 }
 
-/// Returns the Bridge component library.
-fn agglayer_bridge_component_library() -> Library {
-    BRIDGE_COMPONENT_LIBRARY.clone()
+/// Resolves the note script exported at `path` from the AggLayer package.
+///
+/// `path` must be the fully qualified path of a procedure carrying the `@note_script` attribute,
+/// e.g. `::agglayer::notes::claim::main`.
+pub(crate) fn note_script(path: &str) -> NoteScript {
+    NoteScript::from_package_reference(&AGGLAYER_PACKAGE, Path::new(path))
+        .expect("agglayer package contains the note script procedure")
 }
 
-/// Returns the Faucet component library.
-fn agglayer_faucet_component_library() -> Library {
-    FAUCET_COMPONENT_LIBRARY.clone()
+/// Returns the Bridge component package.
+fn agglayer_bridge_component_package() -> Package {
+    BRIDGE_COMPONENT_PACKAGE.clone()
+}
+
+/// Returns the Faucet component package.
+fn agglayer_faucet_component_package() -> Package {
+    FAUCET_COMPONENT_PACKAGE.clone()
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS
@@ -123,54 +155,95 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
+/// Returns the `FeePolicyManager` installed on the agglayer bridge and faucet accounts so their
+/// auth procedure can collect sponsored fees and answer sponsorship fee estimates. The active
+/// policy schedules an explicit 0 fee for every note script in `auth`'s allowlist, so it charges
+/// and collects nothing while still letting fee estimation resolve every note the account can
+/// consume; a real fee faucet and schedule are configured when fees are enabled on these accounts.
+///
+/// Because every scheduled fee is 0, the fee asset (and hence the placeholder faucet id below)
+/// never funds a transfer; only the components' procedure code contributes to the account code
+/// commitment, which `build.rs` mirrors when computing the compile-time commitment constants (the
+/// fee schedule entries and the manager's fee asset id are storage, so they do not affect the
+/// commitment).
+fn agglayer_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
+    // A placeholder public faucet id; see the note above on why its value is immaterial.
+    let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
+        .expect("placeholder fee faucet id is valid");
+
+    // The basic constant fee policy aborts fee estimation for note scripts without a schedule
+    // entry, so enumerate the allowlist and schedule each as free.
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
+    for note_script in allowed_notes {
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+    }
+
+    FeePolicyManager::builder()
+        .active_fee_policy(basic_constant_fee_policy.into())
+        .fee_faucet_id(fee_faucet_id)
+        .build()
+}
+
 /// Creates a complete bridge account builder with the standard configuration.
 ///
-/// The bridge starts with an empty faucet registry. Faucets are registered at runtime
-/// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
+/// The bridge starts with an empty faucet registry. Faucets are registered at runtime via
+/// CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
+///
+/// Here `admin` is seeded as the initial member of the built-in `ADMIN` role, which administers the
+/// operational roles in case they don't have their own administrators, and `roles` seeds the
+/// initial holders of the `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles that gate the
+/// bridge's privileged procedures.
+///
+/// `network_id` is the AggLayer network ID assigned to the Miden chain; it is written to the
+/// bridge's [`AggLayerBridge::network_id_slot_name`] storage slot at account creation.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
-/// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
+/// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes. The
+/// tx-script allowlist contains only the canonical `ExpirationTransactionScript` so the network
+/// transaction builder can bound how long the bridge's transactions stay valid.
+///
+/// The bridge also installs the [`Pausable`] and [`PausableManager`] components for emergency
+/// pauses, gated by the `ADMIN` role via the [`Authority`] unmapped-procedure fallback. While
+/// paused, all bridge entry points abort except `remove_ger`, which stays available so a
+/// fraudulent GER can still be revoked.
 fn create_bridge_account_builder(
     seed: Word,
-    bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
+    admin: AccountId,
+    roles: BridgeRoles,
     network_id: u32,
 ) -> AccountBuilder {
-    Account::builder(seed.into())
-        .account_type(AccountType::Public)
-        .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id, network_id))
-        .with_auth_component(
-            AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
-                .expect("bridge note allowlist is non-empty"),
+    let fee_policy_manager = agglayer_fee_policy_manager(AggLayerBridge::allowed_notes());
+    NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
+        .expect("bridge note allowlist is non-empty")
+        .with_component(AggLayerBridge::new(network_id))
+        .with_component(
+            RoleBasedAccessControl::builder()
+                .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
+                .roles(roles)
+                .build()
+                .expect("the bridge seeds distinct non-empty roles administered by ADMIN"),
         )
+        .with_component(Authority::RbacControlled {
+            procedure_roles: AggLayerBridge::procedure_roles(),
+        })
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
 }
 
 /// Creates a new bridge account with the standard configuration.
 ///
-/// This creates a new account suitable for production use.
+/// This creates a new account suitable for production use. `admin` bootstraps the `ADMIN` role
+/// (role administration); the initial operational-role holders are seeded from `roles` (see
+/// [`BridgeRoles`]). `network_id` is the AggLayer network ID assigned to the Miden chain.
 pub fn create_bridge_account(
     seed: Word,
-    bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
+    admin: AccountId,
+    roles: BridgeRoles,
     network_id: u32,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, network_id)
+    create_bridge_account_builder(seed, admin, roles, network_id)
         .build()
-        .expect("bridge account should be valid")
-}
-
-/// Creates an existing bridge account with the standard configuration.
-///
-/// This creates an existing account suitable for testing scenarios.
-#[cfg(any(feature = "testing", test))]
-pub fn create_existing_bridge_account(
-    seed: Word,
-    bridge_admin_id: AccountId,
-    ger_manager_id: AccountId,
-    network_id: u32,
-) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, network_id)
-        .build_existing()
         .expect("bridge account should be valid")
 }
 
@@ -179,14 +252,16 @@ pub fn create_existing_bridge_account(
 /// The builder includes:
 /// - The `AggLayerFaucet` component (token metadata only).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
-/// - A [`TokenPolicyManager`] (owner-controlled) configured with `MintPolicyConfig::OwnerOnly` and
-///   `BurnPolicyConfig::OwnerOnly`. The manager additionally registers `BurnAllowAll::root()` as an
+/// - A [`TokenPolicyManager`] (owner-controlled) configured with [`MintPolicy::owner_only`] and
+///   [`BurnPolicy::owner_only`]. The manager additionally registers `BurnAllowAll::root()` as an
 ///   allowed burn policy so the owner can open burns at runtime via `set_burn_policy`. The active
 ///   mint policy component (`MintOwnerOnly`) and burn policy component (`BurnOwnerOnly`) are
 ///   produced by the manager; `BurnAllowAll` is installed separately as the additional allowed burn
 ///   policy procedure.
-/// - The [`AuthNetworkAccount`] auth component, initialized with
-///   [`AggLayerFaucet::allowed_notes()`] so the faucet only accepts MINT and BURN notes.
+/// - The network-account auth component, installed via [`NetworkAccount::builder`] with
+///   [`AggLayerFaucet::allowed_notes()`] so the faucet only accepts MINT and BURN notes. The
+///   tx-script allowlist contains only the canonical
+///   [`ExpirationTransactionScript`](miden_standards::tx_script::ExpirationTransactionScript).
 fn create_agglayer_faucet_builder(
     seed: Word,
     token_symbol: &str,
@@ -200,29 +275,22 @@ fn create_agglayer_faucet_builder(
 
     // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
     // via `set_burn_policy`.
-    let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-        .expect("active mint policy is registered exactly once")
-        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-        .expect("active burn policy is registered exactly once")
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
-        .expect("reserved burn policy registration does not conflict")
-        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-        .expect("active send policy is registered exactly once")
-        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-        .expect("active receive policy is registered exactly once");
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::owner_only())
+        .allowed_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
 
-    Account::builder(seed.into())
-        .account_type(AccountType::Public)
+    let fee_policy_manager = agglayer_fee_policy_manager(AggLayerFaucet::allowed_notes());
+    NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
+        .expect("faucet note allowlist is non-empty")
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
-        .with_auth_component(
-            AuthNetworkAccount::with_allowed_notes(AggLayerFaucet::allowed_notes())
-                .expect("faucet note allowlist is non-empty"),
-        )
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.
@@ -269,4 +337,66 @@ pub fn create_existing_agglayer_faucet(
     )
     .build_existing()
     .expect("agglayer faucet account should be valid")
+}
+
+/// Creates an existing agglayer faucet account with the specified configuration and the asset
+/// callback flag enabled.
+///
+/// This creates an existing account suitable for testing scenarios.
+#[cfg(any(feature = "testing", test))]
+pub fn create_existing_agglayer_faucet_with_callbacks(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    token_supply: Felt,
+    bridge_account_id: AccountId,
+) -> Account {
+    use miden_protocol::account::AssetCallbackFlag;
+
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        token_supply,
+        bridge_account_id,
+    )
+    .with_asset_callbacks(AssetCallbackFlag::Enabled)
+    .build_existing()
+    .expect("agglayer faucet account should be valid")
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+    use miden_standards::tx_script::ExpirationTransactionScript;
+
+    use super::*;
+    use crate::testing::create_existing_bridge_account_with_roles;
+
+    /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
+    /// which the network transaction builder attaches to every network transaction.
+    #[test]
+    fn agglayer_accounts_allowlist_expiration_tx_script() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, 77);
+        let faucet = create_existing_agglayer_faucet(
+            Word::default(),
+            "AGG",
+            6,
+            Felt::from(1000u32),
+            Felt::ZERO,
+            id,
+        );
+
+        for account in [bridge, faucet] {
+            let network_account = NetworkAccount::try_from(account).unwrap();
+            assert!(network_account.allows_tx_script(&ExpirationTransactionScript::script_root()));
+        }
+    }
 }

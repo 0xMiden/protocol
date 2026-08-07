@@ -9,14 +9,7 @@
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
-use core::slice;
-
-use miden_agglayer::{
-    ExitRoot,
-    UpdateGerNote,
-    create_existing_agglayer_faucet,
-    create_existing_bridge_account,
-};
+use miden_agglayer::{ExitRoot, UpdateGerNote, create_existing_agglayer_faucet};
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -29,7 +22,11 @@ use miden_standards::errors::standards::{
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use super::test_utils::MIDEN_NETWORK_ID;
+use super::test_utils::{
+    MIDEN_NETWORK_ID,
+    bridge_admin_account_id,
+    create_existing_bridge_account_with_roles,
+};
 
 /// Attack note script: trivial body whose root falls outside the bridge's allowlist.
 const ATTACK_NOTE_CODE: &str = "\
@@ -47,17 +44,23 @@ end
 async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
-        bridge_admin.id(),
-        ger_manager.id(),
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let bridge_account = create_existing_bridge_account_with_roles(
+        bridge_seed,
+        bridge_admin_account_id(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -68,15 +71,17 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     // check.
     let ger = ExitRoot::from([0u8; 32]);
     let update_ger_note =
-        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mock_chain = builder.build()?;
 
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], slice::from_ref(&update_ger_note))?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(update_ger_note)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -88,28 +93,35 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
 }
 
 /// Asserts that a transaction consuming an input note whose script root falls outside the
-/// bridge's allowlist (CLAIM, B2AGG, CONFIG_AGG_BRIDGE, UPDATE_GER) fails with
+/// bridge's allowlist (see
+/// [`AggLayerBridge::allowed_notes`](miden_agglayer::AggLayerBridge::allowed_notes)) fails with
 /// [`ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED`].
 #[tokio::test]
 async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
-    let bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
-        bridge_admin.id(),
-        ger_manager.id(),
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let bridge_account = create_existing_bridge_account_with_roles(
+        bridge_seed,
+        bridge_admin_account_id(),
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
-    let attack_note = NoteBuilder::new(bridge_admin.id(), &mut rand::rng())
+    let attack_note = NoteBuilder::new(faucet_manager.id(), &mut rand::rng())
         .code(ATTACK_NOTE_CODE)
         .build()
         .expect("failed to build attack note");
@@ -119,7 +131,8 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[], slice::from_ref(&attack_note))?
+        .build_transaction(bridge_account.id())
+        .unauthenticated_input_note(attack_note)
         .build()?
         .execute()
         .await;
@@ -141,7 +154,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
 
     // The bridge_account_id is wired into the faucet at creation time as the registered owner;
     // we never execute against the bridge in this test, so a placeholder admin wallet is enough.
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -151,16 +164,17 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
         8,
         Felt::new(1_000_000).unwrap(),
         Felt::ZERO,
-        bridge_admin.id(),
+        faucet_manager.id(),
     );
     builder.add_account(faucet.clone())?;
 
     let mock_chain = builder.build()?;
 
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let tx_script =
+        CodeBuilder::default().compile_tx_script("@transaction_script pub proc main nop end")?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -181,7 +195,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
 async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
@@ -191,11 +205,11 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         8,
         Felt::new(1_000_000).unwrap(),
         Felt::ZERO,
-        bridge_admin.id(),
+        faucet_manager.id(),
     );
     builder.add_account(faucet.clone())?;
 
-    let attack_note = NoteBuilder::new(bridge_admin.id(), &mut rand::rng())
+    let attack_note = NoteBuilder::new(faucet_manager.id(), &mut rand::rng())
         .code(ATTACK_NOTE_CODE)
         .build()
         .expect("failed to build attack note");
@@ -205,7 +219,8 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], slice::from_ref(&attack_note))?
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(attack_note)
         .build()?
         .execute()
         .await;

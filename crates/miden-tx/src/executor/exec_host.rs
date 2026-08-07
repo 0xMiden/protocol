@@ -5,13 +5,12 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::mast::MastForest;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
+use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
-    AccountDelta,
     AccountId,
+    AccountPatch,
     PartialAccount,
     StorageMapKey,
     StorageSlotId,
@@ -19,7 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{
@@ -49,6 +48,7 @@ use crate::host::{
     TransactionEvent,
     TransactionProgress,
     TransactionProgressEvent,
+    TxSummaryOrSignature,
 };
 use crate::{AccountProcedureIndexMap, DataStore};
 
@@ -97,8 +97,16 @@ where
     /// authenticator that produced it.
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
-    /// The initial balance of the fee asset in the native account's vault.
-    initial_fee_asset_balance: u64,
+    /// Whether execution is currently inside the authentication procedure.
+    ///
+    /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
+    /// `EpilogueAuthProcEnd` events, so this flag is `true` only while the registered auth
+    /// procedure is running. It is used to reject signature *production* requested from any other
+    /// context (e.g. untrusted note or transaction scripts): an `AuthRequest` with no pre-supplied
+    /// signature makes the authenticator sign with the account's key and must never be honored
+    /// outside the auth procedure. Verifying an externally-supplied signature does not touch the
+    /// private key and is always allowed.
+    in_auth_procedure: bool,
 
     /// The source manager to track source code file span information, improving any MASM related
     /// error messages.
@@ -123,12 +131,13 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
-        initial_fee_asset_balance: u64,
+        ref_block_commitment: Word,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
+            ref_block_commitment,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
@@ -142,7 +151,7 @@ where
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
-            initial_fee_asset_balance,
+            in_auth_procedure: false,
             source_manager,
         }
     }
@@ -200,7 +209,7 @@ where
     /// The signature is requested from the host's authenticator.
     pub async fn on_auth_requested(
         &mut self,
-        pub_key_hash: Word,
+        pub_key_commitment: PublicKeyCommitment,
         tx_summary: TransactionSummary,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let signing_inputs = SigningInputs::TransactionSummary(Box::new(tx_summary));
@@ -212,69 +221,15 @@ where
         let message = signing_inputs.to_commitment();
 
         let signature: Vec<Felt> = authenticator
-            .get_signature(PublicKeyCommitment::from(pub_key_hash), &signing_inputs)
+            .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
-            .to_prepared_signature(message);
+            .to_encoded_signature(message);
 
-        let signature_key = Hasher::merge(&[pub_key_hash, message]);
+        let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
-        Ok(vec![AdviceMutation::extend_stack(signature)])
-    }
-
-    /// Handles the [`TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount`] and returns an error
-    /// if the account cannot pay the fee.
-    async fn on_before_tx_fee_removed_from_account(
-        &self,
-        fee_asset: FungibleAsset,
-    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        // Construct initial fee asset.
-        let initial_fee_asset =
-            FungibleAsset::new(fee_asset.faucet_id(), self.initial_fee_asset_balance)
-                .expect("fungible asset created from fee asset should be valid");
-
-        // Compute the current balance of the fee asset in the account based on the initial value
-        // and the delta.
-        let current_fee_asset = {
-            let fee_asset_amount_delta = self
-                .base_host
-                .account_delta_tracker()
-                .vault_delta()
-                .fungible()
-                .amount(&initial_fee_asset.vault_key())
-                .unwrap_or(0);
-
-            // SAFETY: Initial fee faucet ID should be a fungible faucet and amount should
-            // be less than MAX_AMOUNT as checked by the account delta.
-            let fee_asset_delta = FungibleAsset::new(
-                initial_fee_asset.faucet_id(),
-                fee_asset_amount_delta.unsigned_abs(),
-            )
-            .expect("faucet ID and amount should be valid");
-
-            // SAFETY: These computations are essentially the same as the ones executed by the
-            // transaction kernel, which should have aborted if they weren't valid.
-            if fee_asset_amount_delta > 0 {
-                initial_fee_asset
-                    .add(fee_asset_delta)
-                    .expect("transaction kernel should ensure amounts do not exceed MAX_AMOUNT")
-            } else {
-                initial_fee_asset
-                    .sub(fee_asset_delta)
-                    .expect("transaction kernel should ensure amount is not negative")
-            }
-        };
-
-        // Return an error if the balance in the account does not cover the fee.
-        if current_fee_asset.amount() < fee_asset.amount() {
-            return Err(TransactionKernelError::InsufficientFee {
-                account_balance: current_fee_asset.amount().as_u64(),
-                tx_fee: fee_asset.amount().as_u64(),
-            });
-        }
-
-        Ok(Vec::new())
+        Ok(vec![AdviceMutation::extend_advice_stack(signature.into())])
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -347,7 +302,7 @@ where
         &self,
         active_account_id: AccountId,
         vault_root: Word,
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let asset_witnesses = self
             .base_host
@@ -355,12 +310,12 @@ where
             .get_vault_asset_witnesses(
                 active_account_id,
                 vault_root,
-                BTreeSet::from_iter([asset_key]),
+                BTreeSet::from_iter([asset_id]),
             )
             .await
             .map_err(|err| TransactionKernelError::GetVaultAssetWitness {
                 vault_root,
-                asset_key,
+                asset_id,
                 source: err,
             })?;
 
@@ -447,7 +402,7 @@ where
     pub fn into_parts(
         self,
     ) -> (
-        AccountDelta,
+        AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
         Vec<AccountCode>,
@@ -455,10 +410,10 @@ where
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
     ) {
-        let (account_delta, input_notes, output_notes) = self.base_host.into_parts();
+        let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
 
         (
-            account_delta,
+            account_patch,
             input_notes,
             output_notes,
             self.accessed_foreign_account_code,
@@ -497,7 +452,10 @@ where
     STORE: DataStore + Sync,
     AUTH: TransactionAuthenticator + Sync,
 {
-    fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
         async move { mast_forest }
     }
@@ -535,11 +493,16 @@ where
                     self.on_foreign_account_requested(account_id).await
                 },
 
-                TransactionEvent::AccountVaultAfterRemoveAsset { asset } => {
-                    self.base_host.on_account_vault_after_remove_asset(asset)
+                TransactionEvent::AccountVaultAfterAssetUpdate { patch } => {
+                    self.base_host.on_account_vault_after_remove_asset(patch)
                 },
-                TransactionEvent::AccountVaultAfterAddAsset { asset } => {
-                    self.base_host.on_account_vault_after_add_asset(asset)
+
+                TransactionEvent::AccountBeforeAssetDeltaComputation => {
+                    self.base_host.on_account_before_asset_delta_computation()
+                },
+
+                TransactionEvent::AccountOnAssetDeltaComputation { delta: update } => {
+                    self.base_host.on_account_on_asset_delta_computation(update)
                 },
 
                 TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {
@@ -561,12 +524,12 @@ where
                 TransactionEvent::AccountVaultBeforeAssetAccess {
                     active_account_id,
                     vault_root,
-                    asset_key,
+                    asset_id,
                 } => {
                     self.on_account_vault_asset_witness_requested(
                         active_account_id,
                         vault_root,
-                        asset_key,
+                        asset_id,
                     )
                     .await
                 },
@@ -632,21 +595,29 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
-                TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature } => {
-                    if let Some(signature) = signature {
+                TransactionEvent::InputNoteIndexLookup { note_id } => {
+                    Ok(self.base_host.on_input_note_index_lookup(note_id))
+                },
+
+                TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary_or_signature,
+                } => match tx_summary_or_signature {
+                    TxSummaryOrSignature::Signature(signature) => {
                         Ok(self.base_host.on_auth_requested(signature))
-                    } else {
-                        self.on_auth_requested(pub_key_hash, tx_summary).await
-                    }
+                    },
+                    TxSummaryOrSignature::TxSummary(tx_summary) => {
+                        if !self.in_auth_procedure {
+                            Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
+                        } else {
+                            self.on_auth_requested(pub_key_commitment, tx_summary).await
+                        }
+                    },
                 },
 
                 // This always returns an error to abort the transaction.
                 TransactionEvent::Unauthorized { tx_summary } => {
                     Err(TransactionKernelError::Unauthorized(Box::new(tx_summary)))
-                },
-
-                TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset } => {
-                    self.on_before_tx_fee_removed_from_account(fee_asset).await
                 },
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
@@ -694,14 +665,12 @@ where
                     },
                     TransactionProgressEvent::EpilogueAuthProcStart(clk) => {
                         self.tx_progress.start_auth_procedure(clk);
+                        self.in_auth_procedure = true;
                         Ok(Vec::new())
                     },
                     TransactionProgressEvent::EpilogueAuthProcEnd(clk) => {
                         self.tx_progress.end_auth_procedure(clk);
-                        Ok(Vec::new())
-                    },
-                    TransactionProgressEvent::EpilogueAfterTxCyclesObtained(clk) => {
-                        self.tx_progress.epilogue_after_tx_cycles_obtained(clk);
+                        self.in_auth_procedure = false;
                         Ok(Vec::new())
                     },
                 },

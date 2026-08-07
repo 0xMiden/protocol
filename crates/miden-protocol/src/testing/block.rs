@@ -5,7 +5,7 @@ use miden_crypto::rand::test_utils::rand_value;
 use crate::Word;
 use crate::account::Account;
 use crate::block::account_tree::{AccountIdKey, AccountTree};
-use crate::block::{BlockHeader, BlockNumber, FeeParameters};
+use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorKeys};
 use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use crate::testing::random_secret_key::random_secret_key;
 
@@ -33,7 +33,8 @@ impl BlockHeader {
         let account_root = acct_db.root();
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
-        let validator_key = random_secret_key();
+        let validator_keys = ValidatorKeys::new(alloc::vec![random_secret_key().public_key()])
+            .expect("randomly generated validator keys should be distinct");
 
         #[cfg(not(target_family = "wasm"))]
         let (
@@ -90,7 +91,7 @@ impl BlockHeader {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_key.public_key(),
+            validator_keys,
             fee_parameters,
             timestamp,
         )

@@ -7,11 +7,22 @@ use crate::procedure_root;
 // ALLOW-ALL BURN POLICY
 // ================================================================================================
 
-account_component_code!(ALLOW_ALL_BURN_POLICY_CODE, "faucets/policies/burn/allow_all.masl");
+account_component_code!(
+    ALLOW_ALL_BURN_POLICY_CODE,
+    "miden-standards-faucets-policies-burn-allow-all.masp"
+);
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BurnAllowAll::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BURN_ALLOW_ALL_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::burn::allow_all";
 
 procedure_root!(
     ALLOW_ALL_POLICY_ROOT,
-    BurnAllowAll::NAME,
+    BURN_ALLOW_ALL_LIBRARY_PATH,
     BurnAllowAll::PROC_NAME,
     BurnAllowAll::code()
 );
@@ -26,8 +37,7 @@ pub struct BurnAllowAll;
 
 impl BurnAllowAll {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::burn::allow_all";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::burn::allow_all";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

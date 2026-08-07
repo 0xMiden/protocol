@@ -15,7 +15,10 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
+use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH,
+    ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT,
+};
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
@@ -43,6 +46,7 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTE_ASSETS_OFFSET,
     INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET,
     INPUT_NOTE_DETAILS_COMMITMENT_OFFSET,
+    INPUT_NOTE_ID_OFFSET,
     INPUT_NOTE_METADATA_OFFSET,
     INPUT_NOTE_NULLIFIER_SECTION_PTR,
     INPUT_NOTE_NUM_ASSETS_OFFSET,
@@ -76,29 +80,21 @@ use miden_protocol::transaction::memory::{
     VERIFICATION_BASE_FEE_IDX,
 };
 use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
-use miden_protocol::{EMPTY_WORD, WORD_SIZE};
+use miden_protocol::{EMPTY_WORD, MAX_ASSETS_PER_NOTE, WORD_SIZE};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::TransactionExecutorError;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 
 use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
-use crate::{
-    Auth,
-    MockChain,
-    TransactionContext,
-    TransactionContextBuilder,
-    assert_execution_error,
-};
+use crate::{Auth, MockChain, MockTransaction, TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
 async fn test_transaction_prologue() -> anyhow::Result<()> {
-    let mut tx_context = {
+    let mut mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note_1 = create_public_p2any_note(
@@ -113,13 +109,13 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(111)],
         );
-        TransactionContextBuilder::new(account)
-            .extend_input_notes(vec![input_note_1, input_note_2, input_note_3])
+        TestTransactionBuilder::new(account)
+            .input_notes(vec![input_note_1, input_note_2, input_note_3])
             .build()?
     };
 
     let code = "
-        use $kernel::prologue
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
@@ -127,7 +123,8 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
         ";
 
     let mock_tx_script_code = "
-        begin
+        @transaction_script
+        pub proc main
             nop
         end
         ";
@@ -136,28 +133,76 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
 
     // Input note 2 does not have any note args.
     let note_args_map = BTreeMap::from([
-        (tx_context.input_notes().get_note(0).note().id(), Word::from([91u32; 4])),
-        (tx_context.input_notes().get_note(1).note().id(), Word::from([92u32; 4])),
+        (mock_tx.input_notes().get_note(0).note().id(), Word::from([91u32; 4])),
+        (mock_tx.input_notes().get_note(1).note().id(), Word::from([92u32; 4])),
     ]);
 
-    let tx_args = TransactionArgs::new(tx_context.tx_args().advice_inputs().clone().map)
+    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().clone().map)
         .with_tx_script(tx_script)
         .with_note_args(note_args_map.clone());
 
-    tx_context.set_tx_args(tx_args);
-    let exec_output = &tx_context.execute_code(code).await?;
+    mock_tx.set_tx_args(tx_args);
+    let exec_output = &mock_tx.execute_code(code).await?;
 
-    global_input_memory_assertions(exec_output, &tx_context);
-    block_data_memory_assertions(exec_output, &tx_context);
-    partial_blockchain_memory_assertions(exec_output, &tx_context);
+    global_input_memory_assertions(exec_output, &mock_tx);
+    block_data_memory_assertions(exec_output, &mock_tx);
+    partial_blockchain_memory_assertions(exec_output, &mock_tx);
     kernel_data_memory_assertions(exec_output);
-    account_data_memory_assertions(exec_output, &tx_context);
-    input_notes_memory_assertions(exec_output, &tx_context, &note_args_map);
+    account_data_memory_assertions(exec_output, &mock_tx);
+    input_notes_memory_assertions(exec_output, &mock_tx, &note_args_map);
 
     Ok(())
 }
 
-fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+#[tokio::test]
+async fn test_transaction_prologue_rejects_too_many_note_assets() -> anyhow::Result<()> {
+    const NOTE_DATA_NUM_ASSETS_IDX: usize = 7 * WORD_SIZE + 1;
+
+    let assets: Vec<_> = (0..MAX_ASSETS_PER_NOTE)
+        .map(|i| NonFungibleAsset::mock(&(i as u32).to_le_bytes()))
+        .collect();
+    let input_note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, assets);
+    let mut mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .input_note(input_note)
+        .build()?;
+
+    // Start with the valid input-note advice generated from a note at the protocol limit, then
+    // forge one additional asset into it. This bypasses `NoteAssets::new` and exercises the
+    // transaction kernel's independent input-note validation.
+    let input_notes_commitment = mock_tx.input_notes().commitment();
+    let (_, advice_inputs) = TransactionKernel::prepare_inputs(mock_tx.tx_inputs());
+    let mut note_data = advice_inputs
+        .as_advice_inputs()
+        .map
+        .get(&input_notes_commitment)
+        .context("input-note advice should be present")?
+        .as_ref()
+        .to_vec();
+
+    note_data[NOTE_DATA_NUM_ASSETS_IDX] = Felt::from((MAX_ASSETS_PER_NOTE + 1) as u32);
+    let assets_end_idx = NOTE_DATA_NUM_ASSETS_IDX + 1 + MAX_ASSETS_PER_NOTE * ASSET_SIZE as usize;
+    let extra_asset = NonFungibleAsset::mock(&(MAX_ASSETS_PER_NOTE as u32).to_le_bytes());
+    note_data.splice(assets_end_idx..assets_end_idx, extra_asset.as_elements());
+
+    mock_tx.set_tx_args(TransactionArgs::new(
+        BTreeMap::from([(input_notes_commitment, note_data)]).into(),
+    ));
+
+    let code = "
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+        end
+        ";
+
+    let result = mock_tx.execute_code(code).await;
+    assert_execution_error!(result, ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT);
+
+    Ok(())
+}
+
+fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_COMMITMENT_PTR),
         inputs.tx_inputs().block_header().commitment(),
@@ -212,7 +257,7 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     );
 }
 
-fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_COMMITMENT_PTR),
         inputs.tx_inputs().block_header().commitment(),
@@ -257,7 +302,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
     assert_eq!(
         exec_output.get_kernel_mem_word(VALIDATOR_KEY_COMMITMENT_PTR),
-        inputs.tx_inputs().block_header().validator_key().to_commitment(),
+        inputs.tx_inputs().block_header().validator_keys().commitment(),
         "The public key commitment should be stored at the VALIDATOR_KEY_COMMITMENT_PTR"
     );
 
@@ -312,7 +357,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
 fn partial_blockchain_memory_assertions(
     exec_output: &ExecutionOutput,
-    prepared_tx: &TransactionContext,
+    prepared_tx: &MockTransaction,
 ) {
     // update the partial blockchain to point to the block against which this transaction is being
     // executed
@@ -358,7 +403,7 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
     }
 }
 
-fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
     let header = AccountHeader::from(inputs.account());
     assert_eq!(
         exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
@@ -430,7 +475,7 @@ fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
 
 fn input_notes_memory_assertions(
     exec_output: &ExecutionOutput,
-    inputs: &TransactionContext,
+    inputs: &MockTransaction,
     note_args: &BTreeMap<NoteId, Word>,
 ) {
     assert_eq!(
@@ -454,6 +499,12 @@ fn input_notes_memory_assertions(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_DETAILS_COMMITMENT_OFFSET),
             note.details_commitment().as_word(),
             "note details commitment should be computed and stored at INPUT_NOTE_DETAILS_COMMITMENT_OFFSET"
+        );
+
+        assert_eq!(
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ID_OFFSET),
+            note.id().as_word(),
+            "note ID should be computed and stored at INPUT_NOTE_ID_OFFSET"
         );
 
         assert_eq!(
@@ -511,16 +562,16 @@ fn input_notes_memory_assertions(
         );
 
         for (asset, asset_idx) in note.assets().iter().cloned().zip(0_u32..) {
-            let asset_key = asset.to_key_word();
+            let asset_id = asset.to_id_word();
             let asset_value = asset.to_value_word();
 
-            let asset_key_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
-            let asset_value_addr = asset_key_addr + ASSET_VALUE_OFFSET;
+            let asset_id_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
+            let asset_value_addr = asset_id_addr + ASSET_VALUE_OFFSET;
 
             assert_eq!(
-                exec_output.get_note_mem_word(note_idx, asset_key_addr),
-                asset_key,
-                "asset key should be stored at the correct offset"
+                exec_output.get_note_mem_word(note_idx, asset_id_addr),
+                asset_id,
+                "asset ID should be stored at the correct offset"
             );
 
             assert_eq!(
@@ -536,28 +587,28 @@ fn input_notes_memory_assertions(
 // ================================================================================================
 
 /// Tests that a simple account can be created in a complete transaction execution (not using
-/// [`TransactionContext::execute_code`]).
+/// [`MockTransaction::execute_code`]).
 #[tokio::test]
 async fn create_simple_account() -> anyhow::Result<()> {
     let account = AccountBuilder::new([6; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .build()?
         .execute()
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(tx.account_patch().final_nonce(), Some(Felt::ONE));
     // except for the nonce, the delta should be empty
-    assert!(tx.account_delta().storage().is_empty());
-    assert!(tx.account_delta().vault().is_empty());
+    assert!(tx.account_patch().storage().is_empty());
+    assert!(tx.account_patch().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::ONE);
     // account commitment should not be the empty word
-    assert_ne!(tx.account_delta().to_commitment(), EMPTY_WORD);
+    assert_ne!(tx.account_patch().to_commitment(), EMPTY_WORD);
 
     Ok(())
 }
@@ -567,15 +618,15 @@ async fn create_simple_account() -> anyhow::Result<()> {
 pub async fn create_account_test(
     account: Account,
 ) -> Result<ExecutedTransaction, TransactionExecutorError> {
-    TransactionContextBuilder::new(account).build().unwrap().execute().await
+    TestTransactionBuilder::new(account).build().unwrap().execute().await
 }
 
 pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow::Result<()> {
     let mut accounts = Vec::new();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+    let account = AccountBuilder::new(rand::random())
         .account_type(account_type)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
             StorageSlotName::mock(0),
             Word::from([255u32; WORD_SIZE]),
@@ -608,33 +659,26 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     let mut mock_chain = MockChain::new();
     mock_chain.prove_next_block()?;
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build()?;
-
-    let tx_inputs = mock_chain
-        .get_transaction_inputs(&account, &[], &[])
-        .expect("failed to get transaction inputs from mock chain");
 
     // override the seed with an invalid seed to ensure the kernel fails
     let account_seed_key = AccountIdKey::from(account.id()).as_word();
     let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_inputs(tx_inputs)
-        .extend_advice_inputs(adv_inputs)
-        .build()?;
+    let mock_tx = mock_chain.build_transaction(account).extend_advice_inputs(adv_inputs).build()?;
 
     let code = "
-      use $kernel::prologue
+      use miden::tx_kernel_core::prologue
 
       begin
           exec.prologue::prepare_transaction
       end
       ";
 
-    let result = tx_context.execute_code(code).await;
+    let result = mock_tx.execute_code(code).await;
 
     assert_execution_error!(result, ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH);
 
@@ -643,10 +687,10 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_version() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
-    use $kernel::memory
-    use $kernel::prologue
+    use miden::tx_kernel_core::memory
+    use miden::tx_kernel_core::prologue
 
     begin
         exec.prologue::prepare_transaction
@@ -657,11 +701,11 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
     end
     ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        Felt::from(tx_context.tx_inputs().block_header().version())
+        Felt::from(mock_tx.tx_inputs().block_header().version())
     );
 
     Ok(())
@@ -669,10 +713,10 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_blk_timestamp() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
     let code = "
-    use $kernel::memory
-    use $kernel::prologue
+    use miden::tx_kernel_core::memory
+    use miden::tx_kernel_core::prologue
 
     begin
         exec.prologue::prepare_transaction
@@ -683,11 +727,11 @@ async fn test_get_blk_timestamp() -> anyhow::Result<()> {
     end
     ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        Felt::from(tx_context.tx_inputs().block_header().timestamp())
+        Felt::from(mock_tx.tx_inputs().block_header().timestamp())
     );
 
     Ok(())

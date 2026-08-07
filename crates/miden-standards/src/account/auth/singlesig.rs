@@ -1,5 +1,5 @@
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -16,9 +16,10 @@ use miden_protocol::account::{
 use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
+use super::Approver;
 use crate::account::account_component_code;
 
-account_component_code!(SINGLESIG_CODE, "auth/singlesig.masl");
+account_component_code!(SINGLESIG_CODE, "miden-standards-auth-singlesig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -40,19 +41,27 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// storage and delegates transaction authentication to
 /// `miden::standards::auth::signature::authenticate_transaction`.
 ///
+/// Before authenticating, `auth_tx` pays the transaction fee via
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the payment asset. The
+/// payment asset and conversion rate are committed to via the transaction's auth args (see
+/// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo); native fee asset at rate 1/1 for
+/// plain native payment). On chains with a zero verification base fee no note is created. The
+/// fee note is created before the transaction summary, so it is covered by the signature.
+///
 /// When linking against this component, the `miden::standards` library must be available to the
 /// assembler (which also implies availability of `miden::protocol`). This is the case when using
 /// [`CodeBuilder`][builder].
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct AuthSingleSig {
-    pub_key: PublicKeyCommitment,
-    auth_scheme: AuthScheme,
+    approver: Approver,
 }
 
 impl AuthSingleSig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
+    pub const NAME: &'static str = "miden::standards::auth::singlesig";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -64,9 +73,9 @@ impl AuthSingleSig {
         &SINGLESIG_CODE
     }
 
-    /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
-    pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
-        Self { pub_key, auth_scheme }
+    /// Creates a new [`AuthSingleSig`] component with the given approver.
+    pub fn new(approver: Approver) -> Self {
+        Self { approver }
     }
 
     /// Creates a new [`AuthSingleSig`] component using the Falcon512Poseidon2 signature scheme.
@@ -74,18 +83,23 @@ impl AuthSingleSig {
     /// The public key commitment is derived from the provided Falcon512 public key.
     pub fn falcon512_poseidon2(pub_key: falcon512_poseidon2::PublicKey) -> Self {
         Self {
-            pub_key: pub_key.into(),
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
+            approver: Approver::new(pub_key.into(), AuthScheme::Falcon512Poseidon2),
         }
     }
 
     /// Creates a new [`AuthSingleSig`] component using the EcdsaK256Keccak signature scheme.
     ///
     /// The public key commitment is derived from the provided ECDSA K256 public key.
+    ///
+    /// Note: this scheme discloses the signer's public key and signature at proving time and
+    /// therefore does not provide public-key privacy. See
+    /// [`AuthScheme::EcdsaK256Keccak`][scheme] for details, and prefer
+    /// [`falcon512_poseidon2`](Self::falcon512_poseidon2) if signer-key privacy is required.
+    ///
+    /// [scheme]: miden_protocol::account::auth::AuthScheme::EcdsaK256Keccak
     pub fn ecdsa_k256_keccak(pub_key: ecdsa_k256_keccak::PublicKey) -> Self {
         Self {
-            pub_key: pub_key.into(),
-            auth_scheme: AuthScheme::EcdsaK256Keccak,
+            approver: Approver::new(pub_key.into(), AuthScheme::EcdsaK256Keccak),
         }
     }
 
@@ -94,9 +108,13 @@ impl AuthSingleSig {
     /// The authentication scheme and public key commitment are derived from the provided key.
     pub fn from_public_key(pub_key: PublicKey) -> Self {
         Self {
-            auth_scheme: pub_key.auth_scheme(),
-            pub_key: pub_key.to_commitment(),
+            approver: Approver::new(pub_key.to_commitment(), pub_key.auth_scheme()),
         }
+    }
+
+    /// Returns the approver of this component.
+    pub fn approver(&self) -> Approver {
+        self.approver
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -147,11 +165,11 @@ impl From<AuthSingleSig> for AccountComponent {
         let storage_slots = vec![
             StorageSlot::with_value(
                 AuthSingleSig::public_key_slot().clone(),
-                basic_signature.pub_key.into(),
+                basic_signature.approver.pub_key().into(),
             ),
             StorageSlot::with_value(
                 AuthSingleSig::scheme_id_slot().clone(),
-                Word::from([basic_signature.auth_scheme.as_u8(), 0, 0, 0]),
+                Word::from([basic_signature.approver.auth_scheme().as_u8(), 0, 0, 0]),
             ),
         ];
 

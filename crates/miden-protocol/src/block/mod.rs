@@ -13,6 +13,12 @@ pub use block_proof::BlockProof;
 mod proposed_block;
 pub use proposed_block::ProposedBlock;
 
+mod validator_keys;
+pub use validator_keys::{ValidatorKeys, ValidatorKeysError};
+
+mod block_signatures;
+pub use block_signatures::{BlockSignatures, SignatureVerificationError};
+
 mod signed_block;
 pub use signed_block::SignedBlock;
 
@@ -21,6 +27,9 @@ pub use proven_block::ProvenBlock;
 
 pub mod account_tree;
 pub mod nullifier_tree;
+
+mod smt_backend;
+pub use smt_backend::{SmtBackend, SmtBackendReader};
 
 mod blockchain;
 pub use blockchain::Blockchain;

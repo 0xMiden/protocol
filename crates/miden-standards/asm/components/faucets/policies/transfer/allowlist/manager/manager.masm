@@ -1,0 +1,12 @@
+# Authority-gated allowlist admin component.
+#
+# Re-exports `allow_account` and `disallow_account` from
+# `miden::standards::faucets::policies::transfer::allowlist::manager`, which wraps the underlying
+# `Invocation: exec` helpers with `authority::assert_authorized`.
+#
+# Pair with the [`Authority`] component (which provides the mode-aware auth dispatch) and a
+# component that installs the `allowed_accounts` storage slot — typically the basic allowlist
+# transfer policy component.
+
+pub use {allow_account} from miden::standards::faucets::policies::transfer::allowlist::manager
+pub use {disallow_account} from miden::standards::faucets::policies::transfer::allowlist::manager

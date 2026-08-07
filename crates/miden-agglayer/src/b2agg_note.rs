@@ -3,10 +3,9 @@
 //! This module provides helpers for creating B2AGG (Bridge to AggLayer) notes,
 //! which are used to bridge assets out from Miden to the AggLayer network.
 
+use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_assembly::Library;
-use miden_assembly::serde::Deserializable;
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
@@ -23,21 +22,22 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::interop::eth::EthAddress;
+use miden_standards::note::costs::NoteConsumptionCost;
+use miden_standards::note::{BurnNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::EthAddress;
+use crate::costs::B2AGG_CONSUMPTION_CYCLES;
+use crate::note_script;
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the B2AGG note script procedure in the agglayer package.
+const B2AGG_SCRIPT_PATH: &str = "::agglayer::notes::b2agg::main";
+
 // Initialize the B2AGG note script only once
-static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/b2agg.masl"));
-    let library =
-        Library::read_from_bytes(bytes).expect("shipped B2AGG script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped B2AGG script is well-formed")
-});
+static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| note_script(B2AGG_SCRIPT_PATH));
 
 // B2AGG NOTE
 // ================================================================================================
@@ -131,4 +131,19 @@ fn build_note_storage(
     elements.extend(destination_address.to_elements());
 
     NoteStorage::new(elements)
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for B2AggNote {
+    fn consumption_cycles() -> u32 {
+        B2AGG_CONSUMPTION_CYCLES
+    }
+
+    /// Consuming a B2AGG note creates the BURN note routed to the agglayer faucet (a network
+    /// account).
+    fn created_notes() -> Vec<NoteScriptRoot> {
+        vec![BurnNote::script_root()]
+    }
 }

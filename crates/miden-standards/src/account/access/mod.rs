@@ -1,38 +1,42 @@
+use alloc::collections::BTreeMap;
 use alloc::vec;
 
-use miden_protocol::account::{AccountComponent, AccountId, RoleSymbol};
+use miden_protocol::Felt;
+use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, RoleSymbol};
+use miden_protocol::errors::AccountIdError;
 
 pub mod authority;
 pub mod ownable2step;
 pub mod pausable;
 pub mod rbac;
 
-/// Access control configuration for account components.
+/// Access control configuration for network-style accounts whose authority-gated setters are
+/// gated by an owner / role check rather than by the account's auth component.
 ///
-/// Each variant expands into the set of [`AccountComponent`]s that implement that access
-/// control choice **plus** the matching [`Authority`] component. The [`Authority`] is
-/// auto-yielded so callers don't need to remember to install it separately and so that the
-/// authority discriminator stays in sync with the chosen access mode.
+/// User-account faucets (where the auth component is itself the setter gate) install
+/// [`Authority::AuthControlled`] directly via factories like
+/// [`create_singlesig_user_fungible_faucet`][crate::account::faucets::create_singlesig_user_fungible_faucet];
+/// they do not need this enum.
 ///
-/// - [`AccessControl::AuthControlled`] yields just [`Authority::AuthControlled`].
-/// - [`AccessControl::Ownable2Step`] yields [`Ownable2Step`] + [`Authority::OwnerControlled`].
-/// - [`AccessControl::Rbac`] yields [`Ownable2Step`] + [`RoleBasedAccessControl`] + an
-///   [`Authority`]. The `authority_role` field selects which authority kind is installed:
-///   - `None` → [`Authority::OwnerControlled`] (the top-level owner gates `set_*` operations).
-///   - `Some(role)` → [`Authority::RbacControlled { role }`] (any holder of `role` gates `set_*`
-///     operations).
+/// - [`AccessControl::Ownable2Step`] → [`Ownable2Step`] + [`Authority::OwnerControlled`]. The
+///   setter gate enforces `sender == owner`.
+/// - [`AccessControl::Rbac`] → [`RoleBasedAccessControl`] + [`Authority::RbacControlled`]. The
+///   `procedure_roles` map assigns a role to individual gated procedures (keyed by procedure root);
+///   procedures without a mapping fall back to the `ADMIN` role check.
 ///
 /// Pass to
 /// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]
 /// to install the access control components on the account:
 ///
 /// ```no_run
+/// use std::collections::BTreeMap;
+///
 /// use miden_protocol::account::AccountBuilder;
 /// use miden_standards::account::access::AccessControl;
-/// # let owner: miden_protocol::account::AccountId = unimplemented!();
+/// # let admin: miden_protocol::account::AccountId = unimplemented!();
 /// # let init_seed = [0u8; 32];
 /// AccountBuilder::new(init_seed)
-///     .with_components(AccessControl::Rbac { owner, authority_role: None });
+///     .with_components(AccessControl::Rbac { admin, procedure_roles: BTreeMap::new() });
 /// ```
 ///
 /// For accounts that don't use the [`AccessControl`] convenience but want to install the
@@ -40,26 +44,26 @@ pub mod rbac;
 /// [`AccountBuilder::with_component`][miden_protocol::account::AccountBuilder::with_component].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessControl {
-    /// No external access control component is installed; access decisions are gated solely
-    /// by the account's auth component.
-    AuthControlled,
-    /// Two-step ownership transfer with the provided initial owner. Authority for `set_*`
-    /// operations is fixed to the registered owner.
+    /// Two-step ownership transfer with the provided initial owner. The setter gate enforces
+    /// `sender == owner`.
     Ownable2Step { owner: AccountId },
-    /// Role-based access control. Includes [`Ownable2Step`] internally; the provided `owner`
-    /// becomes the top-level RBAC authority (the account's owner).
+    /// Role-based access control. The provided `admin` is seeded as the initial member of the
+    /// RBAC `ADMIN` role, which bootstraps role administration.
     ///
-    /// `authority_role` controls which authority is installed alongside RBAC:
-    /// - `None` (default) → [`Authority::OwnerControlled`]: the top-level `owner` is the sole
-    ///   authority for `set_*` operations (`set_mint_policy`, `set_burn_policy`, metadata setters).
-    ///   RBAC roles can still be granted/revoked but they do not directly gate the
-    ///   authority-protected procedures.
-    /// - `Some(role)` → [`Authority::RbacControlled { role }`]: any account holding `role` becomes
-    ///   a valid authority for `set_*` operations. Role membership is managed through the standard
-    ///   RBAC API on the [`RoleBasedAccessControl`] component.
+    /// Role administration itself is fully role-based. Each role is managed by its effective
+    /// admin role (its delegated admin, or `ADMIN` by default). See [`RoleBasedAccessControl`]
+    /// for the administration model.
+    ///
+    /// `procedure_roles` assigns a role to individual authority-gated procedures, keyed by
+    /// procedure root (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` →
+    /// `UNPAUSER`, and optionally `Authority::freeze_root()` → `FREEZER`). A gated procedure
+    /// without an entry in `procedure_roles` falls back to the `ADMIN` role. The emergency
+    /// `freeze` / `unfreeze` switch resolves its role the same way, defaulting to `ADMIN`. Role
+    /// membership is managed through the standard RBAC API on the [`RoleBasedAccessControl`]
+    /// component.
     Rbac {
-        owner: AccountId,
-        authority_role: Option<RoleSymbol>,
+        admin: AccountId,
+        procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     },
 }
 
@@ -72,20 +76,14 @@ impl IntoIterator for AccessControl {
     /// always included.
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            AccessControl::AuthControlled => vec![Authority::AuthControlled.into()].into_iter(),
             AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
-            AccessControl::Rbac { owner, authority_role: None } => vec![
-                Ownable2Step::new(owner).into(),
-                RoleBasedAccessControl::empty().into(),
-                Authority::OwnerControlled.into(),
-            ]
-            .into_iter(),
-            AccessControl::Rbac { owner, authority_role: Some(role) } => vec![
-                Ownable2Step::new(owner).into(),
-                RoleBasedAccessControl::empty().into(),
-                Authority::RbacControlled { role }.into(),
+            AccessControl::Rbac { admin, procedure_roles } => vec![
+                RoleBasedAccessControl::with_admins([admin])
+                    .expect("a single ADMIN member is a valid seed")
+                    .into(),
+                Authority::RbacControlled { procedure_roles }.into(),
             ]
             .into_iter(),
         }
@@ -95,4 +93,20 @@ impl IntoIterator for AccessControl {
 pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
-pub use rbac::RoleBasedAccessControl;
+pub use rbac::{RoleBasedAccessControl, RoleBasedAccessControlError, RoleConfig};
+
+// HELPERS
+// ================================================================================================
+
+/// Constructs an `Option<AccountId>` from a suffix/prefix felt pair.
+/// Returns `Ok(None)` when both felts are zero (e.g. no owner / no nomination).
+pub(crate) fn account_id_from_felt_pair(
+    suffix: Felt,
+    prefix: Felt,
+) -> Result<Option<AccountId>, AccountIdError> {
+    if suffix == Felt::ZERO && prefix == Felt::ZERO {
+        Ok(None)
+    } else {
+        AccountId::try_from_elements(suffix, prefix).map(Some)
+    }
+}

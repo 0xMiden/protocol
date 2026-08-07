@@ -17,7 +17,7 @@ Every Miden `Account` is essentially a smart contract. The `Code` defines the ac
 
 ## Interface
 
-An account's code is typically the result of merging multiple [account components](./components). This results in a set of procedures that make up the _interface_ of the account. As an example, a typical wallet uses the so-called _basic wallet_ interface, which is defined in `miden::standards::wallets::basic`. It consists of the `receive_asset` and `move_asset_to_note` procedures. If an account has this interface, i.e. this set of procedures, it can consume standard [P2ID notes](../note#p2id-pay-to-id). If it doesn't, it can't consume this type of note. So, adhering to standard interfaces such as the basic wallet will generally make an account more interoperable.
+An account's code is typically the result of merging multiple [account components](./components). This results in a set of procedures that make up the _interface_ of the account. As an example, a typical wallet uses the so-called _basic wallet_ interface, which is defined in `miden::components::wallets::basic_wallet`. It consists of the `receive_asset`, `move_asset_to_note` and `create_note` procedures. If an account has this interface, i.e. this set of procedures, it can consume standard [P2ID notes](../note#p2id-pay-to-id). If it doesn't, it can't consume this type of note. So, adhering to standard interfaces such as the basic wallet will generally make an account more interoperable.
 
 ## Authentication
 
@@ -34,6 +34,15 @@ Such an authentication procedure typically inspects the transaction and then dec
 - checking whether notes have been created.
 
 Recall that an [account's nonce](index.md#nonce) must be incremented whenever its state changes. Only authentication procedures are allowed to do so, to prevent accidental or unintended authorization of state changes.
+
+### Signature schemes and privacy
+
+The standard signature-based authentication components support two schemes, and they differ in what they reveal at proving time:
+
+- `falcon512_poseidon2` is verified entirely in-circuit. The public key is supplied non-deterministically and checked against the on-chain `Poseidon2(pk)` commitment inside the proof, so neither the public key nor the signature leaves the prover.
+- `ecdsa_k256_keccak` is verified via a precompile. Under the current native re-verification model, the precompile calldata - the raw compressed secp256k1 public key and the signature - must be carried inside the transaction proof for it to verify: the verifier recomputes the precompile transcript from that calldata and binds it into the proof's public inputs, so it cannot be stripped or withheld. As a consequence, the public key and signature are disclosed to the node operator and to any party on the transaction submission or gossip path, even though the account commits on-chain only to `Poseidon2(pk)`.
+
+In other words, `ecdsa_k256_keccak` does not provide the public-key privacy that commitment-based storage otherwise implies. Integrators requiring signer-key privacy should select `falcon512_poseidon2`.
 
 ### Procedure invocation checks
 

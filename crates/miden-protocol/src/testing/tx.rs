@@ -1,15 +1,17 @@
 use crate::asset::AssetAmount;
 use crate::note::NoteId;
-use crate::transaction::ExecutedTransaction;
+use crate::transaction::{ExecutedTransaction, TransactionFee};
 
 impl ExecutedTransaction {
-    /// A Rust implementation of the compute_fee epilogue procedure.
+    /// A Rust implementation of the compute_fee procedure.
     pub fn compute_fee(&self) -> AssetAmount {
-        // Round up the number of cycles to the next power of two and take log2 of it.
-        let verification_cycles = self.measurements().trace_length().ilog2();
-        let fee_amount =
-            self.block_header().fee_parameters().verification_base_fee() * verification_cycles;
-        AssetAmount::from(fee_amount)
+        TransactionFee::new(
+            u32::try_from(self.measurements().total_cycles())
+                .expect("total number of cycles should fit in u32"),
+        )
+        .expect("an executed transaction's cycle count is non-zero and within the kernel bound")
+        .compute_fee(self.tx_inputs().block_header().fee_parameters())
+        .expect("a margin-free fee is far below the maximum asset amount")
     }
 
     /// Returns `true` if the transaction consumes the note with the given ID.

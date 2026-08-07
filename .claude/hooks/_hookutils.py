@@ -10,10 +10,15 @@ importable via the `sys.path` shim in each hook.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+# Strips harness-injected <system-reminder> blocks from user message text so
+# only what the human actually typed is surfaced to the reviewers.
+_SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 
 
 def repo_root() -> Path | None:
@@ -83,3 +88,73 @@ def read_command(stdin: Any = None) -> str | None:
     input (so the hook can fail open with `sys.exit(0)`).
     """
     return command_from_payload(read_payload(stdin))
+
+
+def recent_user_prompts(
+    transcript_path: Any,
+    max_messages: int = 12,
+    max_chars: int = 3000,
+) -> str | None:
+    """Return the human-typed prompts from a session transcript as a
+    bulleted, most-recent-first string, or None if unavailable/empty.
+
+    Reads the JSONL transcript named by a hook payload's `transcript_path`,
+    keeps only genuine user turns (dropping tool results, tool calls, and
+    harness-injected `<system-reminder>` content), and caps the output so the
+    reviewers get the user's intent without the whole conversation.
+    """
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    try:
+        lines = Path(transcript_path).read_text().splitlines()
+    except OSError:
+        return None
+
+    prompts: list[str] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "user" or entry.get("isMeta"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        text = _user_text(message.get("content"))
+        if text:
+            prompts.append(text)
+    if not prompts:
+        return None
+
+    out: list[str] = []
+    total = 0
+    for prompt in reversed(prompts):  # most recent first
+        if len(prompt) > 500:
+            prompt = prompt[:500].rstrip() + "..."
+        bullet = f"- {prompt}"
+        if out and total + len(bullet) > max_chars:
+            break
+        out.append(bullet)
+        total += len(bullet)
+        if len(out) >= max_messages:
+            break
+    return "\n".join(out)
+
+
+def _user_text(content: Any) -> str | None:
+    """Extract human text from a user message's `content`, dropping
+    tool_result/tool_use blocks and `<system-reminder>` noise. Returns None
+    if nothing human-authored remains."""
+    if isinstance(content, str):
+        parts = [content]
+    elif isinstance(content, list):
+        parts = [
+            block["text"]
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
+        ]
+    else:
+        return None
+    cleaned = _SYSTEM_REMINDER.sub("", "\n".join(parts)).strip()
+    return cleaned or None

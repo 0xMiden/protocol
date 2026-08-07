@@ -3,10 +3,14 @@
 # Basic allowlist transfer policy: rejects transfers whose native account is not allowed on the
 # issuing faucet. Delegates the per-account state to the sibling `allowlist` primitive
 # (storage + helpers).
+#
+# The issuing faucet is exempt from its own allowlist, so the list only ever governs third-party
+# transfers.
 
+use miden::protocol::account_id
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::allowlist
-use miden::standards::access::pausable
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -14,33 +18,50 @@ use miden::standards::access::pausable
 #! Transfer policy that rejects transfers whose native account is not allowed on the issuing
 #! faucet.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`. Reads the native
-#! account ID (asset recipient when invoked from `on_before_asset_added_to_account`, note
-#! creator when invoked from `on_before_asset_added_to_note`) and asserts it is allowed
-#! against the issuing faucet's `allowed_accounts` storage.
-#!
 #! The same procedure root is reusable as both send and receive policy because it only
-#! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
+#! consumes the top eight felts (`ASSET_ID`, `ASSET_VALUE`) and leaves the rest of the call
 #! frame untouched — any `note_idx` carried in the send signature passes through unchanged.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
+#! Where:
+#! - custom_data is `0` for the receive (account) callback and the output note index for the
+#!   send (note) callback. This policy does not inspect it; it passes through unchanged.
+#!
 #! Panics if:
-#! - the account is paused (`Pausable` component required).
-#! - the native account is not allowed on the issuing faucet.
+#! - the native account is not allowed on the issuing faucet and is not the issuing faucet
+#!   itself.
 #!
 #! Invocation: call
+@account_procedure
 pub proc check_policy
-    exec.pausable::assert_not_paused
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    exec.asset::id_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE,
+    #     custom_data, pad(7)]
 
-    exec.allowlist::assert_allowed
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    dupw exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix,
+    #     ASSET_VALUE, custom_data, pad(7)]
 
-    dropw
+    # the issuing faucet is exempt
+    not
+    # => [should_check_allowlist, account_id_suffix, account_id_prefix, faucet_id_suffix,
+    #     faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
+    if.true
+        # drop the faucet ID, keeping the native account ID for the allowlist lookup
+        movup.3 drop movup.2 drop
+        # => [account_id_suffix, account_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
+        exec.allowlist::assert_allowed
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    else
+        dropw
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    end
     # => [ASSET_VALUE, pad(12)]
 end

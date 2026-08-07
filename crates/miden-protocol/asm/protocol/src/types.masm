@@ -1,0 +1,35 @@
+# TYPE ALIASES
+# =================================================================================================
+# Semantic aliases for values that protocol procedures move on the operand stack. Names mirror the
+# corresponding Rust types so signatures read as the Rust API does.
+
+# AccountId is shared with the transaction kernel, so it lives in the common base library.
+pub use {AccountId} from miden::protocol_utils::types
+
+# Two-felt identifier (suffix on top of the stack, prefix below).
+pub type StorageSlotId = struct { suffix: felt, prefix: felt }
+
+# Word-sized domain values that wrap a `Word` in Rust.
+pub type AssetId = word
+pub type NoteId = word
+pub type AssetValue = word
+pub type AccountProcedureRoot = word
+pub type StorageMapKey = word
+pub type NoteRecipient = word
+pub type NoteMetadata = word
+pub type NoteScriptRoot = word
+pub type TransactionScriptRoot = word
+
+# Full asset: the asset ID (an AssetId) on top of the stack, the asset value (an AssetValue)
+# below it.
+pub type Asset = struct { id: word, value: word }
+
+# Scalar domain values.
+pub type Bool = i1
+pub type AssetAmount = felt
+pub type NoteTag = u32
+pub type NoteType = u8
+pub type BlockNumber = u32
+
+pub type DoubleWord = struct { word_lo: word, word_hi: word }
+pub type MemoryAddress = u32

@@ -62,9 +62,6 @@ pub use recipient::NoteRecipient;
 mod script;
 pub use script::{NoteScript, NoteScriptRoot};
 
-mod file;
-pub use file::NoteFile;
-
 // NOTE
 // ================================================================================================
 
@@ -184,6 +181,11 @@ impl Note {
         &self.attachments
     }
 
+    /// Returns `true` if the note has at least one attachment.
+    pub fn has_attachments(&self) -> bool {
+        !self.attachments.is_empty()
+    }
+
     /// Returns a reference to the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
         self.header.metadata()
@@ -193,8 +195,8 @@ impl Note {
     // --------------------------------------------------------------------------------------------
 
     /// Reduces the size of the note script by stripping all debug info from it.
-    pub fn minify_script(&mut self) {
-        self.details.minify_script();
+    pub fn clear_debug_info(&mut self) {
+        self.details.clear_debug_info();
     }
 
     /// Consumes self and returns the underlying parts of the [`Note`].

@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_processor::{FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain};
@@ -43,7 +43,7 @@ pub trait DataStore: MastForestStore {
         ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>>;
 
-    /// Returns witnesses for the asset vault keys in the requested account's vault with the
+    /// Returns witnesses for the asset IDs in the requested account's vault with the
     /// requested vault root.
     ///
     /// These are the witnesses that need to be added to the advice provider's merkle store and
@@ -52,7 +52,7 @@ pub trait DataStore: MastForestStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        asset_ids: BTreeSet<AssetId>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>>;
 
     /// Returns a witness for a storage map item identified by `map_key` in the requested account's

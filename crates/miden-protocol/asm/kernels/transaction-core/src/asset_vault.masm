@@ -1,0 +1,354 @@
+use miden::core::collections::smt
+use miden::core::crypto::hashes::poseidon2
+use miden::core::word
+
+use miden::tx_kernel_core::asset
+use {COMPOSITION_NONE} from miden::tx_kernel_core::asset
+
+# ERRORS
+# =================================================================================================
+
+const ERR_VAULT_ADD_ASSET_FAILED_INITIAL_VALUE_INVALID =
+    "failed to add asset to the asset vault due to the initial value being invalid"
+
+const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS =
+    "failed to add non-fungible asset that already exists in the vault"
+
+const ERR_VAULT_REMOVE_ASSET_FAILED_INITIAL_VALUE_INVALID =
+    "failed to remove asset from the asset vault due to the initial value being invalid"
+
+const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND =
+    "failed to remove non-existent non-fungible asset from the vault"
+
+# CONSTANTS
+# =================================================================================================
+
+# Locals in add_asset.
+const ADD_ASSET_VAULT_ROOT_PTR_LOC = 0
+const ADD_ASSET_ASSET_COMPOSITION_LOC = 1
+
+# Locals in remove_asset.
+const REMOVE_ASSET_VAULT_ROOT_PTR_LOC = 0
+const REMOVE_ASSET_ASSET_COMPOSITION_LOC = 1
+
+# ACCESSORS
+# =================================================================================================
+
+#! Returns the ASSET_VALUE associated with the provided asset ID.
+#!
+#! Inputs:  [ASSET_ID, vault_root_ptr]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Where:
+#! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
+#! - ASSET_ID is the asset ID of the asset to fetch.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+pub proc get_asset
+    # hash the asset ID before using it as the SMT key
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, vault_root_ptr]
+
+    # load the asset vault root from memory
+    padw movup.8 mem_loadw_le
+    # => [ASSET_VAULT_ROOT, ASSET_ID_HASH]
+
+    swapw
+    # => [ASSET_ID_HASH, ASSET_VAULT_ROOT]
+
+    # lookup asset
+    exec.smt::get swapw dropw
+    # => [ASSET_VALUE]
+end
+
+#! Returns the _peeked_ asset associated with the provided hashed asset ID.
+#!
+#! WARNING: Peeked means the asset is loaded from the advice provider, which is susceptible to
+#! manipulation from a malicious host. Therefore this should only be used when the inclusion of the
+#! peeked asset is verified at a later point.
+#!
+#! To get the verified asset, use get_asset. peek_asset is useful when updating a value in an SMT
+#! with smt::set, which returns the previous value. As long as that previous value is the same as
+#! the peeked value, using peek_asset is safe from manipulation. Using smt::get instead would work
+#! as well, but since both smt::get and smt::set prove inclusion of the current/previous value,
+#! this is unnecessary double work that can be skipped by peeking.
+#!
+#! WARNING: This is a generic vault procedure and so it cannot emit an event to lazy load asset
+#! merkle paths from the merkle store, since this is only possible for the account vault. Ensure
+#! that the merkle paths are present prior to calling.
+#!
+#! Inputs:  [ASSET_ID_HASH, vault_root_ptr]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Where:
+#! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
+#! - ASSET_ID_HASH is the hashed asset ID of the asset to fetch (see hash_asset_id).
+#! - ASSET_VALUE is the retrieved asset.
+pub proc peek_asset
+    # load the asset vault root from memory
+    padw movup.8 mem_loadw_le
+    # => [ASSET_VAULT_ROOT, ASSET_ID_HASH]
+
+    swapw
+    # => [ASSET_ID_HASH, ASSET_VAULT_ROOT]
+
+    # lookup asset
+    exec.smt::peek
+    # OS => [ASSET_ID_HASH, ASSET_VAULT_ROOT]
+    # AS => [ASSET_VALUE]
+
+    dropw
+    # OS => [ASSET_VAULT_ROOT]
+    # AS => [ASSET_VALUE]
+
+    # this overwrites the vault root
+    adv_loadw
+    # OS => [ASSET_VALUE]
+    # AS => []
+end
+
+# ADD ASSET
+# =================================================================================================
+
+#! Add the specified asset to the vault.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
+#! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset that is added to the vault.
+#! - ASSET_VALUE is the value of the asset that is added to the vault.
+#! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
+#! - INITIAL_ASSET_VALUE is the value associated with ASSET_ID in the vault prior to the
+#!   operation; EMPTY_WORD if the asset was not present (always EMPTY_WORD for non-composable assets).
+#! - FINAL_ASSET_VALUE is the final value associated with ASSET_ID in the vault, defined as:
+#!   - If ASSET_VALUE is a non-composable asset, FINAL_ASSET_VALUE is the same as ASSET_VALUE.
+#!   - If ASSET_VALUE is a fungible asset, FINAL_ASSET_VALUE is the total fungible asset in the
+#!     account vault after ASSET_VALUE was added to it.
+#!
+#! Panics if:
+#! - the asset is not valid.
+#! - the total value of two fungible assets is greater than FUNGIBLE_ASSET_MAX_AMOUNT.
+#! - the asset is not composable and the vault already contains an asset at that asset ID.
+#!
+#! Locals:
+#! - 0: vault_root_ptr
+#! - 1: asset_composition
+@locals(2)
+pub proc add_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
+
+    exec.asset::validate
+    # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
+
+    # Get the current asset using `peek_asset`.
+    # ---------------------------------------------------------------------------------------------
+
+    # store the asset composition
+    exec.asset::id_to_composition loc_store.ADD_ASSET_ASSET_COMPOSITION_LOC
+    # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
+
+    # store the vault_root_ptr
+    movup.8 loc_store.ADD_ASSET_VAULT_ROOT_PTR_LOC
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # hash the asset ID once; it is used as the SMT key for both the peek and the set below
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, ASSET_VALUE]
+
+    dupw loc_load.ADD_ASSET_VAULT_ROOT_PTR_LOC movdn.4
+    # => [ASSET_ID_HASH, vault_root_ptr, ASSET_ID_HASH, ASSET_VALUE]
+
+    exec.peek_asset
+    # => [INITIAL_ASSET_VALUE, ASSET_ID_HASH, ASSET_VALUE]
+
+    # since we have peeked the value, we need to later assert that the actual value matches this
+    # one, so we'll keep a copy for later
+    swapw dupw.1
+    # => [INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, ASSET_VALUE]
+
+    # Compute the asset value to insert.
+    # ---------------------------------------------------------------------------------------------
+
+    # if the existing value is the empty word, we know the value is absent and we can simply
+    # insert the new value
+    exec.word::testz
+    # => [is_absent, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, ASSET_VALUE]
+
+    if.true
+        # drop the existing asset value (= empty word),
+        # and use the provided ASSET_VALUE as the new value for the vault
+        dropw movupw.2
+        # => [ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+    else
+        # a non-empty existing value means the asset is already present
+        # if the composition is none, it means the non-composable asset already exists in the vault
+        # merge would also panic in this case, but the extra assertion provides a better error
+        movupw.3 loc_load.ADD_ASSET_ASSET_COMPOSITION_LOC
+        # => [asset_composition, ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+        dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_NON_FUNGIBLE_ASSET_TO_ADD_ALREADY_EXISTS
+        # => [asset_composition, ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+        # merge the two values together
+        exec.asset::merge
+        # => [MERGED_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+    end
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+    # store a copy of FINAL_ASSET_VALUE for returning
+    movdnw.2 dupw.2
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # Insert the final asset value.
+    # ---------------------------------------------------------------------------------------------
+
+    # load the vault root
+    padw loc_load.ADD_ASSET_VAULT_ROOT_PTR_LOC mem_loadw_le
+    # => [VAULT_ROOT, FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    movdnw.2
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # update asset in vault
+    exec.smt::set
+    # => [PREV_VAULT_VALUE, NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # assert PREV_VAULT_VALUE = INITIAL_ASSET_VALUE to make sure peek_asset returned the correct asset
+    dupw.2 assert_eqw.err=ERR_VAULT_ADD_ASSET_FAILED_INITIAL_VALUE_INVALID
+    # => [NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # update the vault root
+    loc_load.ADD_ASSET_VAULT_ROOT_PTR_LOC mem_storew_le dropw
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+end
+
+# REMOVE ASSET
+# =================================================================================================
+
+#! Remove the specified asset from the vault and return the initial and remaining asset values.
+#!
+#! For instance, if ASSET_ID points to a fungible asset with amount 100, and ASSET_VALUE has
+#! amount 30, then INITIAL_ASSET_VALUE has amount 100 and FINAL_ASSET_VALUE has amount 70.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, vault_root_ptr]
+#! Outputs: [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset that is removed from the vault.
+#! - ASSET_VALUE is the value of the asset that is removed from the vault.
+#! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
+#! - INITIAL_ASSET_VALUE is the value associated with ASSET_ID in the vault prior to the operation.
+#!   For non-composable assets this equals ASSET_VALUE; for fungible assets this is the pre-removal
+#!   balance.
+#! - FINAL_ASSET_VALUE is the value remaining in the vault after removal, defined as:
+#!   - If the entire asset is removed, FINAL_ASSET_VALUE is EMPTY_WORD. This is always the case for
+#!     non-composable assets and for fungible assets whose full balance is removed.
+#!   - Otherwise FINAL_ASSET_VALUE is INITIAL_ASSET_VALUE with ASSET_VALUE subtracted from it.
+#!
+#! Panics if:
+#! - the asset's composition is Custom (not yet supported).
+#! - the asset is not composable and is not present in the vault with the exact value.
+#! - the amount of the fungible asset in the vault is less than the amount to be removed.
+#!
+#! Locals:
+#! - 0: vault_root_ptr
+#! - 1: asset_composition
+@locals(2)
+pub proc remove_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
+
+    # store the asset composition
+    exec.asset::id_to_composition loc_store.REMOVE_ASSET_ASSET_COMPOSITION_LOC
+    # => [ASSET_ID, ASSET_VALUE, vault_root_ptr]
+
+    # store the vault_root_ptr
+    movup.8 loc_store.REMOVE_ASSET_VAULT_ROOT_PTR_LOC
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # hash the asset ID once; it is used as the SMT key for both the peek and the set below
+    exec.hash_asset_id
+    # => [ASSET_ID_HASH, ASSET_VALUE]
+
+    dupw loc_load.REMOVE_ASSET_VAULT_ROOT_PTR_LOC movdn.4
+    # => [ASSET_ID_HASH, vault_root_ptr, ASSET_ID_HASH, ASSET_VALUE]
+
+    exec.peek_asset
+    # => [INITIAL_ASSET_VALUE, ASSET_ID_HASH, ASSET_VALUE]
+
+    # since we have peeked the value, we need to later assert that the actual value matches this
+    # one, so we'll keep a copy for later
+    swapw dupw.1
+    # => [INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, ASSET_VALUE]
+
+    # Compute the final value that remains in the vault.
+    # ---------------------------------------------------------------------------------------------
+
+    movupw.3
+    # => [ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+    # check if the full value is being removed
+    exec.word::test_eq
+    # => [is_full_removal, ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+    if.true
+        # drop ASSET_VALUE and INITIAL_ASSET_VALUE, and use EMPTY_WORD as the remaining value
+        dropw dropw padw
+        # => [EMPTY_WORD, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+    else
+        # a partial removal is only defined for composable assets; if the composition is none, the
+        # non-composable asset to remove was not found in the vault.
+        # split would also panic in this case, but the extra assertion provides a better error
+        loc_load.REMOVE_ASSET_ASSET_COMPOSITION_LOC
+        dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND
+        # => [asset_composition, ASSET_VALUE, INITIAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+        # compute the remaining value as INITIAL_ASSET_VALUE - ASSET_VALUE
+        exec.asset::split
+        # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+    end
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE]
+
+    # store a copy of FINAL_ASSET_VALUE for returning
+    movdnw.2 dupw.2
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # Insert the final asset value.
+    # ---------------------------------------------------------------------------------------------
+
+    # load the vault root
+    padw loc_load.REMOVE_ASSET_VAULT_ROOT_PTR_LOC mem_loadw_le
+    # => [VAULT_ROOT, FINAL_ASSET_VALUE, ASSET_ID_HASH, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    movdnw.2
+    # => [FINAL_ASSET_VALUE, ASSET_ID_HASH, VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # update asset in vault
+    exec.smt::set
+    # => [PREV_VAULT_VALUE, NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # assert PREV_VAULT_VALUE = INITIAL_ASSET_VALUE to make sure peek_asset returned the correct asset
+    dupw.2 assert_eqw.err=ERR_VAULT_REMOVE_ASSET_FAILED_INITIAL_VALUE_INVALID
+    # => [NEW_VAULT_ROOT, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+
+    # update the vault root
+    loc_load.REMOVE_ASSET_VAULT_ROOT_PTR_LOC mem_storew_le dropw
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Hashes the raw asset ID into the key used by the asset vault SMT.
+#!
+#! See [`AssetId::hash`] in Rust for the rationale.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID_HASH]
+proc hash_asset_id
+    exec.poseidon2::hash
+    # => [ASSET_ID_HASH]
+end

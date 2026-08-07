@@ -27,6 +27,12 @@ pub enum TransactionEventId {
     AccountVaultBeforeRemoveAsset = ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_ID,
     AccountVaultAfterRemoveAsset = ACCOUNT_VAULT_AFTER_REMOVE_ASSET_ID,
 
+    AccountVaultBeforeMintAsset = ACCOUNT_VAULT_BEFORE_MINT_ASSET_ID,
+    AccountVaultBeforeBurnAsset = ACCOUNT_VAULT_BEFORE_BURN_ASSET_ID,
+
+    AccountBeforeAssetDeltaComputation = ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID,
+    AccountOnAssetDeltaComputation = ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID,
+
     AccountVaultBeforeGetAsset = ACCOUNT_VAULT_BEFORE_GET_ASSET_ID,
 
     AccountStorageBeforeSetItem = ACCOUNT_STORAGE_BEFORE_SET_ITEM_ID,
@@ -50,6 +56,8 @@ pub enum TransactionEventId {
 
     NoteBeforeAddAttachment = NOTE_BEFORE_ADD_ATTACHMENT_ID,
 
+    InputNoteIndexLookup = INPUT_NOTE_INDEX_LOOKUP_ID,
+
     AuthRequest = AUTH_REQUEST_ID,
 
     PrologueStart = PROLOGUE_START_ID,
@@ -70,9 +78,6 @@ pub enum TransactionEventId {
     EpilogueAuthProcStart = EPILOGUE_AUTH_PROC_START_ID,
     EpilogueAuthProcEnd = EPILOGUE_AUTH_PROC_END_ID,
 
-    EpilogueAfterTxCyclesObtained = EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID,
-    EpilogueBeforeTxFeeRemovedFromAccount = EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_ID,
-
     LinkMapSet = LINK_MAP_SET_ID,
     LinkMapGet = LINK_MAP_GET_ID,
 
@@ -82,8 +87,11 @@ pub enum TransactionEventId {
 impl TransactionEventId {
     /// Returns `true` if the event is privileged, i.e. it is only allowed to be emitted from the
     /// root context of the VM, which is where the transaction kernel executes.
+    ///
+    /// The host enforces this: a privileged event emitted from a non-root context is rejected.
     pub fn is_privileged(&self) -> bool {
-        let is_unprivileged = matches!(self, Self::AuthRequest | Self::Unauthorized);
+        let is_unprivileged =
+            matches!(self, Self::AuthRequest | Self::InputNoteIndexLookup | Self::Unauthorized);
         !is_unprivileged
     }
 
@@ -100,6 +108,12 @@ impl TransactionEventId {
             Self::AccountVaultAfterAddAsset => &ACCOUNT_VAULT_AFTER_ADD_ASSET_NAME,
             Self::AccountVaultBeforeRemoveAsset => &ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_NAME,
             Self::AccountVaultAfterRemoveAsset => &ACCOUNT_VAULT_AFTER_REMOVE_ASSET_NAME,
+            Self::AccountVaultBeforeMintAsset => &ACCOUNT_VAULT_BEFORE_MINT_ASSET_NAME,
+            Self::AccountVaultBeforeBurnAsset => &ACCOUNT_VAULT_BEFORE_BURN_ASSET_NAME,
+            Self::AccountBeforeAssetDeltaComputation => {
+                &ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_NAME
+            },
+            Self::AccountOnAssetDeltaComputation => &ACCOUNT_ON_ASSET_DELTA_COMPUTATION_NAME,
             Self::AccountVaultBeforeGetAsset => &ACCOUNT_VAULT_BEFORE_GET_ASSET_NAME,
             Self::AccountStorageBeforeSetItem => &ACCOUNT_STORAGE_BEFORE_SET_ITEM_NAME,
             Self::AccountStorageAfterSetItem => &ACCOUNT_STORAGE_AFTER_SET_ITEM_NAME,
@@ -114,6 +128,7 @@ impl TransactionEventId {
             Self::NoteBeforeAddAsset => &NOTE_BEFORE_ADD_ASSET_NAME,
             Self::NoteAfterAddAsset => &NOTE_AFTER_ADD_ASSET_NAME,
             Self::NoteBeforeAddAttachment => &NOTE_BEFORE_ADD_ATTACHMENT_NAME,
+            Self::InputNoteIndexLookup => &INPUT_NOTE_INDEX_LOOKUP_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
@@ -127,10 +142,6 @@ impl TransactionEventId {
             Self::EpilogueEnd => &EPILOGUE_END_NAME,
             Self::EpilogueAuthProcStart => &EPILOGUE_AUTH_PROC_START_NAME,
             Self::EpilogueAuthProcEnd => &EPILOGUE_AUTH_PROC_END_NAME,
-            Self::EpilogueAfterTxCyclesObtained => &EPILOGUE_AFTER_TX_CYCLES_OBTAINED_NAME,
-            Self::EpilogueBeforeTxFeeRemovedFromAccount => {
-                &EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_NAME
-            },
             Self::LinkMapSet => &LINK_MAP_SET_NAME,
             Self::LinkMapGet => &LINK_MAP_GET_NAME,
             Self::Unauthorized => &AUTH_UNAUTHORIZED_NAME,
@@ -161,6 +172,20 @@ impl TryFrom<EventId> for TransactionEventId {
             },
             ACCOUNT_VAULT_AFTER_REMOVE_ASSET_ID => {
                 Ok(TransactionEventId::AccountVaultAfterRemoveAsset)
+            },
+
+            ACCOUNT_VAULT_BEFORE_MINT_ASSET_ID => {
+                Ok(TransactionEventId::AccountVaultBeforeMintAsset)
+            },
+            ACCOUNT_VAULT_BEFORE_BURN_ASSET_ID => {
+                Ok(TransactionEventId::AccountVaultBeforeBurnAsset)
+            },
+
+            ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID => {
+                Ok(TransactionEventId::AccountOnAssetDeltaComputation)
+            },
+            ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID => {
+                Ok(TransactionEventId::AccountBeforeAssetDeltaComputation)
             },
 
             ACCOUNT_VAULT_BEFORE_GET_ASSET_ID => Ok(TransactionEventId::AccountVaultBeforeGetAsset),
@@ -196,6 +221,8 @@ impl TryFrom<EventId> for TransactionEventId {
 
             NOTE_BEFORE_ADD_ATTACHMENT_ID => Ok(TransactionEventId::NoteBeforeAddAttachment),
 
+            INPUT_NOTE_INDEX_LOOKUP_ID => Ok(TransactionEventId::InputNoteIndexLookup),
+
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
 
             PROLOGUE_START_ID => Ok(TransactionEventId::PrologueStart),
@@ -213,12 +240,6 @@ impl TryFrom<EventId> for TransactionEventId {
             EPILOGUE_START_ID => Ok(TransactionEventId::EpilogueStart),
             EPILOGUE_AUTH_PROC_START_ID => Ok(TransactionEventId::EpilogueAuthProcStart),
             EPILOGUE_AUTH_PROC_END_ID => Ok(TransactionEventId::EpilogueAuthProcEnd),
-            EPILOGUE_AFTER_TX_CYCLES_OBTAINED_ID => {
-                Ok(TransactionEventId::EpilogueAfterTxCyclesObtained)
-            },
-            EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_ID => {
-                Ok(TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount)
-            },
             EPILOGUE_END_ID => Ok(TransactionEventId::EpilogueEnd),
 
             LINK_MAP_SET_ID => Ok(TransactionEventId::LinkMapSet),

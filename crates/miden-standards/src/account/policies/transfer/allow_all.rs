@@ -7,11 +7,22 @@ use crate::procedure_root;
 // ALLOW-ALL TRANSFER POLICY
 // ================================================================================================
 
-account_component_code!(ALLOW_ALL_TRANSFER_POLICY_CODE, "faucets/policies/transfer/allow_all.masl");
+account_component_code!(
+    ALLOW_ALL_TRANSFER_POLICY_CODE,
+    "miden-standards-faucets-policies-transfer-allow-all.masp"
+);
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`TransferAllowAll::NAME`], which mirrors the standards-side MASM module path.
+const TRANSFER_ALLOW_ALL_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::allow_all";
 
 procedure_root!(
     ALLOW_ALL_TRANSFER_POLICY_ROOT,
-    TransferAllowAll::NAME,
+    TRANSFER_ALLOW_ALL_LIBRARY_PATH,
     TransferAllowAll::PROC_NAME,
     TransferAllowAll::code()
 );
@@ -25,8 +36,7 @@ pub struct TransferAllowAll;
 
 impl TransferAllowAll {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::allow_all";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::allow_all";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

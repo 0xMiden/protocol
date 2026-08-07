@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -16,7 +17,7 @@ use super::{
     Serializable,
 };
 use crate::Word;
-use crate::account::{AccountVaultDelta, NonFungibleDeltaAction};
+use crate::account::AccountVaultPatch;
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
 use crate::errors::{AssetError, AssetVaultError};
 
@@ -26,11 +27,11 @@ pub use partial::PartialVault;
 mod asset_witness;
 pub use asset_witness::AssetWitness;
 
-mod vault_key;
-pub use vault_key::AssetVaultKey;
-
 mod asset_id;
-pub use asset_id::AssetId;
+pub use asset_id::{AssetId, AssetIdHash};
+
+mod asset_class;
+pub use asset_class::AssetClass;
 
 // ASSET VAULT
 // ================================================================================================
@@ -38,17 +39,22 @@ pub use asset_id::AssetId;
 /// A container for an unlimited number of assets.
 ///
 /// An asset vault can contain an unlimited number of assets. The assets are stored in a Sparse
-/// Merkle tree as follows:
-/// - For fungible assets, the index of a node is defined by the issuing faucet ID, and the value of
-///   the node is the asset itself. Thus, for any fungible asset there will be only one node in the
-///   tree.
-/// - For non-fungible assets, the index is defined by the asset itself, and the asset is also the
-///   value of the node.
+/// Merkle Tree, keyed by the hash of the [`AssetId`] (see [`AssetId::hash`]).
+/// Hashing the raw asset ID gives a uniform leaf distribution: in particular it prevents
+/// non-fungible assets issued by the same faucet from sharing a leaf, which would otherwise happen
+/// because their raw asset IDs share their fourth element (the faucet ID prefix) - the element the
+/// SMT uses to determine leaf membership.
+///
+/// The raw (unhashed) [`AssetId`]s are retained alongside the SMT to allow iteration and
+/// proof reconstruction.
 ///
 /// An asset vault can be reduced to a single hash which is the root of the Sparse Merkle Tree.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AssetVault {
+    /// SMT keyed by hashed [`AssetId`]s.
     asset_tree: Smt,
+    /// Raw [`AssetId`]s -> asset value words, kept in sync with `asset_tree`.
+    entries: BTreeMap<AssetId, Word>,
 }
 
 impl AssetVault {
@@ -63,12 +69,21 @@ impl AssetVault {
 
     /// Returns a new [AssetVault] initialized with the provided assets.
     pub fn new(assets: &[Asset]) -> Result<Self, AssetVaultError> {
-        Ok(Self {
-            asset_tree: Smt::with_entries(
-                assets.iter().map(|asset| (asset.vault_key().to_word(), asset.to_value_word())),
-            )
-            .map_err(AssetVaultError::DuplicateAsset)?,
-        })
+        let asset_tree = Smt::with_entries(
+            assets.iter().map(|asset| (asset.id().hash().as_word(), asset.to_value_word())),
+        )
+        .map_err(AssetVaultError::DuplicateAsset)?;
+
+        // Filter empty values so the `entries` map stays in sync with the SMT, which treats
+        // empty values as no-ops. `Smt::with_entries` above already errored on duplicate keys,
+        // so collecting into a `BTreeMap` here cannot silently drop assets.
+        let entries = assets
+            .iter()
+            .filter(|asset| !asset.to_value_word().is_empty())
+            .map(|asset| (asset.id(), asset.to_value_word()))
+            .collect();
+
+        Ok(Self { asset_tree, entries })
     }
 
     // PUBLIC ACCESSORS
@@ -79,16 +94,16 @@ impl AssetVault {
         self.asset_tree.root()
     }
 
-    /// Returns the asset corresponding to the provided asset vault key, or `None` if the asset
+    /// Returns the asset corresponding to the provided asset ID, or `None` if the asset
     /// doesn't exist.
-    pub fn get(&self, asset_vault_key: AssetVaultKey) -> Option<Asset> {
-        let asset_value = self.asset_tree.get_value(&asset_vault_key.to_word());
+    pub fn get(&self, asset_id: AssetId) -> Option<Asset> {
+        let asset_value = self.entries.get(&asset_id).copied().unwrap_or_default();
 
         if asset_value.is_empty() {
             None
         } else {
             Some(
-                Asset::from_key_value(asset_vault_key, asset_value)
+                Asset::from_id_and_value(asset_id, asset_value)
                     .expect("asset vault should only store valid assets"),
             )
         }
@@ -96,31 +111,27 @@ impl AssetVault {
 
     /// Returns true if the specified non-fungible asset is stored in this vault.
     pub fn has_non_fungible_asset(&self, asset: NonFungibleAsset) -> Result<bool, AssetVaultError> {
-        // check if the asset is stored in the vault
-        match self.asset_tree.get_value(&asset.vault_key().to_word()) {
-            asset if asset == Smt::EMPTY_VALUE => Ok(false),
-            _ => Ok(true),
-        }
+        Ok(self.entries.contains_key(&asset.id()))
     }
 
-    /// Returns the balance of the fungible asset identified by `vault_key`.
+    /// Returns the balance of the fungible asset identified by `asset_id`.
     ///
     /// If the vault does not contain the asset, zero is returned.
     ///
     /// # Errors
     ///
-    /// Returns an error if `vault_key`'s composition is not [`AssetComposition::Fungible`].
-    pub fn get_balance(&self, vault_key: AssetVaultKey) -> Result<AssetAmount, AssetError> {
-        if !vault_key.composition().is_fungible() {
+    /// Returns an error if `asset_id`'s composition is not [`AssetComposition::Fungible`].
+    pub fn get_balance(&self, asset_id: AssetId) -> Result<AssetAmount, AssetError> {
+        if !asset_id.composition().is_fungible() {
             return Err(AssetError::AssetCompositionMismatch {
-                faucet_id: vault_key.faucet_id(),
+                faucet_id: asset_id.faucet_id(),
                 expected: AssetComposition::Fungible,
-                actual: vault_key.composition(),
+                actual: asset_id.composition(),
             });
         }
 
-        let asset_value = self.asset_tree.get_value(&vault_key.to_word());
-        let asset = FungibleAsset::from_key_value(vault_key, asset_value)
+        let asset_value = self.entries.get(&asset_id).copied().unwrap_or_default();
+        let asset = FungibleAsset::from_id_and_value(asset_id, asset_value)
             .expect("asset vault should only store valid assets");
 
         Ok(asset.amount())
@@ -128,9 +139,9 @@ impl AssetVault {
 
     /// Returns an iterator over the assets stored in the vault.
     pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
-        // SAFETY: The asset tree tracks only valid assets.
-        self.asset_tree.entries().map(|(key, value)| {
-            Asset::from_key_value_words(*key, *value)
+        // SAFETY: The entries map only tracks valid assets.
+        self.entries.iter().map(|(id, value)| {
+            Asset::from_id_and_value(*id, *value)
                 .expect("asset vault should only store valid assets")
         })
     }
@@ -140,13 +151,16 @@ impl AssetVault {
         self.asset_tree.inner_nodes()
     }
 
-    /// Returns an opening of the leaf associated with `vault_key`.
+    /// Returns an opening of the leaf associated with `asset_id`.
     ///
-    /// The `vault_key` can be obtained with [`Asset::vault_key`].
-    pub fn open(&self, vault_key: AssetVaultKey) -> AssetWitness {
-        let smt_proof = self.asset_tree.open(&vault_key.to_word());
-        // SAFETY: The asset vault should only contain valid assets.
-        AssetWitness::new_unchecked(smt_proof)
+    /// The `asset_id` can be obtained with [`Asset::id`].
+    pub fn open(&self, asset_id: AssetId) -> AssetWitness {
+        let smt_proof = self.asset_tree.open(&asset_id.hash().as_word());
+        let value = self.entries.get(&asset_id).copied().unwrap_or_default();
+
+        // SAFETY: The ID-value pair is guaranteed to be present in the proof since we open its
+        // hashed form, and the asset vault only contains valid assets.
+        AssetWitness::new_unchecked(smt_proof, [(asset_id, value)])
     }
 
     /// Returns a bool indicating whether the vault is empty.
@@ -173,38 +187,16 @@ impl AssetVault {
     // PUBLIC MODIFIERS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the specified delta to the asset vault.
+    /// Applies the specified patch to the asset vault.
+    ///
+    /// This updates each asset that is contained in the patch to its new value.
     ///
     /// # Errors
-    /// Returns an error:
-    /// - If the total value of the added assets is greater than [`FungibleAsset::MAX_AMOUNT`].
-    /// - If the delta contains an addition/subtraction for a fungible asset that is not stored in
-    ///   the vault.
-    /// - If the delta contains a non-fungible asset removal that is not stored in the vault.
-    /// - If the delta contains a non-fungible asset addition that is already stored in the vault.
-    /// - The maximum number of leaves per asset is exceeded.
-    pub fn apply_delta(&mut self, delta: &AccountVaultDelta) -> Result<(), AssetVaultError> {
-        for (vault_key, &delta) in delta.fungible().iter() {
-            // SAFETY: fungible asset delta should only contain fungible faucet IDs and delta amount
-            // should be in bounds
-            let asset = FungibleAsset::new(vault_key.faucet_id(), delta.unsigned_abs())
-                .expect("fungible asset delta should be valid")
-                .with_callbacks(vault_key.callback_flag());
-            match delta >= 0 {
-                true => self.add_fungible_asset(asset),
-                false => self.remove_fungible_asset(asset),
-            }?;
-        }
-
-        for (&asset, &action) in delta.non_fungible().iter() {
-            match action {
-                NonFungibleDeltaAction::Add => {
-                    self.add_non_fungible_asset(asset)?;
-                },
-                NonFungibleDeltaAction::Remove => {
-                    self.remove_non_fungible_asset(asset)?;
-                },
-            }
+    ///
+    /// Returns an error if the maximum number of leaves per asset is exceeded.
+    pub fn apply_patch(&mut self, patch: &AccountVaultPatch) -> Result<(), AssetVaultError> {
+        for (&asset_id, &value) in patch.iter() {
+            self.insert_entry(asset_id, value)?;
         }
 
         Ok(())
@@ -212,6 +204,16 @@ impl AssetVault {
 
     // ADD ASSET
     // --------------------------------------------------------------------------------------------
+
+    /// Inserts the specified asset into the vault, overwriting the asset value at the same asset
+    /// ID. Returns the value of the asset previously.
+    ///
+    /// # Errors
+    /// - The maximum number of leaves per asset is exceeded.
+    pub fn insert_asset(&mut self, asset: Asset) -> Result<Word, AssetVaultError> {
+        self.insert_entry(asset.id(), asset.to_value_word())
+    }
+
     /// Add the specified asset to the vault.
     ///
     /// # Errors
@@ -235,18 +237,16 @@ impl AssetVault {
         &mut self,
         other_asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
-        let current_asset_value = self.asset_tree.get_value(&other_asset.vault_key().to_word());
-        let current_asset =
-            FungibleAsset::from_key_value(other_asset.vault_key(), current_asset_value)
-                .expect("asset vault should store valid assets");
+        let asset_id = other_asset.id();
+        let current_asset_value = self.entries.get(&asset_id).copied().unwrap_or_default();
+        let current_asset = FungibleAsset::from_id_and_value(asset_id, current_asset_value)
+            .expect("asset vault should store valid assets");
 
         let new_asset = current_asset
             .add(other_asset)
             .map_err(AssetVaultError::AddFungibleAssetBalanceError)?;
 
-        self.asset_tree
-            .insert(new_asset.vault_key().to_word(), new_asset.to_value_word())
-            .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
+        self.insert_entry(new_asset.id(), new_asset.to_value_word())?;
 
         Ok(new_asset)
     }
@@ -260,11 +260,7 @@ impl AssetVault {
         &mut self,
         asset: NonFungibleAsset,
     ) -> Result<NonFungibleAsset, AssetVaultError> {
-        // add non-fungible asset to the vault
-        let old = self
-            .asset_tree
-            .insert(asset.vault_key().to_word(), asset.to_value_word())
-            .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
+        let old = self.insert_entry(asset.id(), asset.to_value_word())?;
 
         // if the asset already exists, return an error
         if old != Smt::EMPTY_VALUE {
@@ -311,10 +307,10 @@ impl AssetVault {
         &mut self,
         other_asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
-        let current_asset_value = self.asset_tree.get_value(&other_asset.vault_key().to_word());
-        let current_asset =
-            FungibleAsset::from_key_value(other_asset.vault_key(), current_asset_value)
-                .expect("asset vault should store valid assets");
+        let asset_id = other_asset.id();
+        let current_asset_value = self.entries.get(&asset_id).copied().unwrap_or_default();
+        let current_asset = FungibleAsset::from_id_and_value(asset_id, current_asset_value)
+            .expect("asset vault should store valid assets");
 
         // If the asset's amount is 0, we consider it absent from the vault.
         if current_asset.amount() == AssetAmount::ZERO {
@@ -335,9 +331,7 @@ impl AssetVault {
             }
         }
 
-        self.asset_tree
-            .insert(new_asset.vault_key().to_word(), new_asset.to_value_word())
-            .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
+        self.insert_entry(new_asset.id(), new_asset.to_value_word())?;
 
         Ok(new_asset)
     }
@@ -351,11 +345,7 @@ impl AssetVault {
         &mut self,
         asset: NonFungibleAsset,
     ) -> Result<(), AssetVaultError> {
-        // remove the asset from the vault.
-        let old = self
-            .asset_tree
-            .insert(asset.vault_key().to_word(), Smt::EMPTY_VALUE)
-            .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
+        let old = self.insert_entry(asset.id(), Smt::EMPTY_VALUE)?;
 
         // return an error if the asset did not exist in the vault.
         if old == Smt::EMPTY_VALUE {
@@ -363,6 +353,26 @@ impl AssetVault {
         }
 
         Ok(())
+    }
+
+    /// Inserts the given `(asset_id, value)` pair into both the SMT and the raw-entry map.
+    ///
+    /// Returns the previous SMT value at the hashed key (the empty word if no entry existed).
+    fn insert_entry(&mut self, asset_id: AssetId, value: Word) -> Result<Word, AssetVaultError> {
+        // Insert into the SMT first so that `entries` is only mutated once the fallible insert
+        // succeeds; this keeps the two structures in sync even if the insert errors.
+        let old_value = self
+            .asset_tree
+            .insert(asset_id.hash().into(), value)
+            .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
+
+        if value == Smt::EMPTY_VALUE {
+            self.entries.remove(&asset_id);
+        } else {
+            self.entries.insert(asset_id, value);
+        }
+
+        Ok(old_value)
     }
 }
 
@@ -413,5 +423,38 @@ mod tests {
         let mut vault = AssetVault::default();
         let err = vault.remove_asset(FungibleAsset::mock(50)).unwrap_err();
         assert_matches!(err, AssetVaultError::FungibleAssetNotFound(_));
+    }
+
+    /// Two non-fungible assets issued by the same faucet share their fourth raw-ID element (the
+    /// faucet ID prefix), which historically caused them to land in the same SMT leaf because the
+    /// SMT uses element 3 for leaf membership. Hashing the asset ID before insertion fixes that:
+    /// the assets must end up in different leaves.
+    ///
+    /// Regression test for <https://github.com/0xMiden/protocol/issues/2518>.
+    #[test]
+    fn two_non_fungible_assets_from_same_faucet_use_different_leaves() -> anyhow::Result<()> {
+        let asset0 = NonFungibleAsset::mock(&[1, 2, 3]);
+        let asset1 = NonFungibleAsset::mock(&[4, 5, 6]);
+
+        // Sanity check: the assets share their faucet but have distinct raw asset IDs (different
+        // asset class).
+        assert_eq!(asset0.id().faucet_id(), asset1.id().faucet_id());
+        assert_ne!(asset0.id(), asset1.id());
+
+        // Without hashing, both raw asset IDs share their two most significant elements (the
+        // faucet ID suffix/metadata in element 2 and the faucet ID prefix in element 3). Element 3
+        // is what the SMT uses for leaf membership, so the two would collide into a single leaf.
+        // Sanity-check that pre-condition.
+        assert_eq!(asset0.id().to_word()[2], asset1.id().to_word()[2]);
+        assert_eq!(asset0.id().to_word()[3], asset1.id().to_word()[3]);
+
+        // With hashing, the hashed leaf indices differ, so they live in different SMT leaves.
+        assert_ne!(asset0.id().hash().to_leaf_index(), asset1.id().hash().to_leaf_index());
+
+        let vault = AssetVault::new(&[asset0, asset1])?;
+        assert_eq!(vault.num_leaves(), 2);
+        assert_eq!(vault.num_assets(), 2);
+
+        Ok(())
     }
 }

@@ -5,7 +5,7 @@ use miden_core::{Felt, ZERO};
 
 use super::{Account, AccountCode, AccountId, PartialStorage};
 use crate::Word;
-use crate::account::{AccountHeader, validate_account_seed};
+use crate::account::{AccountCodeInterface, AccountHeader, validate_account_seed};
 use crate::asset::PartialVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
@@ -93,6 +93,12 @@ impl PartialAccount {
     /// Returns a reference to the account code.
     pub fn code(&self) -> &AccountCode {
         &self.code
+    }
+
+    /// Returns the public interface of this account: its ID and the set of procedure roots it
+    /// exposes.
+    pub fn code_interface(&self) -> AccountCodeInterface {
+        self.code.interface(self.id)
     }
 
     /// Returns a reference to the partial storage representation of the account.

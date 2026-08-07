@@ -9,7 +9,6 @@ use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -20,24 +19,18 @@ use miden_protocol::account::{
     AccountType,
     StorageMap,
     StorageMapKey,
+    StorageMapPatch,
     StorageSlot,
     StorageSlotContent,
-    StorageSlotDelta,
     StorageSlotId,
     StorageSlotName,
+    StorageSlotPatch,
     StorageSlotType,
+    StorageValuePatch,
 };
-use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{
-    Asset,
-    AssetAmount,
-    AssetCallbackFlag,
-    AssetCallbacks,
-    AssetVaultKey,
-    FungibleAsset,
-};
+use miden_protocol::assembly::{DefaultSourceManager, Linkage, ModuleKind, ModuleParser, Path};
+use miden_protocol::asset::{Asset, AssetId, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -57,15 +50,17 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
+use miden_protocol::transaction::memory::{
+    CODE_UPGRADE_COMMITMENT_PTR,
+    STORAGE_UPGRADE_COMMITMENT_PTR,
+};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_protocol::vm::Package;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_tx::LocalTransactionProver;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+use miden_tx::{LocalTransactionProver, TransactionKernelError};
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -75,8 +70,7 @@ use crate::{
     Auth,
     ExecError,
     MockChain,
-    TransactionContextBuilder,
-    TxContextInput,
+    TestTransactionBuilder,
     assert_transaction_executor_error,
 };
 
@@ -100,15 +94,21 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         use miden::core::word
 
         use miden::protocol::active_account
-        use mock::account->mock_account
+        use miden::protocol::native_account
+        use mock::account as mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        begin
-            exec.active_account::get_initial_commitment
+        @transaction_script
+        pub proc main
+            call.mock_account::get_initial_commitment
+            # => [INITIAL_COMMITMENT, pad(12)]
+            swapdw dropw dropw swapw dropw
             # => [INITIAL_COMMITMENT]
 
-            exec.active_account::compute_commitment
+            call.mock_account::compute_commitment
+            # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(8)]
+            swapdw dropw dropw
             # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT]
 
             assert_eqw.err="initial and current commitment should be equal when no changes have been made"
@@ -130,7 +130,9 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
             # => [STORAGE_COMMITMENT0]
 
             # compute the commitment which will recompute the storage commitment
-            exec.active_account::compute_commitment
+            call.mock_account::compute_commitment
+            # => [CURRENT_COMMITMENT, STORAGE_COMMITMENT0, pad(8)]
+            swapdw dropw dropw
             # => [CURRENT_COMMITMENT, STORAGE_COMMITMENT0]
 
             push.{expected_commitment}
@@ -154,11 +156,11 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         expected_commitment = &expected_commitment,
     );
 
-    let tx_context_builder = TransactionContextBuilder::new(account);
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
-    let tx_context = tx_context_builder.tx_script(tx_script).build()?;
+    let mock_tx_builder = TestTransactionBuilder::new(account);
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
+    let mock_tx = mock_tx_builder.tx_script(tx_script).build()?;
 
-    tx_context
+    mock_tx
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("failed to execute transaction: {err}"))?;
@@ -168,6 +170,13 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
 // ACCOUNT ID TESTS
 // ================================================================================================
+
+/// Splits a raw account ID into its suffix and prefix felts.
+fn account_id_felts(account_id: &u128) -> anyhow::Result<(Felt, Felt)> {
+    let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
+    let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+    Ok((prefix, suffix))
+}
 
 #[tokio::test]
 async fn test_account_validate_id() -> anyhow::Result<()> {
@@ -201,11 +210,10 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
-        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
+        let (prefix, suffix) = account_id_felts(account_id)?;
 
         let code = "
-            use $kernel::account_id
+            use miden::protocol::account_id
 
             begin
                 exec.account_id::validate
@@ -258,19 +266,170 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `account_id::validate_structure` enforces the version-independent structural requirements of an
+/// account ID without constraining the version, so IDs carrying a future (currently unsupported)
+/// version pass as long as their suffix is well-formed.
+#[tokio::test]
+async fn test_account_validate_structure_ignores_version() -> anyhow::Result<()> {
+    let test_cases = [
+        // A regular version-one ID is structurally valid.
+        (ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, None),
+        (
+            // An unsupported version (10) is still accepted: the structure is validated, not the
+            // version.
+            (ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE & !(0x0f << 64)) | (0x0a << 64),
+            None,
+        ),
+        (
+            // Set most significant bit of the suffix to `1`.
+            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET | (0x80 << 56),
+            Some(ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO),
+        ),
+        (
+            // Set lower 8 bits of the suffix to a non-zero value (1).
+            ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET | 1,
+            Some(ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO),
+        ),
+    ];
+
+    for (account_id, expected_error) in test_cases.iter() {
+        // Manually split the account ID into prefix and suffix since we can't use AccountId methods
+        // on invalid ids.
+        let (prefix, suffix) = account_id_felts(account_id)?;
+
+        let code = "
+            use miden::protocol::account_id
+
+            begin
+                exec.account_id::validate_structure
+            end
+            ";
+
+        let result = CodeExecutor::with_default_host()
+            .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
+            .run(code)
+            .await;
+
+        match (result.map_err(ExecError::into_execution_error), expected_error) {
+            (Ok(_), None) => (),
+            (Ok(_), Some(err)) => {
+                anyhow::bail!("expected error {err} but validation was successful")
+            },
+            (
+                Err(ExecutionError::OperationError {
+                    err:
+                        miden_processor::operation::OperationError::FailedAssertion {
+                            err_code,
+                            err_msg,
+                        },
+                    ..
+                }),
+                Some(err),
+            ) => {
+                if err_code != err.code() {
+                    anyhow::bail!(
+                        "actual error \"{}\" (code: {err_code}) did not match expected error {err}",
+                        err_msg.as_ref().map(AsRef::as_ref).unwrap_or("<no message>")
+                    );
+                }
+            },
+            (Err(err), None) => {
+                return Err(anyhow::anyhow!(
+                    "validation is supposed to succeed but error occurred: {}",
+                    PrintDiagnostic::new(&err)
+                ));
+            },
+            (Err(err), Some(_)) => {
+                return Err(anyhow::anyhow!(
+                    "unexpected different error than expected: {}",
+                    PrintDiagnostic::new(&err)
+                ));
+            },
+        }
+    }
+
+    Ok(())
+}
+
+/// Exercises the account ID comparison helpers -- `eq`, `eqz`, and `testz` -- in a single program.
+#[tokio::test]
+async fn test_account_id_comparison() -> anyhow::Result<()> {
+    let (prefix_1, suffix_1) = account_id_felts(&ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+    let (prefix_2, suffix_2) = account_id_felts(&ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
+
+    let code = format!(
+        r#"
+        use miden::protocol::account_id
+
+        begin
+            # eq: identical IDs are equal
+            push.{prefix_1}.{suffix_1}.{prefix_1}.{suffix_1}
+            exec.account_id::eq
+            assert.err="eq: identical IDs should be equal"
+            # => [pad(16)]
+
+            # eq: different IDs are not equal
+            push.{prefix_1}.{suffix_1}.{prefix_2}.{suffix_2}
+            exec.account_id::eq
+            assertz.err="eq: different IDs should not be equal"
+            # => [pad(16)]
+
+            # eqz: the zero address is zero
+            push.0.0
+            exec.account_id::eqz
+            assert.err="eqz: the zero address should be zero"
+            # => [pad(16)]
+
+            # eqz: a valid ID is not zero
+            push.{prefix_1}.{suffix_1}
+            exec.account_id::eqz
+            assertz.err="eqz: a valid ID should not be zero"
+            # => [pad(16)]
+
+            # testz: the zero address is zero
+            push.0.0
+            exec.account_id::testz
+            assert.err="testz: the zero address should be zero"
+            # => [pad(18)]
+
+            # testz: a valid ID is not zero, leaving [suffix_1, prefix_1] on the stack
+            push.{prefix_1}.{suffix_1}
+            exec.account_id::testz
+            assertz.err="testz: a valid ID should not be zero"
+            # => [suffix_1, prefix_1, pad(18)]
+
+            # truncate the stack
+            swapw dropw
+            # => [suffix_1, prefix_1, pad(14)]
+        end
+        "#
+    );
+
+    let exec_output = CodeExecutor::with_default_host()
+        .run(&code)
+        .await
+        .map_err(ExecError::into_execution_error)?;
+
+    // testz must preserve the account ID beneath the (already consumed) flag.
+    assert_eq!(exec_output.get_stack_element(0), suffix_1, "testz must preserve the ID suffix");
+    assert_eq!(exec_output.get_stack_element(1), prefix_1, "testz must preserve the ID prefix");
+
+    Ok(())
+}
+
 // ACCOUNT CODE TESTS
 // ================================================================================================
 
 // TODO: update this test once the ability to change the account code will be implemented
 #[tokio::test]
 pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
-    let account = tx_context.account();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let account = mock_tx.account();
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use mock::account->mock_account
+        use miden::tx_kernel_core::prologue
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
@@ -283,7 +442,7 @@ pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
         expected_code_commitment = account.code().commitment()
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -294,12 +453,12 @@ pub async fn test_compute_code_commitment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_item() -> anyhow::Result<()> {
     for storage_item in [AccountStorage::mock_value_slot0(), AccountStorage::mock_value_slot1()] {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             r#"
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             const SLOT_NAME = word("{slot_name}")
 
@@ -320,7 +479,7 @@ async fn test_get_item() -> anyhow::Result<()> {
             item_value = &storage_item.content().value(),
         );
 
-        tx_context.execute_code(&code).await.unwrap();
+        mock_tx.execute_code(&code).await.unwrap();
     }
 
     Ok(())
@@ -329,13 +488,13 @@ async fn test_get_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_map_item() -> anyhow::Result<()> {
     let slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     let StorageSlotContent::Map(map) = slot.content() else {
         panic!("expected map")
@@ -344,7 +503,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
     for (key, expected_value) in map.entries() {
         let code = format!(
             r#"
-            use $kernel::prologue
+            use miden::tx_kernel_core::prologue
             use mock::account
 
             const SLOT_NAME = word("{slot_name}")
@@ -367,7 +526,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
             slot_name = slot.name(),
         );
 
-        tx_context.execute_code(&code).await?;
+        mock_tx.execute_code(&code).await?;
     }
 
     Ok(())
@@ -380,8 +539,8 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
         AccountStorage::mock_value_slot1().name(),
         AccountStorage::mock_map_slot().name(),
     ] {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
-        let (slot_idx, slot) = tx_context
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+        let (slot_idx, slot) = mock_tx
             .account()
             .storage()
             .slots()
@@ -392,8 +551,8 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
 
         let code = format!(
             "
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
@@ -410,7 +569,7 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
             ",
         );
 
-        let exec_output = &tx_context.execute_code(&code).await.unwrap();
+        let exec_output = &mock_tx.execute_code(&code).await.unwrap();
 
         assert_eq!(
             slot.slot_type(),
@@ -452,15 +611,16 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
 
             const UNKNOWN_SLOT_NAME = word("unknown::slot::name")
 
-            begin
+            @transaction_script
+            pub proc main
                 push.UNKNOWN_SLOT_NAME[0..2]
                 call.account::get_item
             end
             "#;
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
 
     let result = chain
-        .build_tx_context(account_empty_storage, &[], &[])?
+        .build_transaction(account_empty_storage)
         .tx_script(tx_script.clone())
         .build()?
         .execute()
@@ -468,7 +628,7 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     assert_transaction_executor_error!(result, ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME);
 
     let result = chain
-        .build_tx_context(account_non_empty_storage, &[], &[])?
+        .build_transaction(account_non_empty_storage)
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -513,7 +673,7 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
     for (prev_slot, curr_slot) in test_cases {
         let code = format!(
             r#"
-            use $kernel::account
+            use miden::tx_kernel_core::account
 
             begin
                 push.{curr_prefix}.{curr_suffix}.{prev_prefix}.{prev_suffix}
@@ -542,16 +702,16 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_item() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     let slot_name = &*MOCK_VALUE_SLOT0;
     let new_value = Word::from([91, 92, 93, 94u32]);
-    let old_value = tx_context.account().storage().get_item(slot_name)?;
+    let old_value = mock_tx.account().storage().get_item(slot_name)?;
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
 
         const MOCK_VALUE_SLOT0 = word("{slot_name}")
 
@@ -580,7 +740,7 @@ async fn test_set_item() -> anyhow::Result<()> {
         "#,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -593,20 +753,20 @@ async fn test_set_map_item() -> anyhow::Result<()> {
     );
 
     let slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![slot.clone()]))
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     let code = format!(
         r#"
         use miden::core::sys
 
-        use $kernel::prologue
-        use mock::account->mock_account
+        use miden::tx_kernel_core::prologue
+        use mock::account as mock_account
 
         const SLOT_NAME=word("{slot_name}")
 
@@ -642,7 +802,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         new_value = &new_value,
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     let mut new_storage_map = AccountStorage::mock_map();
     new_storage_map.insert(new_key, new_value).unwrap();
@@ -670,37 +830,136 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()
         .context("failed to build account")?;
 
-    TransactionContextBuilder::new(account).build()?.execute().await?;
+    TestTransactionBuilder::new(account).build()?.execute().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = format!(
         r#"
-        use miden::protocol::active_account
-        use $kernel::prologue
+        use mock::account as mock_account
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
 
             # get the initial storage commitment
-            exec.active_account::get_initial_storage_commitment
+            call.mock_account::get_initial_storage_commitment
+            # => [INIT_STORAGE_COMMITMENT, pad(12)]
+            swapdw dropw dropw swapw dropw
+            # => [INIT_STORAGE_COMMITMENT]
             push.{expected_storage_commitment}
             assert_eqw.err="actual storage commitment is not equal to the expected one"
         end
         "#,
-        expected_storage_commitment = &tx_context.account().storage().to_commitment(),
+        expected_storage_commitment = &mock_tx.account().storage().to_commitment(),
     );
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// Tests that `native_account::upgrade`, invoked from an account procedure, stores the code and
+/// storage upgrade commitments in the dedicated kernel memory region.
+#[tokio::test]
+async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
+    let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
+
+    // `upgrade` is invoked through the mock account's `upgrade` procedure, so the caller is a
+    // procedure of the account and the authenticator accepts it.
+    let code = format!(
+        r#"
+        use mock::account as mock_account
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{storage_upgrade_commitment}
+            push.{code_upgrade_commitment}
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+            call.mock_account::upgrade
+            # => [pad(16)]
+            dropw dropw dropw dropw
+        end
+        "#,
+        code_upgrade_commitment = &code_upgrade_commitment,
+        storage_upgrade_commitment = &storage_upgrade_commitment,
+    );
+
+    let exec_output = &mock_tx.execute_code(&code).await?;
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
+        code_upgrade_commitment,
+        "code upgrade commitment should be stored in kernel memory"
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR),
+        storage_upgrade_commitment,
+        "storage upgrade commitment should be stored in kernel memory"
+    );
+
+    Ok(())
+}
+
+/// Tests that `account_upgrade` is gated by the account context: invoking it from outside an
+/// account procedure (so that `caller` is not a procedure of the account) must be rejected by the
+/// authenticator. This models what an untrusted transaction script could attempt.
+#[tokio::test]
+async fn test_native_account_upgrade_from_tx_script_is_rejected() -> anyhow::Result<()> {
+    let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
+    let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
+
+    // A transaction script invokes `native_account::upgrade` directly. Its caller is the tx script,
+    // not a procedure of the account, so authentication must reject the invocation.
+    let tx_script_source = format!(
+        r#"
+        use miden::protocol::native_account
+
+        @transaction_script
+        pub proc main
+            push.{storage_upgrade_commitment}
+            push.{code_upgrade_commitment}
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+            exec.native_account::upgrade
+        end
+        "#,
+        code_upgrade_commitment = &code_upgrade_commitment,
+        storage_upgrade_commitment = &storage_upgrade_commitment,
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_source)?;
+
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+
+    let execution_result = mock_tx.execute().await;
+
+    // The tx-script root is not a procedure of the account, so `authenticate_account_origin` fails
+    // while resolving the caller's procedure index.
+    assert_transaction_executor_error!(
+        execution_result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
+    );
 
     Ok(())
 }
@@ -716,8 +975,8 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
 /// - After updating the 2nd storage slot (map slot).
 #[tokio::test]
 async fn test_compute_storage_commitment() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
-    let mut account_clone = tx_context.account().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+    let mut account_clone = mock_tx.account().clone();
     let account_storage = account_clone.storage_mut();
 
     let init_storage_commitment = account_storage.to_commitment();
@@ -737,8 +996,8 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use mock::account->mock_account
+        use miden::tx_kernel_core::prologue
+        use mock::account as mock_account
 
         const MOCK_VALUE_SLOT0=word("{mock_value_slot0}")
         const MOCK_MAP_SLOT=word("{mock_map_slot}")
@@ -785,7 +1044,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
         "#,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -811,7 +1070,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     let account = AccountBuilder::new([6; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![
             slot0.clone(),
             slot1.clone(),
@@ -819,44 +1078,46 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         ]))
         .build()?;
 
-    let tx = TransactionContextBuilder::new(account)
+    let tx = TestTransactionBuilder::new(account)
         .build()?
         .execute()
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        tx.account_patch().final_nonce(),
+        Some(Felt::ONE),
+        "new account should have nonce 1"
+    );
 
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name0).unwrap(),
-        StorageSlotDelta::Value(value) => {
+        tx.account_patch().storage().get(&slot_name0).unwrap(),
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
             assert_eq!(*value, slot0.value())
         }
     );
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name1).unwrap(),
-        StorageSlotDelta::Value(value) => {
+        tx.account_patch().storage().get(&slot_name1).unwrap(),
+        StorageSlotPatch::Value(StorageValuePatch::Create { value }) => {
             assert_eq!(*value, slot1.value())
         }
     );
     assert_matches!(
-        tx.account_delta().storage().get(&slot_name2).unwrap(),
-        StorageSlotDelta::Map(map_delta) => {
+        tx.account_patch().storage().get(&slot_name2).unwrap(),
+        StorageSlotPatch::Map(StorageMapPatch::Create { entries }) => {
             let expected = &BTreeMap::from_iter(map_entries);
-            assert_eq!(expected, map_delta.entries())
+            assert_eq!(expected, entries.as_map())
         }
     );
 
-    assert!(tx.account_delta().vault().is_empty());
+    assert!(tx.account_patch().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::ONE);
 
-    let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
+    let proven_tx = LocalTransactionProver::default().prove(tx.clone())?;
 
-    // The delta should be present on the proven tx.
-    let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
-        panic!("expected delta");
-    };
-    assert_eq!(delta, tx.account_delta());
+    // The patch should be present on the proven tx.
+    let patch = proven_tx.account_update().details().unwrap_public();
+    assert_eq!(patch, tx.account_patch());
 
     Ok(())
 }
@@ -866,9 +1127,9 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_vault_root() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
-    let mut account = tx_context.account().clone();
+    let mut account = mock_tx.account().clone();
 
     let fungible_asset = Asset::Fungible(
         FungibleAsset::new(
@@ -881,21 +1142,24 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     // get the initial vault root
     let code = format!(
         r#"
-        use miden::protocol::active_account
-        use $kernel::prologue
+        use mock::account as mock_account
+        use miden::tx_kernel_core::prologue
 
         begin
             exec.prologue::prepare_transaction
 
             # get the initial vault root
-            exec.active_account::get_initial_vault_root
+            call.mock_account::get_initial_vault_root
+            # => [INIT_VAULT_ROOT, pad(12)]
+            swapdw dropw dropw swapw dropw
+            # => [INIT_VAULT_ROOT]
             push.{expected_vault_root}
             assert_eqw.err="initial vault root mismatch"
         end
         "#,
         expected_vault_root = &account.vault().root(),
     );
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     // get the current vault root
     account.vault_mut().add_asset(fungible_asset)?;
@@ -903,41 +1167,45 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::active_account
-        use $kernel::prologue
-        use mock::account->mock_account
+        use miden::tx_kernel_core::prologue
+        use mock::account as mock_account
 
         begin
             exec.prologue::prepare_transaction
 
             # add an asset to the account
             push.{FUNGIBLE_ASSET_VALUE}
-            push.{FUNGIBLE_ASSET_KEY}
+            push.{FUNGIBLE_ASSET_ID}
             call.mock_account::add_asset
             dropw dropw
             # => []
 
             # get the current vault root
-            exec.active_account::get_vault_root
+            call.mock_account::get_vault_root
+            # => [VAULT_ROOT, pad(12)]
+            swapdw dropw dropw swapw dropw
+            # => [VAULT_ROOT]
             push.{expected_vault_root}
             assert_eqw.err="vault root mismatch"
         end
         "#,
         FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
-        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
         expected_vault_root = &account.vault().root(),
     );
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::active_account::get_initial_balance`
-/// procedure in two cases:
+/// This test checks the correctness of the
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure in two
+/// cases:
 /// - when a note adds the asset which already exists in the account vault.
 /// - when a note adds the asset which doesn't exist in the account vault.
 ///
 /// As part of the test pipeline it also checks the correctness of the
-/// `miden::protocol::active_account::get_balance` procedure.
+/// `miden::standards::assets::fungible_asset::get_active_account_balance` procedure.
 #[tokio::test]
 async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // prepare the testing data
@@ -952,7 +1220,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder.add_existing_wallet_with_assets(
+    let account = builder.add_existing_mock_account_with_assets(
         crate::Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -986,18 +1254,20 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 1: existing asset was added to the account
     // ------------------------------------------
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
-    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+    let asset_id = AssetId::new_fungible(faucet_existing_asset);
+    let initial_balance = account.vault().get_balance(asset_id)?.as_u64();
 
     let add_existing_source = format!(
         r#"
-        use miden::protocol::active_account
+        use miden::core::sys
+        use mock::account as mock_account
 
-        begin
+        @transaction_script
+        pub proc main
             # get the current asset balance
-            push.{ASSET_KEY}
-            exec.active_account::get_balance
-            # => [final_balance]
+            push.{ASSET_ID}
+            call.mock_account::get_active_account_balance
+            # => [final_balance, pad(15)]
 
             # assert final balance is correct
             push.{final_balance}
@@ -1005,48 +1275,50 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             # => []
 
             # get the initial asset balance
-            push.{ASSET_KEY}
-            exec.active_account::get_initial_balance
-            # => [init_balance]
+            push.{ASSET_ID}
+            call.mock_account::get_initial_native_account_balance
+            # => [init_balance, pad(15)]
 
             # assert initial balance is correct
             push.{initial_balance}
             assert_eq.err="initial balance is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
-        ASSET_KEY = asset_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(add_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(add_existing_source)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(
-            TxContextInput::AccountId(account.id()),
-            &[],
-            &[p2id_note_existing_asset],
-        )?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_existing_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     // case 2: new asset was added to the account
     // ------------------------------------------
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset, AssetCallbackFlag::Disabled);
-    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+    let asset_id = AssetId::new_fungible(faucet_new_asset);
+    let initial_balance = account.vault().get_balance(asset_id)?.as_u64();
 
     let add_new_source = format!(
         r#"
-        use miden::protocol::active_account
+        use miden::core::sys
+        use mock::account as mock_account
 
-        begin
+        @transaction_script
+        pub proc main
             # get the current asset balance
-            push.{ASSET_KEY}
-            exec.active_account::get_balance
-            # => [final_balance]
+            push.{ASSET_ID}
+            call.mock_account::get_active_account_balance
+            # => [final_balance, pad(15)]
 
             # assert final balance is correct
             push.{final_balance}
@@ -1054,37 +1326,42 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             # => []
 
             # get the initial asset balance
-            push.{ASSET_KEY}
-            exec.active_account::get_initial_balance
-            # => [init_balance]
+            push.{ASSET_ID}
+            call.mock_account::get_initial_native_account_balance
+            # => [init_balance, pad(15)]
 
             # assert initial balance is correct
             push.{initial_balance}
             assert_eq.err="initial balance is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
-        ASSET_KEY = asset_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(add_new_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(add_new_source)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_new_asset])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(p2id_note_new_asset)
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::active_account::get_initial_balance`
-/// procedure in case when we create a note which removes an asset from the account vault.
-///  
+/// This test checks the correctness of the
+/// `miden::standards::assets::fungible_asset::get_initial_native_account_balance` procedure when an
+/// asset is moved from the vault to a note.
+///
 /// As part of the test pipeline it also checks the correctness of the
-/// `miden::protocol::active_account::get_balance` procedure.
+/// `miden::standards::assets::fungible_asset::get_active_account_balance` procedure.
 #[tokio::test]
 async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1095,7 +1372,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder.add_existing_wallet_with_assets(
+    let account = builder.add_existing_mock_account_with_assets(
         crate::Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -1109,32 +1386,33 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
-    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+    let asset_id = AssetId::new_fungible(faucet_existing_asset);
+    let initial_balance = account.vault().get_balance(asset_id)?.as_u64();
 
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
 
     let remove_existing_source = format!(
         r#"
-        use miden::protocol::active_account
-        use miden::standards::wallets::basic->wallet
+        use miden::core::sys
+        use mock::account as mock_account
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # create random note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
 
             push.{REMOVED_ASSET_VALUE}
-            push.{REMOVED_ASSET_KEY}
+            push.{REMOVED_ASSET_ID}
             exec.util::move_asset_to_note
             # => []
 
             # get the current asset balance
-            push.{ASSET_KEY}
-            exec.active_account::get_balance
-            # => [final_balance]
+            push.{ASSET_ID}
+            call.mock_account::get_active_account_balance
+            # => [final_balance, pad(15)]
 
             # assert final balance is correct
             push.{final_balance}
@@ -1142,36 +1420,39 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             # => []
 
             # get the initial asset balance
-            push.{ASSET_KEY}
-            exec.active_account::get_initial_balance
-            # => [init_balance]
+            push.{ASSET_ID}
+            call.mock_account::get_initial_native_account_balance
+            # => [init_balance, pad(15)]
 
             # assert initial balance is correct
             push.{initial_balance}
             assert_eq.err="initial balance is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
-        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_ID = fungible_asset_for_note_existing.to_id_word(),
         REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
-        ASSET_KEY = asset_key.to_word(),
+        ASSET_ID = asset_id.to_word(),
         final_balance =
             initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(remove_existing_source)?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
 
-/// This test checks the correctness of the `miden::protocol::active_account::get_initial_asset`
+/// This test checks the correctness of the `miden::protocol::native_account::get_initial_asset`
 /// procedure creating a note which removes an asset from the account vault.
 ///
 /// As part of the test pipeline it also checks the correctness of the
@@ -1186,7 +1467,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder.add_existing_wallet_with_assets(
+    let account = builder.add_existing_mock_account_with_assets(
         crate::Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -1209,48 +1490,54 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 
     let remove_existing_source = format!(
         r#"
+        use miden::core::sys
         use miden::protocol::active_account
-        use miden::standards::wallets::basic->wallet
+        use miden::protocol::native_account
+        use mock::account as mock_account
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # create default note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
 
             push.{REMOVED_ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             exec.util::move_asset_to_note
             # => []
 
             # get the current asset
-            push.{ASSET_KEY} exec.active_account::get_asset
-            # => [ASSET_VALUE]
+            push.{ASSET_ID} call.mock_account::get_asset
+            # => [ASSET_VALUE, pad(12)]
 
             push.{FINAL_ASSET}
             assert_eqw.err="final asset is incorrect"
-            # => []
+            # => [pad(12)]
 
             # get the initial asset
-            push.{ASSET_KEY} exec.active_account::get_initial_asset
-            # => [INITIAL_ASSET]
+            push.{ASSET_ID} call.mock_account::get_initial_asset
+            # => [INITIAL_ASSET, pad(12)]
 
             push.{INITIAL_ASSET_VALUE}
             assert_eqw.err="initial asset is incorrect"
+
+            # truncate the stack
+            exec.sys::truncate_stack
         end
     "#,
-        ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        ASSET_ID = fungible_asset_for_note_existing.to_id_word(),
         REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
         INITIAL_ASSET_VALUE = fungible_asset_for_account.to_value_word(),
         FINAL_ASSET = final_asset.to_value_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(remove_existing_source)?;
 
     mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
+        .expected_output_note(RawOutputNote::Full(expected_output_note))
         .build()?
         .execute()
         .await?;
@@ -1262,11 +1549,12 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
+async fn test_authenticate_procedure() -> anyhow::Result<()> {
     let mock_component = MockAccountComponent::with_empty_slots();
 
-    let account_code =
-        AccountCode::from_components(&[Auth::IncrNonce.into(), mock_component.into()]).unwrap();
+    let components: Vec<AccountComponent> =
+        Auth::IncrNonce.into_iter().chain([mock_component.into()]).collect();
+    let account_code = AccountCode::from_components(&components).unwrap();
 
     let tc_0 = *account_code.procedures()[1].mast_root();
     let tc_1 = *account_code.procedures()[2].mast_root();
@@ -1276,19 +1564,19 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
         vec![(tc_0, true), (tc_1, true), (tc_2, true), (Word::from([1, 0, 1, 0u32]), false)];
 
     for (root, valid) in test_cases.into_iter() {
-        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
         let code = format!(
             "
-            use $kernel::account
-            use $kernel::prologue
+            use miden::tx_kernel_core::account
+            use miden::tx_kernel_core::prologue
 
             begin
                 exec.prologue::prepare_transaction
 
                 # authenticate procedure
                 push.{root}
-                exec.account::authenticate_and_track_procedure
+                exec.account::authenticate_procedure
 
                 # truncate the stack
                 dropw
@@ -1299,7 +1587,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 
         // Execution of this code will return an EventError(UnknownAccountProcedure) for procs
         // that are not in the advice provider.
-        let exec_output = tx_context.execute_code(&code).await;
+        let exec_output = mock_tx.execute_code(&code).await;
 
         match valid {
             true => {
@@ -1321,39 +1609,36 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
         .unwrap();
     let mock_value_slot1 = &*MOCK_VALUE_SLOT1;
 
-    // Create a transaction script that:
-    // 1. Checks that get_item hasn't been called yet
-    // 2. Calls get_item from the mock account
-    // 3. Checks that get_item has been called
-    // 4. Calls get_item **again**
-    // 5. Checks that `was_procedure_called` returns `true`
+    // Verifies the call-tracking of an account procedure: `get_item` is tracked as called once it
+    // has been invoked. `was_procedure_called` is itself account-context-gated, so it is invoked
+    // through the account.
     let tx_script_code = format!(
         r#"
-        use mock::account->mock_account
-        use miden::protocol::native_account
+        use miden::core::sys
+        use mock::account as mock_account
 
         const MOCK_VALUE_SLOT1 = word("{mock_value_slot1}")
 
-        begin
+        @transaction_script
+        pub proc main
             # First check that get_item procedure hasn't been called yet
             procref.mock_account::get_item
-            exec.native_account::was_procedure_called
+            call.mock_account::was_procedure_called
             assertz.err="procedure should not have been called"
 
             # Call the procedure first time
             push.MOCK_VALUE_SLOT1[0..2]
             call.mock_account::get_item dropw
-            # => []
 
             procref.mock_account::get_item
-            exec.native_account::was_procedure_called
+            call.mock_account::was_procedure_called
             assert.err="procedure should have been called"
 
             # Call the procedure second time
@@ -1361,19 +1646,21 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
             call.mock_account::get_item dropw
 
             procref.mock_account::get_item
-            exec.native_account::was_procedure_called
+            call.mock_account::was_procedure_called
             assert.err="2nd call should not change the was_called flag"
+
+            exec.sys::truncate_stack
         end
         "#
     );
 
     // Compile the transaction script using the testing assembler with mock account
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_code)?;
 
-    // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build().unwrap();
+    // Create mock transaction and execute
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    tx_context
+    mock_tx
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
@@ -1381,15 +1668,15 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that an account can call code in a custom library when loading that library into the
+/// Tests that an account can call code in a custom package when loading that package into the
 /// executor.
 ///
 /// The call chain and dependency graph in this test is:
-/// `tx script -> account code -> external library`
+/// `tx script -> account code -> external package`
 #[tokio::test]
-async fn transaction_executor_account_code_using_custom_library() -> anyhow::Result<()> {
+async fn transaction_executor_account_code_using_custom_package() -> anyhow::Result<()> {
     let slot_value = Word::from([2, 3, 4, 5u32]);
-    let external_library_code = format!(
+    let external_package_code = format!(
         r#"
       use miden::protocol::native_account
 
@@ -1405,39 +1692,58 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     );
 
     const ACCOUNT_COMPONENT_CODE: &str = "
-      use external_library::external_module
+      use external_package::external_module
 
+      @account_procedure
       pub proc custom_setter
         exec.external_module::external_setter
       end";
 
-    let external_library_source =
-        NamedSource::new("external_library::external_module", external_library_code);
-    let external_library = TransactionKernel::assembler()
-        .assemble_library([external_library_source])
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+    let external_package_root = parser
+        .parse_str(
+            Some(Path::new("external_package::external_module")),
+            &external_package_code,
+            source_manager.clone(),
+        )
         .map_err(|err| {
-            anyhow::anyhow!("failed to assemble library: {}", PrintDiagnostic::new(&err))
+            anyhow::anyhow!("failed to parse package: {}", PrintDiagnostic::new(&err))
+        })?;
+    let external_package = TransactionKernel::assembler_with_source_manager(source_manager.clone())
+        .assemble_library("external-library", external_package_root, None::<&str>)
+        .map_err(|err| {
+            anyhow::anyhow!("failed to assemble package: {}", PrintDiagnostic::new(&err))
         })?;
 
-    let mut assembler: miden_protocol::assembly::Assembler =
-        CodeBuilder::with_mock_libraries_with_source_manager(Arc::new(
-            DefaultSourceManager::default(),
-        ))
-        .into();
-    assembler.link_static_library(&external_library).map_err(|err| {
-        anyhow::anyhow!("failed to link static library: {}", PrintDiagnostic::new(&err))
-    })?;
+    let assembler: miden_protocol::assembly::Assembler =
+        CodeBuilder::with_mock_packages_with_source_manager(source_manager.clone()).into();
+    let assembler =
+        assembler
+            .with_package(Arc::from(external_package), Linkage::Static)
+            .map_err(|err| {
+                anyhow::anyhow!("failed to link static package: {}", PrintDiagnostic::new(&err))
+            })?;
 
-    let account_component_source =
-        NamedSource::new("account_component::account_module", ACCOUNT_COMPONENT_CODE);
-    let account_component_lib = Arc::unwrap_or_clone(
-        assembler.clone().assemble_library([account_component_source]).unwrap(),
-    );
+    let account_component_root = parser
+        .parse_str(
+            Some(Path::new("account_component::account_module")),
+            ACCOUNT_COMPONENT_CODE,
+            source_manager,
+        )
+        .map_err(|err| {
+            anyhow::anyhow!("failed to parse account component: {}", PrintDiagnostic::new(&err))
+        })?;
+    let account_component_lib = *assembler
+        .clone()
+        .assemble_library("account-component", account_component_root, None::<&str>)
+        .unwrap();
 
     let tx_script_src = "\
           use account_component::account_module
 
-          begin
+          @transaction_script
+          pub proc main
             call.account_module::custom_setter
           end";
 
@@ -1448,30 +1754,33 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     )?;
 
     // Build an existing account with nonce 1.
-    let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(account_component)
         .build_existing()?;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&account_component_lib)?
+        .with_dynamically_linked_package(&account_component_lib)?
         .compile_tx_script(tx_script_src)?;
 
-    let tx_context = TransactionContextBuilder::new(native_account.clone())
+    let mock_tx = TestTransactionBuilder::new(native_account.clone())
         .tx_script(tx_script)
         .build()
         .unwrap();
 
-    let executed_tx = tx_context.execute().await?;
+    let executed_tx = mock_tx.execute().await?;
 
     // Account's initial nonce of 1 should have been incremented by 1.
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_tx.account_patch().final_nonce(),
+        Some(native_account.nonce() + Felt::ONE)
+    );
 
     // Make sure that account storage has been updated as per the tx script call.
-    assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
+    assert_eq!(executed_tx.account_patch().storage().values().count(), 1);
     assert_eq!(
-        executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
-        &StorageSlotDelta::Value(slot_value),
+        executed_tx.account_patch().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
+        &StorageSlotPatch::Value(StorageValuePatch::Update { value: slot_value }),
     );
     Ok(())
 }
@@ -1497,12 +1806,12 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::faulty_auth"),
     )?;
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(faulty_auth_component)
+        .with_component(faulty_auth_component)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()
         .context("failed to build account")?;
 
-    let result = TransactionContextBuilder::new(account).build()?.execute().await;
+    let result = TestTransactionBuilder::new(account).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE);
 
@@ -1513,23 +1822,24 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
 async fn test_has_procedure() -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(mock_component)
         .build_existing()
         .unwrap();
 
     let tx_script_code = r#"
-        use mock::account->mock_account
-        use miden::protocol::active_account
+        use miden::core::sys
+        use mock::account as mock_account
 
-        begin
+        @transaction_script
+        pub proc main
             # check that get_item procedure is available on the mock account
             procref.mock_account::get_item
             # => [GET_ITEM_ROOT]
 
-            exec.active_account::has_procedure
-            # => [is_procedure_available]
+            call.mock_account::has_procedure
+            # => [is_procedure_available, pad(15)]
 
             # assert that the get_item is exposed
             assert.err="get_item procedure should be exposed by the mock account"
@@ -1537,23 +1847,25 @@ async fn test_has_procedure() -> anyhow::Result<()> {
             # get some random word and assert that it is not exposed
             push.5.3.15.686
 
-            exec.active_account::has_procedure
-            # => [is_procedure_available]
+            call.mock_account::has_procedure
+            # => [is_procedure_available, pad(15)]
 
             # assert that the procedure with some random root is not exposed
             assertz.err="procedure with some random root should not be exposed by the mock account"
+
+            exec.sys::truncate_stack
         end
         "#;
 
     // Compile the transaction script using the testing assembler with mock account
-    let tx_script = CodeBuilder::with_mock_libraries()
+    let tx_script = CodeBuilder::with_mock_packages()
         .compile_tx_script(tx_script_code)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
 
-    // Create transaction context and execute
-    let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build().unwrap();
+    // Create mock transaction and execute
+    let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    tx_context
+    mock_tx
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
@@ -1561,65 +1873,51 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the `has_callbacks` faucet procedure correctly reports whether a faucet defines
-/// callbacks.
-///
-/// - `with_callbacks`: callback slot has a non-empty value -> returns 1
-/// - `with_empty_callback`: callback slot exists but value is the empty word -> returns 0
-/// - `without_callbacks`: no callback slot at all -> returns 0
-#[rstest::rstest]
-#[case::with_callbacks(
-    vec![StorageSlot::with_value(
-        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
-        Word::from([1, 2, 3, 4u32]),
-    )],
-    true,
-)]
-#[case::with_empty_callback(
-    vec![StorageSlot::with_empty_value(
-        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
-    )],
-    false,
-)]
-#[case::without_callbacks(vec![], false)]
 #[tokio::test]
-async fn test_faucet_has_callbacks(
-    #[case] callback_slots: Vec<StorageSlot>,
-    #[case] expected_has_callbacks: bool,
-) -> anyhow::Result<()> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("").expect("empty string is a valid token name"))
-        .symbol("CBK".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::from(1_000_000u32))
-        .build()?;
+async fn test_has_storage_slot() -> anyhow::Result<()> {
+    let existing_slot_name = format!("{}", AccountStorage::mock_value_slot0().name());
 
-    let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
-        .with_component(MockAccountComponent::with_slots(callback_slots))
-        .with_auth_component(Auth::IncrNonce)
-        .build_existing()?;
+    // (slot name, whether a slot with that name is expected to exist on the account)
+    let test_cases = [(existing_slot_name.as_str(), true), ("unknown::slot::name", false)];
 
-    let tx_script_code = format!(
-        r#"
-        use miden::protocol::faucet
+    for (slot_name, expected_to_exist) in test_cases {
+        let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
-        begin
-            exec.faucet::has_callbacks
-            push.{has_callbacks}
-            assert_eq.err="has_callbacks returned unexpected value"
-        end
-        "#,
-        has_callbacks = u8::from(expected_has_callbacks)
-    );
-    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
+        let assertion = if expected_to_exist {
+            r#"assert.err="installed storage slot should be reported as present""#
+        } else {
+            r#"assertz.err="unknown storage slot should be reported as absent""#
+        };
 
-    TransactionContextBuilder::new(account)
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await?;
+        let code = format!(
+            r#"
+            use miden::core::sys
+
+            use miden::tx_kernel_core::prologue
+            use mock::account as mock_account
+
+            const SLOT_NAME = word("{slot_name}")
+
+            begin
+                exec.prologue::prepare_transaction
+
+                # pad the stack for the call
+                push.SLOT_NAME[0..2]
+                repeat.14 push.0 movdn.2 end
+                # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+                call.mock_account::has_storage_slot
+                # => [has_slot, pad(15)]
+
+                {assertion}
+
+                exec.sys::truncate_stack
+            end
+            "#,
+        );
+
+        mock_tx.execute_code(&code).await?;
+    }
 
     Ok(())
 }
@@ -1629,14 +1927,14 @@ async fn test_faucet_has_callbacks(
 
 #[tokio::test]
 async fn test_get_initial_item() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
 
     // Test that get_initial_item returns the initial value before any changes
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
-        use mock::account->mock_account
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
+        use mock::account as mock_account
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -1672,7 +1970,7 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
         expected_initial_value = &AccountStorage::mock_value_slot0().content().value(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -1680,13 +1978,13 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_initial_map_item() -> anyhow::Result<()> {
     let map_slot = AccountStorage::mock_map_slot();
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![map_slot.clone()]))
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     // Use the first key-value pair from the mock storage
     let StorageSlotContent::Map(map) = map_slot.content() else {
@@ -1700,8 +1998,8 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use $kernel::prologue
-        use mock::account->mock_account
+        use miden::tx_kernel_core::prologue
+        use mock::account as mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
@@ -1751,7 +2049,7 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
         new_value = &new_value,
     );
 
-    tx_context.execute_code(&code).await.unwrap();
+    mock_tx.execute_code(&code).await.unwrap();
 
     Ok(())
 }
@@ -1770,13 +2068,13 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         })
         .collect();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
+    let account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(slots.clone()))
         .build_existing()
         .unwrap();
 
-    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+    let mock_tx = TestTransactionBuilder::new(account).build().unwrap();
 
     // Build MASM code that, for each slot:
     // 1. Sets a new value [index, 0, 0, 0]
@@ -1818,9 +2116,9 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
 
     let code = format!(
         r#"
-        use $kernel::account
-        use $kernel::prologue
-        use mock::account->mock_account
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
+        use mock::account as mock_account
 
         {slot_constants}
 
@@ -1831,7 +2129,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
         "#,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -1840,7 +2138,7 @@ async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()
 #[tokio::test]
 async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
     let mut account = AccountBuilder::new([42; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build_existing()
         .context("failed to build account")?;
@@ -1848,7 +2146,7 @@ async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
     // modulus - 2.
     account.increment_nonce(Felt::new_unchecked(Felt::ORDER_U64 - 2))?;
 
-    let result = TransactionContextBuilder::new(account).build()?.execute().await;
+    let result = TestTransactionBuilder::new(account).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NONCE_AT_MAX);
 
@@ -1865,13 +2163,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         StorageSlotName::new("miden::slot::test").expect("storage slot name should be valid")
     });
 
-    static COMPONENT_1_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    static COMPONENT_1_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
@@ -1881,15 +2180,16 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
             test_slot_name = &*TEST_SLOT_NAME
         );
 
-        let source = NamedSource::new("component1::interface", code);
-        Arc::unwrap_or_clone(
-            TransactionKernel::assembler()
-                .assemble_library([source])
-                .expect("mock account code should be valid"),
-        )
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let root = ModuleParser::new(Some(ModuleKind::Library))
+            .parse_str(Some(Path::new("component1::interface")), &code, source_manager.clone())
+            .expect("mock account code should parse");
+        *TransactionKernel::assembler_with_source_manager(source_manager)
+            .assemble_library("component1", root, None::<&str>)
+            .expect("mock account code should be valid")
     });
 
-    static COMPONENT_2_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    static COMPONENT_2_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
         let code = format!(
             r#"
               use miden::protocol::active_account
@@ -1897,12 +2197,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
+              @account_procedure
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
                   swapw dropw
               end
 
+              @account_procedure
               pub proc set_slot_content
                   push.[5,6,7,8]
                   push.TEST_SLOT_NAME[0..2]
@@ -1913,12 +2215,13 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
             test_slot_name = &*TEST_SLOT_NAME
         );
 
-        let source = NamedSource::new("component2::interface", code);
-        Arc::unwrap_or_clone(
-            TransactionKernel::assembler()
-                .assemble_library([source])
-                .expect("mock account code should be valid"),
-        )
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let root = ModuleParser::new(Some(ModuleKind::Library))
+            .parse_str(Some(Path::new("component2::interface")), &code, source_manager.clone())
+            .expect("mock account code should parse");
+        *TransactionKernel::assembler_with_source_manager(source_manager)
+            .assemble_library("component2", root, None::<&str>)
+            .expect("mock account code should be valid")
     });
 
     struct CustomComponent1 {
@@ -1928,7 +2231,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     impl From<CustomComponent1> for AccountComponent {
         fn from(component: CustomComponent1) -> AccountComponent {
             AccountComponent::new(
-                COMPONENT_1_LIBRARY.clone(),
+                COMPONENT_1_PACKAGE.clone(),
                 vec![component.slot],
                 AccountComponentMetadata::mock("component1::interface"),
             )
@@ -1941,7 +2244,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     impl From<CustomComponent2> for AccountComponent {
         fn from(_component: CustomComponent2) -> AccountComponent {
             AccountComponent::new(
-                COMPONENT_2_LIBRARY.clone(),
+                COMPONENT_2_PACKAGE.clone(),
                 vec![],
                 AccountComponentMetadata::mock("component2::interface"),
             )
@@ -1953,7 +2256,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     let slot = StorageSlot::with_value(TEST_SLOT_NAME.clone(), slot_content1);
 
     let account = AccountBuilder::new([42; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(CustomComponent1 { slot: slot.clone() })
         .with_component(CustomComponent2)
         .build()
@@ -1961,10 +2264,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
     let tx_script = format!(
         r#"
-      use component1::interface->comp1_interface
-      use component2::interface->comp2_interface
+      use component1::interface as comp1_interface
+      use component2::interface as comp2_interface
 
-      begin
+      @transaction_script
+      pub proc main
           call.comp1_interface::get_slot_content
           push.{slot_content1}
           assert_eqw.err="failed to get slot content1"
@@ -1979,11 +2283,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(COMPONENT_1_LIBRARY.clone())?
-        .with_dynamically_linked_library(COMPONENT_2_LIBRARY.clone())?
+        .with_dynamically_linked_package(COMPONENT_1_PACKAGE.clone())?
+        .with_dynamically_linked_package(COMPONENT_2_PACKAGE.clone())?
         .compile_tx_script(tx_script)?;
 
-    TransactionContextBuilder::new(account)
+    TestTransactionBuilder::new(account)
         .tx_script(tx_script)
         .build()?
         .execute()
