@@ -4,6 +4,8 @@
 
 ### Features
 
+- Added `Authority::read_procedure_roles`, which reads the per-procedure role map even when a role felt carries no `RoleSymbol` ([#TBD](https://github.com/0xMiden/protocol)).
+
 ### Changes
 
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
