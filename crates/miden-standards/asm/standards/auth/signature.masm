@@ -202,6 +202,8 @@ end
 #! Returns 1 if scheme_id is supported, else 0.
 #! Inputs:  [scheme_id]
 #! Outputs: [is_supported]
+#!
+#! Invocation: exec
 pub proc is_supported_scheme
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_1, scheme_id]
@@ -216,6 +218,8 @@ end
 #! Reverts if scheme_id is not supported.
 #! Inputs:  [scheme_id]
 #! Outputs: []
+#!
+#! Invocation: exec
 pub proc assert_supported_scheme
     exec.is_supported_scheme
     # => [is_supported]
@@ -228,6 +232,8 @@ end
 #! Validates scheme id word shape: [scheme_id, 0, 0, 0]
 #! Inputs:  [SCHEME_ID_WORD]
 #! Outputs: [SCHEME_ID_WORD]
+#!
+#! Invocation: exec
 pub proc assert_supported_scheme_word
     dupw exec.assert_supported_scheme
     # => [0, 0, 0, SCHEME_ID_WORD]
@@ -254,6 +260,8 @@ end
 #!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
+#!
+#! Invocation: exec
 @locals(5)
 pub proc verify_signatures
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
@@ -380,6 +388,8 @@ end
 #!
 #! Inputs: [key_index]
 #! Outputs: [APPROVER_MAP_KEY]
+#!
+#! Invocation: exec
 pub proc create_approver_map_key
     push.0.0.0 movup.3
     # => [APPROVER_MAP_KEY]

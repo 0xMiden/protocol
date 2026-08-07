@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use core::fmt;
 
 use miden_crypto::merkle::smt::LeafIndex;

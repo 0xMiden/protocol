@@ -101,9 +101,11 @@ where
     ///
     /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
     /// `EpilogueAuthProcEnd` events, so this flag is `true` only while the registered auth
-    /// procedure is running. It is used to reject `AuthRequest` events emitted from any other
-    /// context (e.g. untrusted note or transaction scripts), which must never trigger signature
-    /// production.
+    /// procedure is running. It is used to reject signature *production* requested from any other
+    /// context (e.g. untrusted note or transaction scripts): an `AuthRequest` with no pre-supplied
+    /// signature makes the authenticator sign with the account's key and must never be honored
+    /// outside the auth procedure. Verifying an externally-supplied signature does not touch the
+    /// private key and is always allowed.
     in_auth_procedure: bool,
 
     /// The source manager to track source code file span information, improving any MASM related
@@ -222,12 +224,12 @@ where
             .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
-            .to_prepared_signature(message);
+            .to_encoded_signature(message);
 
         let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
-        Ok(vec![AdviceMutation::extend_stack(signature)])
+        Ok(vec![AdviceMutation::extend_advice_stack(signature.into())])
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -600,22 +602,17 @@ where
                 TransactionEvent::AuthRequest {
                     pub_key_commitment,
                     tx_summary_or_signature,
-                } => {
-                    // Signature production is only permitted while the registered auth procedure
-                    // is executing. An `AuthRequest` emitted from any other context (e.g. an
-                    // untrusted note or transaction script) must not force the host to sign.
-                    if !self.in_auth_procedure {
-                        Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
-                    } else {
-                        match tx_summary_or_signature {
-                            TxSummaryOrSignature::Signature(signature) => {
-                                Ok(self.base_host.on_auth_requested(signature))
-                            },
-                            TxSummaryOrSignature::TxSummary(tx_summary) => {
-                                self.on_auth_requested(pub_key_commitment, tx_summary).await
-                            },
+                } => match tx_summary_or_signature {
+                    TxSummaryOrSignature::Signature(signature) => {
+                        Ok(self.base_host.on_auth_requested(signature))
+                    },
+                    TxSummaryOrSignature::TxSummary(tx_summary) => {
+                        if !self.in_auth_procedure {
+                            Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
+                        } else {
+                            self.on_auth_requested(pub_key_commitment, tx_summary).await
                         }
-                    }
+                    },
                 },
 
                 // This always returns an error to abort the transaction.
