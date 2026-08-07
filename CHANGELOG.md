@@ -6,6 +6,8 @@
 
 ### Changes
 
+- Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
+
 ### Fixes
 
 ## v0.16.0 (2026-08-06)
