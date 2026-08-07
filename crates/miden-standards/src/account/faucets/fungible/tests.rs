@@ -291,8 +291,7 @@ fn get_faucet_procedures() {
 }
 
 /// A user faucet installs no `Ownable2Step` component, so an owner-only mint policy has no owner
-/// slot to read and every mint would abort. The factory must reject that configuration instead of
-/// producing a faucet that can never mint.
+/// slot to read and every mint would abort.
 #[test]
 fn user_fungible_faucet_rejects_owner_only_mint_policy() {
     let auth_component = AuthSingleSig::new(Approver::new(
@@ -319,9 +318,6 @@ fn user_fungible_faucet_rejects_owner_only_mint_policy() {
     });
 }
 
-/// The dependency check covers reserved policies too: a policy that is merely registered as an
-/// allowed alternative can be activated later via `set_burn_policy`, at which point the missing
-/// owner slot would break burning.
 #[test]
 fn user_fungible_faucet_rejects_reserved_owner_only_burn_policy() {
     let auth_component = AuthSingleSig::new(Approver::new(

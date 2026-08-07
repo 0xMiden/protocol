@@ -440,14 +440,6 @@ impl TokenPolicyManager {
 
     /// Returns the storage slots that the registered policies (active + reserved) read but do not
     /// own, deduplicated and in registration order.
-    ///
-    /// These slots must be provided by another component installed on the same account, e.g. the
-    /// [`Ownable2Step`][crate::account::access::Ownable2Step] slot read by the owner-controlled
-    /// policy family. A faucet whose account does not provide them builds successfully but aborts
-    /// on every dispatch to the depending policy, so callers assembling an account by hand should
-    /// check the built storage against this list with
-    /// [`verify_policy_dependencies`][super::verify_policy_dependencies]. The faucet factories in
-    /// [`crate::account::faucets`] do this automatically.
     pub fn required_storage_slots(&self) -> Vec<StorageSlotName> {
         let mut required: Vec<StorageSlotName> = Vec::new();
         for cfg in self.policies.values() {
@@ -761,8 +753,7 @@ mod tests {
     use crate::account::policies::transfer::TransferAllowAll;
 
     /// The owner-controlled policy family reads the `Ownable2Step` owner slot without owning it,
-    /// so the manager surfaces it as a dependency. Mint and burn declare the same slot, which must
-    /// be reported once.
+    /// so the manager surfaces it as a dependency.
     #[test]
     fn owner_only_policies_report_the_ownership_slot_once() {
         let manager = TokenPolicyManager::builder()

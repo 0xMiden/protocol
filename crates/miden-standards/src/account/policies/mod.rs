@@ -27,14 +27,6 @@
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
 //! manager's `dyncall` can dispatch to it.
 //!
-//! A policy procedure may additionally read a storage slot owned by a *different* component (the
-//! owner-controlled family reads the [`Ownable2Step`][crate::account::access::Ownable2Step] slot,
-//! for example). Such a slot is not carried by the policy descriptor's components, so the policy
-//! declares it through `required_slots` and the account must install the providing component
-//! separately. [`verify_policy_dependencies`] checks a built account's storage against
-//! [`TokenPolicyManager::required_storage_slots`], turning an otherwise silently broken faucet
-//! (builds fine, aborts on every dispatch to the depending policy) into a build-time error.
-//!
 //! A faucet constructs the manager via [`TokenPolicyManager::builder`], setting the required
 //! `active_*_policy` for each kind (and optionally any number of reserved `allowed_*_policy`
 //! entries), then passes the built manager directly to
@@ -85,10 +77,6 @@ impl MissingPolicyDependency {
 
 /// Verifies that `storage` provides every slot in `required_slots`, which is typically obtained
 /// from [`TokenPolicyManager::required_storage_slots`].
-///
-/// A policy whose required slot is missing aborts at runtime on the storage lookup, which for the
-/// active mint policy means minting is disabled for the lifetime of the account. Checking the
-/// built account's storage turns that into a build-time error.
 ///
 /// # Errors
 ///

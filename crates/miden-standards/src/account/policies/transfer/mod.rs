@@ -165,9 +165,7 @@ impl TransferPolicy {
         self.root
     }
 
-    /// Returns the storage slots the policy procedure reads but does not own. They must be
-    /// provided by another component installed on the same account, otherwise every dispatch to
-    /// this policy aborts on the missing slot.
+    /// Returns the storage slots the policy procedure reads but does not own.
     pub fn required_slots(&self) -> &[StorageSlotName] {
         &self.required_slots
     }

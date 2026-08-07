@@ -61,12 +61,6 @@ impl BurnPolicy {
     }
 
     /// Returns a burn policy gated by the account owner.
-    ///
-    /// The policy reads the owner from the [`Ownable2Step`] storage slot, which the policy does
-    /// not own: the account must install [`Ownable2Step`] separately (directly or through
-    /// [`AccessControl::Ownable2Step`][crate::account::access::AccessControl::Ownable2Step]).
-    /// The dependency is declared through [`Self::required_slots`] so account factories can
-    /// reject the incomplete configuration at build time.
     pub fn owner_only() -> Self {
         Self {
             root: BurnOwnerOnly::root(),
@@ -122,9 +116,7 @@ impl BurnPolicy {
         self.root
     }
 
-    /// Returns the storage slots the policy procedure reads but does not own. They must be
-    /// provided by another component installed on the same account, otherwise every dispatch to
-    /// this policy aborts on the missing slot.
+    /// Returns the storage slots the policy procedure reads but does not own.
     pub fn required_slots(&self) -> &[StorageSlotName] {
         &self.required_slots
     }
