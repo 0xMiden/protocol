@@ -10,7 +10,7 @@
 
 ### Fixes
 
-- The faucet factories now reject a `TokenPolicyManager` whose policies read a storage slot the account does not install (such as the `Ownable2Step` owner slot read by the owner-only mint and burn policies), instead of building a faucet that aborts on every dispatch to that policy.
+- The faucet factories now reject a `TokenPolicyManager` whose policies read a storage slot the account does not install ([#3527](https://github.com/0xMiden/protocol/pull/3527)).
 
 ## v0.16.0 (2026-08-06)
 
