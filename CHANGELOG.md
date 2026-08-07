@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added `Authority::read_procedure_roles`, which reads the per-procedure role map even when a role felt carries no `RoleSymbol` ([#TBD](https://github.com/0xMiden/protocol)).
+- Added `Authority::read_procedure_roles`, which reads the per-procedure role map even when a role felt carries no `RoleSymbol` ([#3524](https://github.com/0xMiden/protocol/pull/3524)).
 
 ### Changes
 
