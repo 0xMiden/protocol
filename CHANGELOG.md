@@ -31,6 +31,8 @@
 
 ### Changes
 
+- [BREAKING] Moved the `note_tag` MASM module from `miden::standards::note_tag` to `miden::standards::note::note_tag` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
+- [BREAKING] Moved the `note_creator` account component MASM namespace from `miden::standards::components::wallets::note_creator` to `miden::standards::components::note::note_creator`, and moved the Rust `NoteCreator` type from `account::wallets` to `account::note_creator` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
 - [BREAKING] Bind the standard config notes to their target account: `OwnerConfigNote`, `PauseConfigNote`, `RbacConfigNote`, `FaucetPolicyConfigNote`, `AllowlistConfigNote`, `BlocklistConfigNote` and `FaucetMetadataConfigNote` now carry a `NetworkAccountTarget` attachment for that account ([#3433](https://github.com/0xMiden/protocol/issues/3433), [#3455](https://github.com/0xMiden/protocol/pull/3455)).
 - [BREAKING] BURN notes now store and validate the asset passed to `receive_and_burn`, and target its faucet with a `NetworkAccountTarget` attachment ([#2343](https://github.com/0xMiden/protocol/issues/2343)).
 - [BREAKING] Moved the generic EVM-bridging helpers from `miden-agglayer` into `miden-standards`: the `agglayer::common` MASM modules now live at `miden::standards::utils`, `miden::standards::assets::conversion` and `miden::standards::interop::eth`. Corresponding Rust types moved to `miden_standards::interop::eth` ([#3423](https://github.com/0xMiden/protocol/pull/3423)).

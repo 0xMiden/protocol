@@ -1,10 +1,10 @@
 [package]
-name              = "miden-standards-wallets-note-creator"
+name              = "miden-standards-note-note-creator"
 version.workspace = true
 
 [lib]
 kind      = "account-component"
-namespace = "miden::standards::components::wallets::note_creator"
+namespace = "miden::standards::components::note::note_creator"
 path      = "note_creator.masm"
 
 [dependencies]

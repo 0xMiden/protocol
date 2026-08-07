@@ -101,7 +101,7 @@ proc assert_auth_procedure_origin
     padw caller
     # => [CALLER]
 
-    # assert that the caller is from the user context
+    # assert that the caller is from the auth context
     exec.account::assert_auth_procedure
     # => []
 end
@@ -121,8 +121,8 @@ end
 #! - INIT_COMMITMENT is the initial account commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_commitment
@@ -186,8 +186,8 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
 #!
 #! Invocation: dynexec
@@ -220,8 +220,8 @@ end
 #! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_upgrade
@@ -325,7 +325,7 @@ end
 #!   also be the final nonce of the account after transaction execution.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the authentication procedure
 #!   of the account.
 #! - the nonce has already been incremented.
@@ -381,8 +381,8 @@ end
 #! - INIT_STORAGE_COMMITMENT is the initial account storage commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_storage_commitment
@@ -466,7 +466,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_set_item
@@ -521,7 +522,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_item
@@ -557,7 +559,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_map_item
@@ -591,8 +594,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-#! - the procedure is called from a non-account context.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_set_map_item
@@ -622,8 +625,8 @@ end
 #! - INIT_VAULT_ROOT is the initial account vault root.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_vault_root
@@ -687,7 +690,8 @@ end
 #! - the total value of the fungible asset is greater than or equal to 2^63 after the new asset was 
 #!   added.
 #! - the vault already contains the same non-fungible asset.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_add_asset
@@ -718,7 +722,8 @@ end
 #! - the fungible asset is not found in the vault.
 #! - the amount of the fungible asset in the vault is less than the amount to be removed.
 #! - the non-fungible asset is not found in the vault.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_remove_asset
@@ -772,8 +777,8 @@ end
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
@@ -803,7 +808,7 @@ end
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
 #! - the procedure root is not part of the account code.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_was_procedure_called
@@ -938,7 +943,8 @@ end
 #! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - For fungible faucets:
@@ -971,7 +977,8 @@ end
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - For fungible faucets:
