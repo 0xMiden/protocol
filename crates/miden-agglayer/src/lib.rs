@@ -3,25 +3,12 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
-#[cfg(any(feature = "testing", test))]
-use alloc::collections::BTreeSet;
-use alloc::string::String;
 
 use miden_core::{Felt, Word};
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AssetCallbackFlag,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::Path;
-#[cfg(any(feature = "testing", test))]
-use miden_protocol::asset::AssetAmount;
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
-#[cfg(any(feature = "testing", test))]
-use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{
     Authority,
@@ -32,8 +19,6 @@ use miden_standards::account::access::{
     RoleConfig,
 };
 use miden_standards::account::auth::NetworkAccount;
-#[cfg(any(feature = "testing", test))]
-use miden_standards::account::fees::BasicConstantFeePolicy;
 use miden_standards::account::fees::{ConstantFeeManager, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
@@ -170,64 +155,9 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
-/// Returns a zero-fee policy manager for tests that exercise AggLayer behavior independently of
-/// fee sponsorship. Production constructors require their deployment-time manager explicitly.
-#[cfg(any(feature = "testing", test))]
-fn testing_zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
-    let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
-        .expect("placeholder fee faucet id is valid");
-
-    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
-    for note_script in allowed_notes {
-        basic_constant_fee_policy =
-            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
-    }
-
-    FeePolicyManager::builder()
-        .active_fee_policy(basic_constant_fee_policy.into())
-        .fee_faucet_id(fee_faucet_id)
-        .build()
-}
-
-/// Builder for an AggLayer bridge account.
-///
-/// The deployment configuration a bridge cannot be built without is taken by
-/// [`AggLayerBridge::account_builder`]; this type carries the settings that have a default.
-pub struct AggLayerBridgeAccountBuilder {
-    seed: Word,
-    admin: AccountId,
-    roles: BridgeRoles,
-    network_id: u32,
-    fee_policy_manager: FeePolicyManager,
-}
-
-impl AggLayerBridgeAccountBuilder {
-    fn into_account_builder(self) -> AccountBuilder {
-        create_bridge_account_builder(
-            self.seed,
-            self.admin,
-            self.roles,
-            self.network_id,
-            self.fee_policy_manager,
-        )
-    }
-
-    /// Builds a new AggLayer bridge account.
-    pub fn build(self) -> Account {
-        self.into_account_builder().build().expect("bridge account should be valid")
-    }
-
-    /// Builds an existing AggLayer bridge account for tests.
-    #[cfg(any(feature = "testing", test))]
-    pub fn build_existing(self) -> Account {
-        self.into_account_builder()
-            .build_existing()
-            .expect("bridge account should be valid")
-    }
-}
-
 impl AggLayerBridge {
-    /// Returns a builder for a bridge account with the specified deployment configuration.
+    /// Returns an [`AccountBuilder`] for a bridge account with the specified deployment
+    /// configuration.
     ///
     /// `fee_policy_manager` prices the notes the bridge consumes and must cover every root
     /// returned by [`AggLayerBridge::fee_policy_notes`]; production callers should normally
@@ -239,86 +169,19 @@ impl AggLayerBridge {
         roles: BridgeRoles,
         network_id: u32,
         fee_policy_manager: FeePolicyManager,
-    ) -> AggLayerBridgeAccountBuilder {
-        AggLayerBridgeAccountBuilder {
-            seed,
-            admin,
-            roles,
-            network_id,
-            fee_policy_manager,
-        }
-    }
-}
-
-/// Builder for an AggLayer faucet account.
-///
-/// The deployment configuration a faucet cannot be built without is taken by
-/// [`AggLayerFaucet::account_builder`]; this type carries the settings that have a default.
-pub struct AggLayerFaucetAccountBuilder {
-    seed: Word,
-    token_symbol: String,
-    decimals: u8,
-    max_supply: Felt,
-    initial_supply: Felt,
-    asset_callbacks: AssetCallbackFlag,
-    admin: AccountId,
-    bridge_account_id: AccountId,
-    fee_policy_manager: FeePolicyManager,
-}
-
-impl AggLayerFaucetAccountBuilder {
-    /// Sets the initial outstanding supply of an existing faucet test fixture.
-    #[cfg(any(feature = "testing", test))]
-    #[must_use]
-    pub fn with_initial_supply(mut self, initial_supply: Felt) -> Self {
-        self.initial_supply = initial_supply;
-        self
-    }
-
-    /// Sets whether the assets issued by the faucet trigger callbacks.
-    #[must_use]
-    pub fn with_asset_callbacks(mut self, asset_callbacks: AssetCallbackFlag) -> Self {
-        self.asset_callbacks = asset_callbacks;
-        self
-    }
-
-    fn into_account_builder(self) -> AccountBuilder {
-        create_agglayer_faucet_builder(
-            self.seed,
-            &self.token_symbol,
-            self.decimals,
-            self.max_supply,
-            self.initial_supply,
-            self.admin,
-            self.bridge_account_id,
-            self.fee_policy_manager,
-        )
-        .with_asset_callbacks(self.asset_callbacks)
-    }
-
-    /// Builds a new AggLayer faucet account.
-    pub fn build(self) -> Account {
-        self.into_account_builder()
-            .build()
-            .expect("agglayer faucet account should be valid")
-    }
-
-    /// Builds an existing AggLayer faucet account for tests.
-    #[cfg(any(feature = "testing", test))]
-    pub fn build_existing(self) -> Account {
-        self.into_account_builder()
-            .build_existing()
-            .expect("agglayer faucet account should be valid")
+    ) -> AccountBuilder {
+        create_bridge_account_builder(seed, admin, roles, network_id, fee_policy_manager)
     }
 }
 
 impl AggLayerFaucet {
-    /// Returns a builder for a faucet account with the specified deployment configuration.
+    /// Returns an [`AccountBuilder`] for a faucet account with the specified deployment
+    /// configuration.
     ///
     /// `admin` is seeded as the sole member of the faucet's built-in `ADMIN` role, which gates
     /// every authority-controlled procedure, including the `set_note_fee` that reprices the fee
     /// schedule. `bridge_account_id` stays the [`Ownable2Step`] owner and so remains the only
-    /// account that can mint or burn.
+    /// account that can mint or burn. The faucet starts with no outstanding supply.
     ///
     /// `fee_policy_manager` prices the notes the faucet consumes and must cover every root
     /// returned by [`AggLayerFaucet::fee_policy_notes`]; production callers should normally
@@ -332,18 +195,17 @@ impl AggLayerFaucet {
         admin: AccountId,
         bridge_account_id: AccountId,
         fee_policy_manager: FeePolicyManager,
-    ) -> AggLayerFaucetAccountBuilder {
-        AggLayerFaucetAccountBuilder {
+    ) -> AccountBuilder {
+        create_agglayer_faucet_builder(
             seed,
-            token_symbol: token_symbol.into(),
+            token_symbol,
             decimals,
             max_supply,
-            initial_supply: Felt::ZERO,
-            asset_callbacks: AssetCallbackFlag::Disabled,
+            Felt::ZERO,
             admin,
             bridge_account_id,
             fee_policy_manager,
-        }
+        )
     }
 }
 
@@ -371,7 +233,8 @@ impl AggLayerFaucet {
 /// fraudulent GER can still be revoked.
 ///
 /// Finally, it installs the [`ConstantFeeManager`], whose `set_note_fee` reprices the deployed
-/// [`BasicConstantFeePolicy`] schedule. It is left out of
+/// [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy) schedule.
+/// It is left out of
 /// [`AggLayerBridge::procedure_roles`] on purpose, so the same unmapped-procedure fallback gates
 /// it on the `ADMIN` role, and it is driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note.
 /// Without it the schedule would be frozen at its deployment prices, which go stale as soon as
@@ -415,7 +278,9 @@ pub fn create_bridge_account(
     network_id: u32,
     fee_policy_manager: FeePolicyManager,
 ) -> Account {
-    AggLayerBridge::account_builder(seed, admin, roles, network_id, fee_policy_manager).build()
+    AggLayerBridge::account_builder(seed, admin, roles, network_id, fee_policy_manager)
+        .build()
+        .expect("bridge account should be valid")
 }
 
 /// Creates a complete agglayer faucet account builder with the specified configuration.
@@ -433,8 +298,8 @@ pub fn create_bridge_account(
 ///   `ADMIN` role, with [`Authority::RbacControlled`] and an empty procedure-role map so every
 ///   authority-gated procedure resolves to `ADMIN` through the unmapped-procedure fallback.
 /// - The [`ConstantFeeManager`], whose `ADMIN`-gated `set_note_fee` reprices the deployed
-///   [`BasicConstantFeePolicy`] schedule, driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG`
-///   note.
+///   [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy) schedule,
+///   driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note.
 /// - The network-account auth component, installed via [`NetworkAccount::builder`] with
 ///   [`AggLayerFaucet::allowed_notes()`]. The tx-script allowlist contains only the canonical
 ///   [`ExpirationTransactionScript`](miden_standards::tx_script::ExpirationTransactionScript).
@@ -445,7 +310,7 @@ pub fn create_bridge_account(
 /// configuration (its fee schedule, its policies and its metadata) without gaining the ability to
 /// mint, while the bridge keeps minting exactly as before. Note that `ADMIN` can retarget the
 /// [`Ownable2Step`] owner, so it must be held by a strongly authenticated account.
-fn create_agglayer_faucet_builder(
+pub(crate) fn create_agglayer_faucet_builder(
     seed: Word,
     token_symbol: &str,
     decimals: u8,
@@ -507,32 +372,7 @@ pub fn create_agglayer_faucet(
         fee_policy_manager,
     )
     .build()
-}
-
-/// Creates an existing agglayer faucet account with the specified configuration, priced by a
-/// zero-fee policy and administered by [`testing::bridge_admin_account_id`].
-///
-/// This creates an existing account suitable for testing scenarios.
-#[cfg(any(feature = "testing", test))]
-pub fn create_existing_agglayer_faucet(
-    seed: Word,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    initial_supply: Felt,
-    bridge_account_id: AccountId,
-) -> Account {
-    AggLayerFaucet::account_builder(
-        seed,
-        token_symbol,
-        decimals,
-        max_supply,
-        testing::bridge_admin_account_id(),
-        bridge_account_id,
-        testing_zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes()),
-    )
-    .with_initial_supply(initial_supply)
-    .build_existing()
+    .expect("agglayer faucet account should be valid")
 }
 
 // TESTS
@@ -544,7 +384,10 @@ mod tests {
     use miden_standards::tx_script::ExpirationTransactionScript;
 
     use super::*;
-    use crate::testing::create_existing_bridge_account_with_roles;
+    use crate::testing::{
+        create_existing_agglayer_faucet,
+        create_existing_bridge_account_with_roles,
+    };
 
     /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
     /// which the network transaction builder attaches to every network transaction.

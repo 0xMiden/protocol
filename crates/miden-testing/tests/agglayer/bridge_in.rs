@@ -9,6 +9,7 @@ use miden_agglayer::errors::{
     ERR_GER_NOT_FOUND,
     ERR_TOKEN_NOT_REGISTERED,
 };
+use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_agglayer::{
     B2AggNote,
     ClaimNote,
@@ -21,7 +22,6 @@ use miden_agglayer::{
     SmtNode,
     UpdateGerNote,
     agglayer_package,
-    create_existing_agglayer_faucet,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -206,7 +206,7 @@ async fn test_bridge_in_claim_to_p2id(
         verification_base_fee,
     )?
     .with_asset_callbacks(AssetCallbackFlag::Enabled)
-    .build_existing();
+    .build_existing()?;
     builder.add_account(agglayer_faucet.clone())?;
 
     // Get the destination account ID from the leaf data.

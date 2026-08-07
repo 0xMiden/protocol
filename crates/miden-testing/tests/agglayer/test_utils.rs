@@ -10,14 +10,9 @@ pub use miden_agglayer::testing::{
     SOLIDITY_MERKLE_PROOF_VECTORS,
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
+    faucet_account_builder,
 };
-use miden_agglayer::{
-    AggLayerBridge,
-    AggLayerFaucet,
-    AggLayerFaucetAccountBuilder,
-    BridgeRoles,
-    agglayer_package,
-};
+use miden_agglayer::{AggLayerBridge, BridgeRoles, agglayer_package};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::Keccak256;
 use miden_processor::advice::AdviceInputs;
@@ -31,7 +26,7 @@ use miden_processor::{
     StackInputs,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountBuilder, AccountId};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::rand::FeltRng;
@@ -171,7 +166,7 @@ pub fn create_existing_priced_bridge(
         network_note_pricer(verification_base_fee).agglayer_bridge_fee_policy_manager()?;
     Ok(
         AggLayerBridge::account_builder(seed, admin, roles, MIDEN_NETWORK_ID, fee_policy_manager)
-            .build_existing(),
+            .build_existing()?,
     )
 }
 
@@ -188,19 +183,19 @@ pub fn priced_faucet_builder(
     initial_supply: Felt,
     bridge_account_id: AccountId,
     verification_base_fee: u32,
-) -> anyhow::Result<AggLayerFaucetAccountBuilder> {
+) -> anyhow::Result<AccountBuilder> {
     let fee_policy_manager =
         network_note_pricer(verification_base_fee).agglayer_faucet_fee_policy_manager()?;
-    Ok(AggLayerFaucet::account_builder(
+    Ok(faucet_account_builder(
         seed,
         token_symbol,
         decimals,
         max_supply,
+        initial_supply,
         bridge_admin_account_id(),
         bridge_account_id,
         fee_policy_manager,
-    )
-    .with_initial_supply(initial_supply))
+    ))
 }
 
 /// Execute a program with a default host and optional advice inputs.

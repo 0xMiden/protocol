@@ -123,7 +123,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
         MIDEN_NETWORK_ID,
         pricer.agglayer_bridge_fee_policy_manager()?,
     )
-    .build_existing();
+    .build_existing()?;
 
     Ok(match managed {
         ManagedAccount::Bridge => bridge,
@@ -136,7 +136,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             bridge.id(),
             pricer.agglayer_faucet_fee_policy_manager()?,
         )
-        .build_existing(),
+        .build_existing()?,
     })
 }
 

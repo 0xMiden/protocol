@@ -6,6 +6,7 @@ use miden_agglayer::errors::{
     ERR_B2AGG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_NOT_REGISTERED,
 };
+use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -14,7 +15,6 @@ use miden_agglayer::{
     ExitRoot,
     Keccak256Output,
     MetadataHash,
-    create_existing_agglayer_faucet,
 };
 use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_crypto::rand::FeltRng;
@@ -162,7 +162,7 @@ async fn bridge_out_consecutive(
         bridge_account.id(),
         verification_base_fee,
     )?
-    .build_existing();
+    .build_existing()?;
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by faucet manager)

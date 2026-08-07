@@ -1,6 +1,7 @@
 //! Shared test vector types and embedded JSON constants for agglayer testing.
 //!
 //! This module is gated behind the `testing` feature and provides:
+//! - Account fixture helpers (zero-fee policy manager, existing bridge and faucet accounts)
 //! - Embedded JSON test vector files from `solidity-compat/test-vectors/`
 //! - Serde helpers for deserializing Foundry-generated JSON
 //! - Deserialized test vector structs (`LeafValueVector`, `ProofValueVector`, etc.)
@@ -13,28 +14,49 @@ use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountBuilder, AccountId};
+use miden_protocol::asset::AssetAmount;
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::interop::eth::{EthAddress, EthAmount};
 use serde::Deserialize;
 
 use crate::claim_note::{ProofData, SmtNode};
 use crate::{
     AggLayerBridge,
+    AggLayerFaucet,
     BridgeRoles,
     CgiChainHash,
     ExitRoot,
     GlobalIndex,
     LeafData,
     MetadataHash,
-    testing_zero_fee_policy_manager,
 };
 
-// BRIDGE ACCOUNT HELPERS
+// ACCOUNT HELPERS
 // ================================================================================================
+
+/// Returns a zero-fee policy manager for tests that exercise AggLayer behavior independently of
+/// fee sponsorship. Production constructors require their deployment-time manager explicitly.
+pub fn zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
+    let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
+        .expect("placeholder fee faucet id is valid");
+
+    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
+    for note_script in allowed_notes {
+        basic_constant_fee_policy =
+            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+    }
+
+    FeePolicyManager::builder()
+        .active_fee_policy(basic_constant_fee_policy.into())
+        .fee_faucet_id(fee_faucet_id)
+        .build()
+}
 
 /// Returns the fixed dummy account ID commonly seeded as the bridge's built-in `ADMIN` role
 /// member in tests.
@@ -57,7 +79,7 @@ pub fn create_existing_bridge_account_with_roles(
     ger_remover: AccountId,
     network_id: u32,
 ) -> Account {
-    let fee_policy_manager = testing_zero_fee_policy_manager(AggLayerBridge::fee_policy_notes());
+    let fee_policy_manager = zero_fee_policy_manager(AggLayerBridge::fee_policy_notes());
     let roles = BridgeRoles::new(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
@@ -67,6 +89,57 @@ pub fn create_existing_bridge_account_with_roles(
 
     AggLayerBridge::account_builder(seed, admin, roles, network_id, fee_policy_manager)
         .build_existing()
+        .expect("bridge account should be valid")
+}
+
+/// Returns an [`AccountBuilder`] for an AggLayer faucet test fixture.
+///
+/// Unlike [`AggLayerFaucet::account_builder`], this takes the initial outstanding supply, which
+/// production faucets always deploy at zero.
+pub fn faucet_account_builder(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    initial_supply: Felt,
+    admin: AccountId,
+    bridge_account_id: AccountId,
+    fee_policy_manager: FeePolicyManager,
+) -> AccountBuilder {
+    crate::create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        initial_supply,
+        admin,
+        bridge_account_id,
+        fee_policy_manager,
+    )
+}
+
+/// Creates an existing agglayer faucet account with the specified configuration, priced by a
+/// zero-fee policy and administered by [`bridge_admin_account_id`].
+pub fn create_existing_agglayer_faucet(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    initial_supply: Felt,
+    bridge_account_id: AccountId,
+) -> Account {
+    faucet_account_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        initial_supply,
+        bridge_admin_account_id(),
+        bridge_account_id,
+        zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes()),
+    )
+    .build_existing()
+    .expect("agglayer faucet account should be valid")
 }
 
 // EMBEDDED TEST VECTOR JSON FILES
