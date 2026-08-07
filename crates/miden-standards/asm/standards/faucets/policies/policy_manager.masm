@@ -37,7 +37,7 @@ const ALLOWED_SEND_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::polic
 # Allowlist map slot for receive policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_receive_policy_proc_roots")
 
-# Local memory pointer used to pass a policy root to `dynexec`.
+# Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR=0
 
 # ERRORS
@@ -279,11 +279,15 @@ end
 # PUBLIC HELPERS
 # =================================================================================================
 
-#! Executes active mint policy by dynamic execution.
+#! Executes active mint policy by dynamic invocation.
 #!
 #! The policy operates on the full asset value word so the interface is shared across fungible
 #! and non-fungible faucets. The policy may adjust the asset value and the output note's `tag`,
 #! `note_type`, and `RECIPIENT`.
+#!
+#! The policy is invoked via `dyncall`. The inputs are padded to a full call frame beforehand and
+#! the padding is truncated afterwards, so the policy sees exactly the ten values below and cannot
+#! observe or mutate anything deeper on the caller's stack.
 #!
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
 #! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
@@ -310,14 +314,30 @@ pub proc execute_mint_policy
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
-    locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, ASSET_VALUE, tag, note_type, RECIPIENT]
+    # pad the ten inputs into a full call frame by sinking six zeros underneath them
+    push.0.0.0.0.0.0
+    repeat.6
+        movdn.15
+    end
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
-    dynexec
+    locaddr.POLICY_PROC_ROOT_PTR
+    # => [policy_root_ptr, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    dyncall
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # truncate the call frame's padding
+    movupw.3 dropw movup.11 drop movup.10 drop
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 end
 
-#! Executes active burn policy for the provided asset by dynamic execution.
+#! Executes active burn policy for the provided asset by dynamic invocation.
+#!
+#! The policy is invoked via `dyncall`. The asset is padded to a full call frame beforehand and the
+#! frame is dropped afterwards, so the policy sees exactly the asset and cannot observe or mutate
+#! anything deeper on the caller's stack. The policy is a predicate: it consumes the asset and
+#! returns nothing, so callers that still need the asset must keep their own copy.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
@@ -343,10 +363,18 @@ pub proc execute_burn_policy
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
     # => [ASSET_ID, ASSET_VALUE]
 
-    locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, ASSET_ID, ASSET_VALUE]
+    # pad the asset into a full call frame
+    padw padw swapdw
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    dynexec
+    locaddr.POLICY_PROC_ROOT_PTR
+    # => [policy_root_ptr, ASSET_ID, ASSET_VALUE, pad(8)]
+
+    dyncall
+    # => [pad(16)]
+
+    # drop the call frame the predicate returns
+    dropw dropw dropw dropw
     # => []
 end
 

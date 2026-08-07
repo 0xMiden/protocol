@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.17.0 (TBD)
+
+### Features
+
+### Changes
+
+- [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3443](https://github.com/0xMiden/protocol/pull/3443), [#3505](https://github.com/0xMiden/protocol/issues/3505)).
+- Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
+
+### Fixes
+
 ## v0.16.0 (2026-08-06)
 
 ### Features
@@ -23,6 +34,8 @@
 
 ### Changes
 
+- [BREAKING] Moved the `note_tag` MASM module from `miden::standards::note_tag` to `miden::standards::note::note_tag` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
+- [BREAKING] Moved the `note_creator` account component MASM namespace from `miden::standards::components::wallets::note_creator` to `miden::standards::components::note::note_creator`, and moved the Rust `NoteCreator` type from `account::wallets` to `account::note_creator` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
 - [BREAKING] Bind the standard config notes to their target account: `OwnerConfigNote`, `PauseConfigNote`, `RbacConfigNote`, `FaucetPolicyConfigNote`, `AllowlistConfigNote`, `BlocklistConfigNote` and `FaucetMetadataConfigNote` now carry a `NetworkAccountTarget` attachment for that account ([#3433](https://github.com/0xMiden/protocol/issues/3433), [#3455](https://github.com/0xMiden/protocol/pull/3455)).
 - [BREAKING] BURN notes now store and validate the asset passed to `receive_and_burn`, and target its faucet with a `NetworkAccountTarget` attachment ([#2343](https://github.com/0xMiden/protocol/issues/2343)).
 - [BREAKING] Moved the generic EVM-bridging helpers from `miden-agglayer` into `miden-standards`: the `agglayer::common` MASM modules now live at `miden::standards::utils`, `miden::standards::assets::conversion` and `miden::standards::interop::eth`. Corresponding Rust types moved to `miden_standards::interop::eth` ([#3423](https://github.com/0xMiden/protocol/pull/3423)).
@@ -52,13 +65,14 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
 - [BREAKING] Removed the `AuthSingleSigAcl` auth component, the `Auth::Acl` `miden-testing` mock-chain variant, and the `user_faucet_single_sig_acl` testing helper: the exempt (no-signature) branch let fee-charging accounts be drained via calls to exempt procedures. The plain `AuthSingleSig` component (every call requires a signature) remains available and now backs the "singlesig user faucet" factories; a `BurnNote` targeted at a singlesig user faucet, previously exempt via `receive_and_burn`, now requires the owner's signature to be consumed ([#3360](https://github.com/0xMiden/protocol/issues/3360)).
 - [BREAKING] Updated `miden-vm` dependencies to v0.29. Notable downstream changes: `CoreLibrary` now bundles a separate `miden-precompiles` package that must also be seeded into the package registry (`CoreLibrary::packages()`), the advice stack moved behind the typed `AdviceStack` API on `AdviceInputs`, `Kernel` was renamed to `KernelDescriptor` (with `Package::to_kernel` becoming `to_kernel_descriptor` and `Package::module_infos` becoming `module_descriptors`), and `miden_verifier::verify` now takes an `ExecutionClaim` and verifies bundled precompile proofs itself, replacing `verify_with_precompiles` ([#3492](https://github.com/0xMiden/protocol/pull/3492)).
+- [BREAKING] `TokenPolicyManager` now dispatches mint and burn policies via `dyncall` rather than `dynexec` ([#3510](https://github.com/0xMiden/protocol/pull/3510)).
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
+- [BREAKING] Replaced `RoleBasedAccessControl::new` with a validating `RoleBasedAccessControl::builder()` over `RoleConfig`s, which seeds each role's members together with its delegated admin, so exclusive delegation is established at account creation instead of through on-chain `set_role_admin` calls ([#3515](https://github.com/0xMiden/protocol/pull/3515)).
 
 ### Fixes
 
 - Fixed `faucet::mint` and `faucet::burn` failing when the asset's witness in the input vault had not already been loaded, which happened when minting into a faucet whose vault held other assets, or when burning an asset the transaction had not otherwise accessed; both procedures now request the witness from the host before updating the input vault ([#3409](https://github.com/0xMiden/protocol/pull/3409)).
 - Enforced the canonical encoding of `Authority` role map values on read: `Authority::try_from_storage` now rejects a procedure-role value word whose reserved felts (`value[1..=3]`) are non-zero, matching the value-slot check and completing the fix started in [#3209](https://github.com/0xMiden/protocol/pull/3209) ([#3415](https://github.com/0xMiden/protocol/pull/3415)).
-- [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3443](https://github.com/0xMiden/protocol/pull/3443), [#3505](https://github.com/0xMiden/protocol/issues/3505)).
 - Restricted indexed input-note asset removal to the native account's context while preserving active-note self-removal. As a consequence, note scripts and transaction scripts can no longer remove input-note assets by index directly, and neither can foreign accounts invoked through FPI; indexed removal must go through a procedure of the native account ([#3445](https://github.com/0xMiden/protocol/issues/3445)).
 - Fixed the PSWAP note-fill asset to its own payback note ([#3469](https://github.com/0xMiden/protocol/pull/3469)).
 - Fixed `CodeInspection`'s `get_code_commitment`, `get_num_procedures` and `get_procedure_root` and the `min_burn_amount` burn policy's `get_min_burn_amount` returning above the 16-element stack depth ([#3470](https://github.com/0xMiden/protocol/pull/3470)).
@@ -67,6 +81,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Clarified the `ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT` error message to better match the actual validated constraint ([#3474](https://github.com/0xMiden/protocol/pull/3474)).
 - Fixed misleading `NonFungibleFaucet` documentation, it is now stated as an off-chain convention([#3484](https://github.com/0xMiden/protocol/pull/3484)).
 - Added the missing `Invocation: exec` label to the document comments of the public `miden-standards` MASM procedures([#3503](https://github.com/0xMiden/protocol/pull/3503)).
+- Exempted the issuing faucet from its own `BasicBlocklist` / `BasicAllowlist` transfer policy, so a self-entry no longer disables the faucet's minting ([#3508](https://github.com/0xMiden/protocol/pull/3508)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 

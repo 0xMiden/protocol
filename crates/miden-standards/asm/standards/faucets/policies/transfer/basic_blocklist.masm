@@ -3,7 +3,12 @@
 # Basic blocklist transfer policy: rejects transfers whose native account is blocked on the
 # issuing faucet. Delegates the per-account state to the sibling `blocklist` primitive
 # (storage + helpers).
+#
+# The issuing faucet is exempt from its own blocklist, so the list only ever governs third-party
+# transfers.
 
+use miden::protocol::account_id
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
 
@@ -23,17 +28,40 @@ use miden::standards::faucets::policies::transfer::blocklist
 #!   send (note) callback. This policy does not inspect it.
 #!
 #! Panics if:
-#! - the native account is blocked on the issuing faucet.
+#! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
 #!
 #! Invocation: call
 @account_procedure
 pub proc check_policy
-    dropw dropw drop
-    # => [pad(16)]
+    exec.asset::id_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, pad(16)]
+    # => [account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE,
+    #     custom_data, pad(7)]
 
-    exec.blocklist::assert_not_blocked
+    dupw exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix,
+    #     ASSET_VALUE, custom_data, pad(7)]
+
+    # the issuing faucet is exempt
+    not
+    # => [should_check_blocklist, account_id_suffix, account_id_prefix, faucet_id_suffix,
+    #     faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
+    if.true
+        # drop the faucet ID, keeping the native account ID for the blocklist lookup
+        movup.3 drop movup.2 drop
+        # => [account_id_suffix, account_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
+        exec.blocklist::assert_not_blocked
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    else
+        dropw
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    end
+    # => [ASSET_VALUE, custom_data, pad(7)]
+
+    dropw drop
     # => [pad(16)]
 end
