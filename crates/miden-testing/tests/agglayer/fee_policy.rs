@@ -69,11 +69,11 @@ fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> 
 fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Result<()> {
     assert_priced_account(
         &build_managed_account(ManagedAccount::Bridge)?,
-        AggLayerBridge::fee_policy_notes(),
+        AggLayerBridge::allowed_notes(),
     )?;
     assert_priced_account(
         &build_managed_account(ManagedAccount::Faucet)?,
-        AggLayerFaucet::fee_policy_notes(),
+        AggLayerFaucet::allowed_notes(),
     )
 }
 
@@ -86,12 +86,12 @@ fn faucet_allowed_notes_pin() {
         BurnNote::script_root(),
         ConstantFeePolicyConfigNote::script_root(),
     ]);
-    assert_eq!(AggLayerFaucet::allowed_notes(), expected);
+    assert_eq!(AggLayerFaucet::faucet_notes(), expected);
 
     let mut effective = expected;
     effective.insert(NetworkAccountConfigNote::script_root());
     effective.insert(FeeSponsorshipNote::script_root());
-    assert_eq!(AggLayerFaucet::fee_policy_notes(), effective);
+    assert_eq!(AggLayerFaucet::allowed_notes(), effective);
 }
 
 // POST-DEPLOYMENT FEE SCHEDULE UPDATES

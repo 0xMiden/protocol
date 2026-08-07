@@ -1120,7 +1120,7 @@ note via `output_note::add_asset`.
 **Purpose:** Toggles the bridge's emergency pause (see [Section 2.5](#25-administration)). This is
 the `miden-standards` `PAUSE_CONFIG` note (`pause_config.masm` / `PauseConfigNote`), not an
 agglayer-specific note; the bridge merely includes its script root in
-[`AggLayerBridge::allowed_notes`]. Its single storage felt is a selector: `0` dispatches to
+[`AggLayerBridge::bridge_notes`]. Its single storage felt is a selector: `0` dispatches to
 `PausableManager::pause`, `1` to `PausableManager::unpause`.
 
 **Consumption:** The script loads the selector and `call`s the matching `PausableManager`

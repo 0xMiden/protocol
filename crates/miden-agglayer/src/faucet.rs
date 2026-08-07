@@ -152,17 +152,19 @@ impl AggLayerFaucet {
     // ALLOWED NOTES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the set of input-note script roots that AggLayer faucet accounts accept.
+    /// Returns the faucet-specific input-note script roots.
     ///
-    /// The faucet's [`AuthNetworkAccount`] component is initialized with this allowlist, so the
-    /// faucet is driven only by MINT and BURN notes plus the [`ConstantFeePolicyConfigNote`]
-    /// through which the `ADMIN` role reprices its fee schedule after deployment. The bridge
-    /// sizes the sponsorship of every MINT and BURN note it creates from that schedule, so a
-    /// schedule frozen at its deployment prices stalls bridging as soon as the chain's
+    /// The faucet's [`AuthNetworkAccount`] component is initialized with this set as its explicit
+    /// allowlist; [`Self::allowed_notes`] is the resulting full set of notes the account accepts.
+    ///
+    /// The set contains only the MINT and BURN notes plus the [`ConstantFeePolicyConfigNote`],
+    /// through which the `ADMIN` role reprices the faucet's fee schedule after deployment. The
+    /// bridge sizes the sponsorship of every MINT and BURN note it creates from that schedule, so
+    /// a schedule frozen at its deployment prices stalls bridging as soon as the chain's
     /// verification base fee moves.
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
-    pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
+    pub fn faucet_notes() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([
             MintNote::script_root(),
             BurnNote::script_root(),
@@ -170,12 +172,17 @@ impl AggLayerFaucet {
         ])
     }
 
-    /// Returns every input-note script root whose fee must be scheduled on an AggLayer faucet.
+    /// Returns every input-note script root a newly deployed AggLayer faucet account accepts.
     ///
-    /// This is the faucet's explicit allowlist plus the configuration and sponsorship notes that
-    /// [`AuthNetworkAccount`] adds to every standard network account.
-    pub fn fee_policy_notes() -> BTreeSet<NoteScriptRoot> {
-        let mut notes = Self::allowed_notes();
+    /// This is [`Self::faucet_notes`] plus the configuration and sponsorship notes that
+    /// [`AuthNetworkAccount`] adds to every standard network account. The faucet's deployed fee
+    /// policy must schedule a fee for every root in this set.
+    ///
+    /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
+    /// can add or remove entries later, so read a live account's allowlist via
+    /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
+    pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
+        let mut notes = Self::faucet_notes();
         notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
         notes
     }

@@ -150,18 +150,18 @@ impl NetworkNotePricer {
 
     /// Builds the production fee policy manager for an AggLayer bridge account.
     ///
-    /// Every root in [`AggLayerBridge::fee_policy_notes`] is priced through [`Self::price`] and
+    /// Every root in [`AggLayerBridge::allowed_notes`] is priced through [`Self::price`] and
     /// installed in the active [`BasicConstantFeePolicy`].
     pub fn agglayer_bridge_fee_policy_manager(&self) -> Result<FeePolicyManager, NotePricingError> {
-        self.basic_constant_fee_policy_manager(AggLayerBridge::fee_policy_notes())
+        self.basic_constant_fee_policy_manager(AggLayerBridge::allowed_notes())
     }
 
     /// Builds the production fee policy manager for an AggLayer faucet account.
     ///
-    /// Every root in [`AggLayerFaucet::fee_policy_notes`] is priced through [`Self::price`] and
+    /// Every root in [`AggLayerFaucet::allowed_notes`] is priced through [`Self::price`] and
     /// installed in the active [`BasicConstantFeePolicy`].
     pub fn agglayer_faucet_fee_policy_manager(&self) -> Result<FeePolicyManager, NotePricingError> {
-        self.basic_constant_fee_policy_manager(AggLayerFaucet::fee_policy_notes())
+        self.basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())
     }
 
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently

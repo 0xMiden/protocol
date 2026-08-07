@@ -4,8 +4,12 @@
 
 ### Features
 
+- [BREAKING] AggLayer bridge and faucet accounts now take their fee policy manager at deployment, built by the new `NetworkNotePricer::agglayer_bridge_fee_policy_manager` / `agglayer_faucet_fee_policy_manager` ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
+- [BREAKING] AggLayer bridge and faucet accounts install the `ConstantFeeManager` so their `ADMIN` role can reprice the deployed fee schedule; the faucet is now `Authority::RbacControlled` and its constructors take a deployment admin ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
+
 ### Changes
 
+- [BREAKING] Renamed `AggLayerBridge::allowed_notes` / `AggLayerFaucet::allowed_notes` to `bridge_notes` / `faucet_notes`; `allowed_notes` now returns the full set of note script roots the deployed account accepts (the account-specific roots plus the `AuthNetworkAccount` defaults), which its fee policy must price ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
 
 ### Fixes
@@ -14,8 +18,6 @@
 
 ### Features
 
-- [BREAKING] AggLayer bridge and faucet accounts now take their fee policy manager at deployment, built by the new `NetworkNotePricer::agglayer_bridge_fee_policy_manager` / `agglayer_faucet_fee_policy_manager` ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
-- [BREAKING] AggLayer bridge and faucet accounts install the `ConstantFeeManager` so their `ADMIN` role can reprice the deployed fee schedule; the faucet is now `Authority::RbacControlled` and its constructors take a deployment admin ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - [BREAKING] The AggLayer bridge now accepts `RbacConfigNote`s, enabling on-chain rotation of its `ADMIN`, `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles; the `create_existing_bridge_account_with_roles` testing fixture now takes the `ADMIN` member explicitly ([#2706](https://github.com/0xMiden/protocol/issues/2706)).
 - Added the `ConstantFeeManager` account component, exposing the authority-gated `set_note_fee` procedure to update a `BasicConstantFeePolicy`'s fee schedule on a network account after deployment; the supplied fee asset's ID is validated against the account's configured fee asset and its value word is validated to be a well-formed fungible amount not exceeding the maximum ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Added the `miden-protocol-build-utils` crate with helpers to assemble MASM code ([#3334](https://github.com/0xMiden/protocol/pull/3334)).

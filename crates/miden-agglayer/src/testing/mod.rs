@@ -79,7 +79,7 @@ pub fn create_existing_bridge_account_with_roles(
     ger_remover: AccountId,
     network_id: u32,
 ) -> Account {
-    let fee_policy_manager = zero_fee_policy_manager(AggLayerBridge::fee_policy_notes());
+    let fee_policy_manager = zero_fee_policy_manager(AggLayerBridge::allowed_notes());
     let roles = BridgeRoles::new(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
@@ -136,7 +136,7 @@ pub fn create_existing_agglayer_faucet(
         initial_supply,
         bridge_admin_account_id(),
         bridge_account_id,
-        zero_fee_policy_manager(AggLayerFaucet::fee_policy_notes()),
+        zero_fee_policy_manager(AggLayerFaucet::allowed_notes()),
     )
     .build_existing()
     .expect("agglayer faucet account should be valid")

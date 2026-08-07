@@ -472,22 +472,21 @@ impl AggLayerBridge {
     // ALLOWED SCRIPTS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the set of input-note script roots that AggLayer bridge accounts accept.
+    /// Returns the bridge-specific input-note script roots.
     ///
-    /// The bridge's [`AuthNetworkAccount`] component is initialized with this allowlist, which
-    /// means any transaction consuming a note outside this set is rejected before reaching
-    /// `output_note::create`.
+    /// The bridge's [`AuthNetworkAccount`] component is initialized with this set as its explicit
+    /// allowlist; [`Self::allowed_notes`] is the resulting full set of notes the account accepts.
     ///
-    /// Besides the agglayer-specific notes, the bridge accepts three standards notes: the
+    /// Besides the agglayer-specific notes, the set contains three standards notes: the
     /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, the
     /// role-management [`RbacConfigNote`], which makes the bridge's RBAC role graph mutable
     /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration
     /// section of `SPEC.md` for the associated caveats), and the
     /// [`ConstantFeePolicyConfigNote`], so the `ADMIN` role can reprice the bridge's fee
-    /// schedule after deployment (see [`Self::fee_policy_notes`]).
+    /// schedule after deployment.
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
-    pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
+    pub fn bridge_notes() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([
             ClaimNote::script_root(),
             B2AggNote::script_root(),
@@ -501,12 +500,18 @@ impl AggLayerBridge {
         ])
     }
 
-    /// Returns every input-note script root whose fee must be scheduled on an AggLayer bridge.
+    /// Returns every input-note script root a newly deployed AggLayer bridge account accepts.
     ///
-    /// This is the bridge's explicit allowlist plus the configuration and sponsorship notes that
-    /// [`AuthNetworkAccount`] adds to every standard network account.
-    pub fn fee_policy_notes() -> BTreeSet<NoteScriptRoot> {
-        let mut notes = Self::allowed_notes();
+    /// This is [`Self::bridge_notes`] plus the configuration and sponsorship notes that
+    /// [`AuthNetworkAccount`] adds to every standard network account. Any transaction consuming a
+    /// note outside the account's allowlist is rejected before reaching `output_note::create`,
+    /// and the bridge's deployed fee policy must schedule a fee for every root in it.
+    ///
+    /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
+    /// can add or remove entries later, so read a live account's allowlist via
+    /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
+    pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
+        let mut notes = Self::bridge_notes();
         notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
         notes
     }

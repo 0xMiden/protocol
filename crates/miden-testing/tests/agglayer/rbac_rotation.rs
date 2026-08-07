@@ -231,7 +231,7 @@ fn bridge_allowed_notes_pin() {
         RbacConfigNote::script_root(),
         ConstantFeePolicyConfigNote::script_root(),
     ]);
-    assert_eq!(AggLayerBridge::allowed_notes(), expected);
+    assert_eq!(AggLayerBridge::bridge_notes(), expected);
 
     let dummy = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
