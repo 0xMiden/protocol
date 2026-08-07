@@ -249,16 +249,14 @@ pub proc add_asset
     emit.NOTE_BEFORE_ADD_ASSET_EVENT
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    # prepare the stack for the callback
-    swapw dupw.1
-    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, note_idx]
-
-    dup.12 movdn.8
-    # => [ASSET_ID, ASSET_VALUE, note_idx, ASSET_ID, note_idx]
+    # retain the original asset and note index while the callback validates a copy
+    repeat.9
+        dup.8
+    end
+    # => [ASSET_ID, ASSET_VALUE, note_idx, ASSET_ID, ASSET_VALUE, note_idx]
 
     # invoke the callback
     exec.callbacks::on_before_asset_added_to_note
-    swapw
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     movup.8 exec.memory::get_output_note_ptr dup

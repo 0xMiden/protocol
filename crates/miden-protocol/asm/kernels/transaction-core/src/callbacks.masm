@@ -10,9 +10,6 @@ use miden::core::word
 # The index of the local memory slot that contains the procedure root of the callback.
 const CALLBACK_PROC_ROOT_LOC = 0
 
-# The index of the local memory slot that contains the asset value passed to the callback.
-const CALLBACK_ASSET_VALUE_LOC = 4
-
 # The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
 # is stored.
 pub const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT =
@@ -39,7 +36,7 @@ pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT =
 #! - If the callback storage slot contains the empty word.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: []
 #!
 #! Where:
 #! - ASSET_ID is the asset ID of the asset being added.
@@ -56,12 +53,12 @@ pub proc on_before_asset_added_to_account
 
         push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
         exec.invoke_callback
-        # => [ASSET_VALUE]
+        # => []
     else
-        dropw
-        # => [ASSET_VALUE]
+        dropw dropw
+        # => []
     end
-    # => [ASSET_VALUE]
+    # => []
 end
 
 #! Invokes the `on_before_asset_added_to_note` callback on the faucet that issued the asset,
@@ -73,7 +70,7 @@ end
 #! - If the callback storage slot contains the empty word.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: []
 #!
 #! Where:
 #! - ASSET_ID is the asset ID of the asset being added.
@@ -87,30 +84,30 @@ pub proc on_before_asset_added_to_note
     if.true
         push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]
         exec.invoke_callback
-        # => [ASSET_VALUE]
+        # => []
     else
-        dropw movup.4 drop
-        # => [ASSET_VALUE]
+        dropw dropw drop
+        # => []
     end
-    # => [ASSET_VALUE]
+    # => []
 end
 
 #! Invokes a callback by starting a foreign context against the faucet, reading the callback
 #! procedure root from the provided slot ID in the faucet's storage, and invoking it via `dyncall`.
 #!
 #! If the faucet does not have the callback storage slot, or if the slot contains the empty word,
-#! the callback is skipped and the original ASSET_VALUE is returned.
+#! the callback is skipped and its inputs are consumed.
 #!
 #! custom_data should be set to 0 for the account callback and to note_idx for the note callback.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: []
 #!
 #! Where:
 #! - slot_id* is the ID of the slot that contains the callback procedure root.
 #! - ASSET_ID is the asset ID of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
-@locals(8)
+@locals(4)
 proc invoke_callback
     exec.maybe_start_faucet_callback_context
     # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
@@ -123,10 +120,6 @@ proc invoke_callback
     if.true
         # prepare for dyncall by storing procedure root in local memory
         loc_storew_le.CALLBACK_PROC_ROOT_LOC dropw
-        # => [ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
-
-        # retain the asset value while the callback validates the operation
-        swapw loc_storew_le.CALLBACK_ASSET_VALUE_LOC swapw
         # => [ASSET_ID, ASSET_VALUE, custom_data, was_foreign_context_started]
 
         # pad the stack to 16 for the call
@@ -142,21 +135,15 @@ proc invoke_callback
 
         dropw dropw dropw dropw
         # => [was_foreign_context_started]
-
-        padw loc_loadw_le.CALLBACK_ASSET_VALUE_LOC
-        # => [ASSET_VALUE, was_foreign_context_started]
     else
-        # drop proc root, asset ID and custom_data
-        dropw dropw movup.4 drop
-        # => [ASSET_VALUE, was_foreign_context_started]
+        # drop proc root and callback inputs
+        dropw dropw dropw drop
+        # => [was_foreign_context_started]
     end
-    # => [ASSET_VALUE, was_foreign_context_started]
-
-    movup.4
-    # => [was_foreign_context_started, ASSET_VALUE]
+    # => [was_foreign_context_started]
 
     exec.maybe_end_faucet_callback_context
-    # => [ASSET_VALUE]
+    # => []
 end
 
 #! Prepares the invocation of a faucet callback.
