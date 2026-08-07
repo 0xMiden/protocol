@@ -13,7 +13,7 @@
     "trace": {
       "core_rows": 79785,
       "chiplets_rows": 11248,
-      "range_rows": 20243,
+      "range_rows": 20327,
       "chiplets_shape": {
         "hasher_rows": 8216,
         "bitwise_rows": 584,
@@ -37,7 +37,7 @@
     "trace": {
       "core_rows": 12147,
       "chiplets_rows": 5505,
-      "range_rows": 1557,
+      "range_rows": 1541,
       "chiplets_shape": {
         "hasher_rows": 3864,
         "bitwise_rows": 840,
@@ -62,7 +62,7 @@
     "trace": {
       "core_rows": 83350,
       "chiplets_rows": 13291,
-      "range_rows": 20503,
+      "range_rows": 20321,
       "chiplets_shape": {
         "hasher_rows": 9768,
         "bitwise_rows": 928,
@@ -87,7 +87,7 @@
     "trace": {
       "core_rows": 15712,
       "chiplets_rows": 7548,
-      "range_rows": 1491,
+      "range_rows": 1477,
       "chiplets_shape": {
         "hasher_rows": 5416,
         "bitwise_rows": 1184,
@@ -109,7 +109,7 @@
     "trace": {
       "core_rows": 79143,
       "chiplets_rows": 10910,
-      "range_rows": 20407,
+      "range_rows": 20199,
       "chiplets_shape": {
         "hasher_rows": 8000,
         "bitwise_rows": 544,
@@ -131,7 +131,7 @@
     "trace": {
       "core_rows": 11505,
       "chiplets_rows": 5167,
-      "range_rows": 1313,
+      "range_rows": 1347,
       "chiplets_shape": {
         "hasher_rows": 3648,
         "bitwise_rows": 800,
@@ -719,9 +719,9 @@
   },
   "consume RBAC_CONFIG note (network account)": {
     "prologue": 3365,
-    "notes_processing": 5423,
+    "notes_processing": 5422,
     "note_execution": {
-      "0x8515cb40318e57d00e7c8d981c0b661b066fe2c10e7fc6f43c13178081d4c3bc": 5381
+      "0xa36b3c9088c716fd7295a35f01a53acab54c7ea5d85feefbecb1f9f4b8699307": 5380
     },
     "tx_script_processing": 42,
     "epilogue": {
@@ -729,9 +729,9 @@
       "auth_procedure": 9289
     },
     "trace": {
-      "core_rows": 22146,
+      "core_rows": 22145,
       "chiplets_rows": 9797,
-      "range_rows": 1715,
+      "range_rows": 1709,
       "chiplets_shape": {
         "hasher_rows": 7720,
         "bitwise_rows": 576,
@@ -828,7 +828,7 @@
     "trace": {
       "core_rows": 17095,
       "chiplets_rows": 7725,
-      "range_rows": 1555,
+      "range_rows": 1583,
       "chiplets_shape": {
         "hasher_rows": 5648,
         "bitwise_rows": 1144,

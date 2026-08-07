@@ -228,10 +228,11 @@ impl RoleBasedAccessControl {
     /// - the same role is specified more than once.
     /// - a role is configured with neither members nor a delegated admin.
     /// - a role's member count exceeds [`u32::MAX`].
-    /// - a role's effective admin — its delegated admin, or `ADMIN` when unset — can never hold
-    ///   members, which would leave the role permanently unmanageable. Setting an operational role
-    ///   without defining `ADMIN` is the common case: `ADMIN` administers itself, so nothing can
-    ///   ever populate it.
+    /// - `ADMIN` is defined without members, or not defined at all, and a role's admin chain never
+    ///   reaches a populated role, which would leave that role permanently unmanageable. A
+    ///   populated `ADMIN` administers every role whose delegated admin is memberless, so it makes
+    ///   any admin chain recoverable; without one, defining an operational role and no `ADMIN` is
+    ///   the common defect, since `ADMIN` administers itself and nothing can ever populate it.
     #[builder]
     pub fn new(
         #[builder(field)] role_configs: Vec<RoleConfig>,
@@ -253,15 +254,21 @@ impl RoleBasedAccessControl {
             roles.insert(config.role.clone(), config);
         }
 
-        // Check the effective admin of every role, not just of the explicitly delegated ones: a
-        // role left with the default admin is just as frozen when `ADMIN` can never hold members.
-        for role_config in roles.values() {
-            let admin = role_config.admin.clone().unwrap_or_else(Self::admin_role);
-            if !reaches_populated_role(&admin, &roles) {
-                return Err(RoleBasedAccessControlError::UnmanageableRole {
-                    role: role_config.role.clone(),
-                    admin,
-                });
+        // A memberless role can authorize nothing, so authority over the roles it administers falls
+        // back to `ADMIN` (see `assert_sender_is_role_admin`). A populated `ADMIN` therefore keeps
+        // every role manageable, whatever its delegated admin looks like, and only a configuration
+        // without one has to stand on its own admin chains.
+        let admin_is_populated =
+            roles.get(&Self::admin_role()).is_some_and(|config| !config.members.is_empty());
+        if !admin_is_populated {
+            for role_config in roles.values() {
+                let admin = role_config.admin.clone().unwrap_or_else(Self::admin_role);
+                if !reaches_populated_role(&admin, &roles) {
+                    return Err(RoleBasedAccessControlError::UnmanageableRole {
+                        role: role_config.role.clone(),
+                        admin,
+                    });
+                }
             }
         }
 
@@ -383,11 +390,12 @@ impl<S: role_based_access_control_builder::State> RoleBasedAccessControlBuilder<
 /// Returns `true` if walking the delegated-admin chain starting at `role` reaches a role defined
 /// with at least one member.
 ///
-/// Only a populated role can grant members to the role below it in the chain, so a chain that
-/// reaches none of them can never be acted on by anyone. A role that is not configured, or
-/// configured without members, is administered by its delegated admin, defaulting to `ADMIN`.
-/// Every role has exactly one admin, so the walk always ends in a cycle, which the visited set
-/// terminates.
+/// Only relevant when `ADMIN` has no members: a populated `ADMIN` administers every role whose
+/// delegated admin is memberless, which makes any chain recoverable. Without one, only a populated
+/// role can grant members to the role below it in the chain, so a chain that reaches none of them
+/// can never be acted on by anyone. A role that is not configured, or configured without members,
+/// is administered by its delegated admin, defaulting to `ADMIN`. Every role has exactly one admin,
+/// so the walk always ends in a cycle, which the visited set terminates.
 fn reaches_populated_role(role: &RoleSymbol, configs: &BTreeMap<RoleSymbol, RoleConfig>) -> bool {
     let admin_role = RoleBasedAccessControl::admin_role();
     let mut visited = BTreeSet::new();
@@ -656,6 +664,25 @@ mod tests {
         );
         let membership = find_map(&component, RoleBasedAccessControl::role_membership_slot());
         assert_eq!(membership.num_entries(), 1);
+
+        Ok(())
+    }
+
+    /// A populated `ADMIN` administers every role whose delegated admin is memberless, so even an
+    /// admin chain that reaches no populated role of its own leaves the role manageable.
+    #[test]
+    fn populated_admin_allows_an_otherwise_unmanageable_delegation() -> anyhow::Result<()> {
+        let admin = test_admin(1);
+        let minter_role = RoleSymbol::new("MINTER")?;
+        let minter_admin_role = RoleSymbol::new("MINTER_ADMIN")?;
+
+        // MINTER_ADMIN administers itself and has no members, so nothing in MINTER's chain can be
+        // populated by the chain itself — ADMIN takes over administering both.
+        RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
+            .role(RoleConfig::new(minter_role).with_admin(minter_admin_role.clone()))
+            .role(RoleConfig::new(minter_admin_role.clone()).with_admin(minter_admin_role))
+            .build()?;
 
         Ok(())
     }

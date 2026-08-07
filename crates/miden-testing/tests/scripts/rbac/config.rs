@@ -19,7 +19,7 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 // The RBAC account and storage-getter helpers are shared with the parent `rbac` suite, which
 // owns the exhaustive tests of the underlying component. This suite only checks that the
 // RbacConfig note dispatches each action and rejects malformed notes.
-use super::{create_rbac_chain, get_role_config, is_role_member, role, test_account_id};
+use super::{create_rbac_chain, get_role_admin, is_role_member, role, test_account_id};
 
 // HELPERS
 // ================================================================================================
@@ -132,7 +132,7 @@ async fn set_role_admin_dispatch() -> anyhow::Result<()> {
     )?;
     let updated = execute_note_and_apply(&mock_chain, &account, note).await?;
 
-    let (_, admin_role_symbol) = get_role_config(&updated, &minter)?;
+    let admin_role_symbol = get_role_admin(&updated, &minter)?;
     assert_eq!(admin_role_symbol, mint_admin.as_element());
     Ok(())
 }

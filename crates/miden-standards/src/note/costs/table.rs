@@ -46,7 +46,7 @@ pub const PAUSE_CONFIG_CONSUMPTION_CYCLES: u32 = 18643;
 pub const OWNER_CONFIG_CONSUMPTION_CYCLES: u32 = 18237;
 
 /// Cycles of consuming an RBAC_CONFIG note (single benchmarked path).
-pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 22102;
+pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 22101;
 
 /// Cycles of consuming a NETWORK_ACCOUNT_CONFIG note (single benchmarked path).
 pub const NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 19137;

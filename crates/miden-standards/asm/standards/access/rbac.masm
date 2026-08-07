@@ -467,11 +467,9 @@ proc assert_sender_is_role_admin
     exec.get_effective_role_admin
     # => [effective_admin_role_symbol]
 
-    dup exec.get_role_member_count_internal eq.0
-    # => [is_memberless, effective_admin_role_symbol]
-
-    push.ADMIN_ROLE swap
-    # => [is_memberless, ADMIN_ROLE, effective_admin_role_symbol]
+    push.ADMIN_ROLE
+    dup.1 exec.get_role_member_count_internal eq.0
+    # => [is_memberless, admin_role, effective_admin_role_symbol]
 
     # A memberless effective admin cannot authorize anything, so fall back to the `ADMIN` role.
     cdrop
