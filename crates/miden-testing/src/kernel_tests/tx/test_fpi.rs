@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_processor::advice::AdviceInputs;
+use miden_processor::advice::{AdviceInputs, AdviceStack};
 use miden_processor::{EMPTY_WORD, ExecutionOutput, Felt};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -1034,22 +1034,19 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
     // push the hashes of the foreign procedures and account IDs to the advice stack to be able to
     // call them dynamically.
-    let mut advice_inputs = AdviceInputs::default();
-    advice_inputs
-        .stack
-        .extend(*second_foreign_account.code().procedures()[1].mast_root());
-    advice_inputs.stack.extend([
-        second_foreign_account.id().prefix().as_felt(),
-        second_foreign_account.id().suffix(),
-    ]);
-
-    advice_inputs
-        .stack
-        .extend(*first_foreign_account.code().procedures()[2].mast_root());
-    advice_inputs.stack.extend([
-        first_foreign_account.id().prefix().as_felt(),
-        first_foreign_account.id().suffix(),
-    ]);
+    let mut advice_stack = AdviceStack::new();
+    advice_stack
+        .append_elements(*second_foreign_account.code().procedures()[1].mast_root())
+        .append_elements([
+            second_foreign_account.id().prefix().as_felt(),
+            second_foreign_account.id().suffix(),
+        ])
+        .append_elements(*first_foreign_account.code().procedures()[2].mast_root())
+        .append_elements([
+            first_foreign_account.id().prefix().as_felt(),
+            first_foreign_account.id().suffix(),
+        ]);
+    let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
 
     let code = format!(
         r#"
@@ -1537,11 +1534,11 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
 
     // push the hash of the native procedure and native account IDs to the advice stack to be able
     // to call them dynamically.
-    let mut advice_inputs = AdviceInputs::default();
-    advice_inputs.stack.extend(*native_account.code().procedures()[3].mast_root());
-    advice_inputs
-        .stack
-        .extend([native_account.id().prefix().as_felt(), native_account.id().suffix()]);
+    let mut advice_stack = AdviceStack::new();
+    advice_stack
+        .append_elements(*native_account.code().procedures()[3].mast_root())
+        .append_elements([native_account.id().prefix().as_felt(), native_account.id().suffix()]);
+    let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
 
     let result = mock_chain
         .build_transaction(native_account.id())

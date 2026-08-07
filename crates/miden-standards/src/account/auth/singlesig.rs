@@ -61,7 +61,7 @@ pub struct AuthSingleSig {
 
 impl AuthSingleSig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
+    pub const NAME: &'static str = "miden::standards::auth::singlesig";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {

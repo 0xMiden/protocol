@@ -63,10 +63,17 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::faucets::fungible::token_symb
 
 account_component_code!(FUNGIBLE_FAUCET_CODE, "miden-standards-faucets-fungible-faucet.masp");
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`FungibleFaucet::NAME`],
+/// which mirrors the standards-side MASM module path.
+const FUNGIBLE_FAUCET_LIBRARY_PATH: &str = "miden::standards::components::faucets::fungible_faucet";
+
 // Initialize the procedure root of the `mint_and_send` procedure of the Fungible Faucet only once.
 procedure_root!(
     FUNGIBLE_FAUCET_MINT_AND_SEND,
-    FungibleFaucet::NAME,
+    FUNGIBLE_FAUCET_LIBRARY_PATH,
     FungibleFaucet::MINT_PROC_NAME,
     FungibleFaucet::code()
 );
@@ -75,35 +82,35 @@ procedure_root!(
 // once.
 procedure_root!(
     FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
-    FungibleFaucet::NAME,
+    FUNGIBLE_FAUCET_LIBRARY_PATH,
     FungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
     FungibleFaucet::code()
 );
 
 procedure_root!(
     FUNGIBLE_FAUCET_SET_MAX_SUPPLY,
-    FungibleFaucet::NAME,
+    FUNGIBLE_FAUCET_LIBRARY_PATH,
     FungibleFaucet::SET_MAX_SUPPLY_PROC_NAME,
     FungibleFaucet::code()
 );
 
 procedure_root!(
     FUNGIBLE_FAUCET_SET_DESCRIPTION,
-    FungibleFaucet::NAME,
+    FUNGIBLE_FAUCET_LIBRARY_PATH,
     FungibleFaucet::SET_DESCRIPTION_PROC_NAME,
     FungibleFaucet::code()
 );
 
 procedure_root!(
     FUNGIBLE_FAUCET_SET_LOGO_URI,
-    FungibleFaucet::NAME,
+    FUNGIBLE_FAUCET_LIBRARY_PATH,
     FungibleFaucet::SET_LOGO_URI_PROC_NAME,
     FungibleFaucet::code()
 );
 
 procedure_root!(
     FUNGIBLE_FAUCET_SET_EXTERNAL_LINK,
-    FungibleFaucet::NAME,
+    FUNGIBLE_FAUCET_LIBRARY_PATH,
     FungibleFaucet::SET_EXTERNAL_LINK_PROC_NAME,
     FungibleFaucet::code()
 );
@@ -214,7 +221,7 @@ impl FungibleFaucet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::faucets::fungible_faucet";
+    pub const NAME: &'static str = "miden::standards::faucets::fungible";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {

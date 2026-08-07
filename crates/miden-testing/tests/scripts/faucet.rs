@@ -58,6 +58,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::{
     BurnNote,
+    MinBurnAmountConfigNote,
     MintNote,
     MintNoteStorage,
     NetworkAccountConfigNote,
@@ -387,20 +388,40 @@ fn build_network_faucet_with_min_burn_amount(
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
 
-/// Builds a note script that calls the owner-gated `set_min_burn_amount` procedure with the
-/// given new threshold. The procedure expects `[new_min_burn_amount, pad(15)]`, so the script
-/// pushes 15 padding elements before the amount.
-fn create_set_min_burn_amount_note_script(new_min_burn_amount: u64) -> String {
+/// Builds a [`MinBurnAmountConfigNote`] setting `new_min_burn_amount` on `faucet`, sent by
+/// `sender`.
+fn create_set_min_burn_amount_note(
+    sender: AccountId,
+    faucet: AccountId,
+    new_min_burn_amount: u64,
+    rng: &mut RandomCoin,
+) -> anyhow::Result<Note> {
+    let note = MinBurnAmountConfigNote::builder()
+        .sender(sender)
+        .target(faucet)
+        .min_burn_amount(AssetAmount::new(new_min_burn_amount)?)
+        .generate_serial_number(rng)
+        .build()?
+        .into();
+    Ok(note)
+}
+
+/// Builds a note script that invokes `get_min_burn_amount` via `call` and asserts it returns the
+/// expected threshold using the 16-felt call ABI. The getter expects `[pad(16)]`, so the script
+/// pads the stack before the call.
+fn create_get_min_burn_amount_note_script(expected_min_burn_amount: u64) -> String {
     format!(
         r#"
         use miden::standards::faucets::policies::burn::min_burn_amount
 
         @note_script
         pub proc main
-            padw padw padw push.0.0.0
-            push.{new_min_burn_amount}
-            call.min_burn_amount::set_min_burn_amount
-            dropw dropw dropw dropw
+            padw padw padw padw
+            call.min_burn_amount::get_min_burn_amount
+            # => [min_burn_amount, pad(15), pad(16)]
+            push.{expected_min_burn_amount}
+            assert_eq.err="get_min_burn_amount returned an unexpected threshold or violated the call ABI"
+            dropw dropw dropw drop drop drop
         end
         "#
     )
@@ -2048,12 +2069,8 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     )?;
 
     // Owner lowers the minimum burn amount from 50 to 5.
-    let set_note_script = create_set_min_burn_amount_note_script(5);
     let mut rng = RandomCoin::new([Felt::from(610u32); 4].into());
-    let set_note = NoteBuilder::new(owner_account_id, &mut rng)
-        .note_type(NoteType::Private)
-        .code(set_note_script.as_str())
-        .build()?;
+    let set_note = create_set_min_burn_amount_note(owner_account_id, faucet.id(), 5, &mut rng)?;
 
     // A burn of 10 is below the original threshold (50) but at/above the new one (5).
     let burn_amount = 10u64;
@@ -2102,6 +2119,78 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     Ok(())
 }
 
+/// Tests that the configured minimum burn amount can be read through the faucet's public interface,
+/// both as initially configured and after the owner updates it.
+#[tokio::test]
+async fn test_network_faucet_get_min_burn_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
+
+    let faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    // Reads the initially configured threshold of 50.
+    let initial_get_note_script = create_get_min_burn_amount_note_script(50);
+    let mut rng = RandomCoin::new([Felt::from(630u32); 4].into());
+    let initial_get_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(initial_get_note_script.as_str())
+        .build()?;
+
+    // Owner lowers the minimum burn amount from 50 to 5.
+    let mut rng = RandomCoin::new([Felt::from(631u32); 4].into());
+    let set_note = create_set_min_burn_amount_note(owner_account_id, faucet.id(), 5, &mut rng)?;
+
+    // Reads the updated threshold of 5.
+    let updated_get_note_script = create_get_min_burn_amount_note_script(5);
+    let mut rng = RandomCoin::new([Felt::from(632u32); 4].into());
+    let updated_get_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(updated_get_note_script.as_str())
+        .build()?;
+
+    builder.add_output_note(RawOutputNote::Full(initial_get_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(updated_get_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let initial_get_transaction = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(initial_get_note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&initial_get_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    let set_transaction = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(set_note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&set_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(updated_get_note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 /// Tests that a non-owner cannot update the minimum burn amount via `set_min_burn_amount`.
 #[tokio::test]
 async fn test_network_faucet_non_owner_cannot_set_min_burn_amount() -> anyhow::Result<()> {
@@ -2121,12 +2210,8 @@ async fn test_network_faucet_non_owner_cannot_set_min_burn_amount() -> anyhow::R
         50,
     )?;
 
-    let set_note_script = create_set_min_burn_amount_note_script(5);
     let mut rng = RandomCoin::new([Felt::from(620u32); 4].into());
-    let set_note = NoteBuilder::new(non_owner_account_id, &mut rng)
-        .note_type(NoteType::Private)
-        .code(set_note_script.as_str())
-        .build()?;
+    let set_note = create_set_min_burn_amount_note(non_owner_account_id, faucet.id(), 5, &mut rng)?;
     builder.add_output_note(RawOutputNote::Full(set_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;

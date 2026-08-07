@@ -31,7 +31,7 @@ pub enum MintPolicyError {
 
 /// Descriptor for the mint policy registered with a [`super::TokenPolicyManager`].
 ///
-/// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
+/// Binds the procedure root the manager dispatches to (via `dyncall`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
 /// Construct via [`Self::allow_all`], [`Self::owner_only`], or [`Self::custom`]. Pass to the

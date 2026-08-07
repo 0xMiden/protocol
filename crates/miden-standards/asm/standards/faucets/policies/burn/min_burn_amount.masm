@@ -29,8 +29,8 @@ const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must meet or 
 #!
 #! WARNING: The policy assumes the asset is fungible.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE]
-#! Outputs: []
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - ASSET_VALUE is the fungible asset value word `[amount, 0, 0, 0]`.
@@ -38,25 +38,24 @@ const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must meet or 
 #! Panics if:
 #! - the burn amount is below the configured minimum burn amount.
 #!
-#! Invocation: dynexec
-# TODO(call invocation)
+#! Invocation: call
 @account_procedure
 pub proc check_policy
     dropw
-    # => [ASSET_VALUE]
+    # => [ASSET_VALUE, pad(12)]
 
     exec.fungible_asset::value_into_amount
-    # => [amount]
+    # => [amount, pad(15)]
 
     push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item
-    # => [min_burn_amount, 0, 0, 0, amount]
+    # => [min_burn_amount, 0, 0, 0, amount, pad(15)]
 
     movdn.4 drop drop drop
-    # => [amount, min_burn_amount]
+    # => [amount, min_burn_amount, pad(15)]
 
     # burn amount must meet or exceed the configured minimum
     lte assert.err=ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT
-    # => []
+    # => [pad(16)]
 end
 
 # CONFIGURATION PROCEDURES
@@ -71,10 +70,11 @@ end
 @account_procedure
 pub proc get_min_burn_amount
     push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item
-    # => [min_burn_amount, 0, 0, 0, pad(12)]
+    # => [min_burn_amount, 0, 0, 0, pad(16)]
 
-    # discard the three zero felts of the value word, returning only the amount
-    movdn.3 drop drop drop
+    # discard the three zero felts of the value word plus one padding element, returning only the
+    # amount and restoring the stack depth for the call boundary
+    movdn.4 dropw
     # => [min_burn_amount, pad(15)]
 end
 

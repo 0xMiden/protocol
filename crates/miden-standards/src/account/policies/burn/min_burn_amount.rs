@@ -27,23 +27,31 @@ account_component_code!(
     "miden-standards-faucets-policies-burn-min-burn-amount.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`MinBurnAmount::NAME`],
+/// which mirrors the standards-side MASM module path.
+const MIN_BURN_AMOUNT_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::burn::min_burn_amount";
+
 procedure_root!(
     MIN_BURN_AMOUNT_POLICY_ROOT,
-    MinBurnAmount::NAME,
+    MIN_BURN_AMOUNT_LIBRARY_PATH,
     MinBurnAmount::PROC_NAME,
     MinBurnAmount::code()
 );
 
 procedure_root!(
     MIN_BURN_AMOUNT_SET_ROOT,
-    MinBurnAmount::NAME,
+    MIN_BURN_AMOUNT_LIBRARY_PATH,
     MinBurnAmount::SET_PROC_NAME,
     MinBurnAmount::code()
 );
 
 procedure_root!(
     MIN_BURN_AMOUNT_GET_ROOT,
-    MinBurnAmount::NAME,
+    MIN_BURN_AMOUNT_LIBRARY_PATH,
     MinBurnAmount::GET_PROC_NAME,
     MinBurnAmount::code()
 );
@@ -70,8 +78,7 @@ pub struct MinBurnAmount {
 
 impl MinBurnAmount {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::burn::min_burn_amount";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::burn::min_burn_amount";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
     const SET_PROC_NAME: &str = "set_min_burn_amount";
