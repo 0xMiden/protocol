@@ -1,0 +1,48 @@
+# Runs benchmarks on a weekly schedule to track performance over time.
+
+name: bench
+
+concurrency:
+  group: "${{ github.workflow }} @ ${{ github.ref }}"
+  cancel-in-progress: true
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: run benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          # Never save from this workflow: scheduled runs would otherwise evict
+          # the caches that build/test/lint rely on (github has a 10GB limit).
+          save-if: "false"
+      - name: Install rust
+        run: rustup update --no-self-update
+      - name: Run note checker benchmarks
+        run: make bench-note-checker
+      - name: Run transaction execution benchmarks
+        # Proving benchmarks are excluded: a single sample takes seconds, and the
+        # full suite does not complete within a reasonable time on a hosted runner.
+        run: cargo bench --bin bench-transaction --bench time_counting_benchmarks --features concurrent -- "^Execute transaction"
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: criterion-results
+          path: target/criterion/
+          retention-days: 90
