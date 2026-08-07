@@ -11,7 +11,7 @@ use super::{
     create_network_fungible_faucet,
     create_singlesig_user_fungible_faucet,
 };
-use crate::account::access::{AccessControl, Authority};
+use crate::account::access::{AccessControl, Authority, Ownable2Step};
 use crate::account::auth::{
     Approver,
     AuthGuardedMultisig,
@@ -288,4 +288,88 @@ fn get_faucet_procedures() {
     let _set_burn_policy_root = TokenPolicyManager::set_burn_policy_root();
     let _set_send_policy_root = TokenPolicyManager::set_send_policy_root();
     let _set_receive_policy_root = TokenPolicyManager::set_receive_policy_root();
+}
+
+/// A user faucet installs no `Ownable2Step` component, so an owner-only mint policy has no owner
+/// slot to read and every mint would abort. The factory must reject that configuration instead of
+/// producing a faucet that can never mint.
+#[test]
+fn user_fungible_faucet_rejects_owner_only_mint_policy() {
+    let auth_component = AuthSingleSig::new(Approver::new(
+        Word::new([Felt::ONE; 4]).into(),
+        AuthScheme::Falcon512Poseidon2,
+    ));
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .build();
+
+    let err = create_singlesig_user_fungible_faucet(
+        [11u8; 32],
+        sample_faucet(),
+        auth_component,
+        token_policy_manager,
+        AccountType::Private,
+    )
+    .expect_err("owner-only mint policy without Ownable2Step should be rejected");
+
+    assert_matches!(err, FungibleFaucetError::PolicyDependency(err) => {
+        assert_eq!(err.slot_name(), Ownable2Step::slot_name());
+    });
+}
+
+/// The dependency check covers reserved policies too: a policy that is merely registered as an
+/// allowed alternative can be activated later via `set_burn_policy`, at which point the missing
+/// owner slot would break burning.
+#[test]
+fn user_fungible_faucet_rejects_reserved_owner_only_burn_policy() {
+    let auth_component = AuthSingleSig::new(Approver::new(
+        Word::new([Felt::ONE; 4]).into(),
+        AuthScheme::Falcon512Poseidon2,
+    ));
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .allowed_burn_policy(BurnPolicy::owner_only())
+        .build();
+
+    let err = create_singlesig_user_fungible_faucet(
+        [12u8; 32],
+        sample_faucet(),
+        auth_component,
+        token_policy_manager,
+        AccountType::Private,
+    )
+    .expect_err("reserved owner-only burn policy without Ownable2Step should be rejected");
+
+    assert_matches!(err, FungibleFaucetError::PolicyDependency(err) => {
+        assert_eq!(err.slot_name(), Ownable2Step::slot_name());
+    });
+}
+
+/// A network faucet installs `Ownable2Step` through its access control, so the owner-only policy
+/// family finds the owner slot and the dependency check passes.
+#[test]
+fn network_fungible_faucet_accepts_owner_only_policies() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::owner_only())
+        .build();
+
+    let account = create_network_fungible_faucet(
+        [13u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner },
+        token_policy_manager,
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+    )
+    .expect("owner-only policies are satisfied by the Ownable2Step access control");
+
+    assert_eq!(Ownable2Step::try_from_storage(account.storage()).unwrap().owner(), Some(owner));
 }

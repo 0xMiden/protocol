@@ -39,7 +39,7 @@ use crate::account::access::{AccessControl, Authority, Pausable, PausableManager
 use crate::account::account_component_code;
 use crate::account::auth::{AuthSingleSig, NetworkAccount};
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::TokenPolicyManager;
+use crate::account::policies::{TokenPolicyManager, verify_policy_dependencies};
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -519,7 +519,9 @@ pub fn create_user_non_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, NonFungibleFaucetError> {
-    AccountBuilder::new(init_seed)
+    let required_slots = token_policy_manager.required_storage_slots();
+
+    let account = AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
@@ -528,7 +530,11 @@ pub fn create_user_non_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(NonFungibleFaucetError::AccountCreationFailed)
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)?;
+
+    verify_policy_dependencies(&required_slots, account.storage())?;
+
+    Ok(account)
 }
 
 /// Creates a new **network-style** non-fungible faucet. The account is always
@@ -549,7 +555,9 @@ pub fn create_network_non_fungible_faucet(
 ) -> Result<Account, NonFungibleFaucetError> {
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
 
-    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
+    let required_slots = token_policy_manager.required_storage_slots();
+
+    let account = NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty")
         .with_component(faucet)
         .with_components(access_control)
@@ -557,5 +565,9 @@ pub fn create_network_non_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(NonFungibleFaucetError::AccountCreationFailed)
+        .map_err(NonFungibleFaucetError::AccountCreationFailed)?;
+
+    verify_policy_dependencies(&required_slots, account.storage())?;
+
+    Ok(account)
 }

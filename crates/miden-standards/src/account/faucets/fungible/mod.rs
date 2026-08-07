@@ -38,7 +38,7 @@ use crate::account::access::{AccessControl, Authority, Pausable, PausableManager
 use crate::account::account_component_code;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::TokenPolicyManager;
+use crate::account::policies::{TokenPolicyManager, verify_policy_dependencies};
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -575,7 +575,9 @@ pub fn create_singlesig_user_fungible_faucet(
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
     let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
-    AccountBuilder::new(init_seed)
+    let required_slots = token_policy_manager.required_storage_slots();
+
+    let account = AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_asset_callbacks(asset_callbacks)
         .with_component(auth_component)
@@ -585,7 +587,11 @@ pub fn create_singlesig_user_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(FungibleFaucetError::AccountError)
+        .map_err(FungibleFaucetError::AccountError)?;
+
+    verify_policy_dependencies(&required_slots, account.storage())?;
+
+    Ok(account)
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a multisig approver set.
@@ -596,7 +602,9 @@ pub fn create_multisig_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
-    AccountBuilder::new(init_seed)
+    let required_slots = token_policy_manager.required_storage_slots();
+
+    let account = AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
@@ -605,7 +613,11 @@ pub fn create_multisig_user_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(FungibleFaucetError::AccountError)
+        .map_err(FungibleFaucetError::AccountError)?;
+
+    verify_policy_dependencies(&required_slots, account.storage())?;
+
+    Ok(account)
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a guardian-backed multisig.
@@ -616,7 +628,9 @@ pub fn create_guarded_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
-    AccountBuilder::new(init_seed)
+    let required_slots = token_policy_manager.required_storage_slots();
+
+    let account = AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
@@ -625,7 +639,11 @@ pub fn create_guarded_user_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(FungibleFaucetError::AccountError)
+        .map_err(FungibleFaucetError::AccountError)?;
+
+    verify_policy_dependencies(&required_slots, account.storage())?;
+
+    Ok(account)
 }
 
 /// Creates a new **network-style** fungible faucet. The account is always
@@ -644,8 +662,9 @@ pub fn create_network_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
     let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
+    let required_slots = token_policy_manager.required_storage_slots();
 
-    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
+    let account = NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty")
         .with_asset_callbacks(asset_callbacks)
         .with_component(faucet)
@@ -654,5 +673,9 @@ pub fn create_network_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
-        .map_err(FungibleFaucetError::AccountError)
+        .map_err(FungibleFaucetError::AccountError)?;
+
+    verify_policy_dependencies(&required_slots, account.storage())?;
+
+    Ok(account)
 }

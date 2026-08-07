@@ -35,7 +35,12 @@ procedure_root!(
 ///
 /// Companion components required:
 /// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
-///   reads. Without it, the faucet builds successfully but every burn reverts.
+///   reads. The slot is declared as a required slot of
+///   [`BurnPolicy::owner_only`][crate::account::policies::BurnPolicy::owner_only], so the faucet
+///   factories reject an account that does not install it; an account assembled by hand should run
+///   the same check via
+///   [`verify_policy_dependencies`][crate::account::policies::verify_policy_dependencies],
+///   otherwise it builds successfully and every burn reverts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BurnOwnerOnly;
 

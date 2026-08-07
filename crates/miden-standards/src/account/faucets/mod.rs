@@ -3,6 +3,7 @@ use miden_protocol::errors::{AccountError, TokenSymbolError};
 use thiserror::Error;
 
 use crate::account::access::Ownable2StepError;
+use crate::account::policies::MissingPolicyDependency;
 use crate::utils::FixedWidthStringError;
 
 mod fungible;
@@ -78,6 +79,8 @@ pub enum FungibleFaucetError {
     OwnershipError(#[source] Ownable2StepError),
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
+    #[error(transparent)]
+    PolicyDependency(#[from] MissingPolicyDependency),
 }
 
 // NON-FUNGIBLE FAUCET ERROR
@@ -94,4 +97,6 @@ pub enum NonFungibleFaucetError {
     InvalidAssetStatus { status: u64 },
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
+    #[error(transparent)]
+    PolicyDependency(#[from] MissingPolicyDependency),
 }
