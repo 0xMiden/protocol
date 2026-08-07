@@ -48,8 +48,7 @@ static ALLOWLIST_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// The action, together with its argument, is encoded into the note's storage (see [`NoteStorage`]
 /// conversion below) and is fixed at note creation, bound into the note commitment. The consuming
 /// account's `AllowlistManager` procedures authorize the action through the account-wide
-/// [`Authority`](crate::account::access::Authority) component; who that authorizes depends on the
-/// installed authority, see [`AllowlistConfigNote`].
+/// [`Authority`](crate::account::access::Authority) component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AllowlistConfig {
     /// Add `account` to the allowlist. Allowing an already allowed account is a noop.
@@ -110,22 +109,8 @@ impl From<AllowlistConfig> for NoteStorage {
 /// procedures through the account-wide [`Authority`](crate::account::access::Authority) component,
 /// so the note carries no assets.
 ///
-/// Under [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) and
-/// [`RbacControlled`](crate::account::access::Authority::RbacControlled) that check resolves the
-/// note sender (the [`Ownable2Step`](crate::account::access::Ownable2Step) owner, or a member of
-/// the role configured for the called procedure), so authorization is bound to `sender` at
-/// creation time.
-///
-/// Under [`AuthControlled`](crate::account::access::Authority::AuthControlled) there is no sender
-/// check: `assert_authorized` is a no-op and the account's own auth component is the sole gate.
-/// Such an account MUST authenticate the `allow_account` and `disallow_account` procedure roots
-/// (see the `AuthControlled` safety invariant on [`Authority`](crate::account::access::Authority)),
-/// otherwise both actions are permissionless and any party can author this note.
-/// [`Self::script_root`] serves both actions and the selector lives in the note storage, so
-/// allowlisting that root grants both.
-///
-/// The note is always public and tagged for `target`, the account carrying the `AllowlistManager`
-/// component whose allowlist is being managed.
+/// The note is always public and tagged for `target` — the account carrying the
+/// `AllowlistManager` component whose allowlist is being managed.
 ///
 /// The note is bound to `target` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts

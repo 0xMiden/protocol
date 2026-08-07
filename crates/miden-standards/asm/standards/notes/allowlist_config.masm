@@ -45,16 +45,7 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 #!
 #! Authorization is enforced by the called `AllowlistManager` procedures via the account-wide
 #! `Authority` component (`assert_authorized`); this script only loads the arguments and calls
-#! them. What that check means depends on the installed authority:
-#! - OwnerControlled → resolves the note sender against the Ownable2Step owner.
-#! - RbacControlled  → resolves the note sender against the role configured for the called
-#!   procedure, or ADMIN when it is unmapped.
-#! - AuthControlled  → no sender check at all: `assert_authorized` is a no-op and the account's
-#!   auth component is the sole gate. Such an account MUST authenticate the `allow_account` and
-#!   `disallow_account` procedure roots (see the AuthControlled safety invariant on the `Authority`
-#!   component), otherwise both actions are permissionless and any party can author this note.
-#!   A single script root serves both actions and the selector lives in the note storage, so
-#!   allowlisting that root grants both.
+#! them.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::transfer::allowlist::manager::{allow_account,

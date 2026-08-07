@@ -40,17 +40,7 @@ const ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause config note s
 #! - `1` Unpause: `[1]`.
 #!
 #! Authorization is enforced by the called `PausableManager` procedures via the account-wide
-#! `Authority` component (`assert_authorized`); this script only dispatches to them. What that
-#! check means depends on the installed authority:
-#! - OwnerControlled → resolves the note sender against the Ownable2Step owner.
-#! - RbacControlled  → resolves the note sender against the role configured for the called
-#!   procedure, or ADMIN when it is unmapped.
-#! - AuthControlled  → no sender check at all: `assert_authorized` is a no-op and the account's
-#!   auth component is the sole gate. Such an account MUST authenticate the `pause` and `unpause`
-#!   procedure roots (see the AuthControlled safety invariant on the `Authority` component),
-#!   otherwise both actions are permissionless and any party can author this note. A single script
-#!   root serves both actions and the selector lives in the note storage, so allowlisting that root
-#!   grants both.
+#! `Authority` component (`assert_authorized`); this script only dispatches to them.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::access::pausable::manager::{pause, unpause}` (the `PausableManager`

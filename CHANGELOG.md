@@ -2,18 +2,13 @@
 
 ## v0.17.0 (TBD)
 
-### Fixes
-
-- Fixes the documentation of the authority-gated config notes (`PauseConfigNote`, `FaucetPolicyConfigNote`, `FaucetMetadataConfigNote`, `AllowlistConfigNote`, `BlocklistConfigNote`, `ConstantFeePolicyConfigNote`, `NetworkAccountConfigNote`), which stated that authorization is always bound to the note sender: that only holds under `Authority::OwnerControlled` and `Authority::RbacControlled`, whereas under `Authority::AuthControlled` `assert_authorized` is a no-op and the consuming account's auth component is the only check that applies ([#3500](https://github.com/0xMiden/protocol/pull/3500)).
-
-## v0.16.0 (2026-08-04)
-## v0.17.0 (TBD)
-
 ### Features
 
 ### Changes
 
 ### Fixes
+
+- Documented that `authority::assert_authorized` is a no-op under `Authority::AuthControlled` ([#3500](https://github.com/0xMiden/protocol/pull/3500)).
 
 ## v0.16.0 (2026-08-06)
 

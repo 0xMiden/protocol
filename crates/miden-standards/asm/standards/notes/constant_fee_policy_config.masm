@@ -42,13 +42,6 @@ const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy con
 #! `Authority` component; this script only forwards the stored payload to it. The fee asset's ID
 #! must match the account's configured fee asset ID (also enforced by `set_note_fee`).
 #!
-#! The note sender is resolved against the configured owner or role only under the OwnerControlled
-#! and RbacControlled authorities, which is why the account requirements below mandate one of them.
-#! Under AuthControlled, `assert_authorized` is a no-op and no sender is resolved, so on an
-#! `AuthNetworkAccount` (whose auth scheme is permissionless for allowlisted notes) `set_note_fee`
-#! would be callable by anyone. See the AuthControlled safety invariant on the `Authority`
-#! component.
-#!
 #! Requires that the consuming account:
 #! - exposes `miden::standards::fees::policies::constant_fee_manager::set_note_fee`, installed on an
 #!   `AuthNetworkAccount` whose active fee policy is a constant-fee policy, backed by an `Authority`

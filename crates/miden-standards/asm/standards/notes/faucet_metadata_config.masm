@@ -66,17 +66,7 @@ const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet me
 #! the note commitment through the note storage and needs no out-of-band advice inputs.
 #!
 #! Authorization is enforced by the called setters via the account-wide `Authority` component
-#! (`assert_authorized`); this script only loads the arguments and calls them. What that check
-#! means depends on the installed authority:
-#! - OwnerControlled → resolves the note sender against the Ownable2Step owner.
-#! - RbacControlled  → resolves the note sender against the role configured for the called setter,
-#!   or ADMIN when it is unmapped.
-#! - AuthControlled  → no sender check at all: `assert_authorized` is a no-op and the faucet's
-#!   auth component is the sole gate. Such a faucet MUST authenticate every metadata setter root
-#!   (see the AuthControlled safety invariant on the `Authority` component), otherwise the setters
-#!   are permissionless and any party can author this note. A single script root serves all four
-#!   actions and the selector lives in the note storage, so allowlisting that root grants all of
-#!   them.
+#! (`assert_authorized`); this script only loads the arguments and calls them.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::{set_description, set_logo_uri, set_external_link}` for the string
