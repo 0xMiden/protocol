@@ -219,12 +219,9 @@ where
         let advice_provider = output.advice;
 
         // The stack is not necessary since it is being reconstructed when re-executing.
-        let (_stack, advice_map, merkle_store, _pc_requests) = advice_provider.into_parts();
-        let advice_inputs = AdviceInputs {
-            map: advice_map,
-            store: merkle_store,
-            ..Default::default()
-        };
+        let (_stack, advice_map, merkle_store) = advice_provider.into_parts();
+        let mut advice_inputs = AdviceInputs::default().with_merkle_store(merkle_store);
+        advice_inputs.map = advice_map;
 
         build_executed_transaction(advice_inputs, tx_inputs, stack_outputs, host)
     }

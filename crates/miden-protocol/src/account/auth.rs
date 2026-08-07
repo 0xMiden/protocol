@@ -351,9 +351,9 @@ impl Deserializable for PublicKey {
 
 /// Represents a signature object ready for native verification.
 ///
-/// In order to use this signature within the Miden VM, a preparation step may be necessary to
+/// In order to use this signature within the Miden VM, an encoding step may be necessary to
 /// convert the native signature into a vector of field elements that can be loaded into the advice
-/// provider. To prepare the signature, use the provided `to_prepared_signature` method:
+/// provider. To encode the signature, use the provided [`Signature::to_encoded_signature`] method:
 /// ```rust,no_run
 /// use miden_protocol::account::auth::Signature;
 /// use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
@@ -362,7 +362,7 @@ impl Deserializable for PublicKey {
 /// let secret_key = SecretKey::new();
 /// let message = Word::default();
 /// let signature: Signature = secret_key.sign(message).into();
-/// let prepared_signature: Vec<Felt> = signature.to_prepared_signature(message);
+/// let encoded_signature: Vec<Felt> = signature.to_encoded_signature(message);
 /// ```
 #[derive(Clone, Debug)]
 #[repr(u8)]
@@ -372,6 +372,13 @@ pub enum Signature {
 }
 
 impl Signature {
+    /// The maximum number of field elements that [`Signature::to_encoded_signature`] can return
+    /// for any variant.
+    ///
+    /// This lets consumers reject an encoded signature of an impossible length before allocating
+    /// for it. The largest encoding is the one of [`Signature::Falcon512Poseidon2`].
+    pub const MAX_NUM_ENCODED_SIGNATURE_FELTS: usize = 2058;
+
     /// Returns the authentication scheme of this signature.
     pub fn auth_scheme(&self) -> AuthScheme {
         match self {
@@ -383,9 +390,12 @@ impl Signature {
     /// Converts this signature to a sequence of field elements in the format expected by the
     /// native verification procedure in the VM.
     ///
+    /// The returned vector contains at most [`Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS`]
+    /// elements.
+    ///
     /// The order of elements in the returned vector is reversed because it is expected that the
     /// data will be pushed into the advice stack
-    pub fn to_prepared_signature(&self, msg: Word) -> Vec<Felt> {
+    pub fn to_encoded_signature(&self, msg: Word) -> Vec<Felt> {
         // TODO: the `expect()` should be changed to an error; but that will be a part of a bigger
         // refactoring
         match self {
@@ -429,5 +439,45 @@ impl Deserializable for Signature {
                 Ok(Signature::EcdsaK256Keccak(signature))
             },
         }
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use rstest::rstest;
+
+    use super::*;
+
+    /// The encoding of every [`Signature`] variant must fit within
+    /// [`Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS`], which consumers rely on to bound the
+    /// untrusted encoded signatures they accept.
+    #[rstest]
+    #[case::falcon512_poseidon2(AuthScheme::Falcon512Poseidon2, 2058)]
+    #[case::ecdsa_k256_keccak(AuthScheme::EcdsaK256Keccak, 32)]
+    fn encoded_signature_does_not_exceed_max_num_felts(
+        #[case] auth_scheme: AuthScheme,
+        #[case] expected_num_felts: usize,
+    ) -> anyhow::Result<()> {
+        let mut rng = ChaCha20Rng::from_seed([0; 32]);
+        let secret_key = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng)?;
+        let message = Word::from([1u32, 2, 3, 4]);
+        let signature = secret_key.sign(message);
+
+        let encoded_signature = signature.to_encoded_signature(message);
+        assert_eq!(encoded_signature.len(), expected_num_felts);
+        assert!(encoded_signature.len() <= Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS);
+
+        // Match exhaustively on `Signature` so adding a variant breaks compilation as a reminder
+        // to add a case above and to re-check the maximum.
+        match signature {
+            Signature::Falcon512Poseidon2(_) | Signature::EcdsaK256Keccak(_) => {},
+        }
+
+        Ok(())
     }
 }

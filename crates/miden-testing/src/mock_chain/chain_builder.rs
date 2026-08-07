@@ -57,15 +57,16 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, Tran
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::SponsorshipPolicy;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::{BasicWallet, NoteCreator};
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     BurnNote,
     MintNote,
@@ -461,6 +462,39 @@ impl MockChainBuilder {
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
+
+        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
+    }
+
+    /// Convenience: builds a non-fungible faucet from a token-symbol shorthand using `AllowAll`
+    /// policies, then adds it as an existing account with [`Authority::AuthControlled`].
+    ///
+    /// Being auth-controlled, the faucet is not a network faucet, so `mint_and_send` can be called
+    /// from a transaction script. Its transfer policies enable asset callbacks.
+    pub fn add_existing_non_fungible_faucet(
+        &mut self,
+        auth_method: Auth,
+        token_symbol: &str,
+    ) -> anyhow::Result<Account> {
+        let name = TokenName::new(token_symbol)?;
+        let symbol = TokenSymbol::new(token_symbol)
+            .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
+        let faucet = NonFungibleFaucet::builder().name(name).symbol(symbol).build();
+
+        let token_policy_manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::allow_all())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .active_send_policy(TransferPolicy::allow_all())
+            .active_receive_policy(TransferPolicy::allow_all())
+            .build();
+
+        let account_builder = AccountBuilder::new(self.rng.random())
+            .account_type(AccountType::Public)
+            .with_component(faucet)
+            .with_component(Authority::AuthControlled)
+            .with_asset_callbacks(AssetCallbackFlag::Enabled)
+            .with_components(token_policy_manager)
+            .with_component(Pausable::unpaused());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }

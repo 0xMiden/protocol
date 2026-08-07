@@ -1,6 +1,5 @@
-use miden_verifier::verify_with_precompiles;
+use miden_verifier::{ExecutionClaim, verify};
 
-use crate::CoreLibrary;
 use crate::errors::TransactionVerifierError;
 use crate::transaction::{ProvenTransaction, TransactionKernel};
 use crate::vm::ProgramInfo;
@@ -48,16 +47,13 @@ impl TransactionVerifier {
         );
 
         // verify transaction proof
-        let precompile_verifiers = CoreLibrary::default().verifier_registry();
-        let proof_security_level = verify_with_precompiles(
+        let claim = ExecutionClaim::from_program_info(
             self.tx_program_info.clone(),
             stack_inputs,
             stack_outputs,
-            transaction.proof().clone(),
-            &precompile_verifiers,
-        )
-        .map_err(TransactionVerifierError::TransactionVerificationFailed)?
-        .0;
+        );
+        let proof_security_level = verify(transaction.proof().clone(), claim)
+            .map_err(TransactionVerifierError::TransactionVerificationFailed)?;
 
         // check security level
         if proof_security_level < self.proof_security_level {

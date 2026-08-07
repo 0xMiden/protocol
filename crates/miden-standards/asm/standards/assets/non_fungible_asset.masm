@@ -91,6 +91,8 @@ end
 #! Where:
 #! - ASSET_VALUE is the non-fungible asset value, whose first two elements are the asset class.
 #! - asset_class is the (suffix, prefix) pair of the non-fungible asset.
+#!
+#! Invocation: exec
 pub proc value_into_asset_class
     # => [asset_class_suffix, asset_class_prefix, value_2, value_3]
     movup.3 drop movup.2 drop

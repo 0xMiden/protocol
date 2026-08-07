@@ -46,6 +46,7 @@ use miden_testing::{
 };
 
 use super::rbac::{build_grant_role_note, role, test_account_id};
+use super::transfer_policy::{add_faucet_with_wallet, assert_minted_note, build_mint_note};
 use crate::consume_note;
 
 // HELPERS
@@ -442,55 +443,97 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
 /// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
 /// installs the asset-callback slots (here via the basic blocklist transfer policy).
 #[tokio::test]
-async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
+async fn mint_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
+    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let recipient = Word::from([0u32, 1, 2, 3]);
-    let amount: u64 = 100;
-    let tag = NoteTag::default();
-    let note_type = NoteType::Private;
-
-    // `mint_and_send` takes the full asset (ASSET_ID + ASSET_VALUE) the MINT note carries.
-    let asset = FungibleAsset::new(faucet.id(), amount)?;
-    let asset_id = asset.to_id_word();
-    let asset_value = asset.to_value_word();
-
-    let tx_script_code = format!(
-        r#"
-        @transaction_script
-        pub proc main
-            push.0.0
-
-            push.{recipient}
-            push.{note_type}
-            push.{tag}
-            push.{asset_value}
-            push.{asset_id}
-
-            call.::miden::standards::faucets::fungible::mint_and_send
-
-            dropw dropw dropw dropw
-        end
-        "#,
-        recipient = recipient,
-        note_type = note_type as u8,
-        tag = u32::from(tag),
-        asset_value = asset_value,
-        asset_id = asset_id,
-    );
-
-    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
+    let mint = build_mint_note(owner_id, faucet.id(), target.id(), 100, 10)?;
     let executed = mock_chain
         .build_transaction(faucet.id())
-        .tx_script(tx_script)
+        .unauthenticated_input_note(mint.note.clone())
         .build()?
         .execute()
         .await?;
 
-    assert_eq!(executed.output_notes().num_notes(), 1);
+    assert_minted_note(&executed, &mint)?;
+
+    Ok(())
+}
+
+/// Verifies that `block_account` on the faucet's own ID does not disable its minting.
+///
+/// Minting crosses the send policy: the faucet adds the minted asset to an output note, which the
+/// kernel routes through `on_before_asset_added_to_note` with the faucet itself as the native
+/// account. Because the issuer is exempt from its own blocklist, the self-entry is inert.
+///
+/// The entry is written through the regular admin path, so this covers any writer - the standard
+/// config note, a custom note, or a direct manager call - because the exemption lives in the
+/// `check_policy` read path rather than in a guard on the write path.
+#[tokio::test]
+async fn mint_succeeds_after_faucet_blocks_itself() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
+    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let block_faucet_note = build_admin_note(owner_id, faucet.id(), "block_account", 9)?;
+    builder.add_output_note(RawOutputNote::Full(block_faucet_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    consume_note(&mut mock_chain, faucet.id(), &block_faucet_note).await?;
+
+    let mint = build_mint_note(owner_id, faucet.id(), target.id(), 100, 10)?;
+    let executed = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(mint.note.clone())
+        .build()?
+        .execute()
+        .await?;
+
+    assert_minted_note(&executed, &mint)?;
+
+    Ok(())
+}
+
+/// Verifies that the issuer exemption is keyed on the transferred asset rather than on the
+/// native account being a faucet.
+#[tokio::test]
+async fn transfer_of_foreign_asset_by_a_faucet_is_not_exempt() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let other_faucet = add_faucet_with_wallet(&mut builder)?;
+    let issuer = add_faucet_with_owner_blocklist_transfer_initialized(
+        &mut builder,
+        owner_id,
+        [other_faucet.id()],
+    )?;
+
+    let asset = FungibleAsset::new(issuer.id(), 100)?;
+    let p2id_note = builder.add_p2id_note(
+        issuer.id(),
+        other_faucet.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mock_chain = builder.build()?;
+    let issuer_inputs = mock_chain.get_foreign_account_inputs(issuer.id())?;
+
+    let result = mock_chain
+        .build_transaction(other_faucet.id())
+        .authenticated_input_note(p2id_note.id())
+        .foreign_accounts(vec![issuer_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
+
     Ok(())
 }
 

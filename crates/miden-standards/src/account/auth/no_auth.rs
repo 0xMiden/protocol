@@ -25,7 +25,7 @@ pub struct NoAuth;
 
 impl NoAuth {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::no_auth";
+    pub const NAME: &'static str = "miden::standards::auth::no_auth";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {

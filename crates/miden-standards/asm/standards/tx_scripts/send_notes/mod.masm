@@ -1,0 +1,11 @@
+# The canonical `send_notes` transaction scripts, one per account interface that can send notes.
+#
+# Each script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
+# parameters (the payload) from the advice map, so a single script root covers every possible set
+# of output notes. The payload layout and the handling shared by all three live in the private
+# [`send_notes::common`] submodule.
+
+mod common
+pub mod fungible_faucet
+pub mod non_fungible_faucet
+pub mod wallet
