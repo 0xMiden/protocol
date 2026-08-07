@@ -7,6 +7,8 @@ use miden::protocol::active_note
 # PUBLIC INTERFACE
 # =================================================================================================
 
+pub use {create_note} from miden::standards::note::note_creator
+
 #! Adds the provided asset to the active account.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]

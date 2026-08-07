@@ -21,4 +21,5 @@ mod pswap;
 pub(crate) mod rbac;
 mod send_note;
 mod swap;
+pub(crate) mod transfer_policy;
 mod tx_fee;

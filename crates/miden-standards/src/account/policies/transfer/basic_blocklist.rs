@@ -42,6 +42,8 @@ procedure_root!(
 /// [`BasicBlocklist::root`]. When active, transfers fail if the native account (asset
 /// recipient or note creator) is currently blocked on the issuing faucet.
 ///
+/// The issuing faucet is exempt from its own blocklist.
+///
 /// The wrapped [`BlocklistStorage`] captures the initial blocklist contents (it can be empty
 /// for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
 /// [`Self::with_blocked_accounts`] to seed the storage map at component construction time.

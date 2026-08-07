@@ -2,7 +2,9 @@
 
 extern crate alloc;
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
+#[cfg(any(feature = "testing", test))]
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 
 use miden_core::{Felt, Word};
@@ -27,6 +29,7 @@ use miden_standards::account::access::{
     Pausable,
     PausableManager,
     RoleBasedAccessControl,
+    RoleConfig,
 };
 use miden_standards::account::auth::NetworkAccount;
 #[cfg(any(feature = "testing", test))]
@@ -383,7 +386,13 @@ fn create_bridge_account_builder(
     NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
         .expect("bridge note allowlist is non-empty")
         .with_component(AggLayerBridge::new(network_id))
-        .with_component(RoleBasedAccessControl::new(BTreeSet::from([admin]), roles.role_members()))
+        .with_component(
+            RoleBasedAccessControl::builder()
+                .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
+                .roles(roles)
+                .build()
+                .expect("the bridge seeds distinct non-empty roles administered by ADMIN"),
+        )
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
         })
@@ -463,7 +472,10 @@ fn create_agglayer_faucet_builder(
         .expect("faucet note allowlist is non-empty")
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
-        .with_component(RoleBasedAccessControl::new(BTreeSet::from([admin]), BTreeMap::new()))
+        .with_component(
+            RoleBasedAccessControl::with_admins([admin])
+                .expect("the faucet seeds a non-empty ADMIN role"),
+        )
         .with_component(Authority::RbacControlled { procedure_roles: BTreeMap::new() })
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
