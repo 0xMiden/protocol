@@ -5,9 +5,9 @@ use miden::protocol::output_note
 
 #! Creates a new output note and returns its index.
 #!
-#! This procedure lets the wallet opt into note creation: `output_note::create` can only be invoked
-#! from the account context, so accounts that want to create notes must expose it through their own
-#! interface.
+#! This procedure lets a note or tx script create an output note: `output_note::create` can only
+#! be invoked from the account context, so accounts that want to create notes must expose it through
+#! their own interface.
 #!
 #! This procedure is expected to be invoked using a `call` instruction. It makes no guarantees about
 #! the contents of the `PAD` elements shown below. It is the caller's responsibility to make sure

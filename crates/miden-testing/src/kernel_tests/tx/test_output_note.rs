@@ -1272,7 +1272,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let code = format!(
         "
         use miden::protocol::output_note
-        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use {{DEFAULT_TAG}} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1305,7 +1305,7 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::output_note
-        use {DEFAULT_TAG} from miden::standards::note_tag
+        use {DEFAULT_TAG} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1982,7 +1982,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     let code = format!(
         "
         use miden::protocol::output_note
-        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use {{DEFAULT_TAG}} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 

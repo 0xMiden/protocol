@@ -23,7 +23,7 @@ use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::attachments::network_account_target
 use miden::standards::note
-use miden::standards::note_tag
+use miden::standards::note::note_tag
 use miden::standards::notes::fee_sponsorship
 use {NUM_ASSETS as SPONSORSHIP_NUM_ASSETS, FEATURE_NOTE_ID_ITEM_OFFSET} from miden::standards::notes::fee_sponsorship
 use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME, NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS}

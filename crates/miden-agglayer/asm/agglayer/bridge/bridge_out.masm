@@ -6,7 +6,7 @@ use miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
-use {DEFAULT_TAG} from miden::standards::note_tag
+use {DEFAULT_TAG} from miden::standards::note::note_tag
 use {ALWAYS} from miden::standards::note::execution_hint
 use {MemoryAddress} from miden::protocol::types
 use miden::protocol::output_note
