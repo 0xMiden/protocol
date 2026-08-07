@@ -5,12 +5,12 @@
 
 #! Burn policy that accepts every burn request.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE]
-#! Outputs: []
-#! Invocation: dynexec
-# TODO(call invocation)
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
 @account_procedure
 pub proc check_policy
     dropw dropw
-    # => []
+    # => [pad(16)]
 end

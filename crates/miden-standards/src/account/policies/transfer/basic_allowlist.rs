@@ -41,6 +41,8 @@ procedure_root!(
 /// native account (asset recipient or note creator) is not currently allowed on the
 /// issuing faucet.
 ///
+/// The issuing faucet is exempt from its own allowlist.
+///
 /// Allow / disallow administration is intentionally not part of this component. The
 /// `allow_account` / `disallow_account` procedures live in the standards library and require
 /// an auth-wrapped admin component (see [`super::AllowlistManager`]) to be safely

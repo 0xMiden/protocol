@@ -1,4 +1,4 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::vec;
 
 use miden_protocol::Felt;
@@ -80,7 +80,9 @@ impl IntoIterator for AccessControl {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
             AccessControl::Rbac { admin, procedure_roles } => vec![
-                RoleBasedAccessControl::new(BTreeSet::from([admin]), BTreeMap::default()).into(),
+                RoleBasedAccessControl::with_admins([admin])
+                    .expect("a single ADMIN member is a valid seed")
+                    .into(),
                 Authority::RbacControlled { procedure_roles }.into(),
             ]
             .into_iter(),
@@ -91,7 +93,7 @@ impl IntoIterator for AccessControl {
 pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
-pub use rbac::RoleBasedAccessControl;
+pub use rbac::{RoleBasedAccessControl, RoleBasedAccessControlError, RoleConfig};
 
 // HELPERS
 // ================================================================================================

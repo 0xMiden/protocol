@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.17.0 (TBD)
+
+### Features
+
+### Changes
+
+### Fixes
+
 ## v0.16.0 (2026-08-06)
 
 ### Features
@@ -52,7 +60,9 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
 - [BREAKING] Removed the `AuthSingleSigAcl` auth component, the `Auth::Acl` `miden-testing` mock-chain variant, and the `user_faucet_single_sig_acl` testing helper: the exempt (no-signature) branch let fee-charging accounts be drained via calls to exempt procedures. The plain `AuthSingleSig` component (every call requires a signature) remains available and now backs the "singlesig user faucet" factories; a `BurnNote` targeted at a singlesig user faucet, previously exempt via `receive_and_burn`, now requires the owner's signature to be consumed ([#3360](https://github.com/0xMiden/protocol/issues/3360)).
 - [BREAKING] Updated `miden-vm` dependencies to v0.29. Notable downstream changes: `CoreLibrary` now bundles a separate `miden-precompiles` package that must also be seeded into the package registry (`CoreLibrary::packages()`), the advice stack moved behind the typed `AdviceStack` API on `AdviceInputs`, `Kernel` was renamed to `KernelDescriptor` (with `Package::to_kernel` becoming `to_kernel_descriptor` and `Package::module_infos` becoming `module_descriptors`), and `miden_verifier::verify` now takes an `ExecutionClaim` and verifies bundled precompile proofs itself, replacing `verify_with_precompiles` ([#3492](https://github.com/0xMiden/protocol/pull/3492)).
+- [BREAKING] `TokenPolicyManager` now dispatches mint and burn policies via `dyncall` rather than `dynexec` ([#3510](https://github.com/0xMiden/protocol/pull/3510)).
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
+- [BREAKING] Replaced `RoleBasedAccessControl::new` with a validating `RoleBasedAccessControl::builder()` over `RoleConfig`s, which seeds each role's members together with its delegated admin, so exclusive delegation is established at account creation instead of through on-chain `set_role_admin` calls ([#3515](https://github.com/0xMiden/protocol/pull/3515)).
 
 ### Fixes
 
@@ -67,6 +77,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Clarified the `ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT` error message to better match the actual validated constraint ([#3474](https://github.com/0xMiden/protocol/pull/3474)).
 - Fixed misleading `NonFungibleFaucet` documentation, it is now stated as an off-chain convention([#3484](https://github.com/0xMiden/protocol/pull/3484)).
 - Added the missing `Invocation: exec` label to the document comments of the public `miden-standards` MASM procedures([#3503](https://github.com/0xMiden/protocol/pull/3503)).
+- Exempted the issuing faucet from its own `BasicBlocklist` / `BasicAllowlist` transfer policy, so a self-entry no longer disables the faucet's minting ([#3508](https://github.com/0xMiden/protocol/pull/3508)).
 
 ## v0.16.0-beta.1 (2026-07-20)
 
