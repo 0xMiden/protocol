@@ -875,8 +875,8 @@ impl PartialBlockchainError {
 pub enum TransactionScriptError {
     #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
     AssemblyError(Report),
-    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
-    PackageNotProgram(Report),
+    #[error("expected a library package, but the provided package is an executable")]
+    ExecutablePackage,
     #[error("package does not contain a procedure with @transaction_script attribute")]
     NoProcedureWithAttribute,
     #[error("package contains multiple procedures with @transaction_script attribute")]

@@ -68,6 +68,8 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] `TokenPolicyManager` now dispatches mint and burn policies via `dyncall` rather than `dynexec` ([#3510](https://github.com/0xMiden/protocol/pull/3510)).
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
 - [BREAKING] Replaced `RoleBasedAccessControl::new` with a validating `RoleBasedAccessControl::builder()` over `RoleConfig`s, which seeds each role's members together with its delegated admin, so exclusive delegation is established at account creation instead of through on-chain `set_role_admin` calls ([#3515](https://github.com/0xMiden/protocol/pull/3515)).
+- [BREAKING] Updated `TransactionScript::from_package` to reject executable packages, so transaction scripts are identified only by the `@transaction_script` attribute ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
+- [BREAKING] Updated `AccountComponent::from_package` to take `Package` by value ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
 
 ### Fixes
 
