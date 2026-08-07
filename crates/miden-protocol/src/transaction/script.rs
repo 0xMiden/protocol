@@ -94,10 +94,6 @@ impl TransactionScript {
     /// - The package does not contain a procedure with the `@transaction_script` attribute.
     /// - The package contains multiple procedures with the `@transaction_script` attribute.
     pub fn from_package(package: &Package) -> Result<Self, MastForestScriptError> {
-        if package.is_program() {
-            return Err(MastForestScriptError::ExecutablePackage);
-        }
-
         MastForestScript::from_package(package, TRANSACTION_SCRIPT_ATTRIBUTE).map(Self)
     }
 

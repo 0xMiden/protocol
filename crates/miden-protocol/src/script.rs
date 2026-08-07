@@ -74,12 +74,17 @@ impl MastForestScript {
 
     /// Returns a new [MastForestScript] instantiated from the provided package.
     ///
-    /// The package must contain exactly one procedure with the specified `attribute`, which is used
-    /// as the entrypoint.
+    /// The package must be a library package containing exactly one procedure with the specified
+    /// `attribute`, which is used as the entrypoint. Executable packages are rejected: a script's
+    /// entrypoint is identified by its attribute, never by the package's program entrypoint.
     pub(crate) fn from_package(
         package: &Package,
         attribute: &str,
     ) -> Result<Self, MastForestScriptError> {
+        if package.is_program() {
+            return Err(MastForestScriptError::ExecutablePackage);
+        }
+
         let mut entrypoint = None;
 
         for export in package.manifest.exports() {
