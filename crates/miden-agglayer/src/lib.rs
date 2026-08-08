@@ -40,6 +40,7 @@ pub mod errors;
 pub mod eth_types;
 pub mod faucet;
 mod ger_note;
+pub mod proof_data;
 pub mod remove_ger_note;
 #[cfg(any(feature = "testing", test))]
 pub mod testing;
