@@ -1,8 +1,10 @@
 use core::fmt::{Debug, Display};
+use core::str::FromStr;
 
 use miden_crypto_derive::WordWrapper;
 
 use super::{Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
+use crate::WordError;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -46,6 +48,13 @@ impl TransactionId {
         elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
         Self(Hasher::hash_elements(&elements))
     }
+
+    /// Attempts to convert from a hexadecimal string to a [TransactionId].
+    ///
+    /// Callers must ensure the provided value is an actual [`TransactionId`].
+    pub fn from_hex(hex_value: &str) -> Result<Self, WordError> {
+        Word::try_from(hex_value).map(Self::from_raw)
+    }
 }
 
 impl Debug for TransactionId {
@@ -57,6 +66,14 @@ impl Debug for TransactionId {
 impl Display for TransactionId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_hex())
+    }
+}
+
+impl FromStr for TransactionId {
+    type Err = WordError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_hex(s)
     }
 }
 
@@ -87,5 +104,24 @@ impl Deserializable for TransactionId {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let id = Word::read_from(source)?;
         Ok(Self(id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transaction_id_from_hex_round_trip() {
+        let id = TransactionId::new(Word::empty(), Word::empty(), Word::empty(), Word::empty());
+        let hex = id.to_hex();
+
+        assert_eq!(TransactionId::from_hex(&hex).unwrap(), id);
+        assert_eq!(hex.parse::<TransactionId>().unwrap(), id);
+    }
+
+    #[test]
+    fn transaction_id_from_hex_rejects_invalid_value() {
+        assert!("not-a-transaction-id".parse::<TransactionId>().is_err());
     }
 }

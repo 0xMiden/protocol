@@ -4,6 +4,8 @@
 
 ### Features
 
+- Added hex parsing for `TransactionId` via `TransactionId::from_hex` and `FromStr` ([#3452](https://github.com/0xMiden/protocol/issues/3452), [#3534](https://github.com/0xMiden/protocol/pull/3534)).
+
 ### Changes
 
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
