@@ -4,6 +4,8 @@ use alloc::vec;
 use std::collections::BTreeMap;
 use std::vec::Vec;
 
+use miden_crypto::merkle::SparseMerklePath;
+
 use crate::account::{
     AccountCode,
     AccountHeader,
@@ -18,12 +20,13 @@ use crate::account::{
 use crate::asset::PartialVault;
 use crate::block::account_tree::AccountIdKey;
 use crate::errors::TransactionInputsExtractionError;
+use crate::note::NoteInclusionProof;
 use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
-use crate::transaction::TransactionInputs;
-use crate::utils::serde::{Deserializable, Serializable};
+use crate::transaction::{InputNote, PartialBlockchain, TransactionInputs};
+use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 use crate::{Felt, Word};
 
 #[test]
@@ -372,4 +375,86 @@ fn test_transaction_inputs_serialization_with_foreign_slot_names() {
 
     // Verify the entire structure is identical.
     assert_eq!(original_tx_inputs, deserialized);
+}
+
+#[test]
+fn test_transaction_inputs_deserialization_validates_invariants() {
+    let mut chain_length_mismatch = test_transaction_inputs();
+    chain_length_mismatch.blockchain.add_block(
+        &crate::block::BlockHeader::mock(0, None, None, &[], Word::default()),
+        false,
+    );
+    let error = TransactionInputs::read_from_bytes(&chain_length_mismatch.to_bytes()).unwrap_err();
+    assert_matches!(
+        error,
+        DeserializationError::InvalidValue(message)
+            if message == "partial blockchain has length 1 which does not match block number 0"
+    );
+
+    let mut chain_commitment_mismatch = test_transaction_inputs();
+    chain_commitment_mismatch.block_header = crate::block::BlockHeader::mock(
+        0,
+        Some(Word::new([Felt::ONE; 4])),
+        None,
+        &[],
+        Word::default(),
+    );
+    let error =
+        TransactionInputs::read_from_bytes(&chain_commitment_mismatch.to_bytes()).unwrap_err();
+    assert_matches!(
+        error,
+        DeserializationError::InvalidValue(message)
+            if message.starts_with("partial blockchain has commitment ")
+                && message.contains("which does not match the block header's chain commitment")
+    );
+
+    let mut invalid_note_proof = test_transaction_inputs();
+    let note = crate::testing::note::Note::mock_noop(Word::new([Felt::ONE; 4]));
+    let proof = NoteInclusionProof::new(0, 0, SparseMerklePath::default()).unwrap();
+    invalid_note_proof.input_notes = crate::transaction::InputNotes::new(vec![
+        InputNote::Authenticated { note: note.clone(), proof },
+    ])
+    .unwrap();
+    let error = TransactionInputs::read_from_bytes(&invalid_note_proof.to_bytes()).unwrap_err();
+    assert_matches!(
+        error,
+        DeserializationError::InvalidValue(message)
+            if message == format!("input note with id {} was not created in block 0", note.id())
+    );
+}
+
+fn test_transaction_inputs() -> TransactionInputs {
+    let account_id =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+    let code = AccountCode::mock();
+    let storage_header = AccountStorageHeader::new(vec![]).unwrap();
+    let partial_storage = PartialStorage::new(storage_header, []).unwrap();
+    let partial_account = PartialAccount::new(
+        account_id,
+        Felt::new_unchecked(10),
+        code,
+        partial_storage,
+        PartialVault::new(Word::default()),
+        None,
+    )
+    .unwrap();
+    let blockchain = PartialBlockchain::default();
+    let block_header = crate::block::BlockHeader::mock(
+        0,
+        Some(blockchain.peaks().hash_peaks()),
+        None,
+        &[],
+        Word::default(),
+    );
+
+    TransactionInputs {
+        account: partial_account,
+        block_header,
+        blockchain,
+        input_notes: crate::transaction::InputNotes::new(vec![]).unwrap(),
+        tx_args: crate::transaction::TransactionArgs::default(),
+        advice_inputs: crate::vm::AdviceInputs::default(),
+        foreign_account_code: Vec::new(),
+        foreign_account_slot_names: BTreeMap::new(),
+    }
 }

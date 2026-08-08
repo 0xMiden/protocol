@@ -80,33 +80,7 @@ impl TransactionInputs {
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
     ) -> Result<Self, TransactionInputError> {
-        // Check that the partial blockchain and block header are consistent.
-        if blockchain.chain_length() != block_header.block_num() {
-            return Err(TransactionInputError::InconsistentChainLength {
-                expected: block_header.block_num(),
-                actual: blockchain.chain_length(),
-            });
-        }
-        if blockchain.peaks().hash_peaks() != block_header.chain_commitment() {
-            return Err(TransactionInputError::InconsistentChainCommitment {
-                expected: block_header.chain_commitment(),
-                actual: blockchain.peaks().hash_peaks(),
-            });
-        }
-        // Validate the authentication paths of the input notes.
-        for note in input_notes.iter() {
-            if let InputNote::Authenticated { note, proof } = note {
-                let note_block_num = proof.location().block_num();
-                let block_header = if note_block_num == block_header.block_num() {
-                    &block_header
-                } else {
-                    blockchain.get_block(note_block_num).ok_or(
-                        TransactionInputError::InputNoteBlockNotInPartialBlockchain(note.id()),
-                    )?
-                };
-                validate_is_in_block(note, proof, block_header)?;
-            }
-        }
+        validate_transaction_inputs(&block_header, &blockchain, &input_notes)?;
 
         Ok(Self {
             account,
@@ -506,6 +480,9 @@ impl Deserializable for TransactionInputs {
         let foreign_account_slot_names =
             BTreeMap::<StorageSlotId, StorageSlotName>::read_from(source)?;
 
+        validate_transaction_inputs(&block_header, &blockchain, &input_notes)
+            .map_err(|err| DeserializationError::InvalidValue(format!("{err}")))?;
+
         Ok(TransactionInputs {
             account,
             block_header,
@@ -521,6 +498,42 @@ impl Deserializable for TransactionInputs {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+fn validate_transaction_inputs(
+    block_header: &BlockHeader,
+    blockchain: &PartialBlockchain,
+    input_notes: &InputNotes<InputNote>,
+) -> Result<(), TransactionInputError> {
+    // Check that the partial blockchain and block header are consistent.
+    if blockchain.chain_length() != block_header.block_num() {
+        return Err(TransactionInputError::InconsistentChainLength {
+            expected: block_header.block_num(),
+            actual: blockchain.chain_length(),
+        });
+    }
+    if blockchain.peaks().hash_peaks() != block_header.chain_commitment() {
+        return Err(TransactionInputError::InconsistentChainCommitment {
+            expected: block_header.chain_commitment(),
+            actual: blockchain.peaks().hash_peaks(),
+        });
+    }
+    // Validate the authentication paths of the input notes.
+    for note in input_notes.iter() {
+        if let InputNote::Authenticated { note, proof } = note {
+            let note_block_num = proof.location().block_num();
+            let block_header = if note_block_num == block_header.block_num() {
+                block_header
+            } else {
+                blockchain.get_block(note_block_num).ok_or(
+                    TransactionInputError::InputNoteBlockNotInPartialBlockchain(note.id()),
+                )?
+            };
+            validate_is_in_block(note, proof, block_header)?;
+        }
+    }
+
+    Ok(())
+}
 
 /// Validates whether the provided note belongs to the note tree of the specified block.
 fn validate_is_in_block(
