@@ -36,11 +36,9 @@ impl AccountVaultDelta {
     /// Domain separator for assets in the account delta commitment.
     pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(3);
 
-    /// Validates and creates an [AccountVaultDelta] with the given fungible and non-fungible asset
-    /// deltas.
+    /// Creates an [AccountVaultDelta] with the given fungible and non-fungible asset deltas.
     ///
-    /// # Errors
-    /// Returns an error if the delta does not pass the validation.
+    /// No validation is performed here, as both deltas are validated when they are constructed.
     pub const fn new(fungible: FungibleAssetDelta, non_fungible: NonFungibleAssetDelta) -> Self {
         Self { fungible, non_fungible }
     }
