@@ -12,6 +12,8 @@
 
 ### Fixes
 
+- Fixed the `AccountVaultDelta::new` documentation, which described an error case that the infallible constructor cannot return ([#3532](https://github.com/0xMiden/protocol/pull/3532)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features
