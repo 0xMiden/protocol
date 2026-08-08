@@ -17,7 +17,7 @@ Miden's blockchain protocol aims for the following:
 
 ## Batch production
 
-To reduce the required space on the blockchain, transaction proofs are not directly put into blocks. First, they are batched together by verifying them in the batch producer. The purpose of the batch producer is to generate a single proof that some number of proven transactions have been verified. This involves recursively verifying individual transaction proofs inside the Miden VM. As with any program that runs in the Miden VM, there is a proof of correct execution running the Miden verifier to verify transaction proofs. This results into a single batch proof.
+To reduce the required space on the blockchain, transaction proofs are not directly put into blocks. First, they are batched together by verifying them in the batch producer. The purpose of the batch producer is to generate a single proof that some number of proven transactions have been verified. This involves recursively verifying individual transaction proofs inside the Miden VM. As with any program that runs in the Miden VM, there is a proof of correct execution running the Miden verifier to verify transaction proofs. This results in a single batch proof.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/blockchain/batching.png').default} style={{width: '50%'}} alt="Batch diagram"/>
@@ -26,7 +26,7 @@ To reduce the required space on the blockchain, transaction proofs are not direc
 The batch producer aggregates transactions sequentially by verifying that their proofs and state transitions are correct. More specifically, the batch producer ensures:
 
 1. **Ordering of transactions**: If several transactions within the same batch affect a single account, the correct ordering must be enforced. For example, if `Tx1` and `Tx2` both describe state changes of account `A`, then the batch kernel must verify them in the order: `A -> Tx1 -> A' -> Tx2 -> A''`.
-2. **Uniqueness of notes in a single batch**: The batch producer must ensure the uniqueness of all notes across transactions in the batch. This will prevent the situation where duplicate notes, which would share identical nullifiers, are created. Only one such duplicate note could later be consumed, as the nullifier will be marked as spent after the first consumption. It also checks for double spends in the set of consumed notes, even though the real double spent check only happens at the block production level.
+2. **Uniqueness of notes in a single batch**: The batch producer must ensure the uniqueness of all notes across transactions in the batch. This will prevent the situation where duplicate notes, which would share identical nullifiers, are created. Only one such duplicate note could later be consumed, as the nullifier will be marked as spent after the first consumption. It also checks for double spends in the set of consumed notes, even though the real double-spend check only happens at the block production level.
 3. **Expiration windows**: It is possible to set an expiration window for transactions, which in turn sets an expiration window for the entire batch. For instance, if transaction `Tx1` expires at block `8` and transaction `Tx2` expires at block `5`, then the batch expiration will be set to the minimum of all transaction expirations, which is `5`.
 4. **Note erasure of erasable notes**: Erasable notes don't exist in the Notes DB. They are unauthenticated. Accounts can still consume unauthenticated notes to consume those notes faster, they don't have to wait for notes being included into a block. If creation and consumption of an erasable note happens in the same batch, the batch producer erases this note.
 
@@ -38,14 +38,14 @@ The block producer ensures:
 
 1. **Account DB integrity**: The Block `N+1` Account DB commitment must be authenticated against all previous and resulting account commitments across transactions, ensuring valid state transitions and preventing execution on stale states.
 2. **Nullifier DB integrity**: Nullifiers of newly created notes are added to the Nullifier DB. The Block `N+1` Nullifier DB commitment must be authenticated against all new nullifiers to guarantee completeness.
-3. **Block hash references**: Check that all block hashes references by batches are in the chain.
+3. **Block hash references**: Check that all block hashes referenced by batches are in the chain.
 4. **Double-spend prevention**: Each consumed note’s nullifier is checked against prior consumption. The Block `N` Nullifier DB commitment is authenticated against all provided nullifiers for consumed notes, ensuring no nullifier is reused.
 5. **Global note uniqueness**: All created and consumed notes must be unique across batches.
-6. **Batch expiration**: The block height of the created block must be smaller then or equal to the lowest batch expiration.
+6. **Batch expiration**: The block height of the created block must be smaller than or equal to the lowest batch expiration.
 7. **Block time increase**: The block timestamp must increase monotonically from the previous block.
 8. **Note erasure of erasable notes**: If an erasable note is created and consumed in different batches, it is erased now. If, however, an erasable note is consumed but not created within the block, the batch it contains is rejected. The Miden operator's mempool should preemptively filter such transactions.
 
-In final `Block` contains:
+The final `Block` contains:
 - The commitments to the current global [state](state).
 - The newly created nullifiers.
 - The commitments to newly created notes.
