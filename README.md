@@ -78,7 +78,17 @@ Some of the functions in this project are computationally intensive and may take
 
 ## Documentation
 
-The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://docs.miden.xyz/protocol/) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
+The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://docs.miden.xyz/protocol/) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow.
+
+To build the docs locally:
+
+```shell
+cd docs
+npm ci
+npm run build:dev
+```
+
+To preview the docs locally, run `make serve-docs` from the repository root or `npm run start:dev` from the `docs/` folder.
 
 ## License
 
