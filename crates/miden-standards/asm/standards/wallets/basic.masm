@@ -21,7 +21,7 @@ pub use {create_note} from miden::standards::note::note_creator
 #! Panics if:
 #! - the same non-fungible asset already exists in the account.
 #! - adding a fungible asset would result in amount overflow, i.e.,
-#!   the total amount would be greater than 2^63.
+#!   the total amount would exceed FUNGIBLE_ASSET_MAX_AMOUNT (2^63 - 2^31).
 #!
 #! Invocation: call
 @account_procedure

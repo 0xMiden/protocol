@@ -60,8 +60,8 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! Panics if:
 #! - account does not expose the required wallet procedures.
 #! - account vault does not contain the requested asset.
-#! - adding a fungible asset would result in amount overflow, i.e., the total amount would be
-#!   greater than 2^63.
+#! - adding a fungible asset would result in amount overflow, i.e., the total amount would exceed
+#!   FUNGIBLE_ASSET_MAX_AMOUNT (2^63 - 2^31).
 @note_script
 pub proc main
     # drop note args

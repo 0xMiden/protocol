@@ -134,7 +134,10 @@ impl P2ideNote {
         self.storage
     }
 
-    /// Returns the account ID of the note's target (the only account that can consume it).
+    /// Returns the account ID of the note's target.
+    ///
+    /// Before the reclaim height (or when reclaim is disabled), only this account can consume the
+    /// note. At and after the reclaim height, the [reclaimer](Self::reclaimer) may also consume it.
     pub fn target(&self) -> AccountId {
         self.storage.target()
     }

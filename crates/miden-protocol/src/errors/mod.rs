@@ -354,6 +354,8 @@ pub enum AddressError {
     AccountIdDecodeError(#[source] AccountIdError),
     #[error("address separator must not be included without routing parameters")]
     TrailingSeparator,
+    #[error("failed to encode address to a bech32 string")]
+    Bech32EncodeError(#[source] Bech32Error),
     #[error("failed to decode bech32 string into an address")]
     Bech32DecodeError(#[source] Bech32Error),
     #[error("{error_msg}")]
@@ -394,6 +396,8 @@ impl AddressError {
 pub enum Bech32Error {
     #[error(transparent)]
     DecodeError(Box<dyn Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    EncodeError(Box<dyn Error + Send + Sync + 'static>),
     #[error("found unknown address type {0} which is not the expected {account_addr} account ID address type",
       account_addr = AddressType::AccountId as u8
     )]

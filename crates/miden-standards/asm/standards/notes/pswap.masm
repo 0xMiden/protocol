@@ -142,7 +142,7 @@ end
 #! u128 via `u64::widening_mul`, then divided by `fill_reference` (extended to
 #! u128) via `u128::div`. This gives exact integer precision with one floor
 #! division at the end, each input is safe
-#! up to `FungibleAsset::MAX ≈ 2^63`, and the resulting quotient
+#! up to `FungibleAsset::MAX` (2^63 - 2^31), and the resulting quotient
 #! `payout ≤ offered` always fits back in u64 (asserted via the upper-half
 #! limb check below).
 #!

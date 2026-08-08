@@ -19,7 +19,8 @@ use crate::utils::serde::{
 /// A fungible asset.
 ///
 /// A fungible asset consists of a faucet ID of the faucet which issued the asset as well as the
-/// asset amount. Asset amount is guaranteed to be 2^63 - 1 or smaller.
+/// asset amount. Asset amount is guaranteed to be at most [`FungibleAsset::MAX_AMOUNT`]
+/// (`2^63 - 2^31`).
 ///
 /// Whether the asset triggers callbacks to the faucet is an immutable property of the faucet's
 /// [`AccountId`], see [`AccountId::asset_callback_flag`].
@@ -151,7 +152,7 @@ impl FungibleAsset {
     /// # Errors
     /// Returns an error if:
     /// - The assets do not have the same asset ID (i.e. different faucet).
-    /// - The total value of assets is greater than or equal to 2^63.
+    /// - The total value of assets would exceed [`FungibleAsset::MAX_AMOUNT`] (`2^63 - 2^31`).
     #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, AssetError> {
         if !self.is_same(&other) {

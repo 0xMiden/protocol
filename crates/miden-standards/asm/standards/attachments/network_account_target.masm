@@ -73,7 +73,7 @@ end
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
 #! - exec_hint_tag is the encoded execution hint for the note with its tag.
-#! - attachment_scheme is the attachment scheme (1) for use with `output_note::add_word_attachment`.
+#! - attachment_scheme is the attachment scheme (2) for use with `output_note::add_word_attachment`.
 #!
 #! Invocation: exec
 pub proc new

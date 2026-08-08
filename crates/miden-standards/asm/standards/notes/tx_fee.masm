@@ -44,8 +44,8 @@ const ERR_TX_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "TX_FEE note expects exact
 #! - the note carries a non-zero number of storage items.
 #! - the account does not expose miden::standards::wallets::basic::receive_asset procedure.
 #! - the same non-fungible asset already exists in the account.
-#! - adding a fungible asset would result in amount overflow, i.e., the total amount would be
-#!   greater than 2^63.
+#! - adding a fungible asset would result in amount overflow, i.e., the total amount would exceed
+#!   FUNGIBLE_ASSET_MAX_AMOUNT (2^63 - 2^31).
 @note_script
 pub proc main
     # make sure the note carries no storage items

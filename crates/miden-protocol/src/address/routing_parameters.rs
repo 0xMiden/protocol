@@ -153,18 +153,25 @@ impl RoutingParameters {
     }
 
     /// Encodes [`RoutingParameters`] to a bech32 string _without_ the leading hrp and separator.
-    pub(crate) fn encode_to_string(&self) -> String {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if bech32 encoding fails.
+    pub(crate) fn encode_to_string(&self) -> Result<String, AddressError> {
         let encoded = self.encode_to_bytes();
 
-        let bech32_str =
-            bech32::encode::<Bech32m>(*ROUTING_PARAMETERS_HRP, &encoded).expect("TODO");
-        let encoded_str = bech32_str
-            .strip_prefix(ROUTING_PARAMETERS_HRP.as_str())
-            .expect("bech32 str should start with the hrp");
-        let encoded_str = encoded_str
-            .strip_prefix(BECH32_SEPARATOR)
-            .expect("encoded str should start with bech32 separator `1`");
-        encoded_str.to_owned()
+        let bech32_str = bech32::encode::<Bech32m>(*ROUTING_PARAMETERS_HRP, &encoded).map_err(
+            |source| {
+                AddressError::Bech32EncodeError(Bech32Error::EncodeError(source.to_string().into()))
+            },
+        )?;
+        let encoded_str = bech32_str.strip_prefix(ROUTING_PARAMETERS_HRP.as_str()).ok_or_else(
+            || AddressError::decode_error("bech32 str should start with the hrp"),
+        )?;
+        let encoded_str = encoded_str.strip_prefix(BECH32_SEPARATOR).ok_or_else(|| {
+            AddressError::decode_error("encoded str should start with bech32 separator `1`")
+        })?;
+        Ok(encoded_str.to_owned())
     }
 
     /// Decodes [`RoutingParameters`] from a bech32 string _without_ the leading hrp and separator.
@@ -447,7 +454,7 @@ mod tests {
     fn routing_parameters_bech32_encode_decode_roundtrip() -> anyhow::Result<()> {
         // Test case 1: No explicit tag length
         let params_no_tag = RoutingParameters::new(AddressInterface::BasicWallet);
-        let encoded = params_no_tag.encode_to_string();
+        let encoded = params_no_tag.encode_to_string()?;
         let decoded = RoutingParameters::decode(encoded)?;
         assert_eq!(params_no_tag, decoded);
         assert_eq!(decoded.note_tag_len(), None);
@@ -455,7 +462,7 @@ mod tests {
         // Test case 2: Explicit tag length 0
         let params_tag_0 =
             RoutingParameters::new(AddressInterface::BasicWallet).with_note_tag_len(0)?;
-        let encoded = params_tag_0.encode_to_string();
+        let encoded = params_tag_0.encode_to_string()?;
         let decoded = RoutingParameters::decode(encoded)?;
         assert_eq!(params_tag_0, decoded);
         assert_eq!(decoded.note_tag_len(), Some(0));
@@ -463,7 +470,7 @@ mod tests {
         // Test case 3: Explicit tag length 6
         let params_tag_6 =
             RoutingParameters::new(AddressInterface::BasicWallet).with_note_tag_len(6)?;
-        let encoded = params_tag_6.encode_to_string();
+        let encoded = params_tag_6.encode_to_string()?;
         let decoded = RoutingParameters::decode(encoded)?;
         assert_eq!(params_tag_6, decoded);
         assert_eq!(decoded.note_tag_len(), Some(6));
@@ -471,7 +478,7 @@ mod tests {
         // Test case 4: Explicit tag length set to max
         let params_tag_max = RoutingParameters::new(AddressInterface::BasicWallet)
             .with_note_tag_len(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)?;
-        let encoded = params_tag_max.encode_to_string();
+        let encoded = params_tag_max.encode_to_string()?;
         let decoded = RoutingParameters::decode(encoded)?;
         assert_eq!(params_tag_max, decoded);
         assert_eq!(decoded.note_tag_len(), Some(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH));
@@ -525,7 +532,7 @@ mod tests {
                 .with_encryption_key(encryption_key.clone());
 
             // Test bech32 encoding/decoding
-            let encoded = routing_params.encode_to_string();
+            let encoded = routing_params.encode_to_string()?;
             let decoded = RoutingParameters::decode(encoded)?;
             assert_eq!(routing_params, decoded);
             assert_eq!(decoded.encryption_key(), Some(&encryption_key));

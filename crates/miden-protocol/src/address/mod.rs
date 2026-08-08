@@ -141,17 +141,21 @@ impl Address {
     /// - If routing parameters are present:
     ///   - Append the [`Address::SEPARATOR`] to that string.
     ///   - Append the encoded routing parameters to that string.
-    pub fn encode(&self, network_id: NetworkId) -> String {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if encoding the routing parameters to bech32 fails.
+    pub fn encode(&self, network_id: NetworkId) -> Result<String, AddressError> {
         let mut encoded = match self.id {
             AddressId::AccountId(id) => id.to_bech32(network_id),
         };
 
         if let Some(routing_params) = &self.routing_params {
             encoded.push(Self::SEPARATOR);
-            encoded.push_str(&routing_params.encode_to_string());
+            encoded.push_str(&routing_params.encode_to_string()?);
         }
 
-        encoded
+        Ok(encoded)
     }
 
     /// Decodes an address string into the [`NetworkId`] and an [`Address`].
@@ -245,7 +249,7 @@ mod tests {
                 // Encode/Decode without routing parameters should be valid.
                 let mut address = Address::new(account_id);
 
-                let bech32_string = address.encode(network_id.clone());
+                let bech32_string = address.encode(network_id.clone())?;
                 assert!(
                     !bech32_string.contains(Address::SEPARATOR),
                     "separator should not be present in address without routing params"
@@ -264,7 +268,7 @@ mod tests {
                         .with_note_tag_len(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)?,
                 );
 
-                let bech32_string = address.encode(network_id.clone());
+                let bech32_string = address.encode(network_id.clone())?;
                 assert!(
                     bech32_string.contains(Address::SEPARATOR),
                     "separator should be present in address without routing params"
@@ -287,7 +291,7 @@ mod tests {
         let id = AccountIdBuilder::new().build_with_rng(&mut rand::rng());
 
         let address = Address::new(id);
-        let mut encoded_address = address.encode(NetworkId::Devnet);
+        let mut encoded_address = address.encode(NetworkId::Devnet)?;
         encoded_address.push(Address::SEPARATOR);
 
         let err = Address::decode(&encoded_address).unwrap_err();
@@ -305,7 +309,7 @@ mod tests {
             RoutingParameters::new(AddressInterface::BasicWallet).with_note_tag_len(14)?,
         );
 
-        let bech32_string = address.encode(network_id);
+        let bech32_string = address.encode(network_id)?;
         let mut invalid_bech32_1 = bech32_string.clone();
         invalid_bech32_1.remove(0);
         let mut invalid_bech32_2 = bech32_string.clone();
@@ -450,7 +454,7 @@ mod tests {
         );
 
         // Encode and decode
-        let encoded = address.encode(NetworkId::Mainnet);
+        let encoded = address.encode(NetworkId::Mainnet)?;
         let (decoded_network, decoded_address) = Address::decode(&encoded)?;
 
         assert_eq!(decoded_network, NetworkId::Mainnet);

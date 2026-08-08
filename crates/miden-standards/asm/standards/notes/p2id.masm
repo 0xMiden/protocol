@@ -37,8 +37,8 @@ const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 #! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
 #! - Account ID of executing account is not equal to the Account ID specified via note storage.
 #! - The same non-fungible asset already exists in the account.
-#! - Adding a fungible asset would result in amount overflow, i.e., the total amount would be
-#!   greater than 2^63.
+#! - Adding a fungible asset would result in amount overflow, i.e., the total amount would exceed
+#!   FUNGIBLE_ASSET_MAX_AMOUNT (2^63 - 2^31).
 @note_script
 pub proc main
     # store the note storage to memory starting at address 0
