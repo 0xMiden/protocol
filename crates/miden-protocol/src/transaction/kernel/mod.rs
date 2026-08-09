@@ -97,6 +97,36 @@ static TX_SCRIPT_MAIN_DEBUG_INFO: LazyLock<Option<Arc<PackageDebugInfo>>> =
 // TRANSACTION KERNEL
 // ================================================================================================
 
+/// One of the kernel's embedded programs, paired with everything a package-debug execution API
+/// needs to run it.
+///
+/// The program, its debug info and its entrypoint source node are only meaningful together: the
+/// entrypoint node is an index into that package's debug info, and a program whose package
+/// carried no debug sections still needs an empty [`PackageDebugInfo`] to execute against.
+/// Returning them as a unit keeps callers from having to know that.
+pub struct KernelProgram {
+    program: Program,
+    debug_info: Arc<PackageDebugInfo>,
+    entrypoint_source_node: Option<DebugSourceNodeId>,
+}
+
+impl KernelProgram {
+    /// Returns the executable program.
+    pub fn program(&self) -> &Program {
+        &self.program
+    }
+
+    /// Returns the package-owned debug info, which is empty when the package carried none.
+    pub fn debug_info(&self) -> &PackageDebugInfo {
+        &self.debug_info
+    }
+
+    /// Returns the source/debug occurrence for the program's entrypoint.
+    pub fn entrypoint_source_node(&self) -> Option<DebugSourceNodeId> {
+        self.entrypoint_source_node
+    }
+}
+
 pub struct TransactionKernel;
 
 impl TransactionKernel {
@@ -122,17 +152,20 @@ impl TransactionKernel {
         KERNEL_MAIN.clone()
     }
 
-    /// Returns package-owned debug information for the transaction kernel executable program.
+    /// Returns the transaction kernel executable program together with its package-owned debug
+    /// info, ready to hand to a package-debug execution API.
     ///
     /// # Panics
     /// Panics if the embedded transaction kernel package contains malformed debug information.
-    pub fn main_debug_info() -> Option<Arc<PackageDebugInfo>> {
-        KERNEL_MAIN_DEBUG_INFO.clone()
-    }
-
-    /// Returns the source/debug occurrence for the transaction kernel executable entrypoint.
-    pub fn main_entrypoint_source_node() -> Option<DebugSourceNodeId> {
-        package_entrypoint_source_node(&KERNEL_MAIN_PACKAGE, KERNEL_MAIN_DEBUG_INFO.as_deref())
+    pub fn main_program() -> KernelProgram {
+        KernelProgram {
+            program: Self::main(),
+            debug_info: KERNEL_MAIN_DEBUG_INFO.clone().unwrap_or_else(empty_debug_info),
+            entrypoint_source_node: package_entrypoint_source_node(
+                &KERNEL_MAIN_PACKAGE,
+                KERNEL_MAIN_DEBUG_INFO.as_deref(),
+            ),
+        }
     }
 
     /// Returns an AST of the transaction script executor program.
@@ -143,21 +176,21 @@ impl TransactionKernel {
         TX_SCRIPT_MAIN.clone()
     }
 
-    /// Returns package-owned debug information for the transaction script executor program.
+    /// Returns the transaction script executor program together with its package-owned debug
+    /// info, ready to hand to a package-debug execution API.
     ///
     /// # Panics
     /// Panics if the embedded transaction script executor package contains malformed debug
     /// information.
-    pub fn tx_script_main_debug_info() -> Option<Arc<PackageDebugInfo>> {
-        TX_SCRIPT_MAIN_DEBUG_INFO.clone()
-    }
-
-    /// Returns the source/debug occurrence for the transaction script executor entrypoint.
-    pub fn tx_script_main_entrypoint_source_node() -> Option<DebugSourceNodeId> {
-        package_entrypoint_source_node(
-            &TX_SCRIPT_MAIN_PACKAGE,
-            TX_SCRIPT_MAIN_DEBUG_INFO.as_deref(),
-        )
+    pub fn tx_script_main_program() -> KernelProgram {
+        KernelProgram {
+            program: Self::tx_script_main(),
+            debug_info: TX_SCRIPT_MAIN_DEBUG_INFO.clone().unwrap_or_else(empty_debug_info),
+            entrypoint_source_node: package_entrypoint_source_node(
+                &TX_SCRIPT_MAIN_PACKAGE,
+                TX_SCRIPT_MAIN_DEBUG_INFO.as_deref(),
+            ),
+        }
     }
 
     /// Returns [ProgramInfo] for the transaction kernel executable program.
@@ -467,6 +500,13 @@ impl TransactionKernel {
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
     }
+}
+
+/// Shared empty debug info, used when a package carries no debug sections.
+fn empty_debug_info() -> Arc<PackageDebugInfo> {
+    static EMPTY: LazyLock<Arc<PackageDebugInfo>> =
+        LazyLock::new(|| Arc::new(PackageDebugInfo::default()));
+    EMPTY.clone()
 }
 
 fn package_debug_info(package: &Package, package_name: &str) -> Option<Arc<PackageDebugInfo>> {

@@ -19,7 +19,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
 };
-use miden_protocol::vm::{PackageDebugInfo, StackOutputs};
+use miden_protocol::vm::StackOutputs;
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
@@ -203,14 +203,12 @@ where
         // sections. This enables package-owned debug info for dynamically loaded scripts.
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
 
-        let program = TransactionKernel::main();
-        let kernel_debug_info = TransactionKernel::main_debug_info();
-        let fallback_debug_info = PackageDebugInfo::default();
+        let kernel = TransactionKernel::main_program();
         let output = processor
             .execute_with_package_debug_info(
-                &program,
-                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
-                TransactionKernel::main_entrypoint_source_node(),
+                kernel.program(),
+                kernel.debug_info(),
+                kernel.entrypoint_source_node(),
                 &mut host,
             )
             .await
@@ -253,14 +251,12 @@ where
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
         let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
-        let program = TransactionKernel::tx_script_main();
-        let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
-        let fallback_debug_info = PackageDebugInfo::default();
+        let kernel = TransactionKernel::tx_script_main_program();
         let output = processor
             .execute_with_package_debug_info(
-                &program,
-                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
-                TransactionKernel::tx_script_main_entrypoint_source_node(),
+                kernel.program(),
+                kernel.debug_info(),
+                kernel.entrypoint_source_node(),
                 &mut host,
             )
             .await
