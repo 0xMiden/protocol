@@ -11,8 +11,7 @@ const ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
 # =================================================================================================
 #
 # Internal memory-write helpers shared by the `miden::protocol::input_note`,
-# `miden::protocol::active_note`, and `miden::protocol::output_note` APIs. These procedures are
-# private to the library and are not part of its public API.
+# `miden::protocol::active_note`, and `miden::protocol::output_note` APIs.
 
 #! Writes the assets data stored in the advice map to the memory specified by the provided
 #! destination pointer.
