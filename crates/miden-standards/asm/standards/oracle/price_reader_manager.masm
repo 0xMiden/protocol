@@ -14,8 +14,10 @@ use miden::protocol::active_account
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::access::authority
+use miden::standards::assets::fungible_asset
 use miden::standards::fee
 use miden::standards::oracle::price_reader
+use {COMPOSITION_FUNGIBLE} from miden::protocol::asset
 use {AccountId, Asset, AssetId} from miden::protocol::types
 use {ConversionRate} from miden::standards::fee
 
@@ -30,6 +32,8 @@ pub const ORACLE_SLOT = word("miden::standards::oracle::price_reader_manager::or
 
 const ERR_PRICE_READER_MANAGER_ORACLE_NOT_CONFIGURED = "price oracle account is not configured"
 const ERR_PRICE_READER_MANAGER_ORACLE_ID_INVALID = "price oracle account id must be non-zero"
+const ERR_PRICE_READER_MANAGER_ASSET_NOT_FUNGIBLE = "the asset being converted must be fungible"
+const ERR_PRICE_READER_MANAGER_TARGET_NOT_FUNGIBLE = "the target asset must be fungible"
 
 # INTERNAL PROCEDURES
 # =================================================================================================
@@ -100,6 +104,7 @@ end
 #! - timestamp is the block timestamp, in seconds, of the stalest input the rate was derived from.
 #!
 #! Panics if:
+#! - either asset is not fungible.
 #! - no oracle account is configured.
 #! - the oracle cannot price the pair.
 #! - the converted amount overflows a fungible asset amount.
@@ -107,6 +112,17 @@ end
 #! Invocation: exec
 @locals(2) # asset amount (1) + rate timestamp (1)
 pub proc convert_asset_amount(asset: Asset, target: AssetId) -> (felt, u32)
+    # both sides are checked before the value word is read as an amount: for a non-fungible asset
+    # that word carries data, not a quantity, so converting it would produce a plausible number out
+    # of something that was never one
+    dupw exec.asset::id_into_composition eq.COMPOSITION_FUNGIBLE
+    assert.err=ERR_PRICE_READER_MANAGER_ASSET_NOT_FUNGIBLE
+    # => [ASSET_ID, ASSET_VALUE, TARGET_ASSET_ID]
+
+    dupw.2 exec.asset::id_into_composition eq.COMPOSITION_FUNGIBLE
+    assert.err=ERR_PRICE_READER_MANAGER_TARGET_NOT_FUNGIBLE
+    # => [ASSET_ID, ASSET_VALUE, TARGET_ASSET_ID]
+
     swapw exec.asset::fungible_value_into_amount loc_store.0
     # => [ASSET_ID, TARGET_ASSET_ID]
 
@@ -127,6 +143,48 @@ pub proc convert_asset_amount(asset: Asset, target: AssetId) -> (felt, u32)
 
     swap
     # => [converted_amount, timestamp]
+end
+
+#! Converts a fungible asset into the target asset.
+#!
+#! The amount-only [`convert_asset_amount`] is the same conversion without the asset words; this
+#! procedure exists because a caller that goes on to move the result wants an asset, not a number.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, TARGET_ASSET_ID]
+#! Outputs: [TARGET_ASSET_ID, TARGET_ASSET_VALUE, timestamp]
+#!
+#! Where:
+#! - ASSET_ID and ASSET_VALUE are the id and value words of the asset being converted.
+#! - TARGET_ASSET_ID is the asset the result is denominated in, returned unchanged.
+#! - TARGET_ASSET_VALUE is the converted amount as the value word [amount, 0, 0, 0].
+#! - timestamp is the block timestamp, in seconds, of the stalest input the rate was derived from.
+#!
+#! Panics if:
+#! - either asset is not fungible.
+#! - no oracle account is configured.
+#! - the oracle cannot price the pair.
+#! - the converted amount overflows a fungible asset amount.
+#!
+#! Invocation: exec
+@locals(5) # target asset id (4) + rate timestamp (1)
+pub proc convert_asset(asset: Asset, target: AssetId) -> (Asset, u32)
+    dupw.2 loc_storew_le.0 dropw
+    # => [ASSET_ID, ASSET_VALUE, TARGET_ASSET_ID]
+
+    exec.convert_asset_amount
+    # => [converted_amount, timestamp]
+
+    swap loc_store.4
+    # => [converted_amount]
+
+    exec.fungible_asset::create_value
+    # => [TARGET_ASSET_VALUE]
+
+    padw loc_loadw_le.0
+    # => [TARGET_ASSET_ID, TARGET_ASSET_VALUE]
+
+    loc_load.4 movdn.8
+    # => [TARGET_ASSET_ID, TARGET_ASSET_VALUE, timestamp]
 end
 
 # CONFIGURATION PROCEDURES

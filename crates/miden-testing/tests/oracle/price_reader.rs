@@ -6,15 +6,19 @@
 
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::asset::NonFungibleAsset;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Authority;
 use miden_standards::account::oracle::{PriceEntry, PriceReaderManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_PRICE_READER_MANAGER_ASSET_NOT_FUNGIBLE,
     ERR_PRICE_READER_MANAGER_ORACLE_NOT_CONFIGURED,
+    ERR_PRICE_READER_MANAGER_TARGET_NOT_FUNGIBLE,
     ERR_PRICE_READER_RATE_STALE,
 };
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_tx::TransactionExecutorError;
 
 use super::common::{asset_id_of, oracle_account, source_faucet, target_faucet, unpriced_faucet};
 
@@ -34,6 +38,17 @@ const CONVERT_COMPONENT_CODE: &str = r#"
     @account_procedure
     pub proc convert_asset_amount
         exec.price_reader_manager::convert_asset_amount
+
+        exec.sys::truncate_stack
+    end
+
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, TARGET_ASSET_ID, pad(4)]
+    #! Outputs: [TARGET_ASSET_ID, TARGET_ASSET_VALUE, timestamp, pad(7)]
+    #!
+    #! Invocation: call
+    @account_procedure
+    pub proc convert_asset
+        exec.price_reader_manager::convert_asset
 
         exec.sys::truncate_stack
     end
@@ -280,6 +295,146 @@ fn the_component_seeds_the_oracle_account() -> anyhow::Result<()> {
         reader.storage().get_item(PriceReaderManager::oracle_slot())?,
         Word::new([oracle.id().prefix().as_felt(), oracle.id().suffix(), Felt::ZERO, Felt::ZERO])
     );
+
+    Ok(())
+}
+
+/// The asset-returning conversion hands back a well-formed target asset, so a caller that goes on
+/// to move the result does not have to rebuild it from a bare amount.
+#[tokio::test]
+async fn converting_returns_the_target_asset() -> anyhow::Result<()> {
+    let now = MockChain::TIMESTAMP_START_SECS;
+    let oracle = oracle_account(&[
+        (source_faucet()?, PriceEntry::new(Felt::from(1_500u32), 2, now)?),
+        (target_faucet()?, PriceEntry::new(Felt::from(3u32), 0, now)?),
+    ])?;
+    let code = convert_component_code()?;
+    let reader = reader_account(Some(&oracle), code.clone())?;
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(code.as_package())?
+        .compile_tx_script(format!(
+            r#"
+        use miden::core::sys
+        use miden::core::word
+        use test::oracle::convert
+
+        @transaction_script
+        pub proc main
+            padw
+            push.{target_asset_id}
+            push.0.0.0.4 push.{source_asset_id}
+            # => [ASSET_ID, ASSET_VALUE, TARGET_ASSET_ID, pad(4)]
+
+            call.convert::convert_asset
+            # => [TARGET_ASSET_ID, TARGET_ASSET_VALUE, timestamp, pad(7)]
+
+            push.{target_asset_id}
+            exec.word::eq assert.err="converted asset is not denominated in the target asset"
+            # => [TARGET_ASSET_VALUE, timestamp, pad(7)]
+
+            push.20 assert_eq.err="unexpected converted amount"
+            # => [0, 0, 0, timestamp, pad(7)]
+
+            exec.sys::truncate_stack
+        end
+        "#,
+            source_asset_id = asset_id_of(source_faucet()?)?,
+            target_asset_id = asset_id_of(target_faucet()?)?,
+        ))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(oracle.clone())?;
+    builder.add_account(reader.clone())?;
+    let mock_chain = builder.build()?;
+
+    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
+
+    mock_chain
+        .build_transaction(reader.id())
+        .foreign_accounts([foreign_oracle])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// Runs a conversion whose source or target asset id is non-fungible and returns the outcome.
+async fn convert_with_asset_ids(
+    source_asset_id: Word,
+    target_asset_id: Word,
+) -> anyhow::Result<
+    Result<miden_protocol::transaction::ExecutedTransaction, TransactionExecutorError>,
+> {
+    let now = MockChain::TIMESTAMP_START_SECS;
+    let oracle = oracle_account(&[
+        (source_faucet()?, PriceEntry::new(Felt::from(1_500u32), 2, now)?),
+        (target_faucet()?, PriceEntry::new(Felt::from(3u32), 0, now)?),
+    ])?;
+    let code = convert_component_code()?;
+    let reader = reader_account(Some(&oracle), code.clone())?;
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(code.as_package())?
+        .compile_tx_script(format!(
+            r#"
+        use miden::core::sys
+        use test::oracle::convert
+
+        @transaction_script
+        pub proc main
+            padw
+            push.{target_asset_id}
+            push.0.0.0.4 push.{source_asset_id}
+            # => [ASSET_ID, ASSET_VALUE, TARGET_ASSET_ID, pad(4)]
+
+            call.convert::convert_asset_amount
+
+            exec.sys::truncate_stack
+        end
+        "#
+        ))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(oracle.clone())?;
+    builder.add_account(reader.clone())?;
+    let mock_chain = builder.build()?;
+
+    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
+
+    Ok(mock_chain
+        .build_transaction(reader.id())
+        .foreign_accounts([foreign_oracle])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await)
+}
+
+/// A non-fungible asset's value word carries data, not a quantity, so converting one is refused
+/// rather than silently reading that data as an amount.
+#[tokio::test]
+async fn converting_a_non_fungible_asset_is_rejected() -> anyhow::Result<()> {
+    let non_fungible = Word::from(NonFungibleAsset::mock(&[1, 2, 3]).id());
+
+    let result = convert_with_asset_ids(non_fungible, asset_id_of(target_faucet()?)?).await?;
+
+    assert_transaction_executor_error!(result, ERR_PRICE_READER_MANAGER_ASSET_NOT_FUNGIBLE);
+
+    Ok(())
+}
+
+/// The target is checked too, so a conversion cannot produce an amount denominated in something
+/// that has no amounts.
+#[tokio::test]
+async fn converting_into_a_non_fungible_asset_is_rejected() -> anyhow::Result<()> {
+    let non_fungible = Word::from(NonFungibleAsset::mock(&[4, 5, 6]).id());
+
+    let result = convert_with_asset_ids(asset_id_of(source_faucet()?)?, non_fungible).await?;
+
+    assert_transaction_executor_error!(result, ERR_PRICE_READER_MANAGER_TARGET_NOT_FUNGIBLE);
 
     Ok(())
 }

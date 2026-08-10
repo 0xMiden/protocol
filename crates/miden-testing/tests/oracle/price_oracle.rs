@@ -6,10 +6,12 @@
 //! changes is the reason the wrapper exists.
 
 use miden_protocol::Felt;
-use miden_protocol::account::AccountId;
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_standards::account::access::Authority;
 use miden_standards::account::oracle::{PriceEntry, PriceFeed, PriceOracle};
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::MockChain;
+use miden_testing::{Auth, MockChain};
 
 use super::common::{
     asset_id_of,
@@ -18,6 +20,7 @@ use super::common::{
     source_faucet,
     target_faucet,
     unpriced_faucet,
+    usd,
 };
 
 /// Builds a transaction script asserting the rate the oracle reports for a pair.
@@ -207,6 +210,160 @@ fn the_feed_is_registered_as_the_oracle_implementation() -> anyhow::Result<()> {
         oracle.storage().get_item(PriceOracle::implementation_slot())?,
         *PriceFeed::compute_conversion_rate_root().mast_root()
     );
+
+    Ok(())
+}
+
+/// A second implementation, used to show that swapping the pricing behind the wrapper leaves the
+/// address consumers resolve against untouched.
+const ALTERNATIVE_IMPL_PATH: &str = "test::oracle::alternative";
+
+const ALTERNATIVE_IMPL_CODE: &str = r#"
+    use miden::core::sys
+    use miden::protocol::tx
+
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [num, den, timestamp, pad(13)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc compute_conversion_rate
+        dropw dropw
+        # => [pad(8)]
+
+        exec.tx::get_block_timestamp push.1 push.7
+        # => [num = 7, den = 1, timestamp, pad(8)]
+
+        exec.sys::truncate_stack
+    end
+"#;
+
+/// Builds an oracle carrying both the feed and the alternative implementation, with the feed
+/// active.
+fn swappable_oracle_account(
+    prices: &[(AccountId, PriceEntry)],
+    alternative: &AccountComponentCode,
+) -> anyhow::Result<Account> {
+    let mut feed = PriceFeed::new(usd()?);
+    for (faucet_id, entry) in prices {
+        feed = feed.with_price(*faucet_id, *entry);
+    }
+
+    let alternative_component = AccountComponent::new(
+        alternative.clone(),
+        Vec::new(),
+        AccountComponentMetadata::mock(ALTERNATIVE_IMPL_PATH),
+    )?;
+
+    Ok(AccountBuilder::new([35; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(Authority::AuthControlled)
+        .with_component(feed)
+        .with_component(
+            PriceOracle::new().with_implementation(PriceFeed::compute_conversion_rate_root()),
+        )
+        .with_component(alternative_component)
+        .build_existing()?)
+}
+
+/// Replacing the pricing implementation leaves the interface's MAST root untouched, so a consumer
+/// that resolved it before the swap keeps reaching the oracle afterwards and sees the new pricing.
+///
+/// This is the property the wrapper exists for. Pinning the root in isolation does not demonstrate
+/// it; running the same root across a swap does.
+#[tokio::test]
+async fn swapping_the_implementation_keeps_the_interface_reachable() -> anyhow::Result<()> {
+    let now = MockChain::TIMESTAMP_START_SECS;
+    let alternative = CodeBuilder::default()
+        .compile_component_code(ALTERNATIVE_IMPL_PATH, ALTERNATIVE_IMPL_CODE)?;
+    let alternative_root = alternative
+        .get_procedure_root_by_path("test::oracle::alternative::compute_conversion_rate")
+        .expect("component should export compute_conversion_rate");
+
+    let prices = [
+        (source_faucet()?, PriceEntry::new(Felt::from(1_500u32), 2, now)?),
+        (target_faucet()?, PriceEntry::new(Felt::from(3u32), 0, now)?),
+    ];
+    let oracle = swappable_oracle_account(&prices, &alternative)?;
+    let consumer = consumer_account([36; 32])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(oracle.clone())?;
+    builder.add_account(consumer.clone())?;
+    let mut mock_chain = builder.build()?;
+
+    // the feed-derived rate, read through the wrapper
+    let before = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
+        oracle.id(),
+        asset_id_of(source_faucet()?)?,
+        asset_id_of(target_faucet()?)?,
+        1_500,
+        300,
+        u64::from(now),
+    ))?;
+    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
+    mock_chain
+        .build_transaction(consumer.id())
+        .foreign_accounts([foreign_oracle])
+        .tx_script(before)
+        .build()?
+        .execute()
+        .await?;
+
+    // swap the implementation
+    let swap = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        use miden::core::sys
+        use miden::standards::oracle::price_oracle
+
+        @transaction_script
+        pub proc main
+            push.{alternative_root}
+            # => [IMPLEMENTATION_ROOT, ...]
+
+            call.price_oracle::set_implementation
+
+            exec.sys::truncate_stack
+        end
+        "#,
+        alternative_root = *alternative_root.mast_root(),
+    ))?;
+    let executed = mock_chain
+        .build_transaction(oracle.id())
+        .tx_script(swap)
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    assert_eq!(
+        mock_chain
+            .committed_account(oracle.id())?
+            .storage()
+            .get_item(PriceOracle::implementation_slot())?,
+        *alternative_root.mast_root(),
+        "set_implementation should have registered the alternative implementation"
+    );
+
+    // the same wrapper root now answers with the alternative implementation's pricing
+    let after = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
+        oracle.id(),
+        asset_id_of(source_faucet()?)?,
+        asset_id_of(target_faucet()?)?,
+        7,
+        1,
+        u64::from(mock_chain.latest_block_header().timestamp()),
+    ))?;
+    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
+    mock_chain
+        .build_transaction(consumer.id())
+        .foreign_accounts([foreign_oracle])
+        .tx_script(after)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }
