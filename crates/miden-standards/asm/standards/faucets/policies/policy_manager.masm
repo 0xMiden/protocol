@@ -150,16 +150,11 @@ end
 #! applies the pause check and invokes the active send policy.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
-#!
-#! Where:
-#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
-#!   if no send policy is configured.
+#! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the account is paused.
 #! - the active send policy predicate fails.
-#! - the active send policy returns an asset value different from the one it received.
 #!
 #! Invocation: call
 @account_procedure
@@ -168,7 +163,7 @@ pub proc invoke_send_policy
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     exec.invoke_transfer_policy
-    # => [PROCESSED_ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 end
 
 #! Returns active send policy root.
@@ -221,17 +216,14 @@ end
 #! receive policy is configured).
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - custom_data is `0` for the receive callback.
-#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
-#!   if no receive policy is configured.
 #!
 #! Panics if:
 #! - the account is paused.
 #! - the active receive policy predicate fails.
-#! - the active receive policy returns an asset value different from the one it received.
 #!
 #! Invocation: call
 @account_procedure
@@ -240,7 +232,7 @@ pub proc invoke_receive_policy
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     exec.invoke_transfer_policy
-    # => [PROCESSED_ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 end
 
 #! Returns active receive policy root.
@@ -536,23 +528,20 @@ end
 #! which differ only in which slot they bind.
 #!
 #! If the active root is the empty word (no policy configured for this kind), the transfer is
-#! accepted unchanged and the pause check is skipped — mirroring the kernel's behavior when a
-#! callback slot holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op
-#! when the [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
+#! accepted and the pause check is skipped — mirroring the kernel's behavior when a callback slot
+#! holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op when the
+#! [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - slot_id_{suffix, prefix} identify the storage slot holding the active policy root.
 #! - custom_data is `0` for the receive callback and the output note index for the send callback.
-#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
-#!   if no policy is configured.
 #!
 #! Panics if:
 #! - the account is paused.
 #! - the invoked policy predicate fails.
-#! - the invoked policy returns an asset value different from the one it received.
 #!
 #! Invocation: exec
 @locals(4)
@@ -564,10 +553,9 @@ proc invoke_transfer_policy
     # => [is_empty, POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     if.true
-        # No policy configured: drop the empty root and asset ID, return the asset value
-        # unchanged. `movup.4 drop` removes custom_data so only ASSET_VALUE is returned.
-        dropw dropw movup.4 drop
-        # => [ASSET_VALUE, pad(7)]
+        # No policy configured: consume the callback inputs.
+        dropw dropw dropw drop
+        # => [pad(16)]
     else
         exec.pausable::assert_not_paused
         # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
@@ -579,6 +567,6 @@ proc invoke_transfer_policy
         # => [policy_root_ptr, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
         dyncall
-        # => [PROCESSED_ASSET_VALUE, pad(12)]
+        # => [pad(16)]
     end
 end

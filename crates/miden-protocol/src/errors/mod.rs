@@ -41,6 +41,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
+use crate::script::MastForestScriptError;
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
@@ -731,14 +732,8 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
-    #[error("package does not contain a procedure with @note_script attribute")]
-    NoteScriptNoProcedureWithAttribute,
-    #[error("package contains multiple procedures with @note_script attribute")]
-    NoteScriptMultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in package")]
-    NoteScriptProcedureNotFound(Box<str>),
-    #[error("procedure at path '{0}' does not have @note_script attribute")]
-    NoteScriptProcedureMissingAttribute(Box<str>),
+    #[error("error while creating note script: {0}")]
+    MastForestScript(#[source] MastForestScriptError),
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
@@ -873,25 +868,6 @@ impl PartialBlockchainError {
     pub fn untracked_block(block_num: BlockNumber) -> Self {
         Self::UntrackedBlock { block_num }
     }
-}
-
-// TRANSACTION SCRIPT ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum TransactionScriptError {
-    #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
-    AssemblyError(Report),
-    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
-    PackageNotProgram(Report),
-    #[error("package does not contain a procedure with @transaction_script attribute")]
-    NoProcedureWithAttribute,
-    #[error("package contains multiple procedures with @transaction_script attribute")]
-    MultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in package")]
-    ProcedureNotFound(Box<str>),
-    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
-    ProcedureMissingAttribute(Box<str>),
 }
 
 // TRANSACTION INPUT ERROR
