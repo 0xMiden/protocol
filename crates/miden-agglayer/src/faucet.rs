@@ -160,7 +160,8 @@ impl AggLayerFaucet {
     /// [`ConstantFeePolicyConfigNote`], through which the `ADMIN` role can reprice the faucet's
     /// fee schedule after deployment. The bridge sizes the sponsorship of every MINT and BURN
     /// note it creates from that schedule, so bridging stalls if the schedule's prices stop
-    /// covering the chain's verification base fee. The set also includes the
+    /// covering what those notes cost to consume at the chain's current verification base fee.
+    /// The set also includes the
     /// configuration and sponsorship notes that [`AuthNetworkAccount`] adds to every standard
     /// network account.
     ///

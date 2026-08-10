@@ -189,9 +189,10 @@ impl AggLayerBridge {
     /// deployed [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy)
     /// schedule and is driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note. The
     /// procedure has no entry in [`AggLayerBridge::procedure_roles`], so it falls back to the
-    /// `ADMIN` role. Without it the schedule would be stuck at its deployment prices. A schedule
-    /// priced with enough margin may never need an update, but there would be no way to correct
-    /// it if the chain's verification base fee rises past that margin.
+    /// `ADMIN` role. Without it the schedule would be stuck at its deployment prices, with no
+    /// way to correct it if the chain's verification base fee rises past the margin the prices
+    /// were built with. Note that the default `NetworkNotePricer` margin is small: one extra
+    /// verification cycle, roughly 6% of the fee.
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn account_builder(
