@@ -290,6 +290,13 @@ account. A faucet left at stale prices makes the bridge under-sponsor the note i
 created, and the faucet's transaction can no longer pay its own fee. A stale faucet schedule
 therefore stalls bridging, not just faucet administration.
 
+The two schedules are also coupled. The bridge funds the `MINT` and `BURN` sponsorships from its
+own vault, sized by the faucet's schedule, and is reimbursed by the sponsorships attached to its
+own `CLAIM` and `B2AGG` notes, whose prices include the notes they create. So when the faucet is
+repriced upward (for example to add margin), the bridge's `CLAIM` and `B2AGG` entries must rise
+with it, or each claim becomes a small net drain on the bridge's vault. Nothing enforces this
+coupling; it is an operator rule.
+
 A note root must have a schedule entry before notes with that root can be consumed:
 `BasicConstantFeePolicy` aborts on any root without an entry (an explicit zero counts as an
 entry). When an `ADMIN` adds a new root to
