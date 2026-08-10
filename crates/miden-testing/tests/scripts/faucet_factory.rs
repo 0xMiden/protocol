@@ -1,13 +1,5 @@
 //! Tests that the faucet factories wire up asset callbacks consistently with the
 //! [`TokenPolicyManager`] they are given.
-//!
-//! The kernel decides whether to invoke a faucet's `on_before_asset_added_to_*` callbacks purely
-//! from the `AssetCallbackFlag` encoded in the issuing faucet's account ID, and those callbacks are
-//! the only path that reaches a `TokenPolicyManager`'s send / receive policies. Since the flag is
-//! ground into the ID at creation and is immutable, a factory that leaves it disabled while
-//! installing the callback slots produces a faucet whose transfer policies (and the pause check
-//! they carry) can never be enforced, for its entire supply. These tests therefore drive a
-//! factory-built faucet's policy through a real transaction rather than only inspecting storage.
 
 extern crate alloc;
 
@@ -84,9 +76,6 @@ fn sample_faucet() -> anyhow::Result<FungibleFaucet> {
 /// Registers a factory-built faucet in the chain's genesis state. The faucet never executes a
 /// transaction in these tests, it is only read as a foreign account when the kernel dispatches the
 /// receive callback, so it needs no authenticator.
-///
-/// Genesis accounts must be existing accounts, so the nonce is bumped to drop the creation seed.
-/// The account ID is left untouched, which is what carries the asset callback flag under test.
 fn add_factory_faucet(builder: &mut MockChainBuilder, mut faucet: Account) -> anyhow::Result<()> {
     faucet.set_nonce(Felt::ONE)?;
     builder.add_account(faucet)

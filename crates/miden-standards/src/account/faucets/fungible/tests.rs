@@ -292,11 +292,6 @@ fn faucet_create_from_account() {
 
 /// Every fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID when
 /// the policy manager registers a transfer policy, and `Disabled` when it does not.
-///
-/// The kernel decides whether to invoke the `TokenPolicyManager` send / receive callbacks from this
-/// flag alone, and the flag is immutable once the ID is ground, so a factory that leaves it
-/// disabled silently and permanently bypasses the configured transfer policies (and the pause check
-/// they carry) for the faucet's entire supply.
 #[rstest::rstest]
 #[case::with_transfer_policy(allow_all_policy_manager(), AssetCallbackFlag::Enabled)]
 #[case::without_transfer_policy(mint_burn_only_policy_manager(), AssetCallbackFlag::Disabled)]
