@@ -223,7 +223,7 @@ impl AggLayerFaucet {
 /// bridge's [`AggLayerBridge::network_id_slot_name`] storage slot at account creation.
 ///
 /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
-/// [`AggLayerBridge::bridge_notes()`] so the bridge only accepts its sanctioned input notes. The
+/// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes. The
 /// tx-script allowlist contains only the canonical `ExpirationTransactionScript` so the network
 /// transaction builder can bound how long the bridge's transactions stay valid.
 ///
@@ -246,7 +246,7 @@ fn create_bridge_account_builder(
     network_id: u32,
     fee_policy_manager: FeePolicyManager,
 ) -> AccountBuilder {
-    NetworkAccount::builder(seed.into(), AggLayerBridge::bridge_notes(), fee_policy_manager)
+    NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
         .expect("bridge note allowlist is non-empty")
         .with_component(AggLayerBridge::new(network_id))
         .with_component(
@@ -301,7 +301,7 @@ pub fn create_bridge_account(
 ///   [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy) schedule,
 ///   driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note.
 /// - The network-account auth component, installed via [`NetworkAccount::builder`] with
-///   [`AggLayerFaucet::faucet_notes()`]. The tx-script allowlist contains only the canonical
+///   [`AggLayerFaucet::allowed_notes()`]. The tx-script allowlist contains only the canonical
 ///   [`ExpirationTransactionScript`](miden_standards::tx_script::ExpirationTransactionScript).
 ///
 /// Minting and burning are authorized independently of [`Authority`]: `MintOwnerOnly` and
@@ -333,7 +333,7 @@ pub(crate) fn create_agglayer_faucet_builder(
         .active_receive_policy(TransferPolicy::allow_all())
         .build();
 
-    NetworkAccount::builder(seed.into(), AggLayerFaucet::faucet_notes(), fee_policy_manager)
+    NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
         .expect("faucet note allowlist is non-empty")
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))

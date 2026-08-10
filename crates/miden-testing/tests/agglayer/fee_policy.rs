@@ -85,13 +85,10 @@ fn faucet_allowed_notes_pin() {
         MintNote::script_root(),
         BurnNote::script_root(),
         ConstantFeePolicyConfigNote::script_root(),
+        NetworkAccountConfigNote::script_root(),
+        FeeSponsorshipNote::script_root(),
     ]);
-    assert_eq!(AggLayerFaucet::faucet_notes(), expected);
-
-    let mut effective = expected;
-    effective.insert(NetworkAccountConfigNote::script_root());
-    effective.insert(FeeSponsorshipNote::script_root());
-    assert_eq!(AggLayerFaucet::allowed_notes(), effective);
+    assert_eq!(AggLayerFaucet::allowed_notes(), expected);
 }
 
 // POST-DEPLOYMENT FEE SCHEDULE UPDATES

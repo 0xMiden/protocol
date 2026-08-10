@@ -230,8 +230,10 @@ fn bridge_allowed_notes_pin() {
         PauseConfigNote::script_root(),
         RbacConfigNote::script_root(),
         ConstantFeePolicyConfigNote::script_root(),
+        NetworkAccountConfigNote::script_root(),
+        FeeSponsorshipNote::script_root(),
     ]);
-    assert_eq!(AggLayerBridge::bridge_notes(), expected);
+    assert_eq!(AggLayerBridge::allowed_notes(), expected);
 
     let dummy = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
@@ -244,10 +246,7 @@ fn bridge_allowed_notes_pin() {
     );
     let network_account =
         NetworkAccount::try_from(bridge).expect("bridge should be a network account");
-    let mut effective = expected;
-    effective.insert(NetworkAccountConfigNote::script_root());
-    effective.insert(FeeSponsorshipNote::script_root());
-    assert_eq!(network_account.allowed_notes().allowed_script_roots(), &effective);
+    assert_eq!(network_account.allowed_notes().allowed_script_roots(), &expected);
 
     // the tx-script allowlist carries only the canonical expiration script
     assert_eq!(

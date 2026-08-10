@@ -9,7 +9,7 @@
 
 ### Changes
 
-- [BREAKING] Renamed `AggLayerBridge::allowed_notes` / `AggLayerFaucet::allowed_notes` to `bridge_notes` / `faucet_notes`; `allowed_notes` now returns the full set of note script roots the deployed account accepts (the account-specific roots plus the `AuthNetworkAccount` defaults), which its fee policy must price ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
+- [BREAKING] `AggLayerBridge::allowed_notes` / `AggLayerFaucet::allowed_notes` now return the full set of note script roots the deployed account accepts (the account-specific roots plus the `AuthNetworkAccount` defaults), which its fee policy must price ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
 
 ### Fixes
