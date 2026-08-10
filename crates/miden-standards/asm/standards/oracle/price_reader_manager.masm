@@ -1,0 +1,212 @@
+# miden::standards::oracle::price_reader_manager
+#
+# Owns the price reader configuration for an account and exposes it through authority-gated
+# setters. The valuation logic itself lives in [`price_reader`], which is slot-parameterized; this
+# module binds it to two canonical slots so an account can install a ready-made reader instead of
+# defining its own storage.
+#
+# Other components installed on the same account value assets by calling `quote_asset_value` with
+# `exec`.
+
+use miden::core::sys
+use miden::standards::access::authority
+use miden::standards::oracle::price_reader
+use {AccountId, Asset, Bool, StorageMapKey} from miden::protocol::types
+
+# CONSTANTS - slot names
+# =================================================================================================
+
+# Reader configuration. Layout: see the reserved config keys in [`price_reader`].
+pub const CONFIG_SLOT = word("miden::standards::oracle::price_reader_manager::config")
+
+# Per-faucet feed key overrides. Layout: FAUCET_ID => FEED_PRICE_KEY
+pub const PRICE_KEYS_SLOT = word("miden::standards::oracle::price_reader_manager::price_keys")
+
+# CONFIGURATION PROCEDURES
+# =================================================================================================
+
+#! Points the reader at a price feed, after verifying the feed publishes in the expected quote unit.
+#!
+#! The quote check is an FPI call to the feed's `get_quote_id`. It runs here, once, rather than on
+#! every price read: `PriceFeed` exposes no setter for its quote, so a feed that matched at
+#! configuration time keeps matching.
+#!
+#! Inputs:  [GET_PRICE_PROC_ROOT, GET_QUOTE_ID_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix,
+#!           pad(2)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - GET_PRICE_PROC_ROOT is the procedure root of the feed's `get_price`.
+#! - GET_QUOTE_ID_PROC_ROOT is the procedure root of the feed's `get_quote_id`. It is used for the
+#!   verification below and is not stored.
+#! - QUOTE_ID is the quote unit the feed is expected to publish in.
+#! - feed_id_{suffix,prefix} are the suffix and prefix felts of the feed's account id.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#! - the feed's quote unit differs from QUOTE_ID.
+#!
+#! Invocation: call
+@locals(10) # get_price proc root (4) + quote (4) + feed account id (2)
+@account_procedure
+pub proc configure_feed(
+    get_price_proc_root: word,
+    get_quote_id_proc_root: word,
+    quote_id: word,
+    feed_account_id: AccountId,
+)
+    exec.authority::assert_authorized
+    # => [GET_PRICE_PROC_ROOT, GET_QUOTE_ID_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix,
+    #     pad(2)]
+
+    # cache everything `set_feed` needs, since verifying the quote consumes the arguments
+    loc_storew_le.0 dropw
+    # => [GET_QUOTE_ID_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix, pad(2)]
+
+    dupw.1 loc_storew_le.4 dropw
+    # => [GET_QUOTE_ID_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix, pad(2)]
+
+    dup.8 loc_store.8
+    # => [GET_QUOTE_ID_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix, pad(2)]
+
+    dup.9 loc_store.9
+    # => [GET_QUOTE_ID_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix, pad(2)]
+
+    exec.price_reader::assert_feed_quote
+    # => [pad(6)]
+
+    loc_load.9 loc_load.8
+    # => [feed_id_suffix, feed_id_prefix, pad(6)]
+
+    padw loc_loadw_le.4
+    # => [QUOTE_ID, feed_id_suffix, feed_id_prefix, pad(6)]
+
+    padw loc_loadw_le.0
+    # => [GET_PRICE_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix, pad(6)]
+
+    push.CONFIG_SLOT[0..2]
+    # => [config_slot_suffix, config_slot_prefix, GET_PRICE_PROC_ROOT, QUOTE_ID, feed_id_suffix,
+    #     feed_id_prefix, pad(6)]
+
+    exec.price_reader::set_feed
+    # => [pad(6)]
+
+    exec.sys::truncate_stack
+    # => [pad(16)]
+end
+
+#! Sets the reader parameters.
+#!
+#! Inputs:  [quote_exponent, max_age_secs, untracked_policy, pad(13)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - quote_exponent is the decimal exponent every quoted value is normalized to.
+#! - max_age_secs is the largest accepted age, in seconds, of a price.
+#! - untracked_policy is `price_reader::UNTRACKED_POLICY_OMIT` or
+#!   `price_reader::UNTRACKED_POLICY_REJECT`.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#! - quote_exponent or max_age_secs is not a valid u32.
+#! - quote_exponent exceeds the supported exponent range.
+#! - untracked_policy is not one of the two accepted values.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_reader_params(quote_exponent: u32, max_age_secs: u32, untracked_policy: felt)
+    exec.authority::assert_authorized
+    # => [quote_exponent, max_age_secs, untracked_policy, pad(13)]
+
+    push.CONFIG_SLOT[0..2]
+    # => [config_slot_suffix, config_slot_prefix, quote_exponent, max_age_secs, untracked_policy,
+    #     pad(13)]
+
+    exec.price_reader::set_params
+    # => [pad(13)]
+
+    exec.sys::truncate_stack
+    # => [pad(16)]
+end
+
+#! Maps a faucet id to the key the configured feed publishes that asset's price under.
+#!
+#! Only needed for feeds that publish under their own identifiers; the standard `PriceFeed` is keyed
+#! by faucet id, which is the default when no entry exists. Writing the empty word restores that
+#! default.
+#!
+#! Inputs:  [FAUCET_ID, FEED_PRICE_KEY, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - FAUCET_ID is the faucet of the asset, as the word [prefix, suffix, 0, 0].
+#! - FEED_PRICE_KEY is the key the feed publishes the asset's price under.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_asset_feed_price_key(faucet_id: StorageMapKey, feed_price_key: StorageMapKey)
+    exec.authority::assert_authorized
+    # => [FAUCET_ID, FEED_PRICE_KEY, pad(8)]
+
+    push.PRICE_KEYS_SLOT[0..2]
+    # => [price_keys_slot_suffix, price_keys_slot_prefix, FAUCET_ID, FEED_PRICE_KEY, pad(8)]
+
+    exec.price_reader::set_feed_price_key
+    # => [pad(8)]
+
+    exec.sys::truncate_stack
+    # => [pad(16)]
+end
+
+# VALUATION PROCEDURES
+# =================================================================================================
+
+#! Returns the value of a fungible asset expressed in the configured quote unit.
+#!
+#! Intended for other components installed on the same account; invoke with `exec` so the
+#! configuration read stays in the native account's context.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [is_tracked, value_in_quote]
+#!
+#! Where:
+#! - ASSET_ID and ASSET_VALUE are the id and value words of the asset being valued.
+#! - is_tracked is 1 if the feed publishes a price for the asset, 0 otherwise.
+#! - value_in_quote is the asset's value at the configured quote exponent, or 0 when is_tracked is 0.
+#!
+#! Panics if:
+#! - the asset is not fungible.
+#! - no feed account is configured.
+#! - the price is dated in the future or older than the configured maximum age.
+#! - the quoted value does not fit in the supported range.
+#! - the asset is untracked and the configured policy is `price_reader::UNTRACKED_POLICY_REJECT`.
+#!
+#! Invocation: exec
+@locals(8) # asset id (4) + asset value (4)
+pub proc quote_asset_value(asset: Asset) -> (Bool, felt)
+    loc_storew_le.0 dropw
+    # => [ASSET_VALUE]
+
+    loc_storew_le.4 dropw
+    # => []
+
+    push.PRICE_KEYS_SLOT[0..2]
+    # => [price_keys_slot_suffix, price_keys_slot_prefix]
+
+    push.CONFIG_SLOT[0..2]
+    # => [config_slot_suffix, config_slot_prefix, price_keys_slot_suffix, price_keys_slot_prefix]
+
+    padw loc_loadw_le.4
+    # => [ASSET_VALUE, config_slot_suffix, config_slot_prefix, price_keys_slot_suffix,
+    #     price_keys_slot_prefix]
+
+    padw loc_loadw_le.0
+    # => [ASSET_ID, ASSET_VALUE, config_slot_suffix, config_slot_prefix, price_keys_slot_suffix,
+    #     price_keys_slot_prefix]
+
+    exec.price_reader::quote_asset_value
+    # => [is_tracked, value_in_quote]
+end

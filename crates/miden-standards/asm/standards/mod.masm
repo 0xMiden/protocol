@@ -12,6 +12,7 @@ pub mod interop
 pub mod note
 pub mod note_tag
 pub mod notes
+pub mod oracle
 pub mod tx_scripts
 pub mod utils
 pub mod wallets

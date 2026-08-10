@@ -1,0 +1,14 @@
+# The MASM code of the Price Reader Manager Account Component.
+#
+# Owns the price reader configuration for an account: which feed to read, the quote unit that feed
+# is expected to publish in, the reader parameters, and any per-faucet feed key overrides. Pair with
+# an `Authority` component, which gates the setters below.
+#
+# The valuation entry point, `quote_asset_value`, is invoked with `exec` by other components on the
+# same account and is therefore not part of this component's interface.
+#
+# See the `PriceReaderManager` Rust type's documentation for more details.
+
+pub use {configure_feed} from miden::standards::oracle::price_reader_manager
+pub use {set_reader_params} from miden::standards::oracle::price_reader_manager
+pub use {set_asset_feed_price_key} from miden::standards::oracle::price_reader_manager
