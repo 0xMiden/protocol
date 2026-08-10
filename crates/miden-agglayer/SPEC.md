@@ -304,16 +304,18 @@ prepaid. A note whose schedule entry is non-zero can only be consumed together w
 `FEE_SPONSORSHIP` notes bound to it that cover that entry, independently of the chain's own
 verification base fee. Operators therefore fund a sponsorship alongside each management note
 (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`, `PAUSE_CONFIG`), and repricing is the one
-administrative action that never *needs* one.
+administrative action whose sponsorship is voluntary rather than policy-enforced.
 
-The zero entry does not mean the account eats the repricing transaction's fee. Sponsorship
-coverage is checked as *at least* the scheduled amount, so an operator can voluntarily attach a
-`FEE_SPONSORSHIP` note bound to the config note anyway; its asset is credited to the account's
-vault before the transaction pays its fee, keeping the vault whole. The right amount is not a
-guess either: `NetworkNotePricer::price` computes the config note's real benchmarked cost - the
-zero lives only in the on-chain schedule, not in the pricer. What the zero gives up is merely
-*enforcement* of that reimbursement, and only for a note that solely the `ADMIN` role can put to
-use - a deliberate trade against bricking the schedule's one repair path.
+The zero entry is a policy-level statement, not free execution: the repricing transaction still
+pays the chain's transaction fee, funded from the account's vault. An operator keeps the vault
+whole by voluntarily attaching a `FEE_SPONSORSHIP` bound to the config note - coverage is
+checked as *at least* the scheduled amount, so the extra sponsorship is accepted and credited to
+the vault before the fee is paid. The right amount is not a guess either:
+`NetworkNotePricer::price` computes the config note's real benchmarked cost - the zero lives
+only in the on-chain schedule, not in the pricer. What the zero gives up is *enforcement* of
+that reimbursement, for a note only the `ADMIN` role can put to use; what it buys is that
+repricing is gated only on the transaction's own base-fee-bounded chain fee, never on a schedule
+entry that a mistaken repricing could set beyond anything a sponsor can pay.
 
 ---
 

@@ -2,9 +2,9 @@ use alloc::collections::BTreeSet;
 
 use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
-use miden_protocol::account::{Account, AccountId, AccountType, StorageMapKey};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetId, FungibleAsset};
-use miden_protocol::note::{Note, NoteScriptRoot};
+use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::NetworkAccount;
@@ -17,6 +17,7 @@ use miden_standards::note::{
     MintNote,
     NetworkAccountConfigNote,
     PauseConfig,
+    StandardNote,
 };
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
@@ -26,6 +27,7 @@ use super::test_utils::{
     VERIFICATION_BASE_FEE,
     add_fee_sponsorship,
     fee_faucet_id,
+    find_output_note,
     is_bridge_paused,
     network_note_pricer,
 };
@@ -107,20 +109,26 @@ fn outsider_id() -> AccountId {
     AccountId::builder().account_type(AccountType::Public).build_with_seed([42; 32])
 }
 
+/// Returns the production-priced bridge account builder shared by [`build_managed_account`] and
+/// the scenarios that need extra account settings (e.g. a pre-funded vault).
+fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
+    let admin = bridge_admin_account_id();
+    let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;
+    Ok(AggLayerBridge::account_builder(
+        Word::default(),
+        admin,
+        roles,
+        MIDEN_NETWORK_ID,
+        network_note_pricer(VERIFICATION_BASE_FEE).agglayer_bridge_fee_policy_manager()?,
+    ))
+}
+
 /// Builds the requested AggLayer account with its production-priced fee schedule, administered by
 /// [`bridge_admin_account_id`].
 fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
     let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
     let admin = bridge_admin_account_id();
-    let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;
-    let bridge = AggLayerBridge::account_builder(
-        Word::default(),
-        admin,
-        roles,
-        MIDEN_NETWORK_ID,
-        pricer.agglayer_bridge_fee_policy_manager()?,
-    )
-    .build_existing()?;
+    let bridge = bridge_account_builder()?.build_existing()?;
 
     Ok(match managed {
         ManagedAccount::Bridge => bridge,
@@ -270,8 +278,11 @@ async fn non_admin_cannot_reprice_the_fee_schedule(
 ///
 /// The pause note needs a `FEE_SPONSORSHIP` covering its scheduled fee, because a priced schedule
 /// requires every consumed note's fee to be prepaid regardless of the chain's own base fee. The
-/// repricing note needs none: it is scheduled free precisely so that repricing can never be
-/// gated on someone funding a sponsorship for it.
+/// repricing note needs none at the policy level: it is scheduled free so that repricing is
+/// never gated on covering a schedule entry, which a mistaken repricing could set beyond
+/// anything a sponsor can pay. On a fee-charging chain the repricing transaction's own fee must
+/// still be funded, from the account's vault or a voluntary sponsorship - see
+/// [`sponsored_repricing_note_reimburses_the_bridge`].
 #[tokio::test]
 async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
     const REPRICED_FEE: u64 = 4_242;
@@ -308,6 +319,93 @@ async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
         committed_fee(&mock_chain, bridge.id())?,
         Word::from([REPRICED_FEE as u32, 0, 0, 1]),
         "a paused bridge should still accept a repricing note"
+    );
+
+    Ok(())
+}
+
+/// Sums the fungible amounts carried by `assets`.
+fn fungible_total(assets: &NoteAssets) -> u64 {
+    assets.iter().map(|asset| asset.unwrap_fungible().amount().as_u64()).sum()
+}
+
+/// A repricing note can still pay for itself despite its zero schedule entry. Sponsorship
+/// coverage is checked as *at least* the scheduled amount, so an operator can voluntarily attach
+/// a `FEE_SPONSORSHIP` sized at the config note's real benchmarked price - which
+/// `NetworkNotePricer::price` still computes, the zero living only in the on-chain schedule. The
+/// sponsorship is credited to the bridge's vault before the transaction pays its fee, so on a
+/// fee-charging chain the repricing costs the bridge nothing of its own.
+///
+/// The bridge's vault is pre-funded so that a sponsorship falling short of the paid fee surfaces
+/// as the named coverage assertion below instead of an opaque vault abort inside `execute()`.
+/// The coverage assertion is deliberately `>=` rather than exact: today the benchmarked price
+/// and the actual fee land in the same log-cycle bracket, so the bridge breaks exactly even, but
+/// benchmark drift or kernel growth may open bounded slack, which stays in the vault.
+#[tokio::test]
+async fn sponsored_repricing_note_reimburses_the_bridge() -> anyhow::Result<()> {
+    const REPRICED_FEE: u64 = 777;
+    const PREFUND: u64 = 100_000;
+
+    let admin = bridge_admin_account_id();
+    let fee_asset_id = AssetId::new_fungible(fee_faucet_id());
+    let bridge = bridge_account_builder()?
+        .with_assets([FungibleAsset::new(fee_faucet_id(), PREFUND)?.into()])
+        .build_existing()?;
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    builder.add_account(bridge.clone())?;
+    let reprice = build_repricing_note(admin, bridge.id(), REPRICED_FEE, 5)?;
+    builder.add_output_note(RawOutputNote::Full(reprice.clone()));
+    let sponsorship =
+        add_fee_sponsorship(&mut builder, &reprice, bridge.id(), VERIFICATION_BASE_FEE)?
+            .expect("a non-zero base fee should produce a sponsorship");
+    let sponsored = fungible_total(sponsorship.assets());
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let initial_balance = mock_chain
+        .committed_account(bridge.id())?
+        .vault()
+        .get_balance(fee_asset_id)?
+        .as_u64();
+    assert_eq!(initial_balance, PREFUND, "the bridge should start with its pre-funded balance");
+
+    let executed = mock_chain
+        .build_transaction(bridge.id())
+        .authenticated_input_note(reprice.id())
+        .authenticated_input_note(sponsorship.id())
+        .build()?
+        .execute()
+        .await?;
+    let fee_note = find_output_note(&executed, StandardNote::TX_FEE.script_root())
+        .expect("a fee-charging chain should emit a TX_FEE note");
+    let paid_fee = fungible_total(fee_note.assets());
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    assert_eq!(
+        committed_fee(&mock_chain, bridge.id())?,
+        Word::from([REPRICED_FEE as u32, 0, 0, 1]),
+        "the sponsored repricing note should have taken effect"
+    );
+
+    // The voluntary sponsorship covers the transaction's whole fee, and every unit of it is
+    // accounted for: whatever the fee did not consume stays in the bridge's vault on top of the
+    // pre-funded balance.
+    assert!(paid_fee > 0, "the transaction should have paid a non-zero fee");
+    assert!(
+        sponsored >= paid_fee,
+        "the sponsorship ({sponsored}) should cover the paid fee ({paid_fee})"
+    );
+    let final_balance = mock_chain
+        .committed_account(bridge.id())?
+        .vault()
+        .get_balance(fee_asset_id)?
+        .as_u64();
+    assert_eq!(
+        initial_balance + sponsored,
+        final_balance + paid_fee,
+        "the bridge's vault should change by exactly the sponsorship minus the paid fee"
     );
 
     Ok(())
