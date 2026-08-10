@@ -90,12 +90,11 @@ impl TransactionAdviceInputs {
 
     /// Consumes self and returns an iterator of [`AdviceMutation`]s in arbitrary order.
     pub fn into_advice_mutations(self) -> impl Iterator<Item = AdviceMutation> {
+        let (stack, map, store) = self.0.into_parts();
         [
-            AdviceMutation::ExtendMap { other: self.0.map },
-            AdviceMutation::ExtendMerkleStore {
-                infos: self.0.store.inner_nodes().collect(),
-            },
-            AdviceMutation::ExtendStack { values: self.0.stack },
+            AdviceMutation::ExtendMap { other: map },
+            AdviceMutation::ExtendMerkleStore { infos: store.inner_nodes().collect() },
+            AdviceMutation::ExtendStack { stack },
         ]
         .into_iter()
     }
@@ -166,7 +165,7 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.nullifier_root());
         self.extend_stack(header.tx_commitment());
         self.extend_stack(header.tx_kernel_commitment());
-        self.extend_stack(header.validator_key().to_commitment());
+        self.extend_stack(header.validator_keys().commitment());
         self.extend_stack([
             header.block_num().into(),
             Felt::from(header.version()),
@@ -316,6 +315,7 @@ impl TransactionAdviceInputs {
     /// - For each note:
     ///     - The note's private arguments.
     ///     - The note's details (serial number, script root, and its storage / assets commitment).
+    ///     - The preimages of the note recipient's hash chain.
     ///     - The note's public metadata (sender account ID, note type, note tag, attachment
     ///       schemes).
     ///     - The note's storage (unpadded).
@@ -338,8 +338,8 @@ impl TransactionAdviceInputs {
             let recipient = note.recipient();
             let note_arg = tx_inputs.tx_args().get_note_args(note.id()).unwrap_or(&EMPTY_WORD);
 
-            // recipient storage
-            self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
+            // recipient chain entries
+            self.extend_map(recipient.to_advice_map_entries());
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_elements());
 
@@ -421,7 +421,10 @@ impl TransactionAdviceInputs {
 
     /// Extends the stack with the given elements.
     fn extend_stack(&mut self, iter: impl IntoIterator<Item = Felt>) {
-        self.0.stack.extend(iter);
+        // `AdviceInputs` exposes its stack only as a typed `AdviceStack`, so appending goes
+        // through `extend`, which appends the other instance's stack elements to ours.
+        self.0
+            .extend(AdviceInputs::default().with_advice_stack(iter.into_iter().collect()));
     }
 
     /// Extends the [`MerkleStore`](crate::crypto::merkle::MerkleStore) with the given

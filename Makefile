@@ -7,9 +7,6 @@ help:
 # -- variables --------------------------------------------------------------------------------------
 
 WARNINGS=RUSTDOCFLAGS="-D warnings"
-# Enable file generation in the `src` directory.
-# This is used in the build scripts of miden-protocol and miden-standards.
-BUILD_GENERATED_FILES_IN_SRC=BUILD_GENERATED_FILES_IN_SRC=1
 # Enable backtraces for tests where we return an anyhow::Result. If enabled, anyhow::Error will
 # then contain a `Backtrace` and print it when a test returns an error.
 BACKTRACE=RUST_BACKTRACE=1
@@ -58,13 +55,13 @@ toml-check: ## Runs Format for all TOML files but only in check mode
 
 .PHONY: lint
 lint: ## Runs all linting tasks at once (Clippy, fixing, formatting, typos)
-	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) format
-	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) fix
-	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) clippy
-	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) clippy-no-std
-	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) typos-check
-	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) toml
-	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) shear
+	@$(MAKE) format
+	@$(MAKE) fix
+	@$(MAKE) clippy
+	@$(MAKE) clippy-no-std
+	@$(MAKE) typos-check
+	@$(MAKE) toml
+	@$(MAKE) shear
 
 .PHONY: hooks-test
 hooks-test: ## Runs the pytest suite for the python hooks under .claude/hooks/
@@ -85,14 +82,14 @@ serve-docs: ## Serves the docs
 
 .PHONY: test-release-build
 test-release-build: ## Build the test binary
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo nextest run --cargo-profile test-dev --no-default-features --features concurrent,testing,std --no-run
+	cargo nextest run --cargo-profile test-dev --no-default-features --features concurrent,testing,std --no-run
 
 
 # Run all tests without debug mode. This is fast but produces worse error message.
 # Running `make test-release name=test_name` will only run the test `test_name`.
 .PHONY: test-release
 test-release:
-	$(BUILD_GENERATED_FILES_IN_SRC) $(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --no-default-features --features concurrent,testing,std $(name)
+	$(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --no-default-features --features concurrent,testing,std $(name)
 
 # Shorthand for make test-release.
 .PHONY: test-release testr
@@ -102,7 +99,7 @@ testr: test-release
 # Running `make test name=test_name` will only run the test `test_name`.
 .PHONY: test
 test:
-	$(BUILD_GENERATED_FILES_IN_SRC) $(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --features concurrent,testing,std $(name)
+	$(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --features concurrent,testing,std $(name)
 
 
 # Run all tests except the proving tests (imperfectly filtered based on name) with debug mode.
@@ -110,7 +107,7 @@ test:
 # source manager (see `source_manager_ext::load_masm_source_files`).
 .PHONY: test-dev
 test-dev: ## Run default tests excluding slow prove tests in debug mode intended to be run locally
-	$(BUILD_GENERATED_FILES_IN_SRC) $(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --features concurrent,testing,std --filter-expr "not test(prove)"
+	$(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --features concurrent,testing,std --filter-expr "not test(prove)"
 
 
 .PHONY: test-docs
@@ -122,33 +119,39 @@ test-docs: ## Run documentation tests
 
 .PHONY: check
 check: ## Check all targets and features for errors without code generation
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo check --all-targets --all-features
+	cargo check --all-targets --all-features
 
 
 .PHONY: check-no-std
 check-no-std: ## Check the no-std target without any features for errors without code generation
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo check --no-default-features --target wasm32-unknown-unknown --workspace --lib
+	cargo check --no-default-features --target wasm32-unknown-unknown --workspace --lib
 
 
 .PHONY: check-features
 check-features: ## Checks all feature combinations compile without warnings using cargo-hack
 	@scripts/check-features.sh
 
+
+.PHONY: check-crates-published
+check-crates-published: ## Checks every publishable workspace member already exists on crates.io
+	@scripts/check-crates-published.sh
+
+
 # --- building ------------------------------------------------------------------------------------
 
 .PHONY: build
 build: ## By default we should build in release mode
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --release
+	cargo build --release
 
 
 .PHONY: build-no-std
 build-no-std: ## Build without the standard library
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --lib
+	cargo build --no-default-features --target wasm32-unknown-unknown --workspace --lib
 
 
 .PHONY: build-no-std-testing
 build-no-std-testing: ## Build without the standard library. Includes the `testing` feature
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --features testing
+	cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --features testing
 
 # --- test vectors --------------------------------------------------------------------------------
 
@@ -171,6 +174,11 @@ bench-tx: ## Run transaction benchmarks
 .PHONY: bench-note-checker
 bench-note-checker: ## Run note checker benchmarks
 	cargo bench --bin bench-note-checker --bench benches
+
+.PHONY: update-note-costs
+update-note-costs: ## Regenerate bench-tx.json and the checked-in note consumption cost tables
+	cargo run --bin bench-transaction --features concurrent -- update-note-costs
+	cargo +nightly fmt -p miden-standards -p miden-agglayer
 
 # --- installing ----------------------------------------------------------------------------------
 

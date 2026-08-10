@@ -1,29 +1,23 @@
 use miden::core::crypto::hashes::poseidon2
 
-use miden::tx_kernel_core::asset::ASSET_SIZE
-use miden::tx_kernel_core::constants::NOTE_MEM_SIZE
-use miden::tx_kernel_core::constants::WORD_NUM_ELEMENTS
+use {ASSET_SIZE} from miden::tx_kernel_core::asset
+use {NOTE_MEM_SIZE, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
 
-pub use miden::protocol_utils::note::NOTE_TYPE_PUBLIC
-pub use miden::protocol_utils::note::NOTE_TYPE_PRIVATE
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_SCHEME
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_WORDS
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_TOTAL_WORDS
-pub use miden::protocol_utils::note::ATTACHMENT_SCHEME_NONE
-pub use miden::protocol_utils::note::NOTE_METADATA_VERSION_1
+pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
+    from miden::protocol_utils::note
 
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceeds 64"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT = "number of assets in a note exceeds 16"
 
 # CONSTANTS
 # =================================================================================================
 
 # The diff between the memory address after first mem_stream operation and the next target when
 # generating the output notes commitment. Must be NOTE_MEM_SIZE - 8;
-const OUTPUT_NOTE_HASHING_MEM_DIFF=1016
+const OUTPUT_NOTE_HASHING_MEM_DIFF = 1016
 
 # ACTIVE NOTE PROCEDURES
 # =================================================================================================

@@ -28,14 +28,12 @@ mod tx_progress;
 mod tx_event;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::{EventError, EventHandlerRegistry};
-use miden_processor::mast::MastForest;
 use miden_processor::trace::RowIndex;
-use miden_processor::{Felt, MastForestStore, ProcessorState};
+use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -59,6 +57,7 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
+    TransactionSummaryUserParams,
 };
 pub(crate) use tx_event::{
     RecipientData,
@@ -102,6 +101,9 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Input notes consumed by the transaction.
     input_notes: InputNotes<InputNote>,
 
+    /// The commitment to the reference block of the transaction.
+    ref_block_commitment: Word,
+
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
@@ -118,6 +120,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
+        ref_block_commitment: Word,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -142,6 +145,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
+            ref_block_commitment,
             core_lib_handlers,
         }
     }
@@ -269,6 +273,24 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // EVENT HANDLERS
     // --------------------------------------------------------------------------------------------
 
+    /// Pushes an input note's index and a presence flag onto the advice stack.
+    ///
+    /// When the note is absent, index zero is returned with a cleared presence flag. The index is
+    /// an unauthenticated hint and must be validated by the VM before it is used.
+    pub fn on_input_note_index_lookup(&self, note_id: NoteId) -> Vec<AdviceMutation> {
+        let note_idx =
+            self.input_notes.iter().position(|input_note| input_note.id() == note_id).map(
+                |note_idx| {
+                    u16::try_from(note_idx).expect("maximum number of input notes fits in u16")
+                },
+            );
+
+        let is_found = Felt::from(note_idx.is_some() as u8);
+        let note_idx = Felt::from(note_idx.unwrap_or(0));
+
+        vec![AdviceMutation::extend_advice_stack([note_idx, is_found].into_iter().collect())]
+    }
+
     /// Handles the event if the core lib event handler registry contains a handler with the emitted
     /// event ID.
     ///
@@ -302,7 +324,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
-        vec![AdviceMutation::extend_stack(signature)]
+        vec![AdviceMutation::extend_advice_stack(signature.into())]
     }
 
     /// Adds an asset to the output note identified by the note index.
@@ -344,7 +366,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_stack([Felt::from(proc_idx)])])
+        Ok(vec![AdviceMutation::extend_advice_stack(
+            [Felt::from(proc_idx)].into_iter().collect(),
+        )])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.
@@ -431,7 +455,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        salt: Word,
+        block_commitment: Word,
+        expiration_delta: u16,
+        user_params: TransactionSummaryUserParams,
     ) -> Result<TransactionSummary, TransactionKernelError> {
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();
@@ -471,7 +497,24 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        Ok(TransactionSummary::new(account_delta, input_notes, output_notes, salt))
+        let expected_block_commitment = self.ref_block_commitment;
+        if expected_block_commitment != block_commitment {
+            return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
+                format!(
+                    "expected block commitment to be {expected_block_commitment} but was {block_commitment}"
+                )
+                .into(),
+            ));
+        }
+
+        Ok(TransactionSummary::new(
+            account_delta,
+            input_notes,
+            output_notes,
+            block_commitment,
+            expiration_delta,
+            user_params,
+        ))
     }
 
     /// Returns the underlying store of the base host.
@@ -485,7 +528,7 @@ where
     STORE: MastForestStore,
 {
     /// Returns the [`MastForest`] that contains the procedure with the given `procedure_root`.
-    pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
+    pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<LoadedMastForest> {
         // Search in the note MAST forest store, otherwise fall back to the user-provided store
         match self.scripts_mast_store.get(procedure_root) {
             Some(forest) => Some(forest),

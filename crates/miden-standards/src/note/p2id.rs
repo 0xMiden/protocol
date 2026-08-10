@@ -22,6 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
+use crate::note::costs::{NoteConsumptionCost, P2ID_CONSUMPTION_CYCLES};
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -32,7 +33,7 @@ const P2ID_SCRIPT_PATH: &str = "::miden::standards::notes::p2id::main";
 static P2ID_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
     let path = Path::new(P2ID_SCRIPT_PATH);
-    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+    NoteScript::from_package_reference(standards_lib.as_ref(), path)
         .expect("Standards library contains P2ID note script procedure")
 });
 
@@ -271,6 +272,15 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
             .map_err(|err| NoteError::other_with_source("failed to create account id", err))?;
 
         Ok(Self { target })
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for P2idNote {
+    fn consumption_cycles() -> u32 {
+        P2ID_CONSUMPTION_CYCLES
     }
 }
 

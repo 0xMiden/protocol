@@ -1,6 +1,7 @@
 // AUTH
 // ================================================================================================
 use alloc::collections::BTreeSet;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -21,10 +22,10 @@ use miden_standards::account::auth::{
     AuthMultisigSmartConfig,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
-    AuthSingleSigAclConfig,
     GuardianConfig,
+    SponsorshipPolicy,
 };
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::testing::account_component::{
     ConditionalAuthComponent,
     IncrNonceAuthComponent,
@@ -59,14 +60,6 @@ pub enum Auth {
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
     },
 
-    /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthSingleSigAcl]. Any called procedure that is not
-    /// in `exempt_procedures` forces signature verification.
-    Acl {
-        exempt_procedures: BTreeSet<AccountProcedureRoot>,
-        auth_scheme: AuthScheme,
-    },
-
     /// Creates a mock authentication mechanism for the account that only increments the nonce.
     IncrNonce,
 
@@ -83,9 +76,14 @@ pub enum Auth {
     /// Network-account authentication that restricts the account to consuming only notes whose
     /// script roots appear in `allowed_script_roots` (must be non-empty), and to executing only
     /// transaction scripts whose roots appear in `allowed_tx_script_roots` (may be empty).
+    ///
+    /// The `fee_policy_manager` initializes the fee-policy storage the auth component owns and
+    /// contributes the components making its fee policies dispatchable.
     NetworkAccount {
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
         allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
+        fee_policy_manager: FeePolicyManager,
+        sponsorship_policy: SponsorshipPolicy,
     },
 }
 
@@ -100,10 +98,30 @@ impl Default for Auth {
 }
 
 impl Auth {
-    /// Converts `self` into its corresponding authentication [`AccountComponent`] and an optional
-    /// [`BasicAuthenticator`]. The component is always returned, but the authenticator is only
-    /// `Some` when [`Auth::BasicAuth`] is passed."
-    pub fn build_component(&self) -> (AccountComponent, Option<BasicAuthenticator>) {
+    /// Returns [`Auth::BasicAuth`] with [`AuthScheme::Falcon512Poseidon2`].
+    ///
+    /// Prefer ECDSA over Falcon for tests where the auth scheme itself is not under test.
+    pub fn basic_falcon() -> Self {
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        }
+    }
+
+    /// Returns [`Auth::BasicAuth`] with [`AuthScheme::EcdsaK256Keccak`].
+    ///
+    /// ECDSA verifies much faster than Falcon, making it the better choice for tests where the
+    /// auth scheme itself is not under test.
+    pub fn basic_ecdsa() -> Self {
+        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak }
+    }
+
+    /// Converts `self` into the [`AccountComponent`]s implementing this authentication scheme and
+    /// an optional [`BasicAuthenticator`].
+    ///
+    /// The authentication component is always the first component of the returned vector; variants
+    /// that expand into multiple components (e.g. [`Auth::NetworkAccount`]) yield their companion
+    /// components after it. The authenticator is only `Some` when [`Auth::BasicAuth`] is passed.
+    pub fn build_components(&self) -> (Vec<AccountComponent>, Option<BasicAuthenticator>) {
         match self {
             Auth::BasicAuth { auth_scheme } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
@@ -114,7 +132,7 @@ impl Auth {
                 let component = AuthSingleSig::new(Approver::new(pub_key, *auth_scheme)).into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 
-                (component, Some(authenticator))
+                (vec![component], Some(authenticator))
             },
             Auth::Multisig { approver_set, proc_threshold_map } => {
                 let config = AuthMultisigConfig::new(approver_set.clone())
@@ -123,7 +141,7 @@ impl Auth {
                 let component =
                     AuthMultisig::new(config).expect("multisig component creation failed").into();
 
-                (component, None)
+                (vec![component], None)
             },
             Auth::GuardedMultisig {
                 approver_set,
@@ -137,7 +155,7 @@ impl Auth {
                     .expect("guarded multisig component creation failed")
                     .into();
 
-                (component, None)
+                (vec![component], None)
             },
             Auth::MultisigSmart { approver_set, proc_policy_map } => {
                 let config = AuthMultisigSmartConfig::new(approver_set.clone())
@@ -148,46 +166,40 @@ impl Auth {
                     .expect("multisig smart component creation failed")
                     .into();
 
-                (component, None)
+                (vec![component], None)
             },
-            Auth::Acl { exempt_procedures, auth_scheme } => {
-                let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
-                    .expect("failed to create secret key");
-                let pub_key = sec_key.public_key().to_commitment();
-
-                let component = AuthSingleSigAcl::new(
-                    Approver::new(pub_key, *auth_scheme),
-                    AuthSingleSigAclConfig::new(exempt_procedures.clone()).expect(
-                        "AuthSingleSigAcl component creation failed: too many exempt procedures",
-                    ),
-                )
-                .into();
-                let authenticator = BasicAuthenticator::new(&[sec_key]);
-
-                (component, Some(authenticator))
-            },
-            Auth::IncrNonce => (IncrNonceAuthComponent.into(), None),
-            Auth::Noop => (NoopAuthComponent.into(), None),
-            Auth::Conditional => (ConditionalAuthComponent.into(), None),
+            Auth::IncrNonce => (vec![IncrNonceAuthComponent.into()], None),
+            Auth::Noop => (vec![NoopAuthComponent.into()], None),
+            Auth::Conditional => (vec![ConditionalAuthComponent.into()], None),
             Auth::NetworkAccount {
                 allowed_script_roots,
                 allowed_tx_script_roots,
+                fee_policy_manager,
+                sponsorship_policy,
             } => {
-                let component =
-                    AuthNetworkAccount::with_allowed_notes(allowed_script_roots.clone())
-                        .expect("network account allowlist must be non-empty")
-                        .with_allowed_tx_scripts(allowed_tx_script_roots.clone())
-                        .into();
-                (component, None)
+                let components = AuthNetworkAccount::new(
+                    allowed_script_roots.clone(),
+                    fee_policy_manager.clone(),
+                )
+                .expect("network account allowlist must be non-empty")
+                .with_allowed_tx_scripts(allowed_tx_script_roots.clone())
+                .with_sponsorship_policy(*sponsorship_policy)
+                .into_iter()
+                .collect();
+                (components, None)
             },
         }
     }
 }
 
-impl From<Auth> for AccountComponent {
-    fn from(auth: Auth) -> Self {
-        let (component, _) = auth.build_component();
-        component
+impl IntoIterator for Auth {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+
+    /// Yields the [`AccountComponent`]s implementing this authentication scheme, discarding the
+    /// authenticator. Use [`Auth::build_components`] when the authenticator is needed.
+    fn into_iter(self) -> Self::IntoIter {
+        let (components, _) = self.build_components();
+        components.into_iter()
     }
 }

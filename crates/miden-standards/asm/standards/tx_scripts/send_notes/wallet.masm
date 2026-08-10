@@ -1,0 +1,183 @@
+# The canonical `send_notes` transaction script for accounts exposing the basic wallet
+# interface.
+#
+# The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
+# parameters (the payload) from the advice map, so a single script root covers every possible
+# set of output notes. See `send_notes::common` for the payload layout.
+
+use miden::protocol::asset
+use miden::standards::note::note_creator
+use miden::standards::tx_scripts::send_notes::common
+use miden::standards::wallets::basic as basic_wallet
+use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, PAYLOAD_ADDR, TAG_OFFSET} from miden::standards::tx_scripts::send_notes::common
+
+# CONSTANTS
+# =================================================================================================
+
+# process_notes locals
+const PROCESS_NOTES_READ_PTR_LOC = 0
+const PROCESS_NOTES_NOTE_IDX_LOC = 1
+const PROCESS_NOTES_ITEM_PTR_LOC = 2
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SEND_NOTES_NUM_NOTES_INVALID = "send notes payload note count is not a valid u32"
+
+const ERR_SEND_NOTES_NUM_ASSETS_INVALID = "send notes payload asset count is not a valid u32"
+
+const ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID = "send notes payload attachment count is not a valid u32"
+
+# TRANSACTION SCRIPT
+# =================================================================================================
+
+#! Sends the notes described by the advice-provided payload from an account exposing the basic
+#! wallet interface.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]],
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment in the payload
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Invocation: call
+@transaction_script
+pub proc main
+    push.PAYLOAD_ADDR
+    # => [payload_addr, PAYLOAD_COMMITMENT, pad(11)]
+
+    exec.common::write_payload_to_memory
+    # => [pad(16)]
+
+    exec.process_notes
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Creates the output notes described by the payload stored at `PAYLOAD_ADDR`, moving each
+#! note's assets out of the account via the basic wallet interface and adding its attachments.
+#!
+#! Inputs:
+#!   Operand stack: [pad(16)]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment in the payload
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Panics if:
+#! - any payload count is not a valid u32.
+#! - the account does not expose the basic wallet interface.
+#! - any asset is not present in the account vault.
+#! - an attachment's elements are missing from the advice map.
+#!
+#! Locals:
+#! 0: pointer to the current note record
+#! 1: index of the currently processed output note
+#! 2: pointer to the current asset/attachment item
+#!
+#! Invocation: exec
+@locals(3)
+proc process_notes
+    push.NOTES_START_ADDR loc_store.PROCESS_NOTES_READ_PTR_LOC
+    # => [pad(16)]
+
+    mem_load.NUM_NOTES_ADDR u32assert.err=ERR_SEND_NOTES_NUM_NOTES_INVALID
+    # => [notes_left, pad(16)]
+
+    dup neq.0
+    while.true
+        # => [notes_left, pad(16)]
+
+        # create the note from the record's RECIPIENT, note_type, and tag
+        # -----------------------------------------------------------------------------------------
+        # pad so the call inputs fill the top 16 elements and notes_left moves into the overflow
+        push.0.0.0.0 push.0.0.0.0 push.0.0
+        # => [pad(10), notes_left, pad(16)]
+
+        padw loc_load.PROCESS_NOTES_READ_PTR_LOC mem_loadw_le
+        # => [RECIPIENT, pad(10), notes_left, pad(16)]
+
+        loc_load.PROCESS_NOTES_READ_PTR_LOC add.NOTE_TYPE_OFFSET mem_load
+        # => [note_type, RECIPIENT, pad(10), notes_left, pad(16)]
+
+        loc_load.PROCESS_NOTES_READ_PTR_LOC add.TAG_OFFSET mem_load
+        # => [tag, note_type, RECIPIENT, pad(10), notes_left, pad(16)]
+
+        call.note_creator::create_note
+        # => [note_idx, pad(15), notes_left, pad(16)]
+
+        loc_store.PROCESS_NOTES_NOTE_IDX_LOC
+        # => [pad(15), notes_left, pad(16)]
+
+        dropw dropw dropw drop drop drop
+        # => [notes_left, pad(16)]
+
+        # move the record's assets from the account into the note
+        # -----------------------------------------------------------------------------------------
+        loc_load.PROCESS_NOTES_READ_PTR_LOC add.ITEMS_OFFSET loc_store.PROCESS_NOTES_ITEM_PTR_LOC
+
+        loc_load.PROCESS_NOTES_READ_PTR_LOC add.NUM_ASSETS_OFFSET mem_load
+        u32assert.err=ERR_SEND_NOTES_NUM_ASSETS_INVALID
+        # => [assets_left, notes_left, pad(16)]
+
+        dup neq.0
+        while.true
+            # => [assets_left, notes_left, pad(16)]
+
+            push.0.0.0.0 push.0.0.0
+            # => [pad(7), assets_left, notes_left, pad(16)]
+
+            loc_load.PROCESS_NOTES_NOTE_IDX_LOC
+            # => [note_idx, pad(7), assets_left, notes_left, pad(16)]
+
+            loc_load.PROCESS_NOTES_ITEM_PTR_LOC exec.asset::load
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7), assets_left, notes_left, pad(16)]
+
+            call.basic_wallet::move_asset_to_note
+            # => [pad(16), assets_left, notes_left, pad(16)]
+
+            dropw dropw dropw dropw
+            # => [assets_left, notes_left, pad(16)]
+
+            # advance to the next item, which starts right after this asset
+            loc_load.PROCESS_NOTES_ITEM_PTR_LOC add.ITEM_NUM_ELEMENTS loc_store.PROCESS_NOTES_ITEM_PTR_LOC
+            # => [assets_left, notes_left, pad(16)]
+
+            sub.1 dup neq.0
+            # => [assets_left != 0, assets_left, notes_left, pad(16)]
+        end
+        drop
+        # => [notes_left, pad(16)]
+
+        # add the record's attachments to the note, landing on the next record
+        # -----------------------------------------------------------------------------------------
+        loc_load.PROCESS_NOTES_READ_PTR_LOC add.NUM_ATTACHMENTS_OFFSET mem_load
+        u32assert.err=ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID
+        # => [num_attachments, notes_left, pad(16)]
+
+        # the attachments start right after the last asset the loop above walked past
+        loc_load.PROCESS_NOTES_ITEM_PTR_LOC
+        # => [attachments_ptr, num_attachments, notes_left, pad(16)]
+
+        loc_load.PROCESS_NOTES_NOTE_IDX_LOC
+        # => [note_idx, attachments_ptr, num_attachments, notes_left, pad(16)]
+
+        exec.common::add_attachments
+        # => [end_ptr, notes_left, pad(16)]
+
+        # the next note record starts right after the last item
+        loc_store.PROCESS_NOTES_READ_PTR_LOC
+        # => [notes_left, pad(16)]
+
+        sub.1 dup neq.0
+        # => [notes_left != 0, notes_left, pad(16)]
+    end
+    drop
+    # => [pad(16)]
+end

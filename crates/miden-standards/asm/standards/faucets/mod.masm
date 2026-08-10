@@ -13,8 +13,11 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
 
-# =================================================================================================
-# CONSTANTS — slot names
+pub mod fungible
+pub mod non_fungible
+pub mod policies
+
+# CONSTANTS
 # =================================================================================================
 
 pub const TOKEN_NAME_0_SLOT = word("miden::standards::faucets::token_name_0")
@@ -45,68 +48,14 @@ const EXTERNAL_LINK_4_SLOT = word("miden::standards::faucets::external_link_4")
 const EXTERNAL_LINK_5_SLOT = word("miden::standards::faucets::external_link_5")
 const EXTERNAL_LINK_6_SLOT = word("miden::standards::faucets::external_link_6")
 
+# ERRORS
+# =================================================================================================
+
 const ERR_DESCRIPTION_NOT_MUTABLE = "description is not mutable"
 const ERR_LOGO_URI_NOT_MUTABLE = "logo URI is not mutable"
 const ERR_EXTERNAL_LINK_NOT_MUTABLE = "external link is not mutable"
 
-# =================================================================================================
-# PRIVATE HELPERS
-# =================================================================================================
-
-#! Loads name chunk 0 (1 Word).
-#!
-#! Inputs:  []
-#! Outputs: [NAME_CHUNK_0]
-#!
-#! Invocation: exec
-proc get_name_chunk_0
-    push.TOKEN_NAME_0_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-#! Loads name chunk 1 (1 Word).
-#!
-#! Inputs:  []
-#! Outputs: [NAME_CHUNK_1]
-#!
-#! Invocation: exec
-proc get_name_chunk_1
-    push.TOKEN_NAME_1_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-#! Loads the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-#!
-#! Where:
-#! - is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable are boolean flags
-#!   (word[0] on top after get_item, little-endian).
-#!
-#! Invocation: exec
-pub proc get_mutability_config_word
-    push.MUTABILITY_CONFIG_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-#! Pipes 28 felts (7 words) from the advice stack into write_ptr and asserts the hash
-#! matches COMMITMENT. adv.push_mapval must be called before this procedure to load
-#! the data onto the advice stack.
-#!
-#! Inputs:  [write_ptr, COMMITMENT]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc pipe_to_memory
-    push.7
-    exec.mem::pipe_preimage_to_memory
-    # => [write_ptr']
-    drop
-end
-
-# =================================================================================================
-# NAME (2 words)
+# PUBLIC INTERFACE
 # =================================================================================================
 
 #! Returns the token name.
@@ -123,10 +72,6 @@ pub proc get_name
     # => [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
 end
 
-# =================================================================================================
-# MUTABILITY CONFIG — [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-# =================================================================================================
-
 #! Returns the mutability config word.
 #!
 #! Inputs:  [pad(16)]
@@ -139,52 +84,6 @@ pub proc get_mutability_config
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(16)]
     swapw dropw
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
-end
-
-# =================================================================================================
-# MUTABILITY CHECKS — read mutability_config
-# =================================================================================================
-
-# Private helpers — load the mutability config word and extract a single flag.
-# Used by both the public is_* procedures and the set_* procedures.
-
-#! Extracts the is_description_mutable flag from the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_description_mutable]
-#!
-#! Invocation: exec
-proc is_description_mutable_internal
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-    movdn.3 drop drop drop
-    # => [is_description_mutable]
-end
-
-#! Extracts the is_logo_uri_mutable flag from the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_logo_uri_mutable]
-#!
-#! Invocation: exec
-proc is_logo_uri_mutable_internal
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-    drop movdn.2 drop drop
-    # => [is_logo_uri_mutable]
-end
-
-#! Extracts the is_external_link_mutable flag from the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_external_link_mutable]
-#!
-#! Invocation: exec
-proc is_external_link_mutable_internal
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-    drop drop swap drop
-    # => [is_external_link_mutable]
 end
 
 #! Returns 1 if description is mutable, and 0 otherwise.
@@ -228,10 +127,6 @@ pub proc is_external_link_mutable
     swap drop
     # => [is_external_link_mutable, pad(15)]
 end
-
-# =================================================================================================
-# SET DESCRIPTION (gated by Authority when is_description_mutable == 1)
-# =================================================================================================
 
 #! Updates the description (7 Words) if the description mutability flag is 1
 #! and the caller satisfies the account-wide [`Authority`] configuration.
@@ -310,10 +205,6 @@ pub proc set_description
     exec.native_account::set_item dropw
 end
 
-# =================================================================================================
-# SET LOGO URI (gated by Authority when is_logo_uri_mutable == 1)
-# =================================================================================================
-
 #! Updates the logo URI (7 Words) if the logo URI mutability flag is 1
 #! and the caller satisfies the account-wide [`Authority`] configuration.
 #!
@@ -390,10 +281,6 @@ pub proc set_logo_uri
     exec.native_account::set_item dropw
 end
 
-# =================================================================================================
-# SET EXTERNAL LINK (gated by Authority when is_external_link_mutable == 1)
-# =================================================================================================
-
 #! Updates the external link (7 Words) if the external link mutability flag is 1
 #! and the caller satisfies the account-wide [`Authority`] configuration.
 #!
@@ -468,4 +355,104 @@ pub proc set_external_link
     loc_loadw_le.24
     push.EXTERNAL_LINK_6_SLOT[0..2]
     exec.native_account::set_item dropw
+end
+
+# PUBLIC HELPERS
+# =================================================================================================
+
+#! Loads the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+#!
+#! Where:
+#! - is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable are boolean flags
+#!   (word[0] on top after get_item, little-endian).
+#!
+#! Invocation: exec
+pub proc get_mutability_config_word
+    push.MUTABILITY_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Loads name chunk 0 (1 Word).
+#!
+#! Inputs:  []
+#! Outputs: [NAME_CHUNK_0]
+#!
+#! Invocation: exec
+proc get_name_chunk_0
+    push.TOKEN_NAME_0_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Loads name chunk 1 (1 Word).
+#!
+#! Inputs:  []
+#! Outputs: [NAME_CHUNK_1]
+#!
+#! Invocation: exec
+proc get_name_chunk_1
+    push.TOKEN_NAME_1_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Pipes 28 felts (7 words) from the advice stack into write_ptr and asserts the hash
+#! matches COMMITMENT. adv.push_mapval must be called before this procedure to load
+#! the data onto the advice stack.
+#!
+#! Inputs:  [write_ptr, COMMITMENT]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc pipe_to_memory
+    push.7
+    exec.mem::pipe_preimage_to_memory
+    # => [write_ptr']
+    drop
+end
+
+# Private helpers — load the mutability config word and extract a single flag.
+# Used by both the public is_* procedures and the set_* procedures.
+
+#! Extracts the is_description_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_description_mutable]
+#!
+#! Invocation: exec
+proc is_description_mutable_internal
+    exec.get_mutability_config_word
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    movdn.3 drop drop drop
+    # => [is_description_mutable]
+end
+
+#! Extracts the is_logo_uri_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_logo_uri_mutable]
+#!
+#! Invocation: exec
+proc is_logo_uri_mutable_internal
+    exec.get_mutability_config_word
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    drop movdn.2 drop drop
+    # => [is_logo_uri_mutable]
+end
+
+#! Extracts the is_external_link_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_external_link_mutable]
+#!
+#! Invocation: exec
+proc is_external_link_mutable_internal
+    exec.get_mutability_config_word
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    drop drop swap drop
+    # => [is_external_link_mutable]
 end

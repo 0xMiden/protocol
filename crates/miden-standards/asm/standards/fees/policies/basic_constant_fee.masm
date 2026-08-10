@@ -1,0 +1,130 @@
+# miden::standards::fees::policies::basic_constant_fee
+#
+# Basic constant fee policy: derives the fee from a fixed per-note-script fee schedule. It is a
+# simple baseline; more sophisticated constant fee policies can be derived from it by swapping
+# the lookup-key computation. Note that a derived policy must also rename the `fee_schedule`
+# storage slot, since two components on the same account cannot share a slot name. Designed to be
+# registered as a fee policy of an `AuthNetworkAccount`, whose fee manager
+# (see `miden::standards::fees::fee_manager`) dispatches fee estimation to `compute_note_fee` via
+# `dyncall`. The fee is charged in the fee asset the network account is configured with, read from
+# its storage, so this component must be installed on an `AuthNetworkAccount`.
+#
+# Storage layout:
+# - `fee_schedule` map: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]. The last element is a
+#   set-marker distinguishing scheduled entries (including explicit 0 fees) from the zero word
+#   returned for unset keys; note scripts without a schedule entry abort fee computation.
+
+use miden::protocol::active_account
+
+use miden::standards::fees::fee_manager
+use miden::standards::note
+
+use {Asset, NoteRecipient, StorageMapKey} from miden::protocol::types
+
+# CONSTANTS
+# =================================================================================================
+
+# Slot holding the per-note-script fee schedule.
+# Map entries: NOTE_SCRIPT_ROOT => [fee_amount, 0, 0, 1]
+const FEE_SCHEDULE_SLOT = word("miden::standards::fees::policies::basic_constant_fee::fee_schedule")
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE = "note script has no fee schedule entry"
+
+# POLICY PROCEDURES
+# =================================================================================================
+
+#! Fee policy returning the constant fee scheduled for the note's script root.
+#!
+#! The fee amount is looked up in the fee schedule under a key built from the note parameters.
+#! This policy derives the key from just the note's script root, which it recovers from RECIPIENT
+#! via the advice provider, and ignores the remaining parameters, including timeframe and
+#! priority. Note scripts without a schedule entry abort; to make one free, schedule an explicit
+#! 0 fee. The fee asset ID is read from the network account's storage, so this policy must be
+#! installed on an `AuthNetworkAccount`.
+#!
+#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+#! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+#!
+#! Where:
+#! - RECIPIENT is the recipient of the note whose fee is estimated.
+#! - ASSETS_COMMITMENT is the commitment to the note's assets (ignored by this policy).
+#! - ATTACHMENTS_COMMITMENT is the commitment to the note's attachments (ignored by this
+#!   policy).
+#! - timeframe is the timeframe the fee is estimated for (ignored by this policy).
+#! - priority is the priority the fee is estimated for (ignored by this policy).
+#! - FEE_ASSET_ID is the ID of the asset the fee is charged in.
+#! - FEE_ASSET_VALUE is the fee as an asset value word [fee_amount, 0, 0, 0].
+#!
+#! Panics if:
+#! - the advice map has no preimage for the recipient (or the intermediate hash).
+#! - a preimage does not hash to the commitment it claims to open.
+#! - the note's script root has no fee schedule entry.
+#!
+#! Invocation: call
+@account_procedure
+pub proc compute_note_fee(
+    recipient: NoteRecipient,
+    assets_commitment: word,
+    attachments_commitment: word,
+    timeframe: u32,
+    priority: u32
+) -> Asset
+    exec.build_note_fee_lookup_key
+    # => [LOOKUP_KEY, pad(12)]
+
+    push.FEE_SCHEDULE_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, LOOKUP_KEY, pad(12)]
+
+    exec.active_account::get_map_item
+    # => [FEE_SCHEDULE_ENTRY, pad(12)]
+
+    # replace the set-marker (word element 3) with 0, recovering the plain asset value word
+    push.0 swap.4
+    # => [marker, FEE_ASSET_VALUE, pad(12)]
+
+    # unset keys read as the zero word, whose marker element is 0
+    assert.err=ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE
+    # => [FEE_ASSET_VALUE, pad(12)]
+
+    exec.fee_manager::read_fee_asset_id
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(12)]
+
+    # drop the excess padding to restore the stack depth for the call boundary
+    movupw.3 dropw
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Builds the fee schedule lookup key from the note parameters.
+#!
+#! This policy's lookup key is the note's script root, recovered from RECIPIENT via the advice
+#! provider; the remaining parameters are ignored.
+#!
+#! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority]
+#! Outputs: [LOOKUP_KEY]
+#!
+#! Panics if:
+#! - the advice map has no preimage for the recipient (or the intermediate hash).
+#! - a preimage does not hash to the commitment it claims to open.
+#!
+#! Invocation: exec
+proc build_note_fee_lookup_key(
+    recipient: NoteRecipient,
+    assets_commitment: word,
+    attachments_commitment: word,
+    timeframe: u32,
+    priority: u32
+) -> StorageMapKey
+    exec.note::get_recipient_preimage
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority]
+
+    # keep the script root as the lookup key, dropping the recovered storage commitment and the
+    # remaining note parameters
+    swapw.3 dropw dropw dropw movup.4 drop movup.4 drop
+    # => [LOOKUP_KEY]
+end

@@ -3,7 +3,12 @@
 # Basic blocklist transfer policy: rejects transfers whose native account is blocked on the
 # issuing faucet. Delegates the per-account state to the sibling `blocklist` primitive
 # (storage + helpers).
+#
+# The issuing faucet is exempt from its own blocklist, so the list only ever governs third-party
+# transfers.
 
+use miden::protocol::account_id
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
 
@@ -12,29 +17,51 @@ use miden::standards::faucets::policies::transfer::blocklist
 
 #! Transfer policy that rejects transfers whose native account is blocked on the issuing faucet.
 #!
-#! The same procedure root is reusable as both send and receive policy because it only
-#! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
-#! frame untouched — any `note_idx` carried in the send signature passes through unchanged.
+#! The same procedure root is reusable as both send and receive policy because it does not depend
+#! on custom_data.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - custom_data is `0` for the receive (account) callback and the output note index for the
-#!   send (note) callback. This policy does not inspect it; it passes through unchanged.
+#!   send (note) callback. This policy does not inspect it.
 #!
 #! Panics if:
-#! - the native account is blocked on the issuing faucet.
+#! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
 #!
 #! Invocation: call
 @account_procedure
 pub proc check_policy
+    exec.asset::id_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+    # => [account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE,
+    #     custom_data, pad(7)]
 
-    exec.blocklist::assert_not_blocked
-    # => [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+    dupw exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix,
+    #     ASSET_VALUE, custom_data, pad(7)]
 
-    dropw
-    # => [ASSET_VALUE, pad(12)]
+    # the issuing faucet is exempt
+    not
+    # => [should_check_blocklist, account_id_suffix, account_id_prefix, faucet_id_suffix,
+    #     faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
+    if.true
+        # drop the faucet ID, keeping the native account ID for the blocklist lookup
+        movup.3 drop movup.2 drop
+        # => [account_id_suffix, account_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+
+        exec.blocklist::assert_not_blocked
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    else
+        dropw
+        # => [ASSET_VALUE, custom_data, pad(7)]
+    end
+    # => [ASSET_VALUE, custom_data, pad(7)]
+
+    dropw drop
+    # => [pad(16)]
 end

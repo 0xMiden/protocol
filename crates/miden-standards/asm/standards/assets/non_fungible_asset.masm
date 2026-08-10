@@ -1,0 +1,100 @@
+#! miden::standards::assets::non_fungible_asset
+#!
+#! Provides procedures for creating non-fungible assets.
+
+use miden::protocol::asset
+use {COMPOSITION_NONE} from miden::protocol::asset
+
+# ERRORS
+# ================================================================================================
+
+const ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE = "non-fungible asset ID's composition must be non-fungible"
+
+const ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0 = "the asset class suffix in a non-fungible asset ID must match hash0 of the asset value"
+
+const ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1 = "the asset class prefix in a non-fungible asset ID must match hash1 of the asset value"
+
+# PROCEDURES
+# ================================================================================================
+
+#! Creates a non fungible asset for the specified non-fungible faucet.
+#!
+#! The provided asset ID will be created with asset composition set to COMPOSITION_NONE.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
+#!   for.
+#! - ASSET_VALUE is the data hash of the non-fungible asset to create.
+#! - ASSET_ID is the asset ID of the created non-fungible asset.
+#! - ASSET_VALUE is the value of the created non-fungible asset, which is identical to ASSET_VALUE.
+#!
+#! Invocation: exec
+pub proc create
+    # push the non-fungible (None) composition
+    # this is equivalent to the asset metadata
+    push.COMPOSITION_NONE
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+
+    # merge the asset metadata into the lower 8 bits of the suffix
+    add
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
+
+    # copy hashes at indices 0 and 1 in the data hash word to the corresponding index in the key
+    # word
+    dup.3 dup.3
+    # => [hash0, hash1, faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Validates that a non-fungible asset is well formed.
+#!
+#! Only the value's binding to the asset ID and the composition are checked; the structure of
+#! the asset ID's account ID is validated by the kernel and not re-checked here.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to validate.
+#! - ASSET_VALUE is the value (data commitment) of the asset to validate.
+#!
+#! Panics if:
+#! - the asset ID's composition is not non-fungible (None).
+#! - the asset class suffix of the asset ID does not match hash0 of the value.
+#! - the asset class prefix of the asset ID does not match hash1 of the value.
+#!
+#! Invocation: exec
+pub proc validate
+    # assert the asset composition is non-fungible (None)
+    exec.asset::id_to_composition
+    eq.COMPOSITION_NONE
+    assert.err=ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE
+    # => [ASSET_ID, ASSET_VALUE]
+    # => [[asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix], [hash0, hash1, hash2, hash3]]
+
+    # assert that hash0 matches asset_class_suffix and hash1 matches asset_class_prefix
+    dup.4 dup.1 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0
+    dup.5 dup.2 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1
+    # => [ASSET_ID, ASSET_VALUE]
+end
+
+#! Returns the asset class of the given non-fungible asset value and consumes the value.
+#!
+#! WARNING: Assumes that the given asset value is non-fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [asset_class_suffix, asset_class_prefix]
+#!
+#! Where:
+#! - ASSET_VALUE is the non-fungible asset value, whose first two elements are the asset class.
+#! - asset_class is the (suffix, prefix) pair of the non-fungible asset.
+#!
+#! Invocation: exec
+pub proc value_into_asset_class
+    # => [asset_class_suffix, asset_class_prefix, value_2, value_3]
+    movup.3 drop movup.2 drop
+    # => [asset_class_suffix, asset_class_prefix]
+end

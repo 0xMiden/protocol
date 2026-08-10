@@ -1,4 +1,21 @@
-#! Root module of the `miden::protocol` library.
-#!
-#! The user-facing protocol library wraps the transaction kernel, abstracting over the actual
-#! `syscall`s. The library API is defined by the modules in this directory.
+# Root module of the `miden::protocol` library.
+#
+# The user-facing protocol library wraps the transaction kernel, abstracting over the actual
+# `syscall`s. The library API is defined by the modules in this directory.
+
+pub mod account_id
+pub mod active_account
+pub mod active_note
+pub mod asset
+pub mod auth
+pub mod constants
+pub mod faucet
+pub mod input_note
+mod input_note_internal
+pub mod kernel_proc_offsets
+pub mod native_account
+pub mod note
+mod note_internal
+pub mod output_note
+pub mod tx
+pub mod types

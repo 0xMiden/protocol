@@ -1,4 +1,3 @@
-use alloc::string::String;
 use core::fmt::{Debug, Display, Formatter};
 
 use miden_core::WORD_SIZE;

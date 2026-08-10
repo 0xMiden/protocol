@@ -1,51 +1,17 @@
 extern crate alloc;
 
-use miden_agglayer::errors::{ERR_GER_NOT_FOUND, ERR_SENDER_NOT_GER_REMOVER};
-use miden_agglayer::{
-    AggLayerBridge,
-    ExitRoot,
-    RemoveGerNote,
-    UpdateGerNote,
-    create_existing_bridge_account,
-};
-use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_protocol::account::Account;
-use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::crypto::rand::FeltRng;
+use miden_agglayer::errors::ERR_GER_NOT_FOUND;
+use miden_agglayer::{AggLayerBridge, ExitRoot, RemoveGerNote, UpdateGerNote};
 use miden_protocol::transaction::RawOutputNote;
-use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
+use miden_testing::{MockChain, assert_transaction_executor_error};
+
+use super::test_utils::{BridgeSetup, hash_with_keccak256_to_elements, setup_bridge};
 
 const GER_BYTES: [u8; 32] = [
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
     0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
 ];
-
-/// Creates the bridge admin, GER injector, and GER remover wallets, builds the bridge account
-/// wired to those roles, and registers the bridge account with the builder.
-///
-/// Returns the bridge account together with the GER injector and GER remover wallets.
-fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<(Account, Account, Account)> {
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(
-        bridge_seed,
-        bridge_admin.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-    );
-    builder.add_account(bridge_account.clone())?;
-
-    Ok((bridge_account, ger_injector, ger_remover))
-}
 
 /// Computes one fold of the removed-GER hash chain, `keccak256(prev_chain || ger)`, in the
 /// same byte representation that [`AggLayerBridge::removed_ger_hash_chain`] returns.
@@ -53,8 +19,7 @@ fn fold_removed_ger_chain(prev_chain: [u8; 32], ger_bytes: [u8; 32]) -> [u8; 32]
     let mut preimage = [0u8; 64];
     preimage[..32].copy_from_slice(&prev_chain);
     preimage[32..].copy_from_slice(&ger_bytes);
-    let chain_felts: alloc::vec::Vec<_> =
-        KeccakPreimage::new(preimage.to_vec()).digest().as_ref().to_vec();
+    let chain_felts = hash_with_keccak256_to_elements(&preimage);
     let mut chain_bytes = [0u8; 32];
     for (i, felt) in chain_felts.iter().enumerate() {
         let limb = u32::try_from(felt.as_canonical_u64()).expect("felt fits in u32");
@@ -69,7 +34,12 @@ fn fold_removed_ger_chain(prev_chain: [u8; 32], ger_bytes: [u8; 32]) -> [u8; 32]
 #[tokio::test]
 async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     // STEP 1: Register the GER via UPDATE_GER
     let ger = ExitRoot::from(GER_BYTES);
@@ -84,17 +54,19 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
 
     let mut mock_chain = builder.build()?;
 
-    let update_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_executed = update_tx_context.execute().await?;
+    let update_executed = update_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&update_executed)?;
     mock_chain.prove_next_block()?;
 
-    let remove_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+    let remove_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note.id())
         .build()?;
-    let remove_executed = remove_tx_context.execute().await?;
+    let remove_executed = remove_mock_tx.execute().await?;
 
     // VERIFY GER IS NO LONGER REGISTERED AND CHAIN HASH ADVANCED
     let mut updated_bridge_account = bridge_account.clone();
@@ -122,7 +94,12 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
 #[tokio::test]
 async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let mut ger_a_bytes = GER_BYTES;
     ger_a_bytes[31] = 0xaa;
@@ -152,18 +129,21 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_a, &update_b, &update_c] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
     }
 
-    let remove_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_b.id()], &[])?
+    let remove_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_b.id())
         .build()?;
-    let remove_executed = remove_tx_context.execute().await?;
+    let remove_executed = remove_mock_tx.execute().await?;
     updated_bridge_account.apply_patch(remove_executed.account_patch())?;
 
     assert!(
@@ -196,7 +176,12 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
 #[tokio::test]
 async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let mut ger_a_bytes = GER_BYTES;
     ger_a_bytes[31] = 0xaa;
@@ -223,9 +208,11 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_a, &update_b, &remove_a, &remove_b] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
@@ -258,7 +245,12 @@ async fn remove_ger_sequential_removals_fold_chain() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let ger = ExitRoot::from(GER_BYTES);
     let update_ger_note =
@@ -275,15 +267,18 @@ async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     for note in [&update_ger_note, &remove_ger_note_first] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
     }
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note_second.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note_second.id())
         .build()?
         .execute()
         .await;
@@ -301,7 +296,12 @@ async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup {
+        bridge: bridge_account,
+        ger_injector,
+        ger_remover,
+        ..
+    } = setup_bridge(&mut builder)?;
 
     let ger = ExitRoot::from(GER_BYTES);
     let update_first =
@@ -319,9 +319,11 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_first, &remove_note, &update_second] {
-        let tx_context =
-            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
-        let executed = tx_context.execute().await?;
+        let mock_tx = mock_chain
+            .build_transaction(bridge_account.id())
+            .authenticated_input_note(note.id())
+            .build()?;
+        let executed = mock_tx.execute().await?;
         updated_bridge_account.apply_patch(executed.account_patch())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
@@ -347,7 +349,7 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn remove_ger_non_remover_sender_reverts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let (bridge_account, ger_injector, _ger_remover) = setup_bridge(&mut builder)?;
+    let BridgeSetup { bridge: bridge_account, ger_injector, .. } = setup_bridge(&mut builder)?;
 
     // Register a GER first so the failure is exclusively due to the sender check.
     let ger = ExitRoot::from(GER_BYTES);
@@ -362,20 +364,22 @@ async fn remove_ger_non_remover_sender_reverts() -> anyhow::Result<()> {
 
     let mut mock_chain = builder.build()?;
 
-    let update_tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+    let update_mock_tx = mock_chain
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(update_ger_note.id())
         .build()?;
-    let update_executed = update_tx_context.execute().await?;
+    let update_executed = update_mock_tx.execute().await?;
     mock_chain.add_pending_executed_transaction(&update_executed)?;
     mock_chain.prove_next_block()?;
 
     let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+        .build_transaction(bridge_account.id())
+        .authenticated_input_note(remove_ger_note.id())
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_GER_REMOVER);
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
     Ok(())
 }

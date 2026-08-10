@@ -16,12 +16,20 @@ use crate::procedure_root;
 
 account_component_code!(
     BASIC_BLOCKLIST_TRANSFER_POLICY_CODE,
-    "faucets/policies/transfer/basic_blocklist.masl"
+    "miden-standards-faucets-policies-transfer-basic-blocklist.masp"
 );
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BasicBlocklist::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BASIC_BLOCKLIST_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::basic_blocklist";
 
 procedure_root!(
     BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT,
-    BasicBlocklist::NAME,
+    BASIC_BLOCKLIST_LIBRARY_PATH,
     BasicBlocklist::PROC_NAME,
     BasicBlocklist::code()
 );
@@ -34,21 +42,22 @@ procedure_root!(
 /// [`BasicBlocklist::root`]. When active, transfers fail if the native account (asset
 /// recipient or note creator) is currently blocked on the issuing faucet.
 ///
+/// The issuing faucet is exempt from its own blocklist.
+///
 /// The wrapped [`BlocklistStorage`] captures the initial blocklist contents (it can be empty
 /// for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
 /// [`Self::with_blocked_accounts`] to seed the storage map at component construction time.
 ///
 /// Block / unblock administration is intentionally not part of this component. The
 /// `block_account` / `unblock_account` procedures live in the standards library and require an
-/// auth-wrapped admin component (see [`super::BlocklistOwnerControlled`]) to be safely exposed
+/// auth-wrapped admin component (see [`super::BlocklistManager`]) to be safely exposed
 /// on a production faucet.
 #[derive(Debug, Clone, Default)]
 pub struct BasicBlocklist(BlocklistStorage);
 
 impl BasicBlocklist {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::basic_blocklist";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::basic_blocklist";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

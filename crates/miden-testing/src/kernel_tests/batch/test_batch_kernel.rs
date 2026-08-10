@@ -234,7 +234,7 @@ fn input_note_list_blob(batch: &ProposedBatch) -> Vec<Felt> {
             notes.push((nullifier, note_id_or_empty));
         }
     }
-    notes.sort_by(|a, b| a.0.cmp(&b.0));
+    notes.sort_by_key(|entry| entry.0);
     let mut blob = Vec::with_capacity(notes.len() * FELTS_PER_NOTE_ENTRY);
     for (nullifier, note_id_or_empty) in &notes {
         blob.extend_from_slice(nullifier.as_elements());
@@ -382,7 +382,7 @@ fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
         }
     }
     notes.push((Word::from([u32::MAX; 4]), Word::empty()));
-    notes.sort_by(|a, b| a.0.cmp(&b.0));
+    notes.sort_by_key(|entry| entry.0);
     let mut blob = Vec::with_capacity(notes.len() * FELTS_PER_NOTE_ENTRY);
     for (nullifier, note_id_or_empty) in &notes {
         blob.extend_from_slice(nullifier.as_elements());

@@ -263,7 +263,7 @@ async fn block_building_fails_on_creating_account_with_existing_account_id_prefi
     let auth_component: AccountComponent = IncrNonceAuthComponent.into();
 
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(auth_component.clone())
+        .with_component(auth_component.clone())
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
             StorageSlotName::new("miden::test_slot")?,
             Word::from([5u32; 4]),
@@ -295,15 +295,15 @@ async fn block_building_fails_on_creating_account_with_existing_account_id_prefi
     );
     assert_eq!(account.initial_commitment(), Word::empty());
 
-    let existing_account = Account::mock(existing_id.into(), auth_component);
+    let existing_account = Account::mock(existing_id.into(), [auth_component]);
     builder.add_account(existing_account.clone())?;
     let mock_chain = builder.build()?;
 
     // Execute the account-creating transaction.
     // --------------------------------------------------------------------------------------------
 
-    let tx_context = mock_chain.build_tx_context(account, &[], &[])?.build()?;
-    let tx = tx_context.execute().await.context("failed to execute account creating tx")?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+    let tx = mock_tx.execute().await.context("failed to execute account creating tx")?;
     let tx = LocalTransactionProver::default().prove_dummy(tx)?;
 
     let batch = mock_chain.create_batch(vec![tx])?;
@@ -354,7 +354,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
     // --------------------------------------------------------------------------------------------
     let mock_chain = MockChain::new();
     let account = AccountBuilder::new([5; 32])
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
             StorageSlotName::new("miden::test_slot")?,
             Word::from([5u32; 4]),

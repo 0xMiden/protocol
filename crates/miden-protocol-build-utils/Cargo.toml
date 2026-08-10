@@ -1,0 +1,26 @@
+[package]
+authors.workspace      = true
+description            = "Build-time helpers for assembling Miden MASM packages"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["build", "masm", "miden"]
+license.workspace      = true
+name                   = "miden-protocol-build-utils"
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lib]
+doctest = false
+test    = false
+
+[dependencies]
+fs-err                 = { workspace = true }
+miden-assembly         = { features = ["std"], workspace = true }
+miden-core             = { workspace = true }
+miden-mast-package     = { features = ["std"], workspace = true }
+miden-package-registry = { features = ["std"], workspace = true }
+miden-project          = { features = ["serde", "std"], workspace = true }
+regex                  = { workspace = true }
+walkdir                = { workspace = true }

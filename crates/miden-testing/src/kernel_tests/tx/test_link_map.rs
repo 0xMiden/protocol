@@ -172,8 +172,8 @@ async fn insertion() -> anyhow::Result<()> {
     "#
     );
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let exec_output = tx_context.execute_code(&code).await.context("failed to execute code")?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let exec_output = mock_tx.execute_code(&code).await.context("failed to execute code")?;
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
     let map = LinkMap::new(Felt::from(map_ptr), &mem_viewer);
@@ -531,8 +531,8 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
     "#
     );
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let exec_output = tx_context.execute_code(&code).await.context("failed to execute code")?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let exec_output = mock_tx.execute_code(&code).await.context("failed to execute code")?;
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
     for (map_ptr, control_map) in control_maps {
@@ -603,7 +603,7 @@ fn generate_updates(
 
     entries
         .iter()
-        .choose_multiple(&mut rng, num_updates)
+        .sample(&mut rng, num_updates)
         .into_iter()
         .map(|(key, _)| (*key, (rand_value::<Word>(), rand_value::<Word>())))
         .collect()

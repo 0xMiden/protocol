@@ -4,14 +4,16 @@ use miden::core::word
 use miden::core::collections::sorted_array
 
 use miden::batch_kernel::memory
-use miden::batch_kernel::memory::TX_NOTES_SCRATCH_PTR
-use miden::batch_kernel::memory::INPUT_NOTES_PTR
-use miden::batch_kernel::memory::OUTPUT_NOTES_PTR
-use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
-use miden::batch_kernel::memory::INPUT_NOTE_CONSUMPTION_OFFSET
-use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
-use miden::batch_kernel::memory::OUTPUT_NOTE_LINKED_INPUT_OFFSET
-use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
+use {
+    INPUT_NOTE_CONSUMPTION_OFFSET,
+    INPUT_NOTES_PTR,
+    MAX_NOTES_PER_BATCH,
+    NOTE_ENTRY_FELT_LEN,
+    OUTPUT_NOTE_IS_CREATED_OFFSET,
+    OUTPUT_NOTE_LINKED_INPUT_OFFSET,
+    OUTPUT_NOTES_PTR,
+    TX_NOTES_SCRATCH_PTR,
+} from miden::batch_kernel::memory
 
 # ERRORS
 # =================================================================================================

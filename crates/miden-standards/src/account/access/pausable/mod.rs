@@ -22,16 +22,23 @@ pub use manager::PausableManager;
 // IS_PAUSED STORAGE
 // ================================================================================================
 
-account_component_code!(PAUSABLE_CODE, "access/pausable/mod.masl");
+account_component_code!(PAUSABLE_CODE, "miden-standards-access-pausable.masp");
 
 static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::pausable::is_paused")
         .expect("storage slot name should be valid")
 });
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`Pausable::NAME`], which
+/// mirrors the standards-side MASM module path.
+const PAUSABLE_LIBRARY_PATH: &str = "miden::standards::components::access::pausable";
+
 procedure_root!(
     PAUSABLE_IS_PAUSED_ROOT,
-    Pausable::NAME,
+    PAUSABLE_LIBRARY_PATH,
     Pausable::IS_PAUSED_PROC_NAME,
     Pausable::code()
 );
@@ -120,7 +127,7 @@ pub struct Pausable(PausableStorage);
 
 impl Pausable {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::access::pausable";
+    pub const NAME: &'static str = "miden::standards::access::pausable";
 
     const IS_PAUSED_PROC_NAME: &'static str = "is_paused";
 

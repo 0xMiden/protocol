@@ -1,13 +1,13 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_core::program::Kernel;
+use miden_core::program::KernelDescriptor;
 use miden_core::utils::hash_string_to_word;
 
 use crate::batch::{BatchId, ProposedBatch};
 use crate::errors::ProvenBatchError;
 use crate::note::{NoteId, Nullifier};
-use crate::transaction::TransactionId;
+use crate::transaction::{OrderedTransactionHeaders, TransactionId};
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
@@ -60,9 +60,9 @@ impl BatchKernel {
 
     /// Returns [`ProgramInfo`] for the batch kernel program.
     ///
-    /// The batch kernel does not expose syscalls, so the associated [`Kernel`] is empty.
+    /// The batch kernel does not expose syscalls, so the associated [`KernelDescriptor`] is empty.
     pub fn program_info() -> ProgramInfo {
-        ProgramInfo::new(Self::main().hash(), Kernel::default())
+        ProgramInfo::new(Self::main().hash(), KernelDescriptor::default())
     }
 
     // INPUT BUILDERS
@@ -159,7 +159,7 @@ impl BatchKernel {
     /// The kernel reconstructs and verifies the batch's `INPUT_NOTES_COMMITMENT` by walking a
     /// layered advice map, each layer keyed by a hash the previous layer verified:
     /// - `BATCH_ID` -> the `(tx_id, account_id)` tuple list (matching
-    ///   `BatchId::hash_input_elements`).
+    ///   `OrderedTransactionHeaders::hash_input_elements`).
     /// - each `tx_id` -> the transaction header felt sequence (matching
     ///   `TransactionId::input_elements`).
     /// - each per-tx `INPUT_NOTES_COMMITMENT` -> the `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples.
@@ -177,7 +177,7 @@ impl BatchKernel {
         let mut advice_inputs = AdviceInputs::default();
 
         // Layer 1: BATCH_ID -> [(tx_id, account_id) tuples].
-        let layer1_data = BatchId::hash_input_elements(
+        let layer1_data = OrderedTransactionHeaders::hash_input_elements(
             proposed_batch.transactions().iter().map(|tx| (tx.id(), tx.account_id())),
         );
         advice_inputs.map.extend([(proposed_batch.id().as_word(), layer1_data)]);
@@ -236,7 +236,7 @@ impl BatchKernel {
         // `Word`'s ordering compares the most-significant felt first, matching the batch kernel's
         // `word::lt` strict-sort check, `sorted_array`'s lookup order, and `ProposedBatch`'s
         // `InputNoteCommitment::nullifier` order.
-        input_list.sort_by(|a, b| a.0.cmp(&b.0));
+        input_list.sort_by_key(|entry| entry.0);
         output_list.sort_unstable();
 
         // INPUT_NOTE_LIST_KEY -> [NULLIFIER, NOTE_ID_OR_EMPTY] (8 felts per note).

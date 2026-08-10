@@ -208,25 +208,12 @@ pub struct TransactionMeasurements {
     pub tx_script_processing: usize,
     pub epilogue: usize,
     pub auth_procedure: usize,
-    /// The number of cycles the epilogue took to execute after compute_fee determined the cycle
-    /// count.
-    ///
-    /// This is used to get the total number of cycles the transaction takes for use in
-    /// compute_fee itself.
-    pub after_tx_cycles_obtained: usize,
 }
 
 impl TransactionMeasurements {
     /// Returns the total number of cycles spent executing the transaction.
     pub fn total_cycles(&self) -> usize {
         self.prologue + self.notes_processing + self.tx_script_processing + self.epilogue
-    }
-
-    /// Returns the trace length of the transaction which is the next power of 2 of the total cycles
-    /// spent executing the transaction.
-    pub fn trace_length(&self) -> usize {
-        let total_cycles = self.total_cycles();
-        total_cycles.next_power_of_two()
     }
 }
 
@@ -238,7 +225,6 @@ impl Serializable for TransactionMeasurements {
         self.tx_script_processing.write_into(target);
         self.epilogue.write_into(target);
         self.auth_procedure.write_into(target);
-        self.after_tx_cycles_obtained.write_into(target);
     }
 }
 
@@ -250,7 +236,6 @@ impl Deserializable for TransactionMeasurements {
         let tx_script_processing = usize::read_from(source)?;
         let epilogue = usize::read_from(source)?;
         let auth_procedure = usize::read_from(source)?;
-        let after_tx_cycles_obtained = usize::read_from(source)?;
 
         Ok(Self {
             prologue,
@@ -259,7 +244,6 @@ impl Deserializable for TransactionMeasurements {
             tx_script_processing,
             epilogue,
             auth_procedure,
-            after_tx_cycles_obtained,
         })
     }
 }

@@ -89,36 +89,34 @@ end
 #!
 #! Checks whether the receiving account is in the block list. If so, panics.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @account_procedure
 pub proc on_before_asset_added_to_account
     exec.assert_native_account_not_blocked
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    # drop unused asset key
-    dropw
-    # => [ASSET_VALUE, pad(12)]
+    dropw dropw
+    # => [pad(16)]
 end
 
 #! Callback invoked when an asset with callbacks enabled is added to an output note.
 #!
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @account_procedure
 pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-    # drop unused asset key
-    dropw
-    # => [ASSET_VALUE, note_idx, pad(7)]
+    dropw dropw drop
+    # => [pad(16)]
 end
 "#;
 
@@ -126,11 +124,11 @@ end
 const ERR_ACCOUNT_BLOCKED: MasmError =
     MasmError::from_static_str("the account is blocked and cannot receive this asset");
 
-// Initialize the Basic Fungible Faucet library only once.
+// Initialize the block list component code only once.
 static BLOCK_LIST_COMPONENT_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code(BlockList::NAME, BLOCK_LIST_MASM)
-        .expect("block list library should be valid")
+        .expect("block list component code should be valid")
 });
 
 static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -291,7 +289,8 @@ async fn test_faucet_without_callback_slot_skips_callback(
     // Consuming the note should succeed: the callback is gracefully skipped because the
     // faucet does not define the callback storage slot.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -319,34 +318,30 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     // MASM callback that asserts the inputs match expected values.
     let account_callback_masm = format!(
         r#"
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_account
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
-        # => [native_account_suffix, native_account_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+        # => [native_account_suffix, native_account_prefix, ASSET_ID, ASSET_VALUE, pad(8)]
         push.{wallet_id_suffix} assert_eq.err="callback received unexpected native account ID suffix"
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
-        # => [ASSET_KEY, ASSET_VALUE, pad(8)]
-
-        # duplicate the asset value for returning
-        dupw.1 swapw
-        # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
-        exec.::miden::protocol::asset::create_fungible_asset
-        # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, pad(8)]
+        exec.::miden::standards::assets::fungible_asset::create
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
 
         movupw.2
-        assert_eqw.err="callback received unexpected asset key"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        assert_eqw.err="callback received unexpected asset ID"
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         assert_eqw.err="callback received unexpected asset value"
-        # => [ASSET_VALUE, pad(12)]
+        # => [pad(16)]
     end
     "#
     );
@@ -369,7 +364,8 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 
     // Execute the transaction - should succeed because all callback assertions pass.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -413,7 +409,8 @@ async fn test_blocked_account_cannot_receive_asset(
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
@@ -446,7 +443,9 @@ async fn test_blocked_account_cannot_add_asset_to_note(
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Only `create_note` is needed here, so a `NoteCreator` account suffices instead of a full
+    // basic wallet.
+    let target_account = builder.add_existing_note_creator(Auth::IncrNonce)?;
     let faucet = add_faucet_with_block_list(&mut builder, [target_account.id()])?;
     let asset = create_asset(faucet.id())?;
 
@@ -460,14 +459,15 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         r#"
         use miden::protocol::output_note
 
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::miden::standards::note::note_creator::create_note
 
             push.{asset_value}
-            push.{asset_key}
+            push.{asset_id}
             exec.output_note::add_asset
         end
         "#,
@@ -475,15 +475,15 @@ async fn test_blocked_account_cannot_add_asset_to_note(
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
         asset_value = asset.to_value_word(),
-        asset_key = asset.to_key_word(),
+        asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     let result = mock_chain
-        .build_tx_context(target_account.id(), &[], &[])?
+        .build_transaction(target_account.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -504,8 +504,8 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 {
     let mut builder = MockChain::builder();
 
-    // Create wallet first so we know its ID before building the faucet.
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Create the account first so we know its ID before building the faucet.
+    let target_account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let wallet_id_suffix = target_account.id().suffix().as_canonical_u64();
     let wallet_id_prefix = target_account.id().prefix().as_u64();
 
@@ -516,38 +516,37 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         r#"
     const ERR_WRONG_NOTE_IDX = "callback received unexpected note_idx"
 
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_note
         # Assert native account ID can be retrieved via native_account::get_id
         exec.::miden::protocol::native_account::get_id
-        # => [native_account_suffix, native_account_prefix, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [native_account_suffix, native_account_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
         push.{wallet_id_suffix} assert_eq.err="callback received unexpected native account ID suffix"
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         # Assert note_idx == 1 (we create two notes, adding the asset to the second one)
         dup.8 push.1 assert_eq.err=ERR_WRONG_NOTE_IDX
-        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-
-        # duplicate the asset value for returning
-        dupw.1 swapw
-        # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
-        exec.::miden::protocol::asset::create_fungible_asset
-        # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+        exec.::miden::standards::assets::fungible_asset::create
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         movupw.2
-        assert_eqw.err="callback received unexpected asset key"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        assert_eqw.err="callback received unexpected asset ID"
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         assert_eqw.err="callback received unexpected asset value"
-        # => [ASSET_VALUE, note_idx, pad(7)]
+        # => [note_idx, pad(7)]
+
+        drop
+        # => [pad(16)]
     end
     "#
     );
@@ -571,15 +570,16 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         r#"
         use mock::util
 
-        begin
+        @transaction_script
+        pub proc main
             # Create note 0 (just to consume index 0)
             exec.util::create_default_note drop
             # => []
 
             # Create note 1
             push.{asset_value}
-            push.{asset_key}
-            # => [ASSET_KEY, ASSET_VALUE]
+            push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE]
             exec.util::create_default_note_with_moved_asset
             # => []
 
@@ -587,17 +587,18 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         end
         "#,
         asset_value = asset.to_value_word(),
-        asset_key = asset.to_key_word(),
+        asset_id = asset.to_id_word(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
     // Execute the transaction: consume the P2ID note (asset enters vault), then move the asset
     // to output note 1. Should succeed because all callback assertions pass.
     mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
         .tx_script(tx_script)
         .foreign_accounts(vec![faucet_inputs])
         .build()?
@@ -616,22 +617,22 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let account_callback_masm = r#"
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_account
-        dropw
-        # => [ASSET_VALUE, pad(12)]
+        dropw dropw
+        # => [pad(16)]
     end
     "#;
 
     let note_callback_masm = r#"
-    #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_note
-        dropw movup.4 drop
-        # => [ASSET_VALUE, pad(12)]
+        dropw dropw drop
+        # => [pad(16)]
     end
     "#;
 
@@ -648,7 +649,8 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let tx_script_code = format!(
         "
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
@@ -657,8 +659,8 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
             push.{faucet_id_suffix}
             # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
 
-            exec.::miden::protocol::asset::create_fungible_asset
-            # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
+            exec.::miden::standards::assets::fungible_asset::create
+            # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
 
             call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(15)]
@@ -676,7 +678,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
     mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -737,7 +739,7 @@ fn add_faucet_with_callbacks(
     if account_callback_masm.is_some() {
         let path = format!("{component_name}::on_before_asset_added_to_account");
         let proc_root = callback_code
-            .as_library()
+            .as_package()
             .get_procedure_root_by_path(path.as_str())
             .expect("account callback procedure should exist");
         callbacks = callbacks.on_before_asset_added_to_account(proc_root);
@@ -746,7 +748,7 @@ fn add_faucet_with_callbacks(
     if note_callback_masm.is_some() {
         let path = format!("{component_name}::on_before_asset_added_to_note");
         let proc_root = callback_code
-            .as_library()
+            .as_package()
             .get_procedure_root_by_path(path.as_str())
             .expect("note callback procedure should exist");
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);

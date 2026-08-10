@@ -9,12 +9,20 @@ use crate::procedure_root;
 
 account_component_code!(
     OWNER_ONLY_BURN_POLICY_CODE,
-    "faucets/policies/burn/owner_controlled/owner_only.masl"
+    "miden-standards-faucets-policies-burn-owner-controlled-owner-only.masp"
 );
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BurnOwnerOnly::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BURN_OWNER_ONLY_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::burn::owner_controlled::owner_only";
 
 procedure_root!(
     OWNER_ONLY_POLICY_ROOT,
-    BurnOwnerOnly::NAME,
+    BURN_OWNER_ONLY_LIBRARY_PATH,
     BurnOwnerOnly::PROC_NAME,
     BurnOwnerOnly::code()
 );
@@ -34,7 +42,7 @@ pub struct BurnOwnerOnly;
 impl BurnOwnerOnly {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::burn::owner_controlled::owner_only";
+        "miden::standards::faucets::policies::burn::owner_controlled::owner_only";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

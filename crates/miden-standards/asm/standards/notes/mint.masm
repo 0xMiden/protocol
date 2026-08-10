@@ -1,151 +1,73 @@
-use miden::protocol::active_note
-use miden::protocol::note
-use miden::standards::faucets::fungible->faucet
-
-# CONSTANTS
-# =================================================================================================
-
-const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=13
-const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=20
-
-use miden::protocol::note::NOTE_TYPE_PUBLIC
-use miden::protocol::note::NOTE_TYPE_PRIVATE
-
-# Memory addresses of MINT note storage (private mode, 13 items total)
-const STORAGE_PTR = 0
-const PRIVATE_RECIPIENT_PTR = STORAGE_PTR
-const PRIVATE_ASSET_KEY_PTR = STORAGE_PTR + 4
-const PRIVATE_ASSET_VALUE_PTR = STORAGE_PTR + 8
-const PRIVATE_TAG_PTR = STORAGE_PTR + 12
-
-# Memory addresses of MINT note storage (public mode, 20+ items total)
-const PUBLIC_SCRIPT_ROOT_PTR = STORAGE_PTR
-const PUBLIC_SERIAL_NUM_PTR = STORAGE_PTR + 4
-const PUBLIC_ASSET_KEY_PTR = STORAGE_PTR + 8
-const PUBLIC_ASSET_VALUE_PTR = STORAGE_PTR + 12
-const PUBLIC_TAG_PTR = STORAGE_PTR + 16
-const PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 20
+use miden::standards::faucets::fungible as fungible
+use miden::standards::faucets::non_fungible as non_fungible
+use miden::standards::inspection::code_inspection
+use miden::standards::notes::mint_fungible
+use miden::standards::notes::mint_non_fungible
 
 # ERRORS
 # =================================================================================================
 
-const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 13 storage items for private or 20+ storage items for public output notes"
+const ERR_MINT_UNSUPPORTED_FAUCET = "the consuming account exposes neither a fungible nor a non-fungible faucet mint_and_send procedure"
 
-#! Network Faucet MINT script: mints the asset stored in the note by calling the network
-#! faucet's mint_and_send function.
+#! MINT script: mints the asset stored in the note by calling the consuming faucet's
+#! `mint_and_send` procedure. Works against both fungible and non-fungible faucets.
 #!
-#! This note is intended to be executed against a network fungible faucet account.
+#! The faucet kind is determined by reflection: the script asks the account (via the
+#! `CodeInspection` component's `has_procedure`) whether it exposes the fungible `mint_and_send`;
+#! if so the fungible mint path runs (see `mint_fungible`), otherwise the non-fungible path runs
+#! (see `mint_non_fungible`) after asserting the account exposes the non-fungible `mint_and_send`.
+#!
+#! This note is intended to be executed against a network faucet account. The per-faucet-kind
+#! storage layouts are documented on `mint_fungible::mint` and `mint_non_fungible::mint`.
 #!
 #! Requires that the account exposes:
-#! - miden::standards::faucets::fungible::mint_and_send procedure.
+#! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
+#! - either `miden::standards::faucets::fungible::mint_and_send` or
+#!   `miden::standards::faucets::non_fungible::mint_and_send`.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! Note storage supports two modes. Depending on the number of note storage items,
-#! a private or public output note is created on consumption of the MINT note:
-#!
-#! Private mode (13 storage items) - creates a private note:
-#! - RECIPIENT:   The recipient digest (4 elements, word 0)
-#! - ASSET_KEY:   The vault key of the asset to mint (4 elements, word 1)
-#! - ASSET_VALUE: The value word of the asset to mint (4 elements, word 2)
-#! - tag:         Note tag for the output note (1 element)
-#!
-#! Public mode (20+ storage items) - creates a public note with variable-length storage:
-#! - SCRIPT_ROOT: Script root of the output note (4 elements, word 0)
-#! - SERIAL_NUM:  Serial number of the output note (4 elements, word 1)
-#! - ASSET_KEY:   The vault key of the asset to mint (4 elements, word 2)
-#! - ASSET_VALUE: The value word of the asset to mint (4 elements, word 3)
-#! - tag:         Note tag for the output note (1 element)
-#! - padding:     3 elements so the variable storage starts at a word boundary
-#! - [STORAGE]:   Variable-length storage for the output note (Vec<Felt>)
-#!                The number of output note storage items = num_mint_note_storage_items - 20
-#!
 #! Panics if:
-#! - account does not expose mint_and_send procedure.
-#! - the number of storage items is not exactly 13 for private or less than 20 for public output
-#!   notes.
+#! - the account does not expose the `has_procedure` procedure.
+#! - the account exposes neither faucet's `mint_and_send` procedure.
+#! - the number of storage items does not match the detected faucet kind (13 / 20+ for fungible,
+#!   9 / 16+ for non-fungible).
 #! - the asset stored in the note does not belong to the consuming faucet.
 @note_script
 pub proc main
     dropw
     # => [pad(16)]
-    # Load note storage into memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items, pad(16)]
 
-    dup
-    # => [num_storage_items, num_storage_items, pad(16)]
+    # Determine the faucet kind.
+    procref.fungible::mint_and_send
+    # => [FUNGIBLE_MINT_AND_SEND_ROOT, pad(16)]
 
-    u32assert2.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
-    u32gte.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
-    # => [is_public_output_note, num_storage_items, pad(16)]
+    call.code_inspection::has_procedure
+    # => [is_fungible, pad(19)]
+
+    movdn.4 dropw
+    # => [is_fungible, pad(15)]
 
     if.true
-        # public output note creation
-        # => [num_storage_items, pad(16)]
-
-        movdn.8
-        # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
-
-        mem_loadw_le.PUBLIC_SCRIPT_ROOT_PTR
-        # => [SCRIPT_ROOT, EMPTY_WORD, num_storage_items, pad(8)]
-
-        swapw mem_loadw_le.PUBLIC_SERIAL_NUM_PTR
-        # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(8)]
-
-        # compute variable length note storage for the output note
-        movup.8 sub.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
-        # => [num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
-
-        push.PUBLIC_OUTPUT_NOTE_STORAGE_PTR
-        # => [storage_ptr, num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
-
-        exec.note::compute_and_store_recipient
-        # => [RECIPIENT, pad(12)]
-
-        # push note_type and tag, then ASSET_VALUE and ASSET_KEY on top
-        push.NOTE_TYPE_PUBLIC
-        # => [note_type, RECIPIENT, pad(12)]
-
-        mem_load.PUBLIC_TAG_PTR
-        # => [tag, note_type, RECIPIENT, pad(12)]
-
-        padw mem_loadw_le.PUBLIC_ASSET_VALUE_PTR
-        # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
-
-        padw mem_loadw_le.PUBLIC_ASSET_KEY_PTR
-        # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+        exec.mint_fungible::mint
+        # => [pad(16)]
     else
-        # private output note creation
+        # require that the account exposes the non-fungible mint_and_send.
+        procref.non_fungible::mint_and_send
+        # => [NON_FUNGIBLE_MINT_AND_SEND_ROOT, pad(16)]
 
-        eq.MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        call.code_inspection::has_procedure
+        # => [is_non_fungible, pad(19)]
+
+        movdn.4 dropw
+        # => [is_non_fungible, pad(15)]
+
+        assert.err=ERR_MINT_UNSUPPORTED_FAUCET
         # => [pad(16)]
 
-        mem_loadw_le.PRIVATE_RECIPIENT_PTR
-        # => [RECIPIENT, pad(12)]
-
-        # push note_type and tag, then ASSET_VALUE and ASSET_KEY on top
-        push.NOTE_TYPE_PRIVATE
-        # => [note_type, RECIPIENT, pad(12)]
-
-        mem_load.PRIVATE_TAG_PTR
-        # => [tag, note_type, RECIPIENT, pad(12)]
-
-        padw mem_loadw_le.PRIVATE_ASSET_VALUE_PTR
-        # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
-
-        padw mem_loadw_le.PRIVATE_ASSET_KEY_PTR
-        # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
+        exec.mint_non_fungible::mint
+        # => [pad(16)]
     end
-    # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
-
-    # mint_and_send consumes [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)] from the
-    # operand stack and returns [note_idx, pad(15)]. Conceptually we have 26 elements going into
-    # the call and 26 coming back out; drop 10 to return to pad(16) as required by @note_script.
-    call.faucet::mint_and_send
-    # => [note_idx, pad(25)]
-
-    dropw dropw drop drop
     # => [pad(16)]
 end

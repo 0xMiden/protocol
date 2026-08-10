@@ -31,7 +31,7 @@ std = [
   "miden-processor/std",
   "miden-verifier/std",
 ]
-testing = ["dep:rand_chacha", "dep:rand_xoshiro", "miden-core/testing", "miden-crypto/std"]
+testing = ["dep:rand_chacha", "dep:rand_xoshiro", "miden-core/testing", "miden-crypto/std", "rand/thread_rng"]
 
 [dependencies]
 # Miden dependencies
@@ -49,7 +49,7 @@ miden-verifier        = { workspace = true }
 # External dependencies
 bech32       = { default-features = false, features = ["alloc"], version = "0.11" }
 rand         = { workspace = true }
-rand_xoshiro = { default-features = false, optional = true, version = "0.7" }
+rand_xoshiro = { default-features = false, optional = true, version = "0.8" }
 semver       = { features = ["serde"], version = "1.0" }
 serde        = { features = ["derive"], optional = true, workspace = true }
 thiserror    = { workspace = true }
@@ -58,7 +58,7 @@ toml         = { optional = true, version = "1.0" }
 rand_chacha = { optional = true, workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { features = ["wasm_js"], version = "0.3" }
+getrandom = { features = ["wasm_js"], version = "0.4" }
 
 [dev-dependencies]
 anyhow         = { features = ["backtrace", "std"], workspace = true }
@@ -70,14 +70,13 @@ rstest         = { workspace = true }
 tempfile       = { version = "3.19" }
 
 [build-dependencies]
-fs-err                 = { workspace = true }
-miden-assembly         = { features = ["std"], workspace = true }
-miden-core             = { workspace = true }
-miden-core-lib         = { workspace = true }
-miden-mast-package     = { features = ["std"], workspace = true }
-miden-package-registry = { features = ["std"], workspace = true }
-regex                  = { workspace = true }
-walkdir                = { workspace = true }
+fs-err                     = { workspace = true }
+miden-assembly             = { features = ["std"], workspace = true }
+miden-core-lib             = { workspace = true }
+miden-mast-package         = { features = ["std"], workspace = true }
+miden-package-registry     = { features = ["std"], workspace = true }
+miden-protocol-build-utils = { workspace = true }
+regex                      = { workspace = true }
 
 [package.metadata.cargo-shear]
 ignored = ["getrandom"]

@@ -9,7 +9,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, Word, ZERO};
+use crate::{Felt, Hasher, Word};
 
 // ORDERED TRANSACTION HEADERS
 // ================================================================================================
@@ -63,18 +63,34 @@ impl OrderedTransactionHeaders {
     /// Computes a commitment to the provided list of transactions.
     ///
     /// Each transaction is represented by a transaction ID and an account ID which it was executed
-    /// against. The commitment is a sequential hash over (transaction_id, account_id) tuples.
-    pub fn compute_commitment(
-        transactions: impl Iterator<Item = (TransactionId, AccountId)>,
+    /// against. The commitment is a sequential hash over (TRANSACTION_ID, ACCOUNT_ID) tuples.
+    pub(crate) fn compute_commitment(
+        transactions: impl IntoIterator<Item = (TransactionId, AccountId)>,
     ) -> Word {
+        Hasher::hash_elements(&Self::hash_input_elements(transactions))
+    }
+
+    /// Returns the felt sequence that [`Self::compute_commitment`] hashes.
+    ///
+    /// The layout is, for each `(transaction_id, account_id)` pair in iteration order:
+    ///   `[transaction_id[4], account_id_suffix, account_id_prefix, 0, 0]`
+    ///
+    /// The batch kernel pipes this same felt sequence from the advice provider to memory and
+    /// asserts the resulting hash matches the public input `BATCH_ID`.
+    pub(crate) fn hash_input_elements(
+        transactions: impl IntoIterator<Item = (TransactionId, AccountId)>,
+    ) -> Vec<Felt> {
         let mut elements = vec![];
         for (transaction_id, account_id) in transactions {
-            let [account_id_prefix, account_id_suffix] = <[Felt; 2]>::from(account_id);
             elements.extend_from_slice(transaction_id.as_elements());
-            elements.extend_from_slice(&[account_id_prefix, account_id_suffix, ZERO, ZERO]);
+            elements.extend_from_slice(&[
+                account_id.suffix(),
+                account_id.prefix().as_felt(),
+                Felt::ZERO,
+                Felt::ZERO,
+            ]);
         }
-
-        Hasher::hash_elements(&elements)
+        elements
     }
 }
 

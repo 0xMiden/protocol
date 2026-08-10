@@ -2,12 +2,33 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::error::Error;
 
+use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
+pub mod costs;
+
+mod allowlist_config;
+pub use allowlist_config::{AllowlistConfig, AllowlistConfigNote};
+
+mod blocklist_config;
+pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
+
 mod burn;
 pub use burn::BurnNote;
+
+mod constant_fee_policy_config;
+pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
+
+mod faucet_metadata_config;
+pub use faucet_metadata_config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
+
+mod faucet_policy_config;
+pub use faucet_policy_config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
+
+mod fee_sponsorship;
+pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 
 mod execution_hint;
 pub use execution_hint::NoteExecutionHint;
@@ -15,14 +36,17 @@ pub use execution_hint::NoteExecutionHint;
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 
+mod min_burn_amount_config;
+pub use min_burn_amount_config::MinBurnAmountConfigNote;
+
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
-mod non_fungible_burn;
-pub use non_fungible_burn::NonFungibleBurnNote;
+mod network_account_config;
+pub use network_account_config::{NetworkAccountConfig, NetworkAccountConfigNote};
 
-mod non_fungible_mint;
-pub use non_fungible_mint::{NonFungibleMintNote, NonFungibleMintNoteStorage};
+mod owner_config;
+pub use owner_config::{OwnerConfig, OwnerConfigNote};
 
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
@@ -30,11 +54,20 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
+mod pause_config;
+pub use pause_config::{PauseConfig, PauseConfigNote};
+
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
+mod rbac_config;
+pub use rbac_config::{RbacConfig, RbacConfigNote};
+
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
+
+mod tx_fee;
+pub use tx_fee::TxFeeNote;
 
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
@@ -49,6 +82,8 @@ pub use standard_note_attachment::StandardNoteAttachment;
 // ================================================================================================
 
 /// The enum holding the types of standard notes provided by `miden-standards`.
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardNote {
     P2ID,
     P2IDE,
@@ -56,6 +91,18 @@ pub enum StandardNote {
     PSWAP,
     MINT,
     BURN,
+    CONSTANT_FEE_POLICY_CONFIG,
+    FAUCET_POLICY_CONFIG,
+    FAUCET_METADATA_CONFIG,
+    MIN_BURN_AMOUNT_CONFIG,
+    ALLOWLIST_CONFIG,
+    BLOCKLIST_CONFIG,
+    PAUSE_CONFIG,
+    OWNER_CONFIG,
+    RBAC_CONFIG,
+    NETWORK_ACCOUNT_CONFIG,
+    FEE_SPONSORSHIP,
+    TX_FEE,
 }
 
 impl StandardNote {
@@ -89,6 +136,42 @@ impl StandardNote {
         if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
+        if root == ConstantFeePolicyConfigNote::script_root() {
+            return Some(Self::CONSTANT_FEE_POLICY_CONFIG);
+        }
+        if root == FaucetPolicyConfigNote::script_root() {
+            return Some(Self::FAUCET_POLICY_CONFIG);
+        }
+        if root == FaucetMetadataConfigNote::script_root() {
+            return Some(Self::FAUCET_METADATA_CONFIG);
+        }
+        if root == MinBurnAmountConfigNote::script_root() {
+            return Some(Self::MIN_BURN_AMOUNT_CONFIG);
+        }
+        if root == AllowlistConfigNote::script_root() {
+            return Some(Self::ALLOWLIST_CONFIG);
+        }
+        if root == BlocklistConfigNote::script_root() {
+            return Some(Self::BLOCKLIST_CONFIG);
+        }
+        if root == PauseConfigNote::script_root() {
+            return Some(Self::PAUSE_CONFIG);
+        }
+        if root == OwnerConfigNote::script_root() {
+            return Some(Self::OWNER_CONFIG);
+        }
+        if root == RbacConfigNote::script_root() {
+            return Some(Self::RBAC_CONFIG);
+        }
+        if root == NetworkAccountConfigNote::script_root() {
+            return Some(Self::NETWORK_ACCOUNT_CONFIG);
+        }
+        if root == FeeSponsorshipNote::script_root() {
+            return Some(Self::FEE_SPONSORSHIP);
+        }
+        if root == TxFeeNote::script_root() {
+            return Some(Self::TX_FEE);
+        }
 
         None
     }
@@ -105,6 +188,18 @@ impl StandardNote {
             Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
+            Self::CONSTANT_FEE_POLICY_CONFIG => "CONSTANT_FEE_POLICY_CONFIG",
+            Self::FAUCET_POLICY_CONFIG => "FAUCET_POLICY_CONFIG",
+            Self::FAUCET_METADATA_CONFIG => "FAUCET_METADATA_CONFIG",
+            Self::MIN_BURN_AMOUNT_CONFIG => "MIN_BURN_AMOUNT_CONFIG",
+            Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
+            Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
+            Self::PAUSE_CONFIG => "PAUSE_CONFIG",
+            Self::OWNER_CONFIG => "OWNER_CONFIG",
+            Self::RBAC_CONFIG => "RBAC_CONFIG",
+            Self::NETWORK_ACCOUNT_CONFIG => "NETWORK_ACCOUNT_CONFIG",
+            Self::FEE_SPONSORSHIP => "FEE_SPONSORSHIP",
+            Self::TX_FEE => "TX_FEE",
         }
     }
 
@@ -117,6 +212,21 @@ impl StandardNote {
             Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS,
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::NUM_STORAGE_ITEMS,
+            // FaucetMetadataConfig storage is variable per action; this returns the upper bound.
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS,
+            Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::NUM_STORAGE_ITEMS,
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::NUM_STORAGE_ITEMS,
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::NUM_STORAGE_ITEMS,
+            Self::PAUSE_CONFIG => PauseConfigNote::NUM_STORAGE_ITEMS,
+            // OwnerConfig storage is variable per action; this returns the upper bound.
+            Self::OWNER_CONFIG => OwnerConfigNote::MAX_NUM_STORAGE_ITEMS,
+            // RbacConfig storage is variable per action; this returns the upper bound.
+            Self::RBAC_CONFIG => RbacConfigNote::MAX_NUM_STORAGE_ITEMS,
+            Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::NUM_STORAGE_ITEMS,
+            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::NUM_STORAGE_ITEMS,
+            Self::TX_FEE => TxFeeNote::NUM_STORAGE_ITEMS,
         }
     }
 
@@ -129,6 +239,18 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script(),
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script(),
+            Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::script(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
+            Self::PAUSE_CONFIG => PauseConfigNote::script(),
+            Self::OWNER_CONFIG => OwnerConfigNote::script(),
+            Self::RBAC_CONFIG => RbacConfigNote::script(),
+            Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script(),
+            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script(),
+            Self::TX_FEE => TxFeeNote::script(),
         }
     }
 
@@ -141,6 +263,18 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
+            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::script_root(),
+            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script_root(),
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script_root(),
+            Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::script_root(),
+            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
+            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
+            Self::PAUSE_CONFIG => PauseConfigNote::script_root(),
+            Self::OWNER_CONFIG => OwnerConfigNote::script_root(),
+            Self::RBAC_CONFIG => RbacConfigNote::script_root(),
+            Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script_root(),
+            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::script_root(),
+            Self::TX_FEE => TxFeeNote::script_root(),
         }
     }
 
@@ -177,9 +311,12 @@ impl StandardNote {
     ///       account ID.
     /// - for `P2IDE` note:
     ///     - check that note storage has correct number of values.
-    ///     - check that the target account is either the receiver account or the sender account.
-    ///     - check that depending on whether the target account is sender or receiver, it could be
-    ///       either consumed, or consumed after timelock height, or consumed after reclaim height.
+    ///     - check that the target account is either the receiver account or the reclaimer account.
+    ///     - check that depending on whether the target account is reclaimer or receiver, it could
+    ///       be either consumed, or consumed after timelock height, or consumed after reclaim
+    ///       height.
+    /// - for `TX_FEE` note:
+    ///     - check that note storage is empty; the note is otherwise consumable by any account.
     fn is_consumable_inner(
         &self,
         note: &Note,
@@ -198,24 +335,23 @@ impl StandardNote {
                 }
             },
             StandardNote::P2IDE => {
-                let P2ideNoteStorage {
-                    target: receiver_account_id,
-                    reclaim_height,
-                    timelock_height,
-                } = P2ideNoteStorage::try_from(note.storage().items())
+                let storage = P2ideNoteStorage::try_from(note.storage().items())
                     .map_err(|e| NoteError::other_with_source("invalid P2IDE note storage", e))?;
 
-                let current_block_height = block_ref.as_u32();
-                let reclaim_height = reclaim_height.unwrap_or_default().as_u32();
-                let timelock_height = timelock_height.unwrap_or_default().as_u32();
+                let reclaimer_account_id = storage.reclaimer();
+                let receiver_account_id = storage.target();
 
-                // block height after which sender account can consume the note
+                let current_block_height = block_ref.as_u32();
+                let reclaim_height = storage.reclaim_height().unwrap_or_default().as_u32();
+                let timelock_height = storage.timelock_height().unwrap_or_default().as_u32();
+
+                // block height after which the reclaimer account can consume the note
                 let consumable_after = reclaim_height.max(timelock_height);
 
-                // handle the case when the target account of the transaction is sender
-                if target_account_id == note.metadata().sender() {
-                    // For the sender, the current block height needs to have reached both reclaim
-                    // and timelock height to be consumable.
+                // handle the case when the target account of the transaction is the reclaimer
+                if target_account_id == reclaimer_account_id {
+                    // For the reclaimer, the current block height needs to have reached both
+                    // reclaim and timelock height to be consumable.
                     if current_block_height >= consumable_after {
                         Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                     } else {
@@ -235,12 +371,25 @@ impl StandardNote {
                             timelock_height,
                         ))))
                     }
-                // if the target account is neither the sender nor the receiver (from the note's
-                // storage), then this account cannot consume the note
+                // if the target account is neither the reclaimer nor the receiver (from the
+                // note's storage), then this account cannot consume the note
                 } else {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable(
-            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account".into()
+            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the reclaimer account".into()
         )))
+                }
+            },
+
+            // TX_FEE notes carry no target restriction: any account can consume them, as long as
+            // the note carries no storage items (the note script rejects any other
+            // storage shape).
+            StandardNote::TX_FEE => {
+                if usize::from(note.storage().num_items()) != TxFeeNote::NUM_STORAGE_ITEMS {
+                    Ok(Some(NoteConsumptionStatus::NeverConsumable(
+                        "TX_FEE note carries unexpected storage items".into(),
+                    )))
+                } else {
+                    Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                 }
             },
 
@@ -253,6 +402,25 @@ impl StandardNote {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Decodes an optional block height stored as a single storage item, where zero encodes `None`.
+///
+/// `error_msg` names the field being decoded so that a caller can tell the heights apart.
+pub(crate) fn decode_optional_block_height(
+    item: Felt,
+    error_msg: &'static str,
+) -> Result<Option<BlockNumber>, NoteError> {
+    if item == Felt::ZERO {
+        return Ok(None);
+    }
+
+    let height: u32 = item
+        .as_canonical_u64()
+        .try_into()
+        .map_err(|e| NoteError::other_with_source(error_msg, e))?;
+
+    Ok(Some(BlockNumber::from(height)))
+}
 
 // HELPER STRUCTURES
 // ================================================================================================

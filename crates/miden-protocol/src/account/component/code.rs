@@ -1,5 +1,4 @@
-use miden_assembly::Library;
-use miden_assembly::library::ProcedureExport;
+use miden_mast_package::{Package, ProcedureExport};
 use miden_processor::mast::{MastForest, MastNodeExt};
 
 use crate::account::AccountProcedureRoot;
@@ -9,13 +8,13 @@ use crate::vm::AdviceMap;
 // ACCOUNT COMPONENT CODE
 // ================================================================================================
 
-/// A [`Library`] that has been assembled for use as component code.
+/// A [`Package`] that has been assembled for use as component code.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccountComponentCode(Library);
+pub struct AccountComponentCode(Package);
 
 impl AccountComponentCode {
-    /// Returns a reference to the underlying [`Library`]
-    pub fn as_library(&self) -> &Library {
+    /// Returns a reference to the underlying [`Package`]
+    pub fn as_package(&self) -> &Package {
         &self.0
     }
 
@@ -24,8 +23,8 @@ impl AccountComponentCode {
         self.0.mast_forest().as_ref()
     }
 
-    /// Consumes `self` and returns the underlying [`Library`]
-    pub fn into_library(self) -> Library {
+    /// Consumes `self` and returns the underlying [`Package`]
+    pub fn into_package(self) -> Package {
         self.0
     }
 
@@ -33,7 +32,11 @@ impl AccountComponentCode {
     /// procedures.
     pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> + '_ {
         self.exports().map(|proc_export| {
-            let digest = self.0.mast_forest()[proc_export.node].digest();
+            let digest = if let Some(node) = proc_export.node {
+                self.0.mast_forest()[node].digest()
+            } else {
+                proc_export.digest
+            };
             AccountProcedureRoot::from_raw(digest)
         })
     }
@@ -44,6 +47,7 @@ impl AccountComponentCode {
     /// attributes.
     pub fn exports(&self) -> impl Iterator<Item = &ProcedureExport> + '_ {
         self.0
+            .manifest
             .exports()
             .filter_map(|export| export.as_procedure())
             .filter(|proc_export| {
@@ -53,16 +57,27 @@ impl AccountComponentCode {
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
-    /// if it was not found in this component's library.
+    /// if it was not found in this component's code.
     pub fn get_procedure_root_by_path(
         &self,
         proc_name: impl AsRef<Path>,
     ) -> Option<AccountProcedureRoot> {
-        self.0.get_procedure_root_by_path(proc_name).map(AccountProcedureRoot::from_raw)
+        let proc_name = proc_name.as_ref();
+        let absolute_proc_name = proc_name.to_absolute().ok();
+        self.0
+            .manifest
+            .exports()
+            .filter_map(|export| export.as_procedure())
+            .find(|export| {
+                absolute_proc_name.as_ref().is_some_and(|absolute_proc_name| {
+                    export.path.as_ref() == absolute_proc_name.as_ref()
+                })
+            })
+            .map(|export| AccountProcedureRoot::from_raw(export.digest))
     }
 
     /// Returns a new [AccountComponentCode] with the provided advice map entries merged into the
-    /// underlying [Library]'s [MastForest].
+    /// underlying [Package]'s [MastForest].
     ///
     /// This allows adding advice map entries to an already-compiled account component,
     /// which is useful when the entries are determined after compilation.
@@ -75,24 +90,24 @@ impl AccountComponentCode {
     }
 }
 
-impl AsRef<Library> for AccountComponentCode {
-    fn as_ref(&self) -> &Library {
-        self.as_library()
+impl AsRef<Package> for AccountComponentCode {
+    fn as_ref(&self) -> &Package {
+        self.as_package()
     }
 }
 
 // CONVERSIONS
 // ================================================================================================
 
-impl From<Library> for AccountComponentCode {
-    fn from(value: Library) -> Self {
+impl From<Package> for AccountComponentCode {
+    fn from(value: Package) -> Self {
         Self(value)
     }
 }
 
-impl From<AccountComponentCode> for Library {
+impl From<AccountComponentCode> for Package {
     fn from(value: AccountComponentCode) -> Self {
-        value.into_library()
+        value.into_package()
     }
 }
 
@@ -102,30 +117,28 @@ impl From<AccountComponentCode> for Library {
 #[cfg(test)]
 mod tests {
     use alloc::string::ToString;
-    use alloc::sync::Arc;
 
     use miden_core::{Felt, Word};
 
     use super::*;
-    use crate::assembly::Assembler;
+    use crate::testing::assembler::assemble_test_package;
 
     #[test]
     fn test_account_component_code_with_advice_map() {
-        let assembler = Assembler::default();
-        let library = Arc::unwrap_or_clone(
-            assembler
-                .assemble_library(["@account_procedure pub proc test nop end"])
-                .expect("failed to assemble library"),
+        let package = assemble_test_package(
+            "test-component-code-advice-map",
+            "test::component_code_advice_map",
+            "@account_procedure pub proc test nop end",
         );
-        let component_code = AccountComponentCode::from(library);
+        let component_code = AccountComponentCode::from(package);
 
         assert!(component_code.mast_forest().advice_map().is_empty());
 
         // Empty advice map should be a no-op (digest stays the same)
         let cloned = component_code.clone();
-        let original_digest = cloned.as_library().digest();
+        let original_digest = cloned.as_package().digest();
         let component_code = component_code.with_advice_map(AdviceMap::default());
-        assert_eq!(original_digest, component_code.as_library().digest());
+        assert_eq!(original_digest, component_code.as_package().digest());
 
         // Non-empty advice map should add entries
         let key = Word::from([10u32, 20, 30, 40]);
@@ -142,30 +155,36 @@ mod tests {
 
     #[test]
     fn test_get_procedure_root_by_path() {
-        let assembler = Assembler::default();
-        let library = Arc::unwrap_or_clone(
-            assembler
-                .assemble_library(["@account_procedure pub proc test_proc nop end"])
-                .expect("failed to assemble library"),
+        let package = assemble_test_package(
+            "test-component-code-procedure-root",
+            "test::component_code_procedure_root",
+            "@account_procedure pub proc test_proc nop end",
         );
-        let component_code = AccountComponentCode::from(library);
+        let component_code = AccountComponentCode::from(package);
 
-        // The test library exports exactly one procedure.
+        // The test package exports exactly one procedure.
         assert_eq!(component_code.procedure_roots().count(), 1);
         let expected = component_code.procedure_roots().next().expect("one procedure exported");
 
-        let library_namespace = component_code
-            .as_library()
-            .module_infos()
+        let package_namespace = component_code
+            .as_package()
+            .module_descriptors()
             .next()
-            .expect("library should have one module")
+            .expect("package should have one module")
             .path()
             .to_string();
-        let proc_path = alloc::format!("{library_namespace}::test_proc");
+        let proc_path = alloc::format!("{package_namespace}::test_proc");
 
         let root = component_code
-            .get_procedure_root_by_path(proc_path.as_str())
+            .get_procedure_root_by_path(&*proc_path)
             .expect("test_proc should be present");
+        assert_eq!(root, expected);
+
+        let relative_proc_path =
+            proc_path.strip_prefix("::").expect("test procedure path should be absolute");
+        let root = component_code
+            .get_procedure_root_by_path(relative_proc_path)
+            .expect("relative test_proc path should be present");
         assert_eq!(root, expected);
 
         assert!(component_code.get_procedure_root_by_path("bogus::missing").is_none());

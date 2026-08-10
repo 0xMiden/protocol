@@ -1,0 +1,192 @@
+# Shared payload handling for the canonical `send_notes` transaction scripts.
+#
+# This module is private to `send_notes`: it is the shared implementation behind the
+# [`send_notes::wallet`], [`send_notes::fungible_faucet`] and [`send_notes::non_fungible_faucet`]
+# scripts, and is not part of the standards library's public surface.
+#
+# The `send_notes` scripts receive a commitment to their parameters as `TX_SCRIPT_ARGS` and load
+# the actual parameters (the payload) from the advice map, so a single script root covers every
+# possible set of output notes.
+#
+# The payload is a word-aligned element stream with the following layout:
+#
+#   word 0 (header):            [num_notes, expiration_delta, 0, 0]
+#   per note record:
+#     word 0:                   RECIPIENT
+#     word 1:                   [tag, note_type, num_assets, num_attachments]
+#     num_assets * 2 words:     ASSET_ID, ASSET_VALUE
+#     num_attachments * 2 words: [attachment_scheme, 0, 0, 0], ATTACHMENT_COMMITMENT
+#
+# An `expiration_delta` of 0 means the transaction's expiration delta is left unchanged.
+
+use miden::core::mem
+use miden::protocol::output_note
+use miden::protocol::tx
+
+# CONSTANTS
+# =================================================================================================
+
+# The number of field elements in a word. Replace with
+# `miden::protocol::constants::WORD_NUM_ELEMENTS`, once
+# https://github.com/0xMiden/miden-vm/issues/3429 is fixed.
+pub const WORD_NUM_ELEMENTS = 4
+
+# Memory address at which the `send_notes` scripts write the payload, and the address of the note
+# count, which is the payload header's first element.
+pub const PAYLOAD_ADDR = 0
+pub const NUM_NOTES_ADDR = PAYLOAD_ADDR
+
+# Element offset of the expiration delta, the payload header's second element, relative to the
+# payload start.
+const EXPIRATION_DELTA_OFFSET = 1
+
+# Memory address of the first note record, which starts right after the header word.
+pub const NOTES_START_ADDR = PAYLOAD_ADDR + WORD_NUM_ELEMENTS
+
+# Element offsets of the fields in a note record's second word, relative to the record start.
+pub const TAG_OFFSET = WORD_NUM_ELEMENTS
+pub const NOTE_TYPE_OFFSET = TAG_OFFSET + 1
+pub const NUM_ASSETS_OFFSET = TAG_OFFSET + 2
+pub const NUM_ATTACHMENTS_OFFSET = TAG_OFFSET + 3
+
+# Element offset of the first asset or attachment item within a note record, and the number of
+# elements a single such item occupies (two words).
+pub const ITEMS_OFFSET = NUM_ATTACHMENTS_OFFSET + 1
+pub const ITEM_NUM_ELEMENTS = WORD_NUM_ELEMENTS + WORD_NUM_ELEMENTS
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SEND_NOTES_PAYLOAD_LENGTH_INVALID = "send notes payload length advice input is not a valid u32"
+
+const ERR_SEND_NOTES_PAYLOAD_NOT_WORD_ALIGNED = "send notes payload length is not a multiple of the word size"
+
+const ERR_SEND_NOTES_PAYLOAD_EMPTY = "send notes payload must not be empty"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Writes the payload committed to by the transaction script argument from the advice map to
+#! memory at `payload_addr` and sets the transaction expiration delta if requested.
+#!
+#! Inputs:
+#!   Operand stack: [payload_addr, PAYLOAD_COMMITMENT, pad(11)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - payload_addr is the memory address at which to write the payload.
+#! - PAYLOAD_COMMITMENT is the sequential hash of the payload elements.
+#! - payload is the element stream described in the file header.
+#!
+#! Panics if:
+#! - the advice map has no entry for PAYLOAD_COMMITMENT.
+#! - the payload length is not a non-zero multiple of the word size.
+#! - the payload does not hash to PAYLOAD_COMMITMENT.
+#! - the expiration delta is non-zero and not in the range 1..=0xFFFF.
+#!
+#! Invocation: exec
+pub proc write_payload_to_memory(payload_addr: u32, payload_commitment: word)
+    # push the payload from the advice map onto the advice stack, together with its length
+    movdn.4 adv.push_mapvaln
+    # OS => [PAYLOAD_COMMITMENT, payload_addr, pad(11)]
+    # AS => [num_elements, [payload]]
+
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
+    adv_push u32assert.err=ERR_SEND_NOTES_PAYLOAD_LENGTH_INVALID
+    # OS => [num_elements, PAYLOAD_COMMITMENT, payload_addr, pad(11)]
+    # AS => [[payload]]
+
+    u32divmod.WORD_NUM_ELEMENTS
+    # => [remainder, num_words, PAYLOAD_COMMITMENT, payload_addr, pad(11)]
+
+    eq.0 assert.err=ERR_SEND_NOTES_PAYLOAD_NOT_WORD_ALIGNED
+    # => [num_words, PAYLOAD_COMMITMENT, payload_addr, pad(11)]
+
+    dup neq.0 assert.err=ERR_SEND_NOTES_PAYLOAD_EMPTY
+    # => [num_words, PAYLOAD_COMMITMENT, payload_addr, pad(11)]
+
+    # pipe the payload to memory and validate it matches the PAYLOAD_COMMITMENT, keeping a copy of
+    # payload_addr to read the expiration delta from afterwards
+    dup.5 swap
+    # => [num_words, write_ptr, PAYLOAD_COMMITMENT, payload_addr, pad(11)]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => [payload_addr, pad(15)]
+
+    # set the transaction expiration delta if one was provided
+    add.EXPIRATION_DELTA_OFFSET mem_load
+    # => [expiration_delta, pad(15)]
+
+    dup neq.0
+    if.true
+        exec.tx::update_expiration_block_delta
+    else
+        drop
+    end
+    # => [pad(16)]
+end
+
+#! Adds the `num_attachments` attachments starting at `attachments_ptr` to the output note at
+#! `note_idx`, and returns the element right after the last attachment.
+#!
+#! Every `send_notes` script shares this loop; the returned pointer is where the next note record
+#! begins, since attachments are the last items in a record.
+#!
+#! Inputs:
+#!   Operand stack: [note_idx, attachments_ptr, num_attachments]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] for every attachment added
+#!   }
+#! Outputs:
+#!   Operand stack: [end_ptr]
+#!
+#! Where:
+#! - note_idx is the index of the output note to add the attachments to.
+#! - attachments_ptr is the address of the first attachment item.
+#! - num_attachments is the number of attachment items to add.
+#! - end_ptr is `attachments_ptr` advanced past every attachment item.
+#!
+#! Panics if:
+#! - an attachment's elements are missing from the advice map.
+#!
+#! Invocation: exec
+pub proc add_attachments(note_idx: u32, attachments_ptr: u32, num_attachments: u32) -> u32
+    # the loop variables are kept on the stack
+    movdn.2 swap
+    # => [num_attachments, attachments_ptr, note_idx]
+
+    dup neq.0
+    while.true
+        # => [attachments_left, read_ptr, note_idx]
+
+        dup.2
+        # => [note_idx, attachments_left, read_ptr, note_idx]
+
+        padw dup.6 add.WORD_NUM_ELEMENTS mem_loadw_le
+        # => [ATTACHMENT_COMMITMENT, note_idx, attachments_left, read_ptr, note_idx]
+
+        dup.6 mem_load
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, attachments_left, read_ptr, note_idx]
+
+        exec.output_note::add_attachment
+        # => [attachments_left, read_ptr, note_idx]
+
+        # advance to the next attachment
+        swap add.ITEM_NUM_ELEMENTS swap
+        # => [attachments_left, read_ptr, note_idx]
+
+        sub.1 dup neq.0
+        # => [attachments_left != 0, attachments_left, read_ptr, note_idx]
+    end
+    drop
+    # => [read_ptr, note_idx]
+
+    swap drop
+    # => [end_ptr]
+end

@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-note-note-creator"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::note::note_creator"
+path      = "note_creator.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

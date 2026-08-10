@@ -1,7 +1,7 @@
 use alloc::format;
 use alloc::string::ToString;
 
-use miden_agglayer::{ExitRoot, SmtNode, agglayer_library};
+use miden_agglayer::{ExitRoot, SmtNode, agglayer_package};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
@@ -81,7 +81,8 @@ impl<const TREE_HEIGHT: usize> MerkleTreeFrontier32<TREE_HEIGHT> {
 async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     let mut mtf = MerkleTreeFrontier32::<32>::new();
 
-    let mut source = "use agglayer::bridge::merkle_tree_frontier begin".to_string();
+    let mut source =
+        "use agglayer::bridge::merkle_tree_frontier @transaction_script pub proc main".to_string();
 
     for round in 0..32 {
         // construct the leaf from the hex representation of the round number
@@ -99,14 +100,14 @@ async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     source.push_str("end");
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_library(&agglayer_library())?
+        .with_statically_linked_package(&agglayer_package())?
         .compile_tx_script(source)?;
 
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script.clone())
         .build()?
         .execute()
@@ -121,7 +122,8 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
     let zero_31 = *CANONICAL_ZEROS_32.get(31).expect("zeros should have 32 values total");
     let empty_mtf_root = Keccak256::merge(&[zero_31, zero_31]);
 
-    let mut source = "use agglayer::bridge::merkle_tree_frontier begin".to_string();
+    let mut source =
+        "use agglayer::bridge::merkle_tree_frontier @transaction_script pub proc main".to_string();
 
     for round in 1..=32 {
         // check that pushing the zero leaves into the MTF doesn't change its root
@@ -135,14 +137,14 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
     source.push_str("end");
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_library(&agglayer_library())?
+        .with_statically_linked_package(&agglayer_package())?
         .compile_tx_script(source)?;
 
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script.clone())
         .build()?
         .execute()

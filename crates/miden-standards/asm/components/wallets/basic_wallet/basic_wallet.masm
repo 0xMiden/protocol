@@ -1,0 +1,7 @@
+# The MASM code of the Basic Wallet Account Component.
+#
+# See the `BasicWallet` Rust type's documentation for more details.
+
+pub use {receive_asset} from miden::standards::wallets::basic
+pub use {move_asset_to_note} from miden::standards::wallets::basic
+pub use {create_note} from miden::standards::wallets::basic

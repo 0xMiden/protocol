@@ -1,4 +1,3 @@
-use alloc::string::String;
 use alloc::sync::Arc;
 
 use miden_core::mast::MastForest;
@@ -6,7 +5,6 @@ use miden_core::prettier::PrettyPrint;
 use miden_crypto_derive::WordWrapper;
 use miden_processor::mast::{MastNode, MastNodeExt, MastNodeId};
 
-use super::Felt;
 use crate::Word;
 use crate::utils::serde::{
     ByteReader,
@@ -33,6 +31,12 @@ impl AccountProcedureRoot {
     /// Returns a reference to the procedure's mast root.
     pub fn mast_root(&self) -> &Word {
         &self.0
+    }
+}
+
+impl core::fmt::Display for AccountProcedureRoot {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("{}", self.as_word()))
     }
 }
 

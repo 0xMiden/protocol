@@ -1,23 +1,16 @@
 use miden::protocol::account_id
-use miden::protocol::constants::WORD_NUM_ELEMENTS
 use miden::core::crypto::hashes::poseidon2
-use miden::core::mem
+use {AccountId, Bool, MemoryAddress, NoteMetadata, NoteRecipient, NoteScriptRoot, NoteTag, NoteType}
+    from miden::protocol::types
 
-# Re-export the max inputs per note constant.
-pub use miden::protocol_utils::note::MAX_NOTE_STORAGE_ITEMS
-pub use miden::protocol_utils::note::NOTE_TYPE_PUBLIC
-pub use miden::protocol_utils::note::NOTE_TYPE_PRIVATE
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_SCHEME
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_WORDS
-pub use miden::protocol_utils::note::MAX_ATTACHMENT_TOTAL_WORDS
-pub use miden::protocol_utils::note::ATTACHMENT_SCHEME_NONE
+pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
+    from miden::protocol_utils::note
 
-# ERRORS
+# ERRORS
 # =================================================================================================
 
-const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT="number of note storage exceeded the maximum limit of 1024"
-
-const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
+const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT =
+    "number of note storage exceeded the maximum limit of 1024"
 
 # NOTE UTILITY PROCEDURES
 # =================================================================================================
@@ -41,167 +34,16 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bo
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc compute_storage_commitment
+pub proc compute_storage_commitment(storage_ptr: MemoryAddress, num_storage_items: u16) -> word
     # check that number of storage items is less than or equal to MAX_NOTE_STORAGE_ITEMS
-    dup.1 push.MAX_NOTE_STORAGE_ITEMS u32assert2.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
+    dup.1 push.MAX_NOTE_STORAGE_ITEMS
+    u32assert2.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
     u32lte assert.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
     # => [storage_ptr, num_storage_items]
 
     # compute the storage commitment (over the unpadded values)
     exec.poseidon2::hash_elements
     # => [STORAGE_COMMITMENT]
-end
-
-#! Writes the assets data stored in the advice map to the memory specified by the provided
-#! destination pointer.
-#!
-#! Inputs:
-#!   Operand stack: [ASSETS_COMMITMENT, num_assets, dest_ptr]
-#!   Advice map: {
-#!     ASSETS_COMMITMENT: [[ASSETS_DATA]]
-#!   }
-#! Outputs:
-#!   Operand stack: [num_assets, dest_ptr]
-pub proc write_assets_to_memory
-    # load the asset data from the advice map to the advice stack
-    adv.push_mapval
-    # OS => [ASSETS_COMMITMENT, num_assets, dest_ptr]
-    # AS => [[ASSETS_DATA]]
-
-    movup.5 movup.5
-    # OS => [num_assets, dest_ptr, ASSETS_COMMITMENT]
-    # AS => [[ASSETS_DATA]]
-
-    # each asset takes up two words, so num_words = 2 * num_assets
-    # this also guarantees we pass an even number to pipe_double_words_preimage_to_memory
-    mul.2
-    # OS => [num_words, dest_ptr, ASSETS_COMMITMENT]
-    # AS => [[ASSETS_DATA]]
-
-    # write the data from the advice stack into memory
-    exec.mem::pipe_double_words_preimage_to_memory drop
-    # OS => []
-    # AS => []
-end
-
-#! Writes the attachment commitments stored in the advice map to memory specified by the provided
-#! destination pointer.
-#!
-#! Inputs:
-#!   Operand stack: [ATTACHMENTS_COMMITMENT, dest_ptr]
-#!   Advice map: {
-#!     ATTACHMENTS_COMMITMENT: [[ATTACHMENT_COMMITMENT]]
-#!   }
-#! Outputs:
-#!   Operand stack: [num_attachments]
-pub proc write_attachment_commitments_to_memory
-    # push the individual ATTACHMENT commitments from the advice map onto the advice stack
-    adv.push_mapvaln
-    # OS => [ATTACHMENTS_COMMITMENT, dest_ptr]
-    # AS => [num_elements, [ATTACHMENT_COMMITMENT]]
-
-    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
-    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
-    # invalid advice inputs.
-    adv_push u32assert.err="invalid attachment num_elements advice input"
-    u32divmod.WORD_NUM_ELEMENTS
-    # OS => [remainder, num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
-    # AS => [[ATTACHMENT_COMMITMENT]]
-
-    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
-    eq.0 assert.err="attachment commitments num_elements is not a multiple of WORD_NUM_ELEMENTS"
-    # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
-    # AS => [[ATTACHMENT_COMMITMENT]]
-
-    # store the number of words as the number of attachments for return
-    swap.5 dup.5
-    # OS => [num_words, dest_ptr, ATTACHMENTS_COMMITMENT, num_attachments]
-    # AS => [[ATTACHMENT_COMMITMENT]]
-
-    # pipe attachment commitments to memory and validate they match the ATTACHMENTS_COMMITMENT
-    exec.mem::pipe_preimage_to_memory drop
-    # => [num_attachments]
-end
-
-#! Writes a single attachment's data stored in the advice map to the memory specified by the
-#! provided destination pointer.
-#!
-#! Inputs:
-#!   Operand stack: [ATTACHMENT_COMMITMENT, dest_ptr]
-#!   Advice map: {
-#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
-#!   }
-#! Outputs:
-#!   Operand stack: [num_words]
-#!
-#! Where:
-#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
-#! - dest_ptr is the memory address to which to write the attachment data.
-#! - num_words is the number of words in the attachment.
-pub proc write_attachment_to_memory
-    # push the number of attachment elements from the advice map onto the advice stack
-    adv.push_mapvaln
-    # OS => [ATTACHMENT_COMMITMENT, dest_ptr]
-    # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
-
-    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
-    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
-    # invalid advice inputs.
-    adv_push u32assert.err="invalid attachment num_elements advice input"
-    u32divmod.WORD_NUM_ELEMENTS
-    # OS => [remainder, num_words, ATTACHMENT_COMMITMENT, dest_ptr]
-    # AS => [[ATTACHMENT_ELEMENTS]]
-
-    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
-    eq.0 assert.err="attachment num_elements is not a multiple of WORD_NUM_ELEMENTS"
-    # OS => [num_words, ATTACHMENT_COMMITMENT, dest_ptr]
-    # AS => [[ATTACHMENT_ELEMENTS]]
-
-    swap.5 dup.5
-    # OS => [num_words, dest_ptr, ATTACHMENT_COMMITMENT, num_words]
-    # AS => [[ATTACHMENT_ELEMENTS]]
-
-    # pipe the attachment data into memory, validating against ATTACHMENT_COMMITMENT
-    exec.mem::pipe_preimage_to_memory drop
-    # => [num_words]
-end
-
-#! Writes the attachment with the provided index from the provided attachment commitments to the
-#! memory specified by the destination pointer.
-#!
-#! Inputs:  [num_attachments, attachment_commitments_ptr, attachment_idx, dest_ptr]
-#! Outputs: [num_words]
-#!
-#! Where:
-#! - attachment_idx is the index of the attachment to retrieve.
-#! - attachment_commitments_ptr is a pointer to the attachment commitments in memory.
-#! - dest_ptr is the memory address to which to write the attachment data.
-#! - num_attachments is the number of attachments.
-#! - num_words is the number of words in the attachment.
-#!
-#! Panics if:
-#! - the attachment index is greater or equal to the number of attachments.
-#! - the sequential hash over the attachment data in the advice inputs does not match the
-#!   attachment commitment.
-#!
-#! Invocation: exec
-pub proc write_indexed_attachment_to_memory
-    # assert attachment_idx < num_attachments
-    dup.2 swap u32assert2.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
-    u32lt assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
-    # => [attachment_commitments_ptr, attachment_idx, dest_ptr]
-
-    # compute the memory address of the attachment commitment:
-    # commitment_ptr = attachment_commitments_ptr + attachment_idx * WORD_NUM_ELEMENTS
-    swap mul.WORD_NUM_ELEMENTS add
-    # => [commitment_ptr, dest_ptr]
-
-    # load the ATTACHMENT_COMMITMENT from memory
-    padw movup.4 mem_loadw_le
-    # => [ATTACHMENT_COMMITMENT, dest_ptr]
-
-    exec.write_attachment_to_memory
-    # => [num_words]
 end
 
 #! Computes the recipient hash from note storage, script root, and serial number.
@@ -236,7 +78,12 @@ end
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc compute_and_store_recipient
+pub proc compute_and_store_recipient(
+    storage_ptr: MemoryAddress,
+    num_storage_items: u16,
+    serial_num: word,
+    script_root: NoteScriptRoot
+) -> NoteRecipient
     dup.1 dup.1
     # => [storage_ptr, num_storage_items, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
@@ -286,7 +133,11 @@ end
 #! - RECIPIENT is the recipient of the note.
 #!
 #! Invocation: exec
-pub proc compute_recipient
+pub proc compute_recipient(
+    serial_num: word,
+    script_root: NoteScriptRoot,
+    storage_commitment: word
+) -> NoteRecipient
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
@@ -309,7 +160,7 @@ end
 #! - METADATA is the metadata of a note.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID of the note which
 #!   metadata was provided.
-pub proc metadata_into_sender
+pub proc metadata_into_sender(metadata: NoteMetadata) -> AccountId
     # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
 
     # drop tag and attachment_kind_scheme
@@ -331,7 +182,7 @@ end
 #! - attachment_n_scheme is the scheme of the nth attachment (0 if absent).
 #!
 #! Invocation: exec
-pub proc metadata_into_attachment_schemes
+pub proc metadata_into_attachment_schemes(metadata: NoteMetadata) -> (u16, u16, u16, u16)
     # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
 
     drop drop drop
@@ -372,7 +223,7 @@ end
 #! - note_type is the type of the note (0 for private, 1 for public).
 #!
 #! Invocation: exec
-pub proc metadata_into_note_type
+pub proc metadata_into_note_type(metadata: NoteMetadata) -> NoteType
     movdn.3 drop drop drop
     # => [sender_id_suffix_type_version]
 
@@ -398,7 +249,7 @@ end
 #! - tag is the lower 32 bits of the tag element.
 #!
 #! Invocation: exec
-pub proc metadata_into_tag
+pub proc metadata_into_tag(metadata: NoteMetadata) -> NoteTag
     drop drop swap drop
     # => [tag_element]
 
@@ -420,7 +271,7 @@ end
 #! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
 #!
 #! Invocation: exec
-pub proc find_attachment_idx
+pub proc find_attachment_idx(attachment_scheme: u16, metadata: NoteMetadata) -> (Bool, u8)
     movdn.4 exec.metadata_into_attachment_schemes
     # => [scheme_0, scheme_1, scheme_2, scheme_3, attachment_scheme]
 

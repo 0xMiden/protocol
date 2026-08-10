@@ -1,14 +1,22 @@
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountComponentCode;
+use miden_protocol::assembly::diagnostics::Report;
 use miden_protocol::assembly::{
     Assembler,
     DefaultSourceManager,
-    Library,
-    Parse,
-    ParseOptions,
+    Linkage,
+    Module,
+    ModuleKind,
+    ModuleParser,
+    Package,
     Path,
+    SourceFile,
+    SourceManager,
     SourceManagerSync,
 };
 use miden_protocol::note::NoteScript;
@@ -19,36 +27,192 @@ use miden_protocol::{Felt, Word};
 use crate::errors::CodeBuilderError;
 use crate::standards_lib::StandardsLib;
 
+const NOTE_SCRIPT_MODULE_PATH: &str = "::note_script";
+const TX_SCRIPT_MODULE_PATH: &str = "::tx_script";
+
+/// A value that can provide a compiled Miden package to the code builder.
+pub trait CodeBuilderPackage {
+    fn as_code_builder_package(&self) -> &Package;
+}
+
+impl<T> CodeBuilderPackage for &T
+where
+    T: CodeBuilderPackage + ?Sized,
+{
+    fn as_code_builder_package(&self) -> &Package {
+        (*self).as_code_builder_package()
+    }
+}
+
+impl CodeBuilderPackage for Package {
+    fn as_code_builder_package(&self) -> &Package {
+        self
+    }
+}
+
+impl CodeBuilderPackage for Box<Package> {
+    fn as_code_builder_package(&self) -> &Package {
+        self
+    }
+}
+
+impl CodeBuilderPackage for AccountComponentCode {
+    fn as_code_builder_package(&self) -> &Package {
+        self.as_package()
+    }
+}
+
+/// A source value that can be compiled into a note or transaction script.
+pub trait CodeBuilderScriptSource {
+    /// Parses this source into a library module, assigning `default_path` as the module path
+    /// when the source does not provide one.
+    fn parse_script(
+        self,
+        default_path: &Path,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report>;
+}
+
+fn parse_script_str(
+    source: impl AsRef<str>,
+    default_path: &Path,
+    warnings_as_errors: bool,
+    source_manager: Arc<dyn SourceManager>,
+) -> Result<Box<Module>, Report> {
+    let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+    parser.set_warnings_as_errors(warnings_as_errors);
+    parser.parse_str(Some(default_path), source.as_ref(), source_manager)
+}
+
+fn set_default_module_path(mut module: Box<Module>, default_path: &Path) -> Box<Module> {
+    if module.path().is_empty() {
+        module.set_path(default_path);
+    }
+    module
+}
+
+macro_rules! impl_script_source_for_str {
+    ($($source:ty),* $(,)?) => {
+        $(
+            impl CodeBuilderScriptSource for $source {
+                fn parse_script(
+                    self,
+                    default_path: &Path,
+                    warnings_as_errors: bool,
+                    source_manager: Arc<dyn SourceManager>,
+                ) -> Result<Box<Module>, Report> {
+                    parse_script_str(self, default_path, warnings_as_errors, source_manager)
+                }
+            }
+        )*
+    };
+}
+
+impl_script_source_for_str!(&str, &String, String, Box<str>, Cow<'_, str>);
+
+impl CodeBuilderScriptSource for Arc<SourceFile> {
+    fn parse_script(
+        self,
+        default_path: &Path,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        parser.set_warnings_as_errors(warnings_as_errors);
+        parser.parse(Some(default_path), self, source_manager)
+    }
+}
+
+impl CodeBuilderScriptSource for Module {
+    fn parse_script(
+        self,
+        default_path: &Path,
+        _warnings_as_errors: bool,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        Ok(set_default_module_path(Box::new(self), default_path))
+    }
+}
+
+impl CodeBuilderScriptSource for Box<Module> {
+    fn parse_script(
+        self,
+        default_path: &Path,
+        _warnings_as_errors: bool,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        Ok(set_default_module_path(self, default_path))
+    }
+}
+
+impl CodeBuilderScriptSource for Arc<Module> {
+    fn parse_script(
+        self,
+        default_path: &Path,
+        _warnings_as_errors: bool,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        Ok(set_default_module_path(Box::new(Arc::unwrap_or_clone(self)), default_path))
+    }
+}
+
+#[cfg(feature = "std")]
+impl CodeBuilderScriptSource for &std::path::Path {
+    fn parse_script(
+        self,
+        default_path: &Path,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        parser.set_warnings_as_errors(warnings_as_errors);
+        parser.parse_file(Some(default_path), self, source_manager)
+    }
+}
+
+#[cfg(feature = "std")]
+impl CodeBuilderScriptSource for std::path::PathBuf {
+    fn parse_script(
+        self,
+        default_path: &Path,
+        warnings_as_errors: bool,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Box<Module>, Report> {
+        self.as_path().parse_script(default_path, warnings_as_errors, source_manager)
+    }
+}
+
 // CODE BUILDER
 // ================================================================================================
 
 /// A builder for compiling account components, note scripts, and transaction scripts with optional
-/// library dependencies.
+/// package dependencies.
 ///
 /// The [`CodeBuilder`] simplifies the process of creating transaction scripts by providing:
-/// - A clean API for adding multiple libraries with static or dynamic linking
-/// - Automatic assembler configuration with all added libraries
+/// - A clean API for adding multiple packages with static or dynamic linking
+/// - Automatic assembler configuration with all added packages
 /// - Debug mode support
 /// - Builder pattern support for method chaining
 ///
 /// ## Static vs Dynamic Linking
 ///
-/// **Static Linking** (`link_static_library()` / `with_statically_linked_library()`):
-/// - Use when you control and know the library code
-/// - The library code is copied into the script code
-/// - Best for most user-written libraries and dependencies
+/// **Static Linking** (`link_static_package()` / `with_statically_linked_package()`):
+/// - Use when you control and know the package code
+/// - The package code is copied into the script code
+/// - Best for most user-written packages and dependencies
 /// - Results in larger script size but ensures the code is always available
 ///
-/// **Dynamic Linking** (`link_dynamic_library()` / `with_dynamically_linked_library()`):
+/// **Dynamic Linking** (`link_dynamic_package()` / `with_dynamically_linked_package()`):
 /// - Use when making Foreign Procedure Invocation (FPI) calls
-/// - The library code is available on-chain and referenced, not copied
+/// - The package code is available on-chain and referenced, not copied
 /// - Results in smaller script size but requires the code to be available on-chain
 ///
 /// ## Typical Workflow
 ///
 /// 1. Create a new CodeBuilder with debug mode preference
 /// 2. Add any required modules using `link_module()` or `with_linked_module()`
-/// 3. Add libraries using `link_static_library()` / `link_dynamic_library()` as appropriate
+/// 3. Add packages using `link_static_package()` / `link_dynamic_package()` as appropriate
 /// 4. Compile your script with `compile_note_script()` or `compile_tx_script()`
 ///
 /// Note that the compiling methods consume the CodeBuilder, so if you need to compile
@@ -59,18 +223,19 @@ use crate::standards_lib::StandardsLib;
 /// ```no_run
 /// # use anyhow::Context;
 /// # use miden_standards::code_builder::CodeBuilder;
-/// # use miden_protocol::assembly::Library;
-/// # use miden_protocol::CoreLibrary;
+/// # use miden_standards::StandardsLib;
+/// # use miden_protocol::assembly::Package;
+/// # use miden_protocol::ProtocolLib;
 /// # fn example() -> anyhow::Result<()> {
 /// # let module_code = "pub proc test push.1 add end";
-/// # let script_code = "begin nop end";
-/// # // Create sample libraries for the example
-/// # let my_lib: Library = CoreLibrary::default().into(); // Convert CoreLibrary to Library
-/// # let fpi_lib: Library = CoreLibrary::default().into();
+/// # let script_code = "@transaction_script pub proc main nop end";
+/// # // Create sample packages for the example
+/// # let my_lib: Package = StandardsLib::default().into();
+/// # let fpi_lib: Package = ProtocolLib::default().into();
 /// let script = CodeBuilder::default()
 ///     .with_linked_module("my::module", module_code).context("failed to link module")?
-///     .with_statically_linked_library(&my_lib).context("failed to link static library")?
-///     .with_dynamically_linked_library(&fpi_lib).context("failed to link dynamic library")?  // For FPI calls
+///     .with_statically_linked_package(&my_lib).context("failed to link static package")?
+///     .with_dynamically_linked_package(&fpi_lib).context("failed to link dynamic package")?  // For FPI calls
 ///     .compile_tx_script(script_code).context("failed to parse tx script")?;
 /// # Ok(())
 /// # }
@@ -101,8 +266,10 @@ impl CodeBuilder {
     /// # Arguments
     /// * `source_manager` - The source manager to use with the internal `Assembler`
     pub fn with_source_manager(source_manager: Arc<dyn SourceManagerSync>) -> Self {
-        let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone())
-            .with_dynamic_library(StandardsLib::default())
+        let mut assembler =
+            TransactionKernel::assembler_with_source_manager(source_manager.clone());
+        assembler
+            .link_package(StandardsLib::default().package(), Linkage::Dynamic)
             .expect("linking std lib should work");
         Self {
             assembler,
@@ -123,7 +290,7 @@ impl CodeBuilder {
         self
     }
 
-    // LIBRARY MANAGEMENT
+    // PACKAGE MANAGEMENT
     // --------------------------------------------------------------------------------------------
 
     /// Parses and links a module to the code builder.
@@ -143,14 +310,14 @@ impl CodeBuilder {
     pub fn link_module(
         &mut self,
         module_path: impl AsRef<str>,
-        module_code: impl Parse,
+        module_code: impl ToString,
     ) -> Result<(), CodeBuilderError> {
-        let mut parse_options = ParseOptions::for_library();
-        parse_options.path = Some(Path::new(module_path.as_ref()).into());
-
-        let module = module_code.parse_with_options(self.source_manager(), parse_options).map_err(
-            |err| CodeBuilderError::build_error_with_report("failed to parse module code", err),
-        )?;
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        let module = parser
+            .parse_str(Some(Path::new(module_path.as_ref())), module_code, self.source_manager())
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to parse module code", err)
+            })?;
 
         self.assembler.compile_and_statically_link(module).map_err(|err| {
             CodeBuilderError::build_error_with_report("failed to assemble module", err)
@@ -159,73 +326,77 @@ impl CodeBuilder {
         Ok(())
     }
 
-    /// Statically links the given library.
+    /// Statically links the given package.
     ///
-    /// Static linking means the library code is copied into the script code.
-    /// Use this for most libraries that are not available on-chain.
+    /// Static linking means the package code is copied into the script code.
+    /// Use this for most packages that are not available on-chain.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to statically link
+    /// * `package` - The compiled package to statically link
     ///
     /// # Errors
     /// Returns an error if:
-    /// - adding the library to the assembler failed
-    pub fn link_static_library(&mut self, library: &Library) -> Result<(), CodeBuilderError> {
-        self.assembler.link_static_library(library).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to add static library", err)
-        })
+    /// - adding the package to the assembler failed
+    pub fn link_static_package(&mut self, package: &Package) -> Result<(), CodeBuilderError> {
+        self.assembler
+            .link_package(Arc::new(package.clone()), Linkage::Static)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to add static package", err)
+            })
     }
 
-    /// Dynamically links a library.
+    /// Dynamically links a package.
     ///
-    /// This is useful to dynamically link the [`Library`] of a foreign account
+    /// This is useful to dynamically link the [`Package`] of a foreign account
     /// that is invoked using foreign procedure invocation (FPI). Its code is available
     /// on-chain and so it does not have to be copied into the script code.
     ///
-    /// For all other use cases not involving FPI, link the library statically.
+    /// For all other use cases not involving FPI, link the package statically.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to dynamically link
+    /// * `package` - The compiled package to dynamically link
     ///
     /// # Errors
-    /// Returns an error if the library cannot be added to the assembler
-    pub fn link_dynamic_library(&mut self, library: &Library) -> Result<(), CodeBuilderError> {
-        self.assembler.link_dynamic_library(library).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to add dynamic library", err)
-        })
+    /// Returns an error if the package cannot be added to the assembler
+    pub fn link_dynamic_package(&mut self, package: &Package) -> Result<(), CodeBuilderError> {
+        self.assembler
+            .link_package(Arc::new(package.clone()), Linkage::Dynamic)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to add dynamic package", err)
+            })
     }
 
-    /// Builder-style method to statically link a library and return the modified builder.
+    /// Builder-style method to statically link a package and return the modified builder.
     ///
     /// This enables method chaining for convenient builder patterns.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to statically link
+    /// * `package` - The compiled package to statically link
     ///
     /// # Errors
-    /// Returns an error if the library cannot be added to the assembler
-    pub fn with_statically_linked_library(
+    /// Returns an error if the package cannot be added to the assembler
+    pub fn with_statically_linked_package(
         mut self,
-        library: &Library,
+        package: &Package,
     ) -> Result<Self, CodeBuilderError> {
-        self.link_static_library(library)?;
+        self.link_static_package(package)?;
         Ok(self)
     }
 
-    /// Builder-style method to dynamically link a library and return the modified builder.
+    /// Builder-style method to dynamically link a package and return the modified builder.
     ///
     /// This enables method chaining for convenient builder patterns.
     ///
     /// # Arguments
-    /// * `library` - The compiled library to dynamically link
+    /// * `package` - The compiled package to dynamically link
     ///
     /// # Errors
-    /// Returns an error if the library cannot be added to the assembler
-    pub fn with_dynamically_linked_library(
+    /// Returns an error if the package cannot be added to the assembler
+    pub fn with_dynamically_linked_package(
         mut self,
-        library: impl AsRef<Library>,
+        package: impl CodeBuilderPackage,
     ) -> Result<Self, CodeBuilderError> {
-        self.link_dynamic_library(library.as_ref())?;
+        self.link_dynamic_package(package.as_code_builder_package())?;
         Ok(self)
     }
 
@@ -242,7 +413,7 @@ impl CodeBuilder {
     pub fn with_linked_module(
         mut self,
         module_path: impl AsRef<str>,
-        module_code: impl Parse,
+        module_code: impl ToString,
     ) -> Result<Self, CodeBuilderError> {
         self.link_module(module_path, module_code)?;
         Ok(self)
@@ -293,28 +464,14 @@ impl CodeBuilder {
     // PRIVATE HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the advice map to a program if it's non-empty.
+    /// Applies the advice map to a package if it's non-empty.
     ///
     /// This avoids cloning the MAST forest when there are no advice map entries.
-    fn apply_advice_map(
-        advice_map: AdviceMap,
-        program: miden_protocol::vm::Program,
-    ) -> miden_protocol::vm::Program {
+    fn apply_advice_map_to_package(advice_map: AdviceMap, package: Package) -> Package {
         if advice_map.is_empty() {
-            program
+            package
         } else {
-            program.with_advice_map(advice_map)
-        }
-    }
-
-    /// Applies the advice map to a library if it's non-empty.
-    ///
-    /// This avoids cloning the MAST forest when there are no advice map entries.
-    fn apply_advice_map_to_library(advice_map: AdviceMap, library: Library) -> Library {
-        if advice_map.is_empty() {
-            library
-        } else {
-            library.with_advice_map(advice_map)
+            package.with_advice_map(advice_map)
         }
     }
 
@@ -334,27 +491,25 @@ impl CodeBuilder {
     pub fn compile_component_code(
         self,
         component_path: impl AsRef<str>,
-        component_code: impl Parse,
+        component_code: impl ToString,
     ) -> Result<AccountComponentCode, CodeBuilderError> {
         let CodeBuilder { assembler, source_manager, advice_map } = self;
 
-        let mut parse_options = ParseOptions::for_library();
-        parse_options.path = Some(Path::new(component_path.as_ref()).into());
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        let module = parser
+            .parse_str(Some(Path::new(component_path.as_ref())), component_code, source_manager)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to parse component code", err)
+            })?;
 
-        let module =
-            component_code
-                .parse_with_options(source_manager, parse_options)
-                .map_err(|err| {
-                    CodeBuilderError::build_error_with_report("failed to parse component code", err)
-                })?;
+        let package = assembler
+            .assemble_library("account-component", module, None::<Box<Module>>)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report("failed to parse component code", err)
+            })?;
 
-        let library = assembler.assemble_library([module]).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse component code", err)
-        })?;
-
-        Ok(AccountComponentCode::from(Self::apply_advice_map_to_library(
-            advice_map,
-            Arc::unwrap_or_clone(library),
+        Ok(AccountComponentCode::from(Self::apply_advice_map_to_package(
+            advice_map, *package,
         )))
     }
 
@@ -363,22 +518,48 @@ impl CodeBuilder {
     /// The parsed script will have access to all modules that have been added to this builder.
     ///
     /// # Arguments
-    /// * `tx_script` - The transaction script source code
+    /// - `tx_script` - the transaction script source code which is expected to have a single public
+    ///   procedure marked with the @transaction_script attribute.
     ///
     /// # Errors
     /// Returns an error if:
     /// - The transaction script compiling fails
     pub fn compile_tx_script(
         self,
-        tx_script: impl Parse,
+        tx_script: impl CodeBuilderScriptSource,
     ) -> Result<TransactionScript, CodeBuilderError> {
-        let CodeBuilder { assembler, advice_map, .. } = self;
+        let CodeBuilder { assembler, source_manager, advice_map } = self;
 
-        let program = assembler.assemble_program(tx_script).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse transaction script", err)
+        let module = tx_script
+            .parse_script(
+                Path::new(TX_SCRIPT_MODULE_PATH),
+                assembler.warnings_as_errors(),
+                source_manager,
+            )
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse transaction script package",
+                    err,
+                )
+            })?;
+
+        let tx_script_package = assembler
+            .assemble_library("transaction-script", module, None::<Box<Module>>)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse transaction script package",
+                    err,
+                )
+            })?;
+
+        let tx_script = TransactionScript::from_package(&tx_script_package).map_err(|err| {
+            CodeBuilderError::build_error_with_source(
+                "failed to create transaction script from package",
+                err,
+            )
         })?;
 
-        Ok(TransactionScript::new(Self::apply_advice_map(advice_map, program)))
+        Ok(tx_script.with_advice_map(advice_map))
     }
 
     /// Compiles the provided MASM code into a [`NoteScript`].
@@ -392,23 +573,42 @@ impl CodeBuilder {
     /// # Errors
     /// Returns an error if:
     /// - The note script compiling fails
-    pub fn compile_note_script(self, source: impl Parse) -> Result<NoteScript, CodeBuilderError> {
-        let CodeBuilder { assembler, advice_map, .. } = self;
+    pub fn compile_note_script(
+        self,
+        source: impl CodeBuilderScriptSource,
+    ) -> Result<NoteScript, CodeBuilderError> {
+        let CodeBuilder { assembler, source_manager, advice_map } = self;
 
-        let note_script_lib = assembler.assemble_library([source]).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse note script library", err)
-        })?;
+        let module = source
+            .parse_script(
+                Path::new(NOTE_SCRIPT_MODULE_PATH),
+                assembler.warnings_as_errors(),
+                source_manager,
+            )
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse note script package",
+                    err,
+                )
+            })?;
 
-        NoteScript::from_library(&Self::apply_advice_map_to_library(
-            advice_map,
-            Arc::unwrap_or_clone(note_script_lib),
-        ))
-        .map_err(|err| {
+        let note_script_package = assembler
+            .assemble_library("note-script", module, None::<Box<Module>>)
+            .map_err(|err| {
+                CodeBuilderError::build_error_with_report(
+                    "failed to parse note script package",
+                    err,
+                )
+            })?;
+
+        let note_script = NoteScript::from_package(&note_script_package).map_err(|err| {
             CodeBuilderError::build_error_with_source(
-                "failed to create note script from library",
+                "failed to create note script from package",
                 err,
             )
-        })
+        })?;
+
+        Ok(note_script.with_advice_map(advice_map))
     }
 
     // ACCESSORS
@@ -422,71 +622,66 @@ impl CodeBuilder {
     // TESTING CONVENIENCE FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a [`CodeBuilder`] with the transaction kernel as a library.
+    /// Returns a [`CodeBuilder`] with the transaction kernel core package linked.
     ///
     /// This assembler is the same as [`TransactionKernel::assembler`] but additionally includes the
-    /// kernel library on the namespace of `miden::tx_kernel_core`. The `miden::tx_kernel_core`
-    /// library is added separately because even though the library (`api.masm`) and the kernel
+    /// kernel core package on the namespace of `miden::tx_kernel_core`. The `miden::tx_kernel_core`
+    /// package is added separately because even though the library (`api.masm`) and the kernel
     /// binary (`main.masm`) include this code, it is not otherwise accessible. By adding it
-    /// separately, we can invoke procedures from the kernel library to test them individually.
+    /// separately, we can invoke procedures from the kernel core package to test them individually.
     #[cfg(any(feature = "testing", test))]
-    pub fn with_kernel_library(source_manager: Arc<dyn SourceManagerSync>) -> Self {
+    pub fn with_kernel_core_package(source_manager: Arc<dyn SourceManagerSync>) -> Self {
         let mut builder = Self::with_source_manager(source_manager);
         builder
-            .link_dynamic_library(&TransactionKernel::library())
-            .expect("failed to link kernel library");
+            .link_dynamic_package(&TransactionKernel::core_package())
+            .expect("failed to link transaction kernel core package");
         builder
     }
 
-    /// Returns a [`CodeBuilder`] with the `mock::{account, faucet, util}` libraries.
+    /// Returns a [`CodeBuilder`] with the `mock::{account, faucet, util}` packages.
     ///
     /// This assembler includes:
-    /// - [`MockAccountCodeExt::mock_account_library`][account_lib],
-    /// - [`MockAccountCodeExt::mock_faucet_library`][faucet_lib],
-    /// - [`mock_util_library`][util_lib]
+    /// - [`MockAccountCodeExt::mock_account_package`][account_pkg],
+    /// - [`MockAccountCodeExt::mock_faucet_package`][faucet_pkg],
+    /// - [`mock_util_package`][util_pkg]
     ///
-    /// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_library
-    /// [faucet_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_faucet_library
-    /// [util_lib]: crate::testing::mock_util_lib::mock_util_library
+    /// [account_pkg]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_package
+    /// [faucet_pkg]: crate::testing::mock_account_code::MockAccountCodeExt::mock_faucet_package
+    /// [util_pkg]: crate::testing::mock_util_package::mock_util_package
     #[cfg(any(feature = "testing", test))]
-    pub fn with_mock_libraries() -> Self {
-        Self::with_mock_libraries_with_source_manager(Arc::new(DefaultSourceManager::default()))
+    pub fn with_mock_packages() -> Self {
+        Self::with_mock_packages_with_source_manager(Arc::new(DefaultSourceManager::default()))
     }
 
-    /// Returns the mock account and faucet libraries used in testing.
+    /// Returns the mock account and faucet packages used in testing.
     #[cfg(any(feature = "testing", test))]
-    pub fn mock_libraries() -> impl Iterator<Item = Library> {
+    pub fn mock_packages() -> impl Iterator<Item = Package> {
         use miden_protocol::account::AccountCode;
 
         use crate::testing::mock_account_code::MockAccountCodeExt;
 
-        vec![AccountCode::mock_account_library(), AccountCode::mock_faucet_library()].into_iter()
+        vec![AccountCode::mock_account_package(), AccountCode::mock_faucet_package()].into_iter()
     }
 
     #[cfg(any(feature = "testing", test))]
-    pub fn with_mock_libraries_with_source_manager(
+    pub fn with_mock_packages_with_source_manager(
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
-        use crate::testing::mock_util_lib::mock_util_library;
+        use crate::testing::mock_util_package::mock_util_package;
 
-        // Start with the builder linking against the transaction kernel, protocol library and
-        // standards library.
-        let mut builder = Self::with_source_manager(source_manager);
+        // Start with the builder linking against the transaction kernel, protocol package and
+        // standards package.
+        let mut builder = Self::with_kernel_core_package(source_manager);
 
-        // Expose kernel procedures under `miden::tx_kernel_core` for testing.
-        builder
-            .link_dynamic_library(&TransactionKernel::library())
-            .expect("failed to link kernel library");
-
-        // Add mock account/faucet libs (built in debug mode) and mock util.
-        for library in Self::mock_libraries() {
+        // Add mock account/faucet packages (built in debug mode) and mock util.
+        for package in Self::mock_packages() {
             builder
-                .link_dynamic_library(&library)
-                .expect("failed to link mock account libraries");
+                .link_dynamic_package(&package)
+                .expect("failed to link mock account packages");
         }
         builder
-            .link_static_library(&mock_util_library())
-            .expect("failed to link mock util library");
+            .link_static_package(&mock_util_package())
+            .expect("failed to link mock util package");
 
         builder
     }
@@ -510,7 +705,6 @@ impl From<CodeBuilder> for Assembler {
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
-    use miden_protocol::assembly::diagnostics::NamedSource;
     use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 
     use super::*;
@@ -525,17 +719,18 @@ mod tests {
     fn test_code_builder_basic_script_compiling() -> anyhow::Result<()> {
         let builder = CodeBuilder::default();
         builder
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to parse basic tx script")?;
         Ok(())
     }
 
     #[test]
-    fn test_create_library_and_create_tx_script() -> anyhow::Result<()> {
+    fn test_create_package_and_create_tx_script() -> anyhow::Result<()> {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -555,11 +750,11 @@ mod tests {
             end
         ";
 
-        let library_path = "external_contract::counter_contract";
+        let module_path = "external_contract::counter_contract";
 
         let mut builder_with_lib = CodeBuilder::default();
         builder_with_lib
-            .link_module(library_path, account_code)
+            .link_module(module_path, account_code)
             .context("failed to link module")?;
         builder_with_lib
             .compile_tx_script(script_code)
@@ -569,11 +764,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_library_and_add_to_builder() -> anyhow::Result<()> {
+    fn test_parse_package_and_add_to_builder() -> anyhow::Result<()> {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -593,28 +789,28 @@ mod tests {
             end
         ";
 
-        let library_path = "external_contract::counter_contract";
+        let module_path = "external_contract::counter_contract";
 
-        // Test single library
+        // Test a single module
         let mut builder_with_lib = CodeBuilder::default();
         builder_with_lib
-            .link_module(library_path, account_code)
+            .link_module(module_path, account_code)
             .context("failed to link module")?;
         builder_with_lib
             .compile_tx_script(script_code)
             .context("failed to parse tx script")?;
 
-        // Test multiple libraries
+        // Test multiple modules
         let mut builder_with_libs = CodeBuilder::default();
         builder_with_libs
-            .link_module(library_path, account_code)
+            .link_module(module_path, account_code)
             .context("failed to link first module")?;
         builder_with_libs
             .link_module("test::lib", "pub proc test nop end")
             .context("failed to link second module")?;
         builder_with_libs
             .compile_tx_script(script_code)
-            .context("failed to parse tx script with multiple libraries")?;
+            .context("failed to parse tx script with multiple modules")?;
 
         Ok(())
     }
@@ -624,7 +820,8 @@ mod tests {
         let script_code = "
             use external_contract::counter_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.counter_contract::increment
             end
         ";
@@ -656,8 +853,16 @@ mod tests {
 
     #[test]
     fn test_multiple_chained_modules() -> anyhow::Result<()> {
-        let script_code =
-            "use test::lib1 use test::lib2 begin exec.lib1::test1 exec.lib2::test2 end";
+        let script_code = "
+            use test::lib1
+            use test::lib2
+
+            @transaction_script
+            pub proc main
+                exec.lib1::test1
+                exec.lib2::test2
+            end
+        ";
 
         // Test chaining multiple modules
         let builder = CodeBuilder::default()
@@ -676,7 +881,8 @@ mod tests {
         let script_code = "
             use contracts::static_contract
 
-            begin
+            @transaction_script
+            pub proc main
                 call.static_contract::increment_1
             end
         ";
@@ -693,28 +899,44 @@ mod tests {
             end
         ";
 
-        // Create libraries using the assembler
-        let temp_assembler = TransactionKernel::assembler();
+        // Create packages using the assembler
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let mut parser = ModuleParser::new(Some(ModuleKind::Library));
+        let static_module = parser
+            .parse_str(
+                Some(Path::new("contracts::static_contract")),
+                account_code_1,
+                source_manager.clone(),
+            )
+            .map_err(|e| anyhow::anyhow!("failed to parse static package: {}", e))?;
+        let dynamic_module = parser
+            .parse_str(
+                Some(Path::new("contracts::dynamic_contract")),
+                account_code_2,
+                source_manager.clone(),
+            )
+            .map_err(|e| anyhow::anyhow!("failed to parse dynamic package: {}", e))?;
+        let temp_assembler = TransactionKernel::assembler_with_source_manager(source_manager);
 
         let static_lib = temp_assembler
             .clone()
-            .assemble_library([NamedSource::new("contracts::static_contract", account_code_1)])
-            .map_err(|e| anyhow::anyhow!("failed to assemble static library: {}", e))?;
+            .assemble_library("static-contract", static_module, None::<&str>)
+            .map_err(|e| anyhow::anyhow!("failed to assemble static package: {}", e))?;
 
         let dynamic_lib = temp_assembler
-            .assemble_library([NamedSource::new("contracts::dynamic_contract", account_code_2)])
-            .map_err(|e| anyhow::anyhow!("failed to assemble dynamic library: {}", e))?;
+            .assemble_library("dynamic-contract", dynamic_module, None::<&str>)
+            .map_err(|e| anyhow::anyhow!("failed to assemble dynamic package: {}", e))?;
 
-        // Test linking both static and dynamic libraries
+        // Test linking both static and dynamic packages
         let builder = CodeBuilder::default()
-            .with_statically_linked_library(&static_lib)
-            .context("failed to link static library")?
-            .with_dynamically_linked_library(&dynamic_lib)
-            .context("failed to link dynamic library")?;
+            .with_statically_linked_package(&static_lib)
+            .context("failed to link static package")?
+            .with_dynamically_linked_package(&dynamic_lib)
+            .context("failed to link dynamic package")?;
 
         builder
             .compile_tx_script(script_code)
-            .context("failed to parse tx script with static and dynamic libraries")?;
+            .context("failed to parse tx script with static and dynamic packages")?;
 
         Ok(())
     }
@@ -732,7 +954,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to compile tx script with advice map")?;
 
         let mast = script.mast();
@@ -753,7 +975,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_extended_advice_map(advice_map)
-            .compile_tx_script("begin nop end")
+            .compile_tx_script("@transaction_script pub proc main nop end")
             .context("failed to compile tx script")?;
 
         let mast = script.mast();

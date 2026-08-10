@@ -18,8 +18,8 @@
 # |                   |                         | output-note list.                |
 # | 20..8212          | TX_TUPLES_PTR           | Layer 1 piped data: per          |
 # |                   |                         | transaction `[TX_ID,             |
-# |                   |                         | account_id_prefix,               |
-# |                   |                         | account_id_suffix, 0, 0]`        |
+# |                   |                         | account_id_suffix,               |
+# |                   |                         | account_id_prefix, 0, 0]`        |
 # |                   |                         | (8 felts each, sized for up to   |
 # |                   |                         | 1024 transactions).              |
 # | 8212..24596       | TX_HEADERS_PTR          | Layer 2 piped data: per          |
@@ -78,7 +78,7 @@ const NUM_OUTPUT_NOTES_PTR=19
 # =================================================================================================
 
 #! Base of the Layer 1 piped data region. Per transaction, 8 felts:
-#!   `[TX_ID, account_id_prefix, account_id_suffix, 0, 0]`.
+#!   `[TX_ID, account_id_suffix, account_id_prefix, 0, 0]`.
 pub const TX_TUPLES_PTR=20
 
 #! Number of felts each transaction occupies in TX_TUPLES_PTR.

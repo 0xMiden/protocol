@@ -1,0 +1,230 @@
+# Network-account configuration storage.
+#
+# Owns the standardized `AuthNetworkAccount` slots and provides:
+# - `assert_transaction_allowed`, the tx-script and input-note allowlist check the
+#   `AuthNetworkAccount` auth procedure runs,
+# - `add_allowed_note_script` / `remove_allowed_note_script` / `add_allowed_tx_script` /
+#   `remove_allowed_tx_script`, authority-gated procedures that mutate the allowlists after
+#   deployment, and
+# - `get_sponsor_at_most_collected_fees`, the account's sponsorship policy setting.
+
+use miden::protocol::native_account
+use miden::standards::access::authority
+use miden::standards::auth::note_script_allowlist
+use miden::standards::auth::tx_script_allowlist
+use {Bool, NoteScriptRoot, TransactionScriptRoot} from miden::protocol::types
+
+# CONSTANTS
+# =================================================================================================
+
+# The slot holding the map of allowed input-note script roots. Keys are note script roots; any
+# non-empty value marks a root as allowed.
+const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_note_scripts")
+
+# The slot holding the map of allowed tx script roots. Keys are tx script roots; any non-empty value
+# marks a root as allowed.
+const ALLOWED_TX_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_tx_scripts")
+
+# The slot holding the sponsorship policy. Its first element is the policy discriminant, the
+# remaining elements are reserved for future policies and must be zero. See the `SponsorshipPolicy`
+# Rust type for the encoding.
+const SPONSOR_AT_MOST_COLLECTED_FEES_SLOT = word("miden::standards::auth::network_account::sponsor_at_most_collected_fees")
+
+# The policy discriminants, matching the `SponsorshipPolicy` variants on the Rust side.
+const UNLIMITED_DISCRIMINANT = 0
+const AT_MOST_COLLECTED_FEES_DISCRIMINANT = 1
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY = "the network account sponsorship policy slot does not hold a valid policy"
+
+# ALLOWLIST CHECK
+# =================================================================================================
+
+#! Asserts that the transaction is allowed against the network-account allowlists: the transaction
+#! script root, if any, must be allowlisted, and every consumed input note must have an allowlisted
+#! script root.
+#!
+#! Reads the allowlists from the transaction's initial storage state.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the transaction script root is not in the tx script allowlist.
+#! - any input note has a script root not in the note script allowlist.
+#!
+#! Invocation: exec
+pub proc assert_transaction_allowed()
+    # ---- Reject any tx script whose root is not allowlisted ----
+    push.ALLOWED_TX_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix]
+
+    exec.tx_script_allowlist::assert_tx_script_allowed
+    # => []
+
+    # ---- Reject any input note whose script root is not allowlisted ----
+    push.ALLOWED_NOTE_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix]
+
+    exec.note_script_allowlist::assert_all_input_notes_allowed
+    # => []
+end
+
+# SPONSORSHIP POLICY
+# =================================================================================================
+
+#! Returns whether the account may only sponsor outgoing network notes up to the fees it collected
+#! in the same transaction.
+#!
+#! When disabled, the account funds the sponsorship of its outgoing network notes from its own vault
+#! without bound. When enabled, its auth procedure rejects a transaction whose sponsorships exceed
+#! the fees it collected, so downstream consumption is paid for by upstream collection rather than by
+#! the account itself.
+#!
+#! The setting is read from the transaction's initial storage state so a change only takes effect
+#! starting from the next transaction.
+#!
+#! Inputs:  []
+#! Outputs: [sponsor_at_most_collected]
+#!
+#! Where:
+#! - sponsor_at_most_collected is 1 if the setting is enabled, 0 otherwise.
+#!
+#! Panics if:
+#! - the policy slot does not hold a valid policy.
+#!
+#! Invocation: exec
+pub proc get_sponsor_at_most_collected_fees() -> Bool
+    push.SPONSOR_AT_MOST_COLLECTED_FEES_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix]
+
+    exec.native_account::get_initial_item
+    # => [sponsor_at_most_collected, reserved0, reserved1, reserved2]
+
+    movdn.3
+    # => [reserved0, reserved1, reserved2, sponsor_at_most_collected]
+
+    eq.0 assert.err=ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY
+    eq.0 assert.err=ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY
+    eq.0 assert.err=ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY
+    # => [sponsor_at_most_collected]
+
+    # assert that sponsor_at_most_collected is validly encoded
+    dup eq.UNLIMITED_DISCRIMINANT dup.1 eq.AT_MOST_COLLECTED_FEES_DISCRIMINANT or
+    assert.err=ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY
+    # => [sponsor_at_most_collected]
+end
+
+# ALLOWLIST MANAGEMENT PROCEDURES
+# =================================================================================================
+
+#! Adds a note script root to the account's note script allowlist.
+#!
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
+#! transaction's initial state, so an added root only takes effect from the next transaction.
+#!
+#! Inputs:  [SCRIPT_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - SCRIPT_ROOT is the note script root to add to the allowlist.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#!
+#! Invocation: call
+@account_procedure
+pub proc add_allowed_note_script(script_root: NoteScriptRoot)
+    exec.authority::assert_authorized
+    # => [SCRIPT_ROOT, pad(12)]
+
+    push.ALLOWED_NOTE_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, pad(12)]
+
+    exec.note_script_allowlist::add_note_script
+    # => [pad(16)]
+end
+
+#! Removes a note script root from the account's note script allowlist.
+#!
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
+#! transaction's initial state, so a removed root only takes effect from the next transaction.
+#! Removing every root leaves the account unable to consume any note.
+#!
+#! Inputs:  [SCRIPT_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - SCRIPT_ROOT is the note script root to remove from the allowlist.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#!
+#! Invocation: call
+@account_procedure
+pub proc remove_allowed_note_script(script_root: NoteScriptRoot)
+    exec.authority::assert_authorized
+    # => [SCRIPT_ROOT, pad(12)]
+
+    push.ALLOWED_NOTE_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, pad(12)]
+
+    exec.note_script_allowlist::remove_note_script
+    # => [pad(16)]
+end
+
+#! Adds a tx script root to the account's tx script allowlist.
+#!
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
+#! transaction's initial state, so an added root only takes effect from the next transaction.
+#!
+#! Inputs:  [SCRIPT_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - SCRIPT_ROOT is the tx script root to add to the allowlist.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#!
+#! Invocation: call
+@account_procedure
+pub proc add_allowed_tx_script(script_root: TransactionScriptRoot)
+    exec.authority::assert_authorized
+    # => [SCRIPT_ROOT, pad(12)]
+
+    push.ALLOWED_TX_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, pad(12)]
+
+    exec.tx_script_allowlist::add_tx_script
+    # => [pad(16)]
+end
+
+#! Removes a tx script root from the account's tx script allowlist.
+#!
+#! Gated by the account-wide `Authority` component. The auth procedure reads the allowlist from the
+#! transaction's initial state, so a removed root only takes effect from the next transaction.
+#!
+#! Inputs:  [SCRIPT_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - SCRIPT_ROOT is the tx script root to remove from the allowlist.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#!
+#! Invocation: call
+@account_procedure
+pub proc remove_allowed_tx_script(script_root: TransactionScriptRoot)
+    exec.authority::assert_authorized
+    # => [SCRIPT_ROOT, pad(12)]
+
+    push.ALLOWED_TX_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, SCRIPT_ROOT, pad(12)]
+
+    exec.tx_script_allowlist::remove_tx_script
+    # => [pad(16)]
+end

@@ -7,18 +7,26 @@ use crate::procedure_root;
 // PAUSABLE MANAGER COMPONENT
 // ================================================================================================
 
-account_component_code!(PAUSABLE_MANAGER_CODE, "access/pausable/manager.masl");
+account_component_code!(PAUSABLE_MANAGER_CODE, "miden-standards-access-pausable-manager.masp");
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`PausableManager::NAME`], which mirrors the standards-side MASM module path.
+const PAUSABLE_MANAGER_LIBRARY_PATH: &str =
+    "miden::standards::components::access::pausable::manager";
 
 procedure_root!(
     PAUSABLE_MANAGER_PAUSE,
-    PausableManager::NAME,
+    PAUSABLE_MANAGER_LIBRARY_PATH,
     PausableManager::PAUSE_PROC_NAME,
     PausableManager::code()
 );
 
 procedure_root!(
     PAUSABLE_MANAGER_UNPAUSE,
-    PausableManager::NAME,
+    PAUSABLE_MANAGER_LIBRARY_PATH,
     PausableManager::UNPAUSE_PROC_NAME,
     PausableManager::code()
 );
@@ -44,7 +52,7 @@ pub struct PausableManager;
 
 impl PausableManager {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::access::pausable::manager";
+    pub const NAME: &'static str = "miden::standards::access::pausable::manager";
 
     const PAUSE_PROC_NAME: &'static str = "pause";
     const UNPAUSE_PROC_NAME: &'static str = "unpause";

@@ -18,6 +18,7 @@ use miden_protocol::account::{
     AccountStorage,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
@@ -36,11 +37,11 @@ use super::{
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
-use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl};
+use crate::account::auth::{AuthSingleSig, NetworkAccount};
+use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
-use crate::note::{NonFungibleBurnNote, NonFungibleMintNote};
+use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
-use crate::tx_script::ExpirationTransactionScript;
 
 #[cfg(test)]
 mod tests;
@@ -54,59 +55,116 @@ pub(crate) static SYMBOL_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-/// Storage slot holding the asset-status registry map (`[asset_id_suffix, asset_id_prefix, 0, 0]`
+/// Storage slot holding the asset-status registry map (`[token_id_suffix, token_id_prefix, 0, 0]`
 /// -> `[status, 0, 0, 0]`) for a [`NonFungibleFaucet`].
 pub(crate) static ASSET_STATUS_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::faucets::non_fungible::asset_status")
         .expect("storage slot name should be valid")
 });
 
+// ASSET STATUS
+// ================================================================================================
+
+// On-chain status codes stored at element 0 of the asset-status registry value. These must match
+// the `STATUS_ISSUED` / `STATUS_BURNED` constants in the non-fungible faucet MASM.
+const STATUS_ISSUED: u8 = 1;
+const STATUS_BURNED: u8 = 2;
+
+/// The issuance status of a non-fungible asset within a [`NonFungibleFaucet`].
+///
+/// Mirrors the on-chain `get_asset_status` procedure: the faucet's asset-status registry maps each
+/// token ID to `Issued` or `Burned`; a token ID that was never issued is absent from the registry
+/// and reported as `NotIssued`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetStatus {
+    /// The token ID has never been issued by this faucet.
+    NotIssued,
+    /// An NFT has been issued for the token ID and has not been burned.
+    Issued,
+    /// The token ID was issued and later burned; it is permanently consumed and can never be
+    /// issued again.
+    Burned,
+}
+
+impl TryFrom<u8> for AssetStatus {
+    type Error = NonFungibleFaucetError;
+
+    /// Builds an [`AssetStatus`] from the raw status code held in element 0 of the registry value
+    /// word (0 = not issued, 1 = issued, 2 = burned).
+    fn try_from(status: u8) -> Result<Self, Self::Error> {
+        match status {
+            0 => Ok(Self::NotIssued),
+            STATUS_ISSUED => Ok(Self::Issued),
+            STATUS_BURNED => Ok(Self::Burned),
+            other => Err(NonFungibleFaucetError::InvalidAssetStatus { status: other.into() }),
+        }
+    }
+}
+
 // NON-FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-account_component_code!(NON_FUNGIBLE_FAUCET_CODE, "faucets/non_fungible_faucet.masl");
+account_component_code!(
+    NON_FUNGIBLE_FAUCET_CODE,
+    "miden-standards-faucets-non-fungible-faucet.masp"
+);
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`NonFungibleFaucet::NAME`], which mirrors the standards-side MASM module path.
+const NON_FUNGIBLE_FAUCET_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::non_fungible_faucet";
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_MINT_AND_SEND,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::MINT_AND_SEND_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_DESCRIPTION,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_DESCRIPTION_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_LOGO_URI,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_LOGO_URI_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 procedure_root!(
     NON_FUNGIBLE_FAUCET_SET_CONTRACT_URI,
-    NonFungibleFaucet::NAME,
+    NON_FUNGIBLE_FAUCET_LIBRARY_PATH,
     NonFungibleFaucet::SET_CONTRACT_URI_PROC_NAME,
     NonFungibleFaucet::code()
 );
 
 /// An [`AccountComponent`] implementing a non-fungible (NFT) faucet.
 ///
-/// The asset value is the off-chain commitment `hash(user_data, salt)`; the asset identity is
-/// `(hash0, hash1)`. Uniqueness is enforced on-chain by an asset-status registry keyed by
-/// `[hash0, hash1, 0, 0]`: a commitment can be issued at most once, and once burned it is
-/// permanently consumed.
+/// The asset value is an opaque word chosen by the caller. By convention the minter sets it to the
+/// off-chain commitment [`compute_asset_commitment`] produces, but the faucet validates neither
+/// that construction nor knowledge of a preimage - see that method's documentation.
+///
+/// The NFT's token ID is `(hash0, hash1)` - the asset class the protocol derives from the value's
+/// first two elements, which uniquely identifies each NFT within the faucet. The one property
+/// enforced on-chain is token ID uniqueness, via an asset-status registry keyed by
+/// `[hash0, hash1, 0, 0]`: a token ID can be issued at most once, and once burned it is permanently
+/// consumed. Which values may be issued is decided entirely by the active mint policy, which
+/// receives the full asset value; a permissive policy such as `allow_all` lets any caller claim any
+/// token ID.
 ///
 /// It re-exports the procedures from `miden::standards::faucets::non_fungible` plus the shared
 /// token metadata accessors. The procedures are:
@@ -117,6 +175,8 @@ procedure_root!(
 ///
 /// `mint_and_send` is gated by the active mint policy from the associated [`TokenPolicyManager`];
 /// `receive_and_burn` is gated by the active burn policy.
+///
+/// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
 #[derive(Debug, Clone)]
 pub struct NonFungibleFaucet {
     symbol: TokenSymbol,
@@ -171,7 +231,7 @@ impl NonFungibleFaucet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::faucets::non_fungible_faucet";
+    pub const NAME: &'static str = "miden::standards::faucets::non_fungible";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -253,15 +313,62 @@ impl NonFungibleFaucet {
         self.metadata.external_link()
     }
 
-    /// Computes the off-chain asset commitment `hash(user_data, salt)` used as the NFT asset
-    /// value.
+    /// Computes the off-chain asset commitment `hash(user_data, salt)` that the minter is expected
+    /// to use as the NFT asset value.
     ///
     /// This must be computed off-chain: computing it on-chain would leak the salt and make the
     /// underlying `user_data` invertible. The faucet never sees `user_data` or `salt` — only
     /// this commitment word.
+    ///
+    /// Using this helper is a convention, not an enforced property. `mint_and_send` accepts any
+    /// word: it cannot check that a value is a hash output, that a salt was used, or that the
+    /// minter knows a preimage. Consequently a minted asset value attests to nothing the faucet
+    /// verified. Integrators that rely on the value identifying specific off-chain data must
+    /// recompute the commitment from the `user_data` and `salt` they received and compare it to
+    /// the on-chain asset value themselves. Where issuance itself must be controlled - e.g. so a
+    /// published commitment cannot be claimed by a third party - install a restrictive mint policy
+    /// such as `owner_only` rather than `allow_all`; the policy hook receives the full asset value.
     pub fn compute_asset_commitment(user_data: &[u8], salt: Word) -> Word {
         let data_digest = Hasher::hash(user_data);
         Hasher::merge(&[data_digest, salt])
+    }
+
+    /// Reads the issuance [`AssetStatus`] of the token ID derived from `asset_commitment` (the
+    /// asset value, by convention produced by [`compute_asset_commitment`]) from the faucet
+    /// account's `storage`.
+    ///
+    /// The status is keyed by the token ID - elements 0 and 1 of the value - so two values that
+    /// differ only in elements 2 and 3 share a single status entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the asset-status slot cannot be read or holds an invalid status code.
+    ///
+    /// [`compute_asset_commitment`]: NonFungibleFaucet::compute_asset_commitment
+    pub fn get_asset_status(
+        storage: &AccountStorage,
+        asset_commitment: Word,
+    ) -> Result<AssetStatus, NonFungibleFaucetError> {
+        // The registry key is the token ID (commitment elements 0 and 1) padded to a word, matching
+        // the `create_status_key` procedure in the non-fungible faucet MASM.
+        let key = StorageMapKey::new(Word::new([
+            asset_commitment[0],
+            asset_commitment[1],
+            Felt::ZERO,
+            Felt::ZERO,
+        ]));
+
+        let status_word = storage.get_map_item(Self::asset_status_slot(), key).map_err(|err| {
+            TokenMetadataError::StorageLookupFailed {
+                slot_name: Self::asset_status_slot().clone(),
+                source: err,
+            }
+        })?;
+
+        let raw_status = status_word[0].as_canonical_u64();
+        let status_code = u8::try_from(raw_status)
+            .map_err(|_| NonFungibleFaucetError::InvalidAssetStatus { status: raw_status })?;
+        AssetStatus::try_from(status_code)
     }
 
     /// Returns the storage slot schema for the token symbol slot.
@@ -285,8 +392,8 @@ impl NonFungibleFaucet {
         (
             Self::asset_status_slot().clone(),
             StorageSlotSchema::map(
-                "Asset status registry. Key is the asset id padded to a word \
-                 `[asset_id_suffix, asset_id_prefix, 0, 0]`; value is the status (0 = not issued, \
+                "Asset status registry. Key is the token ID padded to a word \
+                 `[token_id_suffix, token_id_prefix, 0, 0]`; value is the status (0 = not issued, \
                  1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`.",
                 SchemaType::native_word(),
                 SchemaType::native_felt(),
@@ -402,21 +509,19 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// Creates a new **user-account** non-fungible faucet. The account's auth component is the sole
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
-/// The caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list
-/// semantics, every authority-gated setter (`mint_and_send`, the metadata setters, the policy
-/// setters, and `pause` / `unpause`) requires a signature by default. A setter only becomes
-/// callable without a signature if its root is explicitly added to the exempt set, so
-/// authority-gated setters must never be exempted.
+/// The caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter
+/// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
+/// signature.
 pub fn create_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
-    auth_component: AuthSingleSigAcl,
+    auth_component: AuthSingleSig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, NonFungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -430,27 +535,22 @@ pub fn create_user_non_fungible_faucet(
 /// [`AccountType::Public`]. Setter gating is enforced in-procedure by the owner / role check
 /// installed via `access_control` ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
 ///
-/// The factory builds the [`AuthNetworkAccount`] auth component internally with a note allowlist
-/// covering the faucet's own [`NonFungibleMintNote`] and [`NonFungibleBurnNote`] scripts, plus a
-/// tx-script allowlist covering the canonical expiration setter
-/// ([`ExpirationTransactionScript`]) so the network can bound its own transactions' expiry.
+/// The factory builds the account via [`NetworkAccount::builder`] with a note allowlist covering
+/// the faucet's own [`MintNote`] and [`BurnNote`] scripts; the builder also allowlists the
+/// canonical expiration setter
+/// ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
+/// network can bound its own transactions' expiry.
 pub fn create_network_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
+    fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, NonFungibleFaucetError> {
-    let note_allowlist = [NonFungibleMintNote::script_root(), NonFungibleBurnNote::script_root()]
-        .into_iter()
-        .collect();
-    let tx_script_allowlist = [ExpirationTransactionScript::script_root()].into_iter().collect();
-    let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
-        .expect("non-fungible MintNote + BurnNote allowlist is non-empty")
-        .with_allowed_tx_scripts(tx_script_allowlist);
+    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
 
-    AccountBuilder::new(init_seed)
-        .account_type(AccountType::Public)
-        .with_auth_component(auth_component)
+    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
+        .expect("MintNote + BurnNote allowlist is non-empty")
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)

@@ -1,9 +1,10 @@
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
@@ -12,7 +13,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -54,8 +55,6 @@ pub(crate) enum TransactionProgressEvent {
 
     EpilogueAuthProcStart(RowIndex),
     EpilogueAuthProcEnd(RowIndex),
-
-    EpilogueAfterTxCyclesObtained(RowIndex),
 }
 
 // TRANSACTION EVENT
@@ -109,7 +108,7 @@ pub(crate) enum TransactionEvent {
         /// The vault root identifying the asset vault from which a witness is requested.
         vault_root: Word,
         /// The asset for which a witness is requested.
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
     },
 
     AccountAfterIncrementNonce,
@@ -142,6 +141,11 @@ pub(crate) enum TransactionEvent {
         note_idx: usize,
         /// The attachment that is appended to the output note.
         attachment: NoteAttachment,
+    },
+
+    /// A lookup that resolves an input note ID to its index through the advice provider.
+    InputNoteIndexLookup {
+        note_id: NoteId,
     },
 
     /// The data necessary to handle an auth request.
@@ -182,6 +186,15 @@ impl TransactionEvent {
             )
         })?;
 
+        // Privileged events must originate from the kernel.
+        if tx_event_id.is_privileged() && !process.ctx().is_root() {
+            return Err(
+                TransactionKernelError::PrivilegedEventFromOutsideTransactionKernelContext(
+                    tx_event_id,
+                ),
+            );
+        }
+
         let tx_event = match tx_event_id {
             TransactionEventId::AccountBeforeForeignLoad => {
                 // Expected stack state: [event, account_id_suffix, account_id_prefix]
@@ -198,36 +211,33 @@ impl TransactionEvent {
                 Some(TransactionEvent::AccountBeforeForeignLoad { foreign_account_id: account_id })
             },
             TransactionEventId::AccountVaultBeforeAddAsset
-            | TransactionEventId::AccountVaultBeforeRemoveAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, account_vault_root_ptr]
-                let asset_vault_key = process.get_stack_word(1);
+            | TransactionEventId::AccountVaultBeforeRemoveAsset
+            | TransactionEventId::AccountVaultBeforeMintAsset
+            | TransactionEventId::AccountVaultBeforeBurnAsset => {
+                // Expected stack state:
+                // [event, ASSET_ID, ASSET_VALUE, {input,account}_vault_root_ptr]
+                let asset_id = process.get_stack_word(1);
                 let vault_root_ptr = process.get_stack_item(9);
 
-                let asset_vault_key =
-                    AssetVaultKey::try_from(asset_vault_key).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountVaultBefore{Add,Remove}Asset",
-                            source,
-                        }
-                    })?;
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultBefore{Add,Remove,Mint,Burn}Asset",
+                        source,
+                    }
+                })?;
                 let current_vault_root = process.get_vault_root(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(
-                    base_host,
-                    process,
-                    asset_vault_key,
-                    current_vault_root,
-                )?
+                on_account_vault_asset_accessed(base_host, process, asset_id, current_vault_root)?
             },
             TransactionEventId::AccountVaultAfterRemoveAsset
             | TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state:
-                // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
-                let asset_key = process.get_stack_word(1);
+                // [event, ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+                let asset_id = process.get_stack_word(1);
                 let initial_vault_value = process.get_stack_word(5);
                 let final_vault_value = process.get_stack_word(9);
 
-                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "AccountVaultAfterRemoveAsset",
                         source,
@@ -235,7 +245,7 @@ impl TransactionEvent {
                 })?;
 
                 let patch = AssetPatch {
-                    asset_key,
+                    asset_id,
                     initial_vault_value,
                     final_vault_value,
                 };
@@ -246,19 +256,19 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountOnAssetDeltaComputation => Some({
                 // Expected stack state:
-                // [event, delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+                // [event, delta_op, ASSET_ID, DELTA_ASSET_VALUE]
                 let delta_op = process.get_stack_item(1);
-                let asset_key = process.get_stack_word(2);
+                let asset_id = process.get_stack_word(2);
                 let delta_asset_value = process.get_stack_word(6);
 
-                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "AccountOnAssetDeltaComputation",
                         source,
                     }
                 })?;
                 let asset =
-                    Asset::from_key_value(asset_key, delta_asset_value).map_err(|source| {
+                    Asset::from_id_and_value(asset_id, delta_asset_value).map_err(|source| {
                         TransactionKernelError::MalformedAssetInEventHandler {
                             handler: "AccountOnAssetDeltaComputation",
                             source,
@@ -282,11 +292,11 @@ impl TransactionEvent {
             }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
-                // [event, ASSET_KEY, vault_root_ptr]
-                let asset_key = process.get_stack_word(1);
+                // [event, ASSET_ID, vault_root_ptr]
+                let asset_id = process.get_stack_word(1);
                 let vault_root_ptr = process.get_stack_item(5);
 
-                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                let asset_id = AssetId::try_from(asset_id).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "AccountVaultBeforeGetAsset",
                         source,
@@ -294,7 +304,7 @@ impl TransactionEvent {
                 })?;
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(base_host, process, asset_key, vault_root)?
+                on_account_vault_asset_accessed(base_host, process, asset_id, vault_root)?
             },
 
             TransactionEventId::AccountStorageBeforeSetItem => None,
@@ -434,13 +444,13 @@ impl TransactionEvent {
             TransactionEventId::NoteAfterCreated => None,
 
             TransactionEventId::NoteBeforeAddAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, note_idx]
-                let asset_key = process.get_stack_word(1);
+                // Expected stack state: [event, ASSET_ID, ASSET_VALUE, note_idx]
+                let asset_id = process.get_stack_word(1);
                 let asset_value = process.get_stack_word(5);
                 let note_idx = process.get_stack_item(9);
 
                 let asset =
-                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
+                    Asset::from_id_and_value_words(asset_id, asset_value).map_err(|source| {
                         TransactionKernelError::MalformedAssetInEventHandler {
                             handler: "NoteBeforeAddAsset",
                             source,
@@ -472,30 +482,33 @@ impl TransactionEvent {
                 Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
             },
 
+            TransactionEventId::InputNoteIndexLookup => {
+                // Expected stack state: [event, NOTE_ID]
+                let note_id = NoteId::from_raw(process.get_stack_word(1));
+                Some(TransactionEvent::InputNoteIndexLookup { note_id })
+            },
+
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
                 let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
                 let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
-                let auth_request = if let Some(signature) = process
-                    .advice_provider()
-                    .get_mapped_values(&signature_key)
-                    .map(|slice| slice.to_vec())
-                {
-                    TransactionEvent::AuthRequest {
-                        pub_key_commitment,
-                        tx_summary_or_signature: TxSummaryOrSignature::Signature(signature),
-                    }
-                } else {
-                    let tx_summary = extract_tx_summary(base_host, process, message)?;
-                    TransactionEvent::AuthRequest {
-                        pub_key_commitment,
-                        tx_summary_or_signature: TxSummaryOrSignature::TxSummary(tx_summary),
-                    }
-                };
+                let tx_summary_or_signature =
+                    match process.advice_provider().get_mapped_values(&signature_key) {
+                        Some(encoded_signature) => TxSummaryOrSignature::from_encoded_signature(
+                            signature_key,
+                            encoded_signature,
+                        )?,
+                        None => TxSummaryOrSignature::TxSummary(extract_tx_summary(
+                            base_host, process, message,
+                        )?),
+                    };
 
-                Some(auth_request)
+                Some(TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary_or_signature,
+                })
             },
 
             TransactionEventId::Unauthorized => {
@@ -561,10 +574,6 @@ impl TransactionEvent {
             TransactionEventId::EpilogueAuthProcEnd => Some(TransactionEvent::Progress(
                 TransactionProgressEvent::EpilogueAuthProcEnd(process.clock()),
             )),
-
-            TransactionEventId::EpilogueAfterTxCyclesObtained => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueAfterTxCyclesObtained(process.clock()),
-            )),
         };
 
         Ok(tx_event)
@@ -581,15 +590,43 @@ pub(crate) enum TxSummaryOrSignature {
     Signature(Vec<Felt>),
 }
 
+impl TxSummaryOrSignature {
+    /// Copies the encoded signature found in the advice map under the given key.
+    ///
+    /// The length is validated before the copy is made. Because any transaction can insert
+    /// arbitrary entries into the advice map, an entry under a signature key is untrusted input
+    /// and must not be able to make the host allocate an unbounded amount of memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the encoded signature is empty or longer than any
+    /// [`Signature`] variant can produce.
+    fn from_encoded_signature(
+        signature_key: Word,
+        encoded_signature: &[Felt],
+    ) -> Result<Self, TransactionKernelError> {
+        if encoded_signature.is_empty()
+            || encoded_signature.len() > Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
+        {
+            return Err(TransactionKernelError::InvalidEncodedSignatureLength {
+                signature_key,
+                actual: encoded_signature.len(),
+            });
+        }
+
+        Ok(TxSummaryOrSignature::Signature(encoded_signature.to_vec()))
+    }
+}
+
 // ASSET PATCH AND DELTA
 // ================================================================================================
 
 #[derive(Debug)]
 pub(crate) struct AssetPatch {
-    pub asset_key: AssetVaultKey,
-    /// The absolute value of `asset_key` in the vault before the operation.
+    pub asset_id: AssetId,
+    /// The absolute value of `asset_id` in the vault before the operation.
     pub initial_vault_value: Word,
-    /// The absolute value of `asset_key` in the vault after the operation.
+    /// The absolute value of `asset_id` in the vault after the operation.
     pub final_vault_value: Word,
 }
 
@@ -618,17 +655,17 @@ pub(crate) enum RecipientData {
     },
 }
 
-/// Checks if the necessary witness for accessing the asset identified by the vault key is already
+/// Checks if the necessary witness for accessing the asset identified by the asset ID is already
 /// in the merkle store, and:
 /// - If so, returns `None`.
 /// - If not, returns `Some` with all necessary data for requesting it.
 fn on_account_vault_asset_accessed<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
     process: &ProcessorState,
-    vault_key: AssetVaultKey,
+    asset_id: AssetId,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
-    let leaf_index = Felt::try_from(vault_key.hash().to_leaf_index().position())
+    let leaf_index = Felt::try_from(asset_id.hash().to_leaf_index().position())
         .expect("expected key index to be a felt");
     let active_account_id = process.get_active_account_id()?;
 
@@ -651,7 +688,7 @@ fn on_account_vault_asset_accessed<'store, STORE>(
         Ok(Some(TransactionEvent::AccountVaultBeforeAssetAccess {
             active_account_id,
             vault_root,
-            asset_key: vault_key,
+            asset_id,
         }))
     }
 }
@@ -718,7 +755,9 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT
+///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+///         BLOCK_COMMITMENT, [expiration_delta, user_param0, user_param1, user_param2],
+///         [user_param3, user_param4, user_param5, user_param6]
 ///     ]
 /// }
 /// ```
@@ -733,22 +772,35 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    if commitments.len() != 16 {
-        return Err(TransactionKernelError::TransactionSummaryConstructionFailed(
-            "expected 4 words for transaction summary commitments".into(),
-        ));
-    }
+    // This also validates the preimage length, which is what makes the commitment words below
+    // safe to slice out.
+    let (expiration_delta, user_params) = TransactionSummary::try_params_from_elements(commitments)
+        .map_err(|source| {
+            TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(source))
+        })?;
 
     let account_delta_commitment = extract_word(commitments, 0);
     let input_notes_commitment = extract_word(commitments, 4);
     let output_notes_commitment = extract_word(commitments, 8);
-    let salt = extract_word(commitments, 12);
+    let block_commitment = extract_word(commitments, 12);
+
+    // Validate the expiration delta against the kernel state so that a summary preimage
+    // carrying a fabricated delta is rejected rather than presented to the signer.
+    let expected_expiration_delta = process.get_expiration_block_delta()?;
+    if expiration_delta != expected_expiration_delta {
+        return Err(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
+            expected: expected_expiration_delta,
+            actual: expiration_delta,
+        });
+    }
 
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
-        salt,
+        block_commitment,
+        expiration_delta,
+        user_params,
     )?;
 
     if tx_summary.to_commitment() != message {

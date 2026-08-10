@@ -3,8 +3,8 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_agglayer::{LeafValue, agglayer_library};
-use miden_assembly::{Assembler, DefaultSourceManager};
+use miden_agglayer::{LeafValue, agglayer_package};
+use miden_assembly::{Assembler, DefaultSourceManager, Linkage};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
 use miden_processor::advice::AdviceInputs;
@@ -53,7 +53,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     expected_packed_bytes.extend_from_slice(&metadata_hash_bytes);
     assert_eq!(expected_packed_bytes.len(), 113);
 
-    let agglayer_lib = agglayer_library();
+    let agglayer_package = agglayer_package();
     let leaf_data_elements = leaf_data.to_elements();
     let leaf_data_bytes: Vec<u8> = packed_u32_elements_to_bytes(&leaf_data_elements);
     assert_eq!(
@@ -120,11 +120,13 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     );
 
     let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
+        .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_dynamic_library(agglayer_lib.clone())
+        .with_package(Arc::new(agglayer_package.clone()), Linkage::Dynamic)
         .unwrap()
-        .assemble_program(&source)
+        .assemble_program("agglayer-test-script", &source)
+        .unwrap()
+        .try_into_program()
         .unwrap();
 
     let exec_output = execute_program_with_default_host(program, Some(advice_inputs)).await?;
@@ -176,14 +178,16 @@ async fn get_leaf_value() -> anyhow::Result<()> {
             end
         "#
     );
-    let agglayer_lib = agglayer_library();
+    let agglayer_package = agglayer_package();
 
     let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
+        .with_package(CoreLibrary::default().package(), Linkage::Dynamic)
         .unwrap()
-        .with_dynamic_library(agglayer_lib.clone())
+        .with_package(Arc::new(agglayer_package.clone()), Linkage::Dynamic)
         .unwrap()
-        .assemble_program(&source)
+        .assemble_program("agglayer-test-script", &source)
+        .unwrap()
+        .try_into_program()
         .unwrap();
 
     let exec_output = execute_program_with_default_host(program, Some(advice_inputs)).await?;

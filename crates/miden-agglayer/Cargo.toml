@@ -17,12 +17,11 @@ doctest = false
 
 [features]
 default = ["std"]
-std     = ["miden-assembly/std", "miden-core/std"]
+std     = ["miden-core/std", "miden-protocol/std"]
 testing = ["dep:serde", "dep:serde_json", "miden-protocol/testing"]
 
 [dependencies]
 # Miden dependencies
-miden-assembly   = { workspace = true }
 miden-core       = { workspace = true }
 miden-protocol   = { workspace = true }
 miden-standards  = { workspace = true }
@@ -30,7 +29,6 @@ miden-utils-sync = { workspace = true }
 
 # Third-party dependencies
 alloy-sol-types = { workspace = true }
-primitive-types = { workspace = true }
 thiserror       = { workspace = true }
 
 # Crypto
@@ -46,11 +44,13 @@ serde          = { features = ["derive"], workspace = true }
 serde_json     = { features = ["std"], workspace = true }
 
 [build-dependencies]
-fs-err          = { workspace = true }
-miden-assembly  = { workspace = true }
-miden-core      = { workspace = true }
-miden-crypto    = { workspace = true }
-miden-protocol  = { features = ["testing"], workspace = true }
-miden-standards = { workspace = true }
-regex           = { workspace = true }
-walkdir         = { workspace = true }
+fs-err                     = { workspace = true }
+miden-assembly             = { features = ["std"], workspace = true }
+miden-core                 = { workspace = true }
+miden-core-lib             = { workspace = true }
+miden-crypto               = { workspace = true }
+miden-mast-package         = { features = ["std"], workspace = true }
+miden-package-registry     = { features = ["resolver", "std"], workspace = true }
+miden-protocol             = { features = ["testing"], workspace = true }
+miden-protocol-build-utils = { workspace = true }
+miden-standards            = { workspace = true }

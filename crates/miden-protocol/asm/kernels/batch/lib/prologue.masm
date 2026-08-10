@@ -2,12 +2,14 @@ use miden::core::mem
 use miden::core::word
 
 use miden::batch_kernel::memory
-use miden::batch_kernel::memory::TX_TUPLES_PTR
-use miden::batch_kernel::memory::INPUT_NOTES_PTR
-use miden::batch_kernel::memory::OUTPUT_NOTES_PTR
-use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
-use miden::batch_kernel::memory::MAX_TRANSACTIONS_PER_BATCH
-use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
+use {
+    INPUT_NOTES_PTR,
+    MAX_NOTES_PER_BATCH,
+    MAX_TRANSACTIONS_PER_BATCH,
+    NOTE_ENTRY_FELT_LEN,
+    OUTPUT_NOTES_PTR,
+    TX_TUPLES_PTR,
+} from miden::batch_kernel::memory
 
 # CONSTANTS
 # =================================================================================================

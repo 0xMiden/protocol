@@ -14,7 +14,7 @@ use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetComposition, AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetComposition, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -22,13 +22,14 @@ use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueN
 use crate::account::{
     AccountCode,
     AccountIdPrefix,
+    AccountProcedureRoot,
     AccountStorage,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetId;
+use crate::asset::AssetClass;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
@@ -40,6 +41,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
+use crate::script::MastForestScriptError;
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
@@ -121,8 +123,12 @@ pub enum AccountError {
     AccountCodeMultipleAuthComponents,
     #[error("account code must contain at least one non-auth procedure")]
     AccountCodeNoProcedures,
+    #[error("account procedure {0} is not contained in the provided mast forest")]
+    AccountCodeProcedureNotInMastForest(AccountProcedureRoot),
     #[error("account code contains {0} procedures but it may contain at most {max} procedures", max = AccountCode::MAX_NUM_PROCEDURES)]
     AccountCodeTooManyProcedures(usize),
+    #[error("account code contains a duplicate procedure with root {0}")]
+    AccountCodeDuplicateProcedureRoot(Word),
     #[error("failed to assemble account component:\n{}", PrintDiagnostic::new(.0))]
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
@@ -564,28 +570,25 @@ pub enum AssetError {
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
     #[error(
-        "cannot combine fungible assets with different vault keys: {original_key} and {other_key}"
+        "cannot combine fungible assets with different asset IDs: {original_id} and {other_id}"
     )]
-    FungibleAssetInconsistentVaultKeys {
-        original_key: AssetVaultKey,
-        other_key: AssetVaultKey,
-    },
+    FungibleAssetInconsistentIds { original_id: AssetId, other_id: AssetId },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+        "asset class prefix and suffix in a non-fungible asset ID must match indices 0 and 1 in the value, but asset class was {asset_class} and value was {value}"
     )]
-    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
-    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
-    FungibleAssetIdMustBeZero(AssetId),
+    NonFungibleAssetClassMustMatchValue { asset_class: AssetClass, value: Word },
+    #[error("asset class prefix and suffix in a fungible asset ID must be zero but was {0}")]
+    FungibleAssetClassMustBeZero(AssetClass),
     #[error(
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error("smt proof in asset witness contains invalid key or value")]
+    #[error("smt proof in asset witness contains invalid ID or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
-    #[error("vault key {key} is not present in the provided asset witness SMT proof")]
-    AssetWitnessMissingKey { key: AssetVaultKey },
+    #[error("asset ID {id} is not present in the provided asset witness SMT proof")]
+    AssetWitnessMissingId { id: AssetId },
     #[error("unknown asset composition encoding: {0}")]
     UnknownAssetComposition(u8),
     #[error("unknown asset delta operation encoding: {0}")]
@@ -710,9 +713,9 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
-    #[error("partial vault contains invalid asset value {value} at key {key}")]
-    InvalidAssetForKey {
-        key: AssetVaultKey,
+    #[error("partial vault contains invalid asset value {value} at ID {id}")]
+    InvalidAssetForId {
+        id: AssetId,
         value: Word,
         #[source]
         source: AssetError,
@@ -728,14 +731,8 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
-    #[error("library does not contain a procedure with @note_script attribute")]
-    NoteScriptNoProcedureWithAttribute,
-    #[error("library contains multiple procedures with @note_script attribute")]
-    NoteScriptMultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in library")]
-    NoteScriptProcedureNotFound(Box<str>),
-    #[error("procedure at path '{0}' does not have @note_script attribute")]
-    NoteScriptProcedureMissingAttribute(Box<str>),
+    #[error("error while creating note script: {0}")]
+    MastForestScript(#[source] MastForestScriptError),
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
@@ -872,17 +869,6 @@ impl PartialBlockchainError {
     }
 }
 
-// TRANSACTION SCRIPT ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum TransactionScriptError {
-    #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
-    AssemblyError(Report),
-    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
-    PackageNotProgram(Report),
-}
-
 // TRANSACTION INPUT ERROR
 // ================================================================================================
 
@@ -987,6 +973,19 @@ pub enum OutputNoteError {
     NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
 
+// TRANSACTION SUMMARY ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionSummaryError {
+    #[error("expiration delta element {0} does not fit into a u16")]
+    ExpirationDeltaTooLarge(Felt),
+    #[error(
+        "transaction summary preimage contains {actual} elements but expected {expected} elements"
+    )]
+    InvalidPreimageLength { actual: usize, expected: usize },
+}
+
 // TRANSACTION EVENT PARSING ERROR
 // ================================================================================================
 
@@ -1047,8 +1046,13 @@ pub enum ProvenTransactionError {
     },
     #[error("proven transaction neither changed the account state, nor consumed any notes")]
     EmptyTransaction,
-    #[error("failed to validate account patch in transaction account update")]
-    AccountPatchCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error(
+        "expected account patch commitment {expected_patch_commitment} but found {actual_patch_commitment}"
+    )]
+    AccountPatchCommitmentMismatch {
+        expected_patch_commitment: Word,
+        actual_patch_commitment: Word,
+    },
     #[error("note with id {0} is both created and consumed by the transaction")]
     NoteCreatedAndConsumed(NoteId),
 }

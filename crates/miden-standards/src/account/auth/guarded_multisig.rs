@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -25,7 +26,7 @@ use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use super::{Approver, ApproverSet};
 use crate::account::account_component_code;
 
-account_component_code!(GUARDED_MULTISIG_CODE, "auth/guarded_multisig.masl");
+account_component_code!(GUARDED_MULTISIG_CODE, "miden-standards-auth-guarded-multisig.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -176,7 +177,7 @@ impl AuthGuardedMultisigConfig {
         self.multisig.default_threshold()
     }
 
-    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
+    pub fn proc_thresholds(&self) -> &BTreeMap<AccountProcedureRoot, u32> {
         self.multisig.proc_thresholds()
     }
 
@@ -213,7 +214,7 @@ pub struct AuthGuardedMultisig {
 
 impl AuthGuardedMultisig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::guarded_multisig";
+    pub const NAME: &'static str = "miden::standards::auth::guarded_multisig";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -403,7 +404,7 @@ mod tests {
 
         // Build account with guarded multisig component.
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
@@ -480,7 +481,7 @@ mod tests {
         .expect("guarded multisig component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

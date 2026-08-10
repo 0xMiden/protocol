@@ -1,0 +1,30 @@
+use miden::protocol::output_note
+
+# PUBLIC API
+# =================================================================================================
+
+#! Creates a new output note and returns its index.
+#!
+#! This procedure lets a note or tx script create an output note: `output_note::create` can only
+#! be invoked from the account context, so accounts that want to create notes must expose it through
+#! their own interface.
+#!
+#! This procedure is expected to be invoked using a `call` instruction. It makes no guarantees about
+#! the contents of the `PAD` elements shown below. It is the caller's responsibility to make sure
+#! these elements do not contain any meaningful data.
+#!
+#! Inputs:  [tag, note_type, RECIPIENT, pad(10)]
+#! Outputs: [note_idx, pad(15)]
+#!
+#! Where:
+#! - tag is the tag to be included in the note.
+#! - note_type is the storage type of the note.
+#! - RECIPIENT is the recipient of the note.
+#! - note_idx is the index of the created note.
+#!
+#! Invocation: call
+@account_procedure
+pub proc create_note
+    exec.output_note::create
+    # => [note_idx, pad(15)]
+end

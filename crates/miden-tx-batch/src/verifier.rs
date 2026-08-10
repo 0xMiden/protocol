@@ -2,7 +2,7 @@ use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
-use miden_verifier::verify;
+use miden_verifier::{ExecutionClaim, verify};
 
 use crate::BatchVerifierError;
 
@@ -64,13 +64,13 @@ impl BatchVerifier {
         )
         .into_stack_outputs();
 
-        let verified_security_level = verify(
+        let claim = ExecutionClaim::from_program_info(
             self.batch_program_info.clone(),
             stack_inputs,
             stack_outputs,
-            batch.proof().clone(),
-        )
-        .map_err(BatchVerifierError::BatchVerificationFailed)?;
+        );
+        let verified_security_level = verify(batch.proof().clone(), claim)
+            .map_err(BatchVerifierError::BatchVerificationFailed)?;
 
         if verified_security_level < self.min_proof_security_level {
             return Err(BatchVerifierError::InsufficientProofSecurityLevel {

@@ -37,7 +37,7 @@ These components are:
 An [asset](asset) container for a `Note`.
 :::
 
-A `Note` can contain from 0 up to 64 different assets. These assets represent fungible or non-fungible tokens, enabling flexible asset transfers.
+A `Note` can contain from 0 up to 16 different assets. These assets represent fungible or non-fungible tokens, enabling flexible asset transfers.
 
 ### Script
 
@@ -225,13 +225,14 @@ The P2IDE note script extends P2ID with additional features including time-locki
 **Key characteristics:**
 
 - **Purpose:** Advanced asset transfer with time-lock and reclaim capabilities
-- **Storage:** Requires exactly 4 storage items:
-  - Target account ID
-  - Reclaim block height (when sender can reclaim)
+- **Storage:** Requires exactly 6 storage items:
+  - Reclaimer account ID (the account allowed to reclaim the note; 2 felts)
+  - Target account ID (2 felts)
+  - Reclaim block height (when the reclaimer can reclaim)
   - Time-lock block height (when target can consume)
 - **Time-lock:** Note cannot be consumed until the specified block height is reached
-- **Reclaim:** Original sender can reclaim the note after the reclaim block height if not consumed by target
-- **Validation:** Complex logic to handle both target consumption and sender reclaim scenarios
+- **Reclaim:** The note's reclaimer (stored in note storage, defaulting to the sender) can reclaim the note after the reclaim block height if not consumed by target
+- **Validation:** Complex logic to handle both target consumption and reclaimer reclaim scenarios
 - **Requirements:** Account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
 **Use cases:**
@@ -239,6 +240,22 @@ The P2IDE note script extends P2ID with additional features including time-locki
 - Escrow-like payments with time constraints
 - Conditional payments that can be reclaimed if not consumed
 - Time-delayed transfers
+
+### TX_FEE
+
+The TX_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds all assets from the note to the consuming account, without restricting who that account is.
+
+**Key characteristics:**
+
+- **Purpose:** Fee payment to a batch builder
+- **Storage:** Carries no storage items
+- **Note type:** Always public
+- **Assets:** Carries one or more assets of the sender's choosing - the note is unopinionated about which assets are used to pay
+- **Tag:** The unique `0xFEE` tag. Its 18 least significant bits are non-zero, so it can never collide with a default account-target tag (those have their 18 least significant bits set to zero)
+- **Validation:** None - unlike P2ID, there is no target account check, so the note is consumable by any account. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
+- **Requirements:** Consuming account must expose the `miden::standards::wallets::basic::receive_asset` procedure
+
+**Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts.
 
 ### SWAP
 

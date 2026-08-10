@@ -4,18 +4,24 @@ use alloc::vec::Vec;
 use miden_core_lib::CoreLibrary;
 
 use crate::account::{AccountHeader, AccountId};
-#[cfg(any(feature = "testing", test))]
-use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
-use crate::assembly::{Assembler, DefaultSourceManager};
+use crate::assembly::{Assembler, DefaultSourceManager, Linkage};
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
 use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
-use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
-use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs, StackOutputs};
+use crate::vm::{
+    AdviceInputs,
+    DebugSourceNodeId,
+    Package,
+    PackageDebugInfo,
+    Program,
+    ProgramInfo,
+    StackInputs,
+    StackOutputs,
+};
 use crate::{Felt, Hasher, Word};
 
 mod procedures {
@@ -38,32 +44,55 @@ static KERNEL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let kernel_package_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel.masp"));
     Arc::new(
-        Package::read_from_bytes(kernel_package_bytes)
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(kernel_package_bytes)
             .expect("failed to deserialize transaction kernel package"),
+    )
+});
+
+// Initialize the kernel main package only once
+static KERNEL_MAIN_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
+    let kernel_main_bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel:main.masp"));
+    Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(kernel_main_bytes)
+            .expect("failed to deserialize transaction kernel main package"),
     )
 });
 
 // Initialize the kernel main program only once
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
-    let kernel_main_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel:main.masp"));
-    Package::read_from_bytes(kernel_main_bytes)
-        .expect("failed to deserialize transaction kernel main package")
+    KERNEL_MAIN_PACKAGE
         .try_into_program()
         .expect("transaction kernel main package should contain a program")
 });
 
-// Initialize the transaction script executor program only once
-static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
+// Initialize the transaction script executor package only once
+static TX_SCRIPT_MAIN_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
     let tx_script_main_bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
         "/assets/kernels/miden-tx-kernel:tx-script-main.masp"
     ));
-    Package::read_from_bytes(tx_script_main_bytes)
-        .expect("failed to deserialize tx script executor package")
+    Arc::new(
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(tx_script_main_bytes)
+            .expect("failed to deserialize tx script executor package"),
+    )
+});
+
+// Initialize the transaction script executor program only once
+static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
+    TX_SCRIPT_MAIN_PACKAGE
         .try_into_program()
         .expect("tx script executor package should contain a program")
 });
+
+static KERNEL_MAIN_DEBUG_INFO: LazyLock<Option<Arc<PackageDebugInfo>>> =
+    LazyLock::new(|| package_debug_info(&KERNEL_MAIN_PACKAGE, "transaction kernel main"));
+
+static TX_SCRIPT_MAIN_DEBUG_INFO: LazyLock<Option<Arc<PackageDebugInfo>>> =
+    LazyLock::new(|| package_debug_info(&TX_SCRIPT_MAIN_PACKAGE, "tx script executor"));
 
 // TRANSACTION KERNEL
 // ================================================================================================
@@ -81,7 +110,7 @@ impl TransactionKernel {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the assembled transaction kernel as a [`Package`].
-    pub fn kernel() -> Arc<Package> {
+    pub fn package() -> Arc<Package> {
         KERNEL_PACKAGE.clone()
     }
 
@@ -93,12 +122,42 @@ impl TransactionKernel {
         KERNEL_MAIN.clone()
     }
 
+    /// Returns package-owned debug information for the transaction kernel executable program.
+    ///
+    /// # Panics
+    /// Panics if the embedded transaction kernel package contains malformed debug information.
+    pub fn main_debug_info() -> Option<Arc<PackageDebugInfo>> {
+        KERNEL_MAIN_DEBUG_INFO.clone()
+    }
+
+    /// Returns the source/debug occurrence for the transaction kernel executable entrypoint.
+    pub fn main_entrypoint_source_node() -> Option<DebugSourceNodeId> {
+        package_entrypoint_source_node(&KERNEL_MAIN_PACKAGE, KERNEL_MAIN_DEBUG_INFO.as_deref())
+    }
+
     /// Returns an AST of the transaction script executor program.
     ///
     /// # Panics
     /// Panics if the transaction kernel source is not well-formed.
     pub fn tx_script_main() -> Program {
         TX_SCRIPT_MAIN.clone()
+    }
+
+    /// Returns package-owned debug information for the transaction script executor program.
+    ///
+    /// # Panics
+    /// Panics if the embedded transaction script executor package contains malformed debug
+    /// information.
+    pub fn tx_script_main_debug_info() -> Option<Arc<PackageDebugInfo>> {
+        TX_SCRIPT_MAIN_DEBUG_INFO.clone()
+    }
+
+    /// Returns the source/debug occurrence for the transaction script executor entrypoint.
+    pub fn tx_script_main_entrypoint_source_node() -> Option<DebugSourceNodeId> {
+        package_entrypoint_source_node(
+            &TX_SCRIPT_MAIN_PACKAGE,
+            TX_SCRIPT_MAIN_DEBUG_INFO.as_deref(),
+        )
     }
 
     /// Returns [ProgramInfo] for the transaction kernel executable program.
@@ -108,8 +167,8 @@ impl TransactionKernel {
     pub fn program_info() -> ProgramInfo {
         // TODO: make static
         let program_hash = Self::main().hash();
-        let kernel = Self::kernel()
-            .to_kernel()
+        let kernel = Self::package()
+            .to_kernel_descriptor()
             .expect("transaction kernel package should describe a valid kernel");
 
         ProgramInfo::new(program_hash, kernel)
@@ -148,14 +207,15 @@ impl TransactionKernel {
         #[cfg(all(any(feature = "testing", test), feature = "std"))]
         source_manager_ext::load_masm_source_files(&source_manager);
 
-        let kernel_lib = Self::kernel()
-            .try_into_kernel_library()
-            .expect("transaction kernel package should contain a kernel library");
-        Assembler::with_kernel(source_manager, kernel_lib)
-            .with_dynamic_library(CoreLibrary::default())
-            .expect("failed to load std-lib")
-            .with_dynamic_library(ProtocolLib::default())
-            .expect("failed to load miden-lib")
+        let mut assembler = Assembler::with_kernel(source_manager, Self::package())
+            .expect("failed to load transaction kernel");
+        assembler
+            .link_package(CoreLibrary::default().package(), Linkage::Dynamic)
+            .expect("failed to load std-lib");
+        assembler
+            .link_package(ProtocolLib::default().package(), Linkage::Dynamic)
+            .expect("failed to load miden-lib");
+        assembler
     }
 
     // STACK INPUTS / OUTPUTS
@@ -409,16 +469,37 @@ impl TransactionKernel {
     }
 }
 
+fn package_debug_info(package: &Package, package_name: &str) -> Option<Arc<PackageDebugInfo>> {
+    package
+        .debug_info()
+        .unwrap_or_else(|err| panic!("failed to read {package_name} debug info: {err}"))
+        .map(Arc::new)
+}
+
+fn package_entrypoint_source_node(
+    package: &Package,
+    debug_info: Option<&PackageDebugInfo>,
+) -> Option<DebugSourceNodeId> {
+    let source_node_id = package.entrypoint_source_node()?;
+    debug_info?.source_node(source_node_id)?;
+    Some(source_node_id)
+}
+
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
-    const KERNEL_TESTING_PACKAGE_BYTES: &'static [u8] =
+    const KERNEL_CORE_PACKAGE_BYTES: &'static [u8] =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/miden-tx-kernel-core.masp"));
 
-    /// Returns the kernel library.
-    pub fn library() -> Library {
-        let package = Package::read_from_bytes(Self::KERNEL_TESTING_PACKAGE_BYTES)
-            .expect("failed to deserialize transaction kernel library package");
-        Arc::unwrap_or_clone(package.mast)
+    /// Returns the transaction kernel procedures as a [`Package`] linkable under the
+    /// `miden::tx_kernel_core` namespace.
+    ///
+    /// Unlike [`TransactionKernel::package()`], which returns the assembled kernel itself, this
+    /// package exposes the kernel procedures as a regular library so that they can be invoked
+    /// individually in tests.
+    pub fn core_package() -> Package {
+        // These bytes are produced by this crate's build script and embedded in the binary.
+        Package::read_from_bytes_trusted(Self::KERNEL_CORE_PACKAGE_BYTES)
+            .expect("failed to deserialize transaction kernel core package")
     }
 }
 
@@ -456,7 +537,7 @@ pub(crate) mod source_manager_ext {
 
     /// Implements the logic of the above function with error handling.
     fn load(source_manager: &dyn SourceManager) -> io::Result<()> {
-        for file in get_masm_files(concat!(env!("OUT_DIR"), "/asm"))? {
+        for file in get_masm_files(concat!(env!("CARGO_MANIFEST_DIR"), "/asm"))? {
             source_manager.load_file(&file).map_err(io::Error::other)?;
         }
 

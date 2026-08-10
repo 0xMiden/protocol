@@ -22,10 +22,10 @@ mod basic_blocklist;
 mod blocklist;
 
 pub use allow_all::TransferAllowAll;
-pub use allowlist::{AllowlistOwnerControlled, AllowlistStorage};
+pub use allowlist::{AllowlistManager, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
-pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
+pub use blocklist::{BlocklistManager, BlocklistStorage};
 
 // TRANSFER POLICY ERROR
 // ================================================================================================
@@ -55,6 +55,12 @@ pub enum TransferPolicyError {
 /// The same descriptor applies to both send (`on_before_asset_added_to_note`) and receive
 /// (`on_before_asset_added_to_account`) callbacks — the policy procedure receives no direction
 /// parameter and reads the relevant account context via `native_account::get_id`.
+///
+/// Note that minting crosses the send callback: `mint_and_send` ends in
+/// `output_note::add_asset`, which the kernel routes through `on_before_asset_added_to_note`
+/// with the issuing faucet itself as the native account, indistinguishable at that point from
+/// an ordinary send. The bundled blocklist and allowlist policies therefore exempt the issuer by
+/// comparing the asset's faucet ID against the native account ID.
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.

@@ -1,0 +1,11 @@
+[workspace]
+members = ["bridge", "faucet"]
+
+[workspace.package]
+version = "0.16.0"
+
+[workspace.dependencies]
+miden-agglayer  = { linkage = "static", version = "0.16.0" }
+miden-core      = { linkage = "dynamic", version = "0.29" }
+miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
+miden-standards = { linkage = "dynamic", version = "0.16.0" }

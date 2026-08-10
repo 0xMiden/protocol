@@ -13,6 +13,7 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
 };
+use miden_protocol::vm::PackageDebugInfo;
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
 use super::{ProgramExecutor, TransactionExecutor};
@@ -436,8 +437,16 @@ where
                 .map_err(TransactionCheckerError::TransactionPreparation)?;
 
         let processor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options);
+        let program = TransactionKernel::main();
+        let kernel_debug_info = TransactionKernel::main_debug_info();
+        let fallback_debug_info = PackageDebugInfo::default();
         let result = processor
-            .execute(&TransactionKernel::main(), &mut host)
+            .execute_with_package_debug_info(
+                &program,
+                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
+                TransactionKernel::main_entrypoint_source_node(),
+                &mut host,
+            )
             .await
             .map_err(map_execution_error);
 
@@ -453,12 +462,9 @@ where
                 // Set the advice inputs from the successful execution as advice inputs for
                 // reexecution. This avoids calls to the data store (to load data lazily) that have
                 // already been done as part of this execution.
-                let (_, advice_map, merkle_store, _) = execution_output.advice.into_parts();
-                let advice_inputs = AdviceInputs {
-                    map: advice_map,
-                    store: merkle_store,
-                    ..Default::default()
-                };
+                let (_, advice_map, merkle_store) = execution_output.advice.into_parts();
+                let mut advice_inputs = AdviceInputs::default().with_merkle_store(merkle_store);
+                advice_inputs.map = advice_map;
                 tx_inputs.set_advice_inputs(advice_inputs);
                 Ok(cycle_counts)
             },

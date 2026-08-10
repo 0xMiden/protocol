@@ -34,14 +34,16 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
     let tx_script_src = &format!(
         "
         use miden::protocol::output_note
-        begin
+        @transaction_script
+        pub proc main
             push.{recipient}
             push.{note_type}
             push.{tag}
-            exec.output_note::create
+            call.::miden::standards::note::note_creator::create_note
+            movdn.15 dropw dropw dropw drop drop drop
 
             push.{ASSET_VALUE}
-            push.{ASSET_KEY}
+            push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
             dropw dropw dropw dropw
         end
@@ -49,17 +51,16 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         recipient = swap_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = Felt::from(swap_note.metadata().tag()),
-        ASSET_KEY = offered_asset.to_key_word(),
+        ASSET_ID = offered_asset.to_id_word(),
         ASSET_VALUE = offered_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
 
     let create_swap_note_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(swap_note.clone())])
+        .expected_output_note(RawOutputNote::Full(swap_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -108,8 +109,8 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let consume_swap_note_tx = mock_chain
-        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
-        .context("failed to build tx context")?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(swap_note.id())
         .build()?
         .execute()
         .await?;
@@ -138,8 +139,8 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     );
 
     let consume_payback_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
+        .unauthenticated_input_note(full_payback_note)
         .build()?
         .execute()
         .await?;
@@ -163,7 +164,7 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 
 // Consumes a SWAP note with a public payback without any off-band advice. The executor materializes
 // the payback recipient from the creator account ID embedded in SWAP storage and the SWAP's own
-// serial number, then registers it with the advice provider via `p2id::new ->
+// serial number, then registers it with the advice provider via `p2id::prepare_note ->
 // note::build_recipient`.
 #[tokio::test]
 async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()> {
@@ -179,8 +180,8 @@ async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()>
     } = setup_swap_test(payback_note_type)?;
 
     let consume_swap_note_tx = mock_chain
-        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
-        .context("failed to build tx context")?
+        .build_transaction(target_account.id())
+        .authenticated_input_note(swap_note.id())
         .build()?
         .execute()
         .await?;
@@ -204,8 +205,8 @@ async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()>
     );
 
     let consume_payback_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
+        .unauthenticated_input_note(full_payback_note)
         .build()?
         .execute()
         .await?;
@@ -236,7 +237,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
 
     // When consuming a SWAP note with a public payback note output
     // it is necessary to add the details of the public note to the advice provider
-    // via `.extend_expected_output_notes()`
+    // via `.expected_output_notes()`
     let payback_p2id_note = Note::from(
         P2idNote::builder()
             .sender(target_account.id())
@@ -249,9 +250,9 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     );
 
     let consume_swap_note_tx = mock_chain
-        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
-        .context("failed to build tx context")?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(payback_p2id_note)])
+        .build_transaction(target_account.id())
+        .authenticated_input_note(swap_note.id())
+        .expected_output_note(RawOutputNote::Full(payback_p2id_note))
         .build()?
         .execute()
         .await?;
@@ -278,8 +279,8 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     );
 
     let consume_payback_tx = mock_chain
-        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
-        .context("failed to build tx context")?
+        .build_transaction(sender_account.id())
+        .unauthenticated_input_note(full_payback_note)
         .build()?
         .execute()
         .await?;
@@ -343,8 +344,8 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let mock_chain = builder.build()?;
     let settle_tx = mock_chain
-        .build_tx_context(matcher_account.id(), &[swap_note_1.id(), swap_note_2.id()], &[])
-        .context("failed to build tx context")?
+        .build_transaction(matcher_account.id())
+        .authenticated_input_notes([swap_note_1.id(), swap_note_2.id()])
         .build()?
         .execute()
         .await?;

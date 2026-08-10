@@ -6,7 +6,7 @@ use anyhow::{Context as _, Result};
 use miden_processor::FastProcessor;
 use miden_processor::trace::{TraceLenSummary, build_trace};
 use miden_protocol::transaction::{TransactionInputs, TransactionKernel, TransactionMeasurements};
-use miden_testing::TransactionContext;
+use miden_testing::MockTransaction;
 use miden_tx::{
     AccountProcedureIndexMap,
     ExecutionOptions,
@@ -23,9 +23,9 @@ use miden_tx::{
 /// setup against those inputs (minus the prove step). The duplicate run is per-bench, not
 /// per-iteration.
 pub async fn capture_measurements_and_trace_summary(
-    context: TransactionContext,
+    mock_tx: MockTransaction,
 ) -> Result<(TransactionMeasurements, TraceLenSummary)> {
-    let executed = context
+    let executed = mock_tx
         .execute()
         .await
         .context("pre-execution (to resolve signatures) failed")?;
@@ -55,10 +55,11 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
         tx_inputs.foreign_account_code().iter().chain([tx_inputs.account().code()]),
     );
 
-    let (partial_account, _ref_block, _blockchain, input_notes, _tx_args) = tx_inputs.into_parts();
+    let (partial_account, ref_block, _blockchain, input_notes, _tx_args) = tx_inputs.into_parts();
     let mut host = TransactionProverHost::new(
         &partial_account,
         input_notes,
+        ref_block.commitment(),
         mast_store.as_ref(),
         script_mast_store,
         account_procedure_index_map,

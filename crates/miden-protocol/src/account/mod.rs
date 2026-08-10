@@ -169,7 +169,7 @@ impl Account {
 
     /// Creates an account's [`AccountCode`] and [`AccountStorage`] from the provided components.
     ///
-    /// This merges all libraries of the components into a single
+    /// This merges all packages of the components into a single
     /// [`MastForest`](miden_processor::MastForest) to produce the [`AccountCode`].
     ///
     /// The storage slots of all components are merged into a single [`AccountStorage`], where the
@@ -182,13 +182,13 @@ impl Account {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The number of procedures in all merged libraries is 0 or exceeds
+    /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more libraries export a procedure with the same MAST root.
+    /// - Two or more packages export a procedure with the same MAST root.
     /// - The first component doesn't contain exactly one authentication procedure.
     /// - Other components contain authentication procedures.
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
-    /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all libraries.
+    /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all packages.
     pub(super) fn initialize_from_components(
         components: Vec<AccountComponent>,
     ) -> Result<(AccountCode, AccountStorage), AccountError> {
@@ -860,7 +860,7 @@ mod tests {
     #[test]
     fn seed_validation() -> anyhow::Result<()> {
         let account = AccountBuilder::new([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
         let (id, vault, storage, code, _nonce, seed) = account.into_parts();
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn incrementing_nonce_should_remove_seed() -> anyhow::Result<()> {
         let mut account = AccountBuilder::new([5; 32])
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build()?;
         account.increment_nonce(Felt::ONE)?;

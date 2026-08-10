@@ -31,7 +31,7 @@ use super::ProcedurePolicy;
 use crate::account::account_component_code;
 use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
 
-account_component_code!(MULTISIG_SMART_CODE, "auth/multisig_smart.masl");
+account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
 
 // CONSTANTS
 // ================================================================================================
@@ -133,7 +133,7 @@ pub struct AuthMultisigSmart {
 
 impl AuthMultisigSmart {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::multisig_smart";
+    pub const NAME: &'static str = "miden::standards::auth::multisig_smart";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -299,7 +299,7 @@ mod tests {
             AuthMultisigSmart::new(config).expect("multisig smart component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(component)
+            .with_component(component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

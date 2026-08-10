@@ -1,5 +1,10 @@
-#! Root module of the `miden::batch_kernel` library.
-#!
-#! This library holds the internal implementation modules of the batch kernel (prologue, note
-#! tracker, epilogue and the shared memory layout). They are linked into the batch kernel
-#! executable defined in `src/main.masm`.
+# Root module of the `miden::batch_kernel` library.
+#
+# This library holds the internal implementation modules of the batch kernel (prologue, note
+# tracker, epilogue and the shared memory layout). They are linked into the batch kernel
+# executable defined in `src/main.masm`.
+
+pub mod epilogue
+pub mod memory
+pub mod note_tracker
+pub mod prologue

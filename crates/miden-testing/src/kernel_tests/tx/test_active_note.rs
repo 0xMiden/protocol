@@ -5,7 +5,11 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
-use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
+use miden_protocol::errors::MasmError;
+use miden_protocol::errors::tx_kernel::{
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED,
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -33,16 +37,24 @@ use rstest::rstest;
 use super::StackInputs;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note};
-use crate::{
-    Auth,
-    MockChain,
-    TestTransactionBuilder,
-    TxContextInput,
-    assert_transaction_executor_error,
-};
+use crate::{Auth, MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
+/// Active note accessors must refuse to run from a transaction script, where no note is being
+/// processed.
+#[rstest]
+#[case::get_sender(
+    "get_sender",
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED
+)]
+#[case::get_note_id(
+    "get_note_id",
+    ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED
+)]
 #[tokio::test]
-async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()> {
+async fn test_active_note_accessor_fails_from_tx_script(
+    #[case] procedure: &str,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::BasicAuth {
@@ -57,50 +69,49 @@ async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let code = "
+    let code = format!(
+        "
         use miden::protocol::active_note
 
-        begin
-            # try to get the sender from transaction script
-            exec.active_note::get_sender
+        @transaction_script
+        pub proc main
+            # try to access the active note from the transaction script
+            exec.active_note::{procedure}
         end
-        ";
+        "
+    );
     let tx_script = CodeBuilder::default()
         .compile_tx_script(code)
         .context("failed to parse tx script")?;
 
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[p2id_note.id()], &[])?
+    let mock_tx = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(p2id_note.id())
         .tx_script(tx_script)
         .build()?;
 
-    let result = tx_context.execute().await;
-    assert_transaction_executor_error!(
-        result,
-        ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED
-    );
+    let result = mock_tx.execute().await;
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_metadata() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = format!(
         r#"
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
 
         begin
@@ -120,10 +131,10 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
+        METADATA = mock_tx.input_notes().get_note(0).note().metadata().to_metadata_word(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -136,22 +147,20 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
 /// word deeper and fails the second `assert_eqw`.
 #[tokio::test]
 async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = format!(
         r#"
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
 
         begin
@@ -182,10 +191,10 @@ async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
+        METADATA = mock_tx.input_notes().get_note(0).note().metadata().to_metadata_word(),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -198,7 +207,7 @@ async fn test_active_note_get_metadata_no_extra_word() -> anyhow::Result<()> {
 async fn test_active_note_is_public_and_is_private(
     #[case] note_type: NoteType,
 ) -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let mut rng = RandomCoin::new(Word::default());
@@ -208,9 +217,7 @@ async fn test_active_note_is_public_and_is_private(
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let (expected_public, expected_private) = match note_type {
@@ -221,7 +228,7 @@ async fn test_active_note_is_public_and_is_private(
     let code = format!(
         r#"
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
 
         begin
@@ -240,29 +247,27 @@ async fn test_active_note_is_public_and_is_private(
         "#
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_sender() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let input_note = create_public_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             [FungibleAsset::mock(100)],
         );
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     // calling get_sender should return sender of the active note
     let code = "
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
 
         begin
@@ -276,9 +281,9 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    let sender = tx_context.input_notes().get_note(0).note().metadata().sender();
+    let sender = mock_tx.input_notes().get_note(0).note().metadata().sender();
     assert_eq!(exec_output.get_stack_element(0), sender.suffix());
     assert_eq!(exec_output.get_stack_element(1), sender.prefix().as_felt());
 
@@ -290,7 +295,7 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
 #[case(NoteType::Private)]
 #[tokio::test]
 async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let mut rng = miden_protocol::crypto::rand::RandomCoin::new(Word::default());
@@ -300,14 +305,12 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
             [FungibleAsset::mock(100)],
             &mut rng,
         );
-        TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
     };
 
     let code = "
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
         use miden::protocol::note
 
@@ -327,7 +330,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
     let actual_note_type = NoteType::try_from(exec_output.get_stack_element(0))
         .expect("stack element should be a valid note type");
@@ -367,9 +370,9 @@ async fn test_metadata_into_tag() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_active_note_get_assets() -> anyhow::Result<()> {
+async fn test_active_note_remove_all_assets() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -390,15 +393,12 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(
-                TxContextInput::AccountId(account.id()),
-                &[],
-                &[p2id_note_1, p2id_note_2],
-            )?
+            .build_transaction(account.id())
+            .unauthenticated_input_notes([p2id_note_1, p2id_note_2])
             .build()?
     };
 
-    let notes = tx_context.input_notes();
+    let notes = mock_tx.input_notes();
 
     const DEST_POINTER_NOTE_0: u32 = 100000000;
     const DEST_POINTER_NOTE_1: u32 = 200000000;
@@ -408,28 +408,28 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         for asset in note.assets().iter() {
             code += &format!(
                 r#"
-                dup padw movup.4 mem_loadw_le push.{ASSET_KEY}
-                assert_eqw.err="asset key mismatch"
+                dup padw movup.4 mem_loadw_le push.{ASSET_ID}
+                assert_eqw.err="asset ID mismatch"
 
                 dup padw movup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le push.{ASSET_VALUE}
                 assert_eqw.err="asset value mismatch"
 
                 add.{ASSET_SIZE}
                 "#,
-                ASSET_KEY = asset.to_key_word(),
+                ASSET_ID = asset.to_id_word(),
                 ASSET_VALUE = asset.to_value_word(),
             );
         }
         code
     }
 
-    // calling get_assets should return assets at the specified address
+    // calling remove_all_assets should write the removed assets to the specified address
     let code = format!(
         r#"
         use miden::core::sys
 
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
 
         proc process_note_0
@@ -439,8 +439,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # set the destination pointer for note 0 assets
             push.{DEST_POINTER_NOTE_0}
 
-            # get the assets
-            exec.active_note::get_assets
+            # remove the assets
+            exec.active_note::remove_all_assets
 
             # assert the number of assets is correct
             eq.{note_0_num_assets} assert.err="unexpected num assets for note 0"
@@ -453,6 +453,14 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
 
             # clean pointer
             drop
+
+            # removing the assets again should return no assets since the note is now empty
+            push.{DEST_POINTER_NOTE_0} exec.active_note::remove_all_assets
+            eq.0 assert.err="note 0 should not have any assets left"
+
+            # the initial assets info should be unaffected by the removals
+            exec.active_note::get_initial_num_assets
+            eq.{note_0_num_assets} assert.err="unexpected initial num assets for note 0"
         end
 
         proc process_note_1
@@ -462,8 +470,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # set the destination pointer for note 1 assets
             push.{DEST_POINTER_NOTE_1}
 
-            # get the assets
-            exec.active_note::get_assets
+            # remove the assets
+            exec.active_note::remove_all_assets
 
             # assert the number of assets is correct
             eq.{note_1_num_assets} assert.err="unexpected num assets for note 1"
@@ -507,14 +515,14 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         NOTE_1_ASSET_ASSERTIONS = construct_asset_assertions(notes.get_note(1).note()),
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_storage() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -529,7 +537,8 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note])?
+            .build_transaction(account.id())
+            .unauthenticated_input_note(p2id_note)
             .build()?
     };
 
@@ -554,12 +563,12 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         code
     }
 
-    let note0 = tx_context.input_notes().get_note(0).note();
+    let note0 = mock_tx.input_notes().get_note(0).note();
 
     let code = format!(
         r#"
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
 
         begin
@@ -598,7 +607,7 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
         NOTE_0_PTR = 100000000,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
     Ok(())
 }
 
@@ -646,9 +655,9 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     );
     let input_note = Note::new(vault.clone(), metadata, recipient);
 
-    // provide this input note to the transaction context
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
-        .extend_input_notes(vec![input_note])
+    // provide this input note to the mock transaction
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .input_note(input_note)
         .build()?;
 
     let tx_code = "
@@ -670,14 +679,14 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
             end
         ";
 
-    tx_context.execute_code(tx_code).await.context("transaction execution failed")?;
+    mock_tx.execute_code(tx_code).await.context("transaction execution failed")?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -691,7 +700,8 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_transaction(account.id())
+            .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
 
@@ -709,16 +719,16 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    let serial_number = tx_context.input_notes().get_note(0).note().serial_num();
+    let serial_number = mock_tx.input_notes().get_note(0).note().serial_num();
     assert_eq!(exec_output.get_stack_word(0), serial_number);
     Ok(())
 }
 
 #[tokio::test]
 async fn test_active_note_get_script_root() -> anyhow::Result<()> {
-    let tx_context = {
+    let mock_tx = {
         let mut builder = MockChain::builder();
         let account = builder.add_existing_wallet(Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -732,7 +742,8 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
         let mock_chain = builder.build()?;
 
         mock_chain
-            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[p2id_note_1])?
+            .build_transaction(account.id())
+            .unauthenticated_input_note(p2id_note_1)
             .build()?
     };
 
@@ -750,9 +761,9 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     end
     ";
 
-    let exec_output = tx_context.execute_code(code).await?;
+    let exec_output = mock_tx.execute_code(code).await?;
 
-    let script_root = tx_context.input_notes().get_note(0).note().script().root();
+    let script_root = mock_tx.input_notes().get_note(0).note().script().root();
     assert_eq!(exec_output.get_stack_word(0), script_root.into());
     Ok(())
 }
@@ -783,7 +794,7 @@ async fn test_note_find_attachment(
     let scheme_0 = NoteAttachmentScheme::new(10)?;
     let scheme_1 = NoteAttachmentScheme::new(20)?;
 
-    let tx_context = {
+    let mock_tx = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
@@ -797,10 +808,10 @@ async fn test_note_find_attachment(
             .build()?;
 
         TestTransactionBuilder::new(account)
-            .extend_input_notes(vec![input_note0, input_note1])
+            .input_notes(vec![input_note0, input_note1])
             .build()?
     };
-    assert_eq!(tx_context.tx_inputs().input_notes().num_notes(), 2);
+    assert_eq!(mock_tx.tx_inputs().input_notes().num_notes(), 2);
 
     let setup_find_attachment = match note_idx {
         Some(idx) => format!("push.{idx}"),
@@ -819,7 +830,7 @@ async fn test_note_find_attachment(
     let code = format!(
         r#"
         use miden::tx_kernel_core::prologue
-        use miden::tx_kernel_core::note->note_internal
+        use miden::tx_kernel_core::note as note_internal
         use miden::protocol::active_note
         use miden::protocol::input_note
 
@@ -876,7 +887,7 @@ async fn test_note_find_attachment(
         EXPECTED_WORD = word_1,
     );
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }

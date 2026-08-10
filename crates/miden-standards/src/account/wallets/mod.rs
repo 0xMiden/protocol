@@ -27,12 +27,19 @@ use crate::procedure_root;
 // BASIC WALLET
 // ================================================================================================
 
-account_component_code!(BASIC_WALLET_CODE, "wallets/basic_wallet.masl");
+account_component_code!(BASIC_WALLET_CODE, "miden-standards-wallets-basic-wallet.masp");
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BasicWallet::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BASIC_WALLET_LIBRARY_PATH: &str = "miden::standards::components::wallets::basic_wallet";
 
 // Initialize the procedure root of the `receive_asset` procedure of the Basic Wallet only once.
 procedure_root!(
     BASIC_WALLET_RECEIVE_ASSET,
-    BasicWallet::NAME,
+    BASIC_WALLET_LIBRARY_PATH,
     BasicWallet::RECEIVE_ASSET_PROC_NAME,
     BasicWallet::code()
 );
@@ -41,20 +48,29 @@ procedure_root!(
 // once.
 procedure_root!(
     BASIC_WALLET_MOVE_ASSET_TO_NOTE,
-    BasicWallet::NAME,
+    BASIC_WALLET_LIBRARY_PATH,
     BasicWallet::MOVE_ASSET_TO_NOTE_PROC_NAME,
+    BasicWallet::code()
+);
+
+// Initialize the procedure root of the `create_note` procedure of the Basic Wallet only once.
+procedure_root!(
+    BASIC_WALLET_CREATE_NOTE,
+    BASIC_WALLET_LIBRARY_PATH,
+    BasicWallet::CREATE_NOTE_PROC_NAME,
     BasicWallet::code()
 );
 
 /// An [`AccountComponent`] implementing a basic wallet.
 ///
-/// It reexports the procedures from `miden::standards::wallets::basic`. When linking against this
-/// component, the `miden` library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be
+/// It reexports the procedures from `miden::standards::wallets::basic` module. When linking against
+/// this component, the `miden` library (i.e. [`ProtocolLib`](miden_protocol::ProtocolLib)) must be
 /// available to the assembler which is the case when using [`CodeBuilder`][builder]. The procedures
 /// of this component are:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
+/// - `create_note`, which can be used to create a new output note and return its index.
 ///
 /// All methods require authentication. Thus, this component must be combined with a component
 /// providing authentication.
@@ -67,10 +83,11 @@ impl BasicWallet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::wallets::basic_wallet";
+    pub const NAME: &'static str = "miden::standards::wallets::basic_wallet";
 
     const RECEIVE_ASSET_PROC_NAME: &str = "receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "move_asset_to_note";
+    const CREATE_NOTE_PROC_NAME: &str = "create_note";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -93,6 +110,11 @@ impl BasicWallet {
     /// Returns the procedure root of the `move_asset_to_note` wallet procedure.
     pub fn move_asset_to_note_root() -> AccountProcedureRoot {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
+    }
+
+    /// Returns the procedure root of the `create_note` wallet procedure.
+    pub fn create_note_root() -> AccountProcedureRoot {
+        *BASIC_WALLET_CREATE_NOTE
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
@@ -118,10 +140,11 @@ impl From<BasicWallet> for AccountComponent {
 /// Creates a new account with a basic wallet interface, single signature authentication and the
 /// specified account type.
 ///
-/// The basic wallet interface exposes two procedures:
+/// The basic wallet interface exposes three procedures:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
+/// - `create_note`, which can be used to create an output note.
 ///
 /// All methods require authentication, which is provided by an [`AuthSingleSig`] component
 /// configured with the given approver.
@@ -201,7 +224,7 @@ fn create_wallet(
 ) -> Result<Account, AccountError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .build()
 }
@@ -222,6 +245,7 @@ mod tests {
         AccountType,
         Approver,
         ApproverSet,
+        AuthMultisig,
         GuardianConfig,
         create_basic_wallet,
         create_guarded_wallet,
@@ -281,8 +305,13 @@ mod tests {
     #[test]
     fn test_create_multisig_wallet_private_higher_override_succeeds() -> anyhow::Result<()> {
         let approver_set = ApproverSet::new(vec![approver(1), approver(2), approver(3)], 2)?;
-        // Hardening a procedure above the default (2 -> 3) is safe for private accounts.
-        let proc_thresholds = vec![(BasicWallet::move_asset_to_note_root(), 3)];
+        // Hardening a procedure above the default (2 -> 3) is safe for private accounts, as long as
+        // the override editing procedure is hardened to the same level so the override cannot be
+        // lowered by a smaller quorum.
+        let proc_thresholds = vec![
+            (BasicWallet::move_asset_to_note_root(), 3),
+            (AuthMultisig::set_procedure_threshold_root(), 3),
+        ];
 
         create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Private)?;
 

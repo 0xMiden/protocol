@@ -11,9 +11,10 @@
 //!   issuing faucet's asset is added to an account vault (transfer "to" side)
 //!
 //! The manager owns an `active_*_policy` slot per kind plus an `allowed_*_policies` map per kind
-//! for set-time validation. Mint and burn are dispatched via `dynexec` by `exec`-invoked
-//! wrappers; send and receive are dispatched by `invoke_send_policy` / `invoke_receive_policy`
-//! wrappers whose roots live in
+//! for set-time validation. Every policy is dispatched via `dyncall`, so it runs in its own memory
+//! context behind the standard `call` ABI and cannot reach the dispatching faucet's procedure
+//! locals. Mint and burn are dispatched by `exec`-invoked wrappers; send and receive are
+//! dispatched by `invoke_send_policy` / `invoke_receive_policy` wrappers whose roots live in
 //! the protocol-reserved callback slots, so the kernel `dyncall`s the wrapper, which applies the
 //! pause check and then dispatches to the active policy.
 //!
@@ -24,7 +25,7 @@
 //!
 //! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`],
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
-//! manager's `dynexec` can dispatch to it.
+//! manager's `dyncall` can dispatch to it.
 //!
 //! A faucet constructs the manager via [`TokenPolicyManager::builder`], setting the required
 //! `active_*_policy` for each kind (and optionally any number of reserved `allowed_*_policy`
@@ -40,11 +41,11 @@ pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicy, BurnPolicyError, MinBurn
 pub use manager::{TokenPolicyManager, TokenPolicyManagerBuilder};
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicy, MintPolicyError};
 pub use transfer::{
-    AllowlistOwnerControlled,
+    AllowlistManager,
     AllowlistStorage,
     BasicAllowlist,
     BasicBlocklist,
-    BlocklistOwnerControlled,
+    BlocklistManager,
     BlocklistStorage,
     TransferAllowAll,
     TransferPolicy,

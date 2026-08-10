@@ -5,8 +5,7 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::mast::MastForest;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
+use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
@@ -19,7 +18,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{
@@ -98,6 +97,17 @@ where
     /// authenticator that produced it.
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
+    /// Whether execution is currently inside the authentication procedure.
+    ///
+    /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
+    /// `EpilogueAuthProcEnd` events, so this flag is `true` only while the registered auth
+    /// procedure is running. It is used to reject signature *production* requested from any other
+    /// context (e.g. untrusted note or transaction scripts): an `AuthRequest` with no pre-supplied
+    /// signature makes the authenticator sign with the account's key and must never be honored
+    /// outside the auth procedure. Verifying an externally-supplied signature does not touch the
+    /// private key and is always allowed.
+    in_auth_procedure: bool,
+
     /// The source manager to track source code file span information, improving any MASM related
     /// error messages.
     source_manager: Arc<dyn SourceManagerSync>,
@@ -121,11 +131,13 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
+        ref_block_commitment: Word,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
+            ref_block_commitment,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
@@ -139,6 +151,7 @@ where
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
+            in_auth_procedure: false,
             source_manager,
         }
     }
@@ -211,12 +224,12 @@ where
             .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
-            .to_prepared_signature(message);
+            .to_encoded_signature(message);
 
         let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
-        Ok(vec![AdviceMutation::extend_stack(signature)])
+        Ok(vec![AdviceMutation::extend_advice_stack(signature.into())])
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.
@@ -289,7 +302,7 @@ where
         &self,
         active_account_id: AccountId,
         vault_root: Word,
-        asset_key: AssetVaultKey,
+        asset_id: AssetId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let asset_witnesses = self
             .base_host
@@ -297,12 +310,12 @@ where
             .get_vault_asset_witnesses(
                 active_account_id,
                 vault_root,
-                BTreeSet::from_iter([asset_key]),
+                BTreeSet::from_iter([asset_id]),
             )
             .await
             .map_err(|err| TransactionKernelError::GetVaultAssetWitness {
                 vault_root,
-                asset_key,
+                asset_id,
                 source: err,
             })?;
 
@@ -439,7 +452,10 @@ where
     STORE: DataStore + Sync,
     AUTH: TransactionAuthenticator + Sync,
 {
-    fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
+    fn get_mast_forest(
+        &self,
+        node_digest: &Word,
+    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
         async move { mast_forest }
     }
@@ -508,12 +524,12 @@ where
                 TransactionEvent::AccountVaultBeforeAssetAccess {
                     active_account_id,
                     vault_root,
-                    asset_key,
+                    asset_id,
                 } => {
                     self.on_account_vault_asset_witness_requested(
                         active_account_id,
                         vault_root,
-                        asset_key,
+                        asset_id,
                     )
                     .await
                 },
@@ -579,6 +595,10 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
+                TransactionEvent::InputNoteIndexLookup { note_id } => {
+                    Ok(self.base_host.on_input_note_index_lookup(note_id))
+                },
+
                 TransactionEvent::AuthRequest {
                     pub_key_commitment,
                     tx_summary_or_signature,
@@ -587,7 +607,11 @@ where
                         Ok(self.base_host.on_auth_requested(signature))
                     },
                     TxSummaryOrSignature::TxSummary(tx_summary) => {
-                        self.on_auth_requested(pub_key_commitment, tx_summary).await
+                        if !self.in_auth_procedure {
+                            Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
+                        } else {
+                            self.on_auth_requested(pub_key_commitment, tx_summary).await
+                        }
                     },
                 },
 
@@ -641,14 +665,12 @@ where
                     },
                     TransactionProgressEvent::EpilogueAuthProcStart(clk) => {
                         self.tx_progress.start_auth_procedure(clk);
+                        self.in_auth_procedure = true;
                         Ok(Vec::new())
                     },
                     TransactionProgressEvent::EpilogueAuthProcEnd(clk) => {
                         self.tx_progress.end_auth_procedure(clk);
-                        Ok(Vec::new())
-                    },
-                    TransactionProgressEvent::EpilogueAfterTxCyclesObtained(clk) => {
-                        self.tx_progress.epilogue_after_tx_cycles_obtained(clk);
+                        self.in_auth_procedure = false;
                         Ok(Vec::new())
                     },
                 },

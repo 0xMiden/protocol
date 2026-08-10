@@ -1,17 +1,12 @@
 use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::fmt::Display;
 
-use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_crypto_derive::WordWrapper;
-use miden_mast_package::Package;
 
+use super::script::TransactionScript;
 use super::{Felt, Hasher, Word};
+use crate::EMPTY_WORD;
 use crate::account::auth::{PublicKeyCommitment, Signature};
-use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
     ByteReader,
@@ -20,8 +15,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::{AdviceInputs, AdviceMap, Program};
-use crate::{EMPTY_WORD, MastForest, MastNodeId};
+use crate::vm::{AdviceInputs, AdviceMap};
 
 // TRANSACTION ARGUMENTS
 // ================================================================================================
@@ -60,7 +54,8 @@ impl TransactionArgs {
     /// Returns new [TransactionArgs] instantiated with the provided transaction script, advice
     /// map and foreign account inputs.
     pub fn new(advice_map: AdviceMap) -> Self {
-        let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+        let mut advice_inputs = AdviceInputs::default();
+        advice_inputs.map = advice_map;
 
         Self {
             tx_script: None,
@@ -166,32 +161,16 @@ impl TransactionArgs {
     /// - storage_commitment |-> storage_items.
     /// - script_root |-> script.
     pub fn add_output_note_recipient<T: AsRef<NoteRecipient>>(&mut self, note_recipient: T) {
-        let note_recipient = note_recipient.as_ref();
-        let storage = note_recipient.storage();
-        let script = note_recipient.script();
-        let script_encoded: Vec<Felt> = script.into();
-
-        // Build the advice map entries
-        let script_root: Word = script.root().into();
-        let sn_hash = Hasher::merge(&[note_recipient.serial_num(), Word::empty()]);
-        let sn_script_hash = Hasher::merge(&[sn_hash, script_root]);
-
-        let new_elements = vec![
-            (sn_hash, concat_words(note_recipient.serial_num(), Word::empty())),
-            (sn_script_hash, concat_words(sn_hash, script_root)),
-            (note_recipient.digest(), concat_words(sn_script_hash, storage.commitment())),
-            (storage.commitment(), storage.to_elements()),
-            (script_root, script_encoded),
-        ];
-
-        self.advice_inputs.extend(AdviceInputs::default().with_map(new_elements));
+        self.advice_inputs.extend(
+            AdviceInputs::default().with_map(note_recipient.as_ref().to_advice_map_entries()),
+        );
     }
 
     /// Adds the `signature` corresponding to `pub_key` on `message` to the advice inputs' map.
     ///
     /// The advice inputs' map is extended with the following key:
     ///
-    /// - hash(pub_key, message) |-> signature (prepared for VM execution).
+    /// - hash(pub_key, message) |-> signature (encoded for VM execution).
     pub fn add_signature(
         &mut self,
         pub_key: PublicKeyCommitment,
@@ -201,7 +180,7 @@ impl TransactionArgs {
         let pk_word: Word = pub_key.into();
         self.advice_inputs
             .map
-            .insert(Hasher::merge(&[pk_word, message]), signature.to_prepared_signature(message));
+            .insert(Hasher::merge(&[pk_word, message]), signature.to_encoded_signature(message));
     }
 
     /// Populates the advice inputs with the specified note recipient details.
@@ -238,13 +217,6 @@ impl TransactionArgs {
 }
 
 /// Concatenates two [`Word`]s into a [`Vec<Felt>`] containing 8 elements.
-fn concat_words(first: Word, second: Word) -> Vec<Felt> {
-    let mut result = Vec::with_capacity(8);
-    result.extend(first);
-    result.extend(second);
-    result
-}
-
 impl Default for TransactionArgs {
     fn default() -> Self {
         Self::new(AdviceMap::default())
@@ -279,141 +251,8 @@ impl Deserializable for TransactionArgs {
     }
 }
 
-// TRANSACTION SCRIPT ROOT
+// TESTS
 // ================================================================================================
-
-/// The MAST root of a [`TransactionScript`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, WordWrapper)]
-pub struct TransactionScriptRoot(Word);
-
-impl From<TransactionScriptRoot> for Word {
-    fn from(root: TransactionScriptRoot) -> Self {
-        root.0
-    }
-}
-
-impl Display for TransactionScriptRoot {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        Display::fmt(&self.0, f)
-    }
-}
-
-impl Serializable for TransactionScriptRoot {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.0);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
-    }
-}
-
-impl Deserializable for TransactionScriptRoot {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let word: Word = source.read()?;
-        Ok(Self::from_raw(word))
-    }
-}
-
-// TRANSACTION SCRIPT
-// ================================================================================================
-
-/// Transaction script.
-///
-/// A transaction script is a program that is executed in a transaction after all input notes
-/// have been executed.
-///
-/// The [TransactionScript] object is composed of an executable program defined by a [MastForest]
-/// and an associated entrypoint.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TransactionScript {
-    mast: Arc<MastForest>,
-    entrypoint: MastNodeId,
-}
-
-impl TransactionScript {
-    // CONSTRUCTORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a new [TransactionScript] instantiated with the provided code.
-    pub fn new(code: Program) -> Self {
-        Self::from_parts(code.mast_forest().clone(), code.entrypoint())
-    }
-
-    /// Returns a new [TransactionScript] instantiated from the provided MAST forest and entrypoint.
-    ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        assert!(mast.get_node_by_id(entrypoint).is_some());
-
-        Self { mast, entrypoint }
-    }
-
-    /// Creates a [TransactionScript] from a [`Package`].
-    ///
-    /// The package must be an executable (i.e., its target type must be
-    /// [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
-    ///
-    /// # Errors
-    /// Returns an error if the package cannot be converted to an executable program.
-    pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
-        let program =
-            package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
-
-        Ok(TransactionScript::new(program))
-    }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a reference to the [MastForest] backing this transaction script.
-    pub fn mast(&self) -> Arc<MastForest> {
-        self.mast.clone()
-    }
-
-    /// Returns the commitment of this transaction script (i.e., the script's MAST root).
-    pub fn root(&self) -> TransactionScriptRoot {
-        TransactionScriptRoot::from_raw(self.mast[self.entrypoint].digest())
-    }
-
-    /// Returns a new [TransactionScript] with the provided advice map entries merged into the
-    /// underlying [MastForest].
-    ///
-    /// This allows adding advice map entries to an already-compiled transaction script,
-    /// which is useful when the entries are determined after script compilation.
-    pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
-        if advice_map.is_empty() {
-            return self;
-        }
-
-        let mut mast = (*self.mast).clone();
-        mast.advice_map_mut().extend(advice_map);
-        Self {
-            mast: Arc::new(mast),
-            entrypoint: self.entrypoint,
-        }
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for TransactionScript {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.mast.write_into(target);
-        target.write_u32(u32::from(self.entrypoint));
-    }
-}
-
-impl Deserializable for TransactionScript {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mast = MastForest::read_from(source)?;
-        let entrypoint = MastNodeId::from_u32_safe(source.read_u32()?, &mast)?;
-
-        Ok(Self::from_parts(Arc::new(mast), entrypoint))
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -429,36 +268,5 @@ mod tests {
         let decoded = TransactionArgs::read_from_bytes(&bytes).unwrap();
 
         assert_eq!(tx_args, decoded);
-    }
-
-    #[test]
-    fn test_transaction_script_with_advice_map() {
-        use miden_core::{Felt, Word};
-
-        use super::TransactionScript;
-        use crate::assembly::Assembler;
-
-        let assembler = Assembler::default();
-        let program = assembler.assemble_program("begin nop end").unwrap();
-        let script = TransactionScript::new(program);
-
-        assert!(script.mast().advice_map().is_empty());
-
-        // Empty advice map should be a no-op
-        let original_root = script.root();
-        let script = script.with_advice_map(AdviceMap::default());
-        assert_eq!(original_root, script.root());
-
-        // Non-empty advice map should add entries
-        let key = Word::from([1u32, 2, 3, 4]);
-        let value = vec![Felt::new_unchecked(42), Felt::new_unchecked(43)];
-        let mut advice_map = AdviceMap::default();
-        advice_map.insert(key, value.clone());
-
-        let script = script.with_advice_map(advice_map);
-
-        let mast = script.mast();
-        let stored = mast.advice_map().get(&key).expect("entry should be present");
-        assert_eq!(stored.as_ref(), value.as_slice());
     }
 }

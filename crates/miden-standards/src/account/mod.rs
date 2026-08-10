@@ -2,12 +2,15 @@ pub mod access;
 pub mod auth;
 pub mod components;
 pub mod faucets;
+pub mod fees;
+pub mod inspection;
 pub mod interface;
-pub mod metadata;
+pub mod note_creator;
 pub mod policies;
+pub mod upgrade;
 pub mod wallets;
 
-pub use metadata::AccountBuilderSchemaCommitmentExt;
+pub use inspection::AccountBuilderSchemaCommitmentExt;
 
 /// Macro to simplify the creation of static procedure root constants.
 ///
@@ -54,35 +57,35 @@ macro_rules! procedure_root {
     };
 }
 
-/// Macro to declare a static `LazyLock<AccountComponentCode>` initialized from a `.masl` asset
+/// Macro to declare a static `LazyLock<AccountComponentCode>` initialized from a `.masp` asset
 /// shipped by the `miden-standards` build script.
 ///
-/// `$relative_path` is appended to `concat!(env!("OUT_DIR"), "/assets/account_components/")` and
-/// the resulting bytes are deserialized via [`Library::read_from_bytes`].
+/// `$relative_path` is appended to `concat!(env!("OUT_DIR"), "/assets/components/")` and the
+/// resulting bytes are deserialized into a [`Package`], which is then wrapped into an
+/// [`AccountComponentCode`].
 ///
 /// This macro is intended for use **inside the `miden-standards` crate only**: it relies on
 /// `env!("OUT_DIR")` resolving against `miden-standards`'s build script, which is where the
-/// `account_components` assets are written.
+/// `components` assets are written.
 ///
-/// [`Library::read_from_bytes`]: miden_protocol::assembly::Library::read_from_bytes
+/// [`Package`]: miden_protocol::vm::Package
+/// [`AccountComponentCode`]: miden_protocol::account::component::AccountComponentCode
 ///
 /// # Example
 /// ```ignore
-/// account_component_code!(BASIC_WALLET_CODE, "wallets/basic_wallet.masl");
+/// account_component_code!(BASIC_WALLET_CODE, "miden-standards-wallets-basic-wallet.masp");
 /// ```
 macro_rules! account_component_code {
     ($name:ident, $relative_path:expr) => {
         static $name: miden_protocol::utils::sync::LazyLock<
             miden_protocol::account::component::AccountComponentCode,
         > = miden_protocol::utils::sync::LazyLock::new(|| {
-            let bytes = include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/assets/account_components/",
-                $relative_path
-            ));
-            let library = <miden_protocol::assembly::Library as miden_protocol::utils::serde::Deserializable>::read_from_bytes(bytes)
-                .expect("Shipped library failed to deserialize: {err}");
-            miden_protocol::account::component::AccountComponentCode::from(library)
+            let bytes =
+                include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/", $relative_path));
+            // These bytes are produced by this crate's build script and embedded in the binary.
+            let package = miden_protocol::vm::Package::read_from_bytes_trusted(bytes)
+                .expect("shipped account-component package failed to deserialize");
+            miden_protocol::account::component::AccountComponentCode::from(package)
         });
     };
 }

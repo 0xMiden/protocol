@@ -1,9 +1,11 @@
 use miden::core::crypto::hashes::poseidon2
 
 use miden::batch_kernel::memory
-use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
-use miden::batch_kernel::memory::INPUT_NOTE_CONSUMPTION_OFFSET
-use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
+use {
+    INPUT_NOTE_CONSUMPTION_OFFSET,
+    NOTE_ENTRY_FELT_LEN,
+    OUTPUT_NOTE_IS_CREATED_OFFSET,
+} from miden::batch_kernel::memory
 
 # ERRORS
 # =================================================================================================
