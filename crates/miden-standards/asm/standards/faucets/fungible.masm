@@ -40,7 +40,7 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds max supply"
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
-const ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
+const ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
 
 # =================================================================================================
@@ -362,7 +362,7 @@ pub proc mint_and_send
     padw loc_loadw_le.MINT_ASSET_ID_LOCAL dupw.1
     # => [ASSET_ID, NOTE_ASSET_ID, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
-    assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    assert_eqw.err=ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1

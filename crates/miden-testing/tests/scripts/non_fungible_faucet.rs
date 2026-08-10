@@ -28,9 +28,9 @@ use miden_standards::account::policies::{
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
+    ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET,
     ERR_NFT_ALREADY_ISSUED,
     ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE,
-    ERR_NON_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage};
@@ -88,14 +88,19 @@ fn build_nft_faucet_with_type(
 }
 
 /// A single mint invocation (push args, call mint_and_send, truncate result).
-fn nft_mint_body(commitment: Word, recipient: Word) -> String {
+///
+/// The `ASSET_ID` passed is the one `faucet_id` derives for `commitment`; `mint_and_send` asserts
+/// it against the asset it derives for the active faucet.
+fn nft_mint_body(faucet_id: AccountId, commitment: Word, recipient: Word) -> String {
+    let asset_id = NonFungibleAsset::from_parts(faucet_id, commitment).to_id_word();
     format!(
         "
             push.{recipient}
             push.{note_type}
             push.{tag}
             push.{commitment}
-            # => [COMMITMENT, tag, note_type, RECIPIENT]
+            push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT]
             call.::miden::standards::faucets::non_fungible::mint_and_send
             # => [note_idx, pad(15)]
             dropw dropw dropw dropw
@@ -106,10 +111,10 @@ fn nft_mint_body(commitment: Word, recipient: Word) -> String {
 }
 
 /// Builds a tx script that mints an NFT for `commitment` and sends it to `recipient`.
-fn nft_mint_script(commitment: Word, recipient: Word) -> String {
+fn nft_mint_script(faucet_id: AccountId, commitment: Word, recipient: Word) -> String {
     format!(
         "@transaction_script\npub proc main\n{}\nend",
-        nft_mint_body(commitment, recipient)
+        nft_mint_body(faucet_id, commitment, recipient)
     )
 }
 
@@ -120,7 +125,7 @@ async fn execute_nft_mint(
     recipient: Word,
 ) -> anyhow::Result<miden_protocol::transaction::ExecutedTransaction> {
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let code = nft_mint_script(commitment, recipient);
+    let code = nft_mint_script(faucet.id(), commitment, recipient);
     let tx_script =
         CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(code)?;
     let mock_tx = mock_chain
@@ -166,7 +171,7 @@ fn build_nft_mint_tx(
     recipient: Word,
 ) -> anyhow::Result<MockTransaction> {
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let code = nft_mint_script(commitment, recipient);
+    let code = nft_mint_script(faucet.id(), commitment, recipient);
     let tx_script =
         CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(code)?;
     mock_chain
@@ -223,7 +228,7 @@ async fn nft_mint_duplicate_commitment_fails() -> anyhow::Result<()> {
     let recipient = Word::from([4, 4, 4, 4u32]);
 
     // mint the same commitment twice in one transaction; the second call must fail
-    let body = nft_mint_body(commitment, recipient);
+    let body = nft_mint_body(faucet.id(), commitment, recipient);
     let code = format!("@transaction_script\npub proc main\n{body}\n{body}\nend");
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -345,7 +350,7 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let recipient_digest = Word::from([5, 5, 5, 5u32]);
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
-    let storage = MintNoteStorage::new_non_fungible_private(
+    let storage = MintNoteStorage::new_private(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
@@ -404,7 +409,7 @@ async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow
         .build_with_seed([13; 32]);
 
     // the asset names `target` as its faucet, which is what the note storage binds it to
-    let storage = MintNoteStorage::new_non_fungible_private(
+    let storage = MintNoteStorage::new_private(
         Word::from([5, 5, 5, 5u32]),
         NonFungibleAsset::from_parts(target.id(), commitment),
         NoteTag::default(),
@@ -424,10 +429,7 @@ async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_NON_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
-    );
+    assert_transaction_executor_error!(result, ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET);
 
     Ok(())
 }
@@ -461,7 +463,7 @@ async fn nft_mint_via_note_succeeds_for_a_private_faucet() -> anyhow::Result<()>
         .account_type(AccountType::Private)
         .build_with_seed([15; 32]);
 
-    let storage = MintNoteStorage::new_non_fungible_private(
+    let storage = MintNoteStorage::new_private(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
@@ -511,7 +513,7 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
         .account_type(AccountType::Private)
         .build_with_seed([11; 32]);
 
-    let storage = MintNoteStorage::new_non_fungible_private(
+    let storage = MintNoteStorage::new_private(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
