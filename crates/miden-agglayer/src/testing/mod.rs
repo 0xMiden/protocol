@@ -14,7 +14,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use miden_protocol::account::{Account, AccountBuilder, AccountId};
+use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
@@ -92,32 +92,6 @@ pub fn create_existing_bridge_account_with_roles(
         .expect("bridge account should be valid")
 }
 
-/// Returns an [`AccountBuilder`] for an AggLayer faucet test fixture.
-///
-/// Unlike [`AggLayerFaucet::account_builder`], this takes the initial outstanding supply, which
-/// production faucets always deploy at zero.
-pub fn faucet_account_builder(
-    seed: Word,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    initial_supply: Felt,
-    admin: AccountId,
-    bridge_account_id: AccountId,
-    fee_policy_manager: FeePolicyManager,
-) -> AccountBuilder {
-    crate::create_agglayer_faucet_builder(
-        seed,
-        token_symbol,
-        decimals,
-        max_supply,
-        initial_supply,
-        admin,
-        bridge_account_id,
-        fee_policy_manager,
-    )
-}
-
 /// Creates an existing agglayer faucet account with the specified configuration, priced by a
 /// zero-fee policy and administered by [`bridge_admin_account_id`].
 pub fn create_existing_agglayer_faucet(
@@ -128,7 +102,7 @@ pub fn create_existing_agglayer_faucet(
     initial_supply: Felt,
     bridge_account_id: AccountId,
 ) -> Account {
-    faucet_account_builder(
+    AggLayerFaucet::account_builder(
         seed,
         token_symbol,
         decimals,

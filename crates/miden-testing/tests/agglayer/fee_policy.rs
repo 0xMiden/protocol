@@ -2,11 +2,11 @@ use alloc::collections::BTreeSet;
 
 use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
@@ -129,6 +129,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             "AGG",
             6,
             1_000u32.into(),
+            Felt::ZERO,
             admin,
             bridge.id(),
             pricer.agglayer_faucet_fee_policy_manager()?,

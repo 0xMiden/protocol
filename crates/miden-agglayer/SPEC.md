@@ -94,7 +94,7 @@ The `CLAIM` note is consumed by the bridge account:
      `P2ID` note targeted at the recipient directly. The asset must have been previously
      locked into the bridge by a prior bridge-out for the same token.
 
-Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the bridge's configured network ID (after `swap_u32_bytes` on the LE-packed memory limb). The network ID is a deployment setting passed to `create_bridge_account` and stored in the `agglayer::bridge::network_id` slot; `bridge_config::load_network_id` reads it at runtime. It is set once at account creation and never mutated.
+Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the bridge's configured network ID (after `swap_u32_bytes` on the LE-packed memory limb). The network ID is a deployment setting passed to `AggLayerBridge::account_builder` and stored in the `agglayer::bridge::network_id` slot; `bridge_config::load_network_id` reads it at runtime. It is set once at account creation and never mutated.
 This mirrors Solidity `claimAsset` destination-network checks.
 
 TODO: The leaf type field is not validated to be `LEAF_TYPE_ASSET` (0)

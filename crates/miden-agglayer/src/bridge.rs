@@ -828,7 +828,7 @@ impl AggLayerBridge {
     /// Besides the [`AggLayerBridge`] component's own slots, this includes the standards-owned
     /// `is_paused` slot: `pausable::assert_not_paused` treats a missing slot as unpaused, so this
     /// testing-side validator certifies the slot exists. (In production the slot is guaranteed by
-    /// `create_bridge_account_builder` always installing the `Pausable` component.)
+    /// `AggLayerBridge::account_builder` always installing the `Pausable` component.)
     fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             &*GER_MAP_SLOT_NAME,

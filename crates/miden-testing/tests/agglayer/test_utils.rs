@@ -10,9 +10,8 @@ pub use miden_agglayer::testing::{
     SOLIDITY_MERKLE_PROOF_VECTORS,
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
-    faucet_account_builder,
 };
-use miden_agglayer::{AggLayerBridge, BridgeRoles, agglayer_package};
+use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles, agglayer_package};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::Keccak256;
 use miden_processor::advice::AdviceInputs;
@@ -186,7 +185,7 @@ pub fn priced_faucet_builder(
 ) -> anyhow::Result<AccountBuilder> {
     let fee_policy_manager =
         network_note_pricer(verification_base_fee).agglayer_faucet_fee_policy_manager()?;
-    Ok(faucet_account_builder(
+    Ok(AggLayerFaucet::account_builder(
         seed,
         token_symbol,
         decimals,

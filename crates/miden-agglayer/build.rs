@@ -226,7 +226,7 @@ fn generate_agglayer_constants(
         components.push(agglayer_component);
         if component_name == "bridge" {
             // The bridge installs the RBAC access-control stack (RoleBasedAccessControl +
-            // Authority::RbacControlled), matching `create_bridge_account_builder` in lib.rs. An
+            // Authority::RbacControlled), matching `AggLayerBridge::account_builder` in lib.rs. An
             // empty admin / role config suffices here since only component code affects the
             // commitment.
             components.extend(AccessControl::Rbac {
@@ -248,7 +248,7 @@ fn generate_agglayer_constants(
                 admin: dummy_owner,
                 procedure_roles: std::collections::BTreeMap::new(),
             });
-            // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
+            // Mirror the component order used by `AggLayerFaucet::account_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
             //
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
