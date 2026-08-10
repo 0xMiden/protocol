@@ -700,14 +700,10 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 
 /// Tests that a non-fungible asset issued by the faucet account itself cannot be burned through
 /// the fungible faucet's `receive_and_burn`.
-///
-/// Without the composition check, `receive_and_burn` would read the non-fungible asset value's
-/// first element as an amount and subtract it from `token_supply`, freeing headroom below
-/// `max_supply` for further mints without any fungible supply having been burned.
 #[tokio::test]
 async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
     // issue the maximum representable supply so the burn below is not stopped by the
-    // `amount <= token_supply` check, leaving the composition assertion as the only guard
+    // `amount <= token_supply` check.
     let token_supply = AssetAmount::MAX;
 
     let mut builder = MockChain::builder();
@@ -720,10 +716,7 @@ async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
         Some(token_supply.as_u64()),
     )?;
 
-    // Pick a non-fungible asset commitment whose first element is a valid fungible amount. The
-    // commitment is the asset value, and its first element is bound to the asset ID, but an
-    // issuer is free to grind the salt until that element lands wherever it wants it. Roughly
-    // half of all commitments qualify, so a handful of salts suffice.
+    // Pick a non-fungible asset commitment whose first element is a valid fungible amount.
     let (commitment, forged_amount) = (0u32..64)
         .find_map(|salt| {
             let commitment = NonFungibleFaucet::compute_asset_commitment(
@@ -736,12 +729,8 @@ async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
         })
         .expect("some salt should yield a commitment whose first element is a valid amount");
 
-    // this is the amount the faucet would subtract from its supply without the composition check
     assert!(forged_amount <= token_supply);
 
-    // the asset's issuer is the fungible faucet account itself; the BURN script dispatches on the
-    // presence of the fungible `receive_and_burn` procedure, so this asset is routed to the
-    // fungible burn path
     let asset = Asset::from(NonFungibleAsset::from_parts(faucet.id(), commitment));
 
     let note = Note::from(

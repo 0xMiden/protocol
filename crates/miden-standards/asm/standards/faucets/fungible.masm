@@ -403,8 +403,6 @@ end
 @account_procedure
 pub proc receive_and_burn
     # validate the asset to burn is well-formed before processing it
-    # without this, a non-fungible asset issued by this account would reduce token_supply by its
-    # asset value's first element
     # note that the asset's origin is validated by the kernel
     exec.fungible_asset::validate
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
