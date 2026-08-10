@@ -2,6 +2,7 @@ use assert_matches::assert_matches;
 use miden_protocol::account::AccountType;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::errors::AccountError;
 use miden_protocol::{Felt, Word};
 
 use super::{NonFungibleFaucet, create_user_non_fungible_faucet};
@@ -68,7 +69,9 @@ fn user_non_fungible_faucet_rejects_owner_only_mint_policy() {
     )
     .expect_err("owner-only mint policy without Ownable2Step should be rejected");
 
-    assert_matches!(err, NonFungibleFaucetError::PolicyDependency(err) => {
-        assert_eq!(err.slot_name(), Ownable2Step::slot_name());
+    assert_matches!(err, NonFungibleFaucetError::AccountCreationFailed(AccountError::BuildError(_, Some(source))) => {
+        assert_matches!(*source, AccountError::UnsatisfiedComponentDependency { slot_name, .. } => {
+            assert_eq!(&slot_name, Ownable2Step::slot_name());
+        });
     });
 }

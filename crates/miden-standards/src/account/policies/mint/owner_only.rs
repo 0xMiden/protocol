@@ -1,6 +1,12 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountComponentName,
+    AccountProcedureRoot,
+    ComponentDependency,
+};
 
+use crate::account::access::Ownable2Step;
 use crate::account::account_component_code;
 use crate::procedure_root;
 
@@ -34,13 +40,9 @@ procedure_root!(
 /// the `Ownable2Step` component) may trigger mint operations.
 ///
 /// Companion components required:
-/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
-///   reads. The slot is declared as a required slot of
-///   [`MintPolicy::owner_only`][crate::account::policies::MintPolicy::owner_only], so the faucet
-///   factories reject an account that does not install it; an account assembled by hand should run
-///   the same check via
-///   [`verify_policy_dependencies`][crate::account::policies::verify_policy_dependencies],
-///   otherwise it builds successfully and every mint reverts.
+/// - [`Ownable2Step`] — provides the owner storage slot the auth check reads. The component
+///   declares that slot as a [`ComponentDependency`], so building an account that installs this
+///   policy without it fails instead of producing a faucet whose every mint reverts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MintOwnerOnly;
 
@@ -69,9 +71,11 @@ impl MintOwnerOnly {
 
 impl From<MintOwnerOnly> for AccountComponent {
     fn from(_: MintOwnerOnly) -> Self {
-        let metadata = AccountComponentMetadata::new(MintOwnerOnly::NAME).with_description(
-            "`owner_only` mint policy (owner-controlled family) for fungible faucets",
-        );
+        let metadata = AccountComponentMetadata::new(MintOwnerOnly::NAME)
+            .with_description(
+                "`owner_only` mint policy (owner-controlled family) for fungible faucets",
+            )
+            .with_dependency(ComponentDependency::StorageSlot(Ownable2Step::slot_name().clone()));
 
         AccountComponent::new(MintOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` mint policy component should satisfy the requirements of a valid account component",

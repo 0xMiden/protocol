@@ -6,6 +6,7 @@ use miden_core::{Felt, Word};
 use crate::account::component::toml::init_storage_data::InitStorageDataError;
 use crate::account::component::{
     AccountComponentMetadata,
+    ComponentDependency,
     InitStorageData,
     InitStorageDataError as CoreInitStorageDataError,
     SchemaType,
@@ -256,6 +257,42 @@ fn metadata_from_toml_parses_named_storage_schema() {
 
     assert!(requirements.contains_key(&"demo::test_value".parse::<StorageValueName>().unwrap()));
     assert!(!requirements.contains_key(&"demo::my_map".parse::<StorageValueName>().unwrap()));
+}
+
+#[test]
+fn metadata_dependencies_round_trip_through_toml() {
+    let toml_str = r#"
+        name = "Test Component"
+        description = "Test description"
+        version = "0.1.0"
+
+        [[dependencies]]
+        storage-slot = "demo::owner_config"
+    "#;
+
+    let metadata = AccountComponentMetadata::from_toml(toml_str).unwrap();
+    let slot_name = StorageSlotName::new("demo::owner_config").unwrap();
+    assert_eq!(metadata.dependencies(), [ComponentDependency::StorageSlot(slot_name)]);
+
+    let reparsed = AccountComponentMetadata::from_toml(&metadata.to_toml().unwrap()).unwrap();
+    assert_eq!(reparsed, metadata);
+}
+
+#[test]
+fn metadata_from_toml_rejects_invalid_dependency_slot_name() {
+    let toml_str = r#"
+        name = "Test Component"
+        description = "Test description"
+        version = "0.1.0"
+
+        [[dependencies]]
+        storage-slot = "_invalid"
+    "#;
+
+    assert_matches::assert_matches!(
+        AccountComponentMetadata::from_toml(toml_str),
+        Err(ComponentMetadataError::TomlDeserializationError(_))
+    );
 }
 
 #[test]

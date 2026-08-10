@@ -19,7 +19,7 @@ use super::super::{
 };
 use crate::account::StorageSlotName;
 use crate::account::component::storage::type_registry::SCHEMA_TYPE_REGISTRY;
-use crate::account::component::{AccountComponentMetadata, SchemaType};
+use crate::account::component::{AccountComponentMetadata, ComponentDependency, SchemaType};
 use crate::errors::ComponentMetadataError;
 
 mod init_storage_data;
@@ -40,6 +40,8 @@ struct RawAccountComponentMetadata {
     #[serde(rename = "storage")]
     #[serde(default)]
     storage: RawStorageSchema,
+    #[serde(default)]
+    dependencies: Vec<ComponentDependency>,
 }
 
 impl AccountComponentMetadata {
@@ -68,10 +70,15 @@ impl AccountComponentMetadata {
         }
 
         let storage_schema = StorageSchema::new(fields)?;
-        Ok(Self::new(raw.name)
+        let mut metadata = Self::new(raw.name)
             .with_description(raw.description)
             .with_version(raw.version)
-            .with_storage_schema(storage_schema))
+            .with_storage_schema(storage_schema);
+        for dependency in raw.dependencies {
+            metadata = metadata.with_dependency(dependency);
+        }
+
+        Ok(metadata)
     }
 
     /// Serializes the account component metadata into a TOML string.

@@ -170,46 +170,16 @@ enum PolicyKind {
     Receive,
 }
 
-// POLICY DESCRIPTOR
-// ================================================================================================
-
-/// What [`TokenPolicyManager`] needs from a policy descriptor, regardless of the kind it gates:
-/// the companion components to install (via [`IntoIterator`]) and the storage slots the policy
-/// procedure reads but does not own.
-trait PolicyDescriptor: IntoIterator<Item = AccountComponent> {
-    fn required_slots(&self) -> &[StorageSlotName];
-}
-
-impl PolicyDescriptor for MintPolicy {
-    fn required_slots(&self) -> &[StorageSlotName] {
-        self.required_slots()
-    }
-}
-
-impl PolicyDescriptor for BurnPolicy {
-    fn required_slots(&self) -> &[StorageSlotName] {
-        self.required_slots()
-    }
-}
-
-impl PolicyDescriptor for TransferPolicy {
-    fn required_slots(&self) -> &[StorageSlotName] {
-        self.required_slots()
-    }
-}
-
 // POLICY CONFIG
 // ================================================================================================
 
 /// Internal entry stored inside [`TokenPolicyManager::policies`] for every registered policy
 /// procedure root. Captures the companion components the policy needs installed on the
-/// account, the storage slots it reads but does not own, and the set of policy kinds the root is
-/// registered under (the same root may serve more than one kind, e.g. a transfer policy active
-/// for both send and receive).
+/// account and the set of policy kinds the root is registered under (the same root may serve
+/// more than one kind, e.g. a transfer policy active for both send and receive).
 #[derive(Debug, Clone)]
 struct PolicyConfig {
     components: Vec<AccountComponent>,
-    required_slots: Vec<StorageSlotName>,
     kinds: BTreeSet<PolicyKind>,
 }
 
@@ -436,20 +406,6 @@ impl TokenPolicyManager {
     /// Returns all allowed receive policy procedure roots (active + reserved).
     pub fn allowed_receive_policies(&self) -> Vec<AccountProcedureRoot> {
         self.roots_of_kind(PolicyKind::Receive)
-    }
-
-    /// Returns the storage slots that the registered policies (active + reserved) read but do not
-    /// own, deduplicated and in registration order.
-    pub fn required_storage_slots(&self) -> Vec<StorageSlotName> {
-        let mut required: Vec<StorageSlotName> = Vec::new();
-        for cfg in self.policies.values() {
-            for slot_name in &cfg.required_slots {
-                if !required.contains(slot_name) {
-                    required.push(slot_name.clone());
-                }
-            }
-        }
-        required
     }
 
     fn roots_of_kind(&self, kind: PolicyKind) -> Vec<AccountProcedureRoot> {
@@ -700,7 +656,7 @@ impl TokenPolicyManager {
 /// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
 /// entry's kind set. The first call wins for the companion components, which guarantees a
 /// given root's companion components are not duplicated across kinds.
-fn insert_policy<P: PolicyDescriptor>(
+fn insert_policy<P: IntoIterator<Item = AccountComponent>>(
     policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
     root: AccountProcedureRoot,
     policy: P,
@@ -715,7 +671,6 @@ fn insert_policy<P: PolicyDescriptor>(
             let mut kinds = BTreeSet::new();
             kinds.insert(kind);
             PolicyConfig {
-                required_slots: policy.required_slots().to_vec(),
                 components: policy.into_iter().collect(),
                 kinds,
             }
@@ -749,33 +704,7 @@ mod tests {
     use miden_protocol::asset::AssetCallbacks;
 
     use super::*;
-    use crate::account::access::Ownable2Step;
     use crate::account::policies::transfer::TransferAllowAll;
-
-    /// The owner-controlled policy family reads the `Ownable2Step` owner slot without owning it,
-    /// so the manager surfaces it as a dependency.
-    #[test]
-    fn owner_only_policies_report_the_ownership_slot_once() {
-        let manager = TokenPolicyManager::builder()
-            .active_mint_policy(MintPolicy::owner_only())
-            .active_burn_policy(BurnPolicy::owner_only())
-            .build();
-
-        assert_eq!(manager.required_storage_slots(), vec![Ownable2Step::slot_name().clone()]);
-    }
-
-    /// Policies that only read slots owned by their own companion components have no dependency.
-    #[test]
-    fn allow_all_policies_report_no_required_slots() {
-        let manager = TokenPolicyManager::builder()
-            .active_mint_policy(MintPolicy::allow_all())
-            .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
-            .build();
-
-        assert!(manager.required_storage_slots().is_empty());
-    }
 
     /// Returns the manager component's storage slot for the given slot name, or `None` if the
     /// component does not register a slot with that name.

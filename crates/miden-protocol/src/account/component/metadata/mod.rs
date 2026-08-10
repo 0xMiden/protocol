@@ -1,11 +1,14 @@
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::str::FromStr;
 
 use miden_mast_package::{Package, SectionId};
 use semver::Version;
 
 use super::{SchemaRequirement, StorageSchema, StorageValueName};
+use crate::account::StorageSlotName;
 use crate::errors::AccountError;
 use crate::utils::serde::{
     ByteReader,
@@ -14,6 +17,29 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+
+// COMPONENT DEPENDENCY
+// ================================================================================================
+
+/// A requirement that an [`AccountComponent`](super::AccountComponent) places on the account it is
+/// installed on, beyond what the component itself provides.
+///
+/// A component may read state that another component owns: the standard owner-gated policies, for
+/// example, read the owner from a storage slot installed by the ownership component. Nothing in
+/// the component's own code or storage schema records that expectation, so an account can be built
+/// without the providing component and every procedure that reads the missing state then aborts at
+/// runtime.
+///
+/// Declaring the requirement here through
+/// [`AccountComponentMetadata::with_dependency`] moves that failure to account construction: the
+/// account is only built if every declared dependency is satisfied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ComponentDependency {
+    /// A storage slot the component accesses but does not install itself. Any component installed
+    /// on the same account may provide it.
+    StorageSlot(StorageSlotName),
+}
 
 // ACCOUNT COMPONENT METADATA
 // ================================================================================================
@@ -99,6 +125,11 @@ pub struct AccountComponentMetadata {
     /// Storage schema defining the component's storage layout, defaults, and init-supplied values.
     #[cfg_attr(feature = "std", serde(rename = "storage"))]
     storage_schema: StorageSchema,
+
+    /// Requirements the component places on the account it is installed on, checked when the
+    /// account is built from its components.
+    #[cfg_attr(feature = "std", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    dependencies: Vec<ComponentDependency>,
 }
 
 impl AccountComponentMetadata {
@@ -108,6 +139,7 @@ impl AccountComponentMetadata {
     /// - `description`: empty string
     /// - `version`: 1.0.0
     /// - `storage_schema`: default (empty)
+    /// - `dependencies`: empty
     ///
     /// Use the `with_*` mutator methods to customize these fields.
     pub fn new(name: impl Into<String>) -> Self {
@@ -116,6 +148,7 @@ impl AccountComponentMetadata {
             description: String::new(),
             version: Version::new(1, 0, 0),
             storage_schema: StorageSchema::default(),
+            dependencies: Vec::new(),
         }
     }
 
@@ -134,6 +167,15 @@ impl AccountComponentMetadata {
     /// Sets the storage schema of the component.
     pub fn with_storage_schema(mut self, schema: StorageSchema) -> Self {
         self.storage_schema = schema;
+        self
+    }
+
+    /// Adds a [`ComponentDependency`] the account must satisfy for this component to work.
+    ///
+    /// Account construction rejects an account that installs this component without satisfying
+    /// the dependency.
+    pub fn with_dependency(mut self, dependency: ComponentDependency) -> Self {
+        self.dependencies.push(dependency);
         self
     }
 
@@ -166,6 +208,11 @@ impl AccountComponentMetadata {
     pub fn storage_schema(&self) -> &StorageSchema {
         &self.storage_schema
     }
+
+    /// Returns the requirements the component places on the account it is installed on.
+    pub fn dependencies(&self) -> &[ComponentDependency] {
+        &self.dependencies
+    }
 }
 
 impl TryFrom<&Package> for AccountComponentMetadata {
@@ -197,12 +244,40 @@ impl TryFrom<&Package> for AccountComponentMetadata {
 // SERIALIZATION
 // ================================================================================================
 
+/// Tag written before a [`ComponentDependency`] to identify its variant.
+const STORAGE_SLOT_DEPENDENCY_TAG: u8 = 0;
+
+impl Serializable for ComponentDependency {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        match self {
+            ComponentDependency::StorageSlot(slot_name) => {
+                STORAGE_SLOT_DEPENDENCY_TAG.write_into(target);
+                slot_name.write_into(target);
+            },
+        }
+    }
+}
+
+impl Deserializable for ComponentDependency {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        match u8::read_from(source)? {
+            STORAGE_SLOT_DEPENDENCY_TAG => {
+                Ok(ComponentDependency::StorageSlot(StorageSlotName::read_from(source)?))
+            },
+            tag => Err(DeserializationError::InvalidValue(format!(
+                "unknown component dependency tag {tag}"
+            ))),
+        }
+    }
+}
+
 impl Serializable for AccountComponentMetadata {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.name.write_into(target);
         self.description.write_into(target);
         self.version.to_string().write_into(target);
         self.storage_schema.write_into(target);
+        self.dependencies.write_into(target);
     }
 }
 
@@ -218,12 +293,14 @@ impl Deserializable for AccountComponentMetadata {
         let version = semver::Version::from_str(&String::read_from(source)?)
             .map_err(|err: semver::Error| DeserializationError::InvalidValue(err.to_string()))?;
         let storage_schema = StorageSchema::read_from(source)?;
+        let dependencies = Vec::<ComponentDependency>::read_from(source)?;
 
         Ok(Self {
             name,
             description,
             version,
             storage_schema,
+            dependencies,
         })
     }
 }

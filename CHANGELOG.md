@@ -10,7 +10,7 @@
 
 ### Fixes
 
-- The faucet factories now reject a `TokenPolicyManager` whose policies read a storage slot the account does not install ([#3527](https://github.com/0xMiden/protocol/pull/3527)).
+- Account components can declare a `ComponentDependency` in their metadata, and `AccountBuilder` now rejects an account that leaves one unsatisfied; the owner-gated mint and burn policies and `Authority::OwnerControlled` declare the `Ownable2Step` owner slot, so a faucet that would abort on every mint no longer builds ([#3527](https://github.com/0xMiden/protocol/pull/3527)).
 
 ## v0.16.0 (2026-08-06)
 

@@ -3,11 +3,9 @@
 
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot, StorageSlotName};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::asset::AssetAmount;
 use thiserror::Error;
-
-use crate::account::access::Ownable2Step;
 
 mod allow_all;
 mod min_burn_amount;
@@ -37,8 +35,7 @@ pub enum BurnPolicyError {
 /// Descriptor for the burn policy registered with a [`super::TokenPolicyManager`].
 ///
 /// Binds the procedure root the manager dispatches to (via `dyncall`) with any companion
-/// [`AccountComponent`]s that must be installed for the procedure to work, plus any storage
-/// slots the procedure reads but does not own (see [`Self::required_slots`]).
+/// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
 /// Construct via [`Self::allow_all`], [`Self::owner_only`], [`Self::min_burn_amount`], or
 /// [`Self::custom`]. Pass to the [`super::TokenPolicyManager`] builder via `active_burn_policy`
@@ -47,7 +44,6 @@ pub enum BurnPolicyError {
 pub struct BurnPolicy {
     root: AccountProcedureRoot,
     components: Vec<AccountComponent>,
-    required_slots: Vec<StorageSlotName>,
 }
 
 impl BurnPolicy {
@@ -56,7 +52,6 @@ impl BurnPolicy {
         Self {
             root: BurnAllowAll::root(),
             components: vec![BurnAllowAll.into()],
-            required_slots: Vec::new(),
         }
     }
 
@@ -65,7 +60,6 @@ impl BurnPolicy {
         Self {
             root: BurnOwnerOnly::root(),
             components: vec![BurnOwnerOnly.into()],
-            required_slots: vec![Ownable2Step::slot_name().clone()],
         }
     }
 
@@ -77,7 +71,6 @@ impl BurnPolicy {
         Self {
             root: MinBurnAmount::root(),
             components: vec![MinBurnAmount::new(min_burn_amount).into()],
-            required_slots: Vec::new(),
         }
     }
 
@@ -97,28 +90,12 @@ impl BurnPolicy {
         if !components.iter().any(|component| component.has_procedure(root)) {
             return Err(BurnPolicyError::RootNotInComponents);
         }
-        Ok(Self {
-            root,
-            components,
-            required_slots: Vec::new(),
-        })
-    }
-
-    /// Declares a storage slot the policy procedure reads but does not own, so it must be
-    /// provided by another component installed on the same account.
-    pub fn with_required_slot(mut self, slot_name: StorageSlotName) -> Self {
-        self.required_slots.push(slot_name);
-        self
+        Ok(Self { root, components })
     }
 
     /// Returns the procedure root of the policy this descriptor resolves to.
     pub fn root(&self) -> AccountProcedureRoot {
         self.root
-    }
-
-    /// Returns the storage slots the policy procedure reads but does not own.
-    pub fn required_slots(&self) -> &[StorageSlotName] {
-        &self.required_slots
     }
 }
 

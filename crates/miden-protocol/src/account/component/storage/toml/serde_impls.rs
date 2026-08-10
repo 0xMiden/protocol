@@ -6,6 +6,48 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::super::type_registry::SCHEMA_TYPE_REGISTRY;
 use super::super::{FeltSchema, SchemaType, WordValue};
+use crate::account::StorageSlotName;
+use crate::account::component::ComponentDependency;
+
+// COMPONENT DEPENDENCY SERIALIZATION
+// ================================================================================================
+
+/// Serialized as a single-entry table naming the dependency kind, e.g.
+/// `storage-slot = "miden::standards::access::ownable2step::owner_config"`.
+impl Serialize for ComponentDependency {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            ComponentDependency::StorageSlot(slot_name) => serializer.serialize_newtype_variant(
+                "ComponentDependency",
+                0,
+                "storage-slot",
+                slot_name.as_str(),
+            ),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ComponentDependency {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        enum RawComponentDependency {
+            StorageSlot(String),
+        }
+
+        match RawComponentDependency::deserialize(deserializer)? {
+            RawComponentDependency::StorageSlot(slot_name) => StorageSlotName::new(slot_name)
+                .map(ComponentDependency::StorageSlot)
+                .map_err(D::Error::custom),
+        }
+    }
+}
 
 // FELT SCHEMA SERIALIZATION
 // ================================================================================================

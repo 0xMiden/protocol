@@ -32,9 +32,6 @@
 //! entries), then passes the built manager directly to
 //! [`miden_protocol::account::AccountBuilder::with_components`].
 
-use miden_protocol::account::{AccountStorage, StorageSlotName};
-use thiserror::Error;
-
 mod burn;
 mod manager;
 mod mint;
@@ -54,42 +51,3 @@ pub use transfer::{
     TransferPolicy,
     TransferPolicyError,
 };
-
-// POLICY DEPENDENCY
-// ================================================================================================
-
-/// Error returned by [`verify_policy_dependencies`] when the account does not provide a storage
-/// slot that one of its registered policies reads.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error(
-    "policy requires storage slot `{slot_name}`, which no component installed on the account provides"
-)]
-pub struct MissingPolicyDependency {
-    slot_name: StorageSlotName,
-}
-
-impl MissingPolicyDependency {
-    /// Returns the name of the missing storage slot.
-    pub fn slot_name(&self) -> &StorageSlotName {
-        &self.slot_name
-    }
-}
-
-/// Verifies that `storage` provides every slot in `required_slots`, which is typically obtained
-/// from [`TokenPolicyManager::required_storage_slots`].
-///
-/// # Errors
-///
-/// Returns [`MissingPolicyDependency`] for the first required slot that `storage` does not have.
-pub fn verify_policy_dependencies(
-    required_slots: &[StorageSlotName],
-    storage: &AccountStorage,
-) -> Result<(), MissingPolicyDependency> {
-    for slot_name in required_slots {
-        if storage.get(slot_name).is_none() {
-            return Err(MissingPolicyDependency { slot_name: slot_name.clone() });
-        }
-    }
-
-    Ok(())
-}

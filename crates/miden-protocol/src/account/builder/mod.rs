@@ -208,6 +208,8 @@ impl AccountBuilder {
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::mast::MastForest::merge) fails on the given
     ///   components.
+    /// - A component declares a [`ComponentDependency`](crate::account::ComponentDependency) that
+    ///   no component on the account satisfies.
     /// - If duplicate assets were added to the builder (only under the `testing` feature).
     /// - If the vault is not empty on new accounts (only under the `testing` feature).
     pub fn build(mut self) -> Result<Account, AccountError> {
@@ -306,7 +308,7 @@ mod tests {
     use miden_mast_package::Package;
 
     use super::*;
-    use crate::account::component::AccountComponentMetadata;
+    use crate::account::component::{AccountComponentMetadata, ComponentDependency};
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
     use crate::testing::assembler::assemble_test_package;
     use crate::testing::noop_auth_component::NoopAuthComponent;
@@ -384,6 +386,53 @@ mod tests {
             )
             .expect("component should be valid")
         }
+    }
+
+    /// A component that accesses a storage slot installed by [`CustomComponent2`] without
+    /// installing it itself, declared as a [`ComponentDependency`].
+    struct DependentComponent;
+    impl From<DependentComponent> for AccountComponent {
+        fn from(_: DependentComponent) -> Self {
+            let metadata = AccountComponentMetadata::new("test::dependent_component")
+                .with_dependency(ComponentDependency::StorageSlot(
+                    CUSTOM_COMPONENT2_SLOT_NAME0.clone(),
+                ));
+
+            AccountComponent::new(CUSTOM_PACKAGE1.clone(), vec![], metadata)
+                .expect("component should be valid")
+        }
+    }
+
+    /// A component whose declared dependency is not installed would abort at runtime on every
+    /// procedure that accesses the missing slot, so the account must not build at all.
+    #[test]
+    fn account_builder_rejects_unsatisfied_dependency() {
+        let err = Account::builder([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(DependentComponent)
+            .build()
+            .expect_err("component dependency is not satisfied");
+
+        assert_matches!(err, AccountError::BuildError(_, Some(source)) => {
+            assert_matches!(*source, AccountError::UnsatisfiedComponentDependency { component_name, slot_name } => {
+                assert_eq!(component_name, "test::dependent_component");
+                assert_eq!(slot_name, *CUSTOM_COMPONENT2_SLOT_NAME0);
+            });
+        });
+    }
+
+    /// Any component may satisfy a dependency: the account builds once some other component
+    /// installs the required slot.
+    #[test]
+    fn account_builder_accepts_satisfied_dependency() {
+        let account = Account::builder([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(DependentComponent)
+            .with_component(CustomComponent2 { slot0: 1, slot1: 2 })
+            .build()
+            .expect("component dependency is satisfied by CustomComponent2");
+
+        assert!(account.storage().get(&CUSTOM_COMPONENT2_SLOT_NAME0).is_some());
     }
 
     #[test]
