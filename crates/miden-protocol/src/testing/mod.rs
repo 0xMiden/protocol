@@ -19,4 +19,5 @@ pub mod storage_map_key;
 pub mod tx;
 pub mod update_details;
 pub mod validator_keys;
+pub mod vault_delta;
 pub mod vault_patch;
