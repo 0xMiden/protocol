@@ -16,6 +16,7 @@ use miden_standards::account::access::{
     Pausable,
     PausableManager,
     RoleBasedAccessControl,
+    RoleConfig,
 };
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
@@ -216,7 +217,13 @@ fn create_bridge_account_builder(
     NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
         .expect("bridge note allowlist is non-empty")
         .with_component(AggLayerBridge::new(network_id))
-        .with_component(RoleBasedAccessControl::new(BTreeSet::from([admin]), roles.role_members()))
+        .with_component(
+            RoleBasedAccessControl::builder()
+                .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
+                .roles(roles)
+                .build()
+                .expect("the bridge seeds distinct non-empty roles administered by ADMIN"),
+        )
         .with_component(Authority::RbacControlled {
             procedure_roles: AggLayerBridge::procedure_roles(),
         })

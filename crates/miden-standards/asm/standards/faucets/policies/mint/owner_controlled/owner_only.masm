@@ -14,16 +14,15 @@ use miden::standards::access::ownable2step
 
 #! Owner-only mint predicate.
 #!
-#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
-#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
+#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 #!
 #! Panics if:
 #! - note sender is not owner.
 #!
-#! Invocation: dynexec
-# TODO(call invocation)
+#! Invocation: call
 @account_procedure
 pub proc check_policy
     exec.ownable2step::assert_sender_is_owner
-    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 end

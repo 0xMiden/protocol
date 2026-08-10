@@ -5,8 +5,8 @@ use miden::protocol::note
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
-use miden::standards::note_tag
-use {DEFAULT_TAG} from miden::standards::note_tag
+use miden::standards::note::note_tag
+use {DEFAULT_TAG} from miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use miden::standards::attachments::network_account_target
 use {ALWAYS} from miden::standards::note::execution_hint
