@@ -11,9 +11,11 @@ pub mod auth
 pub mod constants
 pub mod faucet
 pub mod input_note
+mod input_note_internal
 pub mod kernel_proc_offsets
 pub mod native_account
 pub mod note
+mod note_internal
 pub mod output_note
 pub mod tx
 pub mod types

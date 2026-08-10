@@ -6,6 +6,11 @@
 
 ### Changes
 
+- [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
+- [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
+- Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
+- [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
+
 ### Fixes
 
 ## v0.16.0 (2026-08-06)
@@ -31,6 +36,8 @@
 
 ### Changes
 
+- [BREAKING] Moved the `note_tag` MASM module from `miden::standards::note_tag` to `miden::standards::note::note_tag` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
+- [BREAKING] Moved the `note_creator` account component MASM namespace from `miden::standards::components::wallets::note_creator` to `miden::standards::components::note::note_creator`, and moved the Rust `NoteCreator` type from `account::wallets` to `account::note_creator` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
 - [BREAKING] Bind the standard config notes to their target account: `OwnerConfigNote`, `PauseConfigNote`, `RbacConfigNote`, `FaucetPolicyConfigNote`, `AllowlistConfigNote`, `BlocklistConfigNote` and `FaucetMetadataConfigNote` now carry a `NetworkAccountTarget` attachment for that account ([#3433](https://github.com/0xMiden/protocol/issues/3433), [#3455](https://github.com/0xMiden/protocol/pull/3455)).
 - [BREAKING] BURN notes now store and validate the asset passed to `receive_and_burn`, and target its faucet with a `NetworkAccountTarget` attachment ([#2343](https://github.com/0xMiden/protocol/issues/2343)).
 - [BREAKING] Moved the generic EVM-bridging helpers from `miden-agglayer` into `miden-standards`: the `agglayer::common` MASM modules now live at `miden::standards::utils`, `miden::standards::assets::conversion` and `miden::standards::interop::eth`. Corresponding Rust types moved to `miden_standards::interop::eth` ([#3423](https://github.com/0xMiden/protocol/pull/3423)).
@@ -70,6 +77,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Enforced the canonical encoding of `Authority` role map values on read: `Authority::try_from_storage` now rejects a procedure-role value word whose reserved felts (`value[1..=3]`) are non-zero, matching the value-slot check and completing the fix started in [#3209](https://github.com/0xMiden/protocol/pull/3209) ([#3415](https://github.com/0xMiden/protocol/pull/3415)).
 - [BREAKING] Bound the non-fungible MINT note to its faucet ([#3482](https://github.com/0xMiden/protocol/pull/3482)).
 - Fixed `CodeInspection`'s `get_code_commitment`, `get_num_procedures` and `get_procedure_root` and the `min_burn_amount` burn policy's `get_min_burn_amount` returning above the 16-element stack depth ([#3470](https://github.com/0xMiden/protocol/pull/3470)).
+- Fixed `RoleBasedAccessControl` role administration becoming permanently unmanageable when a role's admin was delegated to a memberless role ([#3476](https://github.com/0xMiden/protocol/pull/3476)).
 - [BREAKING] The transaction kernel now asserts that asset callbacks return the asset value they received, aborting with `ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT` otherwise; previously, offsetting callback transformations could redistribute value between outputs while passing the epilogue's aggregate conservation check. The kernel commitment changes ([#3442](https://github.com/0xMiden/protocol/issues/3442)).
 - Restricted indexed input-note asset removal to the native account's context while preserving active-note self-removal. As a consequence, note scripts and transaction scripts can no longer remove input-note assets by index directly, and neither can foreign accounts invoked through FPI; indexed removal must go through a procedure of the native account ([#3445](https://github.com/0xMiden/protocol/issues/3445)).
 - Fixed the PSWAP note-fill asset to its own payback note ([#3469](https://github.com/0xMiden/protocol/pull/3469)).

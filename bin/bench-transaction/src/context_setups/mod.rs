@@ -272,7 +272,6 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
         "
         use miden::core::sys
         use miden::standards::wallets::basic as basic_wallet
-        use miden::standards::note::note_creator
 
         @transaction_script
         pub proc main
@@ -286,7 +285,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
             push.{tag}
             # => [tag, note_type, RECIPIENT, pad(16)]
 
-            call.note_creator::create_note
+            call.basic_wallet::create_note
             # => [note_idx, pad(21)]
 
             # move the asset to the note

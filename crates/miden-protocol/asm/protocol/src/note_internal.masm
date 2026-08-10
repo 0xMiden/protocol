@@ -1,0 +1,174 @@
+use miden::core::mem
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
+use {MemoryAddress} from miden::protocol::types
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
+
+# PROCEDURES
+# =================================================================================================
+#
+# Internal memory-write helpers shared by the `miden::protocol::input_note`,
+# `miden::protocol::active_note`, and `miden::protocol::output_note` APIs.
+
+#! Writes the assets data stored in the advice map to the memory specified by the provided
+#! destination pointer.
+#!
+#! Inputs:
+#!   Operand stack: [ASSETS_COMMITMENT, num_assets, dest_ptr]
+#!   Advice map: {
+#!     ASSETS_COMMITMENT: [[ASSETS_DATA]]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+pub proc write_assets_to_memory(assets_commitment: word, num_assets: u8, dest_ptr: MemoryAddress)
+    # load the asset data from the advice map to the advice stack
+    adv.push_mapval
+    # OS => [ASSETS_COMMITMENT, num_assets, dest_ptr]
+    # AS => [[ASSETS_DATA]]
+
+    movup.5 movup.5
+    # OS => [num_assets, dest_ptr, ASSETS_COMMITMENT]
+    # AS => [[ASSETS_DATA]]
+
+    # each asset takes up two words, so num_words = 2 * num_assets
+    # this also guarantees we pass an even number to pipe_double_words_preimage_to_memory
+    mul.2
+    # OS => [num_words, dest_ptr, ASSETS_COMMITMENT]
+    # AS => [[ASSETS_DATA]]
+
+    # write the data from the advice stack into memory
+    exec.mem::pipe_double_words_preimage_to_memory drop
+    # OS => []
+    # AS => []
+end
+
+#! Writes the attachment commitments stored in the advice map to memory specified by the provided
+#! destination pointer.
+#!
+#! Inputs:
+#!   Operand stack: [ATTACHMENTS_COMMITMENT, dest_ptr]
+#!   Advice map: {
+#!     ATTACHMENTS_COMMITMENT: [[ATTACHMENT_COMMITMENT]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_attachments]
+pub proc write_attachment_commitments_to_memory(
+    attachments_commitment: word,
+    dest_ptr: MemoryAddress
+) -> u8
+    # push the individual ATTACHMENT commitments from the advice map onto the advice stack
+    adv.push_mapvaln
+    # OS => [ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [num_elements, [ATTACHMENT_COMMITMENT]]
+
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
+    adv_push u32assert.err="invalid attachment num_elements advice input"
+    u32divmod.WORD_NUM_ELEMENTS
+    # OS => [remainder, num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
+    eq.0 assert.err="attachment commitments num_elements is not a multiple of WORD_NUM_ELEMENTS"
+    # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # store the number of words as the number of attachments for return
+    swap.5 dup.5
+    # OS => [num_words, dest_ptr, ATTACHMENTS_COMMITMENT, num_attachments]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # pipe attachment commitments to memory and validate they match the ATTACHMENTS_COMMITMENT
+    exec.mem::pipe_preimage_to_memory drop
+    # => [num_attachments]
+end
+
+#! Writes a single attachment's data stored in the advice map to the memory specified by the
+#! provided destination pointer.
+#!
+#! Inputs:
+#!   Operand stack: [ATTACHMENT_COMMITMENT, dest_ptr]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
+#! Outputs:
+#!   Operand stack: [num_words]
+#!
+#! Where:
+#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
+#! - dest_ptr is the memory address to which to write the attachment data.
+#! - num_words is the number of words in the attachment.
+pub proc write_attachment_to_memory(attachment_commitment: word, dest_ptr: MemoryAddress) -> u16
+    # push the number of attachment elements from the advice map onto the advice stack
+    adv.push_mapvaln
+    # OS => [ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
+
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
+    adv_push u32assert.err="invalid attachment num_elements advice input"
+    u32divmod.WORD_NUM_ELEMENTS
+    # OS => [remainder, num_words, ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
+    eq.0 assert.err="attachment num_elements is not a multiple of WORD_NUM_ELEMENTS"
+    # OS => [num_words, ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    swap.5 dup.5
+    # OS => [num_words, dest_ptr, ATTACHMENT_COMMITMENT, num_words]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # pipe the attachment data into memory, validating against ATTACHMENT_COMMITMENT
+    exec.mem::pipe_preimage_to_memory drop
+    # => [num_words]
+end
+
+#! Writes the attachment with the provided index from the provided attachment commitments to the
+#! memory specified by the destination pointer.
+#!
+#! Inputs:  [num_attachments, attachment_commitments_ptr, attachment_idx, dest_ptr]
+#! Outputs: [num_words]
+#!
+#! Where:
+#! - attachment_idx is the index of the attachment to retrieve.
+#! - attachment_commitments_ptr is a pointer to the attachment commitments in memory.
+#! - dest_ptr is the memory address to which to write the attachment data.
+#! - num_attachments is the number of attachments.
+#! - num_words is the number of words in the attachment.
+#!
+#! Panics if:
+#! - the attachment index is greater or equal to the number of attachments.
+#! - the sequential hash over the attachment data in the advice inputs does not match the
+#!   attachment commitment.
+#!
+#! Invocation: exec
+pub proc write_indexed_attachment_to_memory(
+    num_attachments: u8,
+    attachment_commitments_ptr: MemoryAddress,
+    attachment_idx: u8,
+    dest_ptr: MemoryAddress
+) -> u16
+    # assert attachment_idx < num_attachments
+    dup.2 swap u32assert2.err=ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
+    # => [attachment_commitments_ptr, attachment_idx, dest_ptr]
+
+    # compute the memory address of the attachment commitment:
+    # commitment_ptr = attachment_commitments_ptr + attachment_idx * WORD_NUM_ELEMENTS
+    swap mul.WORD_NUM_ELEMENTS add
+    # => [commitment_ptr, dest_ptr]
+
+    # load the ATTACHMENT_COMMITMENT from memory
+    padw movup.4 mem_loadw_le
+    # => [ATTACHMENT_COMMITMENT, dest_ptr]
+
+    exec.write_attachment_to_memory
+    # => [num_words]
+end
