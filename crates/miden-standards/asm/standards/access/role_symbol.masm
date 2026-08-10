@@ -1,0 +1,147 @@
+# miden::standards::access::role_symbol
+#
+# Encoding of the role symbols used by role-based access control.
+#
+# A role symbol names a role in 1 to `MAX_LENGTH` characters of a 27-character alphabet (`A`-`Z`
+# and `_`), packed into a single felt as `length + ALPHABET_LEN * characters`.
+#
+# On-chain a role is only ever that felt: `rbac` matches it against its membership map without
+# decoding it, so nothing about the encoding enforces itself. This module holds a felt to the
+# encoding, which keeps every role an account authorizes decodable by readers of that account.
+#
+# Keep the constants below in sync with `RoleSymbol` on the Rust side.
+
+# CONSTANTS
+# =================================================================================================
+
+# Size of the alphabet a role symbol is packed in (`A`-`Z` and `_`), i.e. the base of the encoding.
+const ALPHABET_LEN = 27
+
+# Maximum number of characters a role symbol encodes.
+const MAX_LENGTH = 12
+
+# 2^32 reduced modulo `ALPHABET_LEN`. Folding a felt's high limb in by this factor yields the
+# remainder from u32 divisions alone, avoiding a 64-bit one.
+const POW_2_32_MOD_ALPHABET_LEN = 22
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
+const ERR_INVALID_ROLE_SYMBOL = "role symbol is not a valid encoding"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Asserts that a felt is a valid role symbol encoding.
+#!
+#! The encoded value carries its own length: the value modulo `ALPHABET_LEN`. Every character digit
+#! above it is below `ALPHABET_LEN` by construction, so beyond the length being in range exactly one
+#! condition remains: the value must stay below `ALPHABET_LEN^(length + 1)`, or it carries data past
+#! the characters its length announces.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: []
+#!
+#! Panics if:
+#! - role_symbol is zero.
+#! - role_symbol is not a valid role symbol encoding.
+#!
+#! Invocation: exec
+pub proc validate_encoding
+    dup eq.0 assertz.err=ERR_ROLE_SYMBOL_ZERO
+    # => [role_symbol]
+
+    dup exec.encoded_length
+    # => [length, role_symbol]
+
+    # The announced length must select between one and `MAX_LENGTH` characters.
+    dup neq.0 dup.1 u32lte.MAX_LENGTH and
+    assert.err=ERR_INVALID_ROLE_SYMBOL
+    # => [length, role_symbol]
+
+    add.1 exec.alphabet_pow
+    # => [upper_bound, role_symbol]
+
+    # The value must fit in the characters its length announces.
+    lt assert.err=ERR_INVALID_ROLE_SYMBOL
+    # => []
+end
+
+#! Asserts that a delegated admin role symbol is a valid encoding, accepting zero.
+#!
+#! A zero symbol carries no delegation, which the `rbac` component reads as management by its
+#! built-in `ADMIN` role.
+#!
+#! Inputs:  [admin_role_symbol]
+#! Outputs: []
+#!
+#! Panics if:
+#! - admin_role_symbol is non-zero and is not a valid role symbol encoding.
+#!
+#! Invocation: exec
+pub proc validate_admin_role_symbol
+    dup eq.0
+    # => [is_unset, admin_role_symbol]
+
+    if.true
+        drop
+        # => []
+    else
+        exec.validate_encoding
+        # => []
+    end
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Returns the number of characters a role symbol encodes, i.e. its value modulo `ALPHABET_LEN`.
+#!
+#! The felt is folded limb by limb, so the remainder comes from u32 divisions alone.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [length]
+#!
+#! Invocation: exec
+proc encoded_length
+    u32split
+    # => [low_limb, high_limb]
+
+    u32divmod.ALPHABET_LEN swap drop
+    # => [low_remainder, high_limb]
+
+    swap u32divmod.ALPHABET_LEN swap drop
+    # => [high_remainder, low_remainder]
+
+    mul.POW_2_32_MOD_ALPHABET_LEN add
+    # => [folded_remainder]
+
+    u32divmod.ALPHABET_LEN swap drop
+    # => [length]
+end
+
+#! Returns `ALPHABET_LEN` raised to the power of `exponent`.
+#!
+#! Inputs:  [exponent]
+#! Outputs: [power]
+#!
+#! Invocation: exec
+proc alphabet_pow
+    push.1 swap
+    # => [exponent, power]
+
+    dup neq.0
+    # => [is_running, exponent, power]
+
+    while.true
+        sub.1 swap mul.ALPHABET_LEN swap
+        # => [exponent, power]
+
+        dup neq.0
+        # => [is_running, exponent, power]
+    end
+
+    drop
+    # => [power]
+end

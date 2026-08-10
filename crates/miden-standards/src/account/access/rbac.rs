@@ -193,6 +193,11 @@ impl RoleConfig {
 /// `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is reserved and cannot be
 /// used as a role symbol; attempting to do so panics with `ERR_ROLE_SYMBOL_ZERO`.
 ///
+/// On-chain a role is only ever the encoded field element, so the component's entrypoints hold it
+/// to this same encoding and panic with `ERR_INVALID_ROLE_SYMBOL` otherwise. A role the
+/// account authorizes therefore always decodes back into a [`RoleSymbol`], which keeps on-chain
+/// authorization and off-chain readers (such as `Authority::try_from_storage`) in agreement.
+///
 /// ## Usage
 ///
 /// Guarding a procedure in MASM so that only members of `MINTER` can call it:

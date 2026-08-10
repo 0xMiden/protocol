@@ -71,41 +71,6 @@ const OWNER_CONTROLLED: u8 = 1;
 /// Authority value written to the storage slot for [`Authority::RbacControlled`].
 const RBAC_CONTROLLED: u8 = 2;
 
-// PROCEDURE ROLE
-// ================================================================================================
-
-/// The role required by an authority-gated procedure, as read from the procedure-roles map.
-///
-/// A role is identified on-chain by a field element: `rbac::assert_sender_has_role` matches that
-/// felt against the RBAC membership map without ever decoding it. A [`RoleSymbol`] is the printable
-/// name the felt decodes to, which exists only for canonically encoded values, so
-/// [`to_symbol`][Self::to_symbol] returns `None` for a role that carries no name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProcedureRole(Felt);
-
-impl ProcedureRole {
-    /// Returns the role identified by `felt`.
-    pub fn new(felt: Felt) -> Self {
-        Self(felt)
-    }
-
-    /// Returns the felt identifying the role, the form on-chain authorization matches on.
-    pub fn as_felt(&self) -> Felt {
-        self.0
-    }
-
-    /// Returns the role's symbol, or `None` if its felt is not a valid [`RoleSymbol`] encoding.
-    pub fn to_symbol(&self) -> Option<RoleSymbol> {
-        RoleSymbol::try_from(self.0).ok()
-    }
-}
-
-impl From<&RoleSymbol> for ProcedureRole {
-    fn from(role: &RoleSymbol) -> Self {
-        Self(role.as_element())
-    }
-}
-
 // AUTHORITY
 // ================================================================================================
 
@@ -288,22 +253,6 @@ impl Authority {
         Ok(word[1] != Felt::ZERO)
     }
 
-    /// Reads the per-procedure role map without requiring every role to carry a decodable symbol.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the procedure-roles storage slot is missing or is not a map.
-    /// - a role's value word carries data in its reserved felts.
-    pub fn read_procedure_roles(
-        storage: &AccountStorage,
-    ) -> Result<BTreeMap<AccountProcedureRoot, ProcedureRole>, AuthorityError> {
-        Ok(Self::read_role_felts_from_storage(storage)?
-            .into_iter()
-            .map(|(proc_root, role_felt)| (proc_root, ProcedureRole::new(role_felt)))
-            .collect())
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this configuration.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
         let mut slots = vec![(
@@ -374,25 +323,10 @@ impl Authority {
         Ok(word)
     }
 
-    /// Reconstructs the per-procedure role map from the procedure-roles storage slot, requiring
-    /// every role felt to decode into a [`RoleSymbol`].
+    /// Reconstructs the per-procedure role map from the procedure-roles storage slot.
     fn read_roles_from_storage(
         storage: &AccountStorage,
     ) -> Result<BTreeMap<AccountProcedureRoot, RoleSymbol>, AuthorityError> {
-        Self::read_role_felts_from_storage(storage)?
-            .into_iter()
-            .map(|(proc_root, role_felt)| {
-                let role =
-                    RoleSymbol::try_from(role_felt).map_err(AuthorityError::InvalidRoleSymbol)?;
-                Ok((proc_root, role))
-            })
-            .collect()
-    }
-
-    /// Reads the procedure-roles storage slot into the raw role felt of every entry.
-    fn read_role_felts_from_storage(
-        storage: &AccountStorage,
-    ) -> Result<BTreeMap<AccountProcedureRoot, Felt>, AuthorityError> {
         let slot = storage
             .slots()
             .iter()
@@ -403,16 +337,18 @@ impl Authority {
             return Err(AuthorityError::MissingProcedureRolesSlot);
         };
 
-        let mut role_felts = BTreeMap::new();
+        let mut roles = BTreeMap::new();
         for (key, value) in map.entries() {
             // Enforce the canonical encoding on read: the reserved felts must be zero.
             if value[1..4].iter().any(|v| *v != Felt::ZERO) {
                 return Err(AuthorityError::NonCanonicalConfig);
             }
-            role_felts.insert(AccountProcedureRoot::from_raw(key.as_word()), value[0]);
+            let proc_root = AccountProcedureRoot::from_raw(key.as_word());
+            let role = RoleSymbol::try_from(value[0]).map_err(AuthorityError::InvalidRoleSymbol)?;
+            roles.insert(proc_root, role);
         }
 
-        Ok(role_felts)
+        Ok(roles)
     }
 }
 
@@ -571,54 +507,5 @@ mod tests {
             Authority::try_from_storage(&storage),
             Err(AuthorityError::NonCanonicalConfig)
         );
-        assert_matches!(
-            Authority::read_procedure_roles(&storage),
-            Err(AuthorityError::NonCanonicalConfig)
-        );
-    }
-
-    /// On-chain a role is just a felt, so an account built outside `RbacControlled` can hold one
-    /// that decodes to no symbol.
-    #[test]
-    fn role_felt_without_a_symbol_is_read_without_one() {
-        // 27 is the smallest non-zero felt whose base-27 length digit is 0, so it encodes no
-        // symbol.
-        let unnamed_role_felt = Felt::from(27u8);
-        let expected_root = AccountProcedureRoot::from_raw(Word::from(ROLE_KEY_WORD));
-        let storage = rbac_storage_with_role_value(Word::new([
-            unnamed_role_felt,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-        ]));
-
-        // Reconstructing the typed value still fails: `RbacControlled` holds `RoleSymbol`s.
-        assert_matches!(
-            Authority::try_from_storage(&storage),
-            Err(AuthorityError::InvalidRoleSymbol(_))
-        );
-
-        // Reading the map succeeds and preserves the felt on-chain authorization matches on.
-        let roles = Authority::read_procedure_roles(&storage).unwrap();
-        let role = roles.get(&expected_root).expect("the entry should be read");
-        assert_eq!(role.as_felt(), unnamed_role_felt);
-        assert_eq!(role.to_symbol(), None);
-    }
-
-    /// A canonical role felt is read with its symbol, which is the `RoleSymbol` that wrote it.
-    #[test]
-    fn role_felt_with_a_symbol_is_read_with_it() {
-        let role = RoleSymbol::new("ADMIN").unwrap();
-        let expected_root = AccountProcedureRoot::from_raw(Word::from(ROLE_KEY_WORD));
-        let storage = rbac_storage_with_role_value(Word::new([
-            role.as_element(),
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-        ]));
-
-        let roles = Authority::read_procedure_roles(&storage).unwrap();
-        assert_eq!(roles.get(&expected_root), Some(&ProcedureRole::from(&role)));
-        assert_eq!(roles[&expected_root].to_symbol(), Some(role));
     }
 }

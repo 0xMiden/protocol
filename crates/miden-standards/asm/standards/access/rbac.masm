@@ -41,6 +41,7 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::native_account
+use miden::standards::access::role_symbol
 
 # CONSTANTS
 # =================================================================================================
@@ -68,7 +69,6 @@ const ADMIN_ROLE = 1836707
 const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
 const ERR_SENDER_NOT_ROLE_ADMIN = "note sender does not hold the role's admin role"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
-const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
 const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 
 # PUBLIC INTERFACE
@@ -156,14 +156,18 @@ end
 #!   management by the default `ADMIN` role.
 #!
 #! Panics if:
-#! - role_symbol is zero.
+#! - role_symbol is not a valid role symbol encoding.
+#! - admin_role_symbol is non-zero and is not a valid role symbol encoding.
 #! - the note sender is not authorized to administer the role (see
 #!   `assert_sender_is_role_admin`).
 #!
 #! Invocation: call
 @account_procedure
 pub proc set_role_admin
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
+    # => [role_symbol, new_admin_role_symbol, pad(14)]
+
+    dup.1 exec.role_symbol::validate_admin_role_symbol
     # => [role_symbol, new_admin_role_symbol, pad(14)]
 
     dup exec.assert_sender_is_role_admin
@@ -200,7 +204,7 @@ end
 #! Invocation: call
 @account_procedure
 pub proc grant_role
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     dup exec.assert_sender_is_role_admin
@@ -240,7 +244,7 @@ end
 #! Invocation: call
 @account_procedure
 pub proc revoke_role
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     dup exec.assert_sender_is_role_admin
@@ -268,7 +272,7 @@ end
 #! Invocation: call
 @account_procedure
 pub proc renounce_role
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
     # => [role_symbol, pad(15)]
 
     exec.active_note::get_sender
@@ -301,7 +305,7 @@ end
 #!
 #! Invocation: exec
 pub proc assert_sender_has_role
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
     # => [role_symbol]
 
     exec.is_sender_in_role
@@ -328,19 +332,6 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Asserts that a role symbol is non-zero.
-#!
-#! Inputs:  [role_symbol]
-#! Outputs: []
-#!
-#! Panics if:
-#! - role_symbol is zero.
-#!
-#! Invocation: exec
-proc assert_role_symbol_non_zero
-    eq.0 assertz.err=ERR_ROLE_SYMBOL_ZERO
-    # => []
-end
 
 #! Returns the config for a role.
 #!
