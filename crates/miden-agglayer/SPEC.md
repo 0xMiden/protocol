@@ -272,7 +272,8 @@ Both network accounts are deployed with a `BasicConstantFeePolicy` whose schedul
 note they can consume from that note's benchmarked consumption cost under the chain's
 `FeeParameters` (`NetworkNotePricer::agglayer_bridge_fee_policy_manager` /
 `agglayer_faucet_fee_policy_manager`). A schedule entry is a bare amount denominated in the
-chain's fee asset, so it is only correct for the verification base fee it was priced under.
+chain's fee asset, so it covers fees only up to the verification base fee (plus any margin) it
+was priced under. A schedule priced with enough margin may never need an update.
 
 Because that base fee is a chain parameter which changes independently of these accounts, both
 install the `miden-standards` `ConstantFeeManager` and allowlist the
