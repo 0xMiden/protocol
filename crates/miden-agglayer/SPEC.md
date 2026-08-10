@@ -292,10 +292,16 @@ therefore stalls bridging, not just faucet administration.
 
 The two schedules are also coupled. The bridge funds the `MINT` and `BURN` sponsorships from its
 own vault, sized by the faucet's schedule, and is reimbursed by the sponsorships attached to its
-own `CLAIM` and `B2AGG` notes, whose prices include the notes they create. So when the faucet is
-repriced upward (for example to add margin), the bridge's `CLAIM` and `B2AGG` entries must rise
-with it, or each claim becomes a small net drain on the bridge's vault. Nothing enforces this
-coupling; it is an operator rule.
+own `CLAIM` and `B2AGG` notes, whose prices include the notes they create. The bridge also
+asserts that the fees it collects in a transaction cover the fees it sponsors (the default
+`SponsorshipPolicy::AtMostCollectedFees`). So when the faucet is repriced upward (for example to
+add margin), the bridge's `CLAIM` and `B2AGG` entries must rise with it. A small mismatch drains
+the bridge's vault on every claim and bridge-out; once the faucet's entry exceeds the bridge's
+own entry, the assertion fails and every claim and bridge-out aborts. Reprice the bridge first
+and the faucet second, since the bridge reads the faucet's schedule live. For the same reason
+the bridge's `CLAIM` and `B2AGG` entries must never be zeroed: the bridge would then collect
+nothing while still sponsoring the notes it creates. Nothing enforces this coupling; it is an
+operator rule.
 
 A note root must have a schedule entry before notes with that root can be consumed:
 `BasicConstantFeePolicy` aborts on any root without an entry (an explicit zero counts as an
