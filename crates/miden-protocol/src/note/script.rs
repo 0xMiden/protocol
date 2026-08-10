@@ -87,10 +87,12 @@ impl NoteScript {
 
     /// Returns a new [NoteScript] instantiated from the provided components.
     ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        Self(MastForestScript::from_parts(mast, entrypoint))
+    /// # Errors
+    /// Returns an error if the specified entrypoint is not in the provided MAST forest.
+    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Result<Self, NoteError> {
+        MastForestScript::from_parts(mast, entrypoint)
+            .map_err(NoteError::MastForestScript)
+            .map(Self)
     }
 
     /// Returns a new [NoteScript] instantiated from the provided package.
@@ -255,7 +257,8 @@ impl TryFrom<&[Felt]> for NoteScript {
         // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
         let mast = MastForest::read_from_bytes(&data)?;
         let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)?;
-        Ok(NoteScript::from_parts(Arc::new(mast), entrypoint))
+        NoteScript::from_parts(Arc::new(mast), entrypoint)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

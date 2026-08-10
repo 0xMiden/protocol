@@ -113,7 +113,8 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     let root_id = roots.pop().expect("at least one root should exist");
     mast.make_root(root_id);
 
-    let script = NoteScript::from_parts(Arc::new(mast), root_id);
+    let script = NoteScript::from_parts(Arc::new(mast), root_id)
+        .expect("root_id should be in the MAST forest");
 
     let serial_num = Word::empty();
     let storage = NoteStorage::new(alloc::vec::Vec::new())?;
