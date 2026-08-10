@@ -23,7 +23,8 @@ If you want to join the technical discussion or learn more about the project, pl
 
 ## Status and features
 
-Miden is currently on release v0.13. This is an early version of the protocol and its components. We expect to keep making changes (including breaking changes) to all components.
+Miden is still in an early stage. See the [changelog](CHANGELOG.md) for release notes.
+We expect to keep making changes (including breaking changes) to all components.
 
 ### Feature highlights
 
@@ -44,12 +45,18 @@ Miden is currently on release v0.13. This is an early version of the protocol an
 
 ## Project structure
 
-| Crate                                     | Description                                                                             |
-| ----------------------------------------- | --------------------------------------------------------------------------------------- |
-| [miden-protocol](crates/miden-protocol)   | Contains core components defining the Miden protocol, including the transaction kernel. |
-| [miden-standards](crates/miden-standards) | Contains the code of Miden's standardized smart contracts.                              |
-| [miden-tx](crates/miden-tx)               | Contains tools for creating, executing, and proving Miden rollup transactions.          |
-| [bench-tx](bin/bench-tx)                  | Contains transaction execution and proving benchmarks.                                  |
+| Crate | Description |
+| --- | --- |
+| [miden-agglayer](crates/miden-agglayer) | AggLayer components for the Miden protocol. |
+| [miden-block-prover](crates/miden-block-prover) | Block execution and proving tools. |
+| [miden-protocol](crates/miden-protocol) | Core protocol components, including the protocol kernels. |
+| [miden-protocol-build-utils](crates/miden-protocol-build-utils) | Build-time MASM helpers. |
+| [miden-standards](crates/miden-standards) | Standardized smart contracts. |
+| [miden-testing](crates/miden-testing) | Testing tools for Miden transactions, batches, and blocks. |
+| [miden-tx](crates/miden-tx) | Transaction creation, execution, and proving tools. |
+| [miden-tx-batch](crates/miden-tx-batch) | Transaction batch execution, proving, and verification tools. |
+| [bench-note-checker](bin/bench-note-checker) | Note consumability benchmarks for the transaction executor. |
+| [bench-transaction](bin/bench-transaction) | Transaction execution and proving benchmarks. |
 
 ## Make commands
 
