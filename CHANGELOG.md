@@ -14,6 +14,8 @@
 
 ### Fixes
 
+- Fixed `BlockSignatures::read_from` skipping the `TooManySignatures` validation by routing deserialization through `BlockSignatures::new` ([#3494](https://github.com/0xMiden/protocol/issues/3494)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features

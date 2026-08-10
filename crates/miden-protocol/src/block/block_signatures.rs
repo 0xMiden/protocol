@@ -146,7 +146,7 @@ impl Serializable for BlockSignatures {
 impl Deserializable for BlockSignatures {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let signatures = Vec::<Signature>::read_from(source)?;
-        Ok(Self { signatures })
+        Self::new(signatures).map_err(|err| DeserializationError::InvalidValue(format!("{err}")))
     }
 }
 
@@ -214,6 +214,26 @@ mod tests {
             signatures.verify_against(commitment, &other_keys),
             Err(SignatureVerificationError::SignatureCountMismatch { expected: 4, actual: 3 })
         ));
+    }
+
+    #[test]
+    fn read_from_rejects_too_many_signatures() {
+        // Manually serialize more than ValidatorKeys::MAX signatures.
+        let commitment = Word::empty();
+        let signatures: Vec<Signature> = (0..ValidatorKeys::MAX + 1)
+            .map(|_| random_secret_key().sign(commitment))
+            .collect();
+
+        // Serializing raw: write count + each signature.
+        let mut bytes = Vec::new();
+        signatures.write_into(&mut bytes);
+
+        let err = BlockSignatures::read_from_bytes(&bytes)
+            .expect_err("deserializing more than MAX signatures must fail");
+        assert!(
+            matches!(err, DeserializationError::InvalidValue(_)),
+            "expected InvalidValue, got {err:?}"
+        );
     }
 
     #[test]
