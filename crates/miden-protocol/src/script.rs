@@ -180,11 +180,9 @@ impl MastForestScript {
 
     /// Returns a new [MastForestScript] with the package-owned debug information of the provided
     /// package attached.
-    pub fn with_package_debug_info(self, package: &Package) -> Self {
-        Self {
-            package_debug_info: package_debug_info(package),
-            ..self
-        }
+    pub fn with_package_debug_info(mut self, package: &Package) -> Self {
+        self.package_debug_info = package_debug_info(package);
+        self
     }
 
     /// Returns a new [MastForestScript] with the provided advice map entries merged into the
@@ -192,13 +190,14 @@ impl MastForestScript {
     ///
     /// This allows adding advice map entries to an already-compiled program, which is useful when
     /// the entries are determined after compilation.
-    pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
+    pub fn with_advice_map(mut self, advice_map: AdviceMap) -> Self {
         if advice_map.is_empty() {
             return self;
         }
 
         let mast = (*self.mast).clone().with_advice_map(advice_map);
-        Self { mast: Arc::new(mast), ..self }
+        self.mast = Arc::new(mast);
+        self
     }
 }
 
