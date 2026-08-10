@@ -13,6 +13,8 @@
 
 ### Fixes
 
+- Fixed the multisig, guarded, non-fungible, and AggLayer faucet factories not enabling asset callbacks for faucets configured with a transfer policy, which silently and permanently bypassed their send / receive policies; `AccountBuilder::build` now rejects an account that installs an asset callback slot while its asset callback flag is disabled, and the now-redundant `create_existing_agglayer_faucet_with_callbacks` testing helper was removed ([#801](https://github.com/0xMiden/protocol/issues/801)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features

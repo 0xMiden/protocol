@@ -5,7 +5,13 @@ extern crate alloc;
 use alloc::collections::BTreeSet;
 
 use miden_core::{Felt, Word};
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AssetCallbackFlag,
+};
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
@@ -283,9 +289,12 @@ fn create_agglayer_faucet_builder(
         .active_receive_policy(TransferPolicy::allow_all())
         .build();
 
+    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
+
     let fee_policy_manager = agglayer_fee_policy_manager(AggLayerFaucet::allowed_notes());
     NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
         .expect("faucet note allowlist is non-empty")
+        .with_asset_callbacks(asset_callbacks)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_component(Authority::OwnerControlled)
@@ -335,34 +344,6 @@ pub fn create_existing_agglayer_faucet(
         token_supply,
         bridge_account_id,
     )
-    .build_existing()
-    .expect("agglayer faucet account should be valid")
-}
-
-/// Creates an existing agglayer faucet account with the specified configuration and the asset
-/// callback flag enabled.
-///
-/// This creates an existing account suitable for testing scenarios.
-#[cfg(any(feature = "testing", test))]
-pub fn create_existing_agglayer_faucet_with_callbacks(
-    seed: Word,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    token_supply: Felt,
-    bridge_account_id: AccountId,
-) -> Account {
-    use miden_protocol::account::AssetCallbackFlag;
-
-    create_agglayer_faucet_builder(
-        seed,
-        token_symbol,
-        decimals,
-        max_supply,
-        token_supply,
-        bridge_account_id,
-    )
-    .with_asset_callbacks(AssetCallbackFlag::Enabled)
     .build_existing()
     .expect("agglayer faucet account should be valid")
 }

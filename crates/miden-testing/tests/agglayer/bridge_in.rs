@@ -22,7 +22,6 @@ use miden_agglayer::{
     UpdateGerNote,
     agglayer_package,
     create_existing_agglayer_faucet,
-    create_existing_agglayer_faucet_with_callbacks,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -182,7 +181,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
 
-    let agglayer_faucet = create_existing_agglayer_faucet_with_callbacks(
+    let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
         token_symbol,
         decimals,
