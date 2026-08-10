@@ -24,7 +24,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and on each faucet. Manages bridge role membership via RBAC_CONFIG notes and reprices both accounts' fee schedules via CONSTANT_FEE_POLICY_CONFIG notes. Root authority: effective admin of every operational role unless delegated, and on a faucet it can additionally retarget the `Ownable2Step` owner, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
+| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and on each faucet. Manages bridge role membership via RBAC_CONFIG notes and reprices both accounts' fee schedules via CONSTANT_FEE_POLICY_CONFIG notes. Root authority: effective admin of every operational role unless delegated, and on a faucet it can additionally retarget the `Ownable2Step` owner, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). TODO (Future): [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the faucet's ownership-rotation capability in favor of a fixed owner. | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
 
 ---
 
@@ -287,17 +287,33 @@ account, so a faucet left at stale prices makes the bridge under-sponsor the not
 created, and the faucet's transaction can no longer pay its own fee. A frozen faucet schedule
 therefore stalls bridging, not merely faucet administration.
 
+A root must be priced before it is consumable: `BasicConstantFeePolicy` aborts on any root
+without a set-marked schedule entry. An `ADMIN` extending an account's allowlist via
+`NETWORK_ACCOUNT_CONFIG` must therefore schedule the new root's fee first and allowlist it
+second; in the opposite order there is a window where notes of that root are accepted by the
+allowlist but abort at fee computation, accumulating as unconsumable entries.
+
 The config note's own script root is deliberately scheduled at zero on both accounts, even though
 it has a benchmarked cost like any other note. Consuming one is the only route to `set_note_fee`,
 so a priced entry could raise the config note's own fee past what a sponsor covers and put the
-schedule permanently out of reach.
+schedule permanently out of reach: neither account allowlists a transaction script that reaches
+`set_note_fee`, so there is no fallback repair path.
 
 That reach is not hypothetical: a priced schedule requires every consumed note's fee to be
 prepaid. A note whose schedule entry is non-zero can only be consumed together with
 `FEE_SPONSORSHIP` notes bound to it that cover that entry, independently of the chain's own
 verification base fee. Operators therefore fund a sponsorship alongside each management note
 (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`, `PAUSE_CONFIG`), and repricing is the one
-administrative action that never needs one.
+administrative action that never *needs* one.
+
+The zero entry does not mean the account eats the repricing transaction's fee. Sponsorship
+coverage is checked as *at least* the scheduled amount, so an operator can voluntarily attach a
+`FEE_SPONSORSHIP` note bound to the config note anyway; its asset is credited to the account's
+vault before the transaction pays its fee, keeping the vault whole. The right amount is not a
+guess either: `NetworkNotePricer::price` computes the config note's real benchmarked cost - the
+zero lives only in the on-chain schedule, not in the pricer. What the zero gives up is merely
+*enforcement* of that reimbursement, and only for a note that solely the `ADMIN` role can put to
+use - a deliberate trade against bricking the schedule's one repair path.
 
 ---
 
