@@ -259,9 +259,8 @@ impl AggLayerFaucet {
     /// `BurnOwnerOnly` call `ownable2step::assert_sender_is_owner` directly, so they remain gated
     /// on the bridge as the [`Ownable2Step`] owner. `admin` therefore administers the faucet's
     /// configuration (its fee schedule, its policies and its metadata) without gaining the
-    /// ability to mint, while the bridge keeps minting exactly as before. Note that `ADMIN` can
-    /// retarget the [`Ownable2Step`] owner, so it must be held by a strongly authenticated
-    /// account.
+    /// ability to mint, while the bridge keeps minting exactly as before. The [`Ownable2Step`]
+    /// transfer procedures are owner-gated as well, so `admin` cannot retarget the owner either.
     ///
     /// # Panics
     /// Panics if `token_symbol` is not a valid token symbol, or if the token metadata is invalid,

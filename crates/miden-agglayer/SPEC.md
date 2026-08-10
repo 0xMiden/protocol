@@ -24,7 +24,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and on each faucet. Manages bridge role membership via RBAC_CONFIG notes and reprices both accounts' fee schedules via CONSTANT_FEE_POLICY_CONFIG notes. Root authority: effective admin of every operational role unless delegated, and on a faucet it can additionally retarget the `Ownable2Step` owner, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). TODO (Future): [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the faucet's ownership-rotation capability in favor of a fixed owner. | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
+| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and on each faucet. Manages bridge role membership via RBAC_CONFIG notes and reprices both accounts' fee schedules via CONSTANT_FEE_POLICY_CONFIG notes. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). It cannot mint or retarget the faucet's `Ownable2Step` owner: the ownership procedures are owner-gated, not authority-gated. TODO (Future): [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the faucet's unused ownership-transfer procedures. | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
 
 ---
 
@@ -571,8 +571,11 @@ rather than through `Authority`. Everything else on the faucet - its fee schedul
 / transfer policies and its metadata - is authority-gated and so resolves to the `ADMIN` role
 through the unmapped-procedure fallback. The two authorities are therefore separate: `ADMIN`
 administers the faucet's configuration without being able to mint, and the bridge mints without
-being able to reconfigure. Note that `ADMIN` can retarget the `Ownable2Step` owner, so it must be
-held by a strongly authenticated account (see [Section 1](#1-entities-and-trust-model)).
+being able to reconfigure. The `Ownable2Step` transfer procedures are also owner-gated
+(`transfer_ownership` asserts the note sender is the current owner), so `ADMIN` cannot retarget
+the owner: rotation would require a note sent by the bridge, which has no flow that creates one.
+Removing these unreachable procedures entirely is tracked by
+[#2724](https://github.com/0xMiden/protocol/issues/2724).
 
 ---
 
