@@ -52,8 +52,9 @@ fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> 
             BasicConstantFeePolicy::fee_schedule_slot_name(),
             StorageMapKey::new(root.as_word()),
         )?;
-        // Consuming a config note is the only route to `set_note_fee`, so it is scheduled free
-        // even though it has a benchmarked cost: a priced one could put repricing out of reach.
+        // Consuming a config note is the only way to call `set_note_fee`, so it is scheduled
+        // free even though it has a benchmarked cost: a priced entry could make repricing
+        // unreachable.
         let expected_fee = if root == ConstantFeePolicyConfigNote::script_root() {
             assert!(pricer.price(root)?.as_u64() > 0, "the config note should have a real price");
             0
@@ -278,11 +279,9 @@ async fn non_admin_cannot_reprice_the_fee_schedule(
 ///
 /// The pause note needs a `FEE_SPONSORSHIP` covering its scheduled fee, because a priced schedule
 /// requires every consumed note's fee to be prepaid regardless of the chain's own base fee. The
-/// repricing note needs none at the policy level: it is scheduled free so that repricing is
-/// never gated on covering a schedule entry, which a mistaken repricing could set beyond
-/// anything a sponsor can pay. On a fee-charging chain the repricing transaction's own fee must
-/// still be funded, from the account's vault or a voluntary sponsorship - see
-/// [`sponsored_repricing_note_reimburses_the_bridge`].
+/// repricing note needs none: its schedule entry is zero, so no sponsorship is required. On a
+/// fee-charging chain the repricing transaction still pays its own fee, from the vault or from
+/// an optional sponsorship, see [`sponsored_repricing_note_reimburses_the_bridge`].
 #[tokio::test]
 async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
     const REPRICED_FEE: u64 = 4_242;
@@ -329,18 +328,16 @@ fn fungible_total(assets: &NoteAssets) -> u64 {
     assets.iter().map(|asset| asset.unwrap_fungible().amount().as_u64()).sum()
 }
 
-/// A repricing note can still pay for itself despite its zero schedule entry. Sponsorship
-/// coverage is checked as *at least* the scheduled amount, so an operator can voluntarily attach
-/// a `FEE_SPONSORSHIP` sized at the config note's real benchmarked price - which
-/// `NetworkNotePricer::price` still computes, the zero living only in the on-chain schedule. The
-/// sponsorship is credited to the bridge's vault before the transaction pays its fee, so on a
-/// fee-charging chain the repricing costs the bridge nothing of its own.
+/// A repricing note can pay for itself even though its schedule entry is zero. Coverage is
+/// checked as at least the scheduled amount, so the operator can attach a `FEE_SPONSORSHIP`
+/// sized at the config note's real price, which `NetworkNotePricer::price` still returns. The
+/// sponsorship is credited to the bridge's vault before the transaction pays its fee, so the
+/// repricing costs the bridge nothing of its own.
 ///
-/// The bridge's vault is pre-funded so that a sponsorship falling short of the paid fee surfaces
-/// as the named coverage assertion below instead of an opaque vault abort inside `execute()`.
-/// The coverage assertion is deliberately `>=` rather than exact: today the benchmarked price
-/// and the actual fee land in the same log-cycle bracket, so the bridge breaks exactly even, but
-/// benchmark drift or kernel growth may open bounded slack, which stays in the vault.
+/// The bridge's vault is pre-funded so that a too-small sponsorship fails the coverage
+/// assertion below instead of an opaque vault error inside `execute()`. The coverage assertion
+/// is `>=` rather than exact: today the price and the paid fee are equal, but benchmark drift
+/// may open a small difference, which stays in the vault.
 #[tokio::test]
 async fn sponsored_repricing_note_reimburses_the_bridge() -> anyhow::Result<()> {
     const REPRICED_FEE: u64 = 777;

@@ -122,10 +122,9 @@ impl NetworkNotePricer {
     /// [`Self::price`], so the fee includes the default safety margin and the recursively priced
     /// notes created by consuming it.
     ///
-    /// [`ConstantFeePolicyConfigNote`] is the sole exception: it is always scheduled free.
-    /// Consuming one is the only way to reach `set_note_fee`, so pricing it would let the schedule
-    /// put the very note that repairs it out of reach, bricking fee management (see that note's
-    /// operational notes).
+    /// [`ConstantFeePolicyConfigNote`] is the one exception: it is always scheduled free.
+    /// Consuming one is the only way to call `set_note_fee`, so a priced entry set too high by
+    /// mistake could make repricing unreachable (see that note's operational notes).
     pub fn basic_constant_fee_policy_manager(
         &self,
         note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,

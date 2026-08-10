@@ -157,10 +157,10 @@ impl AggLayerFaucet {
     /// The faucet's deployed fee policy must schedule a fee for every root in this set.
     ///
     /// The faucet-specific entries are the MINT and BURN notes plus the
-    /// [`ConstantFeePolicyConfigNote`], through which the `ADMIN` role reprices the faucet's fee
-    /// schedule after deployment. The bridge sizes the sponsorship of every MINT and BURN note it
-    /// creates from that schedule, so a schedule frozen at its deployment prices stalls bridging
-    /// as soon as the chain's verification base fee moves. The set also includes the
+    /// [`ConstantFeePolicyConfigNote`], through which the `ADMIN` role can reprice the faucet's
+    /// fee schedule after deployment. The bridge sizes the sponsorship of every MINT and BURN
+    /// note it creates from that schedule, so a schedule stuck at its deployment prices stalls
+    /// bridging as soon as the chain's verification base fee changes. The set also includes the
     /// configuration and sponsorship notes that [`AuthNetworkAccount`] adds to every standard
     /// network account.
     ///
@@ -175,9 +175,8 @@ impl AggLayerFaucet {
             BurnNote::script_root(),
             ConstantFeePolicyConfigNote::script_root(),
         ]);
-        // The defaults every standard network account accepts (NETWORK_ACCOUNT_CONFIG and
-        // FEE_SPONSORSHIP); `AuthNetworkAccount::new` adds them to whatever set it is given, so
-        // including them here keeps this accessor equal to the deployed allowlist.
+        // NETWORK_ACCOUNT_CONFIG and FEE_SPONSORSHIP; `AuthNetworkAccount::new` adds these
+        // defaults to any set it is given.
         notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
         notes
     }

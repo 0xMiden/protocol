@@ -474,9 +474,9 @@ impl AggLayerBridge {
 
     /// Returns every input-note script root a newly deployed AggLayer bridge account accepts.
     ///
-    /// Any transaction consuming a note outside the account's allowlist is rejected wholesale by
-    /// the auth procedure, so nothing it creates is ever committed, and the bridge's deployed fee
-    /// policy must schedule a fee for every root in it.
+    /// Any transaction consuming a note outside the account's allowlist is rejected by the auth
+    /// procedure, and the bridge's deployed fee policy must schedule a fee for every root in the
+    /// set.
     ///
     /// Besides the agglayer-specific notes, the bridge opts into three standards notes: the
     /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, the
@@ -504,9 +504,8 @@ impl AggLayerBridge {
             RbacConfigNote::script_root(),
             ConstantFeePolicyConfigNote::script_root(),
         ]);
-        // The defaults every standard network account accepts (NETWORK_ACCOUNT_CONFIG and
-        // FEE_SPONSORSHIP); `AuthNetworkAccount::new` adds them to whatever set it is given, so
-        // including them here keeps this accessor equal to the deployed allowlist.
+        // NETWORK_ACCOUNT_CONFIG and FEE_SPONSORSHIP; `AuthNetworkAccount::new` adds these
+        // defaults to any set it is given.
         notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
         notes
     }

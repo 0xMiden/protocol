@@ -185,13 +185,12 @@ impl AggLayerBridge {
     /// paused, all bridge entry points abort except `remove_ger`, which stays available so a
     /// fraudulent GER can still be revoked.
     ///
-    /// Finally, it installs the [`ConstantFeeManager`], whose `set_note_fee` reprices the
+    /// Finally, it installs the [`ConstantFeeManager`]. Its `set_note_fee` procedure updates the
     /// deployed [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy)
-    /// schedule. It is left out of [`AggLayerBridge::procedure_roles`] on purpose, so the same
-    /// unmapped-procedure fallback gates it on the `ADMIN` role, and it is driven by the
-    /// allowlisted `CONSTANT_FEE_POLICY_CONFIG` note. Without it the schedule would be frozen at
-    /// its deployment prices, which go stale as soon as the chain's verification base fee
-    /// changes.
+    /// schedule and is driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note. The
+    /// procedure has no entry in [`AggLayerBridge::procedure_roles`], so it falls back to the
+    /// `ADMIN` role. Without it the schedule would be stuck at its deployment prices, which go
+    /// stale when the chain's verification base fee changes.
     ///
     /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn account_builder(
@@ -248,7 +247,7 @@ impl AggLayerFaucet {
     /// - The [`RoleBasedAccessControl`] stack, seeding `admin` as the sole member of the built-in
     ///   `ADMIN` role, with [`Authority::RbacControlled`] and an empty procedure-role map so every
     ///   authority-gated procedure resolves to `ADMIN` through the unmapped-procedure fallback.
-    /// - The [`ConstantFeeManager`], whose `ADMIN`-gated `set_note_fee` reprices the deployed
+    /// - The [`ConstantFeeManager`], whose `ADMIN`-gated `set_note_fee` can reprice the deployed
     ///   [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy)
     ///   schedule, driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note.
     /// - The network-account auth component, installed via [`NetworkAccount::builder`] with
@@ -260,7 +259,7 @@ impl AggLayerFaucet {
     /// on the bridge as the [`Ownable2Step`] owner. `admin` therefore administers the faucet's
     /// configuration (its fee schedule, its policies and its metadata) without gaining the
     /// ability to mint, while the bridge keeps minting exactly as before. The [`Ownable2Step`]
-    /// transfer procedures are owner-gated as well, so `admin` cannot retarget the owner either.
+    /// transfer procedures are owner-gated as well, so `admin` cannot change the owner either.
     ///
     /// # Panics
     /// Panics if `token_symbol` is not a valid token symbol, or if the token metadata is invalid,
