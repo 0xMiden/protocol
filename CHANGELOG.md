@@ -13,6 +13,8 @@
 
 ### Fixes
 
+- Enforced that a note inclusion proof's index addresses a leaf of its Merkle path ([#3544](https://github.com/0xMiden/protocol/issues/3544)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features

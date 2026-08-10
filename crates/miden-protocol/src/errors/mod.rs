@@ -754,6 +754,14 @@ pub enum NoteError {
         block_note_tree_index: u16,
         highest_index: usize,
     },
+    #[error(
+        "block note tree index {block_note_tree_index} does not address a leaf of a note path \
+         of depth {path_depth}"
+    )]
+    NoteInclusionProofIndexNotInPath {
+        block_note_tree_index: u16,
+        path_depth: u8,
+    },
     #[error("note network execution requires a public note but note is of type {0}")]
     NetworkExecutionRequiresPublicNote(NoteType),
     #[error("failed to assemble note script:\n{}", PrintDiagnostic::new(.0))]
