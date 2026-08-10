@@ -268,11 +268,16 @@ fn encode_receiver_profile(interface: AddressInterface, note_tag_len: Option<u8>
     let note_tag_len = note_tag_len.unwrap_or(ABSENT_NOTE_TAG_LEN);
 
     let interface = interface as u16;
-    debug_assert_eq!(interface >> 10, 0, "address interface should fit into 10 bits");
+    debug_assert_eq!(
+        interface >> AddressInterface::ENCODED_BITS,
+        0,
+        "address interface should fit into {} bits",
+        AddressInterface::ENCODED_BITS,
+    );
 
-    // The interface takes up 10 bits and the tag length 6 bits, so we can merge them
-    // together.
-    let tag_len = (note_tag_len as u16) << 10;
+    // The interface takes up the low bits and the tag length the remaining high ones, so we can
+    // merge them together.
+    let tag_len = (note_tag_len as u16) << AddressInterface::ENCODED_BITS;
     let receiver_profile: u16 = tag_len | interface;
     receiver_profile.to_be_bytes()
 }
@@ -289,7 +294,7 @@ fn decode_receiver_profile(
     let byte1 = byte_iter.next().expect("byte1 should exist");
     let receiver_profile = u16::from_be_bytes([byte0, byte1]);
 
-    let tag_len = (receiver_profile >> 10) as u8;
+    let tag_len = (receiver_profile >> AddressInterface::ENCODED_BITS) as u8;
     let note_tag_len = match tag_len {
         ABSENT_NOTE_TAG_LEN => None,
         0..=32 => Some(tag_len),
@@ -298,7 +303,7 @@ fn decode_receiver_profile(
         },
     };
 
-    let addr_interface = receiver_profile & 0b0000_0011_1111_1111;
+    let addr_interface = receiver_profile & ((1u16 << AddressInterface::ENCODED_BITS) - 1);
     let addr_interface = AddressInterface::try_from(addr_interface).map_err(|err| {
         AddressError::decode_error_with_source("failed to decode address interface", err)
     })?;
