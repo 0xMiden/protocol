@@ -13,7 +13,7 @@
 
 ### Fixes
 
-- Fixed `FungibleFaucet::receive_and_burn` treating a non-fungible asset issued by the same account as a fungible burn, which reduced `token_supply` without burning any fungible supply; the asset is now validated with the new `miden::standards::assets::fungible_asset::validate` procedure.
+- Fixed `FungibleFaucet::receive_and_burn` treating a non-fungible asset issued by the same account as a fungible burn, which reduced `token_supply` without burning any fungible supply; the asset is now validated with the new `miden::standards::assets::fungible_asset::validate` procedure ([#3553](https://github.com/0xMiden/protocol/pull/3553)).
 
 ## v0.16.0 (2026-08-06)
 
