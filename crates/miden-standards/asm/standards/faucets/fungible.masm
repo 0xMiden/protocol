@@ -393,6 +393,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the supplied asset is not a well-formed fungible asset.
 #! - active burn policy validation fails.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
@@ -401,6 +402,13 @@ end
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
+    # validate the asset to burn is well-formed before processing it
+    # without this, a non-fungible asset issued by this account would reduce token_supply by its
+    # asset value's first element
+    # note that the asset's origin is validated by the kernel
+    exec.fungible_asset::validate
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
     # the burn policy consumes the asset, so keep a copy for the burn itself
     dupw.1 dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]

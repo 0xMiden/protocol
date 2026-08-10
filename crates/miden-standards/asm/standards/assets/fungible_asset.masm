@@ -18,6 +18,8 @@ const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT = "fungible asset bui
 
 const ERR_FUNGIBLE_ASSET_VALUE_MALFORMED = "fungible asset value is not well-formed"
 
+const ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE = "fungible asset ID's composition must be fungible"
+
 # PROCEDURES
 # ================================================================================================
 
@@ -202,4 +204,33 @@ pub proc try_value_to_amount
     assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
     assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
     # => [amount]
+end
+
+#! Validates that a fungible asset is well formed.
+#!
+#! Only the composition encoded in the asset ID and the structure of the asset value are checked;
+#! the structure of the asset ID's account ID is validated by the kernel and not re-checked here.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset ID's composition is not fungible.
+#! - the asset value is not well-formed (see try_value_to_amount).
+#!
+#! Invocation: exec
+pub proc validate
+    # assert the asset composition is fungible
+    exec.asset::id_to_composition
+    eq.COMPOSITION_FUNGIBLE
+    assert.err=ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # assert the value word is well-formed, i.e. [amount, 0, 0, 0] with amount <= MAX_AMOUNT
+    dupw.1 exec.try_value_to_amount drop
+    # => [ASSET_ID, ASSET_VALUE]
 end
