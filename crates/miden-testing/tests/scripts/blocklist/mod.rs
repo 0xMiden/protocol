@@ -171,13 +171,19 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(target_account.id())
         .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
         .await?;
+
+    assert_eq!(
+        executed.expiration_block_num(),
+        executed.block_header().block_num() + 20,
+        "the blocklist callback should enforce its one-minute expiration limit",
+    );
 
     Ok(())
 }

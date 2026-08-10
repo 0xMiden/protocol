@@ -11,6 +11,8 @@ use miden::protocol::account_id
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
+use miden::standards::fpi
+use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -32,7 +34,10 @@ use miden::standards::faucets::policies::transfer::blocklist
 #!
 #! Invocation: call
 @account_procedure
+@fpi
 pub proc check_policy
+    push.DEFAULT_EXPIRATION_BLOCK_DELTA exec.fpi::enforce_expiration_block_delta
+
     exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 

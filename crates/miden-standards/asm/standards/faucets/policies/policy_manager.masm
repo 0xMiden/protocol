@@ -3,6 +3,8 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
+use miden::standards::fpi
+use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 
 # DEPENDENCY NOTE
 # This manager owns mint, burn, send, and receive policy state in a single component. The
@@ -158,7 +160,11 @@ end
 #!
 #! Invocation: call
 @account_procedure
+@fpi
 pub proc invoke_send_policy
+    push.DEFAULT_EXPIRATION_BLOCK_DELTA
+    exec.fpi::enforce_expiration_block_delta
+
     push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
@@ -227,7 +233,11 @@ end
 #!
 #! Invocation: call
 @account_procedure
+@fpi
 pub proc invoke_receive_policy
+    push.DEFAULT_EXPIRATION_BLOCK_DELTA
+    exec.fpi::enforce_expiration_block_delta
+
     push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 

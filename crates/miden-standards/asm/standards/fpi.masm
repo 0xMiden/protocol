@@ -1,0 +1,34 @@
+use miden::protocol::tx
+
+# CONSTANTS
+# =================================================================================================
+
+#! The default expiration limit for standards procedures that read mutable state through FPI.
+#! At the default three-second block interval, this corresponds to approximately one minute.
+pub const DEFAULT_EXPIRATION_BLOCK_DELTA = 20
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FPI_EXPIRATION_BLOCK_DELTA_IS_ZERO = "fpi expiration block delta must be nonzero"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Enforces an expiration block delta for a transaction using foreign account state.
+#!
+#! An FPI-exposed procedure should call this as its first action before reading mutable or
+#! time-sensitive state. The transaction-wide expiration can only decrease, so several procedures
+#! may safely enforce different limits in the same transaction.
+#!
+#! Inputs:  [expiration_block_delta]
+#! Outputs: []
+#!
+#! Panics if:
+#! - expiration_block_delta is zero.
+#!
+#! Invocation: exec
+pub proc enforce_expiration_block_delta(expiration_block_delta: u16)
+    dup neq.0 assert.err=ERR_FPI_EXPIRATION_BLOCK_DELTA_IS_ZERO
+    exec.tx::update_expiration_block_delta
+end

@@ -16,6 +16,8 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 
 use miden::standards::access::authority
+use miden::standards::fpi
+use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 
 use {AccountProcedureRoot, Asset, AssetId, NoteRecipient} from miden::protocol::types
 use {ONE_WORD, ZERO_WORD} from miden::standards::utils
@@ -92,6 +94,7 @@ const ERR_FEE_POLICY_FEE_ASSET_MISMATCH = "fee policy returned a fee asset that 
 #!
 #! Invocation: call
 @account_procedure
+@fpi
 pub proc estimate_note_fee(
     recipient: NoteRecipient,
     assets_commitment: word,
@@ -99,6 +102,8 @@ pub proc estimate_note_fee(
     timeframe: u32,
     priority: u32
 ) -> Asset
+    push.DEFAULT_EXPIRATION_BLOCK_DELTA exec.fpi::enforce_expiration_block_delta
+
     # enforce the declared types of the caller-supplied timeframe and priority
     movup.13 movup.13 u32assert2.err=ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 movdn.13 movdn.13
     # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
@@ -114,7 +119,10 @@ end
 #!
 #! Invocation: call
 @account_procedure
+@fpi
 pub proc get_fee_asset_id() -> AssetId
+    push.DEFAULT_EXPIRATION_BLOCK_DELTA exec.fpi::enforce_expiration_block_delta
+
     exec.read_fee_asset_id
     # => [FEE_ASSET_ID, pad(16)]
 

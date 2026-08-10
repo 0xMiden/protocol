@@ -363,7 +363,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(account.id())
         .authenticated_input_note(consumed_note.id())
         .tx_script(tx_script)
@@ -371,6 +371,12 @@ async fn estimate_note_fee_returns_scheduled_fee(
         .build()?
         .execute()
         .await?;
+
+    assert_eq!(
+        executed.expiration_block_num(),
+        executed.block_header().block_num() + 20,
+        "fee estimation should enforce its procedure-level expiration limit",
+    );
 
     Ok(())
 }
@@ -568,13 +574,19 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
+
+    assert_eq!(
+        executed.expiration_block_num(),
+        executed.block_header().block_num() + 20,
+        "foreign fee estimation should enforce its procedure-level expiration limit",
+    );
 
     Ok(())
 }
@@ -672,13 +684,19 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
+
+    assert_eq!(
+        executed.expiration_block_num(),
+        executed.block_header().block_num() + 20,
+        "the fee asset getter should enforce its procedure-level expiration limit",
+    );
 
     Ok(())
 }
