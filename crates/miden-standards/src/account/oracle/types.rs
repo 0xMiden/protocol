@@ -12,10 +12,10 @@ pub enum PriceOracleError {
     QuoteSymbolLength,
     #[error("quote symbol must contain only ASCII characters")]
     QuoteSymbolNotAscii,
-    #[error("untracked asset policy must be 0 (omit) or 1 (reject), got {0}")]
-    UntrackedAssetPolicyInvalid(u64),
     #[error("published price must be non-zero")]
     PriceZero,
+    #[error("price exponent {0} exceeds the maximum of {max}", max = PriceEntry::MAX_EXPONENT)]
+    ExponentOutOfRange(u32),
 }
 
 // QUOTE ID
@@ -135,43 +135,6 @@ impl From<FeedPriceKey> for Word {
     }
 }
 
-// UNTRACKED ASSET POLICY
-// ================================================================================================
-
-/// How the price reader treats an asset the configured feed publishes no price for.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum UntrackedAssetPolicy {
-    /// Report the asset as untracked and value it at zero (fail-open).
-    #[default]
-    Omit,
-    /// Reject the transaction (fail-closed).
-    Reject,
-}
-
-impl UntrackedAssetPolicy {
-    /// Returns the policy's on-chain encoding.
-    pub const fn as_felt(&self) -> Felt {
-        match self {
-            Self::Omit => Felt::ZERO,
-            Self::Reject => Felt::ONE,
-        }
-    }
-
-    /// Constructs a policy from its on-chain encoding.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the value is neither `0` nor `1`.
-    pub fn try_from_felt(value: Felt) -> Result<Self, PriceOracleError> {
-        match value.as_canonical_u64() {
-            0 => Ok(Self::Omit),
-            1 => Ok(Self::Reject),
-            other => Err(PriceOracleError::UntrackedAssetPolicyInvalid(other)),
-        }
-    }
-}
-
 // PRICE ENTRY
 // ================================================================================================
 
@@ -187,14 +150,24 @@ pub struct PriceEntry {
 }
 
 impl PriceEntry {
+    /// The largest decimal exponent a published price may carry.
+    ///
+    /// Mirrors `MAX_PRICE_EXPONENT` in `price_feed.masm`: 10^19 still fits in a u64, so scaling a
+    /// price by a power of ten cannot overflow while the factor is computed.
+    pub const MAX_EXPONENT: u32 = 19;
+
     /// Constructs a price entry.
     ///
     /// # Errors
     ///
-    /// Returns an error if `price` is zero, which the feed reserves to mean "not tracked".
+    /// Returns an error if `price` is zero, which the feed reserves to mean "not published", or if
+    /// `exponent` exceeds [`PriceEntry::MAX_EXPONENT`].
     pub fn new(price: Felt, exponent: u32, timestamp: u32) -> Result<Self, PriceOracleError> {
         if price == Felt::ZERO {
             return Err(PriceOracleError::PriceZero);
+        }
+        if exponent > Self::MAX_EXPONENT {
+            return Err(PriceOracleError::ExponentOutOfRange(exponent));
         }
         Ok(Self { price, exponent, timestamp })
     }
@@ -217,5 +190,63 @@ impl PriceEntry {
     /// Returns the entry's storage value word `[price, exponent, timestamp, 0]`.
     pub fn to_word(self) -> Word {
         Word::new([self.price, Felt::from(self.exponent), Felt::from(self.timestamp), Felt::ZERO])
+    }
+}
+
+// CONVERSION RATE
+// ================================================================================================
+
+/// The rate converting one asset into another, as returned by
+/// [`PriceOracle`][crate::account::oracle::PriceOracle].
+///
+/// `amount` of the source asset is worth `ceil(amount * num / den)` of the target asset, matching
+/// the `ConversionRate` the fee standard applies in `fee::convert_amount`.
+///
+/// A rate with `den == 0` means the oracle cannot price the pair. It is a value rather than a
+/// failure so a caller valuing many assets can decide what an unpriceable one means to it; passing
+/// such a rate to `fee::convert_amount` aborts, so overlooking the case still fails closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConversionRate {
+    num: Felt,
+    den: Felt,
+    timestamp: u32,
+}
+
+impl ConversionRate {
+    /// Constructs a rate from its numerator, denominator and freshness.
+    pub const fn new(num: Felt, den: Felt, timestamp: u32) -> Self {
+        Self { num, den, timestamp }
+    }
+
+    /// Returns the rate the oracle reports for a pair it cannot price.
+    pub const fn unpriced() -> Self {
+        Self {
+            num: Felt::ZERO,
+            den: Felt::ZERO,
+            timestamp: 0,
+        }
+    }
+
+    /// Returns the numerator of the rate.
+    pub const fn num(&self) -> Felt {
+        self.num
+    }
+
+    /// Returns the denominator of the rate, which is zero when the pair cannot be priced.
+    pub const fn den(&self) -> Felt {
+        self.den
+    }
+
+    /// Returns the block timestamp, in seconds, of the stalest input the rate was derived from.
+    ///
+    /// A rate is only as fresh as its stalest leg, so a caller enforcing a maximum age compares
+    /// against this rather than against either underlying price.
+    pub const fn timestamp(&self) -> u32 {
+        self.timestamp
+    }
+
+    /// Returns whether the oracle could price the pair.
+    pub fn is_priced(&self) -> bool {
+        self.den != Felt::ZERO
     }
 }

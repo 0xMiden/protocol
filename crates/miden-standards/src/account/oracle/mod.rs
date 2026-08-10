@@ -1,26 +1,30 @@
-//! Price oracle standards: publishing unit prices and valuing assets against them.
+//! Price oracle standards: asking what one asset is worth in another.
 //!
-//! The standard splits the two sides of a price feed:
+//! [`PriceOracle`] is the interface. Its `get_conversion_rate` answers with a numerator and a
+//! denominator, the same `ConversionRate` shape the fee standard applies through
+//! `fee::convert_amount`, so consumers reuse that arithmetic instead of restating it. The procedure
+//! body only dispatches to a stored implementation root, which keeps its MAST root - the address
+//! consumers resolve over FPI - stable while the pricing behind it changes.
 //!
-//! - [`PriceFeed`] is the publishing side. It stores a unit price per faucet, all denominated in a
-//!   single quote unit fixed at deployment, and exposes them over FPI. It never sees an asset
-//!   amount, so consumers that scale differently can share one feed.
-//! - [`PriceReaderManager`] is the consuming side. It owns the configuration - which feed, which
-//!   quote unit, at what exponent, with what staleness bound - and other components installed on
-//!   the same account value assets through its `quote_asset_value` procedure.
+//! [`PriceFeed`] is one such implementation: published unit prices per faucet, all in a single
+//! quote unit, divided into a rate. The quote cancels out of that division, so it never appears in
+//! the interface.
 //!
-//! Staleness is bounded on both sides, because the two guard different failures. The feed applies
-//! its own transaction expiration delta, which bounds how far the transaction's reference block may
-//! lag; the reader checks the price's timestamp against a configurable maximum age, which bounds
-//! how long ago the feed last published. A fresh reference block says nothing about a feed that
-//! stopped updating, and a third-party feed cannot be assumed to set a delta at all.
+//! [`PriceReaderManager`] is the consuming side, and holds nothing but which oracle account to ask.
+//! The oracle's procedure root is resolved at assembly time from the stable wrapper rather than
+//! stored, so replacing an oracle's implementation never touches a consumer's storage.
+//!
+//! An asset the oracle cannot price yields `den = 0` rather than a failure, so a consumer valuing
+//! many assets can decide what an unpriceable one means to it. Ignoring the case still fails
+//! closed, because `fee::convert_amount` rejects a zero denominator. What to do about it, and how
+//! stale a rate may be, are consumer policies and deliberately absent from this standard.
 
-mod config;
 mod price_feed;
+mod price_oracle;
 mod price_reader;
 mod types;
 
-pub use config::{PriceReaderConfig, PriceReaderConfigBuilder};
 pub use price_feed::PriceFeed;
+pub use price_oracle::PriceOracle;
 pub use price_reader::PriceReaderManager;
-pub use types::{FeedPriceKey, PriceEntry, PriceOracleError, QuoteId, UntrackedAssetPolicy};
+pub use types::{ConversionRate, FeedPriceKey, PriceEntry, PriceOracleError, QuoteId};

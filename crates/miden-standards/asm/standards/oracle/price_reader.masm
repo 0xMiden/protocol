@@ -1,717 +1,121 @@
 # miden::standards::oracle::price_reader
 #
-# Reusable primitive for valuing assets against a configured `PriceFeed`.
+# Consumer-side helpers for reading a `price_oracle` over FPI.
 #
-# `quote_asset_value` turns a fungible asset into a value expressed in the configured quote unit:
-# it resolves the key the feed publishes the asset under, reads the unit price over FPI, rejects
-# prices older than the configured maximum age, normalizes the price to the configured quote
-# exponent and multiplies by the asset amount. The feed returns a unit price and never sees the
-# amount, so the notional computation lives here.
+# The oracle's procedure root is not configuration: it is embedded here with `procref`, which
+# resolves the stable wrapper's MAST root at assembly time. That is the practical payoff of keeping
+# that wrapper's body fixed - a consumer needs to know only which account to ask, never which
+# implementation it runs.
 #
-# The caller owns the storage and passes the slot ids, so the same logic can back multiple
-# components, each with its own configuration.
-#
-# Two map slots are used:
-#
-# - the config slot holds the feed account id, the `get_price` procedure root, the expected quote
-#   unit and the reader parameters, under the four reserved keys defined below.
-# - the price-keys slot maps a faucet id to the key the feed publishes that asset under. An absent
-#   entry means the faucet id is used as-is, which is what the standard `PriceFeed` expects; the
-#   map exists for feeds that publish under their own identifiers.
-#
-# The quote unit is verified once, when the feed is configured, rather than on every read:
-# `assert_feed_quote` calls the feed's `get_quote_id` and compares it against the expected quote.
-# `PriceFeed` has no setter for its quote, so a feed that matched at configuration time keeps
-# matching.
+# Freshness is offered as a helper rather than enforced. How stale a rate may be is a consumer
+# decision: a spending limit and a liquidation engine do not want the same bound, so this module
+# hands back the timestamp and lets the caller pick.
 
-use miden::core::math::u64
-use miden::core::word
-use miden::protocol::active_account
-use miden::protocol::asset
-use miden::protocol::native_account
 use miden::protocol::tx
-use {COMPOSITION_FUNGIBLE} from miden::protocol::asset
-use {AccountId, Asset, Bool, StorageMapKey, StorageSlotId} from miden::protocol::types
-
-# CONSTANTS - reserved config keys
-# =================================================================================================
-#
-# Keys of the config map. The map holds nothing else, so small tagged keys are unambiguous and keep
-# the Rust-side definitions in `PriceReaderConfig` trivially checkable against these.
-
-# Account id of the price feed, stored as [prefix, suffix, 0, 0].
-pub const CONFIG_KEY_FEED_ACCOUNT_ID = [1, 0, 0, 0]
-
-# Procedure root of the feed's `get_price`, invoked over FPI.
-pub const CONFIG_KEY_GET_PRICE_PROC_ROOT = [2, 0, 0, 0]
-
-# Quote unit the feed is expected to publish in.
-pub const CONFIG_KEY_QUOTE = [3, 0, 0, 0]
-
-# Reader parameters, stored as [quote_exponent, max_age_secs, untracked_policy, 0].
-pub const CONFIG_KEY_PARAMS = [4, 0, 0, 0]
-
-# CONSTANTS - untracked asset policies
-# =================================================================================================
-
-# Value an untracked asset contributes nothing and the read succeeds (fail-open).
-pub const UNTRACKED_POLICY_OMIT = 0
-
-# Reject the transaction when the feed does not track an asset (fail-closed).
-pub const UNTRACKED_POLICY_REJECT = 1
-
-# CONSTANTS - bounds
-# =================================================================================================
-
-# Largest decimal exponent the reader will scale by. 10^19 still fits in a u64, so the scale factor
-# can never overflow while being computed.
-const MAX_SCALE_EXPONENT = 19
-
-# Exclusive upper bound on the high limb of a quoted value, keeping the result below 2^63 so that
-# recombining the limbs can never wrap around the field modulus.
-const MAX_VALUE_HI = 0x80000000
+use miden::standards::oracle::price_oracle
+use {AccountId, AssetId} from miden::protocol::types
+use {ConversionRate} from miden::standards::fee
 
 # ERRORS
 # =================================================================================================
 
-const ERR_PRICE_READER_ASSET_NOT_FUNGIBLE = "price reader can only value fungible assets"
-const ERR_PRICE_READER_FEED_NOT_CONFIGURED = "price feed account is not configured"
-const ERR_PRICE_READER_QUOTE_MISMATCH = "price feed quote unit does not match the configured quote unit"
-const ERR_PRICE_READER_PARAMS_NOT_U32 = "quote exponent and maximum age must be valid u32 values"
-const ERR_PRICE_READER_EXPONENT_NOT_U32 = "price exponent and quote exponent must be valid u32 values"
-const ERR_PRICE_READER_EXPONENT_OUT_OF_RANGE = "decimal exponent exceeds the supported range"
-const ERR_PRICE_READER_TIMESTAMP_OR_MAX_AGE_NOT_U32 = "price timestamp and maximum age must be valid u32 values"
-const ERR_PRICE_READER_TIMESTAMP_IN_FUTURE = "price timestamp is after the current block timestamp"
-const ERR_PRICE_READER_PRICE_STALE = "price is older than the configured maximum age"
-const ERR_PRICE_READER_VALUE_OVERFLOW = "quoted asset value does not fit in the supported range"
-const ERR_PRICE_READER_UNTRACKED_POLICY_INVALID = "untracked asset policy must be 0 (omit) or 1 (reject)"
-const ERR_PRICE_READER_UNTRACKED_ASSET_REJECTED = "asset is not tracked by the configured price feed"
+const ERR_PRICE_READER_TIMESTAMP_OR_MAX_AGE_NOT_U32 = "rate timestamp and maximum age must be valid u32 values"
+const ERR_PRICE_READER_TIMESTAMP_IN_FUTURE = "rate timestamp is after the current block timestamp"
+const ERR_PRICE_READER_RATE_STALE = "conversion rate is older than the configured maximum age"
 
-# INTERNAL PROCEDURES
+# PROCEDURES
 # =================================================================================================
 
-#! Returns 10 raised to the given exponent as a u64.
+#! Reads the rate converting the source asset into the target asset from the given oracle account.
 #!
-#! Inputs:  [exponent]
-#! Outputs: [pow_lo, pow_hi]
+#! A rate of `den = 0` means the oracle cannot price this pair. Callers valuing a single asset can
+#! pass the rate straight to `fee::convert_amount`, whose zero-denominator assertion aborts; callers
+#! valuing many assets can branch on it and decide what an unpriceable one means to them.
+#!
+#! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, oracle_id_suffix, oracle_id_prefix]
+#! Outputs: [num, den, timestamp]
 #!
 #! Where:
-#! - exponent is the decimal exponent to raise 10 to.
-#! - pow_{lo,hi} are the 32-bit limbs of the resulting power of ten.
+#! - SOURCE_ASSET_ID is the asset being converted from.
+#! - TARGET_ASSET_ID is the asset being converted to.
+#! - oracle_id_{suffix,prefix} identify the oracle account to read.
+#! - num and den express the rate: `amount` of the source asset is worth
+#!   `ceil(amount * num / den)` of the target asset.
+#! - timestamp is the block timestamp, in seconds, of the stalest input the rate was derived from.
 #!
 #! Panics if:
-#! - exponent exceeds MAX_SCALE_EXPONENT.
+#! - the oracle account has no implementation configured, or its implementation aborts.
 #!
 #! Invocation: exec
-proc pow10_u64(exponent: u32) -> u64
-    dup push.MAX_SCALE_EXPONENT lte assert.err=ERR_PRICE_READER_EXPONENT_OUT_OF_RANGE
-    # => [exponent]
+@locals(10) # source asset id (4) + target asset id (4) + oracle account id (2)
+pub proc get_conversion_rate(source: AssetId, target: AssetId, oracle_account_id: AccountId)
+    -> (ConversionRate, u32)
+    movup.8 loc_store.8 movup.8 loc_store.9
+    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID]
 
-    push.0.1
-    # => [result_lo = 1, result_hi = 0, exponent]
-
-    movup.2
-    # => [exponent, result_lo, result_hi]
-
-    dup neq.0
-    # => [should_loop, exponent, result_lo, result_hi]
-
-    while.true
-        # => [exponent, result_lo, result_hi]
-
-        sub.1
-        # => [exponent-1, result_lo, result_hi]
-
-        movdn.2
-        # => [result_lo, result_hi, exponent-1]
-
-        push.0.10
-        # => [10, 0, result_lo, result_hi, exponent-1]
-
-        # bounded by MAX_SCALE_EXPONENT, so the product always fits in a u64
-        exec.u64::wrapping_mul
-        # => [result_lo, result_hi, exponent-1]
-
-        movup.2
-        # => [exponent-1, result_lo, result_hi]
-
-        dup neq.0
-        # => [should_continue, exponent-1, result_lo, result_hi]
-    end
-    # => [exponent, result_lo, result_hi]
-
-    drop
-    # => [result_lo, result_hi]
-end
-
-#! Reads the reader parameters from the config map.
-#!
-#! Inputs:  [config_slot_suffix, config_slot_prefix]
-#! Outputs: [quote_exponent, max_age_secs, untracked_policy]
-#!
-#! Where:
-#! - config_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing at
-#!   the reader config map.
-#! - quote_exponent is the decimal exponent every quoted value is normalized to.
-#! - max_age_secs is the largest accepted age, in seconds, of a price.
-#! - untracked_policy is UNTRACKED_POLICY_OMIT or UNTRACKED_POLICY_REJECT.
-#!
-#! Invocation: exec
-proc read_params(config_slot: StorageSlotId) -> (u32, u32, felt)
-    push.CONFIG_KEY_PARAMS movup.5 movup.5
-    # => [config_slot_suffix, config_slot_prefix, CONFIG_KEY_PARAMS]
-
-    exec.active_account::get_map_item
-    # => [quote_exponent, max_age_secs, untracked_policy, 0]
-
-    movup.3 drop
-    # => [quote_exponent, max_age_secs, untracked_policy]
-end
-
-#! Invokes the configured feed's `get_price` over FPI.
-#!
-#! The feed's account id and procedure root are cached in local memory before the call, because
-#! `tx::execute_foreign_procedure` consumes a full 16-felt input frame: anything left on the
-#! operand stack within that frame is passed to the foreign procedure and replaced by its outputs.
-#!
-#! Inputs:  [FEED_PRICE_KEY, config_slot_suffix, config_slot_prefix]
-#! Outputs: [is_tracked, price, exponent, timestamp]
-#!
-#! Where:
-#! - FEED_PRICE_KEY is the key the feed publishes the asset's price under.
-#! - config_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing at
-#!   the reader config map.
-#! - is_tracked is 1 if the feed publishes a price for the asset, 0 otherwise.
-#! - price is the price of one unit of the asset, scaled by exponent.
-#! - exponent is the decimal exponent of price.
-#! - timestamp is the block timestamp, in seconds, at which the price was published.
-#!
-#! Panics if:
-#! - no feed account is configured.
-#!
-#! Invocation: exec
-@locals(10) # get_price proc root (4) + feed price key (4) + feed account id (2)
-proc call_feed_get_price(feed_price_key: StorageMapKey, config_slot: StorageSlotId)
-    -> (Bool, felt, felt, u32)
-    loc_storew_le.4 dropw
-    # => [config_slot_suffix, config_slot_prefix]
-
-    push.CONFIG_KEY_GET_PRICE_PROC_ROOT dup.5 dup.5
-    # => [config_slot_suffix, config_slot_prefix, CONFIG_KEY_GET_PRICE_PROC_ROOT,
-    #     config_slot_suffix, config_slot_prefix]
-
-    exec.active_account::get_map_item
-    # => [GET_PRICE_PROC_ROOT, config_slot_suffix, config_slot_prefix]
-
+    # the arguments are cached because `tx::execute_foreign_procedure` consumes a full 16-felt
+    # input frame, so the frame has to be rebuilt from the bottom up
     loc_storew_le.0 dropw
-    # => [config_slot_suffix, config_slot_prefix]
+    # => [TARGET_ASSET_ID]
 
-    push.CONFIG_KEY_FEED_ACCOUNT_ID movup.5 movup.5
-    # => [config_slot_suffix, config_slot_prefix, CONFIG_KEY_FEED_ACCOUNT_ID]
-
-    exec.active_account::get_map_item
-    # => [feed_id_prefix, feed_id_suffix, 0, 0]
-
-    dup neq.0 assert.err=ERR_PRICE_READER_FEED_NOT_CONFIGURED
-    # => [feed_id_prefix, feed_id_suffix, 0, 0]
-
-    loc_store.8 loc_store.9 drop drop
+    loc_storew_le.4 dropw
     # => []
 
-    # `get_price` takes a single word, so the remaining 12 felts of the frame are padding
-    padw padw padw
-    # => [pad(12)]
+    padw padw
+    # => [pad(8)]
 
     padw loc_loadw_le.4
-    # => [FEED_PRICE_KEY, pad(12)]
+    # => [TARGET_ASSET_ID, pad(8)]
 
     padw loc_loadw_le.0
-    # => [GET_PRICE_PROC_ROOT, FEED_PRICE_KEY, pad(12)]
+    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
-    loc_load.8 loc_load.9
-    # => [feed_id_suffix, feed_id_prefix, GET_PRICE_PROC_ROOT, FEED_PRICE_KEY, pad(12)]
+    procref.price_oracle::get_conversion_rate
+    # => [GET_CONVERSION_RATE_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    loc_load.9 loc_load.8
+    # => [oracle_id_suffix, oracle_id_prefix, GET_CONVERSION_RATE_ROOT, SOURCE_ASSET_ID,
+    #     TARGET_ASSET_ID, pad(8)]
 
     exec.tx::execute_foreign_procedure
-    # => [is_tracked, price, exponent, timestamp, pad(12)]
+    # => [num, den, timestamp, pad(13)]
 
     movdnw.3 dropw dropw dropw
-    # => [is_tracked, price, exponent, timestamp]
+    # => [num, den, timestamp, 0]
+
+    movup.3 drop
+    # => [num, den, timestamp]
 end
 
-#! Asserts that a price is neither dated in the future nor older than the configured maximum age.
+#! Asserts that a rate is neither dated in the future nor older than the given maximum age.
 #!
 #! Inputs:  [timestamp, max_age_secs]
 #! Outputs: []
 #!
 #! Where:
-#! - timestamp is the block timestamp, in seconds, at which the price was published.
-#! - max_age_secs is the largest accepted age, in seconds, of a price.
+#! - timestamp is the rate's freshness, as returned by `get_conversion_rate`.
+#! - max_age_secs is the largest age, in seconds, the caller accepts.
 #!
 #! Panics if:
 #! - timestamp or max_age_secs is not a valid u32.
 #! - timestamp is after the current block timestamp.
-#! - the price is older than max_age_secs.
+#! - the rate is older than max_age_secs.
 #!
 #! Invocation: exec
-proc assert_fresh(timestamp: u32, max_age_secs: u32)
+pub proc assert_fresh(timestamp: u32, max_age_secs: u32)
     u32assert2.err=ERR_PRICE_READER_TIMESTAMP_OR_MAX_AGE_NOT_U32
     # => [timestamp, max_age_secs]
 
     exec.tx::get_block_timestamp
     # => [now, timestamp, max_age_secs]
 
-    # reject future timestamps explicitly rather than relying on the subtraction below wrapping
+    # future timestamps are rejected explicitly rather than left to wrap around in the subtraction
     dup.1 dup.1 u32lte assert.err=ERR_PRICE_READER_TIMESTAMP_IN_FUTURE
     # => [now, timestamp, max_age_secs]
 
     swap sub
     # => [age, max_age_secs]
 
-    swap u32lte assert.err=ERR_PRICE_READER_PRICE_STALE
-    # => []
-end
-
-#! Converts a unit price into a value expressed at the configured quote exponent.
-#!
-#! Inputs:  [price, exponent, quote_exponent, amount]
-#! Outputs: [value_in_quote]
-#!
-#! Where:
-#! - price is the price of one unit of the asset, scaled by exponent.
-#! - exponent is the decimal exponent of price.
-#! - quote_exponent is the decimal exponent the result is expressed at.
-#! - amount is the amount of the asset being valued.
-#! - value_in_quote is `amount * price * 10^(quote_exponent - exponent)`, truncated toward zero when
-#!   quote_exponent is smaller than exponent.
-#!
-#! Panics if:
-#! - exponent or quote_exponent is not a valid u32.
-#! - the exponent difference exceeds MAX_SCALE_EXPONENT.
-#! - the result does not fit below 2^63.
-#!
-#! Invocation: exec
-proc scale_to_quote(price: felt, exponent: u32, quote_exponent: u32, amount: felt) -> felt
-    movup.3 u32split
-    # => [amount_lo, amount_hi, price, exponent, quote_exponent]
-
-    movup.2 u32split
-    # => [price_lo, price_hi, amount_lo, amount_hi, exponent, quote_exponent]
-
-    exec.u64::overflowing_mul assertz.err=ERR_PRICE_READER_VALUE_OVERFLOW
-    # => [raw_lo, raw_hi, exponent, quote_exponent]
-
-    movup.3 movup.3
-    # => [exponent, quote_exponent, raw_lo, raw_hi]
-
-    dup.1 dup.1 u32assert2.err=ERR_PRICE_READER_EXPONENT_NOT_U32 drop drop
-    # => [exponent, quote_exponent, raw_lo, raw_hi]
-
-    dup.1 dup.1 u32gte
-    # => [is_scale_up, exponent, quote_exponent, raw_lo, raw_hi]
-
-    if.true
-        # => [exponent, quote_exponent, raw_lo, raw_hi]
-
-        sub
-        # => [quote_exponent - exponent, raw_lo, raw_hi]
-
-        exec.pow10_u64
-        # => [scale_lo, scale_hi, raw_lo, raw_hi]
-
-        exec.u64::overflowing_mul assertz.err=ERR_PRICE_READER_VALUE_OVERFLOW
-        # => [value_lo, value_hi]
-    else
-        # => [exponent, quote_exponent, raw_lo, raw_hi]
-
-        swap sub
-        # => [exponent - quote_exponent, raw_lo, raw_hi]
-
-        exec.pow10_u64
-        # => [scale_lo, scale_hi, raw_lo, raw_hi]
-
-        exec.u64::div
-        # => [value_lo, value_hi]
-    end
-    # => [value_lo, value_hi]
-
-    dup.1 push.MAX_VALUE_HI u32lt assert.err=ERR_PRICE_READER_VALUE_OVERFLOW
-    # => [value_lo, value_hi]
-
-    swap mul.4294967296 add
-    # => [value_in_quote]
-end
-
-# PROCEDURES
-# =================================================================================================
-
-#! Returns the key the configured feed publishes the given faucet's price under.
-#!
-#! Falls back to the faucet id itself when the price-keys map holds no entry for it, which is what
-#! the standard `PriceFeed` expects.
-#!
-#! Inputs:  [price_keys_slot_suffix, price_keys_slot_prefix, FAUCET_ID]
-#! Outputs: [FEED_PRICE_KEY]
-#!
-#! Where:
-#! - price_keys_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing
-#!   at the price-keys map.
-#! - FAUCET_ID is the faucet of the asset being valued, as the word [prefix, suffix, 0, 0].
-#! - FEED_PRICE_KEY is the key the feed publishes the asset's price under.
-#!
-#! Invocation: exec
-pub proc resolve_feed_price_key(price_keys_slot: StorageSlotId, faucet_id: StorageMapKey)
-    -> StorageMapKey
-    dup.5 dup.5 dup.5 dup.5
-    # => [FAUCET_ID, price_keys_slot_suffix, price_keys_slot_prefix, FAUCET_ID]
-
-    movup.5 movup.5
-    # => [price_keys_slot_suffix, price_keys_slot_prefix, FAUCET_ID, FAUCET_ID]
-
-    exec.active_account::get_map_item
-    # => [MAPPED_KEY, FAUCET_ID]
-
-    exec.word::testz
-    # => [is_unmapped, MAPPED_KEY, FAUCET_ID]
-
-    if.true
-        dropw
-        # => [FAUCET_ID]
-    else
-        swapw dropw
-        # => [MAPPED_KEY]
-    end
-end
-
-#! Applies the configured policy for an asset the feed does not track.
-#!
-#! Inputs:  [untracked_policy]
-#! Outputs: []
-#!
-#! Where:
-#! - untracked_policy is UNTRACKED_POLICY_OMIT or UNTRACKED_POLICY_REJECT.
-#!
-#! Panics if:
-#! - untracked_policy is neither UNTRACKED_POLICY_OMIT nor UNTRACKED_POLICY_REJECT.
-#! - untracked_policy is UNTRACKED_POLICY_REJECT.
-#!
-#! Invocation: exec
-pub proc apply_untracked_policy(untracked_policy: felt)
-    dup eq.UNTRACKED_POLICY_OMIT
-    # => [is_omit, untracked_policy]
-
-    if.true
-        drop
-        # => []
-    else
-        dup eq.UNTRACKED_POLICY_REJECT
-        assert.err=ERR_PRICE_READER_UNTRACKED_POLICY_INVALID
-        # => [untracked_policy]
-
-        drop
-        # => []
-
-        push.0 assert.err=ERR_PRICE_READER_UNTRACKED_ASSET_REJECTED
-    end
-end
-
-#! Returns the value of a fungible asset expressed in the configured quote unit.
-#!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, config_slot_suffix, config_slot_prefix,
-#!           price_keys_slot_suffix, price_keys_slot_prefix]
-#! Outputs: [is_tracked, value_in_quote]
-#!
-#! Where:
-#! - ASSET_ID and ASSET_VALUE are the id and value words of the asset being valued.
-#! - config_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing at
-#!   the reader config map.
-#! - price_keys_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing
-#!   at the price-keys map.
-#! - is_tracked is 1 if the feed publishes a price for the asset, 0 otherwise.
-#! - value_in_quote is the asset's value at the configured quote exponent, or 0 when is_tracked is 0.
-#!
-#! Panics if:
-#! - the asset is not fungible.
-#! - no feed account is configured.
-#! - the price is dated in the future or older than the configured maximum age.
-#! - the quoted value does not fit in the supported range.
-#! - the asset is untracked and the configured policy is UNTRACKED_POLICY_REJECT.
-#!
-#! Invocation: exec
-@locals(3) # asset amount (1) + config slot id (2)
-pub proc quote_asset_value(
-    asset: Asset,
-    config_slot: StorageSlotId,
-    price_keys_slot: StorageSlotId,
-) -> (Bool, felt)
-    dupw exec.asset::id_into_composition eq.COMPOSITION_FUNGIBLE
-    assert.err=ERR_PRICE_READER_ASSET_NOT_FUNGIBLE
-    # => [ASSET_ID, ASSET_VALUE, config_slot_suffix, config_slot_prefix,
-    #     price_keys_slot_suffix, price_keys_slot_prefix]
-
-    swapw exec.asset::fungible_value_into_amount loc_store.0
-    # => [ASSET_ID, config_slot_suffix, config_slot_prefix,
-    #     price_keys_slot_suffix, price_keys_slot_prefix]
-
-    dup.4 loc_store.1 dup.5 loc_store.2
-    # => [ASSET_ID, config_slot_suffix, config_slot_prefix,
-    #     price_keys_slot_suffix, price_keys_slot_prefix]
-
-    exec.asset::id_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, config_slot_suffix, config_slot_prefix,
-    #     price_keys_slot_suffix, price_keys_slot_prefix]
-
-    swap push.0.0 movdn.3 movdn.3
-    # => [FAUCET_ID, config_slot_suffix, config_slot_prefix,
-    #     price_keys_slot_suffix, price_keys_slot_prefix]
-
-    movup.7 movup.7
-    # => [price_keys_slot_suffix, price_keys_slot_prefix, FAUCET_ID,
-    #     config_slot_suffix, config_slot_prefix]
-
-    exec.resolve_feed_price_key
-    # => [FEED_PRICE_KEY, config_slot_suffix, config_slot_prefix]
-
-    exec.call_feed_get_price
-    # => [is_tracked, price, exponent, timestamp]
-
-    loc_load.2 loc_load.1
-    # => [config_slot_suffix, config_slot_prefix, is_tracked, price, exponent, timestamp]
-
-    exec.read_params
-    # => [quote_exponent, max_age_secs, untracked_policy, is_tracked, price, exponent, timestamp]
-
-    movup.3
-    # => [is_tracked, quote_exponent, max_age_secs, untracked_policy, price, exponent, timestamp]
-
-    if.true
-        # => [quote_exponent, max_age_secs, untracked_policy, price, exponent, timestamp]
-
-        movup.2 drop
-        # => [quote_exponent, max_age_secs, price, exponent, timestamp]
-
-        movup.4 movup.2 swap
-        # => [timestamp, max_age_secs, quote_exponent, price, exponent]
-
-        exec.assert_fresh
-        # => [quote_exponent, price, exponent]
-
-        movup.2 movup.2
-        # => [price, exponent, quote_exponent]
-
-        loc_load.0 movdn.3
-        # => [price, exponent, quote_exponent, amount]
-
-        exec.scale_to_quote
-        # => [value_in_quote]
-
-        push.1
-        # => [is_tracked = 1, value_in_quote]
-    else
-        # => [quote_exponent, max_age_secs, untracked_policy, price, exponent, timestamp]
-
-        movup.2 exec.apply_untracked_policy
-        # => [quote_exponent, max_age_secs, price, exponent, timestamp]
-
-        drop drop drop drop drop
-        # => []
-
-        push.0 push.0
-        # => [is_tracked = 0, value_in_quote = 0]
-    end
-end
-
-# CONFIGURATION PROCEDURES
-# =================================================================================================
-
-#! Asserts that the feed publishes prices in the expected quote unit.
-#!
-#! Calls the feed's `get_quote_id` over FPI. Intended to run when a feed is configured, not on every
-#! price read: `PriceFeed` exposes no setter for its quote, so a feed that matched once keeps
-#! matching.
-#!
-#! Inputs:  [GET_QUOTE_ID_PROC_ROOT, EXPECTED_QUOTE_ID, feed_id_suffix, feed_id_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - GET_QUOTE_ID_PROC_ROOT is the procedure root of the feed's `get_quote_id`.
-#! - EXPECTED_QUOTE_ID is the quote unit the reader is being configured for.
-#! - feed_id_{suffix,prefix} are the suffix and prefix felts of the feed's account id.
-#!
-#! Panics if:
-#! - the feed's quote unit differs from EXPECTED_QUOTE_ID.
-#!
-#! Invocation: exec
-@locals(10) # expected quote (4) + get_quote_id proc root (4) + feed account id (2)
-pub proc assert_feed_quote(
-    get_quote_id_proc_root: word,
-    expected_quote_id: word,
-    feed_account_id: AccountId,
-)
-    loc_storew_le.4 dropw
-    # => [EXPECTED_QUOTE_ID, feed_id_suffix, feed_id_prefix]
-
-    loc_storew_le.0 dropw
-    # => [feed_id_suffix, feed_id_prefix]
-
-    loc_store.8 loc_store.9
-    # => []
-
-    # `get_quote_id` takes no inputs, so the whole frame is padding
-    padw padw padw padw
-    # => [pad(16)]
-
-    padw loc_loadw_le.4
-    # => [GET_QUOTE_ID_PROC_ROOT, pad(16)]
-
-    loc_load.9 loc_load.8
-    # => [feed_id_suffix, feed_id_prefix, GET_QUOTE_ID_PROC_ROOT, pad(16)]
-
-    exec.tx::execute_foreign_procedure
-    # => [FEED_QUOTE_ID, pad(12)]
-
-    padw loc_loadw_le.0
-    # => [EXPECTED_QUOTE_ID, FEED_QUOTE_ID, pad(12)]
-
-    exec.word::eq assert.err=ERR_PRICE_READER_QUOTE_MISMATCH
-    # => [pad(12)]
-
-    dropw dropw dropw
-    # => []
-end
-
-#! Writes the feed account id, its `get_price` procedure root and the expected quote unit.
-#!
-#! Performs NO authorization and NO quote verification; callers are responsible for gating this and
-#! for pairing it with `assert_feed_quote`.
-#!
-#! Inputs:  [config_slot_suffix, config_slot_prefix, GET_PRICE_PROC_ROOT, QUOTE_ID,
-#!           feed_id_suffix, feed_id_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - config_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing at
-#!   the reader config map.
-#! - GET_PRICE_PROC_ROOT is the procedure root of the feed's `get_price`.
-#! - QUOTE_ID is the quote unit the feed publishes in.
-#! - feed_id_{suffix,prefix} are the suffix and prefix felts of the feed's account id.
-#!
-#! Invocation: exec
-@locals(10) # get_price proc root (4) + quote (4) + config slot id (2)
-pub proc set_feed(
-    config_slot: StorageSlotId,
-    get_price_proc_root: word,
-    quote_id: word,
-    feed_account_id: AccountId,
-)
-    loc_store.8 loc_store.9
-    # => [GET_PRICE_PROC_ROOT, QUOTE_ID, feed_id_suffix, feed_id_prefix]
-
-    loc_storew_le.0 dropw
-    # => [QUOTE_ID, feed_id_suffix, feed_id_prefix]
-
-    loc_storew_le.4 dropw
-    # => [feed_id_suffix, feed_id_prefix]
-
-    swap push.0.0 movdn.3 movdn.3
-    # => [FEED_ACCOUNT_ID]
-
-    push.CONFIG_KEY_FEED_ACCOUNT_ID loc_load.9 loc_load.8
-    # => [config_slot_suffix, config_slot_prefix, CONFIG_KEY_FEED_ACCOUNT_ID, FEED_ACCOUNT_ID]
-
-    exec.native_account::set_map_item dropw
-    # => []
-
-    padw loc_loadw_le.0
-    # => [GET_PRICE_PROC_ROOT]
-
-    push.CONFIG_KEY_GET_PRICE_PROC_ROOT loc_load.9 loc_load.8
-    # => [config_slot_suffix, config_slot_prefix, CONFIG_KEY_GET_PRICE_PROC_ROOT,
-    #     GET_PRICE_PROC_ROOT]
-
-    exec.native_account::set_map_item dropw
-    # => []
-
-    padw loc_loadw_le.4
-    # => [QUOTE_ID]
-
-    push.CONFIG_KEY_QUOTE loc_load.9 loc_load.8
-    # => [config_slot_suffix, config_slot_prefix, CONFIG_KEY_QUOTE, QUOTE_ID]
-
-    exec.native_account::set_map_item dropw
-    # => []
-end
-
-#! Writes the reader parameters.
-#!
-#! Performs NO authorization; callers are responsible for gating this.
-#!
-#! Inputs:  [config_slot_suffix, config_slot_prefix, quote_exponent, max_age_secs, untracked_policy]
-#! Outputs: []
-#!
-#! Where:
-#! - config_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing at
-#!   the reader config map.
-#! - quote_exponent is the decimal exponent every quoted value is normalized to.
-#! - max_age_secs is the largest accepted age, in seconds, of a price.
-#! - untracked_policy is UNTRACKED_POLICY_OMIT or UNTRACKED_POLICY_REJECT.
-#!
-#! Panics if:
-#! - quote_exponent or max_age_secs is not a valid u32.
-#! - quote_exponent exceeds MAX_SCALE_EXPONENT.
-#! - untracked_policy is neither UNTRACKED_POLICY_OMIT nor UNTRACKED_POLICY_REJECT.
-#!
-#! Invocation: exec
-pub proc set_params(
-    config_slot: StorageSlotId,
-    quote_exponent: u32,
-    max_age_secs: u32,
-    untracked_policy: felt,
-)
-    dup.2 dup.4 u32assert2.err=ERR_PRICE_READER_PARAMS_NOT_U32 drop drop
-    # => [config_slot_suffix, config_slot_prefix, quote_exponent, max_age_secs, untracked_policy]
-
-    dup.2 push.MAX_SCALE_EXPONENT lte assert.err=ERR_PRICE_READER_EXPONENT_OUT_OF_RANGE
-    # => [config_slot_suffix, config_slot_prefix, quote_exponent, max_age_secs, untracked_policy]
-
-    dup.4 dup eq.UNTRACKED_POLICY_OMIT swap eq.UNTRACKED_POLICY_REJECT or
-    assert.err=ERR_PRICE_READER_UNTRACKED_POLICY_INVALID
-    # => [config_slot_suffix, config_slot_prefix, quote_exponent, max_age_secs, untracked_policy]
-
-    movup.4 movup.4 movup.4
-    # => [quote_exponent, max_age_secs, untracked_policy, config_slot_suffix, config_slot_prefix]
-
-    push.0 movdn.3
-    # => [quote_exponent, max_age_secs, untracked_policy, 0, config_slot_suffix,
-    #     config_slot_prefix]
-
-    push.CONFIG_KEY_PARAMS movup.9 movup.9
-    # => [config_slot_suffix, config_slot_prefix, CONFIG_KEY_PARAMS, PARAMS]
-
-    exec.native_account::set_map_item dropw
-    # => []
-end
-
-#! Maps a faucet id to the key the feed publishes that asset's price under.
-#!
-#! Writing the empty word restores the default, where the faucet id is used as the feed key.
-#!
-#! Performs NO authorization; callers are responsible for gating this.
-#!
-#! Inputs:  [price_keys_slot_suffix, price_keys_slot_prefix, FAUCET_ID, FEED_PRICE_KEY]
-#! Outputs: []
-#!
-#! Where:
-#! - price_keys_slot_{suffix,prefix} are the suffix and prefix felts of the slot identifier pointing
-#!   at the price-keys map.
-#! - FAUCET_ID is the faucet of the asset, as the word [prefix, suffix, 0, 0].
-#! - FEED_PRICE_KEY is the key the feed publishes the asset's price under.
-#!
-#! Invocation: exec
-pub proc set_feed_price_key(
-    price_keys_slot: StorageSlotId,
-    faucet_id: StorageMapKey,
-    feed_price_key: StorageMapKey,
-)
-    exec.native_account::set_map_item dropw
+    swap u32lte assert.err=ERR_PRICE_READER_RATE_STALE
     # => []
 end

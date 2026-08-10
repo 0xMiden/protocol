@@ -1,0 +1,109 @@
+# miden::standards::oracle::price_oracle
+#
+# The user-facing price oracle interface: a single procedure answering "how much of one asset is
+# another worth".
+#
+# A rate is returned rather than a converted amount, matching the `ConversionRate` vocabulary the
+# fee standard already uses. Consumers apply it with `fee::convert_amount`, which computes
+# `ceil(amount * num / den)` at 128-bit intermediate precision, so this standard does not restate
+# that arithmetic and both paths share one rounding convention.
+#
+# WARNING: the body of `get_conversion_rate` MUST NOT change. Consumers reach it over FPI by its
+# MAST root, which is a hash of that body, so any edit rewrites the address every consumer resolved
+# against. The body is deliberately trivial: it reads a procedure root from storage and dispatches
+# to it, which is what lets the pricing implementation be replaced while the address stays put.
+#
+# The wrapper is a stable address, NOT a gate. A dispatch target must itself be an account
+# procedure to be `dyncall` reachable, which also makes it reachable directly over FPI, so an
+# implementation cannot rely on the wrapper having run first: every guarantee it needs, including
+# its transaction expiration delta, has to be enforced in its own body.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::standards::access::authority
+use {AccountProcedureRoot, AssetId} from miden::protocol::types
+use {ConversionRate} from miden::standards::fee
+
+# CONSTANTS - slot names
+# =================================================================================================
+
+# Procedure root of the active pricing implementation. Layout: [IMPLEMENTATION_ROOT]
+pub const IMPLEMENTATION_SLOT = word("miden::standards::oracle::price_oracle::implementation")
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Returns the rate converting the source asset into the target asset, and how fresh that rate is.
+#!
+#! WARNING: do not edit this procedure. See the module documentation: its MAST root is the address
+#! consumers resolve against, and the body exists only to keep that address stable across
+#! implementation changes.
+#!
+#! A rate of `den = 0` means the active implementation cannot price this pair. It is returned rather
+#! than raised as a failure so a caller valuing many assets can decide what an unpriceable one
+#! means, instead of losing the whole transaction. Handing such a rate to `fee::convert_amount`
+#! aborts on its zero-denominator assertion, so ignoring the case still fails closed.
+#!
+#! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+#! Outputs: [num, den, timestamp, pad(13)]
+#!
+#! Where:
+#! - SOURCE_ASSET_ID is the asset being converted from.
+#! - TARGET_ASSET_ID is the asset being converted to.
+#! - num and den express the rate: `amount` of the source asset is worth
+#!   `ceil(amount * num / den)` of the target asset.
+#! - den is 0 when the pair cannot be priced, in which case num and timestamp are 0 as well.
+#! - timestamp is the block timestamp, in seconds, of the stalest input the rate was derived from.
+#!   A rate is only as fresh as its stalest leg, so a caller enforcing a maximum age compares
+#!   against this value rather than trusting the oracle's own bound.
+#!
+#! Panics if:
+#! - no implementation is configured.
+#! - the active implementation aborts.
+#!
+#! Invocation: call
+@locals(4) # implementation procedure root
+@account_procedure
+pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (ConversionRate, u32)
+    push.IMPLEMENTATION_SLOT[0..2] exec.active_account::get_item
+    # => [IMPLEMENTATION_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    loc_storew_le.0 dropw
+    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    locaddr.0
+    # => [implementation_root_ptr, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    dyncall
+    # => [num, den, timestamp, pad(13)]
+end
+
+# CONFIGURATION PROCEDURES
+# =================================================================================================
+
+#! Sets the pricing implementation `get_conversion_rate` dispatches to.
+#!
+#! The root must belong to a procedure of this account, since `dyncall` can only reach the account's
+#! own procedures.
+#!
+#! Inputs:  [IMPLEMENTATION_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - IMPLEMENTATION_ROOT is the procedure root of the pricing implementation.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_implementation(implementation_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    # => [IMPLEMENTATION_ROOT, pad(12)]
+
+    push.IMPLEMENTATION_SLOT[0..2] exec.native_account::set_item
+    # => [OLD_ROOT, pad(12)]
+
+    dropw
+    # => [pad(12)]
+end

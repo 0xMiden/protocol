@@ -30,6 +30,7 @@ members = [
   "inspection/schema_commitment",
   "note/note_creator",
   "oracle/price_feed",
+  "oracle/price_oracle",
   "oracle/price_reader_manager",
   "upgrade/manager",
   "wallets/basic_wallet",

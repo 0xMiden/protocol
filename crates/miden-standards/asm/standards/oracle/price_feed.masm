@@ -1,44 +1,58 @@
 # miden::standards::oracle::price_feed
 #
-# `PriceFeed` publishes unit prices for fungible assets, all quoted in a single quote unit.
+# A price oracle implementation backed by published unit prices.
 #
-# A price is a `(price, exponent)` pair: the real value of one unit of the priced asset is
-# `price * 10^(-exponent)`, expressed in the feed's quote unit. Consumers read prices through
-# `get_price` over FPI and are responsible for turning a unit price into a notional value; this
-# component deliberately does NOT multiply by an asset amount.
+# Prices are stored per faucet as a `(price, exponent, timestamp)` triple, all denominated in one
+# quote unit fixed at deployment. `compute_conversion_rate` turns two of them into the rate between
+# the assets; the quote unit cancels out of that division, which is why it never appears in the
+# oracle interface and why a single feed must publish every price in the same unit.
 #
-# The quote unit lives in a value slot written once at deployment time and has no setter, so a
-# consumer that verified the quote at configuration time can rely on it not changing underneath.
-#
-# `get_price` applies its own transaction expiration delta rather than relying on the consumer to
-# do so. FPI reads reflect the transaction's reference block, which the executor picks, so a feed
-# that does not bound the reference block lets a stale price be presented as current.
+# This module is the dispatch target of `price_oracle::get_conversion_rate`, registered through
+# `price_oracle::set_implementation`. It is reachable directly over FPI as well, so it applies its
+# own transaction expiration delta rather than relying on the wrapper having run first.
 
+use miden::core::math::u64
 use miden::core::sys
+use miden::core::word
 use miden::protocol::active_account
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::access::authority
-use {Bool, StorageMapKey} from miden::protocol::types
+use {AccountId, AssetId, StorageMapKey} from miden::protocol::types
+use {ConversionRate} from miden::standards::fee
 
 # CONSTANTS - slot names
 # =================================================================================================
 
 # Quote unit every price published by this feed is denominated in. Layout: [QUOTE_ID]
+#
+# Written once at deployment and never read on chain: the quote cancels out of every rate. It is
+# stored so tooling and reviewers can tell what the raw prices mean, and to make the invariant that
+# one feed uses one unit inspectable.
 pub const QUOTE_SLOT = word("miden::standards::oracle::price_feed::quote")
 
 # Published prices. Layout: FAUCET_ID => [price, exponent, timestamp, 0]
 pub const PRICES_SLOT = word("miden::standards::oracle::price_feed::prices")
 
-# CONSTANTS - expiration
+# CONSTANTS - bounds
 # =================================================================================================
 
-# Transaction expiration delta, in blocks, applied by `get_price`.
+# Transaction expiration delta, in blocks, applied by `compute_conversion_rate`.
 #
 # Bounds how far the transaction's reference block may lag the block the transaction is included
-# in, which in turn bounds how stale the price read over FPI can be. Sized for a price that is
-# expected to be refreshed on the order of every 30 seconds.
+# in, which bounds how stale the state read over FPI can be. This is a different guarantee from the
+# price timestamp returned to the caller: a fresh reference block says nothing about a feed that
+# stopped publishing. Sized for a price expected to be refreshed on the order of every 30 seconds.
 const PRICE_EXPIRATION_BLOCK_DELTA = 10
+
+# Largest decimal exponent a published price may carry. 10^19 still fits in a u64, so scaling a
+# price by a power of ten can never overflow while the factor is being computed.
+const MAX_PRICE_EXPONENT = 19
+
+# Exclusive upper bound on the high limb of a scaled price, keeping it below 2^63 so recombining
+# the limbs into a felt cannot wrap around the field modulus.
+const MAX_SCALED_PRICE_HI = 0x80000000
 
 # ERRORS
 # =================================================================================================
@@ -46,6 +60,8 @@ const PRICE_EXPIRATION_BLOCK_DELTA = 10
 const ERR_PRICE_FEED_KEY_NOT_CANONICAL = "faucet id key must be [prefix, suffix, 0, 0]"
 const ERR_PRICE_FEED_PRICE_ZERO = "published price must be non-zero"
 const ERR_PRICE_FEED_EXPONENT_OR_TIMESTAMP_NOT_U32 = "price exponent and timestamp must be valid u32 values"
+const ERR_PRICE_FEED_EXPONENT_OUT_OF_RANGE = "price exponent exceeds the supported range"
+const ERR_PRICE_FEED_SCALED_PRICE_OVERFLOW = "scaled price does not fit in the supported range"
 
 # INTERNAL PROCEDURES
 # =================================================================================================
@@ -73,69 +89,206 @@ proc assert_canonical_faucet_id(faucet_id: StorageMapKey) -> StorageMapKey
     # => [FAUCET_ID]
 end
 
-# PUBLIC INTERFACE
-# =================================================================================================
-
-#! Returns the published price of the asset issued by the given faucet.
+#! Returns 10 raised to the given exponent as a u64.
 #!
-#! Applies this feed's transaction expiration delta before reading, so the caller cannot widen how
-#! stale the returned price may be.
-#!
-#! An asset with no published price reads back as the empty word, which yields `is_tracked = 0`.
-#! `publish_price` rejects a zero price, so a zero `price` unambiguously means "not tracked".
-#!
-#! Inputs:  [FAUCET_ID, pad(12)]
-#! Outputs: [is_tracked, price, exponent, timestamp, pad(12)]
+#! Inputs:  [exponent]
+#! Outputs: [pow_lo, pow_hi]
 #!
 #! Where:
-#! - FAUCET_ID is the faucet of the priced asset, as the word [prefix, suffix, 0, 0].
-#! - is_tracked is 1 if this feed publishes a price for the asset, 0 otherwise.
-#! - price is the price of one unit of the asset in the feed's quote unit, scaled by exponent.
-#! - exponent is the decimal exponent of price; the real value is `price * 10^(-exponent)`.
-#! - timestamp is the block timestamp, in seconds, at which the price was published.
+#! - exponent is the decimal exponent to raise 10 to.
+#! - pow_{lo,hi} are the 32-bit limbs of the resulting power of ten.
 #!
 #! Panics if:
-#! - FAUCET_ID is not of the form [prefix, suffix, 0, 0].
+#! - exponent exceeds MAX_PRICE_EXPONENT.
 #!
-#! Invocation: call
-@account_procedure
-pub proc get_price(faucet_id: StorageMapKey) -> (Bool, felt, felt, u32)
-    push.PRICE_EXPIRATION_BLOCK_DELTA exec.tx::update_expiration_block_delta
-    # => [FAUCET_ID, pad(12)]
+#! Invocation: exec
+proc pow10_u64(exponent: u32) -> u64
+    dup push.MAX_PRICE_EXPONENT lte assert.err=ERR_PRICE_FEED_EXPONENT_OUT_OF_RANGE
+    # => [exponent]
 
-    exec.assert_canonical_faucet_id
-    # => [FAUCET_ID, pad(12)]
+    push.0.1
+    # => [result_lo = 1, result_hi = 0, exponent]
 
-    push.PRICES_SLOT[0..2] exec.active_account::get_map_item
-    # => [price, exponent, timestamp, 0, pad(12)]
+    movup.2
+    # => [exponent, result_lo, result_hi]
 
     dup neq.0
-    # => [is_tracked, price, exponent, timestamp, 0, pad(12)]
+    # => [should_loop, exponent, result_lo, result_hi]
 
-    # discard the value word's trailing zero only after `is_tracked` has been derived, so the
-    # operand stack never dips below the 16-felt call frame and grows back past it
-    movup.4 drop
-    # => [is_tracked, price, exponent, timestamp, pad(12)]
+    while.true
+        # => [exponent, result_lo, result_hi]
+
+        sub.1 movdn.2
+        # => [result_lo, result_hi, exponent-1]
+
+        push.0.10
+        # => [10, 0, result_lo, result_hi, exponent-1]
+
+        # bounded by MAX_PRICE_EXPONENT, so the product always fits in a u64
+        exec.u64::wrapping_mul
+        # => [result_lo, result_hi, exponent-1]
+
+        movup.2
+        # => [exponent-1, result_lo, result_hi]
+
+        dup neq.0
+        # => [should_continue, exponent-1, result_lo, result_hi]
+    end
+    # => [exponent, result_lo, result_hi]
+
+    drop
+    # => [result_lo, result_hi]
 end
 
-#! Returns the quote unit every price published by this feed is denominated in.
+#! Multiplies a price by a power of ten.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [QUOTE_ID, pad(12)]
+#! Inputs:  [price, exponent]
+#! Outputs: [scaled_price]
 #!
 #! Where:
-#! - QUOTE_ID identifies the unit prices are quoted in. It is an opaque word by design: quote units
-#!   such as USD have no faucet on Miden, so an account id cannot represent them.
+#! - price is the published price to scale.
+#! - exponent is the decimal exponent to scale by.
+#! - scaled_price is `price * 10^exponent`.
 #!
-#! Invocation: call
-@account_procedure
-pub proc get_quote_id() -> word
-    push.QUOTE_SLOT[0..2] exec.active_account::get_item
-    # => [QUOTE_ID, pad(16)]
+#! Panics if:
+#! - exponent exceeds MAX_PRICE_EXPONENT.
+#! - the scaled price does not fit below 2^63.
+#!
+#! Invocation: exec
+proc scale_price(price: felt, exponent: u32) -> felt
+    swap exec.pow10_u64
+    # => [pow_lo, pow_hi, price]
 
-    swapw dropw
-    # => [QUOTE_ID, pad(12)]
+    movup.2 u32split
+    # => [price_lo, price_hi, pow_lo, pow_hi]
+
+    exec.u64::overflowing_mul assertz.err=ERR_PRICE_FEED_SCALED_PRICE_OVERFLOW
+    # => [scaled_lo, scaled_hi]
+
+    dup.1 push.MAX_SCALED_PRICE_HI u32lt assert.err=ERR_PRICE_FEED_SCALED_PRICE_OVERFLOW
+    # => [scaled_lo, scaled_hi]
+
+    swap mul.4294967296 add
+    # => [scaled_price]
 end
+
+#! Reads the price published for the given faucet.
+#!
+#! An asset with no published price reads back as the empty word. `publish_price` rejects a zero
+#! price, so a zero `price` unambiguously means "not published".
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [price, exponent, timestamp]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} identify the faucet of the priced asset.
+#! - price is the price of one unit of the asset, scaled by exponent, or 0 if none is published.
+#! - exponent is the decimal exponent of price.
+#! - timestamp is the block timestamp, in seconds, at which the price was published.
+#!
+#! Invocation: exec
+proc read_price(faucet_id: AccountId) -> (felt, u32, u32)
+    swap push.0.0 movdn.3 movdn.3
+    # => [FAUCET_ID]
+
+    push.PRICES_SLOT[0..2] exec.active_account::get_map_item
+    # => [price, exponent, timestamp, 0]
+
+    movup.3 drop
+    # => [price, exponent, timestamp]
+end
+
+# ORACLE IMPLEMENTATION
+# =================================================================================================
+
+#! Returns the rate converting the source asset into the target asset, derived from the two
+#! published prices.
+#!
+#! Both prices are quoted in this feed's unit, so that unit cancels: with `p` and `e` the price and
+#! exponent of each leg, the rate is `(p_source * 10^e_target) / (p_target * 10^e_source)`.
+#!
+#! Applies this feed's transaction expiration delta. Registered as the dispatch target of
+#! `price_oracle::get_conversion_rate`, but reachable directly over FPI too, which is why the delta
+#! is applied here rather than in the wrapper.
+#!
+#! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+#! Outputs: [num, den, timestamp, pad(13)]
+#!
+#! Where:
+#! - SOURCE_ASSET_ID is the asset being converted from.
+#! - TARGET_ASSET_ID is the asset being converted to.
+#! - num and den express the rate; den is 0 when either leg has no published price.
+#! - timestamp is the older of the two legs' publication timestamps, since a rate is only as fresh
+#!   as its stalest input. Converting an asset into itself needs no price at all and reports the
+#!   current block timestamp.
+#!
+#! Panics if:
+#! - a published exponent exceeds the supported range, or a scaled price overflows.
+#!
+#! Invocation: dyncall
+@locals(6) # source price, exponent, timestamp (3) + target price, exponent, timestamp (3)
+@account_procedure
+pub proc compute_conversion_rate(source: AssetId, target: AssetId) -> (ConversionRate, u32)
+    push.PRICE_EXPIRATION_BLOCK_DELTA exec.tx::update_expiration_block_delta
+    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    exec.word::test_eq
+    # => [is_same_asset, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    if.true
+        dropw dropw
+        # => [pad(8)]
+
+        # an asset is always worth exactly itself, and that never goes stale
+        exec.tx::get_block_timestamp push.1 push.1
+        # => [num = 1, den = 1, timestamp, pad(8)]
+    else
+        # => [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+        swapw exec.asset::id_into_faucet_id exec.read_price
+        # => [target_price, target_exponent, target_timestamp, SOURCE_ASSET_ID, pad(8)]
+
+        loc_store.3 loc_store.4 loc_store.5
+        # => [SOURCE_ASSET_ID, pad(8)]
+
+        exec.asset::id_into_faucet_id exec.read_price
+        # => [source_price, source_exponent, source_timestamp, pad(8)]
+
+        loc_store.0 loc_store.1 loc_store.2
+        # => [pad(8)]
+
+        # the field is prime, so the product is zero exactly when one of the prices is
+        loc_load.0 loc_load.3 mul neq.0
+        # => [both_legs_priced, pad(8)]
+
+        if.true
+            loc_load.4 loc_load.0 exec.scale_price
+            # => [num, pad(8)]
+
+            loc_load.1 loc_load.3 exec.scale_price
+            # => [den, num, pad(8)]
+
+            swap
+            # => [num, den, pad(8)]
+
+            loc_load.2 loc_load.5 u32min
+            # => [timestamp, num, den, pad(8)]
+
+            movdn.2
+            # => [num, den, timestamp, pad(8)]
+        else
+            push.0 push.0 push.0
+            # => [num = 0, den = 0, timestamp = 0, pad(8)]
+        end
+    end
+    # => [num, den, timestamp, ...]
+
+    exec.sys::truncate_stack
+    # => [num, den, timestamp, pad(13)]
+end
+
+# CONFIGURATION PROCEDURES
+# =================================================================================================
 
 #! Publishes the price of the asset issued by the given faucet, overwriting any previous entry.
 #!
@@ -151,8 +304,10 @@ end
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority`.
 #! - FAUCET_ID is not of the form [prefix, suffix, 0, 0].
-#! - price is zero, which is reserved to mean "not tracked".
+#! - price is zero, which is reserved to mean "not published".
 #! - exponent or timestamp is not a valid u32.
+#! - exponent exceeds the supported range. Rejecting it here keeps a rate computation from
+#!   aborting later on a value that could have been refused at publication time.
 #!
 #! Invocation: call
 @account_procedure
@@ -169,6 +324,9 @@ pub proc publish_price(faucet_id: StorageMapKey, price: felt, exponent: u32, tim
     dup.5 dup.7 u32assert2.err=ERR_PRICE_FEED_EXPONENT_OR_TIMESTAMP_NOT_U32 drop drop
     # => [FAUCET_ID, price, exponent, timestamp, pad(9)]
 
+    dup.5 push.MAX_PRICE_EXPONENT lte assert.err=ERR_PRICE_FEED_EXPONENT_OUT_OF_RANGE
+    # => [FAUCET_ID, price, exponent, timestamp, pad(9)]
+
     # the felt below timestamp is caller-supplied padding, so it is replaced with a zero to
     # complete the value word rather than trusted to already be zero
     movup.7 drop push.0 movdn.7
@@ -180,7 +338,6 @@ pub proc publish_price(faucet_id: StorageMapKey, price: felt, exponent: u32, tim
     dropw
     # => [pad(8)]
 
-    # the frame dipped to the stack's 16-felt floor above, so its depth is restored explicitly
     exec.sys::truncate_stack
     # => [pad(16)]
 end

@@ -35,16 +35,9 @@ account_component_code!(PRICE_FEED_CODE, "miden-standards-oracle-price-feed.masp
 const PRICE_FEED_LIBRARY_PATH: &str = "miden::standards::components::oracle::price_feed";
 
 procedure_root!(
-    PRICE_FEED_GET_PRICE_ROOT,
+    PRICE_FEED_COMPUTE_CONVERSION_RATE_ROOT,
     PRICE_FEED_LIBRARY_PATH,
-    PriceFeed::GET_PRICE_PROC_NAME,
-    PriceFeed::code()
-);
-
-procedure_root!(
-    PRICE_FEED_GET_QUOTE_ID_ROOT,
-    PRICE_FEED_LIBRARY_PATH,
-    PriceFeed::GET_QUOTE_ID_PROC_NAME,
+    PriceFeed::COMPUTE_CONVERSION_RATE_PROC_NAME,
     PriceFeed::code()
 );
 
@@ -65,20 +58,20 @@ static PRICES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-/// The price feed account component.
+/// A price oracle implementation backed by published unit prices.
 ///
-/// Publishes unit prices for fungible assets, all denominated in a single quote unit fixed at
-/// deployment time. Consumers read prices over FPI through `get_price`, which returns
-/// `(is_tracked, price, exponent, timestamp)` and deliberately never sees an asset amount: turning
-/// a unit price into a notional value is the reader's job, so the same feed serves consumers that
-/// scale differently.
+/// Each faucet gets a `(price, exponent, timestamp)` entry, all denominated in one quote unit fixed
+/// at deployment. `compute_conversion_rate` divides two of them into the rate between the assets;
+/// the quote cancels out of that division, which is why it never appears in the oracle interface
+/// and why one feed must publish every price in the same unit.
 ///
-/// The quote unit has no setter. A consumer that verified it once, when configuring the feed, can
-/// rely on it not changing underneath, which is why the reader does not re-verify on every read.
+/// Register [`PriceFeed::compute_conversion_rate_root`] on a
+/// [`PriceOracle`][crate::account::oracle::PriceOracle] installed on the same account, and pair
+/// both with an [`Authority`][crate::account::access::Authority], which gates `publish_price`.
 ///
-/// `get_price` applies its own transaction expiration delta rather than trusting consumers to bound
-/// the reference block. Pair the component with an
-/// [`Authority`][crate::account::access::Authority], which gates `publish_price`.
+/// The rate computation applies its own transaction expiration delta. It is the dispatch target of
+/// the oracle's wrapper but is reachable directly over FPI as well, so it cannot rely on the
+/// wrapper having run first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PriceFeed {
     quote_id: QuoteId,
@@ -89,8 +82,7 @@ impl PriceFeed {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::oracle::price_feed";
 
-    pub(crate) const GET_PRICE_PROC_NAME: &'static str = "get_price";
-    pub(crate) const GET_QUOTE_ID_PROC_NAME: &'static str = "get_quote_id";
+    pub(crate) const COMPUTE_CONVERSION_RATE_PROC_NAME: &'static str = "compute_conversion_rate";
     const PUBLISH_PRICE_PROC_NAME: &'static str = "publish_price";
 
     /// Creates a feed quoting in the given unit with no prices published yet.
@@ -114,14 +106,13 @@ impl PriceFeed {
         &PRICE_FEED_CODE
     }
 
-    /// Returns the procedure root of the `get_price` account procedure.
-    pub fn get_price_root() -> AccountProcedureRoot {
-        *PRICE_FEED_GET_PRICE_ROOT
-    }
-
-    /// Returns the procedure root of the `get_quote_id` account procedure.
-    pub fn get_quote_id_root() -> AccountProcedureRoot {
-        *PRICE_FEED_GET_QUOTE_ID_ROOT
+    /// Returns the procedure root of the `compute_conversion_rate` account procedure.
+    ///
+    /// Register it with
+    /// [`PriceOracle::with_implementation`][crate::account::oracle::PriceOracle::with_implementation]
+    /// so the oracle's stable wrapper dispatches to this feed.
+    pub fn compute_conversion_rate_root() -> AccountProcedureRoot {
+        *PRICE_FEED_COMPUTE_CONVERSION_RATE_ROOT
     }
 
     /// Returns the procedure root of the `publish_price` account procedure.
@@ -179,7 +170,7 @@ impl PriceFeed {
                 .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME)
-            .with_description("Publishes unit prices for fungible assets in a fixed quote unit")
+            .with_description("Prices assets from published unit prices in a fixed quote unit")
             .with_storage_schema(storage_schema)
     }
 

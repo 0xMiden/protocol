@@ -1,11 +1,10 @@
 # The MASM code of the Price Feed Account Component.
 #
-# Publishes unit prices for fungible assets, all quoted in a single quote unit fixed at deployment
-# time. `get_price` and `get_quote_id` are meant to be invoked over FPI by consumers; `get_price`
-# applies its own transaction expiration delta so a consumer cannot widen how stale a price may be.
+# The published-price implementation behind a `PriceOracle`: `publish_price` maintains the prices
+# and `compute_conversion_rate` is the dispatch target registered through
+# `PriceOracle::set_implementation`.
 #
 # See the `PriceFeed` Rust type's documentation for more details.
 
-pub use {get_price} from miden::standards::oracle::price_feed
-pub use {get_quote_id} from miden::standards::oracle::price_feed
+pub use {compute_conversion_rate} from miden::standards::oracle::price_feed
 pub use {publish_price} from miden::standards::oracle::price_feed
