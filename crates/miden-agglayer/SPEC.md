@@ -291,19 +291,22 @@ created, and the faucet's transaction can no longer pay its own fee. A stale fau
 therefore stalls bridging, not just faucet administration.
 
 The two schedules are also coupled. The bridge funds the `MINT` and `BURN` sponsorships from its
-own vault, sized by the faucet's schedule, and is reimbursed by the sponsorships attached to its
-own `CLAIM` and `B2AGG` notes, whose prices include the notes they create. The bridge also
+own vault, sized by each faucet's schedule, and is reimbursed by the sponsorships attached to
+its own `CLAIM` and `B2AGG` notes, whose prices include the notes they create. The bridge also
 asserts that the fees it collects in a transaction cover the fees it sponsors (the default
-`SponsorshipPolicy::AtMostCollectedFees`). So when the faucet is repriced upward (for example to
-add margin), the bridge's `CLAIM` and `B2AGG` entries must rise with it. A small mismatch drains
-the bridge's vault on every claim and bridge-out routed through that faucet; once the faucet's
-entry exceeds what a consumer's sponsorship attached (sized by the bridge's own entry), the
-assertion fails and the transaction aborts. The rule is: the bridge's `CLAIM` and `B2AGG`
-entries must never sit below the faucet's `MINT` and `BURN` entries. When raising prices,
-reprice the bridge first and the faucet second; when lowering them, the faucet first and the
-bridge second. Zeroing the bridge's `CLAIM` or `B2AGG` entry breaks the rule outright: the
-bridge would collect nothing while still sponsoring the notes it creates, so every claim and
-bridge-out would abort. Nothing enforces this coupling; it is an operator rule.
+`SponsorshipPolicy::AtMostCollectedFees`). The rule is: the bridge's `CLAIM` and `B2AGG`
+entries must exceed every registered faucet's `MINT` and `BURN` entries by at least the bridge's
+own consumption fee, which is exactly how `NetworkNotePricer` prices them. Below that, each
+claim and bridge-out through that faucet drains the bridge's vault; below the faucet's entry,
+the assertion fails and the transaction aborts. This applies when registering a new faucet too,
+not only when repricing.
+
+Repricing must keep the rule at every step: when raising prices, reprice the bridge first and
+the faucet second; when lowering them, the faucet first and the bridge second; and wait for the
+first config note to commit before submitting the second. Raising an entry also strands notes
+created under the old price, since their sponsorship no longer covers it; they become consumable
+again once someone adds another `FEE_SPONSORSHIP` bound to the same note. Nothing enforces any
+of this; it is an operator rule.
 
 A note root must have a schedule entry before notes with that root can be consumed:
 `BasicConstantFeePolicy` aborts on any root without an entry (an explicit zero counts as an
