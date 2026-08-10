@@ -158,4 +158,40 @@ mod tests {
         assert!(ab > b);
         assert!(b < ab);
     }
+
+    /// Utility test just to make sure that the [`RoleSymbol::MAX_ENCODED_VALUE`] constant still
+    /// represents the maximum possible encoded value.
+    #[test]
+    fn test_role_symbol_max_value() {
+        let role_symbol = RoleSymbol::new("____________").unwrap();
+
+        assert_eq!(role_symbol.as_element().as_canonical_u64(), RoleSymbol::MAX_ENCODED_VALUE);
+    }
+
+    /// Utility test just to make sure that the [`RoleSymbol::MIN_ENCODED_VALUE`] constant still
+    /// represents the minimum possible encoded value.
+    #[test]
+    fn test_role_symbol_min_value() {
+        let role_symbol = RoleSymbol::new("A").unwrap();
+
+        assert_eq!(role_symbol.as_element().as_canonical_u64(), RoleSymbol::MIN_ENCODED_VALUE);
+    }
+
+    /// Checks that decoding rejects a value below [`RoleSymbol::MIN_ENCODED_VALUE`].
+    #[test]
+    fn test_role_symbol_underflow() {
+        let err = RoleSymbol::try_from(Felt::ZERO).unwrap_err();
+
+        assert_matches!(err, RoleSymbolError::ValueTooSmall(0));
+    }
+
+    /// Checks that decoding rejects a value above [`RoleSymbol::MAX_ENCODED_VALUE`].
+    #[test]
+    fn test_role_symbol_overflow() {
+        let too_large = Felt::new_unchecked(RoleSymbol::MAX_ENCODED_VALUE + 1);
+
+        let err = RoleSymbol::try_from(too_large).unwrap_err();
+
+        assert_matches!(err, RoleSymbolError::ValueTooLarge(_));
+    }
 }
