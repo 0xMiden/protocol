@@ -77,8 +77,7 @@ pub proc main
     assert.err=ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
-    # write the note storage to memory starting at STORAGE_PTR, rejecting a note whose storage is
-    # longer than any action accepts before that storage is loaded and hashed
+    # write the note storage to memory starting at STORAGE_PTR
     push.NUM_ITEMS_SET_POLICY push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 

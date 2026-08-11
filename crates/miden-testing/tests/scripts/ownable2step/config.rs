@@ -196,9 +196,6 @@ async fn oversized_storage_is_rejected_before_the_storage_is_loaded() -> anyhow:
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // As many items as the protocol permits, the first of which reads as the TransferOwnership
-    // selector. Without the bound the script would load and hash all of them before the count
-    // guard rejected the note.
     let storage = vec![Felt::from(0u32); MAX_NOTE_STORAGE_ITEMS];
     let note = malformed_owner_config_note(owner, account.id(), storage, &mut rng)?;
     let tx = mock_chain

@@ -280,9 +280,6 @@ end
 
 #! Returns the storage commitment and the number of storage items of the active note.
 #!
-#! This does not load the storage itself, so it costs the same no matter how many items the note
-#! carries. Note scripts that only need the item count should prefer this over `get_storage`.
-#!
 #! Inputs:  []
 #! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items]
 #!
@@ -305,12 +302,6 @@ end
 
 #! Writes the active note's storage to memory starting at the specified address, provided the note
 #! carries at most `max_num_storage_items` items.
-#!
-#! The item count is read before the storage preimage is loaded, so a note whose storage exceeds the
-#! bound is rejected without any of its items being written or hashed. Note scripts that accept only
-#! storage layouts of a known maximum length should prefer this over `get_storage`: it bounds the
-#! work an oversized note can impose on whoever attempts to consume it. The bound is an upper limit,
-#! so a script requiring an exact item count must still check the returned `num_storage_items`.
 #!
 #! Inputs:
 #!   Stack: [dest_ptr, max_num_storage_items]
