@@ -4,6 +4,8 @@
 
 ### Features
 
+- Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and used the latter in the `OwnerConfig` and `FaucetPolicyConfig` note scripts so a note whose storage is longer than any action accepts is rejected before that storage is loaded and hashed. Both note script roots change.
+
 ### Changes
 
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).

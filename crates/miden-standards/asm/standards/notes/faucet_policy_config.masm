@@ -61,6 +61,7 @@ const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet poli
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds NUM_ITEMS_SET_POLICY.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized, or the policy root is not an allowed alternative (per the
@@ -76,8 +77,9 @@ pub proc main
     assert.err=ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
-    # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    # write the note storage to memory starting at STORAGE_PTR, rejecting a note whose storage is
+    # longer than any action accepts before that storage is loaded and hashed
+    push.NUM_ITEMS_SET_POLICY push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR

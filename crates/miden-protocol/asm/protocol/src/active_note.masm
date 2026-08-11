@@ -14,6 +14,9 @@ const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT = "note data does not match the co
 const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS =
     "the specified number of note storage items does not match the actual number"
 
+const ERR_NOTE_TOO_MANY_STORAGE_ITEMS =
+    "the number of note storage items exceeds the maximum accepted by the note script"
+
 # ACTIVE NOTE PROCEDURES
 # =================================================================================================
 #
@@ -264,6 +267,83 @@ pub proc get_storage(dest_ptr: MemoryAddress) -> u16
     # => [is_active_note = 1, note_index = 0, dest_ptr]
 
     exec.input_note_internal::get_storage_info_raw
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+
+    # save num_storage_items for the return value
+    dup.4 movdn.6
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, num_storage_items]
+
+    # write the inputs to the provided destination pointer
+    exec.write_storage_to_memory
+    # => [num_storage_items]
+end
+
+#! Returns the storage commitment and the number of storage items of the active note.
+#!
+#! This does not load the storage itself, so it costs the same no matter how many items the note
+#! carries. Note scripts that only need the item count should prefer this over `get_storage`.
+#!
+#! Inputs:  []
+#! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items]
+#!
+#! Where:
+#! - NOTE_STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - num_storage_items is the number of storage items the active note was created with.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_storage_info() -> (word, u16)
+    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    push.0.1
+    # => [is_active_note = 1, note_index = 0]
+
+    exec.input_note_internal::get_storage_info_raw
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
+end
+
+#! Writes the active note's storage to memory starting at the specified address, provided the note
+#! carries at most `max_num_storage_items` items.
+#!
+#! The item count is read before the storage preimage is loaded, so a note whose storage exceeds the
+#! bound is rejected without any of its items being written or hashed. Note scripts that accept only
+#! storage layouts of a known maximum length should prefer this over `get_storage`: it bounds the
+#! work an oversized note can impose on whoever attempts to consume it. The bound is an upper limit,
+#! so a script requiring an exact item count must still check the returned `num_storage_items`.
+#!
+#! Inputs:
+#!   Stack: [dest_ptr, max_num_storage_items]
+#!   Advice Map: { NOTE_STORAGE_COMMITMENT: [STORAGE] }
+#! Outputs:
+#!   Stack: [num_storage_items]
+#!
+#! Where:
+#! - dest_ptr is the memory address to write the note storage.
+#! - max_num_storage_items is the largest number of storage items the caller accepts.
+#! - NOTE_STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - STORAGE is the data corresponding to the note's storage.
+#! - num_storage_items is the number of storage items the active note was created with.
+#!
+#! Panics if:
+#! - no note is currently active.
+#! - num_storage_items is greater than max_num_storage_items.
+#!
+#! Invocation: exec
+pub proc get_bounded_storage(dest_ptr: MemoryAddress, max_num_storage_items: u16) -> u16
+    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    push.0.1
+    # => [is_active_note = 1, note_index = 0, dest_ptr, max_num_storage_items]
+
+    exec.input_note_internal::get_storage_info_raw
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, max_num_storage_items]
+
+    # reject an oversized note before its storage preimage is loaded and hashed
+    dup.4 dup.7 lte assert.err=ERR_NOTE_TOO_MANY_STORAGE_ITEMS
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, max_num_storage_items]
+
+    # the bound is no longer needed
+    movup.6 drop
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
     # save num_storage_items for the return value

@@ -24,6 +24,10 @@ const NUM_ITEMS_TRANSFER_OWNERSHIP = 3
 const NUM_ITEMS_ACCEPT_OWNERSHIP = 1
 const NUM_ITEMS_RENOUNCE_OWNERSHIP = 1
 
+# Largest storage item count any action uses. A note whose storage exceeds it cannot match any
+# selector, so it is rejected before its storage is loaded.
+const MAX_NUM_ITEMS = NUM_ITEMS_TRANSFER_OWNERSHIP
+
 # ERRORS
 # =================================================================================================
 
@@ -58,6 +62,7 @@ const ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner config note s
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized for the selected action (per the `Ownable2Step` procedures).
@@ -72,8 +77,9 @@ pub proc main
     assert.err=ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]
 
-    # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    # write the note storage to memory starting at STORAGE_PTR, rejecting a note whose storage is
+    # longer than any action accepts before that storage is loaded and hashed
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR
