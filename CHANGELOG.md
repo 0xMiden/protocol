@@ -6,6 +6,7 @@
 
 ### Changes
 
+- [BREAKING] Added a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and to the fee manager's `estimate_note_fee` and `get_fee_asset_id` procedures; affected component code commitments change ([#3504](https://github.com/0xMiden/protocol/issues/3504), [#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
@@ -74,7 +75,6 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 
 ### Fixes
 
-- [BREAKING] Added component-owned expiration limits to FPI-exposed transfer and fee procedures that read mutable foreign account state. Affected component code commitments change ([#3504](https://github.com/0xMiden/protocol/issues/3504)).
 - Fixed `faucet::mint` and `faucet::burn` failing when the asset's witness in the input vault had not already been loaded, which happened when minting into a faucet whose vault held other assets, or when burning an asset the transaction had not otherwise accessed; both procedures now request the witness from the host before updating the input vault ([#3409](https://github.com/0xMiden/protocol/pull/3409)).
 - Enforced the canonical encoding of `Authority` role map values on read: `Authority::try_from_storage` now rejects a procedure-role value word whose reserved felts (`value[1..=3]`) are non-zero, matching the value-slot check and completing the fix started in [#3209](https://github.com/0xMiden/protocol/pull/3209) ([#3415](https://github.com/0xMiden/protocol/pull/3415)).
 - Fixed `RoleBasedAccessControl` role administration becoming permanently unmanageable when a role's admin was delegated to a memberless role ([#3476](https://github.com/0xMiden/protocol/pull/3476)).

@@ -3,8 +3,6 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
-use miden::standards::fpi
-use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 
 # DEPENDENCY NOTE
 # This manager owns mint, burn, send, and receive policy state in a single component. The
@@ -151,6 +149,11 @@ end
 #! Binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`], which
 #! applies the pause check and invokes the active send policy.
 #!
+#! The dispatcher sets no transaction expiration delta: each policy decides its own limit (see
+#! [`miden::standards::fpi`]). When the active policy sets none, the dispatcher's own reads of the
+#! active policy root and the pause flag are not expiration-bounded either; a protocol-wide FPI
+#! expiration backstop is discussed in issue #3504.
+#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
 #!
@@ -161,9 +164,6 @@ end
 #! Invocation: call
 @account_procedure
 pub proc invoke_send_policy
-    push.DEFAULT_EXPIRATION_BLOCK_DELTA
-    exec.fpi::enforce_expiration_block_delta
-
     push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
@@ -220,6 +220,11 @@ end
 #! which applies the pause check and invokes the active receive policy (skipping both when no
 #! receive policy is configured).
 #!
+#! The dispatcher sets no transaction expiration delta: each policy decides its own limit (see
+#! [`miden::standards::fpi`]). When the active policy sets none, the dispatcher's own reads of the
+#! active policy root and the pause flag are not expiration-bounded either; a protocol-wide FPI
+#! expiration backstop is discussed in issue #3504.
+#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
 #!
@@ -233,9 +238,6 @@ end
 #! Invocation: call
 @account_procedure
 pub proc invoke_receive_policy
-    push.DEFAULT_EXPIRATION_BLOCK_DELTA
-    exec.fpi::enforce_expiration_block_delta
-
     push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
