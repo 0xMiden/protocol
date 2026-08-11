@@ -1,9 +1,8 @@
 use alloc::boxed::Box;
 
-#[cfg(test)]
-use miden_processor::DefaultHost;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{
+    DefaultHost,
     ExecutionError,
     ExecutionOptions,
     ExecutionOutput,
@@ -12,7 +11,6 @@ use miden_processor::{
     Program,
     StackInputs,
 };
-#[cfg(test)]
 use miden_protocol::assembly::Assembler;
 use miden_protocol::vm::{DebugSourceNodeId, Package, PackageDebugInfo};
 
@@ -22,7 +20,7 @@ use crate::ExecError;
 // ================================================================================================
 
 /// Helper for executing arbitrary code within arbitrary hosts.
-pub(crate) struct CodeExecutor<H> {
+pub struct CodeExecutor<H> {
     host: H,
     stack_inputs: Option<StackInputs>,
     advice_inputs: AdviceInputs,
@@ -52,14 +50,13 @@ impl<H: Host> CodeExecutor<H> {
     }
 
     /// Overrides the [`ExecutionOptions`] used to run the program (e.g. to cap `max_cycles`).
-    #[cfg(test)]
     pub fn execution_options(mut self, options: ExecutionOptions) -> Self {
         self.execution_options = Some(options);
         self
     }
 
-    /// Compiles and runs the desired code in the host and returns the [`Process`] state.
-    #[cfg(test)]
+    /// Compiles and runs the desired code in the host and returns the resulting
+    /// [`ExecutionOutput`].
     pub async fn run(self, code: &str) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
         use alloc::sync::Arc;
@@ -69,17 +66,18 @@ impl<H: Host> CodeExecutor<H> {
         use miden_standards::code_builder::CodeBuilder;
 
         let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
-        let assembler: Assembler = CodeBuilder::with_kernel_library(source_manager.clone()).into();
+        let assembler: Assembler =
+            CodeBuilder::with_kernel_core_package(source_manager.clone()).into();
 
         // Virtual file name should be unique.
         let virtual_source_file =
             source_manager.load(SourceLanguage::Masm, Uri::new("_user_code"), code.to_owned());
-        let package = assembler.assemble_program("tx-context-code", virtual_source_file).unwrap();
+        let package = assembler.assemble_program("mock-tx-code", virtual_source_file).unwrap();
 
         self.execute_package(package).await
     }
 
-    /// Executes the provided executable [`Package`] and returns the [`Process`] state.
+    /// Executes the provided executable [`Package`] and returns the resulting [`ExecutionOutput`].
     ///
     /// Package-owned debug information is used when present.
     pub async fn execute_package(
@@ -145,7 +143,6 @@ impl<H: Host> CodeExecutor<H> {
     }
 }
 
-#[cfg(test)]
 impl CodeExecutor<DefaultHost> {
     pub fn with_default_host() -> Self {
         use miden_core_lib::CoreLibrary;
@@ -164,8 +161,8 @@ impl CodeExecutor<DefaultHost> {
         let protocol_lib = ProtocolLib::default();
         host.load_library(protocol_lib.mast_forest()).unwrap();
 
-        let kernel_lib = TransactionKernel::library();
-        host.load_library(kernel_lib.mast_forest()).unwrap();
+        let kernel_core_package = TransactionKernel::core_package();
+        host.load_library(kernel_core_package.mast_forest()).unwrap();
 
         CodeExecutor::new(host)
     }

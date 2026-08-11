@@ -1,9 +1,9 @@
 use alloc::string::ToString;
 use alloc::sync::Arc;
-use core::slice;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -20,7 +20,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::{DefaultSourceManager, Library, ModuleKind, ModuleParser, Path};
+use miden_protocol::assembly::{DefaultSourceManager, ModuleKind, ModuleParser, Package, Path};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
@@ -56,8 +56,8 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionArgs,
     TransactionKernel,
-    TransactionScript,
     TransactionSummary,
+    TransactionSummaryUserParams,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
 use miden_standards::account::interface::{
@@ -76,6 +76,7 @@ use miden_tx::{
     LocalTransactionProver,
     TransactionExecutor,
     TransactionExecutorError,
+    TransactionKernelError,
     TransactionProverError,
 };
 use rstest::rstest;
@@ -112,8 +113,9 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     // block 11. We use account 1 for this, so that account 2 remains unchanged and is still valid
     // against reference block 1 which we'll use for the later transaction.
     let tx = mock_chain
-        .build_tx_context(account1.id(), &[spawn_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .build_transaction(account1.id())
+        .authenticated_input_note(spawn_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note.clone()))
         .build()?
         .execute()
         .await?;
@@ -132,10 +134,10 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
 
     // Attempt to execute a transaction against reference block 1 with the note created in block 11
     // - which should fail.
-    let tx_context = mock_chain.build_tx_context(account2.id(), &[], &[])?.build()?;
+    let mock_tx = mock_chain.build_transaction(account2.id()).build()?;
 
-    let tx_executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context)
-        .with_source_manager(tx_context.source_manager());
+    let tx_executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
+        .with_source_manager(mock_tx.source_manager());
 
     // Try to execute with block_ref==1
     let error = tx_executor
@@ -160,7 +162,7 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_block_procedures() -> anyhow::Result<()> {
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = "
         use miden::protocol::tx
@@ -180,23 +182,23 @@ async fn test_block_procedures() -> anyhow::Result<()> {
         end
         ";
 
-    let exec_output = &tx_context.execute_code(code).await?;
+    let exec_output = &mock_tx.execute_code(code).await?;
 
     assert_eq!(
         exec_output.get_stack_word(0),
-        tx_context.tx_inputs().block_header().commitment(),
+        mock_tx.tx_inputs().block_header().commitment(),
         "top word on the stack should be equal to the block header commitment"
     );
 
     assert_eq!(
         exec_output.get_stack_element(4).as_canonical_u64(),
-        tx_context.tx_inputs().block_header().timestamp() as u64,
+        mock_tx.tx_inputs().block_header().timestamp() as u64,
         "fifth element on the stack should be equal to the timestamp of the last block creation"
     );
 
     assert_eq!(
         exec_output.get_stack_element(5).as_canonical_u64(),
-        tx_context.tx_inputs().block_header().block_num().as_u64(),
+        mock_tx.tx_inputs().block_header().block_num().as_u64(),
         "sixth element on the stack should be equal to the block number"
     );
     Ok(())
@@ -205,7 +207,7 @@ async fn test_block_procedures() -> anyhow::Result<()> {
 #[tokio::test]
 async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let executor_account =
-        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, IncrNonceAuthComponent);
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, [IncrNonceAuthComponent]);
     let account_id = executor_account.id();
 
     // removed assets
@@ -275,7 +277,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         "\
-        use miden::standards::wallets::basic as wallet
+        use miden::core::sys
         use miden::protocol::output_note
         use mock::util
 
@@ -289,7 +291,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.{recipient_1}                  # recipient
             push.{NOTETYPE1}                    # note_type
             push.{tag1}                         # tag
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx = 0]
 
             dup
@@ -309,7 +311,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.{RECIPIENT2}                   # recipient
             push.{NOTETYPE2}                    # note_type
             push.{tag2}                         # tag
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx = 1]
 
             dup
@@ -334,7 +336,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.{RECIPIENT3}                   # recipient
             push.{NOTETYPE3}                    # note_type
             push.{tag3}                         # tag
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx = 2]
 
             # Store attachment3 words to memory at address 1024
@@ -347,6 +349,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => [attachment_scheme, num_words, ptr, note_idx]
             exec.output_note::add_attachment_from_memory
             # => []
+
+            exec.sys::truncate_stack
         end
     ",
         REMOVED_ASSET_ID_1 = removed_asset_1.to_id_word(),
@@ -370,7 +374,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         num_attachment3_words = attachment3.content().num_words(),
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     // expected delta
     // --------------------------------------------------------------------------------------------
@@ -378,15 +382,15 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     assert!(attachment3.content().num_words() > 1, "expected multi-word attachment");
 
-    let tx_context = TestTransactionBuilder::new(executor_account)
+    let mock_tx = TestTransactionBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),
         ])
         .build()?;
 
-    let executed_transaction = tx_context.execute().await?;
+    let executed_transaction = mock_tx.execute().await?;
 
     // output notes
     // --------------------------------------------------------------------------------------------
@@ -441,7 +445,6 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let source_code = r#"
       use miden::standards::auth
-      use miden::protocol::tx
       const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
@@ -451,19 +454,16 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           # => [pad(16)]
 
           exec.::miden::protocol::native_account::incr_nonce
-          exec.tx::get_block_number
-          push.0.0
-          # => [[0, 0, block_num, final_nonce], pad(16)]
-          # => [SALT, pad(16)]
+          # => [final_nonce, pad(16)]
+
+          # pass the final nonce as the last user param and zero the remaining ones
+          push.0.0.0.0.0.0
+          # => [user_params(7), pad(16)]
 
           exec.auth::create_tx_summary
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
 
-          # insert tx summary into advice provider for extraction by the host
-          adv.insert_hqword
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-
-          exec.auth::hash_tx_summary
+          exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -482,7 +482,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     let account = AccountBuilder::new([42; 32])
         .account_type(AccountType::Private)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .build_existing()
         .context("failed to build account")?;
@@ -496,13 +496,16 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     builder.add_output_note(RawOutputNote::Full(input_note.clone()));
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain.build_tx_context(account, &[input_note.id()], &[])?.build()?;
-    let ref_block_num = tx_context.tx_inputs().block_header().block_num().as_u32();
-    let final_nonce = tx_context.account().nonce().as_canonical_u64() as u32 + 1;
-    let input_notes = tx_context.input_notes().clone();
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .authenticated_input_note(input_note.id())
+        .build()?;
+    let ref_block_commitment = mock_tx.tx_inputs().block_header().commitment();
+    let final_nonce = mock_tx.account().nonce().as_canonical_u64() as u32 + 1;
+    let input_notes = mock_tx.input_notes().clone();
     let output_notes = RawOutputNotes::new(vec![RawOutputNote::Partial(output_note.into())])?;
 
-    let error = tx_context.execute().await.unwrap_err();
+    let error = mock_tx.execute().await.unwrap_err();
 
     assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
         assert!(tx_summary.account_delta().vault().is_empty());
@@ -510,10 +513,236 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         assert_eq!(tx_summary.account_delta().nonce_delta().as_canonical_u64(), 1);
         assert_eq!(tx_summary.input_notes(), &input_notes);
         assert_eq!(tx_summary.output_notes(), &output_notes);
-        assert_eq!(tx_summary.salt(), Word::from(
-          [0, 0, ref_block_num, final_nonce]
-        ));
+        assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
+        assert_eq!(tx_summary.expiration_delta(), 0);
+        assert_eq!(
+            tx_summary.user_params(),
+            TransactionSummaryUserParams::new([0, 0, 0, 0, 0, 0, final_nonce].map(Felt::from))
+        );
     });
+
+    Ok(())
+}
+
+/// Tests that the transaction summary binds the expiration block delta set during the transaction
+/// and the user-defined parameters passed to `create_tx_summary`.
+///
+/// The host verifies that the reconstructed summary commits to the message hashed in the kernel,
+/// so the assertions on the extracted summary prove that these values are part of the signed
+/// message.
+#[tokio::test]
+async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      use miden::protocol::tx
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          push.42 exec.tx::update_expiration_block_delta
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce
+          # => [final_nonce, pad(16)]
+
+          # pass [7, 8, 9] as the leading user params and the final nonce as the last one
+          push.0.0.0.9.8.7
+          # => [user_params(7), pad(16)]
+
+          exec.auth::create_tx_summary
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mock_chain = MockChain::builder().build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+    let ref_block_commitment = mock_tx.tx_inputs().block_header().commitment();
+    let final_nonce = mock_tx.account().nonce().as_canonical_u64() as u32 + 1;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
+        assert_eq!(tx_summary.expiration_delta(), 42);
+        assert_eq!(
+            tx_summary.user_params(),
+            TransactionSummaryUserParams::new([7, 8, 9, 0, 0, 0, final_nonce].map(Felt::from))
+        );
+        assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
+    });
+
+    Ok(())
+}
+
+/// Tests that the host rejects a transaction summary whose block commitment does not match the
+/// reference block of the transaction.
+#[tokio::test]
+async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce
+          # => [final_nonce, pad(16)]
+
+          # pass the final nonce as the last user param and zero the remaining ones
+          push.0.0.0.0.0.0
+          # => [user_params(7), pad(16)]
+
+          exec.auth::create_tx_summary
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          # replace BLOCK_COMMITMENT with a bogus word
+          swapw.3 dropw push.1.2.3.4 swapw.3
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([44; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mock_chain = MockChain::builder().build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryCommitmentMismatch(inner))
+                if inner.to_string().contains("block commitment")
+        )
+    );
+
+    Ok(())
+}
+
+/// Tests that the host rejects a transaction summary whose expiration delta does not match the
+/// kernel state of the transaction.
+#[tokio::test]
+async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      use miden::protocol::tx
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce drop
+          # => [pad(16)]
+
+          # Assemble the summary preimage manually with a forged PARAMS_HEAD word claiming an
+          # expiration delta of 777 while the transaction never set one.
+          padw
+          # => [PARAMS_TAIL, pad(16)]
+
+          push.0.0.0.777
+          # => [PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.tx::get_block_commitment
+          exec.tx::get_output_notes_commitment
+          exec.tx::get_input_notes_commitment
+          exec.::miden::protocol::native_account::compute_delta_commitment
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([45; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mock_chain = MockChain::builder().build()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
+                expected: 0,
+                actual: 777,
+            })
+        )
+    );
 
     Ok(())
 }
@@ -534,11 +763,12 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
     let spawn_note = builder.add_spawn_note([&p2any_note])?;
     let chain = builder.build()?;
 
-    let tx_builder =
-        chain.build_tx_context(account.id(), &[], core::slice::from_ref(&spawn_note))?;
+    let tx_builder = chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(spawn_note.clone());
 
     let tx = tx_builder.clone().build()?;
-    let ref_block_num = tx.tx_inputs().block_header().block_num();
+    let ref_block_commitment = tx.tx_inputs().block_header().commitment();
     let tx = tx.execute().await?;
 
     let nonce_delta = Felt::ONE;
@@ -554,7 +784,11 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         account_delta,
         InputNotes::new(vec![InputNote::unauthenticated(spawn_note)])?,
         RawOutputNotes::new(vec![RawOutputNote::Partial(PartialNote::from(p2any_note))])?,
-        Word::from([0, 0, ref_block_num.as_u32(), final_nonce.as_canonical_u64() as u32]),
+        ref_block_commitment,
+        0,
+        TransactionSummaryUserParams::new(
+            [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0, 0].map(Felt::from),
+        ),
     );
 
     let summary_commitment = expected_summary.to_commitment();
@@ -590,7 +824,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let library = compile_test_library(
+    let package = compile_test_package(
         source_manager.clone(),
         "test-tx-view-script",
         "test::module_1",
@@ -610,17 +844,17 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::new()
-        .with_statically_linked_library(&library)?
+        .with_statically_linked_package(&package)?
         .compile_tx_script(source)?;
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .with_source_manager(source_manager.clone())
         .tx_script(tx_script.clone())
         .build()?;
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let advice_inputs = tx_context.tx_args().advice_inputs().clone();
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let advice_inputs = mock_tx.tx_args().advice_inputs().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context)
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
         .with_source_manager(source_manager);
 
     let stack_outputs = executor
@@ -632,12 +866,12 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn compile_test_library(
+fn compile_test_package(
     source_manager: Arc<DefaultSourceManager>,
     name: &str,
     path: &str,
     source: &str,
-) -> Library {
+) -> Package {
     let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone());
     let source = ModuleParser::new(Some(ModuleKind::Library))
         .parse_str(Some(Path::new(path)), source, source_manager)
@@ -659,10 +893,10 @@ async fn failed_tx_script_reports_package_debug_message() -> anyhow::Result<()> 
         "#
     ))?;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .build()?;
-    let error = tx_context.execute().await.expect_err("transaction script should fail");
+    let error = mock_tx.execute().await.expect_err("transaction script should fail");
 
     assert_transaction_error_contains_debug_message(&error, ERROR_MESSAGE);
 
@@ -682,12 +916,12 @@ async fn failed_tx_view_script_reports_package_debug_message() -> anyhow::Result
         "#
     ))?;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let account_id = tx_context.account().id();
-    let block_ref = tx_context.tx_inputs().block_header().block_num();
-    let advice_inputs = tx_context.tx_args().advice_inputs().clone();
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let advice_inputs = mock_tx.tx_args().advice_inputs().clone();
 
-    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&tx_context);
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let error = executor
         .execute_tx_view_script(account_id, block_ref, tx_script, advice_inputs)
         .await
@@ -736,12 +970,12 @@ async fn test_tx_script_inputs() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_advice_map([(tx_script_input_key, tx_script_input_value.to_vec())])
+        .add_advice_map_entry(tx_script_input_key, tx_script_input_value.to_vec())
         .build()?;
 
-    tx_context.execute().await.context("failed to execute transaction")?;
+    mock_tx.execute().await.context("failed to execute transaction")?;
 
     Ok(())
 }
@@ -780,13 +1014,13 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
 
     // extend the advice map with the entry that is accessed using the provided transaction script
     // argument
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
-        .extend_advice_map([(tx_script_args, advice_entry.as_elements().to_vec())])
+        .add_advice_map_entry(tx_script_args, advice_entry.as_elements().to_vec())
         .tx_script_args(tx_script_args)
         .build()?;
 
-    tx_context.execute().await?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -814,11 +1048,11 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
         "#
     );
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account()
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
         .tx_script(tx_script)
         .build()?;
 
-    tx_context.execute_code(&code).await?;
+    mock_tx.execute_code(&code).await?;
 
     Ok(())
 }
@@ -841,9 +1075,9 @@ async fn test_get_script_root_without_script() -> anyhow::Result<()> {
         end
         "#;
 
-    let tx_context = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
-    tx_context.execute_code(code).await?;
+    mock_tx.execute_code(code).await?;
 
     Ok(())
 }
@@ -892,7 +1126,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         "#;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(component_code)?
+        .with_dynamically_linked_package(component_code)?
         .compile_tx_script(script)?;
 
     assert!(tx_script.mast().advice_map().get(&Word::try_from([1u64, 2, 3, 4])?).is_some());
@@ -911,13 +1145,13 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         account_code,
         Felt::new_unchecked(1u64),
     );
-    let tx_context = crate::TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
-    _ = tx_context.execute().await?;
+    let mock_tx = crate::TestTransactionBuilder::new(account).tx_script(tx_script).build()?;
+    _ = mock_tx.execute().await?;
 
     Ok(())
 }
 
-/// Test that reexecuting a transaction with no authenticator and the tx inputs from a first
+/// Test that reexecuting a transaction with no authenticator and the advice witness from a first
 /// successful execution is possible. This ensures that the signature generated in the first
 /// execution is present during re-execution.
 #[tokio::test]
@@ -936,15 +1170,20 @@ async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
     let chain = builder.build()?;
 
     let tx = chain
-        .build_tx_context(account.id(), &[note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
         .build()?
         .execute()
         .await?;
 
+    // The advice witness of the executed transaction carries the signature generated during the
+    // first execution, so feeding it back in lets the re-execution authenticate without an
+    // authenticator.
     let _reexecuted_tx = chain
-        .build_tx_context(account.id(), &[note.id()], &[])?
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
         .authenticator(None)
-        .tx_inputs(tx.tx_inputs().clone())
+        .extend_advice_inputs(tx.advice_witness().clone())
         .build()?
         .execute()
         .await?;
@@ -966,16 +1205,17 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([1u32; 4]));
     let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
 
-    let script = TransactionScript::from(SendNotesTransactionScript::new(
+    let script = SendNotesTransactionScript::new(
         &account.code_interface(),
         &[PartialNote::from(note_x.clone())],
-    )?);
+    )?;
 
     // The tx script reconstructs note_x as an output note (same recipient + same asset).
     let executed_tx = chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
-        .tx_script(script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note_x.clone())
+        .send_notes_script(&script)
+        .expected_output_note(RawOutputNote::Full(note_x.clone()))
         .build()?
         .execute()
         .await?;

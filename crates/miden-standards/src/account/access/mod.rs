@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 
 use miden_protocol::Felt;
@@ -9,7 +9,6 @@ pub mod authority;
 pub mod ownable2step;
 pub mod pausable;
 pub mod rbac;
-pub mod warden;
 
 /// Access control configuration for network-style accounts whose authority-gated setters are
 /// gated by an owner / role check rather than by the account's auth component.
@@ -22,7 +21,7 @@ pub mod warden;
 /// - [`AccessControl::Ownable2Step`] → [`Ownable2Step`] + [`Authority::OwnerControlled`]. The
 ///   setter gate enforces `sender == owner`.
 /// - [`AccessControl::Rbac`] → [`RoleBasedAccessControl`] + [`Authority::RbacControlled`]. The
-///   `roles` map assigns a role to individual gated procedures (keyed by procedure root);
+///   `procedure_roles` map assigns a role to individual gated procedures (keyed by procedure root);
 ///   procedures without a mapping fall back to the `ADMIN` role check.
 ///
 /// Pass to
@@ -37,7 +36,7 @@ pub mod warden;
 /// # let admin: miden_protocol::account::AccountId = unimplemented!();
 /// # let init_seed = [0u8; 32];
 /// AccountBuilder::new(init_seed)
-///     .with_components(AccessControl::Rbac { admin, roles: BTreeMap::new() });
+///     .with_components(AccessControl::Rbac { admin, procedure_roles: BTreeMap::new() });
 /// ```
 ///
 /// For accounts that don't use the [`AccessControl`] convenience but want to install the
@@ -55,15 +54,16 @@ pub enum AccessControl {
     /// admin role (its delegated admin, or `ADMIN` by default). See [`RoleBasedAccessControl`]
     /// for the administration model.
     ///
-    /// `roles` assigns a role to individual authority-gated procedures, keyed by procedure root
-    /// (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` → `UNPAUSER`, and
-    /// optionally `Authority::freeze_root()` → `FREEZER`). A gated procedure without an entry in
-    /// `roles` falls back to the `ADMIN` role. The emergency `freeze` / `unfreeze` switch resolves
-    /// its role the same way, defaulting to `ADMIN`. Role membership is managed through the
-    /// standard RBAC API on the [`RoleBasedAccessControl`] component.
+    /// `procedure_roles` assigns a role to individual authority-gated procedures, keyed by
+    /// procedure root (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` →
+    /// `UNPAUSER`, and optionally `Authority::freeze_root()` → `FREEZER`). A gated procedure
+    /// without an entry in `procedure_roles` falls back to the `ADMIN` role. The emergency
+    /// `freeze` / `unfreeze` switch resolves its role the same way, defaulting to `ADMIN`. Role
+    /// membership is managed through the standard RBAC API on the [`RoleBasedAccessControl`]
+    /// component.
     Rbac {
         admin: AccountId,
-        roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+        procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     },
 }
 
@@ -79,9 +79,9 @@ impl IntoIterator for AccessControl {
             AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
-            AccessControl::Rbac { admin, roles } => vec![
-                RoleBasedAccessControl::new(admin).into(),
-                Authority::RbacControlled { roles }.into(),
+            AccessControl::Rbac { admin, procedure_roles } => vec![
+                RoleBasedAccessControl::new(BTreeSet::from([admin]), BTreeMap::default()).into(),
+                Authority::RbacControlled { procedure_roles }.into(),
             ]
             .into_iter(),
         }
@@ -92,13 +92,12 @@ pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
 pub use rbac::RoleBasedAccessControl;
-pub use warden::{Warden, WardenError};
 
 // HELPERS
 // ================================================================================================
 
 /// Constructs an `Option<AccountId>` from a suffix/prefix felt pair.
-/// Returns `Ok(None)` when both felts are zero (e.g. no owner / no nomination / no warden).
+/// Returns `Ok(None)` when both felts are zero (e.g. no owner / no nomination).
 pub(crate) fn account_id_from_felt_pair(
     suffix: Felt,
     prefix: Felt,

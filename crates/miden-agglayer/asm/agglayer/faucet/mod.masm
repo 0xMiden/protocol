@@ -1,30 +1,6 @@
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Burns the fungible asset from the active note.
-#!
-#! This procedure retrieves the asset from the active note and burns it. The note must contain
-#! exactly one asset, which must be a fungible asset issued by this faucet.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the procedure is not called from a note context (active_note::get_assets will fail).
-#! - the note does not contain exactly one asset.
-#! - the transaction is executed against an account which is not a fungible asset faucet.
-#! - the transaction is executed against a faucet which is not the origin of the specified asset.
-#! - the amount about to be burned is greater than the outstanding supply of the asset.
-#!
-#! Invocation: call
 pub use {receive_and_burn} from miden::standards::faucets::fungible
-
-#! Re-export the fungible faucet's `mint_and_send` procedure.
-#!
-#! See `miden::standards::faucets::fungible::mint_and_send` for more details.
-#!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
-#! Outputs: [note_idx, pad(15)]
-#!
-#! Invocation: call
 pub use {mint_and_send} from miden::standards::faucets::fungible
+pub use {has_procedure} from miden::standards::inspection::code_inspection

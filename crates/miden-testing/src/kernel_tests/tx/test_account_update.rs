@@ -50,17 +50,20 @@ use crate::{Auth, MockChain, TestTransactionBuilder};
 /// Tests that an empty account delta commits to the empty word.
 #[tokio::test]
 async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
-    let tx_script = CodeBuilder::with_mock_libraries()
+    let tx_script = CodeBuilder::with_mock_packages()
         .compile_tx_script(
             r#"
-      use miden::protocol::native_account
+      use miden::core::sys
+      use mock::account as mock_account
 
       @transaction_script
       pub proc main
-          exec.native_account::compute_delta_commitment
-          # => [DELTA_COMMITMENT]
+          call.mock_account::compute_delta_commitment
+          # => [DELTA_COMMITMENT, pad(12)]
 
           padw assert_eqw.err="empty account delta should commit to the empty word"
+
+          exec.sys::truncate_stack
       end
       "#,
         )
@@ -72,8 +75,7 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], &[])
-        .expect("failed to build tx context")
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .build()?
         .execute()
@@ -603,7 +605,7 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
             push.{tag}             # tag
 
             # create the note
-            exec.output_note::create
+            call.::mock::account::create_note
             # => [note_idx, pad(15)]
 
             # move the asset into the new note
@@ -653,7 +655,7 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
         mock_map_slot = &*MOCK_MAP_SLOT,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
 
     let expected_storage_patch = AccountStoragePatch::builder()
         .update_value(MOCK_VALUE_SLOT0.clone(), updated_slot_value)
@@ -709,7 +711,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     // Build a public account so the proven transaction includes the account update.
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(delta_check_auth_component())
+        .with_component(delta_check_auth_component())
         .with_component(MockAccountComponent::with_slots(vec![
             AccountStorage::mock_value_slot0(),
             StorageSlot::with_map(map0_slot_name.clone(), map0.clone()),
@@ -743,7 +745,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -835,7 +837,7 @@ async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
             StorageSlot::with_empty_value(slot_name0.clone()),
             StorageSlot::with_value(slot_name1.clone(), slot_value2),
         ]))
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .build()?;
 
     let tx = TestTransactionBuilder::new(account.clone()).build()?.execute().await?;
@@ -883,7 +885,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
             StorageSlot::with_empty_map(slot_name0.clone()),
             StorageSlot::with_empty_map(slot_name1.clone()),
         ]))
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .build()?;
 
     let map_key = StorageMapKey::from_array([1, 2, 3, 4u32]);
@@ -918,7 +920,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
       "#
     );
 
-    let builder = CodeBuilder::with_mock_libraries();
+    let builder = CodeBuilder::with_mock_packages();
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
@@ -1037,17 +1039,14 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
         # => [[AUTH_ARGS], pad(12)]
 
         # Build the tx summary.
-        # Replace AUTH_ARGS with an EMPTY_WORD salt for the tx summary.
-        dropw padw
-        # => [SALT, pad(12)]
+        # Replace AUTH_ARGS with all-zero user params.
+        dropw padw push.0.0.0
+        # => [user_params(7), pad(12)]
 
         exec.::miden::standards::auth::create_tx_summary
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(12)]
 
-        adv.insert_hqword
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-        exec.::miden::standards::auth::hash_tx_summary
+        exec.::miden::standards::auth::hash_and_insert_tx_summary
         # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
         emit.AUTH_UNAUTHORIZED_EVENT
@@ -1060,12 +1059,12 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     );
 
     let auth_component_code =
-        CodeBuilder::with_mock_libraries().compile_component_code("test::account", auth_code)?;
+        CodeBuilder::with_mock_packages().compile_component_code("test::account", auth_code)?;
 
     let mut builder = MockChain::builder();
     let account = Account::builder(builder.rng_mut().random())
         .account_type(AccountType::Public)
-        .with_auth_component(AccountComponent::new(
+        .with_component(AccountComponent::new(
             auth_component_code,
             vec![],
             AccountComponentMetadata::new("test::account"),
@@ -1077,7 +1076,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let tx_summary = mock_chain
-        .build_tx_context(account, &[], &[])?
+        .build_transaction(account)
         .build()?
         .execute()
         .await
@@ -1108,7 +1107,7 @@ fn parse_tx_script(code: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
         code = code.as_ref()
     );
 
-    CodeBuilder::with_mock_libraries()
+    CodeBuilder::with_mock_packages()
         .compile_tx_script(&code)
         .context("failed to parse tx script")
 }
@@ -1191,17 +1190,14 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
 
         dup
         if.true
-            # Replace AUTH_ARGS with an EMPTY_WORD salt for the tx summary.
-            dropw padw
-            # => [SALT, pad(12)]
+            # Replace AUTH_ARGS with all-zero user params.
+            dropw padw push.0.0.0
+            # => [user_params(7), pad(12)]
 
             exec.::miden::standards::auth::create_tx_summary
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(12)]
 
-            adv.insert_hqword
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
-
-            exec.::miden::standards::auth::hash_tx_summary
+            exec.::miden::standards::auth::hash_and_insert_tx_summary
             # => [TX_SUMMARY_COMMITMENT, pad(12)]
 
             emit.AUTH_UNAUTHORIZED_EVENT
@@ -1211,15 +1207,15 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
     end
 "#;
 
-static DELTA_CHECK_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    CodeBuilder::with_mock_libraries()
+static DELTA_CHECK_AUTH_PACKAGE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    CodeBuilder::with_mock_packages()
         .compile_component_code("test::incr_nonce_with_delta_check_auth", DELTA_CHECK_AUTH_CODE)
         .expect("delta-check auth code should compile")
 });
 
 fn delta_check_auth_component() -> AccountComponent {
     AccountComponent::new(
-        DELTA_CHECK_AUTH_LIBRARY.clone(),
+        DELTA_CHECK_AUTH_PACKAGE.clone(),
         vec![],
         AccountComponentMetadata::new("test::incr_nonce_with_delta_check_auth"),
     )
@@ -1268,7 +1264,7 @@ impl AccountUpdateTest {
         let mut builder = MockChain::builder();
         let account = Account::builder(builder.rng_mut().random())
             .account_type(AccountType::Public)
-            .with_auth_component(delta_check_auth_component())
+            .with_component(delta_check_auth_component())
             .with_component(MockAccountComponent::with_slots(initial_storage_slots))
             .with_assets(initial_vault_assets)
             .build_existing()?;
@@ -1303,7 +1299,8 @@ impl AccountUpdateTest {
         // Delta path: emit unauthorized so the host's build_tx_summary cross-checks the delta.
         let delta_run = {
             let mut tx = mock_chain
-                .build_tx_context(account.id(), &input_note_ids, &[])?
+                .build_transaction(account.id())
+                .authenticated_input_notes(input_note_ids.iter().copied())
                 .auth_args(emit_delta_args());
             if let Some(ref script) = tx_script {
                 tx = tx.tx_script(script.clone());
@@ -1320,7 +1317,8 @@ impl AccountUpdateTest {
         // Patch path: complete the tx normally and check the patch.
         let patch_run_tx = {
             let mut tx = mock_chain
-                .build_tx_context(account.id(), &input_note_ids, &[])?
+                .build_transaction(account.id())
+                .authenticated_input_notes(input_note_ids.iter().copied())
                 .auth_args(EMPTY_WORD);
             if let Some(script) = tx_script {
                 tx = tx.tx_script(script);

@@ -1,3 +1,5 @@
+use alloc::collections::BTreeSet;
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -66,23 +68,46 @@ impl AccountCode {
     /// Returns a new [`AccountCode`] instantiated from the provided [`MastForest`] and a list of
     /// [`AccountProcedureRoot`]s.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if:
+    /// Returns an error if:
     /// - The number of procedures is smaller than 2 or greater than 256.
-    pub fn from_parts(mast: Arc<MastForest>, procedures: Vec<AccountProcedureRoot>) -> Self {
-        assert!(procedures.len() >= Self::MIN_NUM_PROCEDURES, "not enough account procedures");
-        assert!(procedures.len() <= Self::MAX_NUM_PROCEDURES, "too many account procedures");
+    /// - The procedure roots are not unique.
+    /// - Any provided procedure root is not in the provided [`MastForest`].
+    pub fn from_parts(
+        mast: Arc<MastForest>,
+        procedures: Vec<AccountProcedureRoot>,
+    ) -> Result<Self, AccountError> {
+        if procedures.len() < Self::MIN_NUM_PROCEDURES {
+            return Err(AccountError::AccountCodeNoProcedures);
+        }
+        if procedures.len() > Self::MAX_NUM_PROCEDURES {
+            return Err(AccountError::AccountCodeTooManyProcedures(procedures.len()));
+        }
 
-        Self {
+        let mut unique_roots = BTreeSet::new();
+        for procedure in &procedures {
+            if !unique_roots.insert(procedure.as_word()) {
+                return Err(AccountError::AccountCodeDuplicateProcedureRoot(procedure.as_word()));
+            }
+        }
+
+        // make sure that all account procedures are in the MAST forest
+        for procedure in procedures.iter() {
+            if mast.find_procedure_root(procedure.as_word()).is_none() {
+                return Err(AccountError::AccountCodeProcedureNotInMastForest(*procedure));
+            }
+        }
+
+        Ok(Self {
             commitment: build_procedure_commitment(&procedures),
             procedures,
             mast,
             package_debug_info: None,
-        }
+        })
     }
 
-    /// Creates a new [`AccountCode`] from the provided components' libraries.
+    /// Creates a new [`AccountCode`] from the provided components' packages.
     ///
     /// For testing use only.
     #[cfg(any(feature = "testing", test))]
@@ -90,7 +115,7 @@ impl AccountCode {
         Self::from_components_unchecked(components)
     }
 
-    /// Creates a new [`AccountCode`] from the provided components' libraries.
+    /// Creates a new [`AccountCode`] from the provided components' packages.
     ///
     /// # Warning
     ///
@@ -99,14 +124,14 @@ impl AccountCode {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The number of procedures in all merged libraries is 0 or exceeds
+    /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more libraries export a procedure with the same MAST root.
+    /// - Two or more packages export a procedure with the same MAST root.
     /// - The first component doesn't contain exactly one authentication procedure.
     /// - Other components contain authentication procedures.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of a component or of all
     ///   components exceeds 255.
-    /// - [`MastForest::merge`] fails on all libraries.
+    /// - [`MastForest::merge`] fails on all packages.
     pub(super) fn from_components_unchecked(
         components: &[AccountComponent],
     ) -> Result<Self, AccountError> {
@@ -116,14 +141,21 @@ impl AccountCode {
         let package_debug_info = merge_component_debug_info(components, &root_map)?;
 
         let mut builder = AccountProcedureBuilder::new();
-        let mut components_iter = components.iter();
+        let mut num_auth_components = 0;
 
-        let first_component =
-            components_iter.next().ok_or(AccountError::AccountCodeNoAuthComponent)?;
-        builder.add_auth_component(first_component)?;
+        for component in components {
+            if component.is_auth_component() {
+                num_auth_components += 1;
+                builder.add_auth_component(component)?
+            } else {
+                builder.add_component(component)?;
+            }
+        }
 
-        for component in components_iter {
-            builder.add_component(component)?;
+        if num_auth_components == 0 {
+            return Err(AccountError::AccountCodeNoAuthComponent);
+        } else if num_auth_components > 1 {
+            return Err(AccountError::AccountCodeMultipleAuthComponents);
         }
 
         let procedures = builder.build()?;
@@ -289,30 +321,12 @@ impl Deserializable for AccountCode {
         let mast = Arc::new(MastForest::read_from(source)?);
         let num_procedures = (source.read_u8()? as usize) + 1;
 
-        // make sure the number of procedures is valid; we only check the minimum because
-        // u8::MAX + 1 is guaranteed to be less than or equal to 256
-        if num_procedures < Self::MIN_NUM_PROCEDURES {
-            return Err(DeserializationError::InvalidValue(format!(
-                "account code must contain at least {} procedures, but has only {num_procedures} procedures",
-                Self::MIN_NUM_PROCEDURES
-            )));
-        }
-
         let procedures = source
             .read_many_iter(num_procedures)?
             .collect::<Result<Vec<AccountProcedureRoot>, _>>()?;
 
-        // make sure that all account procedures are in the MAST forest
-        for procedure in procedures.iter() {
-            if mast.find_procedure_root(procedure.as_word()).is_none() {
-                return Err(DeserializationError::InvalidValue(format!(
-                    "procedure with root {} is missing from account code's MAST forest",
-                    procedure.as_word()
-                )));
-            }
-        }
-
-        Ok(Self::from_parts(mast, procedures))
+        Self::from_parts(mast, procedures)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -429,7 +443,7 @@ fn merge_component_debug_info(
         .iter()
         .enumerate()
         .filter_map(|(idx, component)| {
-            package_debug_info(component.component_code().as_library()).map(|debug| (idx, debug))
+            package_debug_info(component.component_code().as_package()).map(|debug| (idx, debug))
         })
         .collect::<Vec<_>>();
 
@@ -458,15 +472,18 @@ fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use assert_matches::assert_matches;
 
-    use super::{AccountCode, Deserializable, Serializable};
-    use crate::account::AccountComponent;
+    use super::{AccountCode, ByteWriter, Deserializable, DeserializationError, Serializable};
+    use crate::Word;
     use crate::account::code::build_procedure_commitment;
     use crate::account::component::AccountComponentMetadata;
+    use crate::account::{AccountComponent, AccountProcedureRoot};
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     #[test]
@@ -493,10 +510,10 @@ mod tests {
 
     #[test]
     fn test_account_code_no_auth_component() {
-        let library =
-            assemble_test_library("test-account-code-no-auth", "test::account_code", CODE);
+        let package =
+            assemble_test_package("test-account-code-no-auth", "test::account_code", CODE);
         let metadata = AccountComponentMetadata::new("test::no_auth");
-        let component = AccountComponent::new(library, vec![], metadata).unwrap();
+        let component = AccountComponent::new(package, vec![], metadata).unwrap();
 
         let err = AccountCode::from_components(&[component]).unwrap_err();
 
@@ -505,10 +522,10 @@ mod tests {
 
     #[test]
     fn test_account_code_preserves_component_debug_info() {
-        let library =
-            assemble_test_library("test-account-code-debug-info", "test::account_code", CODE);
+        let package =
+            assemble_test_package("test-account-code-debug-info", "test::account_code", CODE);
         let metadata = AccountComponentMetadata::new("test::debug_info");
-        let component = AccountComponent::new(library, vec![], metadata).unwrap();
+        let component = AccountComponent::new(package, vec![], metadata).unwrap();
 
         let code = AccountCode::from_components(&[NoopAuthComponent.into(), component]).unwrap();
 
@@ -538,16 +555,67 @@ mod tests {
             end
         ";
 
-        let library = assemble_test_library(
+        let package = assemble_test_package(
             "test-account-code-multiple-auth",
             "test::account_code_multiple_auth",
             code_with_multiple_auth,
         );
         let metadata = AccountComponentMetadata::new("test::multiple_auth");
-        let component = AccountComponent::new(library, vec![], metadata).unwrap();
+        let component = AccountComponent::new(package, vec![], metadata).unwrap();
 
         let err = AccountCode::from_components(&[component]).unwrap_err();
 
         assert_matches!(err, AccountError::AccountComponentMultipleAuthProcedures);
+    }
+
+    #[test]
+    fn test_account_code_from_parts_rejects_duplicate_roots() {
+        let code = AccountCode::mock();
+        let procedures = code.procedures();
+
+        // repeat the non-auth procedure root at a second index
+        let duplicated = vec![procedures[0], procedures[1], procedures[1]];
+        let err = AccountCode::from_parts(code.mast(), duplicated).unwrap_err();
+
+        assert_matches!(
+            err,
+            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[1].as_word()
+        );
+    }
+
+    #[test]
+    fn test_account_code_from_parts_rejects_missing_root() {
+        let code = AccountCode::mock();
+        let procedures = code.procedures();
+        let non_existent_root = AccountProcedureRoot::from_raw(Word::from([1, 2, 3, 4u32]));
+
+        // provide a procedure root that is not in the mast forest
+        let procedures = vec![procedures[0], non_existent_root];
+        let err = AccountCode::from_parts(code.mast(), procedures).unwrap_err();
+
+        assert_matches!(
+            err,
+            AccountError::AccountCodeProcedureNotInMastForest(root) if root == non_existent_root
+        );
+    }
+
+    #[test]
+    fn test_account_code_deserialization_rejects_duplicate_roots() {
+        let code = AccountCode::mock();
+        let procedures = code.procedures();
+
+        let mut bytes = Vec::new();
+        code.mast().write_into(&mut bytes);
+        bytes.write_u8(3 - 1); // num_procedures is serialized as count - 1
+        procedures[0].write_into(&mut bytes);
+        procedures[1].write_into(&mut bytes);
+        procedures[1].write_into(&mut bytes);
+
+        let err = AccountCode::read_from_bytes(&bytes).unwrap_err();
+
+        assert_matches!(
+            err,
+            DeserializationError::InvalidValue(msg) if msg.contains("duplicate procedure with root")
+        );
     }
 }

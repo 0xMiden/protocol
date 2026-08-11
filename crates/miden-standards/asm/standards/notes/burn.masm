@@ -1,30 +1,114 @@
-use miden::standards::faucets::fungible as faucet
+use miden::standards::faucets::fungible as fungible
+use miden::standards::faucets::non_fungible as non_fungible
+use miden::standards::inspection::code_inspection
+use miden::protocol::active_note
+use miden::protocol::asset
 
-#! BURN script: burns the asset from the note by calling the faucet's `receive_and_burn`
-#! procedure. This note is intended to be executed against a fungible faucet account.
+# MEMORY
+# =================================================================================================
+
+const STORAGE_PTR = 0
+const NOTE_ASSET_PTR = 8
+const NUM_STORAGE_ITEMS = 8
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BURN_UNSUPPORTED_FAUCET = "the consuming account exposes neither a fungible nor a non-fungible faucet receive_and_burn procedure"
+const ERR_BURN_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "burn note expects exactly 8 note storage items"
+const ERR_BURN_WRONG_NUMBER_OF_ASSETS = "burn note must carry exactly one asset"
+const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the asset it carries"
+
+#! BURN script: burns the asset stored in and carried by the note by calling the consuming faucet's
+#! `receive_and_burn` procedure. Works against both fungible and non-fungible faucets.
 #!
-#! The receive_and_burn procedure in the faucet already handles all necessary validations
-#! including:
-#! - Checking that the note contains exactly one asset
-#! - Verifying the asset is a fungible asset issued by this faucet
-#! - Ensuring the amount to burn doesn't exceed the outstanding supply
+#! The faucet kind is determined by reflection: the script asks the account (via the
+#! `CodeInspection` component's `has_procedure`) whether it exposes the fungible
+#! `receive_and_burn`; if so the fungible procedure is called, otherwise the non-fungible one is
+#! called after asserting the account exposes it.
+#!
+#! Before calling the faucet, the script checks that the note carries exactly one asset and that it
+#! exactly matches the asset embedded in note storage. The faucet receives that stored asset as an
+#! explicit parameter, verifies it was issued by the consuming faucet, enforces the active burn
+#! policy, and updates supply / asset status.
 #!
 #! Requires that the account exposes:
-#! - `miden::standards::faucets::fungible::receive_and_burn` procedure.
+#! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
+#! - either `miden::standards::faucets::fungible::receive_and_burn` or
+#!   `miden::standards::faucets::non_fungible::receive_and_burn`.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - account does not expose receive_and_burn procedure.
-#! - any of the validations in the receive_and_burn procedure fail.
+#! - the account does not expose the `has_procedure` procedure.
+#! - the account exposes neither faucet's `receive_and_burn` procedure.
+#! - the note storage does not contain exactly one asset.
+#! - the note does not carry exactly one asset, or that asset differs from the stored asset.
+#! - any of the validations in the `receive_and_burn` procedure fail.
 @note_script
 pub proc main
     dropw
     # => [pad(16)]
 
-    # Call the fungible faucet receive_and_burn wrapper which enforces burn policy and then burns
-    # the asset.
-    call.faucet::receive_and_burn
+    # Load the asset embedded in storage and require the canonical eight-felt asset layout.
+    push.STORAGE_PTR exec.active_note::get_storage
+    eq.NUM_STORAGE_ITEMS assert.err=ERR_BURN_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [pad(16)]
+
+    # Remove the note's single carried asset so it enters the transaction vault.
+    push.NOTE_ASSET_PTR exec.active_note::remove_all_assets
+    eq.1 assert.err=ERR_BURN_WRONG_NUMBER_OF_ASSETS
+    # => [pad(16)]
+
+    # Check the carried asset against the stored asset word-for-word. This also guarantees that
+    # the amount handed to the faucet is exactly the amount carried by the note.
+    push.NOTE_ASSET_PTR exec.asset::load
+    push.STORAGE_PTR exec.asset::load
+    # => [STORED_ASSET_ID, STORED_ASSET_VALUE, NOTE_ASSET_ID, NOTE_ASSET_VALUE, pad(16)]
+
+    movupw.2 assert_eqw.err=ERR_BURN_ASSET_MISMATCH
+    assert_eqw.err=ERR_BURN_ASSET_MISMATCH
+    # => [pad(16)]
+
+    # Determine the faucet kind
+    procref.fungible::receive_and_burn
+    # => [FUNGIBLE_RECEIVE_AND_BURN_ROOT, pad(16)]
+
+    call.code_inspection::has_procedure
+    # => [is_fungible, pad(19)]
+
+    movdn.4 dropw
+    # => [is_fungible, pad(15)]
+
+    if.true
+        # Fungible faucet: burn the fungible asset.
+        push.STORAGE_PTR exec.asset::load
+        swapdw dropw dropw
+        # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+        call.fungible::receive_and_burn
+        # => [pad(16)]
+    else
+        # Not a fungible faucet: require that it is a non-fungible faucet.
+        procref.non_fungible::receive_and_burn
+        # => [NON_FUNGIBLE_RECEIVE_AND_BURN_ROOT, pad(16)]
+
+        call.code_inspection::has_procedure
+        # => [is_non_fungible, pad(19)]
+
+        movdn.4 dropw
+        # => [is_non_fungible, pad(15)]
+
+        assert.err=ERR_BURN_UNSUPPORTED_FAUCET
+        # => [pad(16)]
+
+        push.STORAGE_PTR exec.asset::load
+        swapdw dropw dropw
+        # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+        call.non_fungible::receive_and_burn
+        # => [pad(16)]
+    end
     # => [pad(16)]
 end

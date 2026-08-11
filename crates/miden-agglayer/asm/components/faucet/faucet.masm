@@ -1,0 +1,14 @@
+# The MASM code of the AggLayer Faucet Account Component.
+#
+# This is a thin wrapper that re-exports faucet-related procedures from the agglayer library.
+#
+# The faucet exposes:
+# - `mint_and_send` from the fungible faucet (for MINT note consumption, with owner verification
+#   gated by the active mint policy)
+# - `receive_and_burn` for bridge-out
+# - `has_procedure` from the CodeInspection component, so the unified MINT/BURN note scripts can
+#   reflectively detect the faucet kind.
+
+pub use {mint_and_send} from agglayer::faucet
+pub use {receive_and_burn} from agglayer::faucet
+pub use {has_procedure} from agglayer::faucet

@@ -3,9 +3,11 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use miden::protocol::account_id
 use miden::protocol::active_account
-use miden::protocol::active_note
 use miden::protocol::native_account
-use agglayer::common::utils
+use miden::standards::access::authority
+use miden::standards::access::pausable
+use {ONE_WORD} from miden::standards::utils
+use miden::standards::utils
 
 # ERRORS
 # =================================================================================================
@@ -14,21 +16,16 @@ const ERR_GER_NOT_FOUND = "GER not found in storage"
 const ERR_GER_ALREADY_REGISTERED = "GER is already registered in storage"
 const ERR_FAUCET_NOT_REGISTERED = "faucet is not registered in the bridge's faucet registry"
 const ERR_TOKEN_NOT_REGISTERED = "(origin token address, origin network) pair is not registered in the bridge's token registry"
-const ERR_SENDER_NOT_BRIDGE_ADMIN = "note sender is not the bridge admin"
-const ERR_SENDER_NOT_GER_INJECTOR = "note sender is not the global exit root injector"
-const ERR_SENDER_NOT_GER_REMOVER = "note sender is not the global exit root remover"
 
 # CONSTANTS
 # =================================================================================================
 
 # Storage slots
-const BRIDGE_ADMIN_SLOT = word("agglayer::bridge::admin_account_id")
-const GER_INJECTOR_SLOT = word("agglayer::bridge::ger_injector_account_id")
-const GER_REMOVER_SLOT = word("agglayer::bridge::ger_remover_account_id")
 const GER_MAP_STORAGE_SLOT = word("agglayer::bridge::ger_map")
 const FAUCET_REGISTRY_MAP_SLOT = word("agglayer::bridge::faucet_registry_map")
 const TOKEN_REGISTRY_MAP_SLOT = word("agglayer::bridge::token_registry_map")
 const FAUCET_METADATA_MAP_SLOT = word("agglayer::bridge::faucet_metadata_map")
+const NETWORK_ID_SLOT = word("agglayer::bridge::network_id")
 
 # Storage slot constants for the removed GER hash chain.
 # The chain is updated as `keccak256(prev_chain || ger)` on each removal and stored in two
@@ -41,7 +38,7 @@ const REMOVED_GER_HASH_CHAIN_LO_SLOT = word("agglayer::bridge::removed_ger_hash_
 const REMOVED_GER_HASH_CHAIN_HI_SLOT = word("agglayer::bridge::removed_ger_hash_chain_hi")
 
 # Flags
-const GER_KNOWN_FLAG = [1, 0, 0, 0]
+const GER_KNOWN_FLAG = ONE_WORD
 const FAUCET_REGISTERED_FLAG = 1
 
 # Offset in the local memory of the `hash_token_address` procedure
@@ -78,14 +75,16 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the global exit root injector.
+#! - the note sender does not hold the global exit root injector role.
+#! - the bridge is paused.
 #! - the GER has already been registered in storage.
 #!
 #! Invocation: call
 @account_procedure
 pub proc update_ger
-    # assert the note sender is the global exit root injector.
-    exec.assert_sender_is_ger_injector
+    # assert the note sender is authorized for this procedure (holds the GER injector role).
+    exec.authority::assert_authorized
+    exec.pausable::assert_not_paused
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
     # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER)
@@ -113,6 +112,9 @@ end
 #! Removes a Global Exit Root (GER) from the bridge account storage and folds it into the running
 #! removed-GER keccak256 hash chain.
 #!
+#! Deliberately exempt from the emergency-pause check: a paused bridge must still be able to
+#! revoke a fraudulent GER.
+#!
 #! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER), overwrites the map entry with
 #! [0, 0, 0, 0] (Miden equivalent of Solidity's `delete globalExitRootMap[ger]`) while asserting
 #! that the previous map value equals GER_KNOWN_FLAG (i.e. the GER was currently known), and
@@ -122,14 +124,14 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the global exit root remover.
+#! - the note sender does not hold the global exit root remover role.
 #! - the GER is not currently registered in the bridge's GER map.
 #!
 #! Invocation: call
 @account_procedure
 pub proc remove_ger
-    # assert the note sender is the global exit root remover.
-    exec.assert_sender_is_ger_remover
+    # assert the note sender is authorized for this procedure (holds the GER remover role).
+    exec.authority::assert_authorized
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
     # duplicate the GER (16 felts) so we can use one copy to compute the map key
@@ -212,13 +214,16 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the bridge admin.
+#! - the note sender does not hold the faucet manager role.
+#! - the bridge is paused.
 #!
 #! Invocation: call
 @locals(14)
 @account_procedure
 pub proc register_faucet
-    exec.assert_sender_is_bridge_admin
+    # assert the note sender is authorized for this procedure (holds the faucet manager role).
+    exec.authority::assert_authorized
+    exec.pausable::assert_not_paused
     # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
     # Save non-address data to locals.
@@ -359,12 +364,15 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the bridge admin.
+#! - the note sender does not hold the faucet manager role.
+#! - the bridge is paused.
 #!
 #! Invocation: call
 @account_procedure
 pub proc store_faucet_metadata_hash
-    exec.assert_sender_is_bridge_admin
+    # assert the note sender is authorized for this procedure (holds the faucet manager role).
+    exec.authority::assert_authorized
+    exec.pausable::assert_not_paused
     # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
     # --- Store METADATA_HASH_LO at key [SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix] ---
@@ -399,7 +407,8 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the bridge admin.
+#! - the note sender does not hold the faucet manager role.
+#! - the bridge is paused.
 #! - the faucet is not currently registered in the faucet registry.
 #!
 #! Locals:
@@ -410,8 +419,9 @@ end
 @locals(2)
 @account_procedure
 pub proc deregister_faucet
-    # assert the note sender is the bridge admin.
-    exec.assert_sender_is_bridge_admin
+    # assert the note sender is authorized for this procedure (holds the faucet manager role).
+    exec.authority::assert_authorized
+    exec.pausable::assert_not_paused
     # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
 
     # Stash the faucet ID; it is needed for every map key below.
@@ -666,16 +676,16 @@ pub proc lookup_faucet_by_token_address
     exec.active_account::get_map_item
     # => [0, 0, faucet_id_suffix, faucet_id_prefix]
 
-    # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
-    dup.3 dup.3 push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 0, 0, faucet_id_suffix, faucet_id_prefix]
-
-    exec.account_id::is_equal
-    # => [is_id_zero, 0, 0, faucet_id_suffix, faucet_id_prefix]
-
-    # If AccountId returned from map is zero, it means the (address, network) pair is not registered.
-    assertz.err=ERR_TOKEN_NOT_REGISTERED
     drop drop
+    # => [faucet_id_suffix, faucet_id_prefix]
+
+    # Assert the token is registered: faucet_id is always non-zero for valid account IDs.
+    exec.account_id::testz
+    # => [is_id_zero, faucet_id_suffix, faucet_id_prefix]
+
+    # If the AccountId returned from the map is zero, it means the (address, network) pair is not
+    # registered.
+    assertz.err=ERR_TOKEN_NOT_REGISTERED
     # => [faucet_id_suffix, faucet_id_prefix]
 end
 
@@ -702,90 +712,6 @@ proc hash_token_address
     push.6 locaddr.TOKEN_ADDR_HASH_PTR
     exec.poseidon2::hash_elements
     # => [TOKEN_ADDR_HASH]
-end
-
-#! Asserts that the note sender matches the bridge admin stored in account storage.
-#!
-#! Reads the bridge admin account ID from BRIDGE_ADMIN_SLOT and compares it against the sender of
-#! the currently executing note.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender does not match the bridge admin account ID.
-#!
-#! Invocation: exec
-proc assert_sender_is_bridge_admin
-    push.BRIDGE_ADMIN_SLOT[0..2]
-    exec.active_account::get_item
-    # => [0, 0, admin_suffix, admin_prefix, pad(16)]
-
-    drop drop
-    # => [admin_suffix, admin_prefix, pad(16)]
-
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, admin_suffix, admin_prefix, pad(16)]
-
-    exec.account_id::is_equal
-    assert.err=ERR_SENDER_NOT_BRIDGE_ADMIN
-    # => [pad(16)]
-end
-
-#! Asserts that the note sender matches the global exit root injector stored in account storage.
-#!
-#! Reads the GER injector account ID from GER_INJECTOR_SLOT and compares it against the sender of the
-#! currently executing note.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender does not match the GER injector account ID.
-#!
-#! Invocation: exec
-proc assert_sender_is_ger_injector
-    push.GER_INJECTOR_SLOT[0..2]
-    exec.active_account::get_item
-    # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
-
-    drop drop
-    # => [mgr_suffix, mgr_prefix, pad(16)]
-
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, mgr_suffix, mgr_prefix, pad(16)]
-
-    exec.account_id::is_equal
-    assert.err=ERR_SENDER_NOT_GER_INJECTOR
-    # => [pad(16)]
-end
-
-#! Asserts that the note sender matches the global exit root remover stored in account storage.
-#!
-#! Reads the GER remover account ID from GER_REMOVER_SLOT and compares it against the sender of the
-#! currently executing note.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender does not match the GER remover account ID.
-#!
-#! Invocation: exec
-proc assert_sender_is_ger_remover
-    push.GER_REMOVER_SLOT[0..2]
-    exec.active_account::get_item
-    # => [0, 0, rem_suffix, rem_prefix, pad(16)]
-
-    drop drop
-    # => [rem_suffix, rem_prefix, pad(16)]
-
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, rem_suffix, rem_prefix, pad(16)]
-
-    exec.account_id::is_equal
-    assert.err=ERR_SENDER_NOT_GER_REMOVER
-    # => [pad(16)]
 end
 
 #! Updates the removed-GER keccak256 hash chain by folding in the provided GER.
@@ -842,4 +768,28 @@ proc store_removed_ger_hash_chain
     push.REMOVED_GER_HASH_CHAIN_HI_SLOT[0..2]
     exec.native_account::set_item dropw
     # => []
+end
+
+#! Returns the AggLayer network ID assigned to this bridge.
+#!
+#! The network ID is written to NETWORK_ID_SLOT once at account creation and is never mutated by
+#! any bridge procedure, so it is effectively immutable for the lifetime of the account. It
+#! identifies this Miden chain within the AggLayer and may differ between deployments (e.g. testnet
+#! vs mainnet).
+#!
+#! Inputs:  []
+#! Outputs: [network_id]
+#!
+#! Where:
+#! - network_id is the u32 AggLayer network ID of this bridge.
+#!
+#! Invocation: exec
+pub proc load_network_id
+    push.NETWORK_ID_SLOT[0..2]
+    exec.active_account::get_item
+    # => [network_id, 0, 0, 0]
+
+    # discard the three padding zeros, keeping only the network ID
+    movdn.3 drop drop drop
+    # => [network_id]
 end

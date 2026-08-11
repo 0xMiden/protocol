@@ -8,10 +8,10 @@ use {MAX_OUTPUT_NOTES_PER_TX} from miden::tx_kernel_core::constants
 # =================================================================================================
 
 # Max value for U16, used as the upper limit for expiration block delta
-const EXPIRY_UPPER_LIMIT=0xFFFF+1
+const EXPIRY_UPPER_LIMIT = 0xFFFF + 1
 
 # Max U32 value, used for initializing the expiration block number
-const MAX_BLOCK_NUM=0xFFFFFFFF
+const MAX_BLOCK_NUM = 0xFFFFFFFF
 
 #! The maximum number of VM cycles a program is allowed to take (see ExecutionOptions::MAX_CYCLES).
 const MAX_CYCLES = 0x20000000
@@ -19,21 +19,28 @@ const MAX_CYCLES = 0x20000000
 # ERRORS
 # =================================================================================================
 
-const ERR_TX_INVALID_EXPIRATION_DELTA="transaction expiration block delta must be within 0x1 and 0xFFFF"
+const ERR_TX_INVALID_EXPIRATION_DELTA =
+    "transaction expiration block delta must be within 0x1 and 0xFFFF"
 
-const ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32="the number of extra cycles passed to compute_fee must be a u32"
+const ERR_TX_COMPUTE_FEE_EXTRA_CYCLES_NOT_U32 =
+    "the number of extra cycles passed to compute_fee must be a u32"
 
-const ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX = "the number of estimated cycles exceeds the maximum possible cycles"
+const ERR_TX_COMPUTE_FEE_CYCLES_EXCEED_MAX =
+    "the number of estimated cycles exceeds the maximum possible cycles"
 
-const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COUNT_EXCEEDS_MAX="the number of excluded output notes exceeds the maximum number of output notes per transaction"
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COUNT_EXCEEDS_MAX =
+    "the number of excluded output notes exceeds the maximum number of output notes per transaction"
 
-const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COMMITMENT_MISMATCH="the excluded output note indices do not match the exclude notes commitment"
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_COMMITMENT_MISMATCH =
+    "the excluded output note indices do not match the exclude notes commitment"
 
-const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_NOT_U32="an excluded output note index is not a u32"
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_NOT_U32 = "an excluded output note index is not a u32"
 
-const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_OUT_OF_BOUNDS="an excluded output note index is not less than the number of output notes"
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTE_INDEX_OUT_OF_BOUNDS =
+    "an excluded output note index is not less than the number of output notes"
 
-const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_UNSORTED="the excluded output note indices must be sorted in ascending order and free of duplicates"
+const ERR_TX_COMPUTE_FEE_EXCLUDE_NOTES_UNSORTED =
+    "the excluded output note indices must be sorted in ascending order and free of duplicates"
 
 # PROCEDURES
 # =================================================================================================
@@ -46,7 +53,8 @@ pub use {get_blk_timestamp as get_block_timestamp} from miden::tx_kernel_core::m
 
 pub use {get_input_notes_commitment} from miden::tx_kernel_core::memory
 
-pub use {compute_output_notes_commitment as get_output_notes_commitment} from miden::tx_kernel_core::note
+pub use {compute_output_notes_commitment as get_output_notes_commitment}
+    from miden::tx_kernel_core::note
 
 pub use {get_num_input_notes} from miden::tx_kernel_core::memory
 

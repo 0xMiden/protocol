@@ -5,14 +5,12 @@ members = [
   "access/pausable",
   "access/pausable_manager",
   "access/rbac",
-  "access/warden",
   "auth/guarded_multisig",
   "auth/multisig",
   "auth/multisig_smart",
   "auth/network_account",
   "auth/no_auth",
   "auth/singlesig",
-  "auth/singlesig_acl",
   "faucets/fungible_faucet",
   "faucets/non_fungible_faucet",
   "faucets/policies/burn/allow_all",
@@ -22,12 +20,16 @@ members = [
   "faucets/policies/mint/owner_controlled/owner_only",
   "faucets/policies/policy_manager",
   "faucets/policies/transfer/allow_all",
-  "faucets/policies/transfer/allowlist/owner_controlled",
+  "faucets/policies/transfer/allowlist/manager",
   "faucets/policies/transfer/basic_allowlist",
   "faucets/policies/transfer/basic_blocklist",
-  "faucets/policies/transfer/blocklist/owner_controlled",
-  "metadata/code_inspection",
-  "metadata/schema_commitment",
+  "faucets/policies/transfer/blocklist/manager",
+  "fees/policies/basic_constant_fee",
+  "fees/policies/constant_fee_manager",
+  "inspection/code_inspection",
+  "inspection/schema_commitment",
+  "note/note_creator",
+  "upgrade/manager",
   "wallets/basic_wallet",
 ]
 
@@ -35,6 +37,6 @@ members = [
 version = "0.16.0"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.22" }
+miden-core      = { linkage = "dynamic", version = "0.25" }
 miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
 miden-standards = { linkage = "static", version = "0.16.0" }

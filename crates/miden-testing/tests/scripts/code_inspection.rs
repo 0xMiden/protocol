@@ -2,7 +2,7 @@ extern crate alloc;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_standards::account::metadata::CodeInspection;
+use miden_standards::account::inspection::CodeInspection;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain};
@@ -14,7 +14,7 @@ use miden_testing::{Auth, MockChain};
 fn create_inspectable_account() -> anyhow::Result<Account> {
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_components(Auth::IncrNonce)
         .with_component(BasicWallet)
         .with_component(CodeInspection)
         .build_existing()?;
@@ -37,11 +37,11 @@ async fn run_has_procedure_script(proc_root: Word, body: &str) -> anyhow::Result
     // `call`. No `procref` is used so the stack depth stays at 16 across the call boundary.
     let tx_script_code = format!(
         r#"
-        use miden::standards::components::metadata::code_inspection as code_inspection
+        use miden::standards::components::inspection::code_inspection
 
         @transaction_script
         pub proc main
-            # stack: [PROC_ROOT, pad(12)]
+            # => [PROC_ROOT, pad(12)]
             call.code_inspection::has_procedure
             # => [is_procedure_available, pad(15)]
             {body}
@@ -50,11 +50,11 @@ async fn run_has_procedure_script(proc_root: Word, body: &str) -> anyhow::Result
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(CodeInspection::code())?
+        .with_dynamically_linked_package(CodeInspection::code())?
         .compile_tx_script(tx_script_code)?;
 
     mock_chain
-        .build_tx_context(account.id(), &[], &[])?
+        .build_transaction(account.id())
         .tx_script(tx_script)
         .tx_script_args(proc_root)
         .build()?

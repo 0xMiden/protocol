@@ -11,11 +11,14 @@ use miden_protocol::account::AccountProcedureRoot;
 pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
+    /// Exposes the `create_note` procedure from the
+    /// [`NoteCreator`][crate::account::wallets::NoteCreator] component.
+    NoteCreator,
     /// Exposes procedures from the
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
     FungibleFaucet,
     /// Exposes procedures from the
-    /// [`CodeInspection`][crate::account::metadata::CodeInspection] component.
+    /// [`CodeInspection`][crate::account::inspection::CodeInspection] component.
     CodeInspection,
     /// Exposes procedures from the
     /// [`Authority`][crate::account::access::Authority] access component.
@@ -30,9 +33,6 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the
     /// [`AuthSingleSig`][crate::account::auth::AuthSingleSig] module.
     AuthSingleSig,
-    /// Exposes procedures from the
-    /// [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] module.
-    AuthSingleSigAcl,
     /// Exposes procedures from the
     /// [`AuthMultisig`][crate::account::auth::AuthMultisig] module.
     AuthMultisig,
@@ -70,6 +70,7 @@ impl AccountComponentInterface {
     pub fn name(&self) -> String {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
+            AccountComponentInterface::NoteCreator => "Note Creator".to_string(),
             AccountComponentInterface::FungibleFaucet => "Fungible Faucet".to_string(),
             AccountComponentInterface::CodeInspection => "Code Inspection".to_string(),
             AccountComponentInterface::Authority => "Authority".to_string(),
@@ -78,7 +79,6 @@ impl AccountComponentInterface {
                 "Role Based Access Control".to_string()
             },
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
-            AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthMultisigSmart => "Multisig Smart".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
@@ -102,7 +102,6 @@ impl AccountComponentInterface {
         matches!(
             self,
             AccountComponentInterface::AuthSingleSig
-                | AccountComponentInterface::AuthSingleSigAcl
                 | AccountComponentInterface::AuthMultisig
                 | AccountComponentInterface::AuthMultisigSmart
                 | AccountComponentInterface::AuthGuardedMultisig

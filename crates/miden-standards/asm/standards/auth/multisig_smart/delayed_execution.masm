@@ -1,7 +1,15 @@
-use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
+
+# Delayed execution (timelocked transactions) for the multisig smart account.
+#
+# A proposal is keyed by the target transaction's TX_EFFECTS_COMMITMENT: the block- and expiration-
+# independent commitment produced by `auth::hash_tx_effects_commitment`. Proposing and executing a
+# transaction necessarily happen at different reference blocks (the timelock measures elapsed time
+# via block timestamps), so the key must exclude the reference block; otherwise the proposal
+# recorded at propose time could never match the transaction executed later. The full, block-bound
+# tx-summary commitment is still what the approvers' signatures cover at execution time.
 
 # CONSTANTS
 # =================================================================================================
@@ -9,7 +17,7 @@ use miden::standards::auth::multisig
 # [min_delay, propose_expiration_delta, 0, 0]
 const DELAY_MODE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_mode_config")
 
-# Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
+# Map entries: [TX_EFFECTS_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
 
 const EMPTY_WORD = [0, 0, 0, 0]
@@ -105,7 +113,7 @@ proc get_delayed_execution_config
     push.DELAY_MODE_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
-    exec.active_account::get_initial_item
+    exec.native_account::get_initial_item
     # => [min_delay, propose_expiration_delta, 0, 0]
 
     movup.3 drop movup.2 drop
@@ -147,43 +155,43 @@ end
 # TIMELOCK + PROPOSALS HELPERS
 # =================================================================================================
 
-#! Returns the proposal entry stored for `TX_SUMMARY_COMMITMENT`.
+#! Returns the proposal entry stored for `TX_EFFECTS_COMMITMENT`.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [TX_EFFECTS_COMMITMENT]
 #! Outputs: [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
+#! - TX_EFFECTS_COMMITMENT is the block-independent transaction effects commitment used as the proposal map key.
 #! - unlock_timestamp is the earliest timestamp at which the proposal can be executed, or 0 if no proposal exists.
 #! - proposal_timestamp is the timestamp at which the proposal was recorded, or 0 if no proposal exists.
 #! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal, or 0 if no proposal exists.
 #!
 #! Invocation: exec
-proc get_tx_proposal(tx_summary_commitment: word)
+proc get_tx_proposal(tx_effects_commitment: word)
     push.TX_PROPOSALS_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT]
+    # => [slot_prefix, slot_suffix, TX_EFFECTS_COMMITMENT]
 
     # Read the proposal from the transaction's initial state, so proposal checks cannot be
     # influenced by map mutations made earlier in the same transaction.
-    exec.active_account::get_initial_map_item
+    exec.native_account::get_initial_map_item
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 
     movup.3 drop
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 end
 
-#! Returns 1 if a proposal exists for `TX_SUMMARY_COMMITMENT`, 0 otherwise.
+#! Returns 1 if a proposal exists for `TX_EFFECTS_COMMITMENT`, 0 otherwise.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [TX_EFFECTS_COMMITMENT]
 #! Outputs: [is_proposed]
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
+#! - TX_EFFECTS_COMMITMENT is the block-independent transaction effects commitment used as the proposal map key.
 #! - is_proposed is 1 if `proposal_timestamp` is non-zero (i.e. a proposal has been recorded
 #!   for the commitment), otherwise 0.
 #!
 #! Invocation: exec
-pub proc is_tx_proposed(tx_summary_commitment: word) -> u32
+pub proc is_tx_proposed(tx_effects_commitment: word) -> u32
     exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
@@ -191,48 +199,48 @@ pub proc is_tx_proposed(tx_summary_commitment: word) -> u32
     # => [is_proposed]
 end
 
-#! Deletes the proposal entry for `TX_SUMMARY_COMMITMENT` by writing `EMPTY_WORD`.
+#! Deletes the proposal entry for `TX_EFFECTS_COMMITMENT` by writing `EMPTY_WORD`.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [TX_EFFECTS_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary hash used as the proposal map key.
+#! - TX_EFFECTS_COMMITMENT is the block-independent transaction effects commitment used as the proposal map key.
 #!
 #! Invocation: exec
-proc remove_tx_proposal(tx_summary_commitment: word)
+proc remove_tx_proposal(tx_effects_commitment: word)
     push.0.0.0
-    # => [0, 0, 0, TX_SUMMARY_COMMITMENT]
+    # => [0, 0, 0, TX_EFFECTS_COMMITMENT]
 
     # Writing zero unlock/proposal/cancel fields stores EMPTY_WORD, i.e. clears the entry.
     exec.write_tx_proposal
     # => []
 end
 
-#! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally.
+#! Writes the proposal entry for `TX_EFFECTS_COMMITMENT` unconditionally.
 #!
-#! Inputs:  [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+#! Inputs:  [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_EFFECTS_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
 #! - unlock_timestamp is the earliest timestamp at which the proposal can be executed.
 #! - proposal_timestamp is the timestamp at which the proposal was recorded.
 #! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal.
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
+#! - TX_EFFECTS_COMMITMENT is the block-independent transaction effects commitment used as the proposal map key.
 #!
 #! Invocation: exec
 proc write_tx_proposal
     push.0
-    # => [0, unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    # => [0, unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_EFFECTS_COMMITMENT]
 
     movdn.3
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0, TX_SUMMARY_COMMITMENT]
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0, TX_EFFECTS_COMMITMENT]
 
     swapw
-    # => [TX_SUMMARY_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
+    # => [TX_EFFECTS_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 
     push.TX_PROPOSALS_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
+    # => [slot_prefix, slot_suffix, TX_EFFECTS_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 
     exec.native_account::set_map_item
     # => [OLD_PROPOSAL_WORD]
@@ -298,16 +306,16 @@ proc assert_unlock_reached
     # => []
 end
 
-#! Asserts that `TX_SUMMARY_COMMITMENT` is proposed and that its unlock timestamp has been reached.
+#! Asserts that `TX_EFFECTS_COMMITMENT` is proposed and that its unlock timestamp has been reached.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [TX_EFFECTS_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
+#! - TX_EFFECTS_COMMITMENT is the block-independent transaction effects commitment used as the proposal map key.
 #!
 #! Panics if:
-#! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
+#! - no proposal exists for `TX_EFFECTS_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
 #! - `assert_unlock_reached` fails.
 #!
 #! Invocation: exec
@@ -358,98 +366,98 @@ end
 # TX ACTIONS API
 # =================================================================================================
 
-#! Records a new proposal for `TX_SUMMARY_COMMITMENT`.
+#! Records a new proposal for `TX_EFFECTS_COMMITMENT`.
 #!
-#! Verifies the proposal signatures over `TX_SUMMARY_COMMITMENT` against the approver set and
+#! Verifies the proposal signatures over `TX_EFFECTS_COMMITMENT` against the approver set and
 #! requires at least `default_threshold` valid signatures. The proposal is written with
 #! `min_cancel_sigs` set to the number of verified signatures, and the current (proposal)
 #! transaction is given the configured `propose_expiration_delta`.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [TX_EFFECTS_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment of the target transaction to
+#! - TX_EFFECTS_COMMITMENT is the block-independent transaction effects commitment of the target transaction to
 #!   propose.
 #!
 #! Panics if:
-#! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
-#! - fewer than `default_threshold` signatures verify over `TX_SUMMARY_COMMITMENT`
+#! - a proposal already exists for `TX_EFFECTS_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
+#! - fewer than `default_threshold` signatures verify over `TX_EFFECTS_COMMITMENT`
 #!   (`ERR_PROPOSE_INSUFFICIENT_SIGNATURES`).
 #! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #!
 #! Invocation: call
 @account_procedure
 pub proc propose_transaction
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_EFFECTS_COMMITMENT]
     # Note: a transaction that was already executed can still be proposed here; it is not worth an
     # extra `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing
     # it later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
     dupw exec.is_tx_proposed assertz.err=ERR_TX_ALREADY_PROPOSED
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_EFFECTS_COMMITMENT]
 
     # ---- Verify proposal signatures over the target commitment. ----
     exec.multisig::get_initial_threshold_and_num_approvers
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+    # => [default_threshold, num_of_approvers, TX_EFFECTS_COMMITMENT]
 
     movdn.5
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+    # => [num_of_approvers, TX_EFFECTS_COMMITMENT, default_threshold]
 
     exec.multisig::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
+    # => [num_verified_signatures, TX_EFFECTS_COMMITMENT, default_threshold]
 
     dup movup.6 u32gte assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [num_verified_signatures, TX_EFFECTS_COMMITMENT]
 
     # ---- Bound the proposal transaction's validity window. ----
     exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [num_verified_signatures, TX_EFFECTS_COMMITMENT]
 
     # ---- Write the proposal with min_cancel_sigs = num_verified_signatures. ----
     exec.compute_unlock_timestamp
-    # => [unlock_timestamp, proposal_timestamp, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [unlock_timestamp, proposal_timestamp, num_verified_signatures, TX_EFFECTS_COMMITMENT]
 
     exec.write_tx_proposal
     # => []
 end
 
-#! Cancels an existing proposal for `TX_SUMMARY_COMMITMENT`.
+#! Cancels an existing proposal for `TX_EFFECTS_COMMITMENT`.
 #!
-#! Verifies the cancellation signatures over `TX_SUMMARY_COMMITMENT` and requires at least the
+#! Verifies the cancellation signatures over `TX_EFFECTS_COMMITMENT` and requires at least the
 #! proposal's `min_cancel_sigs` valid signatures, then deletes the proposal entry.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [TX_EFFECTS_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment of the proposal to cancel.
+#! - TX_EFFECTS_COMMITMENT is the block-independent transaction effects commitment of the proposal to cancel.
 #!
 #! Panics if:
-#! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
-#! - fewer than `min_cancel_sigs` signatures verify over `TX_SUMMARY_COMMITMENT`
+#! - no proposal exists for `TX_EFFECTS_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
+#! - fewer than `min_cancel_sigs` signatures verify over `TX_EFFECTS_COMMITMENT`
 #!   (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`).
 #!
 #! Invocation: call
 @account_procedure
 pub proc cancel_transaction_proposal
     dupw exec.get_tx_proposal
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_EFFECTS_COMMITMENT]
 
     drop neq.0 assert.err=ERR_TX_NOT_PROPOSED
-    # => [min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    # => [min_cancel_sigs, TX_EFFECTS_COMMITMENT]
 
     movdn.4
-    # => [TX_SUMMARY_COMMITMENT, min_cancel_sigs]
+    # => [TX_EFFECTS_COMMITMENT, min_cancel_sigs]
 
     # ---- Verify cancellation signatures over the target commitment. ----
     exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
+    # => [num_of_approvers, TX_EFFECTS_COMMITMENT, min_cancel_sigs]
 
     exec.multisig::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
+    # => [num_verified_signatures, TX_EFFECTS_COMMITMENT, min_cancel_sigs]
 
     movup.5 u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_EFFECTS_COMMITMENT]
 
     exec.remove_tx_proposal
     # => []
@@ -461,21 +469,21 @@ end
 #! the proposal exists and its unlock timestamp has been reached, then deletes the proposal entry.
 #! Replay protection against re-execution is provided by the multisig executed-transactions set.
 #!
-#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Inputs:  [TX_EFFECTS_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the current transaction summary commitment.
+#! - TX_EFFECTS_COMMITMENT is the current transaction's block-independent transaction effects commitment.
 #!
 #! Panics if:
-#! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
+#! - no proposal exists for `TX_EFFECTS_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
 #! - the proposal unlock timestamp has not been reached (`ERR_TX_STILL_TIMELOCKED`).
 #!
 #! Invocation: exec
 pub proc assert_and_consume_proposal
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_EFFECTS_COMMITMENT]
     dupw exec.assert_tx_proposed_and_unlocked
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_EFFECTS_COMMITMENT]
 
     exec.remove_tx_proposal
     # => []

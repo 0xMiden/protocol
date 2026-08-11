@@ -36,16 +36,11 @@ use super::{
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
-use crate::account::auth::{
-    AuthGuardedMultisig,
-    AuthMultisig,
-    AuthNetworkAccount,
-    AuthSingleSigAcl,
-};
+use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
+use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
-use crate::tx_script::ExpirationTransactionScript;
 
 #[cfg(test)]
 mod tests;
@@ -293,8 +288,7 @@ impl FungibleFaucet {
 
     /// Returns the procedure root of the `set_max_supply` account procedure. This is an
     /// authority-gated setter; when paired with `Authority::AuthControlled` (via
-    /// [`create_singlesig_user_fungible_faucet`]) it requires a signature by default and must
-    /// never be added to the auth component's exempt set.
+    /// [`create_singlesig_user_fungible_faucet`]) it requires a signature.
     pub fn set_max_supply_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_MAX_SUPPLY
     }
@@ -559,19 +553,17 @@ impl TryFrom<&Account> for FungibleFaucet {
 // FACTORY
 // ================================================================================================
 
-/// Creates a new **user-account** fungible faucet authenticated by a single-signature ACL.
+/// Creates a new **user-account** fungible faucet authenticated by a single signature.
 /// The account's auth component is the sole gate for authority-protected setters
 /// ([`Authority::AuthControlled`] is installed directly).
 ///
-/// Caller passes a fully-configured [`AuthSingleSigAcl`]. Because it uses exempt-list semantics,
-/// every authority-gated setter on the faucet (`mint_and_send`, the metadata setters, the policy
-/// setters, and `pause` / `unpause`) requires a signature by default. Adding any such setter to
-/// the exempt set makes it permissionless under [`Authority::AuthControlled`], so authority-gated
-/// setters must never be exempted.
+/// Caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter on the faucet
+/// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
+/// signature.
 pub fn create_singlesig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
-    auth_component: AuthSingleSigAcl,
+    auth_component: AuthSingleSig,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
@@ -579,7 +571,7 @@ pub fn create_singlesig_user_fungible_faucet(
     AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_asset_callbacks(asset_callbacks)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -599,7 +591,7 @@ pub fn create_multisig_user_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -619,7 +611,7 @@ pub fn create_guarded_user_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
@@ -641,18 +633,14 @@ pub fn create_network_fungible_faucet(
     faucet: FungibleFaucet,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
+    fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
-    let tx_script_allowlist = [ExpirationTransactionScript::script_root()].into_iter().collect();
-    let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
-        .expect("MintNote + BurnNote allowlist is non-empty")
-        .with_allowed_tx_scripts(tx_script_allowlist);
-
     let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
-    AccountBuilder::new(init_seed)
-        .account_type(AccountType::Public)
+
+    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
+        .expect("MintNote + BurnNote allowlist is non-empty")
         .with_asset_callbacks(asset_callbacks)
-        .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)

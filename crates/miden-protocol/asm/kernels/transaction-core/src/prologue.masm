@@ -8,67 +8,64 @@ use miden::protocol_utils::account_id
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::asset
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
-use {
-    EMPTY_SMT_ROOT,
-    MAX_ASSETS_PER_NOTE,
-    MAX_INPUT_NOTES_PER_TX,
-    MAX_NOTE_STORAGE_ITEMS,
-    NOTE_TREE_DEPTH,
-} from miden::tx_kernel_core::constants
+use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
+    from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
-use {
-    BLOCK_DATA_SECTION_OFFSET,
-    INPUT_VAULT_ROOT_PTR,
-    KERNEL_PROCEDURES_PTR,
-    PARTIAL_BLOCKCHAIN_PTR,
-} from miden::tx_kernel_core::memory
+use {BLOCK_DATA_SECTION_OFFSET, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR}
+    from miden::tx_kernel_core::memory
 
 # CONSTS
 # =================================================================================================
 
 # Max U32 value, used for initializing the expiration block number
-const MAX_BLOCK_NUM=0xFFFFFFFF
-
-# EVENTS
-#=================================================================================================
-
-# Emission of an equivalent to `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT`, use in `add_input_note_assets_to_vault`
-const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::account::vault_before_add_asset")
+const MAX_BLOCK_NUM = 0xFFFFFFFF
 
 # ERRORS
 # =================================================================================================
 
-const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT="the provided global inputs do not match the block commitment"
+const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT =
+    "the provided global inputs do not match the block commitment"
 
-const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_NUMBER_COMMITMENT="the provided global inputs do not match the block number commitment"
+const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_NUMBER_COMMITMENT =
+    "the provided global inputs do not match the block number commitment"
 
-const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32="verification base fee must fit into a u32"
+const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32 = "verification base fee must fit into a u32"
 
-const ERR_PROLOGUE_NEW_ACCOUNT_VAULT_MUST_BE_EMPTY="new account must have an empty vault"
+const ERR_PROLOGUE_NEW_ACCOUNT_VAULT_MUST_BE_EMPTY = "new account must have an empty vault"
 
-const ERR_PROLOGUE_PROVIDED_ACCOUNT_DATA_DOES_NOT_MATCH_ON_CHAIN_COMMITMENT="account data provided does not match the commitment recorded on-chain"
+const ERR_PROLOGUE_PROVIDED_ACCOUNT_DATA_DOES_NOT_MATCH_ON_CHAIN_COMMITMENT =
+    "account data provided does not match the commitment recorded on-chain"
 
-const ERR_PROLOGUE_EXISTING_ACCOUNT_MUST_HAVE_NON_ZERO_NONCE="existing accounts must have a non-zero nonce"
+const ERR_PROLOGUE_EXISTING_ACCOUNT_MUST_HAVE_NON_ZERO_NONCE =
+    "existing accounts must have a non-zero nonce"
 
-const ERR_PROLOGUE_MISMATCH_OF_ACCOUNT_IDS_FROM_GLOBAL_INPUTS_AND_ADVICE_PROVIDER="account IDs provided via global inputs and advice provider do not match"
+const ERR_PROLOGUE_MISMATCH_OF_ACCOUNT_IDS_FROM_GLOBAL_INPUTS_AND_ADVICE_PROVIDER =
+    "account IDs provided via global inputs and advice provider do not match"
 
-const ERR_PROLOGUE_MISMATCH_OF_REFERENCE_BLOCK_MMR_AND_NOTE_AUTHENTICATION_MMR="reference block MMR and note's authentication MMR must match"
+const ERR_PROLOGUE_MISMATCH_OF_REFERENCE_BLOCK_MMR_AND_NOTE_AUTHENTICATION_MMR =
+    "reference block MMR and note's authentication MMR must match"
 
-const ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT="number of note assets exceeds the maximum limit of 64"
+const ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT =
+    "number of note assets exceeds the maximum limit of 16"
 
-const ERR_PROLOGUE_PROVIDED_INPUT_ASSETS_INFO_DOES_NOT_MATCH_ITS_COMMITMENT="provided info about assets of an input does not match its commitment"
+const ERR_PROLOGUE_PROVIDED_INPUT_ASSETS_INFO_DOES_NOT_MATCH_ITS_COMMITMENT =
+    "provided info about assets of an input does not match its commitment"
 
-const ERR_PROLOGUE_NUMBER_OF_INPUT_NOTES_EXCEEDS_LIMIT="number of input notes exceeds the kernel's maximum limit of 1024"
+const ERR_PROLOGUE_NUMBER_OF_INPUT_NOTES_EXCEEDS_LIMIT =
+    "number of input notes exceeds the kernel's maximum limit of 1024"
 
-const ERR_PROLOGUE_INPUT_NOTES_COMMITMENT_MISMATCH="note commitment computed from the input note data does not match given note commitment"
+const ERR_PROLOGUE_INPUT_NOTES_COMMITMENT_MISMATCH =
+    "note commitment computed from the input note data does not match given note commitment"
 
-const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO="new account must have a zero nonce"
+const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO = "new account must have a zero nonce"
 
-const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT="number of note storage items exceeded the maximum limit of 1024"
+const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT =
+    "number of note storage items exceeded the maximum limit of 1024"
 
-const ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED="failed to authenticate note inclusion in block"
+const ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED = "failed to authenticate note inclusion in block"
 
-const ERR_PROLOGUE_KERNEL_PROCEDURE_COMMITMENT_MISMATCH="sequential hash over kernel procedures does not match kernel commitment from block"
+const ERR_PROLOGUE_KERNEL_PROCEDURE_COMMITMENT_MISMATCH =
+    "sequential hash over kernel procedures does not match kernel commitment from block"
 
 # PUBLIC INPUTS
 # =================================================================================================
@@ -384,7 +381,8 @@ proc process_account_data
     # assert the account ID matches the account ID in global inputs
     exec.memory::get_global_account_id
     exec.memory::get_account_id
-    exec.account_id::is_equal assert.err=ERR_PROLOGUE_MISMATCH_OF_ACCOUNT_IDS_FROM_GLOBAL_INPUTS_AND_ADVICE_PROVIDER
+    exec.account_id::eq
+    assert.err=ERR_PROLOGUE_MISMATCH_OF_ACCOUNT_IDS_FROM_GLOBAL_INPUTS_AND_ADVICE_PROVIDER
     # => [ACCOUNT_COMMITMENT]
 
     # store a copy of the initial nonce in global inputs
@@ -485,7 +483,6 @@ end
 proc authenticate_note
     # Load the BLOCK_COMMITMENT from the PARTIAL_BLOCKCHAIN
     # ---------------------------------------------------------------------------------------------
-
     push.PARTIAL_BLOCKCHAIN_PTR adv_push
     # => [block_num, partial_blockchain_ptr, NOTE_ID]
 
@@ -667,7 +664,6 @@ end
 proc process_note_assets
     # Validate num_assets and setup commitment computation.
     # ---------------------------------------------------------------------------------------------
-
     adv_push
     # => [num_assets, note_ptr]
 
@@ -713,7 +709,6 @@ end
 proc add_input_note_assets_to_vault
     # prepare the stack
     # ---------------------------------------------------------------------------------------------
-
     push.INPUT_VAULT_ROOT_PTR
     # => [input_vault_root_ptr, note_ptr]
 
@@ -801,8 +796,8 @@ end
 #! memory address.
 #!
 #! This procedure also computes the note's nullifier and ID. Stores the note's nullifier, metadata,
-#! args, assets, and note details commitment to memory, and returns the hasher state in the stack so
-#! that the input notes commitment can be extracted.
+#! args, assets, note details commitment, and note ID to memory, and returns the hasher state in the
+#! stack so that the input notes commitment can be extracted.
 #!
 #! Inputs:
 #!   Operand stack: [idx, CAPACITY]
@@ -849,7 +844,6 @@ end
 proc process_input_note
     # note args
     # ---------------------------------------------------------------------------------------------
-
     dup exec.memory::get_input_note_ptr
     # => [note_ptr, idx, CAPACITY]
 
@@ -889,15 +883,22 @@ proc process_input_note
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
     # save note details commitment to memory
-    movup.8 exec.memory::set_input_note_details_commitment
-    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
+    dup.8 exec.memory::set_input_note_details_commitment
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
-    # note authentication
+    # note id
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_ID: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`
     exec.poseidon2::merge
+    # => [NOTE_ID, note_ptr, NULLIFIER, CAPACITY]
+
+    # cache the note ID in the note's data segment
+    movup.4 exec.memory::set_input_note_id
     # => [NOTE_ID, NULLIFIER, CAPACITY]
+
+    # note authentication
+    # ---------------------------------------------------------------------------------------------
 
     adv_push
     # => [is_authenticated, NOTE_ID, NULLIFIER, CAPACITY]

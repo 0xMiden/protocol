@@ -26,8 +26,8 @@ const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
 // ACCOUNT COMPONENT
 // ================================================================================================
 
-/// An [`AccountComponent`] defines a [`Library`](crate::assembly::Library) of code and the initial
-/// value and types of the [`StorageSlot`]s it accesses.
+/// An [`AccountComponent`] defines a [`Package`] of code and the initial value and types of the
+/// [`StorageSlot`]s it accesses.
 ///
 /// One or more components can be used to build [`AccountCode`](crate::account::AccountCode) and
 /// [`AccountStorage`](crate::account::AccountStorage).
@@ -46,7 +46,7 @@ impl AccountComponent {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`AccountComponent`] constructed from the provided `library`,
+    /// Returns a new [`AccountComponent`] constructed from the provided `code`,
     /// `storage_slots`, and `metadata`.
     ///
     /// Procedures exported from the provided code that are marked with the `@account_procedure`
@@ -84,14 +84,12 @@ impl AccountComponent {
     ///
     /// # Arguments
     ///
-    /// * `package` - The package containing the [`Library`](crate::assembly::Library) and account
-    ///   component metadata
+    /// * `package` - The package containing the account component metadata
     /// * `init_storage_data` - The initialization data for storage slots
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The package does not contain a library artifact
     /// - The package does not contain account component metadata
     /// - The metadata cannot be deserialized from the package
     /// - The storage initialization fails due to invalid or missing data
@@ -101,37 +99,8 @@ impl AccountComponent {
         init_storage_data: &InitStorageData,
     ) -> Result<Self, AccountError> {
         let metadata = AccountComponentMetadata::try_from(package)?;
-        let library = package.clone();
+        let component_code = AccountComponentCode::from(package.clone());
 
-        let component_code = AccountComponentCode::from(library);
-        Self::from_library(&component_code, &metadata, init_storage_data)
-    }
-
-    /// Creates an [`AccountComponent`] from an [`AccountComponentCode`] and
-    /// [`AccountComponentMetadata`].
-    ///
-    /// This method provides type safety by leveraging the component's metadata to validate
-    /// the passed storage initialization data ([`InitStorageData`]).
-    ///
-    /// # Arguments
-    ///
-    /// * `library` - The component's assembled code
-    /// * `metadata` - The component's metadata, which describes the storage layout
-    /// * `init_storage_data` - The initialization data for storage slots
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The package does not contain a library artifact
-    /// - The package does not contain account component metadata
-    /// - The metadata cannot be deserialized from the package
-    /// - The storage initialization fails due to invalid or missing data
-    /// - The component creation fails
-    pub fn from_library(
-        library: &AccountComponentCode,
-        metadata: &AccountComponentMetadata,
-        init_storage_data: &InitStorageData,
-    ) -> Result<Self, AccountError> {
         let storage_slots = metadata
             .storage_schema()
             .build_storage_slots(init_storage_data)
@@ -139,7 +108,7 @@ impl AccountComponent {
                 AccountError::other_with_source("failed to instantiate account component", err)
             })?;
 
-        AccountComponent::new(library.clone(), storage_slots, metadata.clone())
+        AccountComponent::new(component_code, storage_slots, metadata)
     }
 
     // ACCESSORS
@@ -201,7 +170,7 @@ impl AccountComponent {
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
-    /// if it was not found in this component's library.
+    /// if it was not found in this component's code.
     pub fn get_procedure_root_by_path(
         &self,
         proc_name: impl AsRef<Path>,
@@ -213,6 +182,12 @@ impl AccountComponent {
     /// component.
     pub fn has_procedure(&self, root: AccountProcedureRoot) -> bool {
         self.procedures().any(|(proc_root, _)| proc_root == root)
+    }
+
+    /// Returns `true` if this component exports an authentication procedure (a procedure marked
+    /// with the `@auth_script` attribute).
+    pub fn is_auth_component(&self) -> bool {
+        self.procedures().any(|(_, is_auth)| is_auth)
     }
 }
 
@@ -231,14 +206,14 @@ mod tests {
 
     use super::*;
     use crate::testing::account_code::CODE;
-    use crate::testing::assembler::assemble_test_library;
+    use crate::testing::assembler::assemble_test_package;
     use crate::utils::serde::Serializable;
 
     #[test]
     fn test_extract_metadata_from_package() {
-        // Create a simple library for testing
-        let library =
-            assemble_test_library("test-extract-metadata", "test::extract_metadata", CODE);
+        // Create a simple package for testing
+        let package =
+            assemble_test_package("test-extract-metadata", "test::extract_metadata", CODE);
 
         // Test with metadata
         let metadata = AccountComponentMetadata::new("test_component")
@@ -246,7 +221,7 @@ mod tests {
             .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
-        let mut package_with_metadata = library.clone();
+        let mut package_with_metadata = package.clone();
         package_with_metadata
             .sections
             .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, metadata_bytes.clone()));
@@ -256,7 +231,7 @@ mod tests {
         assert_eq!(extracted_metadata.name(), "test_component");
 
         // Test without metadata - should fail
-        let package_without_metadata = library;
+        let package_without_metadata = package;
 
         let result = AccountComponentMetadata::try_from(&package_without_metadata);
         assert!(result.is_err());
@@ -265,30 +240,31 @@ mod tests {
     }
 
     #[test]
-    fn test_from_library_with_init_data() {
-        // Create a simple library for testing
-        let library =
-            assemble_test_library("test-from-library-init-data", "test::from_library", CODE);
-        let component_code = AccountComponentCode::from(library.clone());
+    fn test_from_package_with_init_data() {
+        // Create a simple package for testing
+        let package =
+            assemble_test_package("test-from-package-init-data", "test::from_package", CODE);
 
-        // Create metadata for the component
+        // Create metadata for the component and embed it into the package
         let metadata = AccountComponentMetadata::new("test_component")
             .with_description("A test component")
             .with_version(Version::new(1, 0, 0));
 
+        let mut package_with_metadata = package.clone();
+        package_with_metadata
+            .sections
+            .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, metadata.to_bytes()));
+
         // Test with empty init data - this tests the complete workflow:
-        // Library + Metadata -> AccountComponent
+        // Package -> AccountComponent
         let init_data = InitStorageData::default();
-        let component =
-            AccountComponent::from_library(&component_code, &metadata, &init_data).unwrap();
+        let component = AccountComponent::from_package(&package_with_metadata, &init_data).unwrap();
 
         // Verify the component was created correctly
         assert_eq!(component.storage_size(), 0);
 
         // Test without metadata - should fail
-        let package_without_metadata = library;
-
-        let result = AccountComponent::from_package(&package_without_metadata, &init_data);
+        let result = AccountComponent::from_package(&package, &init_data);
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("package does not contain account component metadata"));

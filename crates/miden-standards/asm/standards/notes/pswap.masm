@@ -6,15 +6,17 @@ use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
 use miden::protocol::output_note
-use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
+use miden::standards::assets::fungible_asset
+use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
 use miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
+use miden::standards::note::note_creator
 
 # CONSTANTS
 # =================================================================================================
 
-const NUM_STORAGE_ITEMS=6
+const NUM_STORAGE_ITEMS=7
 const MAX_U32=0x0000000100000000
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
@@ -22,22 +24,24 @@ const MAX_U32=0x0000000100000000
 # StandardNoteAttachment::PswapAttachment in the Rust standards crate.
 const PSWAP_ATTACHMENT_SCHEME = 3
 
-# Note storage layout (6 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount       [2]  : 1 felt
-# - payback_note_type          [3]  : 1 felt
-# - creator_id_prefix          [4]  : 1 felt
+# - min_fill_step              [3]  : 1 felt
+# - payback_note_type          [4]  : 1 felt
 # - creator_id_suffix          [5]  : 1 felt
+# - creator_id_prefix          [6]  : 1 felt
 #
 # Where:
 # - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
 # - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
 #   (AccountIdPrefix as Felt)
 # - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
+# - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
 # - payback_note_type: The NoteType used for the P2ID payback note
-# - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
 # - creator_id_suffix: The suffix of the creator's AccountId (Felt)
+# - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
 #
 # The payback note tag is derived at runtime from the creator's account ID
 # (via note_tag::create_account_target) rather than stored.
@@ -49,9 +53,10 @@ const STORAGE_PTR = 0
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
 const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 2
-const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 3
-const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 4
+const MIN_FILL_STEP_ITEM = STORAGE_PTR + 3
+const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
 const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
+const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
 
 # Local memory offsets
 # =================================================================================================
@@ -94,11 +99,12 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 # ERRORS
 # =================================================================================================
 
-const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 6 note storage items"
+const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
+const ERR_PSWAP_FILL_BELOW_MINIMUM="PSWAP fill amount is below the minimum fill step"
 
 # U64 VALIDATION
 # =================================================================================================
@@ -199,13 +205,24 @@ proc max
     # => [max(a, b)]
 end
 
+#! Returns the smaller of two field elements, compared as unsigned integers.
+#!
+#! Inputs:  [a, b]
+#! Outputs: [min(a, b)]
+proc min
+    dup dup.2 lt
+    # => [a_lt_b, a, b]
+    cdrop
+    # => [min(a, b)]
+end
+
 # P2ID NOTE CREATION PROCEDURE
 # =================================================================================================
 
 #! Creates a P2ID output note for the swap creator.
 #!
 #! Derives a unique serial number by incrementing the least significant element
-#! of the provided serial, creates the output note using p2id::new, sets the
+#! of the provided serial, creates the output note using p2id::create_output_note, sets the
 #! attachment, and adds the requested assets (from the consumer's account vault
 #! and/or from another note in the same transaction).
 #!
@@ -233,7 +250,7 @@ proc create_p2id_note
     movdn.2
     # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM, ...]
 
-    exec.p2id::new
+    exec.p2id::create_output_note
     # => [note_idx, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
     loc_store.P2ID_NOTE_IDX
@@ -276,7 +293,7 @@ proc create_p2id_note
         loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_account_fill]
 
-        exec.asset::create_fungible_asset
+        exec.fungible_asset::create
         # => [ASSET_ID, ASSET_VALUE]
 
         # pad the stack for the call
@@ -296,7 +313,7 @@ proc create_p2id_note
     # => [has_note_fill]
 
     if.true
-        loc_load.P2ID_NOTE_IDX movdn.8
+        loc_load.P2ID_NOTE_IDX
         # => [note_idx]
 
         # create the asset
@@ -305,7 +322,7 @@ proc create_p2id_note
         loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_note_fill, note_idx]
 
-        exec.asset::create_fungible_asset
+        exec.fungible_asset::create
         # => [ASSET_ID, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
@@ -368,13 +385,18 @@ proc create_remainder_note
     movup.4 movup.5
     # => [tag, note_type, RECIPIENT]
 
-    exec.output_note::create
+    # Note creation must originate from the account context, so route through the account's
+    # `create_note` procedure. Pad the stack for the `call` convention.
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    call.note_creator::create_note
+    # => [note_idx, pad(15)]
+
+    movdn.15 dropw dropw dropw drop drop drop
     # => [note_idx]
 
-    loc_store.REMAINDER_NOTE_IDX
-    # => []
-
-    loc_load.REMAINDER_NOTE_IDX
+    dup loc_store.REMAINDER_NOTE_IDX
     # => [note_idx]
 
     push.0
@@ -408,7 +430,7 @@ proc create_remainder_note
     loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
     # => [offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
 
-    exec.asset::create_fungible_asset
+    exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
@@ -424,7 +446,7 @@ proc is_consumer_creator
     exec.active_account::get_id
     # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
 
-    exec.account_id::is_equal
+    exec.account_id::eq
     # => [is_creator]
 end
 
@@ -435,7 +457,7 @@ end
 #!
 @locals(8)
 proc load_offered_asset
-    locaddr.0 exec.active_note::get_assets
+    locaddr.0 exec.active_note::remove_all_assets
     # => [num_assets]
 
     push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
@@ -543,6 +565,10 @@ end
 #!   goes to the cross-swap counterparty that supplied it. Either way the creator banks the
 #!   surplus requested tokens.
 #!
+#! A per-fill floor rejects any fill below `min(min_fill_step, min_requested_amount)`. Clamping to
+#! `min_requested_amount` keeps a shrinking remainder completable, and `min_fill_step == 0` disables
+#! the floor.
+#!
 #! Account fill and note fill payouts are computed separately (rather than summing
 #! first) because the account fill portion must be credited to the consumer's vault
 #! on its own, while the combined total is needed to size the remainder note.
@@ -570,7 +596,7 @@ proc execute_pswap
     # => [ASSET_ID, ASSET_VALUE]
 
     # Extract offered amount
-    exec.asset::fungible_to_amount
+    exec.fungible_asset::to_amount
     # => [amount, ASSET_ID, ASSET_VALUE]
 
     loc_store.EXEC_AMT_OFFERED
@@ -606,6 +632,19 @@ proc execute_pswap
     # => [sum_lo, sum_hi]
 
     swap mul.MAX_U32 add
+    # => [fill_amount]
+
+    # Reject fills below the effective per-fill floor (see the proc doc comment).
+    dup
+    # => [fill_amount, fill_amount]
+
+    mem_load.MIN_FILL_STEP_ITEM loc_load.EXEC_AMT_MIN_REQUESTED exec.min
+    # => [effective_floor, fill_amount, fill_amount]
+
+    lt
+    # => [fill_below_floor, fill_amount]
+
+    assertz.err=ERR_PSWAP_FILL_BELOW_MINIMUM
     # => [fill_amount]
 
     # fill_reference = max(fill, min_requested_amount).
@@ -680,7 +719,7 @@ proc execute_pswap
         loc_load.EXEC_OFFERED_FAUCET_SUFFIX
         # => [faucet_suffix, faucet_prefix, amt_payout_account_fill, pad(8)]
 
-        exec.asset::create_fungible_asset
+        exec.fungible_asset::create
         # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
         call.wallet::receive_asset
@@ -757,6 +796,7 @@ end
 #! Requires that the account exposes:
 #! - `miden::standards::wallets::basic::receive_asset` procedure.
 #! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
+#! - `miden::standards::note::note_creator::create_note` procedure.
 #!
 #! Inputs:  [NOTE_ARGS]
 #! Outputs: []

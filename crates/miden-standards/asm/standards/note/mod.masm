@@ -1,1 +1,137 @@
+# miden::standards::note
+#
+# Collects note-related helper procedures that operate on input notes and are candidates for
+# eventual promotion into the protocol layer (`miden::protocol`).
+
+use miden::core::crypto::hashes::poseidon2
+
+use miden::protocol::active_note
+use miden::protocol::input_note
+use miden::protocol::output_note
+
+use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
+
 pub mod execution_hint
+pub mod note_creator
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage from the advice provider does not hash to the note recipient"
+
+# PROCEDURES
+# =================================================================================================
+
+#! TODO: Move this to miden::protocol::input_note.
+#!
+#! Loads the storage items of the input note at `note_index` into memory at `dest_ptr`.
+#!
+#! The items are read from the advice map keyed by the note's storage commitment and validated
+#! against it, so a host that supplies wrong storage aborts the transaction.
+#!
+#! Inputs:  [note_index, dest_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - note_index is the index of the input note whose storage is loaded.
+#! - dest_ptr is the memory address the storage items are written to.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the advice-provided storage does not match the note's storage commitment.
+#!
+#! Invocation: exec
+pub proc input_note_get_storage
+    exec.input_note::get_storage_info
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+
+    # note that this call does NOT depend on the active note, it is merely a helper
+    exec.active_note::write_storage_to_memory
+    # => []
+end
+
+#! TODO: Move this to miden::protocol::output_note.
+#!
+#! Recovers a note's script root and storage commitment from its recipient via the advice provider.
+#!
+#! This works only for notes whose recipient preimage is in the advice provider. This is generally
+#! the case for public notes since their recipients are added to the advice inputs or they are
+#! created with compute_and_store_recipient. As long as the recipient preimage is available, this
+#! also works for private notes.
+#!
+#! Inputs:  [output_note_idx]
+#! Outputs: [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
+#!
+#! Where:
+#! - output_note_idx is the index of the output note for which to recover the commitments.
+#! - NOTE_SCRIPT_ROOT is the recovered note script root.
+#! - STORAGE_COMMITMENT is the recovered note storage commitment.
+#!
+#! Panics if:
+#! - the advice map has no preimage for the recipient (or the intermediate hash).
+#! - a preimage does not hash to the commitment it claims to open.
+#!
+#! Invocation: exec
+pub proc output_note_get_recipient_preimage(output_note_idx: u16) -> (NoteScriptRoot, word)
+    exec.output_note::get_recipient
+    # => [RECIPIENT]
+
+    exec.get_recipient_preimage
+    # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
+end
+
+#! Recovers a note's script root and storage commitment from the given recipient via the advice
+#! provider.
+#!
+#! Requires the recipient preimage in the advice provider. Always present for input notes and
+#! must be present for public output notes.
+#!
+#! Inputs:  [RECIPIENT]
+#! Outputs: [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
+#!
+#! Where:
+#! - RECIPIENT is the recipient of the note for which to recover the commitments.
+#! - NOTE_SCRIPT_ROOT is the recovered note script root.
+#! - STORAGE_COMMITMENT is the recovered note storage commitment.
+#!
+#! Panics if:
+#! - the advice map has no preimage for the recipient (or the intermediate hash).
+#! - a preimage does not hash to the commitment it claims to open.
+#!
+#! Invocation: exec
+pub proc get_recipient_preimage(recipient: NoteRecipient) -> (NoteScriptRoot, word)
+    # push the advice map entry for RECIPIENT
+    adv.push_mapval
+    # OS => [RECIPIENT]
+    # AS => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+
+    padw adv_loadw padw adv_loadw swapw
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
+
+    # re-hash the preimage and assert it reproduces RECIPIENT, keeping the preimage words
+    dupw.1 dupw.1 exec.poseidon2::merge
+    # => [RECOMPUTED_RECIPIENT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, RECIPIENT]
+
+    movupw.3 assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+
+    # push the advice map entry for SERIAL_SCRIPT_COMMITMENT
+    adv.push_mapval
+    # OS => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+    # AS => [SERIAL_COMMITMENT, SCRIPT_ROOT]
+
+    padw adv_loadw padw adv_loadw
+    # => [SCRIPT_ROOT, SERIAL_COMMITMENT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+
+    swapw
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+
+    dupw.1 dupw.1 exec.poseidon2::merge
+    # => [RECOMPUTED_SERIAL_SCRIPT_COMMITMENT, SERIAL_COMMITMENT, SCRIPT_ROOT, SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+
+    movupw.3 assert_eqw.err=ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    dropw
+    # => [SCRIPT_ROOT, STORAGE_COMMITMENT]
+end

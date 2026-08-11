@@ -1,37 +1,11 @@
-use miden::protocol::asset
-use {COMPOSITION_FUNGIBLE, COMPOSITION_NONE} from miden::protocol::asset
-use {
-    ACCOUNT_GET_ID_OFFSET,
-    ACCOUNT_GET_NONCE_OFFSET,
-    ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET,
-    ACCOUNT_COMPUTE_COMMITMENT_OFFSET,
-    ACCOUNT_GET_CODE_COMMITMENT_OFFSET,
-    ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET,
-    ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET,
-    ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET,
-    ACCOUNT_GET_VAULT_ROOT_OFFSET,
-    ACCOUNT_GET_ITEM_OFFSET,
-    ACCOUNT_HAS_STORAGE_SLOT_OFFSET,
-    ACCOUNT_GET_INITIAL_ITEM_OFFSET,
-    ACCOUNT_GET_MAP_ITEM_OFFSET,
-    ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET,
-    ACCOUNT_GET_ASSET_OFFSET,
-    ACCOUNT_GET_INITIAL_ASSET_OFFSET,
-    ACCOUNT_GET_NUM_PROCEDURES_OFFSET,
-    ACCOUNT_GET_PROCEDURE_ROOT_OFFSET,
-    ACCOUNT_HAS_PROCEDURE_OFFSET,
-} from miden::protocol::kernel_proc_offsets
+use {ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_NONCE_OFFSET, ACCOUNT_COMPUTE_COMMITMENT_OFFSET, ACCOUNT_GET_CODE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_VAULT_ROOT_OFFSET, ACCOUNT_GET_ITEM_OFFSET, ACCOUNT_HAS_STORAGE_SLOT_OFFSET, ACCOUNT_GET_MAP_ITEM_OFFSET, ACCOUNT_GET_ASSET_OFFSET, ACCOUNT_GET_NUM_PROCEDURES_OFFSET, ACCOUNT_GET_PROCEDURE_ROOT_OFFSET, ACCOUNT_HAS_PROCEDURE_OFFSET}
+    from miden::protocol::kernel_proc_offsets
 use miden::core::word
+use {AccountId, AccountProcedureRoot, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId}
+    from miden::protocol::types
 
 # ACTIVE ACCOUNT PROCEDURES
 # =================================================================================================
-
-# ERRORS
-# -------------------------------------------------------------------------------------------------
-
-const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance can only be called on a fungible asset"
-
-const ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET="the has_non_fungible_asset procedure can only be called on a non-fungible faucet"
 
 # ID AND NONCE
 # -------------------------------------------------------------------------------------------------
@@ -45,7 +19,7 @@ const ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the ID of the active account.
 #!
 #! Invocation: exec
-pub proc get_id
+pub proc get_id() -> AccountId
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14)]
@@ -77,8 +51,11 @@ end
 #! Where:
 #! - nonce is the active account's nonce.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: exec
-pub proc get_nonce
+pub proc get_nonce() -> felt
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -97,31 +74,6 @@ end
 # COMMITMENTS
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the commitment of the active account at the beginning of the transaction.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_COMMITMENT]
-#!
-#! Where:
-#! - INIT_COMMITMENT is the initial account commitment.
-#!
-#! Invocation: exec
-pub proc get_initial_commitment
-    # pad the stack
-    padw padw padw push.0.0.0
-    # => [pad(15)]
-
-    push.ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
-    # => [offset, pad(15)]
-
-    syscall.exec_kernel_proc
-    # => [INIT_COMMITMENT, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [INIT_COMMITMENT]
-end
-
 #! Computes and returns commitment to the state of the active account.
 #!
 #! Inputs:  []
@@ -130,8 +82,11 @@ end
 #! Where:
 #! - ACCOUNT_COMMITMENT is the commitment of the account data.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: exec
-pub proc compute_commitment
+pub proc compute_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -169,7 +124,7 @@ end
 #! - CODE_COMMITMENT is the commitment of the account code.
 #!
 #! Invocation: exec
-pub proc get_code_commitment
+pub proc get_code_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -183,36 +138,6 @@ pub proc get_code_commitment
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [CODE_COMMITMENT]
-end
-
-#! Returns the storage commitment of the active account at the beginning of the transaction.
-#!
-#! During an account-creating transaction (when the initial nonce is 0), this procedure and
-#! compute_storage_commitment will return the same value at the beginning of the transaction
-#! (before any note or transaction scripts were executed). Despite that, the account delta may
-#! not be empty. See account::compute_delta_commitment for more.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_STORAGE_COMMITMENT]
-#!
-#! Where:
-#! - INIT_STORAGE_COMMITMENT is the initial account storage commitment.
-#!
-#! Invocation: exec
-pub proc get_initial_storage_commitment
-    # pad the stack
-    padw padw padw push.0.0.0
-    # => [pad(15)]
-
-    push.ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET
-    # => [offset, pad(15)]
-
-    syscall.exec_kernel_proc
-    # => [INIT_STORAGE_COMMITMENT, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [INIT_STORAGE_COMMITMENT]
 end
 
 #! Computes the latest storage commitment of the active account.
@@ -233,7 +158,7 @@ end
 #! - STORAGE_COMMITMENT is the commitment of the account storage.
 #!
 #! Invocation: exec
-pub proc compute_storage_commitment
+pub proc compute_storage_commitment() -> word
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -249,31 +174,6 @@ pub proc compute_storage_commitment
     # => [STORAGE_COMMITMENT]
 end
 
-#! Returns the vault root of the active account at the beginning of the transaction.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_VAULT_ROOT]
-#!
-#! Where:
-#! - INIT_VAULT_ROOT is the initial account vault root.
-#!
-#! Invocation: exec
-pub proc get_initial_vault_root
-    # pad the stack
-    padw padw padw push.0.0.0
-    # => [pad(15)]
-
-    push.ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET
-    # => [offset, pad(15)]
-
-    syscall.exec_kernel_proc
-    # => [INIT_VAULT_ROOT, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [INIT_VAULT_ROOT]
-end
-
 #! Returns the vault root of the active account.
 #!
 #! Inputs:  []
@@ -282,8 +182,11 @@ end
 #! Where:
 #! - VAULT_ROOT is the root of the account vault.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: exec
-pub proc get_vault_root
+pub proc get_vault_root() -> word
     # pad the stack for syscall invocation
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -316,7 +219,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #!
 #! Invocation: exec
-pub proc get_item
+pub proc get_item(slot_id: StorageSlotId) -> word
     push.0 movdn.2
     # => [slot_id_suffix, slot_id_prefix, 0]
 
@@ -349,7 +252,7 @@ end
 #! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
 #!
 #! Invocation: exec
-pub proc has_storage_slot
+pub proc has_storage_slot(slot_id: StorageSlotId) -> Bool
     push.0 movdn.2
     # => [slot_id_suffix, slot_id_prefix, 0]
 
@@ -366,40 +269,6 @@ pub proc has_storage_slot
     # clean the stack
     swapdw dropw dropw swapw dropw movdn.3 drop drop drop
     # => [has_slot]
-end
-
-#! Gets the initial item from the active account storage slot as it was at the beginning of the
-#! transaction.
-#!
-#! Inputs:  [slot_id_suffix, slot_id_prefix]
-#! Outputs: [INIT_VALUE]
-#!
-#! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
-#! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
-#!
-#! Panics if:
-#! - a slot with the provided slot ID does not exist in account storage.
-#!
-#! Invocation: exec
-pub proc get_initial_item
-    push.0 movdn.2
-    # => [slot_id_suffix, slot_id_prefix, 0]
-
-    push.ACCOUNT_GET_INITIAL_ITEM_OFFSET
-    # => [offset, slot_id_suffix, slot_id_prefix, 0]
-
-    # pad the stack
-    padw swapw padw padw swapdw
-    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
-
-    syscall.exec_kernel_proc
-    # => [INIT_VALUE, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [INIT_VALUE]
 end
 
 #! Gets a map item from the active account storage.
@@ -419,7 +288,7 @@ end
 #! - the slot item at index is not a map.
 #!
 #! Invocation: exec
-pub proc get_map_item
+pub proc get_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
     push.ACCOUNT_GET_MAP_ITEM_OFFSET
     # => [offset, slot_id_suffix, slot_id_prefix, KEY]
 
@@ -435,38 +304,6 @@ pub proc get_map_item
     # => [VALUE]
 end
 
-#! Gets the initial VALUE from the active account storage map as it was at the beginning of the
-#! transaction.
-#!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
-#! Outputs: [INIT_VALUE]
-#!
-#! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
-#! - KEY is the key of the item to get.
-#! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
-#!
-#! Panics if:
-#! - a slot with the provided slot ID does not exist in account storage.
-#! - the slot item at index is not a map.
-#!
-#! Invocation: exec
-pub proc get_initial_map_item
-    push.ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
-    # => [offset, slot_id_suffix, slot_id_prefix, KEY]
-
-    push.0 movdn.7 padw padw swapdw
-    # => [offset, slot_id_suffix, slot_id_prefix, KEY, pad(9)]
-
-    syscall.exec_kernel_proc
-    # => [INIT_VALUE, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [INIT_VALUE]
-end
-
 # VAULT
 # -------------------------------------------------------------------------------------------------
 
@@ -480,8 +317,11 @@ end
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: exec
-pub proc get_asset
+pub proc get_asset(asset_id: AssetId) -> AssetValue
     push.ACCOUNT_GET_ASSET_OFFSET
     # => [offset, ASSET_ID]
 
@@ -498,114 +338,21 @@ pub proc get_asset
     # => [ASSET_VALUE]
 end
 
-#! Returns the asset associated with the provided asset ID in the active account's vault at
-#! the beginning of the transaction.
-#!
-#! Inputs:  [ASSET_ID]
-#! Outputs: [ASSET_VALUE]
-#!
-#! Where:
-#! - ASSET_ID is the asset ID of the asset to fetch.
-#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
-#!   present.
-#!
-#! Invocation: exec
-pub proc get_initial_asset
-    push.ACCOUNT_GET_INITIAL_ASSET_OFFSET
-    # => [offset, ASSET_ID]
-
-    # pad the stack
-    push.0 movdn.5 push.0 movdn.5 push.0 movdn.5
-    padw padw swapdw
-    # => [offset, ASSET_ID, pad(11)]
-
-    syscall.exec_kernel_proc
-    # => [ASSET_VALUE, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [ASSET_VALUE]
-end
-
-#! Returns the balance of the fungible asset associated with the provided asset ID in the
-#! active account's vault.
-#!
-#! Inputs:  [ASSET_ID]
-#! Outputs: [balance]
-#!
-#! Where:
-#! - ASSET_ID is the asset ID of the fungible asset of interest.
-#! - balance is the vault balance of the fungible asset.
-#!
-#! Panics if:
-#! - the asset composition encoded in ASSET_ID is not fungible.
-#!
-#! Invocation: exec
-pub proc get_balance
-    # assert that the asset composition is fungible
-    exec.asset::id_to_composition
-    push.COMPOSITION_FUNGIBLE
-    assert_eq.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [ASSET_ID]
-
-    exec.get_asset
-    # => [ASSET_VALUE]
-
-    # extract the asset's balance
-    exec.asset::fungible_value_into_amount
-    # => [balance]
-end
-
-#! Returns the balance of the fungible asset associated with the provided asset ID in the
-#! active account's vault at the beginning of the transaction.
-#!
-#! Inputs:  [ASSET_ID]
-#! Outputs: [init_balance]
-#!
-#! Where:
-#! - ASSET_ID is the asset ID of the fungible asset of interest.
-#! - init_balance is the vault balance of the fungible asset at the beginning of the transaction.
-#!
-#! Panics if:
-#! - the asset composition encoded in ASSET_ID is not fungible.
-#!
-#! Invocation: exec
-pub proc get_initial_balance
-    # assert that the asset composition is fungible
-    exec.asset::id_to_composition
-    push.COMPOSITION_FUNGIBLE
-    assert_eq.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [ASSET_ID]
-
-    exec.get_initial_asset
-    # => [ASSET_VALUE]
-
-    # extract the asset's balance
-    exec.asset::fungible_value_into_amount
-    # => [balance]
-end
-
 #! Returns a boolean indicating whether the active account stores an asset with the provided
-#! non-fungible asset ID in its vault.
+#! asset ID in its vault.
 #!
 #! Inputs:  [ASSET_ID]
 #! Outputs: [has_asset]
 #!
 #! Where:
-#! - ASSET_ID is the key of the fungible asset to check.
+#! - ASSET_ID is the asset ID of the asset to check.
 #! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Panics if:
-#! - the ASSET_VALUE is a fungible asset.
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
-pub proc has_non_fungible_asset
-    # assert that the asset's composition is non-fungible
-    exec.asset::id_to_composition
-    push.COMPOSITION_NONE
-    assert_eq.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
-    # => [ASSET_ID]
-
+pub proc has_asset(asset_id: AssetId) -> Bool
     exec.get_asset
     # => [ASSET_VALUE]
 
@@ -622,8 +369,11 @@ end
 #! Where:
 #! - num_procedures is the number of procedures in the active account.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: exec
-pub proc get_num_procedures
+pub proc get_num_procedures() -> u16
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
@@ -649,10 +399,11 @@ end
 #! - PROC_ROOT is the hash of the procedure.
 #!
 #! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
 #! - the procedure index is out of bounds.
 #!
 #! Invocation: exec
-pub proc get_procedure_root
+pub proc get_procedure_root(index: u8) -> AccountProcedureRoot
     # => [index]
 
     push.0.0 movup.2
@@ -684,8 +435,11 @@ end
 #! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is
 #!   available on the active account.
 #!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#!
 #! Invocation: exec
-pub proc has_procedure
+pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     push.ACCOUNT_HAS_PROCEDURE_OFFSET
     # => [offset, PROC_ROOT]
 

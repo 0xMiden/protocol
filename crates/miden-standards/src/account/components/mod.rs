@@ -10,13 +10,12 @@ use crate::account::auth::{
     AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
-    AuthSingleSigAcl,
     NoAuth,
 };
 use crate::account::faucets::FungibleFaucet;
+use crate::account::inspection::CodeInspection;
 use crate::account::interface::AccountComponentInterface;
-use crate::account::metadata::CodeInspection;
-use crate::account::wallets::BasicWallet;
+use crate::account::wallets::{BasicWallet, NoteCreator};
 
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
@@ -25,13 +24,13 @@ use crate::account::wallets::BasicWallet;
 /// crate.
 pub enum StandardAccountComponent {
     BasicWallet,
+    NoteCreator,
     FungibleFaucet,
     CodeInspection,
     Authority,
     Ownable2Step,
     RoleBasedAccessControl,
     AuthSingleSig,
-    AuthSingleSigAcl,
     AuthMultisig,
     AuthMultisigSmart,
     AuthGuardedMultisig,
@@ -45,13 +44,13 @@ impl StandardAccountComponent {
     pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> {
         let code = match self {
             Self::BasicWallet => BasicWallet::code(),
+            Self::NoteCreator => NoteCreator::code(),
             Self::FungibleFaucet => FungibleFaucet::code(),
             Self::CodeInspection => CodeInspection::code(),
             Self::Authority => Authority::code(),
             Self::Ownable2Step => Ownable2Step::code(),
             Self::RoleBasedAccessControl => RoleBasedAccessControl::code(),
             Self::AuthSingleSig => AuthSingleSig::code(),
-            Self::AuthSingleSigAcl => AuthSingleSigAcl::code(),
             Self::AuthMultisig => AuthMultisig::code(),
             Self::AuthMultisigSmart => AuthMultisigSmart::code(),
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
@@ -82,6 +81,9 @@ impl StandardAccountComponent {
                 Self::BasicWallet => {
                     component_interface_vec.push(AccountComponentInterface::BasicWallet)
                 },
+                Self::NoteCreator => {
+                    component_interface_vec.push(AccountComponentInterface::NoteCreator)
+                },
                 Self::FungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
                 },
@@ -99,9 +101,6 @@ impl StandardAccountComponent {
                 },
                 Self::AuthSingleSig => {
                     component_interface_vec.push(AccountComponentInterface::AuthSingleSig)
-                },
-                Self::AuthSingleSigAcl => {
-                    component_interface_vec.push(AccountComponentInterface::AuthSingleSigAcl)
                 },
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
@@ -129,13 +128,15 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
+        // Must run after `BasicWallet`: `NoteCreator`'s only procedure (`create_note`) is a subset
+        // of the basic wallet's, so a full wallet must claim it first to avoid misdetection.
+        Self::NoteCreator.extract_component(procedures_set, component_interface_vec);
         Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::CodeInspection.extract_component(procedures_set, component_interface_vec);
         Self::Authority.extract_component(procedures_set, component_interface_vec);
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
-        Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);

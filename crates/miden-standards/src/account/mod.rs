@@ -2,12 +2,14 @@ pub mod access;
 pub mod auth;
 pub mod components;
 pub mod faucets;
+pub mod fees;
+pub mod inspection;
 pub mod interface;
-pub mod metadata;
 pub mod policies;
+pub mod upgrade;
 pub mod wallets;
 
-pub use metadata::AccountBuilderSchemaCommitmentExt;
+pub use inspection::AccountBuilderSchemaCommitmentExt;
 
 /// Macro to simplify the creation of static procedure root constants.
 ///
@@ -58,7 +60,7 @@ macro_rules! procedure_root {
 /// shipped by the `miden-standards` build script.
 ///
 /// `$relative_path` is appended to `concat!(env!("OUT_DIR"), "/assets/components/")` and the
-/// resulting bytes are deserialized into a [`Package`], whose library is then wrapped into an
+/// resulting bytes are deserialized into a [`Package`], which is then wrapped into an
 /// [`AccountComponentCode`].
 ///
 /// This macro is intended for use **inside the `miden-standards` crate only**: it relies on

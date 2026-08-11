@@ -17,11 +17,10 @@
 
 use miden::core::word
 use miden::protocol::active_account
-use miden::protocol::active_note
-use miden::protocol::asset
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
+use miden::standards::assets::non_fungible_asset
 use miden::standards::faucets::policies::policy_manager
 
 # =================================================================================================
@@ -41,12 +40,8 @@ const STATUS_BURNED = 2
 
 # The local memory address holding the asset commitment across the mint flow.
 const ASSET_VALUE_LOCAL = 0
-# The memory address at which a note's assets are written by `active_note::get_assets`.
-const ASSET_PTR = 0
-
 const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
 const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
-const ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
 const ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE = "mint policy must not modify the asset value"
 
 # =================================================================================================
@@ -196,7 +191,7 @@ pub proc mint_and_send
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(10)]
 
-    exec.asset::non_fungible_value_into_asset_class
+    exec.non_fungible_asset::value_into_asset_class
     # => [token_id_suffix, token_id_prefix, tag, note_type, RECIPIENT, pad(10)]
 
     exec.create_status_key
@@ -223,7 +218,13 @@ pub proc mint_and_send
     padw loc_loadw_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, note_idx, note_idx, pad(15)]
 
-    exec.faucet::create_non_fungible_asset
+    exec.active_account::get_id
+    # => [id_suffix, id_prefix, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+    # the asset ID is derived from the value here (composition None, asset class copied from
+    # the value's hash0/hash1), so the minted asset is well formed by construction and
+    # non_fungible_asset::validate is deliberately skipped
+    exec.non_fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     dupw.1 dupw.1
@@ -240,36 +241,28 @@ end
 # RECEIVE AND BURN
 # =================================================================================================
 
-#! Receives a non-fungible asset from the active note and burns it.
+#! Burns the non-fungible asset supplied by the caller.
 #!
 #! Burning removes the asset from circulation and marks the commitment BURNED in the status
 #! registry (asserting it was ISSUED). A burned commitment is permanently consumed and can never
 #! be issued again.
 #!
-#! Inputs:  [pad(16)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the active burn policy validation fails.
-#! - the procedure is not called from a note context.
-#! - the note does not contain exactly one asset.
 #! - the asset was not issued by this faucet.
 #! - the asset is not in the issued state.
 #!
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
-    # get the single asset from the note (fails if not called from a note context)
-    push.ASSET_PTR exec.active_note::get_assets
-    # => [num_assets, pad(16)]
-
-    eq.1 assert.err=ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [pad(16)]
-
-    push.ASSET_PTR exec.asset::load
+    # validate the asset to burn is well-formed before processing it
+    # note that the asset's origin is validated by the kernel
+    exec.non_fungible_asset::validate
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
-    # run the active burn policy on a copy of the asset
     dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
     # => [ASSET_ID, ASSET_VALUE, pad(16)]
 
@@ -277,7 +270,7 @@ pub proc receive_and_burn
     dupw.1
     # => [ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(16)]
 
-    exec.asset::non_fungible_value_into_asset_class
+    exec.non_fungible_asset::value_into_asset_class
     # => [token_id_suffix, token_id_prefix, ASSET_ID, ASSET_VALUE, pad(16)]
 
     exec.create_status_key

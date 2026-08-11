@@ -14,6 +14,10 @@ account_component_code!(NO_AUTH_CODE, "miden-standards-auth-no-auth.masp");
 /// modify the account state.
 ///
 /// It exports the procedure `auth_no_auth`, which:
+/// - Pays the transaction fee by creating a public TX_FEE note funded from the account's vault in
+///   the native fee asset at rate 1/1 (see `miden::standards::fee::pay_fee` and
+///   `miden::standards::fee::native_conversion_info`); on chains with a zero verification base fee
+///   no note is created
 /// - Checks if the account state has changed by comparing initial and final commitments
 /// - Only increments the nonce if the account state has actually changed
 /// - Provides no cryptographic authentication
@@ -73,7 +77,7 @@ mod tests {
     fn test_no_auth_component() {
         // Create an account using the NoAuth component
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(NoAuth)
+            .with_component(NoAuth)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

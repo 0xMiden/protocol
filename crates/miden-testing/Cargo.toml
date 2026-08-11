@@ -30,7 +30,7 @@ miden-processor = { workspace = true }
 
 # External dependencies
 anyhow      = { workspace = true }
-itertools   = { default-features = false, features = ["use_alloc"], version = "0.14" }
+itertools   = { default-features = false, features = ["use_alloc"], version = "0.15" }
 rand        = { features = ["sys_rng"], workspace = true }
 rand_chacha = { workspace = true }
 thiserror   = { workspace = true }
@@ -38,6 +38,7 @@ thiserror   = { workspace = true }
 [dev-dependencies]
 anyhow          = { features = ["backtrace", "std"], workspace = true }
 assert_matches  = { workspace = true }
+bon             = { workspace = true }
 miden-agglayer  = { features = ["testing"], workspace = true }
 miden-assembly  = { workspace = true }
 miden-crypto    = { workspace = true }

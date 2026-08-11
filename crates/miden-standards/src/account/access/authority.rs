@@ -83,8 +83,8 @@ const RBAC_CONTROLLED: u8 = 2;
 ///
 /// # Per-procedure roles under [`Authority::RbacControlled`]
 ///
-/// Under RBAC, each gated procedure can be assigned its own role via `roles`, keyed by the
-/// procedure's [`AccountProcedureRoot`] (e.g. `pause` → `PAUSER`, `unpause` → `UNPAUSER`). At
+/// Under RBAC, each gated procedure can be assigned its own role via `procedure_roles`, keyed by
+/// the procedure's [`AccountProcedureRoot`] (e.g. `pause` → `PAUSER`, `unpause` → `UNPAUSER`). At
 /// runtime `assert_authorized` identifies the calling procedure via the `caller` instruction and
 /// looks up its role. A procedure without a mapping falls back to the `ADMIN` role check.
 ///
@@ -116,12 +116,13 @@ pub enum Authority {
     OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in an RBAC role, resolved per gated procedure.
     ///
-    /// `roles` maps a gated procedure's [`AccountProcedureRoot`] to the role required to invoke it.
-    /// Requires the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
-    /// component to be installed on the account. the MASM helper calls into
-    /// `rbac::assert_sender_has_role` and will fail to link otherwise.
+    /// `procedure_roles` maps a gated procedure's [`AccountProcedureRoot`] to the role required to
+    /// invoke it. Requires the
+    /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
+    /// installed on the account. the MASM helper calls into `rbac::assert_sender_has_role` and will
+    /// fail to link otherwise.
     RbacControlled {
-        roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+        procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     } = RBAC_CONTROLLED,
 }
 
@@ -185,8 +186,8 @@ impl Authority {
             AUTH_CONTROLLED => Ok(Self::AuthControlled),
             OWNER_CONTROLLED => Ok(Self::OwnerControlled),
             RBAC_CONTROLLED => {
-                let roles = Self::read_roles_from_storage(storage)?;
-                Ok(Self::RbacControlled { roles })
+                let procedure_roles = Self::read_roles_from_storage(storage)?;
+                Ok(Self::RbacControlled { procedure_roles })
             },
             other => Err(AuthorityError::InvalidAuthority(other.into())),
         }
@@ -288,6 +289,10 @@ impl Authority {
 
         let mut roles = BTreeMap::new();
         for (key, value) in map.entries() {
+            // Enforce the canonical encoding on read: the reserved felts must be zero.
+            if value[1..4].iter().any(|v| *v != Felt::ZERO) {
+                return Err(AuthorityError::NonCanonicalConfig);
+            }
             let proc_root = AccountProcedureRoot::from_raw(key.as_word());
             let role = RoleSymbol::try_from(value[0]).map_err(AuthorityError::InvalidRoleSymbol)?;
             roles.insert(proc_root, role);
@@ -306,8 +311,8 @@ impl From<Authority> for AccountComponent {
 
         let mut slots = vec![StorageSlot::with_value(AUTHORITY_SLOT_NAME.clone(), value.to_word())];
 
-        if let Authority::RbacControlled { roles } = value {
-            let entries = roles.into_iter().map(|(proc_root, role)| {
+        if let Authority::RbacControlled { procedure_roles } = value {
+            let entries = procedure_roles.into_iter().map(|(proc_root, role)| {
                 (StorageMapKey::new(proc_root.as_word()), role_value_word(&role))
             });
             slots.push(StorageSlot::with_map(
@@ -348,12 +353,30 @@ pub enum AuthorityError {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
+
+    /// Procedure-root key of the single entry inserted by [`rbac_storage_with_role_value`].
+    const ROLE_KEY_WORD: [u32; 4] = [1, 2, 3, 4];
 
     /// Builds account storage whose authority value slot holds `word`.
     fn storage_with_config(word: Word) -> AccountStorage {
         let slot = StorageSlot::with_value(Authority::authority_slot().clone(), word);
         AccountStorage::new(vec![slot]).expect("storage should be valid")
+    }
+
+    /// Builds RBAC account storage whose procedure-roles map holds a single entry, keyed by
+    /// [`ROLE_KEY_WORD`], with `role_value` as its value word.
+    fn rbac_storage_with_role_value(role_value: Word) -> AccountStorage {
+        let config = StorageSlot::with_value(
+            Authority::authority_slot().clone(),
+            Word::from([u32::from(RBAC_CONTROLLED), 0, 0, 0]),
+        );
+        let key = StorageMapKey::new(Word::from(ROLE_KEY_WORD));
+        let map = StorageMap::with_entries([(key, role_value)]).expect("map should be valid");
+        let roles = StorageSlot::with_map(Authority::procedure_roles_slot().clone(), map);
+        AccountStorage::new(vec![config, roles]).expect("storage should be valid")
     }
 
     #[test]
@@ -402,5 +425,37 @@ mod tests {
             Authority::try_read_frozen(&storage),
             Err(AuthorityError::NonCanonicalConfig)
         ));
+    }
+
+    #[test]
+    fn non_zero_reserved_felt_in_role_value_is_rejected() {
+        let role = RoleSymbol::new("ADMIN").unwrap();
+        let role_felt: Felt = (&role).into();
+        let expected_root = AccountProcedureRoot::from_raw(Word::from(ROLE_KEY_WORD));
+
+        // A canonical role value word `[role, 0, 0, 0]` is accepted and parses the configured role.
+        let storage = rbac_storage_with_role_value(Word::new([
+            role_felt,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+        ]));
+        assert_matches!(
+            Authority::try_from_storage(&storage),
+            Ok(Authority::RbacControlled { procedure_roles })
+                if procedure_roles.get(&expected_root) == Some(&role)
+        );
+
+        // A non-zero reserved felt in the role value word carries unexpected trailing data.
+        let storage = rbac_storage_with_role_value(Word::new([
+            role_felt,
+            Felt::ZERO,
+            Felt::from(9u8),
+            Felt::ZERO,
+        ]));
+        assert_matches!(
+            Authority::try_from_storage(&storage),
+            Err(AuthorityError::NonCanonicalConfig)
+        );
     }
 }

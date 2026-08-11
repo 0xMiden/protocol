@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -103,25 +102,7 @@ impl ProvenTransaction {
         let output_notes =
             OutputNotes::new(output_notes).map_err(ProvenTransactionError::OutputNotesError)?;
 
-        // Disallow creating and consuming notes with the same ID in a transaction. This is a
-        // circular dependency that can be abused (see https://github.com/0xMiden/protocol/issues/2796).
-        // This is only relevant for unauthenticated notes (notes with a header), since only these
-        // can be erased at batch or block level. Authenticated notes don't exhibit this issue.
-        for input_note in input_notes.iter().filter_map(InputNoteCommitment::header) {
-            if output_notes.iter().any(|output_note| output_note.id() == input_note.id()) {
-                return Err(ProvenTransactionError::NoteCreatedAndConsumed(input_note.id()));
-            }
-        }
-
-        let id = TransactionId::new(
-            account_update.initial_state_commitment(),
-            account_update.final_state_commitment(),
-            input_notes.commitment(),
-            output_notes.commitment(),
-        );
-
-        let proven_transaction = Self {
-            id,
+        Self::from_parts(
             account_update,
             input_notes,
             output_notes,
@@ -129,9 +110,7 @@ impl ProvenTransaction {
             ref_block_commitment,
             expiration_block_num,
             proof,
-        };
-
-        proven_transaction.validate()
+        )
     }
 
     // PUBLIC ACCESSORS
@@ -197,43 +176,64 @@ impl ProvenTransaction {
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
 
-    /// Validates the transaction.
+    /// Creates a [`ProvenTransaction`] from its raw parts, enforcing all invariants.
+    ///
+    /// Both [`ProvenTransaction::new`] and [`ProvenTransaction::read_from`] funnel through this
+    /// constructor so that every invariant is checked on both the creation and deserialization
+    /// paths.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The transaction is empty, which is the case if the account state is unchanged or the
-    ///   number of input notes is zero.
-    /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
-    ///   not match its declared account delta commitment.
-    fn validate(self) -> Result<Self, ProvenTransactionError> {
+    /// - The transaction is empty (account state unchanged and no input notes).
+    /// - The same note ID appears as both an unauthenticated input and an output (circular
+    ///   dependency, see <https://github.com/0xMiden/protocol/issues/2796>).
+    /// - The commitment computed on the actual account delta does not match its declared account
+    ///   delta commitment.
+    fn from_parts(
+        account_update: TxAccountUpdate,
+        input_notes: InputNotes<InputNoteCommitment>,
+        output_notes: OutputNotes,
+        ref_block_num: BlockNumber,
+        ref_block_commitment: Word,
+        expiration_block_num: BlockNumber,
+        proof: ExecutionProof,
+    ) -> Result<Self, ProvenTransactionError> {
         // Check that either the account state was changed or at least one note was consumed,
         // otherwise this transaction is considered empty.
-        if self.account_update.initial_state_commitment()
-            == self.account_update.final_state_commitment()
-            && self.input_notes.commitment().is_empty()
+        if account_update.initial_state_commitment() == account_update.final_state_commitment()
+            && input_notes.commitment().is_empty()
         {
             return Err(ProvenTransactionError::EmptyTransaction);
         }
 
-        match &self.account_update.details {
-            // The patch commitment cannot be validated for private account updates. It will be
-            // validated as part of transaction proof verification implicitly.
-            AccountUpdateDetails::Private => (),
-            AccountUpdateDetails::Public(account_patch) => {
-                let expected_commitment = self.account_update.account_patch_commitment;
-                let actual_commitment = account_patch.to_commitment();
-                if expected_commitment != actual_commitment {
-                    return Err(ProvenTransactionError::AccountPatchCommitmentMismatch(Box::from(
-                        format!(
-                            "expected account patch commitment {expected_commitment} but found {actual_commitment}"
-                        ),
-                    )));
-                }
-            },
+        // Disallow creating and consuming notes with the same ID in a transaction. This is a
+        // circular dependency that can be abused (see https://github.com/0xMiden/protocol/issues/2796).
+        // This is only relevant for unauthenticated notes (notes with a header), since only these
+        // can be erased at batch or block level. Authenticated notes don't exhibit this issue.
+        for input_note in input_notes.iter().filter_map(InputNoteCommitment::header) {
+            if output_notes.iter().any(|output_note| output_note.id() == input_note.id()) {
+                return Err(ProvenTransactionError::NoteCreatedAndConsumed(input_note.id()));
+            }
         }
 
-        Ok(self)
+        let id = TransactionId::new(
+            account_update.initial_state_commitment(),
+            account_update.final_state_commitment(),
+            input_notes.commitment(),
+            output_notes.commitment(),
+        );
+
+        Ok(Self {
+            id,
+            account_update,
+            input_notes,
+            output_notes,
+            ref_block_num,
+            ref_block_commitment,
+            expiration_block_num,
+            proof,
+        })
     }
 }
 
@@ -261,15 +261,7 @@ impl Deserializable for ProvenTransaction {
         let expiration_block_num = BlockNumber::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
 
-        let id = TransactionId::new(
-            account_update.initial_state_commitment(),
-            account_update.final_state_commitment(),
-            input_notes.commitment(),
-            output_notes.commitment(),
-        );
-
-        let proven_transaction = Self {
-            id,
+        Self::from_parts(
             account_update,
             input_notes,
             output_notes,
@@ -277,11 +269,8 @@ impl Deserializable for ProvenTransaction {
             ref_block_commitment,
             expiration_block_num,
             proof,
-        };
-
-        proven_transaction
-            .validate()
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        )
+        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -374,6 +363,14 @@ impl TxAccountUpdate {
                     return Err(ProvenTransactionError::AccountIdMismatch {
                         tx_account_id: account_id,
                         details_account_id: patch.id(),
+                    });
+                }
+
+                let actual_patch_commitment = patch.to_commitment();
+                if account_patch_commitment != actual_patch_commitment {
+                    return Err(ProvenTransactionError::AccountPatchCommitmentMismatch {
+                        expected_patch_commitment: account_patch_commitment,
+                        actual_patch_commitment,
                     });
                 }
 
@@ -630,10 +627,11 @@ mod tests {
         // A small account's delta does not exceed the limit.
         let account = Account::builder([9; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build_existing()?;
         let patch = AccountPatch::try_from(account.clone())?;
+        let patch_commitment = patch.to_commitment();
 
         let details = AccountUpdateDetails::Public(patch);
 
@@ -641,7 +639,7 @@ mod tests {
             account.id(),
             account.to_commitment(),
             account.to_commitment(),
-            Word::empty(),
+            patch_commitment,
             details,
         )?;
 
@@ -697,7 +695,7 @@ mod tests {
     fn account_update_id_mismatch_between_account_id_and_patch() -> anyhow::Result<()> {
         let patch_account = Account::builder([9; 32])
             .account_type(AccountType::Public)
-            .with_auth_component(NoopAuthComponent)
+            .with_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build_existing()?;
         let patch = AccountPatch::try_from(patch_account.clone())?;
@@ -729,6 +727,36 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn account_patch_commitment_mismatch() -> anyhow::Result<()> {
+        let account = Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        let patch = AccountPatch::try_from(account.clone())?;
+        let actual_patch_commitment = patch.to_commitment();
+        // EMPTY_WORD is all-zeros and differs from a real Rescue hash.
+        let wrong_commitment = EMPTY_WORD;
+        assert_ne!(wrong_commitment, actual_patch_commitment);
+        let err = TxAccountUpdate::new(
+            account.id(),
+            account.to_commitment(),
+            account.to_commitment(),
+            wrong_commitment,
+            AccountUpdateDetails::Public(patch),
+        )
+        .unwrap_err();
+        assert_matches!(
+            err,
+            ProvenTransactionError::AccountPatchCommitmentMismatch {
+                expected_patch_commitment,
+                actual_patch_commitment: returned_actual,
+            } if expected_patch_commitment == wrong_commitment
+                && returned_actual == actual_patch_commitment
+        );
+        Ok(())
+    }
     #[test]
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id =

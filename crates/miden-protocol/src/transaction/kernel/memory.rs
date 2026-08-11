@@ -18,9 +18,10 @@ pub type StorageSlot = u8;
 // | Global inputs      | 400           | 40               |                                            |
 // | Block header       | 800           | 44               |                                            |
 // | Partial blockchain | 1_200         | 132              |                                            |
-// | Kernel data        | 1_600         | 140              | 34 procedures in total, 4 elements each    |
+// | Kernel data        | 1_600         | 224              | 56 procedures in total, 4 elements each    |
 // | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each        |
-// | Account delta      | 532_480       | 263              |                                            |
+// | Account delta      | 532_480       | 264              | fungible + non-fungible ptr + 256 patches  |
+// | Account upgrade    | 532_744       | 8                | code + storage upgrade commitment          |
 // | Input notes        | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)    |
 // |                    |               |                  | + 1024 input notes max, 1024 elements each |
 // | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each  |
@@ -340,6 +341,15 @@ pub const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET: MemoryAddress = 3360;
 pub const NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR: MemoryAddress =
     NATIVE_ACCOUNT_DATA_PTR + ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET;
 
+// UPGRADE COMMITMENTS
+// ------------------------------------------------------------------------------------------------
+
+/// The memory address at which the native account code upgrade commitment is stored.
+pub const CODE_UPGRADE_COMMITMENT_PTR: MemoryAddress = 532_744;
+
+/// The memory address at which the native account storage upgrade commitment is stored.
+pub const STORAGE_UPGRADE_COMMITMENT_PTR: MemoryAddress = 532_748;
+
 // NOTES DATA
 // ================================================================================================
 
@@ -365,20 +375,22 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 // Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
-// ┌──────────────┬────────┬────────┬────────────┬────────────┬──────────┬─────────────┬───────────┬───────┬
-// │ NOTE DETAILS │ SERIAL │ SCRIPT │  STORAGE   │   ASSETS   │ METADATA │ ATTACHMENTS │ RECIPIENT │ NOTE  │
-// │  COMMITMENT  │  NUM   │  ROOT  │ COMMITMENT │ COMMITMENT │          │  COMMITMENT │           │ ARGS  │
-// ├──────────────┼────────┼────────┼────────────┼────────────┼──────────┼─────────────┼───────────┼───────┼
+// ┌──────────────┬────────┬────────┬────────────┬────────────┬──────────┬─────────────┬───────────┬──────┬
+// │ NOTE DETAILS │ SERIAL │ SCRIPT │  STORAGE   │   ASSETS   │ METADATA │ ATTACHMENTS │ RECIPIENT │ NOTE │
+// │  COMMITMENT  │  NUM   │  ROOT  │ COMMITMENT │ COMMITMENT │          │  COMMITMENT │           │  ID  │
+// ├──────────────┼────────┼────────┼────────────┼────────────┼──────────┼─────────────┼───────────┼──────┼
 // 0              4        8        12           16           20         24            28          32
 //
-// ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
-// │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
-// │ LENGTH  │ ASSETS │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
-// ┼─────────┼────────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 36        40       44      48              44 + 8n  48 + 8n
+// ┬───────┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │ NOTE  │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │ ARGS  │ LENGTH  │ ASSETS │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼───────┼─────────┼────────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 36      40        44       48      52              48 + 8n  52 + 8n
 //
 // - NUM_STORAGE_ITEMS is encoded as [num_storage_items, 0, 0, 0].
 // - NUM_ASSETS is encoded as [num_assets, 0, 0, 0].
+// - NOTE ID is computed and cached by the transaction prologue; asset removals only mutate the
+//   assets region and do not invalidate it.
 // - STORAGE_COMMITMENT is the key to look up note storage in the advice map.
 // - ASSETS_COMMITMENT is the key to look up note assets in the advice map.
 //
@@ -410,10 +422,11 @@ pub const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 16;
 pub const INPUT_NOTE_METADATA_OFFSET: MemoryOffset = 20;
 pub const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET: MemoryOffset = 24;
 pub const INPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 28;
-pub const INPUT_NOTE_ARGS_OFFSET: MemoryOffset = 32;
-pub const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET: MemoryOffset = 36;
-pub const INPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 40;
-pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
+pub const INPUT_NOTE_ID_OFFSET: MemoryOffset = 32;
+pub const INPUT_NOTE_ARGS_OFFSET: MemoryOffset = 36;
+pub const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET: MemoryOffset = 40;
+pub const INPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 44;
+pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 48;
 
 #[allow(clippy::empty_line_after_outer_attr)]
 #[rustfmt::skip]
@@ -434,7 +447,7 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // │ NOTE DETAILS │ METADATA │ RECIPIENT │ [dirty_flag, num_assets,                  │
 // │  COMMITMENT  │          │           │  num_attachments, total_attachment_words] │
 // ├──────────────┼──────────┼───────────┼───────────────────────────────────────────┼
-// 0      4          8           12
+// 0              4          8           12
 //
 // ┬────────────┬────────────┬────────────┬────────────┬────────────┬
 // │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │   ASSETS   │

@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -176,7 +177,7 @@ impl AuthGuardedMultisigConfig {
         self.multisig.default_threshold()
     }
 
-    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
+    pub fn proc_thresholds(&self) -> &BTreeMap<AccountProcedureRoot, u32> {
         self.multisig.proc_thresholds()
     }
 
@@ -403,7 +404,7 @@ mod tests {
 
         // Build account with guarded multisig component.
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
@@ -480,7 +481,7 @@ mod tests {
         .expect("guarded multisig component creation failed");
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
+            .with_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");

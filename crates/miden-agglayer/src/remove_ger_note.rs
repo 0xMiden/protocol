@@ -5,26 +5,25 @@
 //! running removed-GER keccak256 hash chain.
 
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
-use miden_protocol::utils::serde::Deserializable;
+use miden_standards::note::costs::NoteConsumptionCost;
 use miden_utils_sync::LazyLock;
 
-use crate::ExitRoot;
+use crate::costs::REMOVE_GER_CONSUMPTION_CYCLES;
 use crate::ger_note::create_ger_note;
+use crate::{ExitRoot, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the REMOVE_GER note script procedure in the agglayer package.
+const REMOVE_GER_SCRIPT_PATH: &str = "::agglayer::notes::remove_ger::main";
+
 // Initialize the REMOVE_GER note script only once
-static REMOVE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/remove_ger.masp"));
-    let library =
-        Library::read_from_bytes(bytes).expect("shipped REMOVE_GER script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped REMOVE_GER script is well-formed")
-});
+static REMOVE_GER_SCRIPT: LazyLock<NoteScript> =
+    LazyLock::new(|| note_script(REMOVE_GER_SCRIPT_PATH));
 
 // REMOVE_GER NOTE
 // ================================================================================================
@@ -77,5 +76,14 @@ impl RemoveGerNote {
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         create_ger_note(ger, sender_account_id, target_account_id, Self::script(), rng)
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for RemoveGerNote {
+    fn consumption_cycles() -> u32 {
+        REMOVE_GER_CONSUMPTION_CYCLES
     }
 }

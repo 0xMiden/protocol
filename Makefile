@@ -131,6 +131,12 @@ check-no-std: ## Check the no-std target without any features for errors without
 check-features: ## Checks all feature combinations compile without warnings using cargo-hack
 	@scripts/check-features.sh
 
+
+.PHONY: check-crates-published
+check-crates-published: ## Checks every publishable workspace member already exists on crates.io
+	@scripts/check-crates-published.sh
+
+
 # --- building ------------------------------------------------------------------------------------
 
 .PHONY: build
@@ -168,6 +174,11 @@ bench-tx: ## Run transaction benchmarks
 .PHONY: bench-note-checker
 bench-note-checker: ## Run note checker benchmarks
 	cargo bench --bin bench-note-checker --bench benches
+
+.PHONY: update-note-costs
+update-note-costs: ## Regenerate bench-tx.json and the checked-in note consumption cost tables
+	cargo run --bin bench-transaction --features concurrent -- update-note-costs
+	cargo +nightly fmt -p miden-standards -p miden-agglayer
 
 # --- installing ----------------------------------------------------------------------------------
 

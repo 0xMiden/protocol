@@ -34,21 +34,22 @@ use crate::{TestTransactionBuilder, assert_execution_error};
 
 #[tokio::test]
 async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).build()?;
-    let expected_asset = FungibleAsset::new(tx_context.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
+    let expected_asset = FungibleAsset::new(mock_tx.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
         "
         use miden::tx_kernel_core::prologue
-        use miden::protocol::faucet
+        use miden::standards::assets::fungible_asset
 
         begin
             exec.prologue::prepare_transaction
 
-            # create fungible asset
+            # create fungible asset for the active faucet
             push.{FUNGIBLE_ASSET_AMOUNT}
-            exec.faucet::create_fungible_asset
+            exec.::miden::protocol::active_account::get_id
+            exec.fungible_asset::create
             # => [ASSET_ID, ASSET_VALUE]
 
             # truncate the stack
@@ -57,7 +58,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
         "
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), expected_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), expected_asset.to_value_word());
@@ -67,7 +68,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context =
+    let mock_tx =
         TestTransactionBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
 
@@ -80,14 +81,15 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let code = format!(
         "
         use miden::tx_kernel_core::prologue
-        use miden::protocol::faucet
+        use miden::standards::assets::non_fungible_asset
 
         begin
             exec.prologue::prepare_transaction
 
             # push non-fungible asset data hash onto the stack
             push.{NON_FUNGIBLE_ASSET_DATA_HASH}
-            exec.faucet::create_non_fungible_asset
+            exec.::miden::protocol::active_account::get_id
+            exec.non_fungible_asset::create
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
@@ -96,7 +98,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         NON_FUNGIBLE_ASSET_DATA_HASH = non_fungible_asset.to_value_word(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &mock_tx.execute_code(&code).await?;
 
     assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
@@ -114,10 +116,16 @@ fn key_suffix_with_metadata(account_id: AccountId, metadata_byte: u64) -> Felt {
         .expect("metadata byte only occupies the lower 8 bits")
 }
 
+/// The kernel and standards `validate` procedures reject the same malformed non-fungible assets.
+///
+/// Both are exercised via the `namespace` matrix. The two procedures deliberately share the same
+/// error wording, so a single expectation matches both. The kernel proc additionally validates
+/// the account ID structure (which the standards proc leaves to the kernel); that difference is
+/// not covered by these shared cases.
 #[rstest::rstest]
-#[case::account_is_not_non_fungible_faucet(
-    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
-    AssetClass::default(),
+#[case::composition_is_not_non_fungible(
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
+    AssetClass::new(Felt::from(2u32), Felt::from(3u32)),
     METADATA_BYTE_FUNGIBLE,
     ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE
 )]
@@ -139,10 +147,11 @@ async fn test_validate_non_fungible_asset(
     #[case] asset_class: AssetClass,
     #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
+    #[values("miden::tx_kernel_core", "miden::standards::assets")] namespace: &str,
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use miden::tx_kernel_core::non_fungible_asset
+        use {namespace}::non_fungible_asset
 
         begin
             # a random asset value
@@ -170,6 +179,43 @@ async fn test_validate_non_fungible_asset(
     let exec_result = CodeExecutor::with_default_host().run(&code).await;
 
     assert_execution_error!(exec_result, expected_err);
+
+    Ok(())
+}
+
+/// A well-formed non-fungible asset passes the standards-side `validate` and leaves the asset ID
+/// and value on the stack unchanged.
+#[tokio::test]
+async fn test_validate_non_fungible_asset_standards_succeeds() -> anyhow::Result<()> {
+    let non_fungible_asset_details = NonFungibleAssetDetails::new(
+        NonFungibleAsset::mock_issuer(),
+        NON_FUNGIBLE_ASSET_DATA.to_vec(),
+    );
+    let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
+
+    let code = format!(
+        "
+        use miden::standards::assets::non_fungible_asset
+
+        begin
+            push.{ASSET_VALUE}
+            push.{ASSET_ID}
+            # => [ASSET_ID, ASSET_VALUE]
+
+            exec.non_fungible_asset::validate
+
+            # truncate the stack
+            swapdw dropw dropw
+        end
+        ",
+        ASSET_VALUE = non_fungible_asset.to_value_word(),
+        ASSET_ID = non_fungible_asset.to_id_word(),
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_id_word());
+    assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
 
     Ok(())
 }

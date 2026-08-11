@@ -5,7 +5,7 @@ use core::error::Error;
 
 use miden_processor::ExecutionError;
 use miden_processor::serde::DeserializationError;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::{AccountId, StorageMapKey};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
@@ -21,7 +21,7 @@ use miden_protocol::errors::{
     TransactionOutputError,
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
-use miden_protocol::transaction::TransactionSummary;
+use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
@@ -133,6 +133,10 @@ pub enum TransactionExecutorError {
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
     MissingAuthenticator,
+    #[error("received an auth request event emitted outside the authentication procedure")]
+    AuthRequestOutsideAuthProcedure,
+    #[error("received privileged event {0} emitted outside the tx kernel context")]
+    PrivilegedEventFromOutsideTransactionKernelContext(TransactionEventId),
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -208,10 +212,18 @@ pub enum TransactionKernelError {
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
     MissingAuthenticator,
+    #[error("received an auth request event emitted outside the authentication procedure")]
+    AuthRequestOutsideAuthProcedure,
+    #[error("received privileged event {0} emitted outside the tx kernel context")]
+    PrivilegedEventFromOutsideTransactionKernelContext(TransactionEventId),
     #[error("failed to generate signature")]
     SignatureGenerationFailed(#[source] AuthenticationError),
     #[error("transaction returned unauthorized event but a commitment did not match: {0}")]
     TransactionSummaryCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error(
+        "transaction summary binds expiration delta {actual} but the transaction's expiration delta is {expected}"
+    )]
+    TransactionSummaryExpirationDeltaMismatch { expected: u16, actual: u16 },
     #[error("failed to construct transaction summary")]
     TransactionSummaryConstructionFailed(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("asset data extracted from the stack by event handler `{handler}` is not well formed")]
@@ -230,6 +242,11 @@ pub enum TransactionKernelError {
         data: Vec<Felt>,
         source: DeserializationError,
     },
+    #[error(
+        "encoded signature under advice map key {signature_key} has {actual} elements, but a valid encoded signature has between 1 and {max} elements",
+        max = Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
+    )]
+    InvalidEncodedSignatureLength { signature_key: Word, actual: usize },
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]

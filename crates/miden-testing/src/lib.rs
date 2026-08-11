@@ -13,23 +13,19 @@ pub use mock_chain::{
     MockChain,
     MockChainBuilder,
     MockChainNote,
-    TxContextInput,
+    MockTransactionInput,
 };
 
-mod tx_context;
+mod mock_transaction;
 #[cfg(test)]
-pub(crate) use tx_context::TestTransactionBuilder;
-pub use tx_context::{
-    ExecError,
-    MockTransactionBuilder,
-    TransactionContext,
-    TransactionContextBuilder,
-};
+pub(crate) use mock_transaction::TestTransactionBuilder;
+pub use mock_transaction::{ExecError, MockTransaction, MockTransactionBuilder};
 
 pub mod asserts;
 
 pub mod executor;
 
+#[cfg(test)]
 mod mock_host;
 
 pub mod utils;

@@ -11,7 +11,6 @@ use alloc::vec::Vec;
 
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -26,23 +25,23 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::utils::serde::Deserializable;
+use miden_standards::interop::eth::EthAddress;
+use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::{EthAddress, MetadataHash};
+use crate::costs::CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES;
+use crate::{MetadataHash, note_script};
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the CONFIG_AGG_BRIDGE note script procedure in the agglayer package.
+const CONFIG_AGG_BRIDGE_SCRIPT_PATH: &str = "::agglayer::notes::config_agg_bridge::main";
+
 // Initialize the CONFIG_AGG_BRIDGE note script only once
-static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/config_agg_bridge.masp"));
-    let library = Library::read_from_bytes(bytes)
-        .expect("shipped CONFIG_AGG_BRIDGE script library is well-formed");
-    NoteScript::from_library(&library).expect("shipped CONFIG_AGG_BRIDGE script is well-formed")
-});
+static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> =
+    LazyLock::new(|| note_script(CONFIG_AGG_BRIDGE_SCRIPT_PATH));
 
 // CONVERSION METADATA
 // ================================================================================================
@@ -178,6 +177,15 @@ impl ConfigAggBridgeNote {
         let assets = NoteAssets::new(vec![])?;
 
         Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+    }
+}
+
+// NOTE CONSUMPTION COST
+// ================================================================================================
+
+impl NoteConsumptionCost for ConfigAggBridgeNote {
+    fn consumption_cycles() -> u32 {
+        CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES
     }
 }
 

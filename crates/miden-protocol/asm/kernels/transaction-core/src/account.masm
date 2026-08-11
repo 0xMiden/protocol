@@ -8,138 +8,174 @@ use miden::core::collections::sorted_array
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
-use {
-    ACCOUNT_PROCEDURE_DATA_LENGTH,
-    EMPTY_SMT_ROOT,
-    STORAGE_SLOT_TYPE_MAP,
-    STORAGE_SLOT_TYPE_VALUE,
-} from miden::tx_kernel_core::constants
-use {
-    ACCOUNT_DATA_LENGTH,
-    ACCT_ID_PREFIX_OFFSET,
-    ACCT_ID_SUFFIX_OFFSET,
-    MAX_FOREIGN_ACCOUNT_PTR,
-    NATIVE_ACCOUNT_DATA_PTR,
-} from miden::tx_kernel_core::memory
+use {ACCOUNT_PROCEDURE_DATA_LENGTH, EMPTY_SMT_ROOT, STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE}
+    from miden::tx_kernel_core::constants
+use {ACCOUNT_DATA_LENGTH, ACCT_ID_PREFIX_OFFSET, ACCT_ID_SUFFIX_OFFSET, MAX_FOREIGN_ACCOUNT_PTR, NATIVE_ACCOUNT_DATA_PTR}
+    from miden::tx_kernel_core::memory
 
 # ERRORS
 # =================================================================================================
 
-const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE="account nonce can only be incremented once"
+const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE = "account nonce can only be incremented once"
 
-const ERR_ACCOUNT_NONCE_AT_MAX="account nonce is already at its maximum possible value"
+const ERR_ACCOUNT_NONCE_AT_MAX = "account nonce is already at its maximum possible value"
 
-const ERR_ACCOUNT_CODE_IS_NOT_UPDATABLE="account code must be updatable for it to be possible to set new code"
+const ERR_ACCOUNT_CODE_IS_NOT_UPDATABLE =
+    "account code must be updatable for it to be possible to set new code"
 
-const ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH="ID of the new account does not match the ID computed from the seed and commitments"
+const ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH =
+    "ID of the new account does not match the ID computed from the seed and commitments"
 
-const ERR_ACCOUNT_SETTING_VALUE_ITEM_ON_NON_VALUE_SLOT="failed to write an account value item to a non-value storage slot"
+const ERR_ACCOUNT_SETTING_VALUE_ITEM_ON_NON_VALUE_SLOT =
+    "failed to write an account value item to a non-value storage slot"
 
-const ERR_ACCOUNT_SETTING_MAP_ITEM_ON_NON_MAP_SLOT="failed to write an account map item to a non-map storage slot"
+const ERR_ACCOUNT_SETTING_MAP_ITEM_ON_NON_MAP_SLOT =
+    "failed to write an account map item to a non-map storage slot"
 
-const ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE="procedure is not part of the account code"
+const ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE = "procedure is not part of the account code"
 
-const ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS="provided procedure index is out of bounds"
+const ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS = "provided procedure index is out of bounds"
 
-const ERR_ACCOUNT_PROC_NOT_AUTH_PROC="account procedure is not the authentication procedure; some procedures (e.g. `incr_nonce`) can be called only from the authentication procedure"
+const ERR_ACCOUNT_PROC_NOT_AUTH_PROC =
+    "account procedure is not the authentication procedure; some procedures (e.g. `incr_nonce`) can be called only from the authentication procedure"
 
-const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE="slot IDs must be unique and sorted in ascending order"
+const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE =
+    "slot IDs must be unique and sorted in ascending order"
 
-const ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME="storage slot with the provided name does not exist"
+const ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME = "storage slot with the provided name does not exist"
 
-const ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH="computed account code commitment does not match recorded account code commitment"
+const ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH =
+    "computed account code commitment does not match recorded account code commitment"
 
-const ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES="number of account procedures must be at least 2"
+const ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES = "number of account procedures must be at least 2"
 
-const ERR_ACCOUNT_TOO_MANY_PROCEDURES="number of account procedures exceeds the maximum limit of 256"
+const ERR_ACCOUNT_TOO_MANY_PROCEDURES =
+    "number of account procedures exceeds the maximum limit of 256"
 
-const ERR_ACCOUNT_TOO_MANY_STORAGE_SLOTS="number of account storage slots exceeds the maximum limit of 255"
+const ERR_ACCOUNT_TOO_MANY_STORAGE_SLOTS =
+    "number of account storage slots exceeds the maximum limit of 255"
 
-const ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH="computed account storage commitment does not match recorded account storage commitment"
+const ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH =
+    "computed account storage commitment does not match recorded account storage commitment"
 
-const ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
+const ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT =
+    "storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
 
-const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED="maximum allowed number of foreign accounts to be loaded (63) was exceeded"
+const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED =
+    "maximum allowed number of foreign accounts to be loaded (63) was exceeded"
 
-const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT="commitment of the foreign account in the advice provider does not match the commitment in the account tree"
+const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT =
+    "commitment of the foreign account in the advice provider does not match the commitment in the account tree"
 
-const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account map item from a non-map storage slot"
+const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT =
+    "failed to read an account map item from a non-map storage slot"
 
-const ERR_FOREIGN_ACCOUNT_ID_MISMATCH="foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
+const ERR_FOREIGN_ACCOUNT_ID_MISMATCH =
+    "foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
 
 # CONSTANTS
 # =================================================================================================
 
 # The maximum storage slot index
-const MAX_STORAGE_SLOT_INDEX=254
+const MAX_STORAGE_SLOT_INDEX = 254
 
 # The maximum number of account storage slots.
-const MAX_NUM_STORAGE_SLOTS=MAX_STORAGE_SLOT_INDEX+1
+const MAX_NUM_STORAGE_SLOTS = MAX_STORAGE_SLOT_INDEX + 1
 
 # The minimum number of account interface procedures.
-const MIN_NUM_PROCEDURES=2
+const MIN_NUM_PROCEDURES = 2
 
 # The maximum number of account interface procedures.
-const MAX_NUM_PROCEDURES=256
+const MAX_NUM_PROCEDURES = 256
 
 # Depth of the account database tree.
-const ACCOUNT_TREE_DEPTH=64
+const ACCOUNT_TREE_DEPTH = 64
 
 # The number of field elements it takes to store one account storage slot.
-const ACCOUNT_STORAGE_SLOT_DATA_LENGTH=8
+const ACCOUNT_STORAGE_SLOT_DATA_LENGTH = 8
 
 # The offset of the slot type in the storage slot.
-const ACCOUNT_SLOT_TYPE_OFFSET=1
+const ACCOUNT_SLOT_TYPE_OFFSET = 1
 
 # The offset of the slot's ID suffix in the storage slot.
-const ACCOUNT_SLOT_ID_SUFFIX_OFFSET=2
+const ACCOUNT_SLOT_ID_SUFFIX_OFFSET = 2
 
 # The offset of the slot's ID prefix in the storage slot.
-const ACCOUNT_SLOT_ID_PREFIX_OFFSET=3
+const ACCOUNT_SLOT_ID_PREFIX_OFFSET = 3
 
 # The offset of the slot value in the storage slot.
-const ACCOUNT_SLOT_VALUE_OFFSET=4
+const ACCOUNT_SLOT_VALUE_OFFSET = 4
 
 # EVENTS
 # =================================================================================================
 
 # Event emitted before a foreign account is loaded from the advice inputs.
-const ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT=event("miden::protocol::account::before_foreign_load")
+const ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT = event("miden::protocol::account::before_foreign_load")
 
 # Event emitted before an asset is added to the account vault.
-const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::account::vault_before_add_asset")
+const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_before_add_asset"
+    )
 # Event emitted after an asset is added to the account vault.
-const ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT=event("miden::protocol::account::vault_after_add_asset")
+const ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT = event("miden::protocol::account::vault_after_add_asset")
 
 # Event emitted before an asset is removed from the account vault.
-const ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_EVENT=event("miden::protocol::account::vault_before_remove_asset")
+const ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_before_remove_asset"
+    )
 # Event emitted after an asset is removed from the account vault.
-const ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT=event("miden::protocol::account::vault_after_remove_asset")
+const ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_after_remove_asset"
+    )
 
 # Event emitted before an asset is fetched from the account vault.
-const ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT=event("miden::protocol::account::vault_before_get_asset")
+const ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT =
+    event(
+        "miden::protocol::account::vault_before_get_asset"
+    )
 
 # Event emitted before an account storage item is updated.
-const ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT=event("miden::protocol::account::storage_before_set_item")
+const ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT =
+    event(
+        "miden::protocol::account::storage_before_set_item"
+    )
 # Event emitted after an account storage item is updated.
-const ACCOUNT_STORAGE_AFTER_SET_ITEM_EVENT=event("miden::protocol::account::storage_after_set_item")
+const ACCOUNT_STORAGE_AFTER_SET_ITEM_EVENT =
+    event(
+        "miden::protocol::account::storage_after_set_item"
+    )
 
 # Event emitted before an account storage map item is accessed.
-const ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_EVENT=event("miden::protocol::account::storage_before_get_map_item")
+const ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_EVENT =
+    event(
+        "miden::protocol::account::storage_before_get_map_item"
+    )
 
 # Event emitted before an account storage map item is updated.
-const ACCOUNT_STORAGE_BEFORE_SET_MAP_ITEM_EVENT=event("miden::protocol::account::storage_before_set_map_item")
+const ACCOUNT_STORAGE_BEFORE_SET_MAP_ITEM_EVENT =
+    event(
+        "miden::protocol::account::storage_before_set_map_item"
+    )
 # Event emitted after an account storage map item is updated.
-const ACCOUNT_STORAGE_AFTER_SET_MAP_ITEM_EVENT=event("miden::protocol::account::storage_after_set_map_item")
+const ACCOUNT_STORAGE_AFTER_SET_MAP_ITEM_EVENT =
+    event(
+        "miden::protocol::account::storage_after_set_map_item"
+    )
 
 # Event emitted before an account nonce is incremented.
-const ACCOUNT_BEFORE_INCREMENT_NONCE_EVENT=event("miden::protocol::account::before_increment_nonce")
+const ACCOUNT_BEFORE_INCREMENT_NONCE_EVENT =
+    event(
+        "miden::protocol::account::before_increment_nonce"
+    )
 # Event emitted after an account nonce is incremented.
-const ACCOUNT_AFTER_INCREMENT_NONCE_EVENT=event("miden::protocol::account::after_increment_nonce")
+const ACCOUNT_AFTER_INCREMENT_NONCE_EVENT = event("miden::protocol::account::after_increment_nonce")
 
 # Event emitted to push the index of the account procedure at the top of the operand stack onto
 # the advice stack.
-const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT=event("miden::protocol::account::push_procedure_index")
+const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT = event("miden::protocol::account::push_procedure_index")
 
 # CONSTANT ACCESSORS
 # =================================================================================================
@@ -217,26 +253,7 @@ end
 
 ### ACCOUNT COMMITMENT ###################################################
 
-#! Returns the commitment of the active account at the beginning of the transaction.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_COMMITMENT]
-#!
-#! Where:
-#! - INIT_COMMITMENT is the initial account commitment.
-pub proc get_initial_commitment
-    # determine whether the active account is native
-    exec.memory::is_native_account
-    # => [is_native_account]
-
-    if.true
-        exec.memory::get_init_account_commitment
-    else
-        # for the foreign account current commitment equals to initial
-        exec.compute_commitment
-    end
-    # => [INIT_COMMITMENT]
-end
+pub use {get_init_account_commitment as get_initial_commitment} from miden::tx_kernel_core::memory
 
 #! Computes commitment to the state of the active account.
 #!
@@ -282,32 +299,8 @@ pub use {get_account_code_commitment as get_code_commitment} from miden::tx_kern
 
 ### STORAGE COMMITMENT ###################################################
 
-#! Returns the storage commitment of the active account at the beginning of the transaction.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_ACCOUNT_STORAGE_COMMITMENT]
-#!
-#! Where:
-#! - INIT_ACCOUNT_STORAGE_COMMITMENT is the initial account storage commitment.
-pub proc get_initial_storage_commitment
-    # Get the storage commitment of the active account. For the foreign account this commitment will
-    # be initial.
-    exec.memory::get_account_storage_commitment
-    # => [ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
-
-    # get the initial storage commitment of the native account
-    exec.memory::get_init_account_storage_commitment
-    # => [INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
-
-    # check whether the active account is native
-    exec.memory::is_native_account
-    # => [is_native_account, INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
-
-    # if the active account is native, keep the INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, or
-    # ACTIVE_ACCOUNT_STORAGE_COMMITMENT otherwise
-    cdropw
-    # => [INIT_ACCOUNT_STORAGE_COMMITMENT]
-end
+pub use {get_init_account_storage_commitment as get_initial_storage_commitment}
+    from miden::tx_kernel_core::memory
 
 #! Computes the storage commitment of the active account.
 #!
@@ -327,32 +320,8 @@ end
 
 ### VAULT ROOT ###########################################################
 
-#! Returns the vault root of the active account at the beginning of the transaction.
-#!
-#! Inputs:  []
-#! Outputs: [INIT_ACCOUNT_VAULT_ROOT]
-#!
-#! Where:
-#! - INIT_ACCOUNT_VAULT_ROOT is the initial account vault root.
-pub proc get_initial_vault_root
-    # Get the vault root of the active account. For the foreign account this root will be equal to 
-    # the initial one.
-    exec.memory::get_account_vault_root
-    # => [ACTIVE_ACCOUNT_VAULT_ROOT]
-
-    # get the initial vault root of the native account
-    exec.memory::get_init_native_account_vault_root
-    # => [INIT_NATIVE_ACCOUNT_VAULT_ROOT, ACTIVE_ACCOUNT_VAULT_ROOT]
-
-    # check whether the active account is native
-    exec.memory::is_native_account
-    # => [is_native_account, INIT_NATIVE_ACCOUNT_VAULT_ROOT, ACTIVE_ACCOUNT_VAULT_ROOT]
-
-    # if the active account is native, keep the INIT_NATIVE_ACCOUNT_VAULT_ROOT, or
-    # ACTIVE_ACCOUNT_VAULT_ROOT otherwise
-    cdropw
-    # => [INIT_ACCOUNT_VAULT_ROOT]
-end
+pub use {get_init_native_account_vault_root as get_initial_vault_root}
+    from miden::tx_kernel_core::memory
 
 # STORAGE
 # -------------------------------------------------------------------------------------------------
@@ -471,7 +440,7 @@ pub proc get_typed_item
     # => [VALUE, slot_type]
 end
 
-#! Gets an item from the account storage at its initial state (beginning of transaction).
+#! Gets an item from the native account storage at its initial state (beginning of transaction).
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [INIT_VALUE]
@@ -484,9 +453,9 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 pub proc get_initial_item
-    # get account initial storage slots section offset
-    exec.memory::get_account_initial_storage_slots_ptr
-    # => [account_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+    # get native account initial storage slots section offset
+    exec.memory::get_native_account_initial_storage_slots_ptr
+    # => [native_account_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix]
 
     exec.get_storage_slot_ptr
     # => [slot_ptr]
@@ -569,7 +538,7 @@ pub proc get_map_item
 end
 
 #! Returns the VALUE located under the specified KEY within the map contained in the given
-#! account storage slot at its initial state (beginning of transaction).
+#! native account storage slot at its initial state (beginning of transaction).
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [INIT_VALUE]
@@ -583,8 +552,8 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 pub proc get_initial_map_item
-    exec.memory::get_account_initial_storage_slots_ptr
-    # => [initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
+    exec.memory::get_native_account_initial_storage_slots_ptr
+    # => [native_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
 
     exec.get_map_item_raw
 end
@@ -623,7 +592,7 @@ pub proc set_map_item
     push.STORAGE_SLOT_TYPE_MAP eq
     assert.err=ERR_ACCOUNT_SETTING_MAP_ITEM_ON_NON_MAP_SLOT
     # => [slot_ptr, KEY, NEW_VALUE]
- 
+
     exec.set_map_item_raw
     # => [OLD_VALUE]
 end
@@ -773,7 +742,7 @@ pub proc get_asset
     # => [ASSET_VALUE]
 end
 
-#! Returns the ASSET_VALUE associated with the provided asset ID in the active account's vault at
+#! Returns the ASSET_VALUE associated with the provided asset ID in the native account's vault at
 #! the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_ID]
@@ -783,8 +752,8 @@ end
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 pub proc get_initial_asset
-    # get the vault root associated with the initial vault root of the native account
-    exec.memory::get_account_initial_vault_root_ptr movdn.4
+    # get the initial vault root ptr of the native account
+    exec.memory::get_init_native_account_vault_root_ptr movdn.4
     # => [ASSET_ID, init_native_vault_root_ptr]
 
     # emit event to signal that an asset is requested
@@ -811,6 +780,27 @@ end
 #! Panics if:
 #! - the procedure root is not part of the account code.
 pub proc authenticate_and_track_procedure
+    # verify that the procedure is part of the account code and get its index
+    exec.assert_procedure_in_account
+    # => [index]
+
+    # Set the was_called flag to 1 for this procedure
+    exec.set_was_procedure_called
+    # => []
+end
+
+#! Verifies that the procedure root is part of the account code and returns its index, WITHOUT
+#! tracking the call.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [index]
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure to authenticate.
+#!
+#! Panics if:
+#! - the procedure root is not part of the account code.
+pub proc assert_procedure_in_account
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [index, PROC_ROOT]
@@ -821,10 +811,6 @@ pub proc authenticate_and_track_procedure
     # verify that PROC_ROOT and MEM_PROC_ROOT fetched from memory match
     assert_eqw.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
     # => [index]
-
-    # Set the was_called flag to 1 for this procedure
-    exec.set_was_procedure_called
-    # => []
 end
 
 #! Asserts that the specified procedure root is the root of the authentication procedure for an
@@ -878,7 +864,6 @@ end
 pub proc validate_seed
     # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
     # ---------------------------------------------------------------------------------------------
-
     # initialize capacity of the hasher and rate1 with the code commitment
     padw exec.memory::get_account_code_commitment
     # => [CODE_COMMITMENT, CAPACITY]
@@ -924,7 +909,7 @@ pub proc validate_seed
     # => [hashed_account_id_suffix, hashed_account_id_prefix, account_id_suffix, account_id_prefix]
 
     # assert the account ID matches the account ID of the new account
-    exec.account_id::is_equal assert.err=ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH
+    exec.account_id::eq assert.err=ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH
     # => []
 end
 
@@ -1084,7 +1069,7 @@ pub proc load_foreign_account
     # check that the account ID provided by the advice map matches the one provided by the operand
     # stack
     dup.5 dup.5
-    exec.account_id::is_equal assert.err=ERR_FOREIGN_ACCOUNT_ID_MISMATCH
+    exec.account_id::eq assert.err=ERR_FOREIGN_ACCOUNT_ID_MISMATCH
     # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
@@ -1444,8 +1429,8 @@ pub proc get_item_patch
     movup.2 exec.get_item_raw
     # => [CURRENT_VALUE, slot_id_suffix, slot_id_prefix, offset]
 
-    # get account initial storage slots section offset
-    exec.memory::get_account_initial_storage_slots_ptr
+    # get native account initial storage slots section offset
+    exec.memory::get_native_account_initial_storage_slots_ptr
     # => [init_storage_slots_ptr, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, offset]
 
     movup.7 add
@@ -1453,6 +1438,30 @@ pub proc get_item_patch
 
     exec.get_item_raw
     # => [INITIAL_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix]
+end
+
+#! Gets the slot ID of the storage slot at the provided index from the native account.
+#!
+#! WARNING: The index must be in bounds.
+#!
+#! Inputs:  [index]
+#! Outputs: [slot_id_suffix, slot_id_prefix]
+#!
+#! Where:
+#! - index is the index of the slot.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+pub proc get_native_slot_id
+    # convert the index into a memory offset
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # => [offset]
+
+    exec.memory::get_native_account_active_storage_slots_ptr
+    add
+    # => [slot_ptr]
+
+    exec.get_slot_id_inner
+    # => [slot_id_suffix, slot_id_prefix]
 end
 
 #! Gets the slot ID of the storage slot at the provided index.
@@ -1475,6 +1484,23 @@ pub proc get_slot_id
     add
     # => [slot_ptr]
 
+    exec.get_slot_id_inner
+    # => [slot_id_suffix, slot_id_prefix]
+end
+
+
+#! Gets the slot ID of the storage slot pointed at by slot_ptr.
+#!
+#! WARNING: The slot_ptr must be valid.
+#!
+#! Inputs:  [slot_ptr]
+#! Outputs: [slot_id_suffix, slot_id_prefix]
+#!
+#! Where:
+#! - slot_ptr is the pointer to a slot.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+proc get_slot_id_inner
     dup add.ACCOUNT_SLOT_ID_PREFIX_OFFSET mem_load
     # => [slot_id_prefix, slot_ptr]
 
@@ -1796,7 +1822,7 @@ pub proc get_account_data_ptr
         # => [is_empty_block, account_id_suffix, account_id_prefix, curr_account_ptr', foreign_account_id_suffix, foreign_account_id_prefix]
 
         # check whether the current id matches the foreign id
-        movdn.2 dup.5 dup.5 exec.account_id::is_equal
+        movdn.2 dup.5 dup.5 exec.account_id::eq
         # => [is_equal_id, is_empty_block, curr_account_ptr', foreign_account_id_suffix, foreign_account_id_prefix]
 
         # get the loop flag
@@ -1888,7 +1914,8 @@ proc refresh_storage_commitment
         # => [num_storage_slots]
 
         # setup start and end ptr
-        mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_active_storage_slots_section_ptr
+        mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+        exec.memory::get_account_active_storage_slots_section_ptr
         dup movdn.2 add swap
         # => [start_ptr, end_ptr]
 
@@ -2023,7 +2050,7 @@ pub proc has_procedure
         # move the current procedure pointer
         movup.4 add.ACCOUNT_PROCEDURE_DATA_LENGTH
         # => [curr_proc_ptr + 4, PROC_ROOT, end_ptr, is_procedure_available']
-        
+
         # compute should_loop flag: we should continue iterating if
         # !(is_procedure_available' || curr_proc_ptr + 4 == end_ptr), i.e. we didn't find the
         # procedure and we didn't reach the end of the procedures memory block

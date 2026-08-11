@@ -4,36 +4,20 @@ use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::code_builder::CodeBuilder;
+use crate::tx_script::transaction_script;
+
+// CONSTANTS
+// ================================================================================================
+
+/// Path to the expiration transaction script procedure in the standards library, assembled from
+/// `asm/standards/tx_scripts/expiration.masm`.
+const EXPIRATION_TX_SCRIPT_PATH: &str = "::miden::standards::tx_scripts::expiration::main";
 
 // EXPIRATION TRANSACTION SCRIPT
 // ================================================================================================
 
-/// Transaction script that sets the expiration delta.
-const EXPIRATION_TX_SCRIPT_SOURCE: &str = "\
-use miden::protocol::tx
-
-#! Set the transaction's expiration delta.
-#!
-#! Inputs:  [[delta, 0, 0, 0], pad(12)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - delta is 0 or not a u32 in the range 1..=0xFFFF (ERR_TX_INVALID_EXPIRATION_DELTA).
-#!
-#! Invocation: call
-@transaction_script
-pub proc main
-    exec.tx::update_expiration_block_delta
-    # => [pad(16)]
-end
-";
-
-static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
-    CodeBuilder::default()
-        .compile_tx_script(EXPIRATION_TX_SCRIPT_SOURCE)
-        .expect("canonical expiration tx script should compile")
-});
+static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> =
+    LazyLock::new(|| transaction_script(EXPIRATION_TX_SCRIPT_PATH));
 
 /// The canonical transaction script that sets the transaction's expiration delta to the value
 /// supplied in the first element of `TX_SCRIPT_ARGS`.
@@ -53,9 +37,8 @@ static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
 ///
 /// ```ignore
 /// let script = ExpirationTransactionScript::new(delta);
-/// let context = build_tx_context(/* .. */)
-///     .tx_script(script.into())
-///     .tx_script_args(script.tx_script_args());
+/// let tx_args = TransactionArgs::new(AdviceMap::default())
+///     .with_tx_script_and_args(script.into(), script.tx_script_args());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpirationTransactionScript {
@@ -84,8 +67,8 @@ impl ExpirationTransactionScript {
         Word::from([Felt::from(self.delta.get()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
 
-    /// The [`TransactionScriptRoot`] of the canonical script, to be allowlisted on a network
-    /// account via `AuthNetworkAccount::with_allowed_tx_scripts`.
+    /// The [`TransactionScriptRoot`] of the canonical script, allowlisted on a network account by
+    /// default via `AuthNetworkAccount::new`.
     pub fn script_root() -> TransactionScriptRoot {
         EXPIRATION_TX_SCRIPT.root()
     }

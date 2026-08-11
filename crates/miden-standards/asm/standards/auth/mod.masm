@@ -5,58 +5,222 @@ use miden::core::crypto::hashes::poseidon2
 pub mod guardian
 pub mod multisig
 pub mod multisig_smart
+pub mod network_account
 pub mod note_script_allowlist
 pub mod signature
 pub mod tx_policy
 pub mod tx_script_allowlist
 
+# CONSTANTS
+# =================================================================================================
+
+# hash_and_insert_tx_summary locals: the six words of the summary preimage in hashing order.
+const SUMMARY_ACCOUNT_DELTA_LOC = 0
+const SUMMARY_INPUT_NOTES_LOC = 4
+const SUMMARY_OUTPUT_NOTES_LOC = 8
+const SUMMARY_BLOCK_COMMITMENT_LOC = 12
+const SUMMARY_PARAMS_HEAD_LOC = 16
+const SUMMARY_PARAMS_TAIL_LOC = 20
+
+# Number of felts in the transaction summary preimage (6 words). Must match
+# TransactionSummary::NUM_ELEMENTS in miden-protocol
+# (crates/miden-protocol/src/transaction/tx_summary.rs).
+const TX_SUMMARY_NUM_ELEMENTS = 24
+
 #! Creates the transaction summary and returns it in the order in which it will be hashed.
 #!
-#! Inputs:  [SALT]
-#! Outputs: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+#! Inputs:  [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
+#!           user_param6]
+#! Outputs: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!           BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 #!
 #! Where:
-#! - SALT is a user-defined input recommended to use as replay protection.
+#! - user_param0 through user_param6 are arbitrary, user-defined inputs which are bound by the
+#!   transaction summary. They are opaque: binding them enforces no meaning, so any semantics (e.g.
+#!   replay protection or a maximum fee) must be implemented by the calling component.
+#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2].
+#! - PARAMS_TAIL is the word [user_param3, user_param4, user_param5, user_param6].
+#! - expiration_delta is the transaction's expiration block delta, or 0 if it has not been set.
+#! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
-pub proc create_tx_summary
+#!
+#! Invocation: exec
+pub proc create_tx_summary(user_params: [felt; 7]) -> (word, word, word, word, word, word)
+    exec.tx::get_expiration_block_delta
+    # => [PARAMS_HEAD, PARAMS_TAIL]
+
+    exec.tx::get_block_commitment
+    # => [BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
     exec.tx::get_output_notes_commitment
-    # => [OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.tx::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.native_account::compute_delta_commitment
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 end
 
-#! Hashes the provided transaction summary and returns its commitment.
+#! Hashes the provided transaction summary, inserts its preimage into the advice map keyed by the
+#! resulting commitment, and returns the commitment.
 #!
-#! Inputs:  [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
-#! Outputs: [TX_SUMMARY_COMMITMENT]
+#! The preimage is saved to the advice map so that the host can extract the transaction summary
+#! when handling authentication events.
+#!
+#! Inputs:
+#!   Operand stack: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!                   BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+#! Outputs:
+#!   Operand stack: [TX_SUMMARY_COMMITMENT]
+#!   Advice map: {
+#!     TX_SUMMARY_COMMITMENT: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+#!                             OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+#!   }
 #!
 #! Where:
-#! - SALT is an arbitrary word used for replay protection.
+#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2] and
+#!   PARAMS_TAIL the word [user_param3, user_param4, user_param5, user_param6], together binding the
+#!   transaction's expiration block delta and the seven user-defined parameters.
+#! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
-pub proc hash_tx_summary
+#! - TX_SUMMARY_COMMITMENT is the commitment to the transaction summary.
+#!
+#! Invocation: exec
+@locals(24)
+pub proc hash_and_insert_tx_summary(
+    account_delta_commitment: word,
+    input_notes_commitment: word,
+    output_notes_commitment: word,
+    block_commitment: word,
+    params_head: word,
+    params_tail: word
+) -> word
+    # save the first pair of rate words to the locals for the advice map insertion below
+    loc_storew_le.SUMMARY_ACCOUNT_DELTA_LOC
+    swapw loc_storew_le.SUMMARY_INPUT_NOTES_LOC swapw
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
     # pad capacity element of the hasher
     padw movdnw.2
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     # drop rate words
     dropw dropw
-    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
+    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
     movdnw.2
-    # => [OUTPUT_NOTES_COMMITMENT, SALT, CAPACITY]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    # save the second pair of rate words to the locals
+    loc_storew_le.SUMMARY_OUTPUT_NOTES_LOC
+    swapw loc_storew_le.SUMMARY_BLOCK_COMMITMENT_LOC swapw
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    # drop rate words
+    dropw dropw
+    # => [CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
+
+    # save the third pair of rate words to the locals
+    loc_storew_le.SUMMARY_PARAMS_HEAD_LOC
+    swapw loc_storew_le.SUMMARY_PARAMS_TAIL_LOC swapw
+    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
 
     exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
     # => [TX_SUMMARY_COMMITMENT]
+
+    # insert the preimage stored in the locals into the advice map keyed by the commitment
+    locaddr.SUMMARY_ACCOUNT_DELTA_LOC dup add.TX_SUMMARY_NUM_ELEMENTS
+    # => [end_ptr, start_ptr, TX_SUMMARY_COMMITMENT]
+
+    movdn.5 movdn.4
+    # => [TX_SUMMARY_COMMITMENT, start_ptr, end_ptr]
+
+    adv.insert_mem
+    # => [TX_SUMMARY_COMMITMENT, start_ptr, end_ptr]
+
+    movup.4 drop movup.4 drop
+    # => [TX_SUMMARY_COMMITMENT]
+end
+
+#! Hashes a transaction summary with the block commitment and expiration block delta zeroed out,
+#! yielding a commitment to the transaction's *effects* that is independent of its execution context.
+#!
+#! This mirrors the hashing of [`hash_and_insert_tx_summary`] exactly, except that it substitutes an
+#! empty word for `BLOCK_COMMITMENT` and a zero for `expiration_delta` in `PARAMS_HEAD`, and it does
+#! not insert the preimage into the advice map. The reference block and the expiration delta are
+#! execution context that legitimately differs between the moment a transaction is planned and the
+#! moment it runs, so binding them would make the commitment change across blocks. Everything that
+#! identifies the transaction's *effects* - the account delta, the input/output notes, and the user
+#! parameters - stays bound.
+#!
+#! It is used by the delayed-execution flow to key a proposal on a stable identifier: the proposer
+#! commits to the effects, and the auth procedure recomputes the same commitment when the
+#! transaction is later executed against a different reference block. Because it does not bind the
+#! reference block or expiration, it must not be used as the message that authorizes execution (that
+#! would reintroduce the binding gap that binding the block into the tx summary closed); execution is
+#! still authorized by signatures over the full tx-summary commitment.
+#!
+#! Inputs:  [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!           BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+#! Outputs: [TX_EFFECTS_COMMITMENT]
+#!
+#! Where:
+#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2] and
+#!   PARAMS_TAIL the word [user_param3, user_param4, user_param5, user_param6].
+#! - TX_EFFECTS_COMMITMENT is the block- and expiration-independent commitment to the transaction's
+#!   effects.
+#!
+#! Invocation: exec
+pub proc hash_tx_effects_commitment(
+    account_delta_commitment: word,
+    input_notes_commitment: word,
+    output_notes_commitment: word,
+    block_commitment: word,
+    params_head: word,
+    params_tail: word
+) -> word
+    # pad capacity element of the hasher
+    padw movdnw.2
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
+    exec.poseidon2::permute
+    dropw dropw
+    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
+    movdnw.2
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    # Replace BLOCK_COMMITMENT with an empty word so the commitment is block-independent.
+    swapw dropw padw swapw
+    # => [OUTPUT_NOTES_COMMITMENT, EMPTY_WORD, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    exec.poseidon2::permute
+    dropw dropw
+    # => [CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
+
+    # Zero the expiration_delta (top element of PARAMS_HEAD), keeping the user parameters.
+    drop push.0
+    # => [PARAMS_HEAD', PARAMS_TAIL, CAPACITY]
+
+    exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
+    # => [TX_EFFECTS_COMMITMENT]
 end

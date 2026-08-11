@@ -1,9 +1,8 @@
 use alloc::sync::Arc;
 
-use crate::assembly::Library;
+use crate::assembly::Package;
 use crate::assembly::mast::MastForest;
 use crate::utils::sync::LazyLock;
-use crate::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
@@ -26,19 +25,24 @@ static PROTOCOL_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {
 pub struct ProtocolLib(Arc<Package>);
 
 impl ProtocolLib {
-    /// Returns a reference to the [`MastForest`] of the inner [`Library`].
+    /// Returns the underlying [`Arc<Package>`]
+    pub fn package(&self) -> Arc<Package> {
+        self.0.clone()
+    }
+
+    /// Returns a reference to the [`MastForest`] of the inner [`Package`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
         self.0.mast_forest()
     }
 }
 
-impl AsRef<Library> for ProtocolLib {
-    fn as_ref(&self) -> &Library {
+impl AsRef<Package> for ProtocolLib {
+    fn as_ref(&self) -> &Package {
         self.0.as_ref()
     }
 }
 
-impl From<ProtocolLib> for Library {
+impl From<ProtocolLib> for Package {
     fn from(value: ProtocolLib) -> Self {
         Arc::unwrap_or_clone(value.0)
     }

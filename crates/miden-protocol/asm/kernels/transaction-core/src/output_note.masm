@@ -6,13 +6,8 @@ use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
 use {MAX_OUTPUT_NOTES_PER_TX, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
-use {
-    MAX_ATTACHMENT_SCHEME,
-    MAX_ATTACHMENT_TOTAL_WORDS,
-    MAX_ATTACHMENT_WORDS,
-    NOTE_METADATA_VERSION_1,
-    NOTE_TYPE_PUBLIC,
-} from miden::tx_kernel_core::note
+use {MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PUBLIC}
+    from miden::tx_kernel_core::note
 use miden::core::word
 use miden::core::mem
 
@@ -20,11 +15,11 @@ use miden::core::mem
 # =================================================================================================
 
 # The maximum number of attachments per note.
-const MAX_ATTACHMENTS_PER_NOTE=4
+const MAX_ATTACHMENTS_PER_NOTE = 4
 
 # The default value of felt[3] in the metadata when a new note is created.
 # All zeros means no attachment schemes are set.
-const ATTACHMENT_DEFAULT_SCHEMES=0
+const ATTACHMENT_DEFAULT_SCHEMES = 0
 
 #! The attachment scheme value that is reserved to represent an absent attachment.
 const ATTACHMENT_RESERVED_SCHEME = 0
@@ -32,49 +27,57 @@ const ATTACHMENT_RESERVED_SCHEME = 0
 # ERRORS
 # =================================================================================================
 
-const ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT="number of output notes in the transaction exceeds the maximum limit of 1024"
+const ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT =
+    "number of output notes in the transaction exceeds the maximum limit of 1024"
 
-const ERR_NOTE_INVALID_TYPE="invalid note type"
+const ERR_NOTE_INVALID_TYPE = "invalid note type"
 
-const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS="requested output note index should be less than the total number of created output notes"
+const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS =
+    "requested output note index should be less than the total number of created output notes"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED="attachment scheme must not exceed 65534"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED = "attachment scheme must not exceed 65534"
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO = "attachment scheme must not be 0"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment num_words must not exceed 256"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED = "attachment num_words must not exceed 256"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE="number of elements in an attachment must be a multiple of 4"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE =
+    "number of elements in an attachment must be a multiple of 4"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO="attachment num_words cannot be zero"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO = "attachment num_words cannot be zero"
 
-const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS="number of attachments per note cannot exceed 4"
+const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS = "number of attachments per note cannot exceed 4"
 
-const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED="total number of attachment words per note cannot exceed 512"
+const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED =
+    "total number of attachment words per note cannot exceed 512"
 
-const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
+const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED =
+    "adding a fungible asset to a note cannot exceed FUNGIBLE_ASSET_MAX_AMOUNT"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_COMMITMENT_MISMATCH="the computed hash of fetched attachment elements does not match the provided commitment"
+const ERR_OUTPUT_NOTE_ATTACHMENT_COMMITMENT_MISMATCH =
+    "the computed hash of fetched attachment elements does not match the provided commitment"
 
-const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
+const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS =
+    "non-fungible asset that already exists in the note cannot be added again"
 
-const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero"
+const ERR_NOTE_TAG_MUST_BE_U32 =
+    "the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero"
 
 # EVENTS
 # =================================================================================================
 
 # Event emitted before a new note is created.
-const NOTE_BEFORE_CREATED_EVENT=event("miden::protocol::note::before_created")
+const NOTE_BEFORE_CREATED_EVENT = event("miden::protocol::note::before_created")
 # Event emitted after a new note is created.
-const NOTE_AFTER_CREATED_EVENT=event("miden::protocol::note::after_created")
+const NOTE_AFTER_CREATED_EVENT = event("miden::protocol::note::after_created")
 
 # Event emitted before an asset is added to a note.
-const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::note::before_add_asset")
+const NOTE_BEFORE_ADD_ASSET_EVENT = event("miden::protocol::note::before_add_asset")
 # Event emitted after an asset is added to a note.
-const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::protocol::note::after_add_asset")
+const NOTE_AFTER_ADD_ASSET_EVENT = event("miden::protocol::note::after_add_asset")
 
 # Event emitted before an attachment is added to a note.
-const NOTE_BEFORE_ADD_ATTACHMENT_EVENT=event("miden::protocol::note::before_add_attachment")
+const NOTE_BEFORE_ADD_ATTACHMENT_EVENT = event("miden::protocol::note::before_add_attachment")
 
 # OUTPUT NOTE PROCEDURES
 # =================================================================================================
@@ -232,7 +235,7 @@ end
 #! - the asset ID or value are malformed (e.g., invalid faucet ID).
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
-#! - the total number of ASSETs exceeds the maximum of 64.
+#! - the total number of ASSETs exceeds the maximum of 16.
 pub proc add_asset
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
@@ -467,7 +470,6 @@ end
 pub proc build_metadata
     # Validate that note type is private (0) or public (1).
     # --------------------------------------------------------------------------------------------
-
     dup.1
     u32assert.err=ERR_NOTE_INVALID_TYPE u32lte.NOTE_TYPE_PUBLIC
     assert.err=ERR_NOTE_INVALID_TYPE
@@ -519,10 +521,8 @@ proc set_attachment_schemes
     #   attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)
     # ]
     # -> current scheme needs to be shifted left by num_attachments * 16
-
     # Prepare scheme and num_words.
     # --------------------------------------------------------------------------------------------
-
     movup.2 swap
     # => [num_attachments, attachment_scheme, note_ptr]
 

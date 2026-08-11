@@ -1,0 +1,235 @@
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+use miden::standards::faucets::policies::policy_manager
+
+# CONSTANTS
+# =================================================================================================
+
+# Memory base at which the note storage is written by `active_note::get_storage`.
+const STORAGE_PTR = 0
+
+# Memory addresses of the FaucetPolicyConfig note storage. The policy root word comes first so that
+# it is word-aligned and can be loaded with a single `mem_loadw_le`; the selector follows it.
+const POLICY_ROOT_PTR = STORAGE_PTR
+const SELECTOR_PTR = STORAGE_PTR + 4
+
+# Config note selectors, stored in the storage item after the policy root. Keep in sync with
+# `FaucetPolicyConfig` on the Rust side.
+const SELECTOR_SET_MINT_POLICY = 0
+const SELECTOR_SET_BURN_POLICY = 1
+const SELECTOR_SET_SEND_POLICY = 2
+const SELECTOR_SET_RECEIVE_POLICY = 3
+
+# Expected note storage item count: a selector plus the policy root word. Identical for every
+# action.
+const NUM_ITEMS_SET_POLICY = 5
+
+# ERRORS
+# =================================================================================================
+
+const ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH = "faucet policy config note attachment target account does not match the consuming account"
+
+const ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR = "faucet policy config note selector does not match a known action"
+
+const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet policy config note storage item count does not match the selected action"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! FaucetPolicyConfig script: triggers a `TokenPolicyManager` policy-switch action against the
+#! consuming faucet, dispatched on a selector stored in the note storage item after the policy root.
+#!
+#! The selected action and its policy root are read from the note storage (fixed at note creation,
+#! so authorization is bound to the note sender):
+#! - `0` SetMintPolicy:    `[POLICY_ROOT, 0]`.
+#! - `1` SetBurnPolicy:    `[POLICY_ROOT, 1]`.
+#! - `2` SetSendPolicy:    `[POLICY_ROOT, 2]`.
+#! - `3` SetReceivePolicy: `[POLICY_ROOT, 3]`.
+#!
+#! Authorization is enforced by the called `TokenPolicyManager` procedures via the account-wide
+#! `Authority` component (`assert_authorized`), which resolves the note sender against the
+#! configured owner or role; this script only dispatches to them. Each procedure additionally
+#! rejects a policy root that is not registered as an allowed alternative for its kind.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::faucets::policies::policy_manager::{set_mint_policy, set_burn_policy,
+#!   set_send_policy, set_receive_policy}` (the `TokenPolicyManager` component), backed by the
+#!   `Authority` companion component.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the selector is not a known action.
+#! - the number of storage items does not match the selected action.
+#! - the note sender is not authorized, or the policy root is not an allowed alternative (per the
+#!   `TokenPolicyManager` procedures).
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items]
+
+    mem_load.SELECTOR_PTR
+    # => [selector, num_storage_items]
+
+    # dispatch on the selector to the matching action procedure
+    dup eq.SELECTOR_SET_MINT_POLICY
+    # => [is_set_mint, selector, num_storage_items]
+
+    if.true
+        drop
+        # => [num_storage_items]
+
+        exec.execute_set_mint_policy
+    else
+        dup eq.SELECTOR_SET_BURN_POLICY
+        # => [is_set_burn, selector, num_storage_items]
+
+        if.true
+            drop
+            # => [num_storage_items]
+
+            exec.execute_set_burn_policy
+        else
+            dup eq.SELECTOR_SET_SEND_POLICY
+            # => [is_set_send, selector, num_storage_items]
+
+            if.true
+                drop
+                # => [num_storage_items]
+
+                exec.execute_set_send_policy
+            else
+                eq.SELECTOR_SET_RECEIVE_POLICY
+                assert.err=ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR
+                # => [num_storage_items]
+
+                exec.execute_set_receive_policy
+            end
+        end
+    end
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts the storage item count and builds the `set_*_policy` input window from the stored policy
+#! root.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: [NEW_POLICY_ROOT, pad(12)]
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#!
+#! Invocation: exec
+proc load_policy_root_window
+    eq.NUM_ITEMS_SET_POLICY
+    assert.err=ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # load the word-aligned policy root on top of a pad(12) tail, overwriting the topmost pad word
+    padw padw padw padw
+    mem_loadw_le.POLICY_ROOT_PTR
+    # => [NEW_POLICY_ROOT, pad(12)]
+end
+
+#! Executes the SetMintPolicy action: switches the active mint policy to the stored root.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#! - the note sender is not authorized, or the root is not an allowed mint policy (per
+#!   `policy_manager::set_mint_policy`).
+#!
+#! Invocation: exec
+proc execute_set_mint_policy
+    exec.load_policy_root_window
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    call.policy_manager::set_mint_policy
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetBurnPolicy action: switches the active burn policy to the stored root.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#! - the note sender is not authorized, or the root is not an allowed burn policy (per
+#!   `policy_manager::set_burn_policy`).
+#!
+#! Invocation: exec
+proc execute_set_burn_policy
+    exec.load_policy_root_window
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    call.policy_manager::set_burn_policy
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetSendPolicy action: switches the active send policy to the stored root.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#! - the note sender is not authorized, or the root is not an allowed send policy (per
+#!   `policy_manager::set_send_policy`).
+#!
+#! Invocation: exec
+proc execute_set_send_policy
+    exec.load_policy_root_window
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    call.policy_manager::set_send_policy
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetReceivePolicy action: switches the active receive policy to the stored root.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_POLICY.
+#! - the note sender is not authorized, or the root is not an allowed receive policy (per
+#!   `policy_manager::set_receive_policy`).
+#!
+#! Invocation: exec
+proc execute_set_receive_policy
+    exec.load_policy_root_window
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    call.policy_manager::set_receive_policy
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
+end

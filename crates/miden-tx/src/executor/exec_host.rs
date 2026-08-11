@@ -97,6 +97,17 @@ where
     /// authenticator that produced it.
     generated_signatures: BTreeMap<Word, Vec<Felt>>,
 
+    /// Whether execution is currently inside the authentication procedure.
+    ///
+    /// The epilogue wraps the auth procedure between the `EpilogueAuthProcStart` and
+    /// `EpilogueAuthProcEnd` events, so this flag is `true` only while the registered auth
+    /// procedure is running. It is used to reject signature *production* requested from any other
+    /// context (e.g. untrusted note or transaction scripts): an `AuthRequest` with no pre-supplied
+    /// signature makes the authenticator sign with the account's key and must never be honored
+    /// outside the auth procedure. Verifying an externally-supplied signature does not touch the
+    /// private key and is always allowed.
+    in_auth_procedure: bool,
+
     /// The source manager to track source code file span information, improving any MASM related
     /// error messages.
     source_manager: Arc<dyn SourceManagerSync>,
@@ -120,11 +131,13 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
+        ref_block_commitment: Word,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
+            ref_block_commitment,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
@@ -138,6 +151,7 @@ where
             accessed_foreign_account_code: Vec::new(),
             foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
+            in_auth_procedure: false,
             source_manager,
         }
     }
@@ -210,7 +224,7 @@ where
             .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
-            .to_prepared_signature(message);
+            .to_encoded_signature(message);
 
         let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
@@ -581,6 +595,10 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
+                TransactionEvent::InputNoteIndexLookup { note_id } => {
+                    Ok(self.base_host.on_input_note_index_lookup(note_id))
+                },
+
                 TransactionEvent::AuthRequest {
                     pub_key_commitment,
                     tx_summary_or_signature,
@@ -589,7 +607,11 @@ where
                         Ok(self.base_host.on_auth_requested(signature))
                     },
                     TxSummaryOrSignature::TxSummary(tx_summary) => {
-                        self.on_auth_requested(pub_key_commitment, tx_summary).await
+                        if !self.in_auth_procedure {
+                            Err(TransactionKernelError::AuthRequestOutsideAuthProcedure)
+                        } else {
+                            self.on_auth_requested(pub_key_commitment, tx_summary).await
+                        }
                     },
                 },
 
@@ -643,10 +665,12 @@ where
                     },
                     TransactionProgressEvent::EpilogueAuthProcStart(clk) => {
                         self.tx_progress.start_auth_procedure(clk);
+                        self.in_auth_procedure = true;
                         Ok(Vec::new())
                     },
                     TransactionProgressEvent::EpilogueAuthProcEnd(clk) => {
                         self.tx_progress.end_auth_procedure(clk);
+                        self.in_auth_procedure = false;
                         Ok(Vec::new())
                     },
                 },

@@ -20,7 +20,7 @@ In Miden, assets serve as the primary means of expressing and transferring value
    Users can transact freely and privately with no single contract or entity controlling `Asset` transfers. This reduces the risk of censored transactions, resulting in a more open and resilient system.
 
 4. **Fee payment in native asset:**  
-   Transaction fees are paid in the chain's native asset as defined by the current reference block's fee parameters. See [Fees](fees.md).
+   Transaction fees are denominated in the chain's native asset as defined by the current reference block's fee parameters, and paid in the asset committed via the transaction's auth args (the native asset at rate 1/1, or a different asset at a committed conversion rate). See [Fees](fees.md).
 
 ## Native asset
 
@@ -138,7 +138,7 @@ Examples of such assets include NFTs like a DevCon ticket.
 
 ### Storage
 
-[Accounts](./account) and [notes](note) have vaults used to store assets. Accounts use a sparse Merkle tree as a vault while notes use a simple list. This enables an account to store a practically unlimited number of assets while a note can only store up to 64 assets.
+[Accounts](./account) and [notes](note) have vaults used to store assets. Accounts use a sparse Merkle tree as a vault while notes use a simple list. This enables an account to store a practically unlimited number of assets while a note can only store up to 16 assets.
 
 Asset IDs are hashed before being used as keys in the underlying sparse Merkle tree. Hashing the raw key ensures a uniform leaf distribution: in particular, it prevents non-fungible assets issued by the same faucet from sharing an SMT leaf (their raw asset IDs share the fourth element - the faucet ID prefix - which the SMT uses to determine leaf membership).
 
