@@ -12,6 +12,15 @@ Miden transactions pay a fee by creating a public TX_FEE note (see the [note doc
 - The `compute_fee` transaction kernel procedure estimates the number of verification cycles by taking log2 of the estimated total execution cycles (rounded up). The result is then multiplied by the `verification_base_fee` from the reference block’s fee parameters.
 - Since `compute_fee` runs before the transaction finishes, callers pass an estimate of the cycles that will still be spent after the call (e.g. for signature verification and the kernel epilogue). Standard components use conservative per-signature-scheme estimates; because of the logarithmic fee formula, overestimation costs at most a small number of base fee units.
 
+## Note consumption pricing terminology
+
+When pricing note consumption for fee schedules and sponsorship, the codebase uses two related terms consistently:
+
+- **Cost**: the benchmarked number of VM cycles required to consume a note (see the note cost tables in `miden-standards`).
+- **Price**: the fee amount in the chain's native fee asset, derived from a note's cost and from the costs of any notes its consumption creates.
+
+Use *cost* when referring to cycle counts; use *price* when referring to fee amounts. The `NetworkNotePricer` API in `miden-tx` follows this convention: it looks up consumption costs and returns prices as `AssetAmount` values.
+
 ## Which asset is used to pay fees
 
 There are two distinct quantities involved in paying a fee:
