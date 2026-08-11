@@ -272,6 +272,11 @@ async fn admin_reprices_the_fee_schedule(#[case] managed: ManagedAccount) -> any
 /// extreme self-price and sponsors that new price. The second restores the benchmarked deployment
 /// price while sponsoring only that lower value; it would fail if fee collection still read the
 /// extreme previous entry.
+///
+/// The notes and sponsorships are injected directly into the chain, so this covers the
+/// consumption side only: a real sender's auth component sizes the attached sponsorship from the
+/// account's pre-transaction estimate, so the sender must be able to pay the previous fee (see
+/// the [`ConstantFeePolicyConfigNote`] operational notes).
 #[rstest]
 #[case::bridge(ManagedAccount::Bridge)]
 #[case::faucet(ManagedAccount::Faucet)]

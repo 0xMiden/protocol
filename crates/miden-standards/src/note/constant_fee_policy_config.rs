@@ -91,13 +91,18 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 /// - The scheduled `note_script_root` is unconstrained, so an authorized config note can set the
 ///   fee for its *own* script root. Note execution updates the schedule before network
 ///   authentication calculates input-note fees, and the active fee policy reads the final updated
-///   schedule. In a transaction containing one such self-repricing note, it is therefore charged
-///   the new fee it writes, never the previous fee. If the previous fee is unusably high, an
-///   authorized sender can reset it to zero without sponsorship, or set it to a sane non-zero value
-///   with sponsorship covering only that new value. Tooling that prepares a self-repricing
-///   transaction must size its sponsorship from the proposed new fee rather than the account's
-///   pre-transaction estimate. If one transaction contains several self-repricing notes, the final
-///   value written prices all of them.
+///   schedule: every input note of a repriced root (a config note repricing its own root included)
+///   is charged the new fee, never the previous one. If one transaction contains several
+///   self-repricing notes, the final value written prices all of them.
+/// - Repricing changes what consumption requires, but sponsorships are sized when a note is
+///   created: the standard auth components fund each network output note's sponsorship from the
+///   target's pre-transaction `estimate_note_fee` (see `fee::pay_fee`). Raising a root's fee leaves
+///   already-created notes of that root under-sponsored; they abort at the coverage check until an
+///   additional [`FeeSponsorshipNote`](crate::note::FeeSponsorshipNote) is bound to them. Lowering
+///   a too-high entry still requires the config note's sender to pay the *previous* fee, because
+///   the sender's own auth sizes the attached sponsorship from it (the extra amount is credited to
+///   the consuming account's vault). An entry that no sender can fund freezes fee administration on
+///   an account whose only path to `set_note_fee` is this note.
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,

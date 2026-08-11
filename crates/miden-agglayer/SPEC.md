@@ -284,13 +284,16 @@ entry). An `ADMIN` adding a root through `NETWORK_ACCOUNT_CONFIG` should therefo
 fee before adding it to the allowlist.
 
 The config note is priced from its benchmarked consumption cost like every other allowlisted note.
-It can safely update its own schedule entry because note execution precedes network authentication:
-`set_note_fee` writes the new entry before `BasicConstantFeePolicy` calculates the input-note fee.
-With one self-repricing config note in the transaction, the note is therefore charged the new value,
-never the previous value. If the existing entry is unusably high, an `ADMIN` can reset it to zero
-without sponsorship or set it to a sane non-zero value with sponsorship covering only that new
-value. Self-repricing tooling must use the proposed fee rather than the account's pre-transaction
-estimate when sizing the sponsorship.
+It can update its own schedule entry because note scripts run before network authentication:
+`set_note_fee` writes the new entry before `BasicConstantFeePolicy` computes the input-note fee,
+so every input note of a repriced root is charged the new value, never the previous one.
+Sponsorships, however, are sized when a note is created: the sender's auth component funds them
+from the account's pre-transaction estimate (`fee::pay_fee`). Raising a root's fee leaves
+already-created notes of that root under-sponsored until an extra `FEE_SPONSORSHIP` is bound to
+them. Recovering from a too-high config-note entry requires a sender that can pay the previous fee
+(the extra amount is credited to the account's vault). An entry that no sender can fund freezes
+fee administration, because consuming this note is the only path to `set_note_fee` on these
+accounts.
 
 ---
 
@@ -1140,7 +1143,7 @@ attachment, then calls `ConstantFeeManager::set_note_fee`. The sender must hold 
 available while the bridge is paused. Network authentication prices input notes after their scripts
 execute, using the final active fee schedule. A transaction containing one config note that updates
 this note's own script-root entry is therefore charged the newly written fee instead of the previous
-entry, preserving a recovery path from an accidentally excessive price.
+entry; the sender-side sponsorship sizing caveats in [Section 2.5](#25-administration) apply.
 
 #### Permissions
 
