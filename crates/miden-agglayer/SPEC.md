@@ -24,7 +24,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and each faucet. Manages bridge roles and both accounts' fee schedules. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). It cannot mint or change the faucet owner; [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the unused ownership-transfer procedures. | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
+| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and each faucet. Manages bridge roles and both accounts' fee schedules. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). The faucet does not allowlist RBAC_CONFIG, so its `ADMIN` can be neither rotated nor revoked on-chain: losing that key is unrecoverable for the faucet, and a compromised key can never be reliably rotated out. It cannot mint or change the faucet owner; [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the unused ownership-transfer procedures. | Not an onchain entity; creates RBAC_CONFIG and PAUSE_CONFIG (bridge only), NETWORK_ACCOUNT_CONFIG, and CONSTANT_FEE_POLICY_CONFIG notes |
 
 ---
 
@@ -226,7 +226,9 @@ Roles are managed on-chain via [`RBAC_CONFIG`](#47-rbac_config) notes, which dis
 RBAC component's `grant_role` / `revoke_role` / `set_role_admin` / `renounce_role` procedures.
 Authorization is enforced by those procedures against the note sender: a member of the target
 role's effective admin role for grant / revoke / set-admin, or the role holder itself for
-renounce. This makes every role rotatable after account creation, including `ADMIN` itself.
+renounce. This makes every bridge role rotatable after account creation, including `ADMIN`
+itself. The faucet does not allowlist RBAC_CONFIG, so its roles are not rotatable this way (see
+the trust model in [Section 1](#1-entities-and-trust-model)).
 
 Role management via notes comes with caveats. The generic hazards are documented on the
 miden-standards [`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs)
@@ -246,6 +248,15 @@ bridge-specific consequences are:
 - **Consumption order is not under the operator's control.** The bridge executes without a
   signature gate, so any party chooses which pending note is consumed first; never have an
   `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously.
+- **The faucet's `ADMIN` is fixed at deployment.** The faucet does not allowlist `RBAC_CONFIG`,
+  so its `ADMIN` can be neither rotated nor revoked on-chain. A live `ADMIN` can restore
+  rotatability in two steps: price the `RBAC_CONFIG` root with a `CONSTANT_FEE_POLICY_CONFIG`
+  note, then allowlist it with a `NETWORK_ACCOUNT_CONFIG` note. Losing the key freezes the
+  faucet's authority-gated configuration, including its fee schedule. A compromised key is
+  worse: it can strip the faucet's note allowlist - including `NETWORK_ACCOUNT_CONFIG` itself -
+  leaving the faucet permanently unable to mint or burn, which strands the L1 collateral behind
+  the faucet's outstanding tokens. Hold the faucet `ADMIN` with the same key custody as the
+  bridge `ADMIN` (e.g. a multisig member account).
 
 #### Emergency pause
 

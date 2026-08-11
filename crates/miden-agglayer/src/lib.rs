@@ -227,9 +227,14 @@ impl AggLayerFaucet {
     ///
     /// `admin` is seeded as the sole member of the faucet's built-in `ADMIN` role, which gates
     /// every authority-controlled procedure, including the `set_note_fee` that reprices the fee
-    /// schedule. `bridge_account_id` stays the [`Ownable2Step`] owner and so remains the only
-    /// account that can mint or burn. Production faucets always deploy with an `initial_supply`
-    /// of zero; only test fixtures simulate a faucet with outstanding supply.
+    /// schedule. The faucet does not allowlist the RBAC_CONFIG note, so this role can be neither
+    /// rotated nor revoked on-chain; a live admin can restore rotatability by first pricing and
+    /// then allowlisting that note. Losing the admin key is unrecoverable, and a compromised key
+    /// can never be reliably rotated out - see the Administration section of `SPEC.md` for the
+    /// consequences and the key custody guidance. `bridge_account_id` stays the
+    /// [`Ownable2Step`] owner and so remains the only account that can mint or burn. Production
+    /// faucets always deploy with an `initial_supply` of zero; only test fixtures simulate a
+    /// faucet with outstanding supply.
     ///
     /// `fee_policy_manager` prices the notes the faucet consumes and must cover every root
     /// returned by [`AggLayerFaucet::allowed_notes`]; production callers should normally

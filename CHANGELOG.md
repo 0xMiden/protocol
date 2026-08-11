@@ -4,14 +4,10 @@
 
 ### Features
 
-- [BREAKING] AggLayer bridge and faucet accounts now take their fee policy manager at deployment, built by the new `NetworkNotePricer::agglayer_bridge_fee_policy_manager` / `agglayer_faucet_fee_policy_manager` ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
-- [BREAKING] AggLayer bridge and faucet accounts install the `ConstantFeeManager` so their `ADMIN` role can reprice the deployed fee schedule; the faucet is now `Authority::RbacControlled` and its constructors take a deployment admin ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
+- [BREAKING] AggLayer bridge and faucet accounts now take a priced fee policy manager at deployment (built by the new `NetworkNotePricer` helpers) and install the `ConstantFeeManager` for `ADMIN`-gated repricing; account creation is collapsed into `AggLayerBridge::account_builder` / `AggLayerFaucet::account_builder`, the faucet moves to `Authority::RbacControlled` with a deployment-seeded `ADMIN` that administers all of its authority-gated configuration; the faucet no longer registers `BurnAllowAll`, and both accounts' `allowed_notes` now return the full set of accepted note roots, which the deployed policy must price. Both account code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 
 ### Changes
 
-- [BREAKING] `AggLayerBridge::allowed_notes` / `AggLayerFaucet::allowed_notes` now return the full set of note script roots the deployed account accepts (the account-specific roots plus the `AuthNetworkAccount` defaults), which its fee policy must price ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
-- [BREAKING] Collapsed AggLayer account creation into `AggLayerBridge::account_builder` / `AggLayerFaucet::account_builder` (which now takes the initial supply), removing the `create_bridge_account` / `create_agglayer_faucet` one-shot constructors and the `testing::faucet_account_builder` helper ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
-- [BREAKING] The AggLayer faucet no longer registers `BurnAllowAll` as an allowed burn policy, so burns cannot be opened at runtime and the faucet code commitment changes ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
