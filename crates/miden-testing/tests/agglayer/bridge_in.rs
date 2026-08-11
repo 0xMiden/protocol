@@ -367,6 +367,9 @@ async fn test_bridge_in_claim_to_p2id(
 
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
+    // Fee-free the CLAIM creates only the MINT note; fee-enabled it also creates the MINT note's
+    // FEE_SPONSORSHIP and the TX_FEE note.
+    assert_eq!(claim_executed.output_notes().num_notes(), if fees_enabled { 3 } else { 1 });
     let mint_output_note = find_output_note(&claim_executed, StandardNote::MINT.script_root())
         .expect("CLAIM should create a MINT note");
     let mint_sponsorship_id = fees_enabled.then(|| {
@@ -403,7 +406,9 @@ async fn test_bridge_in_claim_to_p2id(
     // VERIFY P2ID NOTE WAS CREATED BY THE FAUCET
     // --------------------------------------------------------------------------------------------
 
-    // Check that exactly one P2ID note was created by the faucet
+    // The P2ID targets a regular wallet, not a network account, so it gets no sponsorship even
+    // with fees enabled; the only extra fee-enabled note is TX_FEE.
+    assert_eq!(mint_executed.output_notes().num_notes(), if fees_enabled { 2 } else { 1 });
     let output_note = find_output_note(&mint_executed, StandardNote::P2ID.script_root())
         .expect("MINT should create a P2ID note");
 

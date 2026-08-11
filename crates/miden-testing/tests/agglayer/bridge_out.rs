@@ -256,6 +256,9 @@ async fn bridge_out_consecutive(
             assert_transaction_paid_fee(&executed_tx);
         }
 
+        // Fee-free the B2AGG creates only the BURN note; fee-enabled it also creates the BURN
+        // note's FEE_SPONSORSHIP and the TX_FEE note.
+        assert_eq!(executed_tx.output_notes().num_notes(), if fees_enabled { 3 } else { 1 });
         let burn_output = find_output_note(&executed_tx, StandardNote::BURN.script_root())
             .expect("B2AGG should create a BURN note");
         let RawOutputNote::Full(burn_note) = burn_output else {
