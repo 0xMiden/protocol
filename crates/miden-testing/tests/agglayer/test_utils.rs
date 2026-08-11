@@ -150,6 +150,9 @@ pub fn assert_transaction_paid_fee(executed: &ExecutedTransaction) {
     );
 }
 
+// The priced fixtures below cannot move into `miden_agglayer::testing` next to the zero-fee
+// ones: `NetworkNotePricer` lives in `miden-tx`, which itself depends on `miden-agglayer`.
+
 /// Builds an existing AggLayer bridge with its production-priced fee policy.
 pub fn create_existing_priced_bridge(
     seed: Word,

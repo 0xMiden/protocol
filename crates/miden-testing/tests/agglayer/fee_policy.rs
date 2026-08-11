@@ -29,6 +29,10 @@ use super::test_utils::{
     is_bridge_paused,
     network_note_pricer,
 };
+
+// DEPLOYMENT-PRICED FEE POLICIES
+// ================================================================================================
+
 fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> anyhow::Result<()> {
     let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
     let network_account = NetworkAccount::new(account.clone())?;
@@ -98,8 +102,7 @@ fn outsider_id() -> AccountId {
     AccountId::builder().account_type(AccountType::Public).build_with_seed([42; 32])
 }
 
-/// Returns the production-priced bridge account builder shared by [`build_managed_account`] and
-/// the scenarios that need extra account settings (e.g. a pre-funded vault).
+/// Returns the production-priced bridge account builder used by [`build_managed_account`].
 fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
     let admin = bridge_admin_account_id();
     let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;

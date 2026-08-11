@@ -17,7 +17,10 @@ use alloc::vec::Vec;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_FEE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+};
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -43,8 +46,10 @@ use crate::{
 /// Returns a zero-fee policy manager for tests that exercise AggLayer behavior independently of
 /// fee sponsorship. Production constructors require their deployment-time manager explicitly.
 pub fn zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
-    let fee_faucet_id = AccountId::from_hex("0xab0000000000cd110000ac000000de")
-        .expect("placeholder fee faucet id is valid");
+    // Use the mock chain's native fee faucet so a test that later enables fees does not trip the
+    // native-fee-asset assertion in the network-account auth procedure.
+    let fee_faucet_id =
+        AccountId::try_from(ACCOUNT_ID_FEE_FAUCET).expect("mock-chain fee faucet id is valid");
 
     let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
     for note_script in allowed_notes {
