@@ -249,14 +249,11 @@ bridge-specific consequences are:
   signature gate, so any party chooses which pending note is consumed first; never have an
   `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously.
 - **The faucet's `ADMIN` is fixed at deployment.** The faucet does not allowlist `RBAC_CONFIG`,
-  so its `ADMIN` can be neither rotated nor revoked on-chain. A live `ADMIN` can restore
-  rotatability in two steps: price the `RBAC_CONFIG` root with a `CONSTANT_FEE_POLICY_CONFIG`
-  note, then allowlist it with a `NETWORK_ACCOUNT_CONFIG` note. Losing the key freezes the
-  faucet's authority-gated configuration, including its fee schedule. A compromised key is
-  worse: it can strip the faucet's note allowlist - including `NETWORK_ACCOUNT_CONFIG` itself -
-  leaving the faucet permanently unable to mint or burn, which strands the L1 collateral behind
-  the faucet's outstanding tokens. Hold the faucet `ADMIN` with the same key custody as the
-  bridge `ADMIN` (e.g. a multisig member account).
+  so its `ADMIN` can be neither rotated nor revoked on-chain (a live `ADMIN` can restore
+  rotatability by pricing and then allowlisting that note). Losing the key freezes the faucet's
+  configuration; a compromised key can strip the note allowlist and permanently brick minting
+  and burning, stranding the L1 collateral behind outstanding tokens. Use the same key custody
+  as for the bridge `ADMIN`.
 
 #### Emergency pause
 
@@ -294,17 +291,14 @@ A note root must have a schedule entry before notes with that root can be consum
 entry). An `ADMIN` adding a root through `NETWORK_ACCOUNT_CONFIG` should therefore schedule its
 fee before adding it to the allowlist.
 
-The config note is priced from its benchmarked consumption cost like every other allowlisted note.
-It can update its own schedule entry because note scripts run before network authentication:
-`set_note_fee` writes the new entry before `BasicConstantFeePolicy` computes the input-note fee,
-so every input note of a repriced root is charged the new value, never the previous one.
-Sponsorships, however, are sized when a note is created: the sender's auth component funds them
-from the account's pre-transaction estimate (`fee::pay_fee`). Raising a root's fee leaves
-already-created notes of that root under-sponsored until an extra `FEE_SPONSORSHIP` is bound to
-them. Recovering from a too-high config-note entry requires a sender that can pay the previous fee
-(the extra amount is credited to the account's vault). An entry that no sender can fund freezes
-fee administration, because consuming this note is the only path to `set_note_fee` on these
-accounts.
+The config note is priced from its benchmarked consumption cost like every other allowlisted
+note. Note scripts run before network authentication, so a config note updating its own entry is
+charged the value it writes, never the previous one. Sponsorships, however, are sized at note
+creation from the pre-transaction estimate: raising a fee leaves already-created notes of that
+root under-sponsored until a top-up `FEE_SPONSORSHIP` is bound to them, and recovering from a
+too-high config-note entry requires a sender able to pay the previous fee. An entry no sender can
+fund freezes fee administration, since this note is the only path to `set_note_fee`. See the
+`CONSTANT_FEE_POLICY_CONFIG` note documentation for the full mechanics.
 
 ---
 
