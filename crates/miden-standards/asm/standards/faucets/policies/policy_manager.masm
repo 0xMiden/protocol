@@ -160,7 +160,6 @@ end
 #!
 #! Invocation: call
 @account_procedure
-@fpi
 pub proc invoke_send_policy
     push.DEFAULT_EXPIRATION_BLOCK_DELTA
     exec.fpi::enforce_expiration_block_delta
@@ -233,7 +232,6 @@ end
 #!
 #! Invocation: call
 @account_procedure
-@fpi
 pub proc invoke_receive_policy
     push.DEFAULT_EXPIRATION_BLOCK_DELTA
     exec.fpi::enforce_expiration_block_delta

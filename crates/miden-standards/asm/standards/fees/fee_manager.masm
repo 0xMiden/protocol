@@ -94,7 +94,6 @@ const ERR_FEE_POLICY_FEE_ASSET_MISMATCH = "fee policy returned a fee asset that 
 #!
 #! Invocation: call
 @account_procedure
-@fpi
 pub proc estimate_note_fee(
     recipient: NoteRecipient,
     assets_commitment: word,
@@ -119,7 +118,6 @@ end
 #!
 #! Invocation: call
 @account_procedure
-@fpi
 pub proc get_fee_asset_id() -> AssetId
     push.DEFAULT_EXPIRATION_BLOCK_DELTA exec.fpi::enforce_expiration_block_delta
 

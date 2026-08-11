@@ -34,7 +34,6 @@ use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 #!
 #! Invocation: call
 @account_procedure
-@fpi
 pub proc check_policy
     push.DEFAULT_EXPIRATION_BLOCK_DELTA exec.fpi::enforce_expiration_block_delta
 

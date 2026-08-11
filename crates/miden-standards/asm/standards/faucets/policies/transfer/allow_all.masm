@@ -17,7 +17,6 @@
 #!
 #! Invocation: call
 @account_procedure
-@fpi
 pub proc check_policy
     dropw dropw drop
     # => [pad(16)]
