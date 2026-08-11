@@ -42,6 +42,12 @@ const ERR_ACCOUNT_PROC_NOT_AUTH_PROC =
 const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE =
     "slot IDs must be unique and sorted in ascending order"
 
+const ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE =
+    "account procedures following the authentication procedure must be unique and sorted in ascending order"
+
+const ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED =
+    "the root of the authentication procedure must not appear among the account's other procedures"
+
 const ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME = "storage slot with the provided name does not exist"
 
 const ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH =
@@ -1026,6 +1032,79 @@ pub proc is_slot_id_lt
     # determines the outcome
     and or
     # => [is_prev_lt_curr]
+end
+
+#! Validates that the account procedures following the authentication procedure at index 0 are
+#! sorted in ascending order and that no procedure root appears more than once.
+#!
+#! The authentication procedure is exempt from the ordering requirement because the transaction
+#! kernel expects it at index 0.
+#!
+#! This procedure is public so it can be tested.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - a procedure root is not strictly greater than the root preceding it.
+#!    - this ensures sorting and uniqueness among the procedures following the auth procedure.
+#! - the root of the auth procedure appears at an index other than 0.
+pub proc validate_procedures
+    exec.memory::get_num_account_procedures sub.1
+    # => [curr_proc_idx]
+
+    # keep the auth procedure root on the stack since every procedure is compared against it
+    push.0 exec.get_procedure_root
+    # => [AUTH_PROC_ROOT, curr_proc_idx]
+
+    dup.4 exec.get_procedure_root
+    # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+    # save_account_procedure_data guarantees that the account has at least MIN_NUM_PROCEDURES
+    # procedures, so curr_proc_idx is at least 1. the procedure at index 1 is handled after the loop
+    # because it has no predecessor to be compared against.
+    dup.8 neq.1
+    # => [should_loop, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+    while.true
+        # assert the current proc root is not the auth proc root
+        exec.word::test_eq
+        # => [is_auth_proc_dup, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+        assertz.err=ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED
+        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+        # step to the preceding procedure, whose root becomes the current one of the next iteration
+        movup.8 sub.1 movdn.8
+        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        dup.8 exec.get_procedure_root
+        # => [PREV_PROC_ROOT, CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        dupw movupw.2
+        # => [CURR_PROC_ROOT, PREV_PROC_ROOT, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        # word::lt returns whether PREV_PROC_ROOT is strictly less than CURR_PROC_ROOT, so this
+        # rejects duplicates as well as procedures that are out of order
+        exec.word::lt
+        # => [is_prev_lt_curr, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        assert.err=ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE
+        # => [PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        # continue if prev_proc_idx != 1
+        dup.8 neq.1
+        # => [should_continue, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+    end
+    # => [PROC_ROOT_1, AUTH_PROC_ROOT, proc_idx = 1]
+
+    # the procedure at index 1 is the only one the loop did not compare against the auth procedure
+    exec.word::eq
+    # => [is_auth_proc_dup, proc_idx]
+
+    assertz.err=ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED
+    drop
+    # => []
 end
 
 # DATA LOADERS
