@@ -14,6 +14,8 @@
 
 ### Fixes
 
+- Fixed the authentication procedure not ending up at index 0 of an account's code when its MAST root was already exported by another component ([#3566](https://github.com/0xMiden/protocol/pull/3566)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features
