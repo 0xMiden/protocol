@@ -12,7 +12,6 @@ use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
 use miden::standards::fpi
-use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -21,6 +20,9 @@ use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 #!
 #! The same procedure root is reusable as both send and receive policy because it does not depend
 #! on custom_data.
+#!
+#! Limits the transaction's expiration to [`fpi::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
+#! reference block, since the policy reads mutable faucet state.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
@@ -35,7 +37,7 @@ use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 #! Invocation: call
 @account_procedure
 pub proc check_policy
-    push.DEFAULT_EXPIRATION_BLOCK_DELTA exec.fpi::enforce_expiration_block_delta
+    exec.fpi::apply_default_expiration_delta
 
     exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]

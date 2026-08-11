@@ -27,7 +27,6 @@ use miden_protocol::transaction::memory::{
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
 use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_FPI_EXPIRATION_BLOCK_DELTA_IS_ZERO;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 
@@ -374,38 +373,24 @@ async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_fpi_expiration_helper() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
-    let delta = u16::MAX;
 
-    let code = format!(
-        r#"
+    let code = r#"
         use miden::tx_kernel_core::prologue
         use miden::protocol::tx
         use miden::standards::fpi
+        use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
 
         begin
             exec.prologue::prepare_transaction
 
-            push.{delta} exec.fpi::enforce_expiration_block_delta
+            exec.fpi::apply_default_expiration_delta
             exec.tx::get_expiration_block_delta
-            push.{delta} assert_eq.err="FPI helper did not set the requested expiration delta"
+            push.DEFAULT_EXPIRATION_BLOCK_DELTA
+            assert_eq.err="FPI helper did not set the default expiration delta"
         end
-    "#,
-    );
+    "#;
 
-    mock_tx.execute_code(&code).await?;
-
-    let result = mock_tx
-        .execute_code(
-            r#"
-            use miden::standards::fpi
-
-            begin
-                push.0 exec.fpi::enforce_expiration_block_delta
-            end
-            "#,
-        )
-        .await;
-    assert_execution_error!(result, ERR_FPI_EXPIRATION_BLOCK_DELTA_IS_ZERO);
+    mock_tx.execute_code(code).await?;
 
     Ok(())
 }

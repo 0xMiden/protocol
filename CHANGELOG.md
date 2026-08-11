@@ -4,6 +4,8 @@
 
 ### Features
 
+- Added the `miden::standards::fpi` MASM module with `apply_default_expiration_delta` for applying the default procedure-level transaction expiration limit ([#3504](https://github.com/0xMiden/protocol/issues/3504), [#3512](https://github.com/0xMiden/protocol/pull/3512)).
+
 ### Changes
 
 - [BREAKING] Added a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and to the fee manager's `estimate_note_fee` and `get_fee_asset_id` procedures; affected component code commitments change ([#3504](https://github.com/0xMiden/protocol/issues/3504), [#3512](https://github.com/0xMiden/protocol/pull/3512)).
