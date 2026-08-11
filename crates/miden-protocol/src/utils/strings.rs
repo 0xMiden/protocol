@@ -81,10 +81,9 @@ impl ShortCapitalString {
     /// Returns an error if:
     /// - The string contains a character that is not part of the provided alphabet.
     pub fn as_element(&self, alphabet: &str) -> Result<Felt, ShortCapitalStringError> {
-        debug_assert!(
-            alphabet.is_ascii(),
-            "ShortCapitalString::as_element: alphabet must be ASCII-only"
-        );
+        if alphabet.is_empty() || !alphabet.is_ascii() {
+            return Err(ShortCapitalStringError::InvalidCharacter);
+        }
         let alphabet_len = alphabet.len() as u64;
         let mut encoded_value: u64 = 0;
 
@@ -134,10 +133,9 @@ impl ShortCapitalString {
             return Err(ShortCapitalStringError::ValueTooLarge(encoded_value));
         }
 
-        debug_assert!(
-            alphabet.is_ascii(),
-            "ShortCapitalString::try_from_encoded_felt: alphabet must be ASCII-only"
-        );
+        if alphabet.is_empty() || !alphabet.is_ascii() {
+            return Err(ShortCapitalStringError::InvalidCharacter);
+        }
         let alphabet_len = alphabet.len() as u64;
         let mut remaining_value = encoded_value;
         let string_len = (remaining_value % alphabet_len) as usize;
@@ -224,5 +222,18 @@ mod tests {
         )
         .unwrap_err();
         assert_matches!(err, ShortCapitalStringError::ValueTooSmall(0));
+    }
+
+    #[test]
+    fn short_capital_string_rejects_empty_or_non_ascii_alphabet() {
+        let short_string = ShortCapitalString::from_ascii_uppercase("MIDEN").unwrap();
+        assert_matches!(
+            short_string.as_element(""),
+            Err(ShortCapitalStringError::InvalidCharacter)
+        );
+        assert_matches!(
+            ShortCapitalString::try_from_encoded_felt(Felt::from(100u32), "", 1, 1000),
+            Err(ShortCapitalStringError::InvalidCharacter)
+        );
     }
 }
