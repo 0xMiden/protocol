@@ -74,25 +74,30 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 ///   schedule.
 /// - allowlist this note's own script root ([`Self::script_root`]) so a network transaction is
 ///   allowed to consume it.
-/// - already carry a set-marked fee schedule entry for this note's own script root (typically a 0
-///   fee, so the note is free to consume). A network account prices every consumed note through its
-///   active fee policy, so an unscheduled config-note root would itself be unpriced. This is
-///   typically bootstrapped at account creation, before the first config note is consumed.
+/// - already carry a set-marked fee schedule entry for this note's own script root. A network
+///   account prices every consumed note through its active fee policy, so an unscheduled
+///   config-note root would itself be unpriced. This is typically bootstrapped at account creation,
+///   before the first config note is consumed.
 ///
 /// # Operational notes
 ///
-/// - Allowlisting and 0-fee-scheduling this note's script root makes it a free, unauthenticated
-///   entry point into the account's network-transaction queue: anyone can author a public note with
-///   this (publicly known) script root targeting the account. Unauthorized or wrongly targeted ones
-///   abort at the target/authorization checks with no state change and no fee, but because the
-///   transaction aborts, the nullifier is never produced - such notes are never consumable and
-///   remain as permanently-unconsumable entries, which may require operator-side filtering. This is
-///   inherent to any allowlisted network-note root, not specific to this note.
+/// - Allowlisting this note's script root creates an unauthenticated entry point into the account's
+///   network-transaction queue: anyone can author a public note with this (publicly known) script
+///   root targeting the account. Unauthorized or wrongly targeted ones abort at the
+///   target/authorization checks with no state change and no fee, but because the transaction
+///   aborts, the nullifier is never produced - such notes are never consumable and remain as
+///   permanently-unconsumable entries, which may require operator-side filtering. This is inherent
+///   to any allowlisted network-note root, not specific to this note.
 /// - The scheduled `note_script_root` is unconstrained, so an authorized config note can set the
-///   fee for its *own* script root. Scheduling a non-zero fee there can make subsequent config
-///   notes unpayable, and since the manager is only reachable through a consumed note, that bricks
-///   fee management unless the account also exposes a transaction-script path to `set_note_fee`.
-///   Keep this note's own root scheduled at 0.
+///   fee for its *own* script root. Note execution updates the schedule before network
+///   authentication calculates input-note fees, and the active fee policy reads the final updated
+///   schedule. In a transaction containing one such self-repricing note, it is therefore charged
+///   the new fee it writes, never the previous fee. If the previous fee is unusably high, an
+///   authorized sender can reset it to zero without sponsorship, or set it to a sane non-zero value
+///   with sponsorship covering only that new value. Tooling that prepares a self-repricing
+///   transaction must size its sponsorship from the proposed new fee rather than the account's
+///   pre-transaction estimate. If one transaction contains several self-repricing notes, the final
+///   value written prices all of them.
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,

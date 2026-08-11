@@ -283,9 +283,14 @@ A note root must have a schedule entry before notes with that root can be consum
 entry). An `ADMIN` adding a root through `NETWORK_ACCOUNT_CONFIG` should therefore schedule its
 fee before adding it to the allowlist.
 
-The config note's own script root is scheduled at zero on both accounts, even though it has a
-benchmarked cost. It is the only allowlisted path to `set_note_fee`, so setting its own entry too
-high could make the schedule impossible to repair.
+The config note is priced from its benchmarked consumption cost like every other allowlisted note.
+It can safely update its own schedule entry because note execution precedes network authentication:
+`set_note_fee` writes the new entry before `BasicConstantFeePolicy` calculates the input-note fee.
+With one self-repricing config note in the transaction, the note is therefore charged the new value,
+never the previous value. If the existing entry is unusably high, an `ADMIN` can reset it to zero
+without sponsorship or set it to a sane non-zero value with sponsorship covering only that new
+value. Self-repricing tooling must use the proposed fee rather than the account's pre-transaction
+estimate when sizing the sponsorship.
 
 ---
 
@@ -1132,7 +1137,10 @@ this `miden-standards` note.
 **Consumption:** The script asserts the consuming account matches its `NetworkAccountTarget`
 attachment, then calls `ConstantFeeManager::set_note_fee`. The sender must hold the account's
 `ADMIN` role, and the supplied asset ID must match its configured fee asset. Repricing remains
-available while the bridge is paused.
+available while the bridge is paused. Network authentication prices input notes after their scripts
+execute, using the final active fee schedule. A transaction containing one config note that updates
+this note's own script-root entry is therefore charged the newly written fee instead of the previous
+entry, preserving a recovery path from an accidentally excessive price.
 
 #### Permissions
 
