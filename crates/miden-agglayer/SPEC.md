@@ -24,7 +24,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and on each faucet. Manages bridge role membership via RBAC_CONFIG notes and reprices both accounts' fee schedules via CONSTANT_FEE_POLICY_CONFIG notes. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). It cannot mint or change the faucet's `Ownable2Step` owner: the ownership procedures are owner-gated, not authority-gated. TODO (Future): [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the faucet's unused ownership-transfer procedures. | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
+| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and each faucet. Manages bridge roles and both accounts' fee schedules. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). It cannot mint or change the faucet owner; [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the unused ownership-transfer procedures. | Not an onchain entity; creates RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
 
 ---
 
@@ -271,71 +271,21 @@ inverse.
 Both network accounts are deployed with a `BasicConstantFeePolicy` whose schedule prices every
 note they can consume from that note's benchmarked consumption cost under the chain's
 `FeeParameters` (`NetworkNotePricer::agglayer_bridge_fee_policy_manager` /
-`agglayer_faucet_fee_policy_manager`). A schedule entry is a bare amount denominated in the
-chain's fee asset, so it covers a note's consumption fee only up to the verification base fee it
-was priced under, plus whatever margin was priced in. A schedule priced with a large enough
-margin may never need an update; note that the default `NetworkNotePricer` margin is one extra
-verification cycle, which adds only about 6% of headroom.
-
-Because that base fee is a chain parameter which changes independently of these accounts, both
-install the `miden-standards` `ConstantFeeManager` and allowlist the
-[`CONSTANT_FEE_POLICY_CONFIG`](#412-constant_fee_policy_config-standards) note, which dispatches
-to its `set_note_fee`. Neither account maps that procedure in its `Authority` procedure-to-role
-map, so authorization falls back to the `ADMIN` role, exactly as for the pause toggles. Without
-it a schedule would be stuck at its deployment prices for the account's whole lifetime.
-
-Repricing the faucet matters as much as repricing the bridge. When the bridge creates a `MINT` or
-`BURN` note it sizes that note's fee sponsorship by reading the *faucet's* schedule as a foreign
-account. A faucet left at stale prices makes the bridge under-sponsor the note it has just
-created, and the faucet's transaction can no longer pay its own fee. A stale faucet schedule
-therefore stalls bridging, not just faucet administration.
-
-The two schedules are also coupled. The bridge funds the `MINT` and `BURN` sponsorships from its
-own vault, sized by each faucet's schedule, and is reimbursed by the sponsorships attached to
-its own `CLAIM` and `B2AGG` notes, whose prices include the notes they create. The bridge also
-asserts that the fees it collects in a transaction cover the fees it sponsors (the default
-`SponsorshipPolicy::AtMostCollectedFees`). The rule is: the bridge's `CLAIM` and `B2AGG`
-entries must exceed every registered faucet's `MINT` and `BURN` entries by at least the bridge's
-own consumption fee, which is exactly how `NetworkNotePricer` prices them. Below that, each
-claim and bridge-out through that faucet drains the bridge's vault; below the faucet's entry,
-the assertion fails and the transaction aborts. This applies when registering a new faucet too,
-not only when repricing.
-
-Repricing must keep the rule at every step: when raising prices, reprice the bridge first and
-the faucet second; when lowering them, the faucet first and the bridge second; and wait for the
-first config note to commit before submitting the second. Raising an entry also strands notes
-created under the old price, since their sponsorship no longer covers it; they become consumable
-again once someone adds another `FEE_SPONSORSHIP` bound to the same note. Nothing enforces any
-of this; it is an operator rule.
+`agglayer_faucet_fee_policy_manager`). Both accounts install the `miden-standards`
+`ConstantFeeManager`, whose `set_note_fee` procedure is available to the `ADMIN` role through
+`CONSTANT_FEE_POLICY_CONFIG` notes. This lets operators refresh schedules when the chain's
+`FeeParameters` change. The cost tables already account for the notes created by each consumed
+note, so operators should regenerate the bridge and faucet schedules with `NetworkNotePricer`
+rather than adjust dependent entries independently.
 
 A note root must have a schedule entry before notes with that root can be consumed:
 `BasicConstantFeePolicy` aborts on any root without an entry (an explicit zero counts as an
-entry). When an `ADMIN` adds a new root to
-the allowlist via `NETWORK_ACCOUNT_CONFIG`, it should set the root's fee first and add the root
-to the allowlist second. In the other order, notes of that root are accepted but cannot be
-consumed until the fee is set.
+entry). An `ADMIN` adding a root through `NETWORK_ACCOUNT_CONFIG` should therefore schedule its
+fee before adding it to the allowlist.
 
 The config note's own script root is scheduled at zero on both accounts, even though it has a
-benchmarked cost like any other note. Consuming a config note is the only way to call
-`set_note_fee`; neither account allowlists a transaction script that reaches it. If the config
-note's own entry were priced and then set too high by mistake, no sponsor could cover it and the
-schedule could never be repaired.
-
-A note with a non-zero schedule entry can only be consumed together with `FEE_SPONSORSHIP` notes
-bound to it that cover that entry, regardless of the chain's own verification base fee. Operators therefore
-fund a sponsorship alongside each management note (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`,
-`PAUSE_CONFIG`). Repricing is the one administrative action where the sponsorship is optional.
-
-A zero entry does not make the transaction free: a repricing transaction still pays the chain's
-transaction fee from the account's vault. The operator can keep the vault whole by attaching a
-`FEE_SPONSORSHIP` bound to the config note. Coverage is checked as at least the scheduled
-amount, so the extra sponsorship is accepted and credited to the vault before the fee is paid.
-The right amount is easy to find: `NetworkNotePricer::price` returns the config note's real
-benchmarked cost; the zero is only in the on-chain schedule. So the zero entry gives up only the
-enforcement of that reimbursement, for a note only the `ADMIN` role can use. In exchange,
-repricing stays reachable, but only as long as the config note's own entry stays zero: nothing
-stops `set_note_fee` from repricing the config note's own root, so the `ADMIN` must never do
-that.
+benchmarked cost. It is the only allowlisted path to `set_note_fee`, so setting its own entry too
+high could make the schedule impossible to repair.
 
 ---
 
@@ -575,8 +525,7 @@ This is a re-export of `miden::standards::faucets::fungible::receive_and_burn`. 
 | Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
 
 **Companion component storage slots:** The faucet account also includes storage from its
-companion components - those required by `fungible::mint_and_send`, plus the access-control and
-fee-administration stack:
+ownership, policy, access-control and fee-administration components:
 
 - `Ownable2Step` owner config slot: stores the bridge account ID as owner.
 - `TokenPolicyManager` slots: `active_policy_proc_root`, `allowed_policy_proc_roots` per policy
@@ -585,17 +534,10 @@ fee-administration stack:
   `Authority` config slot (`RbacControlled`) with an empty procedure-to-role map.
 - `ConstantFeeManager` value slot: the ID of the fee schedule slot it reprices.
 
-**Access control:** minting and burning are gated on the `Ownable2Step` owner (the bridge), which
-`MintOwnerOnly` / `BurnOwnerOnly` assert directly via `ownable2step::assert_sender_is_owner`
-rather than through `Authority`. Everything else on the faucet - its fee schedule, its mint / burn
-/ transfer policies and its metadata - is authority-gated and so resolves to the `ADMIN` role
-through the unmapped-procedure fallback. The two authorities are therefore separate: `ADMIN`
-administers the faucet's configuration without being able to mint, and the bridge mints without
-being able to reconfigure. The `Ownable2Step` transfer procedures are also owner-gated
-(`transfer_ownership` asserts the note sender is the current owner), so `ADMIN` cannot change
-the owner: a transfer would require a note sent by the bridge, and the bridge has no flow that
-creates one. Removing these unused procedures is tracked by
-[#2724](https://github.com/0xMiden/protocol/issues/2724).
+**Access control:** `MintOwnerOnly` and `BurnOwnerOnly` gate minting and burning on the bridge as
+the `Ownable2Step` owner. Authority-gated configuration falls back to the faucet's `ADMIN` role,
+which cannot mint or change the owner. Removing the unreachable ownership-transfer procedures is
+tracked by [#2724](https://github.com/0xMiden/protocol/issues/2724).
 
 ---
 
@@ -1184,27 +1126,13 @@ with clearer error reporting for non-public targets.
 ### 4.12 CONSTANT_FEE_POLICY_CONFIG (standards)
 
 **Purpose:** Reprices one entry of a network account's `BasicConstantFeePolicy` fee schedule
-after deployment (see [Section 2.5](#25-administration)). This is the `miden-standards`
-`CONSTANT_FEE_POLICY_CONFIG` note (`constant_fee_policy_config.masm` /
-`ConstantFeePolicyConfigNote`), not an agglayer-specific note; both the bridge and the faucet
-include its script root in their allowlists. Its storage is
-`[NOTE_SCRIPT_ROOT, FEE_ASSET_ID, FEE_ASSET_VALUE]`: the schedule key to rewrite, and the fee to
-schedule for it.
+after deployment (see [Section 2.5](#25-administration)). Both the bridge and faucet allowlist
+this `miden-standards` note.
 
 **Consumption:** The script asserts the consuming account matches its `NetworkAccountTarget`
-attachment, then `call`s `ConstantFeeManager::set_note_fee`, which runs
-`authority::assert_authorized` before writing the schedule entry. The supplied asset's ID must
-match the account's configured fee asset ID. On both AggLayer accounts `set_note_fee` has no
-mapped role, so the note sender must hold the `ADMIN` role.
-
-`set_note_fee` carries no `pausable::assert_not_paused`, so a paused bridge can still be
-repriced, consistent with the other management notes.
-
-Because the note is allowlisted and scheduled free, anyone can author one targeting either
-account; unauthorized or misdirected notes abort at the target and authorization checks with no
-state change, but since the transaction aborts no nullifier is produced and such notes remain as
-permanently-unconsumable entries that may require operator-side filtering. This is inherent to
-every allowlisted network-note root, not specific to this note.
+attachment, then calls `ConstantFeeManager::set_note_fee`. The sender must hold the account's
+`ADMIN` role, and the supplied asset ID must match its configured fee asset. Repricing remains
+available while the bridge is paused.
 
 #### Permissions
 
