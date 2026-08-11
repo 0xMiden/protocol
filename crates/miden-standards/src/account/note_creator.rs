@@ -7,14 +7,14 @@ use crate::procedure_root;
 // NOTE CREATOR
 // ================================================================================================
 
-account_component_code!(NOTE_CREATOR_CODE, "miden-standards-wallets-note-creator.masp");
+account_component_code!(NOTE_CREATOR_CODE, "miden-standards-note-note-creator.masp");
 
 // PROCEDURE ROOTS
 // ================================================================================================
 
 /// MASL library namespace used for procedure-root lookups. Distinct from [`NoteCreator::NAME`],
 /// which mirrors the standards-side MASM module path.
-const NOTE_CREATOR_LIBRARY_PATH: &str = "miden::standards::components::wallets::note_creator";
+const NOTE_CREATOR_LIBRARY_PATH: &str = "miden::standards::components::note::note_creator";
 
 // Initialize the procedure root of the `create_note` procedure of the Note Creator only once.
 procedure_root!(
@@ -77,5 +77,22 @@ impl From<NoteCreator> for AccountComponent {
         AccountComponent::new(NoteCreator::code().clone(), vec![], metadata).expect(
             "note creator component should satisfy the requirements of a valid account component",
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NoteCreator;
+    use crate::account::wallets::BasicWallet;
+
+    /// `NoteCreator::create_note_root()` must resolve and equal `BasicWallet`'s `create_note` root.
+    ///
+    /// Resolving forces the `procedure_root!` lazy lookup, which panics if `NoteCreator::NAME` does
+    /// not match the component's package namespace. The equality pins the invariant that the basic
+    /// wallet re-exports the same `create_note` procedure (identical MAST root), which standard
+    /// note scripts rely on so that `NoteCreator`-only accounts can consume them.
+    #[test]
+    fn note_creator_create_note_root_matches_basic_wallet() {
+        assert_eq!(NoteCreator::create_note_root(), BasicWallet::create_note_root());
     }
 }

@@ -59,13 +59,14 @@ use miden_standards::account::access::{AccessControl, Authority, Pausable, Pausa
 use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::{BasicWallet, NoteCreator};
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{
     BurnNote,
     MintNote,

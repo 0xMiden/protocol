@@ -1,4 +1,4 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::vec;
 
 use miden_protocol::Felt;
@@ -55,12 +55,12 @@ pub enum AccessControl {
     /// for the administration model.
     ///
     /// `procedure_roles` assigns a role to individual authority-gated procedures, keyed by
-    /// procedure root (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` →
-    /// `UNPAUSER`, and optionally `Authority::freeze_root()` → `FREEZER`). A gated procedure
-    /// without an entry in `procedure_roles` falls back to the `ADMIN` role. The emergency
-    /// `freeze` / `unfreeze` switch resolves its role the same way, defaulting to `ADMIN`. Role
-    /// membership is managed through the standard RBAC API on the [`RoleBasedAccessControl`]
-    /// component.
+    /// procedure root (e.g. [`PausableManager::pause_root`] → `PAUSER`,
+    /// [`PausableManager::unpause_root`] → `UNPAUSER`, and optionally [`Authority::freeze_root`] →
+    /// `FREEZER` with [`Authority::unfreeze_root`] → `UNFREEZER`). A gated procedure without an
+    /// entry in `procedure_roles` falls back to the `ADMIN` role. The emergency `freeze` /
+    /// `unfreeze` switch resolves its role the same way, defaulting to `ADMIN`. Role membership is
+    /// managed through the standard RBAC API on the [`RoleBasedAccessControl`] component.
     Rbac {
         admin: AccountId,
         procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
@@ -80,7 +80,9 @@ impl IntoIterator for AccessControl {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
             AccessControl::Rbac { admin, procedure_roles } => vec![
-                RoleBasedAccessControl::new(BTreeSet::from([admin]), BTreeMap::default()).into(),
+                RoleBasedAccessControl::with_admins([admin])
+                    .expect("a single ADMIN member is a valid seed")
+                    .into(),
                 Authority::RbacControlled { procedure_roles }.into(),
             ]
             .into_iter(),
@@ -91,7 +93,7 @@ impl IntoIterator for AccessControl {
 pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
-pub use rbac::RoleBasedAccessControl;
+pub use rbac::{RoleBasedAccessControl, RoleBasedAccessControlError, RoleConfig};
 
 // HELPERS
 // ================================================================================================

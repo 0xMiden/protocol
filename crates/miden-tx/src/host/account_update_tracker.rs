@@ -1,9 +1,16 @@
 use miden_protocol::Felt;
-use miden_protocol::account::{AccountCode, AccountDelta, AccountId, AccountPatch, PartialAccount};
+use miden_protocol::account::{
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    AccountPatch,
+    AssetDelta,
+    PartialAccount,
+};
 
 use crate::TransactionKernelError;
 use crate::host::storage_patch_tracker::StoragePatchTracker;
-use crate::host::tx_event::{AssetDelta, AssetPatch};
+use crate::host::tx_event::AssetPatch;
 use crate::host::vault_update_tracker::VaultUpdateTracker;
 
 // ACCOUNT DELTA TRACKER
@@ -62,8 +69,10 @@ impl AccountUpdateTracker {
         self.vault.update_patch(patch)
     }
 
-    /// Updates the vault delta.
-    pub fn update_asset_delta(&mut self, delta: AssetDelta) {
+    /// Updates the vault delta, overwriting the previous delta of the same asset.
+    ///
+    /// Returns the overwritten delta, if the asset was already present.
+    pub fn update_asset_delta(&mut self, delta: AssetDelta) -> Option<AssetDelta> {
         self.vault.update_delta(delta)
     }
 

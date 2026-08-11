@@ -1660,10 +1660,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create mock transaction and execute
     let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    mock_tx
-        .execute()
-        .await
-        .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -1865,10 +1862,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     // Create mock transaction and execute
     let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    mock_tx
-        .execute()
-        .await
-        .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+    mock_tx.execute().await?;
 
     Ok(())
 }

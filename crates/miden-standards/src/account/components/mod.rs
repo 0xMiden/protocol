@@ -15,7 +15,8 @@ use crate::account::auth::{
 use crate::account::faucets::FungibleFaucet;
 use crate::account::inspection::CodeInspection;
 use crate::account::interface::AccountComponentInterface;
-use crate::account::wallets::{BasicWallet, NoteCreator};
+use crate::account::note_creator::NoteCreator;
+use crate::account::wallets::BasicWallet;
 
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
