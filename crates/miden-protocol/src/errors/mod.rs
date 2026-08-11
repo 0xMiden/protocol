@@ -123,6 +123,10 @@ pub enum AccountError {
     AccountCodeTooManyProcedures(usize),
     #[error("account code contains a duplicate procedure with root {0}")]
     AccountCodeDuplicateProcedureRoot(Word),
+    #[error(
+        "account code procedures following the authentication procedure are not sorted in ascending order"
+    )]
+    AccountCodeProceduresNotSorted,
     #[error("failed to assemble account component:\n{}", PrintDiagnostic::new(.0))]
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
