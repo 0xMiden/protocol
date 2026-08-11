@@ -543,7 +543,8 @@ ownership, policy, access-control and fee-administration components:
 - `ConstantFeeManager` value slot: the ID of the fee schedule slot it reprices.
 
 **Access control:** `MintOwnerOnly` and `BurnOwnerOnly` gate minting and burning on the bridge as
-the `Ownable2Step` owner. Authority-gated configuration falls back to the faucet's `ADMIN` role,
+the `Ownable2Step` owner. No other burn policy is registered as allowed, so `set_burn_policy`
+cannot open burns. Authority-gated configuration falls back to the faucet's `ADMIN` role,
 which cannot mint or change the owner. Removing the unreachable ownership-transfer procedures is
 tracked by [#2724](https://github.com/0xMiden/protocol/issues/2724).
 

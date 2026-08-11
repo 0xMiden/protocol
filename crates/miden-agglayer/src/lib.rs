@@ -21,7 +21,6 @@ use miden_standards::account::access::{
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::fees::{ConstantFeeManager, FeePolicyManager};
 use miden_standards::account::policies::{
-    BurnAllowAll,
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
@@ -241,11 +240,10 @@ impl AggLayerFaucet {
     /// - The `AggLayerFaucet` component (token metadata only).
     /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
     /// - A [`TokenPolicyManager`] configured with [`MintPolicy::owner_only`] and
-    ///   [`BurnPolicy::owner_only`]. The manager additionally registers `BurnAllowAll::root()` as
-    ///   an allowed burn policy so the owner can open burns at runtime via `set_burn_policy`. The
-    ///   active mint policy component (`MintOwnerOnly`) and burn policy component (`BurnOwnerOnly`)
-    ///   are produced by the manager; `BurnAllowAll` is installed separately as the additional
-    ///   allowed burn policy procedure.
+    ///   [`BurnPolicy::owner_only`]; the manager produces the active mint policy component
+    ///   (`MintOwnerOnly`) and burn policy component (`BurnOwnerOnly`). No other burn policy is
+    ///   registered as allowed: burns stay owner-gated, and `set_burn_policy` has nothing to switch
+    ///   to.
     /// - The [`RoleBasedAccessControl`] stack, seeding `admin` as the sole member of the built-in
     ///   `ADMIN` role, with [`Authority::RbacControlled`] and an empty procedure-role map so every
     ///   authority-gated procedure resolves to `ADMIN` through the unmapped-procedure fallback.
@@ -281,12 +279,13 @@ impl AggLayerFaucet {
         let agglayer_component =
             create_agglayer_faucet_component(token_symbol, decimals, max_supply, initial_supply);
 
-        // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
-        // via `set_burn_policy`.
+        // No burn policy besides the active `owner_only` is registered as allowed, so
+        // `set_burn_policy` has nothing to switch to and burns stay owner-gated. In particular,
+        // `allow_all` is not registered: under `Authority::RbacControlled` the `ADMIN` role could
+        // otherwise widen the allowlist and activate it, making burns permissionless.
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::owner_only())
-            .allowed_burn_policy(BurnPolicy::allow_all())
             .active_send_policy(TransferPolicy::allow_all())
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
@@ -301,7 +300,6 @@ impl AggLayerFaucet {
             )
             .with_component(Authority::RbacControlled { procedure_roles: BTreeMap::new() })
             .with_components(token_policy_manager)
-            .with_component(BurnAllowAll)
             .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
     }
 }

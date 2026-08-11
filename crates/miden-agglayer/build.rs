@@ -251,13 +251,11 @@ fn generate_agglayer_constants(
             // Mirror the component order used by `AggLayerFaucet::account_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
             //
-            // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
-            // is registered as Reserved so the owner can open burns at runtime via
-            // `set_burn_policy`.
+            // Only the active `owner_only` policies are installed; no other burn policy is
+            // registered as allowed, so burns stay owner-gated (see the lib.rs builder).
             let token_policy_manager = TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::owner_only())
                 .active_burn_policy(BurnPolicy::owner_only())
-                .allowed_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(TransferPolicy::allow_all())
                 .active_receive_policy(TransferPolicy::allow_all())
                 .build();
