@@ -8,6 +8,7 @@ use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
+    AssetDelta,
     StorageMap,
     StorageMapKey,
     StorageSlotName,
@@ -287,7 +288,7 @@ impl TransactionEvent {
                 })?;
 
                 TransactionEvent::AccountOnAssetDeltaComputation {
-                    delta: AssetDelta { delta_op, asset },
+                    delta: AssetDelta::new(delta_op, asset),
                 }
             }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
@@ -618,7 +619,7 @@ impl TxSummaryOrSignature {
     }
 }
 
-// ASSET PATCH AND DELTA
+// ASSET PATCH
 // ================================================================================================
 
 #[derive(Debug)]
@@ -628,12 +629,6 @@ pub(crate) struct AssetPatch {
     pub initial_vault_value: Word,
     /// The absolute value of `asset_id` in the vault after the operation.
     pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 // RECIPIENT DATA
