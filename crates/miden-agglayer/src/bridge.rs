@@ -486,6 +486,9 @@ impl AggLayerBridge {
     /// [`ConstantFeePolicyConfigNote`], so the `ADMIN` role can reprice the bridge's fee
     /// schedule after deployment. On top of those, the set includes the configuration and
     /// sponsorship notes that [`AuthNetworkAccount`] adds to every standard network account.
+    /// The FEE_SPONSORSHIP schedule entry is never read - fee collection prices sponsorship
+    /// notes at zero without consulting the policy - it exists only so the schedule covers the
+    /// whole allowlist.
     ///
     /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
     /// can add or remove entries later, so read a live account's allowlist via
