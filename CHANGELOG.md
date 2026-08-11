@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and used the latter in the `OwnerConfig` and `FaucetPolicyConfig` note scripts so a note whose storage is longer than any action accepts is rejected before that storage is loaded and hashed. Both note script roots change.
+- Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and used the latter in the `OwnerConfig` and `FaucetPolicyConfig` ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 
 ### Changes
 
