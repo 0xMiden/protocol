@@ -88,21 +88,14 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 ///   aborts, the nullifier is never produced - such notes are never consumable and remain as
 ///   permanently-unconsumable entries, which may require operator-side filtering. This is inherent
 ///   to any allowlisted network-note root, not specific to this note.
-/// - The scheduled `note_script_root` is unconstrained, so an authorized config note can set the
-///   fee for its *own* script root. Note execution updates the schedule before network
-///   authentication calculates input-note fees, and the active fee policy reads the final updated
-///   schedule: every input note of a repriced root (a config note repricing its own root included)
-///   is charged the new fee, never the previous one. If one transaction contains several
-///   self-repricing notes, the final value written prices all of them.
-/// - Repricing changes what consumption requires, but sponsorships are sized when a note is
-///   created: the standard auth components fund each network output note's sponsorship from the
-///   target's pre-transaction `estimate_note_fee` (see `fee::pay_fee`). Raising a root's fee leaves
-///   already-created notes of that root under-sponsored; they abort at the coverage check until an
-///   additional [`FeeSponsorshipNote`](crate::note::FeeSponsorshipNote) is bound to them. Lowering
-///   a too-high entry still requires the config note's sender to pay the *previous* fee, because
-///   the sender's own auth sizes the attached sponsorship from it (the extra amount is credited to
-///   the consuming account's vault). An entry that no sender can fund freezes fee administration on
-///   an account whose only path to `set_note_fee` is this note.
+/// - The scheduled `note_script_root` is unconstrained, so a config note can reprice any root,
+///   including its own. Note scripts run before fee collection, so notes of a repriced root are
+///   charged the new value; with several repricing notes in one transaction, the last write wins.
+/// - Sponsorships are sized at note creation from the target's pre-transaction estimate (see
+///   `fee::pay_fee`). Raising a fee leaves already-created notes of that root under-sponsored until
+///   a top-up [`FeeSponsorshipNote`](crate::note::FeeSponsorshipNote) is bound to them, and
+///   lowering a too-high entry requires a sender able to pay the previous fee. An entry no sender
+///   can fund freezes fee administration where this note is the only path to `set_note_fee`.
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,
