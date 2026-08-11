@@ -104,6 +104,7 @@ pub proc estimate_note_fee(
     priority: u32
 ) -> Asset
     exec.fpi::apply_default_expiration_delta
+    # => [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
 
     # enforce the declared types of the caller-supplied timeframe and priority
     movup.13 movup.13 u32assert2.err=ERR_TIMEFRAME_OR_PRIORITY_NOT_U32 movdn.13 movdn.13
@@ -116,7 +117,8 @@ end
 #! Returns the ID of the asset fees are charged in.
 #!
 #! Limits the transaction's expiration to [`fpi::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
-#! reference block, since the fee asset is mutable fee configuration.
+#! reference block. The fee asset slot has no setter today, so this bounds the FPI read
+#! defensively rather than protecting against staleness.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [FEE_ASSET_ID, pad(12)]
@@ -125,6 +127,7 @@ end
 @account_procedure
 pub proc get_fee_asset_id() -> AssetId
     exec.fpi::apply_default_expiration_delta
+    # => [pad(16)]
 
     exec.read_fee_asset_id
     # => [FEE_ASSET_ID, pad(16)]
@@ -134,6 +137,9 @@ pub proc get_fee_asset_id() -> AssetId
 end
 
 #! Returns active fee policy root.
+#!
+#! Sets no transaction expiration delta; whether FPI-exposed configuration getters should be
+#! bounded is discussed in issue #3504.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [FEE_POLICY_ROOT, pad(12)]

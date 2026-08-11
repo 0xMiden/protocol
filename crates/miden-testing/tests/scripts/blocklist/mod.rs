@@ -179,11 +179,7 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    assert_eq!(
-        executed.expiration_block_num(),
-        executed.block_header().block_num() + 20,
-        "the blocklist callback should enforce its one-minute expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed, "the blocklist callback");
 
     Ok(())
 }

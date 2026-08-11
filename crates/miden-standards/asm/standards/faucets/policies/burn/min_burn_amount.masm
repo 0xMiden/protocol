@@ -46,6 +46,7 @@ const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must meet or 
 @account_procedure
 pub proc check_policy
     exec.fpi::apply_default_expiration_delta
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     dropw
     # => [ASSET_VALUE, pad(12)]
@@ -68,6 +69,9 @@ end
 # =================================================================================================
 
 #! Returns the configured minimum burn amount.
+#!
+#! Sets no transaction expiration delta; whether FPI-exposed configuration getters should be
+#! bounded is discussed in issue #3504.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [min_burn_amount, pad(15)]

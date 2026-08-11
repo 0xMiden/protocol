@@ -185,11 +185,7 @@ async fn allow_receive_asset_succeeds_when_account_pre_allowed() -> anyhow::Resu
         .execute()
         .await?;
 
-    assert_eq!(
-        executed.expiration_block_num(),
-        executed.block_header().block_num() + 20,
-        "the allowlist callback should enforce its one-minute expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed, "the allowlist callback");
 
     Ok(())
 }

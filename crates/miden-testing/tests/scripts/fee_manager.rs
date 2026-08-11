@@ -372,11 +372,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
         .execute()
         .await?;
 
-    assert_eq!(
-        executed.expiration_block_num(),
-        executed.block_header().block_num() + 20,
-        "fee estimation should enforce its procedure-level expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed, "fee estimation");
 
     Ok(())
 }
@@ -582,11 +578,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
         .execute()
         .await?;
 
-    assert_eq!(
-        executed.expiration_block_num(),
-        executed.block_header().block_num() + 20,
-        "foreign fee estimation should enforce its procedure-level expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed, "foreign fee estimation");
 
     Ok(())
 }
@@ -692,11 +684,7 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
         .execute()
         .await?;
 
-    assert_eq!(
-        executed.expiration_block_num(),
-        executed.block_header().block_num() + 20,
-        "the fee asset getter should enforce its procedure-level expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed, "the fee asset getter");
 
     Ok(())
 }

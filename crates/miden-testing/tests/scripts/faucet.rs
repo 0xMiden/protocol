@@ -1062,11 +1062,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let executed_transaction = mock_tx.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    assert_eq!(
-        executed_transaction.expiration_block_num(),
-        executed_transaction.block_header().block_num() + 20,
-        "the owner-only mint policy should enforce its one-minute expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed_transaction, "the owner-only mint policy");
 
     Ok(())
 }
@@ -1931,11 +1927,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         Some(faucet.nonce() + Felt::from(2u8),),
         "nonce should be incremented by 1 in each of the 2 txs"
     );
-    assert_eq!(
-        executed_transaction.expiration_block_num(),
-        executed_transaction.block_header().block_num() + 20,
-        "the owner-only burn policy should enforce its one-minute expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed_transaction, "the owner-only burn policy");
 
     Ok(())
 }
@@ -2050,11 +2042,7 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
         .build()?;
     let executed_transaction = mock_tx.execute().await?;
 
-    assert_eq!(
-        executed_transaction.expiration_block_num(),
-        executed_transaction.block_header().block_num() + 20,
-        "the min-burn-amount policy should enforce its one-minute expiration limit",
-    );
+    super::assert_default_expiration_limit(&executed_transaction, "the min-burn-amount policy");
 
     faucet.apply_patch(executed_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();

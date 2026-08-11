@@ -38,6 +38,7 @@ use miden::standards::fpi
 @account_procedure
 pub proc check_policy
     exec.fpi::apply_default_expiration_delta
+    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
