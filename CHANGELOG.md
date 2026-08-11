@@ -8,7 +8,7 @@
 
 ### Changes
 
-- [BREAKING] Added a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and to the fee manager's `estimate_note_fee` and `get_fee_asset_id` procedures; affected component code commitments change ([#3504](https://github.com/0xMiden/protocol/issues/3504), [#3512](https://github.com/0xMiden/protocol/pull/3512)).
+- [BREAKING] Added a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies, the min-burn-amount and owner-only mint/burn policies, and the fee manager's `estimate_note_fee` and `get_fee_asset_id` procedures; affected component code commitments change ([#3504](https://github.com/0xMiden/protocol/issues/3504), [#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
