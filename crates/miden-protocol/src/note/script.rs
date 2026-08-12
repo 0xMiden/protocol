@@ -100,6 +100,8 @@ impl NoteScript {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - The package is an executable (i.e., its target type is
+    ///   [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
     /// - The package does not contain a procedure with the `@note_script` attribute.
     /// - The package contains multiple procedures with the `@note_script` attribute.
     pub fn from_package(package: &Package) -> Result<Self, NoteError> {
@@ -369,5 +371,24 @@ mod tests {
         let mast = script.mast();
         let stored = mast.advice_map().get(&key).expect("entry should be present");
         assert_eq!(stored.as_ref(), value.as_slice());
+    }
+
+    #[test]
+    fn test_note_script_from_executable_package() {
+        use assert_matches::assert_matches;
+
+        use crate::assembly::Assembler;
+        use crate::errors::NoteError;
+        use crate::script::MastForestScriptError;
+
+        // an executable package is rejected: note scripts are identified only by the @note_script
+        // attribute
+        let package = Assembler::default()
+            .assemble_program("test-note-script-executable", "begin nop end")
+            .unwrap();
+        assert_matches!(
+            NoteScript::from_package(&package),
+            Err(NoteError::MastForestScript(MastForestScriptError::ExecutablePackage))
+        );
     }
 }
