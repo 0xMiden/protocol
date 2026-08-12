@@ -241,9 +241,6 @@ fn generate_agglayer_constants(
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
-            // The faucet installs the same RBAC access-control stack as the bridge, so its
-            // ADMIN role can reprice the fee schedule and administer its policies. Minting and
-            // burning remain gated on the Ownable2Step owner, which the policies check directly.
             components.extend(AccessControl::Rbac {
                 admin: dummy_owner,
                 procedure_roles: std::collections::BTreeMap::new(),
