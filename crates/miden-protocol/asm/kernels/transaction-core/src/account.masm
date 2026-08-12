@@ -1046,8 +1046,8 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - a procedure root is not strictly greater than the root preceding it.
-#!    - this ensures sorting and uniqueness among the procedures following the auth procedure.
+#! - the procedure roots are not sorted.
+#! - the procedure roots are not unique.
 #! - the root of the auth procedure appears at an index other than 0.
 pub proc validate_procedures
     exec.memory::get_num_account_procedures sub.1
