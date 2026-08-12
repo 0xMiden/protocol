@@ -170,7 +170,7 @@ impl AggLayerBridge {
     ///
     /// `fee_policy_manager` prices the notes the bridge consumes and must cover every root
     /// returned by [`AggLayerBridge::allowed_notes`]; production callers should normally
-    /// construct it with `NetworkNotePricer::agglayer_bridge_fee_policy_manager` from the
+    /// construct it with `NetworkNotePricer::basic_constant_fee_policy_manager` from the
     /// network's current fee parameters.
     ///
     /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
@@ -234,7 +234,7 @@ impl AggLayerFaucet {
     ///
     /// `fee_policy_manager` prices the notes the faucet consumes and must cover every root
     /// returned by [`AggLayerFaucet::allowed_notes`]; production callers should normally
-    /// construct it with `NetworkNotePricer::agglayer_faucet_fee_policy_manager` from the
+    /// construct it with `NetworkNotePricer::basic_constant_fee_policy_manager` from the
     /// network's current fee parameters.
     ///
     /// The builder includes:

@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_agglayer::{AggLayerBridge, AggLayerFaucet, AgglayerNote};
+use miden_agglayer::AgglayerNote;
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::block::FeeParameters;
 use miden_protocol::errors::AssetError;
@@ -135,20 +135,6 @@ impl NetworkNotePricer {
             .fee_faucet_id(self.fee_parameters.fee_faucet_id())
             .active_fee_policy(policy.into())
             .build())
-    }
-
-    /// Builds the production fee policy manager for an AggLayer bridge account.
-    ///
-    /// Prices [`AggLayerBridge::allowed_notes`] into the active [`BasicConstantFeePolicy`].
-    pub fn agglayer_bridge_fee_policy_manager(&self) -> Result<FeePolicyManager, NotePricingError> {
-        self.basic_constant_fee_policy_manager(AggLayerBridge::allowed_notes())
-    }
-
-    /// Builds the production fee policy manager for an AggLayer faucet account.
-    ///
-    /// Prices [`AggLayerFaucet::allowed_notes`] into the active [`BasicConstantFeePolicy`].
-    pub fn agglayer_faucet_fee_policy_manager(&self) -> Result<FeePolicyManager, NotePricingError> {
-        self.basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())
     }
 
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently

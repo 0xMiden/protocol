@@ -111,7 +111,8 @@ fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
         admin,
         roles,
         MIDEN_NETWORK_ID,
-        network_note_pricer(VERIFICATION_BASE_FEE).agglayer_bridge_fee_policy_manager()?,
+        network_note_pricer(VERIFICATION_BASE_FEE)
+            .basic_constant_fee_policy_manager(AggLayerBridge::allowed_notes())?,
     ))
 }
 
@@ -132,7 +133,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             Felt::ZERO,
             admin,
             bridge.id(),
-            pricer.agglayer_faucet_fee_policy_manager()?,
+            pricer.basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())?,
         )
         .build_existing()?,
     })

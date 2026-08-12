@@ -281,8 +281,8 @@ inverse.
 
 Both network accounts are deployed with a `BasicConstantFeePolicy` whose schedule prices the notes
 they can consume from each note's benchmarked consumption cost under the chain's
-`FeeParameters` (`NetworkNotePricer::agglayer_bridge_fee_policy_manager` /
-`agglayer_faucet_fee_policy_manager`). Both accounts install the `miden-standards`
+`FeeParameters` (`NetworkNotePricer::basic_constant_fee_policy_manager`, applied to each account's
+`allowed_notes`). Both accounts install the `miden-standards`
 `ConstantFeeManager`, whose `set_note_fee` procedure is available to that account's own `ADMIN`
 role through `CONSTANT_FEE_POLICY_CONFIG` notes. This lets operators refresh schedules when the
 chain's `FeeParameters` change. The cost tables already account for the notes created by each consumed
