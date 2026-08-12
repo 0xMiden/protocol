@@ -200,9 +200,10 @@ TODO: Faucet existence and code commitment are not validated during registration
 
 The bridge uses role-based access control (RBAC) for its privileged operations, built on the
 `miden-standards` access-control stack (`RoleBasedAccessControl` + `Authority`) installed on the
-bridge account alongside the bridge component. Each faucet installs the same stack with its own,
-unrelated role set, so both accounts have a built-in `ADMIN` role. This document writes bridge
-`ADMIN` and faucet `ADMIN` wherever the distinction matters; bare `ADMIN` below is the bridge's.
+bridge account alongside the bridge component. Each faucet installs those same two components with
+its own, unrelated role set, so both accounts have a built-in `ADMIN` role. This document writes
+bridge `ADMIN` and faucet `ADMIN` wherever the distinction matters; bare `ADMIN` below is the
+bridge's.
 
 - **`ADMIN` role**: the built-in administrative role. Members of `ADMIN` administer (grant and
   revoke) the operational roles below. It is the effective admin of any role whose delegated admin
