@@ -14,6 +14,8 @@
 
 ### Fixes
 
+- Fixed `PrivateOutputNote` construction and deserialization accepting attachment data that is not committed by the note header ([#3556](https://github.com/0xMiden/protocol/issues/3556)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features
