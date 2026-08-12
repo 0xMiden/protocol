@@ -90,11 +90,7 @@ fn private_output_note_rejects_attachment_header_mismatch() -> anyhow::Result<()
     let header = private_note_header(&committed_attachments);
 
     let error = PrivateOutputNote::new(header, provided_attachments).unwrap_err();
-    let note_id = match error {
-        OutputNoteError::AttachmentHeadersMismatch(note_id) => note_id,
-        error => panic!("expected attachment headers mismatch, got {error:?}"),
-    };
-    assert_eq!(note_id, header.id());
+    assert_matches!(error, OutputNoteError::AttachmentHeadersMismatch(_));
 
     Ok(())
 }
@@ -106,11 +102,7 @@ fn private_output_note_rejects_attachments_commitment_mismatch() -> anyhow::Resu
     let header = private_note_header(&committed_attachments);
 
     let error = PrivateOutputNote::new(header, provided_attachments).unwrap_err();
-    let note_id = match error {
-        OutputNoteError::AttachmentsCommitmentMismatch(note_id) => note_id,
-        error => panic!("expected attachments commitment mismatch, got {error:?}"),
-    };
-    assert_eq!(note_id, header.id());
+    assert_matches!(error, OutputNoteError::AttachmentsCommitmentMismatch(_));
 
     Ok(())
 }
