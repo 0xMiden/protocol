@@ -90,20 +90,29 @@ impl AccountCode {
 
         // The authentication procedure at index 0 is exempt from the ordering invariant, so the
         // remaining procedures are checked to be strictly increasing, which also makes them unique.
-        let (auth_proc, other_procs) = procedures.split_first().expect("at least two procedures");
-        for pair in other_procs.windows(2) {
-            match pair[0].cmp(&pair[1]) {
-                Ordering::Less => {},
-                Ordering::Equal => {
-                    return Err(AccountError::AccountCodeDuplicateProcedureRoot(pair[0].as_word()));
-                },
-                Ordering::Greater => return Err(AccountError::AccountCodeProceduresNotSorted),
-            }
-        }
+        // Each of them is also compared against the authentication procedure, which must not appear
+        // a second time.
+        let (auth_proc, other_procs) = procedures
+            .split_first()
+            .expect("account code should contain at least two procedures");
 
-        // The authentication procedure must not appear a second time among the sorted procedures.
-        if other_procs.binary_search(auth_proc).is_ok() {
-            return Err(AccountError::AccountCodeDuplicateProcedureRoot(auth_proc.as_word()));
+        let mut previous_proc: Option<&AccountProcedureRoot> = None;
+        for procedure in other_procs {
+            if procedure == auth_proc {
+                return Err(AccountError::AccountCodeDuplicateProcedureRoot(*procedure));
+            }
+
+            if let Some(previous_proc) = previous_proc {
+                match previous_proc.cmp(procedure) {
+                    Ordering::Less => {},
+                    Ordering::Equal => {
+                        return Err(AccountError::AccountCodeDuplicateProcedureRoot(*procedure));
+                    },
+                    Ordering::Greater => return Err(AccountError::AccountCodeProceduresUnsorted),
+                }
+            }
+
+            previous_proc = Some(procedure);
         }
 
         // make sure that all account procedures are in the MAST forest
@@ -591,7 +600,7 @@ mod tests {
 
         assert_matches!(
             err,
-            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[1].as_word()
+            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[1]
         );
     }
 
@@ -668,7 +677,7 @@ mod tests {
         let unsorted = vec![procedures[0], procedures[2], procedures[1]];
         let err = AccountCode::from_parts(code.mast(), unsorted).unwrap_err();
 
-        assert_matches!(err, AccountError::AccountCodeProceduresNotSorted);
+        assert_matches!(err, AccountError::AccountCodeProceduresUnsorted);
 
         Ok(())
     }
@@ -685,7 +694,7 @@ mod tests {
 
         assert_matches!(
             err,
-            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[0].as_word()
+            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[0]
         );
 
         Ok(())
