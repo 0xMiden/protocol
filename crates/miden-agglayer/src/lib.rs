@@ -156,7 +156,6 @@ fn create_agglayer_faucet_component(
 
 impl AggLayerBridge {
     /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration;
-    /// finish with `build()` for a new production account or `build_existing()` in tests.
     ///
     /// The bridge starts with an empty faucet registry. Faucets are registered at runtime via
     /// CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
