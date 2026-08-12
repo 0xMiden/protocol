@@ -14,6 +14,8 @@
 
 ### Fixes
 
+- [BREAKING] Foreign procedure invocation now requires the provided procedure root to be part of the foreign account's code, so a caller can no longer execute arbitrary code under a foreign account's identity ([#3575](https://github.com/0xMiden/protocol/pull/3575)).
+
 ## v0.16.0 (2026-08-06)
 
 ### Features
