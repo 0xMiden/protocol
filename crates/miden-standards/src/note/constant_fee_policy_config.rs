@@ -74,27 +74,16 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 ///   schedule.
 /// - allowlist this note's own script root ([`Self::script_root`]) so a network transaction is
 ///   allowed to consume it.
-/// - already carry a set-marked fee schedule entry for this note's own script root. A network
-///   account prices every consumed note through its active fee policy, so an unscheduled
-///   config-note root would itself be unpriced. This is typically bootstrapped at account creation,
-///   before the first config note is consumed.
+/// - carry a set-marked fee schedule entry for this note's own script root.
 ///
 /// # Operational notes
 ///
-/// - Allowlisting this note's script root opens an unauthenticated entry point to the account's
-///   network-transaction queue: the script root is publicly known, so any party can author a note
-///   carrying it and target the account. Notes that fail the target or authorization check abort
-///   with no state change and no fee, but an aborted transaction produces no nullifier, so they
-///   remain in the queue and may need operator-side filtering. This applies to any allowlisted
-///   network-note root.
-/// - `note_script_root` is unconstrained, so a config note can reprice any root, including its own.
-///   Note scripts run before fee collection, so notes of a repriced root are charged the new value.
-///   If a transaction carries several repricing notes, the last write is the value used.
-/// - Sponsorships are sized at note creation from the target's pre-transaction estimate (see
-///   `fee::pay_fee`). Raising a fee leaves already-created notes of that root under-sponsored until
-///   a top-up [`FeeSponsorshipNote`](crate::note::FeeSponsorshipNote) is bound to them, and
-///   lowering a too-high entry requires a sender able to pay the previous fee. An entry no sender
-///   can fund freezes fee administration where this note is the only path to `set_note_fee`.
+/// - Any party can submit this note to an account that allowlists it; `set_note_fee` authorizes its
+///   sender during consumption.
+/// - `note_script_root` may be this note's own root. Fee collection reads the schedule after note
+///   execution, while sender-side sponsorship uses the pre-transaction estimate.
+/// - Lowering this note's own fee requires funding its previous fee. An unaffordable value freezes
+///   note-based fee administration.
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,

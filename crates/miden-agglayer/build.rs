@@ -192,45 +192,25 @@ fn generate_agglayer_constants(
             AccountComponent::new(Arc::unwrap_or_clone(package), vec![], dummy_metadata.clone())
                 .unwrap();
 
-        // The faucet account includes an Ownable2Step component alongside the agglayer faucet
-        // component, since fungible::mint_and_send gates minting on the owner, plus the RBAC
-        // access-control stack that gates everything else.
-        //
-        // Use a dummy owner and admin for commitment computation - the real ones are set at
-        // runtime. Only the component code (not storage) contributes to the code commitment.
-        let dummy_owner = miden_protocol::account::AccountId::try_from(
+        let dummy_account_id = miden_protocol::account::AccountId::try_from(
             miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
         )
         .unwrap();
 
-        // Both the bridge and the faucet install a FeePolicyManager (see
-        // `agglayer_fee_policy_manager` in lib.rs). Only its procedure code affects the commitment,
-        // so the fee faucet id backing the policy is immaterial here. The manager's active policy,
-        // allowed policies and fee asset initialize the fee-policy slots the auth component owns,
-        // but those are storage (not code) and so do not affect the commitment either.
         let fee_policy_manager = FeePolicyManager::builder()
             .active_fee_policy(BasicConstantFeePolicy::new().into())
-            .fee_faucet_id(dummy_owner)
+            .fee_faucet_id(dummy_account_id)
             .build();
 
-        // The allowlist lives in storage, not code, and here we only care about the code commitment
-        // of the accounts, so we can init the allowlists with dummy values.
         let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
         let auth_component = AuthNetworkAccount::new(placeholder_allowlist, fee_policy_manager)
             .expect("placeholder allowlist is non-empty");
 
-        // The auth component expands into itself followed by the fee policy manager's components,
-        // matching `NetworkAccount::builder`, which installs them via `with_components` before the
-        // account-specific components below.
         let mut components: Vec<AccountComponent> = auth_component.into_iter().collect();
         components.push(agglayer_component);
         if component_name == "bridge" {
-            // The bridge installs the RBAC access-control stack (RoleBasedAccessControl +
-            // Authority::RbacControlled), matching `AggLayerBridge::account_builder` in lib.rs. An
-            // empty admin / role config suffices here since only component code affects the
-            // commitment.
             components.extend(AccessControl::Rbac {
-                admin: dummy_owner,
+                admin: dummy_account_id,
                 procedure_roles: std::collections::BTreeMap::new(),
             });
             components.push(AccountComponent::from(Pausable::unpaused()));
@@ -239,17 +219,12 @@ fn generate_agglayer_constants(
                 .push(AccountComponent::from(ConstantFeeManager::for_basic_constant_fee_policy()));
         } else if component_name == "faucet" {
             components.push(AccountComponent::from(
-                miden_standards::account::access::Ownable2Step::new(dummy_owner),
+                miden_standards::account::access::Ownable2Step::new(dummy_account_id),
             ));
             components.extend(AccessControl::Rbac {
-                admin: dummy_owner,
+                admin: dummy_account_id,
                 procedure_roles: std::collections::BTreeMap::new(),
             });
-            // Mirror the component order used by `AggLayerFaucet::account_builder` in lib.rs so
-            // the compile-time code commitment matches the one computed at runtime.
-            //
-            // Only the active `owner_only` policies are installed; no other burn policy is
-            // registered as allowed, so burns stay owner-gated (see the lib.rs builder).
             let token_policy_manager = TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::owner_only())
                 .active_burn_policy(BurnPolicy::owner_only())

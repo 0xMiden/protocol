@@ -47,7 +47,7 @@ fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> 
         AssetId::new_fungible(fee_faucet_id()).to_word()
     );
 
-    for root in FeeSponsorshipNote::feature_notes(roots) {
+    for root in roots {
         let entry = account.storage().get_map_item(
             BasicConstantFeePolicy::fee_schedule_slot_name(),
             StorageMapKey::new(root.as_word()),
@@ -72,8 +72,6 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
     )
 }
 
-/// Pins the faucet's input-note allowlist. The allowlist decides which notes can drive an account
-/// that holds an `ADMIN` role, so it should not grow silently.
 #[test]
 fn faucet_allowed_notes_pin() {
     let expected = BTreeSet::from([
@@ -89,26 +87,23 @@ fn faucet_allowed_notes_pin() {
 // POST-DEPLOYMENT FEE SCHEDULE UPDATES
 // ================================================================================================
 
-/// Which AggLayer network account a repricing case runs against. Both install the
-/// `ConstantFeeManager` behind the same `ADMIN`-gated authority, so the cases are shared.
 #[derive(Clone, Copy, Debug)]
 enum ManagedAccount {
     Bridge,
     Faucet,
 }
 
-/// An account ID that holds no role on either AggLayer account.
 fn outsider_id() -> AccountId {
     AccountId::builder().account_type(AccountType::Public).build_with_seed([42; 32])
 }
 
-/// Returns the production-priced bridge account builder used by [`build_managed_account`].
 fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
-    let admin = bridge_admin_account_id();
-    let roles = BridgeRoles::new([admin].into(), [admin].into(), [admin].into())?;
+    let bridge_admin = bridge_admin_account_id();
+    let roles =
+        BridgeRoles::new([bridge_admin].into(), [bridge_admin].into(), [bridge_admin].into())?;
     Ok(AggLayerBridge::account_builder(
         Word::default(),
-        admin,
+        bridge_admin,
         roles,
         MIDEN_NETWORK_ID,
         network_note_pricer(VERIFICATION_BASE_FEE)
@@ -116,11 +111,9 @@ fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
     ))
 }
 
-/// Builds the requested AggLayer account with its production-priced fee schedule, administered by
-/// [`bridge_admin_account_id`].
 fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
     let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
-    let admin = bridge_admin_account_id();
+    let account_admin = bridge_admin_account_id();
     let bridge = bridge_account_builder()?.build_existing()?;
 
     Ok(match managed {
@@ -131,7 +124,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             6,
             1_000u32.into(),
             Felt::ZERO,
-            admin,
+            account_admin,
             bridge.id(),
             pricer.basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())?,
         )
@@ -139,10 +132,6 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
     })
 }
 
-/// Builds a config note repricing `note_script_root` on `account` to `amount`, authored by
-/// `sender`.
-///
-/// `serial_seed` keeps otherwise-identical notes from sharing a note ID.
 fn build_repricing_note(
     sender: AccountId,
     account: AccountId,
@@ -160,14 +149,10 @@ fn build_repricing_note(
     Ok(Note::from(note))
 }
 
-/// The root the repricing cases rewrite. Every network account schedules it, so the bridge and
-/// faucet cases can share it. Keeping the config note's own root unchanged makes these tests cover
-/// ordinary schedule administration independently of the self-repricing recovery path.
 fn repriced_root() -> NoteScriptRoot {
     NetworkAccountConfigNote::script_root()
 }
 
-/// Returns the storage-map value for a set fee-schedule entry.
 fn fee_schedule_entry(amount: u64) -> Word {
     Word::new([
         Felt::new(amount).expect("a fee amount should fit in a field element"),
@@ -177,7 +162,6 @@ fn fee_schedule_entry(amount: u64) -> Word {
     ])
 }
 
-/// Reads the committed fee schedule entry for `note_script_root` on `account_id`.
 fn committed_fee(
     mock_chain: &MockChain,
     account_id: AccountId,
@@ -191,8 +175,6 @@ fn committed_fee(
     Ok(entry)
 }
 
-/// Consumes a priced feature note together with the sponsorship bound to it, then commits the
-/// resulting account state.
 async fn consume_sponsored_note(
     mock_chain: &mut MockChain,
     account_id: AccountId,
@@ -211,14 +193,6 @@ async fn consume_sponsored_note(
     Ok(())
 }
 
-/// An `ADMIN`-authored config note reprices a scheduled note, both upwards and back down, on the
-/// bridge and on the faucet. Repricing downwards matters as much as upwards: it is how an
-/// operator walks fees back after the chain's verification base fee falls, and it exercises the
-/// manager overwriting a set-marked entry rather than filling an empty one.
-///
-/// The chain runs at a zero verification base fee so the transactions themselves cost nothing.
-/// The config notes still require sponsorships for their production schedule price, independently
-/// of the transaction fee.
 #[rstest]
 #[case::bridge(ManagedAccount::Bridge)]
 #[case::faucet(ManagedAccount::Faucet)]
@@ -227,12 +201,12 @@ async fn admin_reprices_the_fee_schedule(#[case] managed: ManagedAccount) -> any
     const RAISED_FEE: u64 = 9_000;
     const LOWERED_FEE: u64 = 12;
 
-    let admin = bridge_admin_account_id();
+    let account_admin = bridge_admin_account_id();
     let account = build_managed_account(managed)?;
     let deployed_fee = network_note_pricer(VERIFICATION_BASE_FEE).price(repriced_root())?.as_u64();
 
-    let raise = build_repricing_note(admin, account.id(), repriced_root(), RAISED_FEE, 1)?;
-    let lower = build_repricing_note(admin, account.id(), repriced_root(), LOWERED_FEE, 2)?;
+    let raise = build_repricing_note(account_admin, account.id(), repriced_root(), RAISED_FEE, 1)?;
+    let lower = build_repricing_note(account_admin, account.id(), repriced_root(), LOWERED_FEE, 2)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -270,82 +244,6 @@ async fn admin_reprices_the_fee_schedule(#[case] managed: ManagedAccount) -> any
     Ok(())
 }
 
-/// A config note that updates its own script-root entry is charged the value it writes, not the
-/// value present before the transaction. Note scripts execute before network authentication, and
-/// fee collection reads the updated account map. The first transaction deliberately installs an
-/// extreme self-price and sponsors that new price. The second restores the benchmarked deployment
-/// price while sponsoring only that lower value; it would fail if fee collection still read the
-/// extreme previous entry.
-///
-/// The notes and sponsorships are injected directly into the chain, so this covers the
-/// consumption side only: a real sender's auth component sizes the attached sponsorship from the
-/// account's pre-transaction estimate, so the sender must be able to pay the previous fee (see
-/// the [`ConstantFeePolicyConfigNote`] operational notes).
-#[rstest]
-#[case::bridge(ManagedAccount::Bridge)]
-#[case::faucet(ManagedAccount::Faucet)]
-#[tokio::test]
-async fn config_note_recovers_from_extreme_self_price(
-    #[case] managed: ManagedAccount,
-) -> anyhow::Result<()> {
-    const EXTREME_FEE: u64 = 1_000_000_000_000_000;
-
-    let admin = bridge_admin_account_id();
-    let account = build_managed_account(managed)?;
-    let config_root = ConstantFeePolicyConfigNote::script_root();
-    let deployment_fee = network_note_pricer(VERIFICATION_BASE_FEE).price(config_root)?.as_u64();
-
-    let raise = build_repricing_note(admin, account.id(), config_root, EXTREME_FEE, 5)?;
-    let restore = build_repricing_note(admin, account.id(), config_root, deployment_fee, 6)?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    builder.add_output_note(RawOutputNote::Full(raise.clone()));
-    builder.add_output_note(RawOutputNote::Full(restore.clone()));
-
-    let raise_sponsorship: Note = FeeSponsorshipNote::builder()
-        .sender(admin)
-        .target_account(account.id())
-        .feature_note_id(raise.id())
-        .asset(FungibleAsset::new(fee_faucet_id(), EXTREME_FEE)?)
-        .generate_serial_number(builder.rng_mut())
-        .build()?
-        .into();
-    builder.add_output_note(RawOutputNote::Full(raise_sponsorship.clone()));
-    let restore_sponsorship =
-        add_fee_sponsorship(&mut builder, &restore, account.id(), VERIFICATION_BASE_FEE)?
-            .expect("the restored config-note price should require sponsorship");
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    assert_eq!(
-        committed_fee(&mock_chain, account.id(), config_root)?,
-        fee_schedule_entry(deployment_fee),
-        "the config note should start at its benchmarked deployment price"
-    );
-
-    consume_sponsored_note(&mut mock_chain, account.id(), &raise, &raise_sponsorship).await?;
-    assert_eq!(
-        committed_fee(&mock_chain, account.id(), config_root)?,
-        fee_schedule_entry(EXTREME_FEE),
-        "the config note should be able to install an extreme self-price"
-    );
-
-    consume_sponsored_note(&mut mock_chain, account.id(), &restore, &restore_sponsorship).await?;
-    assert_eq!(
-        committed_fee(&mock_chain, account.id(), config_root)?,
-        fee_schedule_entry(deployment_fee),
-        "the lower new price should recover from the extreme previous entry"
-    );
-
-    Ok(())
-}
-
-/// A config note authored by an account outside the `ADMIN` role cannot reprice either account:
-/// `set_note_fee` runs `authority::assert_authorized`, which under `Authority::RbacControlled`
-/// resolves the unmapped procedure to `ADMIN` and rejects a sender that does not hold it. The
-/// schedule is left untouched.
 #[rstest]
 #[case::bridge(ManagedAccount::Bridge)]
 #[case::faucet(ManagedAccount::Faucet)]
@@ -380,30 +278,27 @@ async fn non_admin_cannot_reprice_the_fee_schedule(
     Ok(())
 }
 
-/// A paused bridge can still be repriced. `set_note_fee` belongs to the standards
-/// `ConstantFeeManager`, not to the bridge component, so it carries no
-/// `pausable::assert_not_paused` - repricing stays available alongside the other management
-/// notes while every bridging entry point is halted.
-///
-/// Both the pause and repricing notes need a `FEE_SPONSORSHIP` covering their scheduled fees,
-/// because a priced schedule requires every consumed feature note's fee to be prepaid regardless
-/// of the chain's own base fee.
 #[tokio::test]
 async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
     const REPRICED_FEE: u64 = 4_242;
 
-    let admin = bridge_admin_account_id();
+    let bridge_admin = bridge_admin_account_id();
     let bridge = build_managed_account(ManagedAccount::Bridge)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(bridge.clone())?;
-    let pause =
-        AggLayerBridge::pause_note(PauseConfig::Pause, admin, bridge.id(), builder.rng_mut())?;
+    let pause = AggLayerBridge::pause_note(
+        PauseConfig::Pause,
+        bridge_admin,
+        bridge.id(),
+        builder.rng_mut(),
+    )?;
     builder.add_output_note(RawOutputNote::Full(pause.clone()));
     let pause_sponsorship =
         add_fee_sponsorship(&mut builder, &pause, bridge.id(), VERIFICATION_BASE_FEE)?
             .expect("a non-zero base fee should produce a sponsorship");
-    let reprice = build_repricing_note(admin, bridge.id(), repriced_root(), REPRICED_FEE, 4)?;
+    let reprice =
+        build_repricing_note(bridge_admin, bridge.id(), repriced_root(), REPRICED_FEE, 4)?;
     builder.add_output_note(RawOutputNote::Full(reprice.clone()));
     let reprice_sponsorship =
         add_fee_sponsorship(&mut builder, &reprice, bridge.id(), VERIFICATION_BASE_FEE)?

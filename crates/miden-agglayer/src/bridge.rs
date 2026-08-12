@@ -472,20 +472,9 @@ impl AggLayerBridge {
     // ALLOWED NOTES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns every input-note script root a newly deployed AggLayer bridge account accepts.
+    /// Returns the input-note script roots allowlisted on a newly deployed AggLayer bridge.
     ///
-    /// Any transaction consuming a note outside the account's allowlist is rejected by the auth
-    /// procedure. `NetworkNotePricer` turns this set into the bridge's deployed fee schedule.
-    ///
-    /// In addition to the agglayer-specific notes, the bridge accepts three other standard notes:
-    /// the [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, the
-    /// role-management [`RbacConfigNote`], which makes the bridge's RBAC role graph mutable
-    /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration section
-    /// of `SPEC.md` for the associated caveats), and the [`ConstantFeePolicyConfigNote`], so the
-    /// `ADMIN` role can reprice the bridge's fee schedule after deployment.
-    ///
-    /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
-    /// can add or remove entries later, so read a live account's allowlist via
+    /// A live account's allowlist is available through
     /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         let mut notes = BTreeSet::from([

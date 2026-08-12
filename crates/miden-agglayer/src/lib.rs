@@ -19,7 +19,11 @@ use miden_standards::account::access::{
     RoleConfig,
 };
 use miden_standards::account::auth::NetworkAccount;
-use miden_standards::account::fees::{ConstantFeeManager, FeePolicyManager};
+use miden_standards::account::fees::{
+    BasicConstantFeePolicy,
+    ConstantFeeManager,
+    FeePolicyManager,
+};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -154,55 +158,47 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
+fn assert_basic_constant_fee_policy_manager(fee_policy_manager: &FeePolicyManager) {
+    let policy_root = BasicConstantFeePolicy::root();
+    assert_eq!(
+        fee_policy_manager.active_fee_policy(),
+        policy_root,
+        "AggLayer accounts require BasicConstantFeePolicy as the active fee policy"
+    );
+    assert_eq!(
+        fee_policy_manager.allowed_fee_policies().as_slice(),
+        &[policy_root],
+        "AggLayer accounts do not support additional fee policies"
+    );
+}
+
 impl AggLayerBridge {
     /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration.
     ///
-    /// The bridge starts with an empty faucet registry. Faucets are registered at runtime via
-    /// CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
+    /// `bridge_admin` is the initial member of the bridge's built-in `ADMIN` role. The fee policy
+    /// manager must contain only an active [`BasicConstantFeePolicy`] with entries for
+    /// [`AggLayerBridge::allowed_notes`].
     ///
-    /// Here `admin` is seeded as the initial member of the built-in `ADMIN` role, which
-    /// administers the operational roles in case they don't have their own administrators, and
-    /// `roles` seeds the initial holders of the `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER`
-    /// roles that gate the bridge's privileged procedures.
+    /// # Panics
     ///
-    /// `network_id` is the AggLayer network ID assigned to the Miden chain; it is written to the
-    /// bridge's [`AggLayerBridge::network_id_slot_name`] storage slot at account creation.
-    ///
-    /// `fee_policy_manager` prices the notes the bridge consumes and must cover every root
-    /// returned by [`AggLayerBridge::allowed_notes`]; production callers should normally
-    /// construct it with `NetworkNotePricer::basic_constant_fee_policy_manager` from the
-    /// network's current fee parameters.
-    ///
-    /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
-    /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its allowed input notes.
-    /// The tx-script allowlist contains only the canonical `ExpirationTransactionScript` so the
-    /// network transaction builder can bound how long the bridge's transactions stay valid.
-    ///
-    /// The bridge also installs the [`Pausable`] and [`PausableManager`] components for emergency
-    /// pauses, gated by the `ADMIN` role via the [`Authority`] unmapped-procedure fallback. While
-    /// paused, all bridge entry points abort except `remove_ger`, which stays available so a
-    /// fraudulent GER can still be revoked.
-    ///
-    /// Finally, it installs the [`ConstantFeeManager`]. Its `set_note_fee` procedure updates the
-    /// deployed [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy)
-    /// schedule and is driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note. The
-    /// procedure has no entry in [`AggLayerBridge::procedure_roles`], so it falls back to the
-    /// `ADMIN` role.
-    ///
-    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    /// Panics if the fee policy manager contains a different or additional fee policy.
     pub fn account_builder(
         seed: Word,
-        admin: AccountId,
+        bridge_admin: AccountId,
         roles: BridgeRoles,
         network_id: u32,
         fee_policy_manager: FeePolicyManager,
     ) -> AccountBuilder {
+        assert_basic_constant_fee_policy_manager(&fee_policy_manager);
         NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
             .expect("bridge note allowlist is non-empty")
             .with_component(AggLayerBridge::new(network_id))
             .with_component(
                 RoleBasedAccessControl::builder()
-                    .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
+                    .role(
+                        RoleConfig::new(RoleBasedAccessControl::admin_role())
+                            .with_member(bridge_admin),
+                    )
                     .roles(roles)
                     .build()
                     .expect("the bridge seeds distinct non-empty roles administered by ADMIN"),
@@ -218,54 +214,16 @@ impl AggLayerBridge {
 
 impl AggLayerFaucet {
     /// Returns an [`AccountBuilder`] for a faucet account with the specified deployment
-    /// configuration; finish with `build()` for a new production account or `build_existing()`
-    /// in tests.
+    /// configuration.
     ///
-    /// `admin` is seeded as the sole member of the faucet's built-in `ADMIN` role, which gates
-    /// every authority-controlled procedure, including the `set_note_fee` that reprices the fee
-    /// schedule. The faucet does not allowlist the RBAC_CONFIG note, so this role can be neither
-    /// rotated nor revoked on-chain; a live admin can restore rotatability by first pricing and
-    /// then allowlisting that note. Losing the admin key is unrecoverable, and a compromised key
-    /// can never be reliably rotated out - see the Administration section of `SPEC.md` for the
-    /// consequences and the key custody guidance. `bridge_account_id` stays the
-    /// [`Ownable2Step`] owner and so remains the only account that can mint or burn. Production
-    /// faucets always deploy with an `initial_supply` of zero; only test fixtures simulate a
-    /// faucet with outstanding supply.
-    ///
-    /// `fee_policy_manager` prices the notes the faucet consumes and must cover every root
-    /// returned by [`AggLayerFaucet::allowed_notes`]; production callers should normally
-    /// construct it with `NetworkNotePricer::basic_constant_fee_policy_manager` from the
-    /// network's current fee parameters.
-    ///
-    /// The builder includes:
-    /// - The `AggLayerFaucet` component (token metadata only).
-    /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
-    /// - A [`TokenPolicyManager`] configured with [`MintPolicy::owner_only`] and
-    ///   [`BurnPolicy::owner_only`]; the manager produces the active mint policy component
-    ///   (`MintOwnerOnly`) and burn policy component (`BurnOwnerOnly`). No other burn policy is
-    ///   registered as allowed: burns stay owner-gated, and `set_burn_policy` has nothing to switch
-    ///   to.
-    /// - The [`RoleBasedAccessControl`] stack, seeding `admin` as the sole member of the built-in
-    ///   `ADMIN` role, with [`Authority::RbacControlled`] and an empty procedure-role map so every
-    ///   authority-gated procedure resolves to `ADMIN` through the unmapped-procedure fallback.
-    /// - The [`ConstantFeeManager`], whose `ADMIN`-gated `set_note_fee` can reprice the deployed
-    ///   [`BasicConstantFeePolicy`](miden_standards::account::fees::BasicConstantFeePolicy)
-    ///   schedule, driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note.
-    /// - The network-account auth component, installed via [`NetworkAccount::builder`] with
-    ///   [`AggLayerFaucet::allowed_notes()`]. The tx-script allowlist contains only the canonical
-    ///   [`ExpirationTransactionScript`](miden_standards::tx_script::ExpirationTransactionScript).
-    ///
-    /// Minting and burning are authorized independently of [`Authority`]: `MintOwnerOnly` and
-    /// `BurnOwnerOnly` call `ownable2step::assert_sender_is_owner` directly, so they remain gated
-    /// on the bridge as the [`Ownable2Step`] owner. `admin` therefore administers the faucet's
-    /// configuration (its fee schedule, its policies and its metadata) without gaining the
-    /// ability to mint, while the bridge keeps minting exactly as before. The [`Ownable2Step`]
-    /// transfer procedures are owner-gated as well, so `admin` cannot change the owner either.
+    /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role;
+    /// `bridge_account_id` is its [`Ownable2Step`] owner. The fee policy manager must contain only
+    /// an active [`BasicConstantFeePolicy`] with entries for [`AggLayerFaucet::allowed_notes`].
     ///
     /// # Panics
-    /// Panics if `token_symbol` is not a valid token symbol, or if the token metadata is invalid,
-    /// e.g. `max_supply` exceeds the maximum asset amount or `initial_supply` exceeds
-    /// `max_supply`.
+    ///
+    /// Panics if the token metadata is invalid or the fee policy manager contains a different or
+    /// additional fee policy.
     #[allow(clippy::too_many_arguments)]
     pub fn account_builder(
         seed: Word,
@@ -273,17 +231,14 @@ impl AggLayerFaucet {
         decimals: u8,
         max_supply: Felt,
         initial_supply: Felt,
-        admin: AccountId,
+        faucet_admin: AccountId,
         bridge_account_id: AccountId,
         fee_policy_manager: FeePolicyManager,
     ) -> AccountBuilder {
+        assert_basic_constant_fee_policy_manager(&fee_policy_manager);
         let agglayer_component =
             create_agglayer_faucet_component(token_symbol, decimals, max_supply, initial_supply);
 
-        // No burn policy besides the active `owner_only` is registered as allowed, so
-        // `set_burn_policy` has nothing to switch to and burns stay owner-gated. In particular,
-        // `allow_all` is not registered: under `Authority::RbacControlled` the `ADMIN` role could
-        // otherwise widen the allowlist and activate it, making burns permissionless.
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::owner_only())
@@ -296,7 +251,7 @@ impl AggLayerFaucet {
             .with_component(agglayer_component)
             .with_component(Ownable2Step::new(bridge_account_id))
             .with_component(
-                RoleBasedAccessControl::with_admins([admin])
+                RoleBasedAccessControl::with_admins([faucet_admin])
                     .expect("the faucet seeds a non-empty ADMIN role"),
             )
             .with_component(Authority::RbacControlled { procedure_roles: BTreeMap::new() })
@@ -311,6 +266,7 @@ impl AggLayerFaucet {
 #[cfg(test)]
 mod tests {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+    use miden_standards::account::fees::FeePolicy;
     use miden_standards::tx_script::ExpirationTransactionScript;
 
     use super::*;
@@ -339,5 +295,30 @@ mod tests {
             let network_account = NetworkAccount::try_from(account).unwrap();
             assert!(network_account.allows_tx_script(&ExpirationTransactionScript::script_root()));
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "require BasicConstantFeePolicy")]
+    fn agglayer_accounts_reject_a_different_active_fee_policy() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+        let policy = FeePolicy::custom(PausableManager::pause_root(), [PausableManager]).unwrap();
+        let manager =
+            FeePolicyManager::builder().fee_faucet_id(id).active_fee_policy(policy).build();
+
+        assert_basic_constant_fee_policy_manager(&manager);
+    }
+
+    #[test]
+    #[should_panic(expected = "do not support additional fee policies")]
+    fn agglayer_accounts_reject_additional_fee_policies() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+        let policy = FeePolicy::custom(PausableManager::pause_root(), [PausableManager]).unwrap();
+        let manager = FeePolicyManager::builder()
+            .fee_faucet_id(id)
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
+            .allowed_fee_policy(policy)
+            .build();
+
+        assert_basic_constant_fee_policy_manager(&manager);
     }
 }

@@ -1,12 +1,4 @@
-//! Shared test vector types and embedded JSON constants for agglayer testing.
-//!
-//! This module is gated behind the `testing` feature and provides:
-//! - Account fixture helpers (zero-fee policy manager, existing bridge and faucet accounts)
-//! - Embedded JSON test vector files from `solidity-compat/test-vectors/`
-//! - Serde helpers for deserializing Foundry-generated JSON
-//! - Deserialized test vector structs (`LeafValueVector`, `ProofValueVector`, etc.)
-//! - Lazy-parsed static instances of the test vectors
-//! - `ClaimDataSource` enum for selecting between different claim data sources
+//! Test fixtures and Solidity-compatible vectors for AggLayer accounts.
 
 extern crate alloc;
 
@@ -43,8 +35,7 @@ use crate::{
 // ACCOUNT HELPERS
 // ================================================================================================
 
-/// Returns a zero-fee policy manager for tests that exercise AggLayer behavior independently of
-/// fee sponsorship. Production constructors require their deployment-time manager explicitly.
+/// Returns a zero-fee policy manager for AggLayer test fixtures.
 pub fn zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
     let fee_faucet_id =
         AccountId::try_from(ACCOUNT_ID_FEE_FAUCET).expect("mock-chain fee faucet id is valid");
@@ -61,22 +52,15 @@ pub fn zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePo
         .build()
 }
 
-/// Returns the fixed dummy account ID commonly seeded as the bridge's built-in `ADMIN` role
-/// member in tests.
-///
-/// Tests that exercise `ADMIN`-gated procedures (e.g. the pause toggles or role rotation) must
-/// use the seeded admin's ID as the note sender.
+/// Returns the account ID used as `BRIDGE_ADMIN` in test fixtures.
 pub fn bridge_admin_account_id() -> AccountId {
     AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap()
 }
 
-/// Creates an existing bridge account seeded with the provided account as the built-in `ADMIN`
-/// role member and a single holder per operational role.
-///
-/// `network_id` is the AggLayer network ID written to the bridge's storage at account creation.
+/// Creates an existing bridge account with one holder per operational role.
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
-    admin: AccountId,
+    bridge_admin: AccountId,
     faucet_manager: AccountId,
     ger_injector: AccountId,
     ger_remover: AccountId,
@@ -90,13 +74,12 @@ pub fn create_existing_bridge_account_with_roles(
     )
     .expect("single-holder role sets are non-empty");
 
-    AggLayerBridge::account_builder(seed, admin, roles, network_id, fee_policy_manager)
+    AggLayerBridge::account_builder(seed, bridge_admin, roles, network_id, fee_policy_manager)
         .build_existing()
         .expect("bridge account should be valid")
 }
 
-/// Creates an existing agglayer faucet account with the specified configuration, priced by a
-/// zero-fee policy and administered by [`bridge_admin_account_id`].
+/// Creates an existing AggLayer faucet account with a zero-fee policy.
 pub fn create_existing_agglayer_faucet(
     seed: Word,
     token_symbol: &str,
@@ -105,13 +88,14 @@ pub fn create_existing_agglayer_faucet(
     initial_supply: Felt,
     bridge_account_id: AccountId,
 ) -> Account {
+    let faucet_admin = bridge_admin_account_id();
     AggLayerFaucet::account_builder(
         seed,
         token_symbol,
         decimals,
         max_supply,
         initial_supply,
-        bridge_admin_account_id(),
+        faucet_admin,
         bridge_account_id,
         zero_fee_policy_manager(AggLayerFaucet::allowed_notes()),
     )

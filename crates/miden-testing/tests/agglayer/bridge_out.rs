@@ -60,14 +60,9 @@ use super::test_utils::{
     priced_faucet_builder,
 };
 
-/// Number of frontier evolutions pinned by the bundled Solidity MTF test vectors.
 const SOLIDITY_MTF_VECTOR_COUNT: usize = 32;
 
-/// Tests the complete B2AGG-to-BURN bridge-out lifecycle.
-///
-/// The fee-free case consumes all 32 vectors and pins every Solidity MTF root. The fee-enabled
-/// case consumes one vector with production-priced policies, sponsorships, and non-zero fee
-/// payments on the bridge and faucet transactions.
+/// Tests the B2AGG-to-BURN bridge-out lifecycle.
 ///
 /// This test exercises the complete bridge-out lifecycle:
 /// 1. Creates a bridge account (empty faucet registry) and an agglayer faucet with conversion
@@ -92,7 +87,6 @@ async fn bridge_out_consecutive(
 ) -> anyhow::Result<()> {
     let fees_enabled = verification_base_fee > 0;
     let vectors = &*SOLIDITY_MTF_VECTORS;
-    // the bundled fixture pins 32 frontier evolutions; the fee-free case consumes all of them.
     for (name, len) in [
         ("amount", vectors.amounts.len()),
         ("root", vectors.roots.len()),
@@ -256,8 +250,6 @@ async fn bridge_out_consecutive(
             assert_transaction_paid_fee(&executed_tx);
         }
 
-        // Fee-free the B2AGG creates only the BURN note; fee-enabled it also creates the BURN
-        // note's FEE_SPONSORSHIP and the TX_FEE note.
         assert_eq!(executed_tx.output_notes().num_notes(), if fees_enabled { 3 } else { 1 });
         let burn_output = find_output_note(&executed_tx, StandardNote::BURN.script_root())
             .expect("B2AGG should create a BURN note");

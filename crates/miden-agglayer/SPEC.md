@@ -24,7 +24,8 @@ implementation are called out inline with `TODO (Future)` markers.
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Role Admin** (offchain) | Holds the `ADMIN` role on the bridge and the separate `ADMIN` role on each faucet. Manages bridge roles and both accounts' fee schedules. Root authority: effective admin of every operational role unless delegated, so compromise of this key is equivalent to compromise of all operational roles (see [Section 2.5](#25-administration)). The faucet does not allowlist RBAC_CONFIG, so its `ADMIN` can be neither rotated nor revoked on-chain: losing that key is unrecoverable for the faucet, and a compromised key can never be reliably rotated out. It cannot mint or change the faucet owner. | Not an onchain entity; creates RBAC_CONFIG and PAUSE_CONFIG (bridge only), NETWORK_ACCOUNT_CONFIG, and CONSTANT_FEE_POLICY_CONFIG notes |
+| **Bridge Admin (`BRIDGE_ADMIN`)** (offchain) | Holds the bridge account's built-in `ADMIN` role. Manages bridge roles, pause state, allowlists, and fee schedule. | Not an onchain entity; creates RBAC_CONFIG, PAUSE_CONFIG, NETWORK_ACCOUNT_CONFIG, and CONSTANT_FEE_POLICY_CONFIG notes |
+| **Faucet Admin (`FAUCET_ADMIN`)** (offchain) | Holds a faucet account's separate built-in `ADMIN` role. Manages that faucet's allowlists and fee schedule but cannot mint or change its owner. | Not an onchain entity; creates NETWORK_ACCOUNT_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
 
 ---
 
@@ -160,9 +161,9 @@ to the empty word, the `GER_INJECTOR` role holder can re-register the same GER v
 caveat worth calling out: a compromised or faulty `GER_INJECTOR` role holder can undo a `REMOVE_GER`
 emergency patch and re-open the very claim window the removal was meant to close. The
 split between the `GER_INJECTOR` and `GER_REMOVER` roles bounds this only for
-operational-key compromise: the `ADMIN` role can rotate the offending holder out via
+operational-key compromise: `BRIDGE_ADMIN` can rotate the offending holder out via
 [`RBAC_CONFIG`](#47-rbac_config) notes (see [Section 2.5](#25-administration)). It does not
-bound a compromised `ADMIN`, which can grant itself either role. The removed-GER hash chain is
+bound a compromised `BRIDGE_ADMIN`, which can grant itself either role. The removed-GER hash chain is
 therefore an append-only log of removal events, not a registry of currently revoked GERs
 - a GER listed in the chain may have been revived since its removal.
 
@@ -201,14 +202,13 @@ TODO: Faucet existence and code commitment are not validated during registration
 The bridge uses role-based access control (RBAC) for its privileged operations, built on the
 `miden-standards` access-control stack (`RoleBasedAccessControl` + `Authority`) installed on the
 bridge account alongside the bridge component. Each faucet installs those same two components with
-its own, unrelated role set, so both accounts have a built-in `ADMIN` role. This document writes
-bridge `ADMIN` and faucet `ADMIN` wherever the distinction matters; bare `ADMIN` below is the
-bridge's.
+its own, unrelated role set. Both use the built-in `ADMIN` role symbol; this document calls the
+bridge instance `BRIDGE_ADMIN` and each faucet instance `FAUCET_ADMIN`.
 
-- **`ADMIN` role**: the built-in administrative role. Members of `ADMIN` administer (grant and
-  revoke) the operational roles below. It is the effective admin of any role whose delegated admin
-  is unset, and it administers itself, so `ADMIN` membership can be granted, revoked, and renounced
-  through the standard RBAC API.
+- **`BRIDGE_ADMIN` role**: the bridge's built-in administrative role. Its members administer the
+  operational roles below and bridge procedures without an explicit role mapping.
+- **`FAUCET_ADMIN` role**: a faucet's built-in administrative role. It controls that faucet's
+  authority-gated configuration procedures.
 - **`FAUCET_MNGR` role**: authorizes faucet registration via
   [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes (`register_faucet`,
   `store_faucet_metadata_hash`) and faucet deregistration via
@@ -221,15 +221,15 @@ bridge's.
 
 Each role-gated procedure calls `authority::assert_authorized`, which resolves the calling
 procedure's required role from the account's `Authority` procedure-to-role map and asserts that the
-note sender holds that role (a role may have multiple holders). Procedures with no mapped role fall
-back to requiring the `ADMIN` role. The initial `ADMIN` member and the initial operational-role
+note sender holds that role (a role may have multiple holders). Bridge procedures with no mapped role
+fall back to requiring `BRIDGE_ADMIN`. The initial `BRIDGE_ADMIN` member and operational-role
 holders are seeded at account creation, so the bridge is born fully functional.
 
 Roles are managed on-chain via [`RBAC_CONFIG`](#47-rbac_config) notes, which dispatch to the
 RBAC component's `grant_role` / `revoke_role` / `set_role_admin` / `renounce_role` procedures.
 Authorization is enforced by those procedures against the note sender: a member of the target
 role's effective admin role for grant / revoke / set-admin, or the role holder itself for
-renounce. This makes every bridge role rotatable after account creation, including `ADMIN`
+renounce. This makes every bridge role rotatable after account creation, including `BRIDGE_ADMIN`
 itself. The faucet does not allowlist RBAC_CONFIG, so its roles are not rotatable this way (see
 the trust model in [Section 1](#1-entities-and-trust-model)).
 
@@ -238,25 +238,22 @@ miden-standards [`RoleBasedAccessControl`](../miden-standards/src/account/access
 component and the [`RBAC_CONFIG` note](../miden-standards/src/note/rbac_config.rs); the
 bridge-specific consequences are:
 
-- **`ADMIN` is the bridge's root authority.** It is the effective admin of all three
+- **`BRIDGE_ADMIN` is the bridge's root authority.** It is the effective admin of all three
   operational roles, and the auto-allowlisted `NETWORK_ACCOUNT_CONFIG` note dispatches the
-  `ADMIN`-defaulted note-, tx-script-, and allowed-fee-policy-update procedures, so a
-  compromised `ADMIN` key controls the whole bridge configuration (see
+  admin-defaulted note-, tx-script-, and allowed-fee-policy-update procedures, so a compromised
+  `BRIDGE_ADMIN` key controls the whole bridge configuration (see
   [Section 1](#1-entities-and-trust-model)). For the same
-  reason the `ADMIN` role must never be emptied: role rotation and every `ADMIN`-defaulted
+  reason the `BRIDGE_ADMIN` role must never be emptied: role rotation and every admin-defaulted
   procedure - the bridge's post-deployment configuration channel, including `unpause` - would
   be lost forever, and on a paused bridge that would freeze claims and bridge-outs
-  permanently. Contain `ADMIN` compromise risk with strong key custody (e.g. a multisig
+  permanently. Contain `BRIDGE_ADMIN` compromise risk with strong key custody (e.g. a multisig
   member account), not by decommissioning the role.
 - **Consumption order is not under the operator's control.** The bridge executes without a
   signature gate, so any party chooses which pending note is consumed first; never have an
-  `ADMIN` grant and an `ADMIN` revoke/renounce in flight simultaneously.
-- **The faucet's `ADMIN` is fixed at deployment.** The faucet does not allowlist `RBAC_CONFIG`,
-  so its `ADMIN` can be neither rotated nor revoked on-chain (a live `ADMIN` can restore
-  rotatability by pricing and then allowlisting that note). Losing the key freezes the faucet's
-  configuration; a compromised key can strip the note allowlist and permanently brick minting
-  and burning, stranding the L1 collateral behind outstanding tokens. Use the same key custody
-  as for the bridge `ADMIN`.
+  `BRIDGE_ADMIN` grant and a `BRIDGE_ADMIN` revoke/renounce in flight simultaneously.
+- **`FAUCET_ADMIN` is fixed at deployment.** The faucet does not allowlist `RBAC_CONFIG`, so this
+  role cannot be rotated or revoked on-chain. [#3570](https://github.com/0xMiden/protocol/issues/3570)
+  tracks making it rotatable.
 
 #### Emergency pause
 
@@ -271,7 +268,7 @@ can still be administered.
 
 The pause is toggled via the standards [`PAUSE_CONFIG`](#411-pause_config-standards) note, which
 dispatches to `PausableManager`'s `pause` / `unpause`. These have no entry in the bridge's
-`Authority` procedure-to-role map, so authorization falls back to the `ADMIN` role.
+`Authority` procedure-to-role map, so authorization falls back to `BRIDGE_ADMIN`.
 
 The pause complements the `Authority` freeze switch: freezing blocks every authority-gated
 procedure - including `remove_ger` - but not `claim` / `bridge_out`, while the pause is the
@@ -279,27 +276,13 @@ inverse.
 
 #### Fee schedule administration
 
-Both network accounts are deployed with a `BasicConstantFeePolicy` whose schedule prices the notes
-they can consume from each note's benchmarked consumption cost under the chain's
-`FeeParameters` (`NetworkNotePricer::basic_constant_fee_policy_manager`, applied to each account's
-`allowed_notes`). Both accounts install the `miden-standards`
-`ConstantFeeManager`, whose `set_note_fee` procedure is available to that account's own `ADMIN`
-role through `CONSTANT_FEE_POLICY_CONFIG` notes. This lets operators refresh schedules when the
-chain's `FeeParameters` change. The cost tables already account for the notes created by each consumed
-note, so operators should regenerate the bridge and faucet schedules with `NetworkNotePricer`
-rather than adjust dependent entries independently.
+Both network accounts deploy with a `BasicConstantFeePolicy` generated by
+`NetworkNotePricer::basic_constant_fee_policy_manager`. The schedule uses the chain's fee asset and
+prices every root in the account's deployment allowlist, including `FEE_SPONSORSHIP`.
 
-A note root must have a schedule entry before notes with that root can be consumed:
-`BasicConstantFeePolicy` aborts on any root without an entry (an explicit zero counts as an
-entry). An account's `ADMIN` adding a root through `NETWORK_ACCOUNT_CONFIG` should therefore
-schedule its fee before adding it to the allowlist. `FEE_SPONSORSHIP` is the one exception and
-carries no entry: fee collection charges a sponsorship input nothing and never consults the
-policy for it.
-
-The config note is priced like every other allowlisted note. Note scripts run before network
-authentication, so a config note updating its own entry is charged the fee it writes. Sponsorships
-are sized when the sponsoring note is created, so raising a fee leaves already-created notes of
-that root under-sponsored until a top-up `FEE_SPONSORSHIP` is bound to them.
+`BRIDGE_ADMIN` and `FAUCET_ADMIN` update their account's schedule through
+`CONSTANT_FEE_POLICY_CONFIG` notes. A root added through `NETWORK_ACCOUNT_CONFIG` must receive a
+schedule entry before it can be consumed.
 
 ---
 
@@ -483,7 +466,7 @@ documented in `miden-standards`, rather than in dedicated bridge slots. Likewise
 pause state lives in the `Pausable` component's own `is_paused` slot. See
 [Administration](#25-administration).
 
-Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `ADMIN` member and
+Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial `BRIDGE_ADMIN` member and
 the initial `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` role holders are seeded into the
 access-control components at account creation time.
 
@@ -538,21 +521,19 @@ This is a re-export of `miden::standards::faucets::fungible::receive_and_burn`. 
 |-----------|-----------|----------------|---------|
 | Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
 
-**Companion component storage slots:** The faucet account also includes storage from its
-ownership, policy, access-control and fee-administration components:
+**Companion component storage slots:**
 
 - `Ownable2Step` owner config slot: stores the bridge account ID as owner.
 - `TokenPolicyManager` slots: `active_policy_proc_root`, `allowed_policy_proc_roots` per policy
   kind.
-- `RoleBasedAccessControl` role storage, seeded with the deployment `ADMIN` member, and the
+- `RoleBasedAccessControl` role storage, seeded with the deployment `FAUCET_ADMIN` member, and the
   `Authority` config slot (`RbacControlled`) with an empty procedure-to-role map.
 - `ConstantFeeManager` value slot: the ID of the fee schedule slot it reprices.
 
-**Access control:** `MintOwnerOnly` and `BurnOwnerOnly` gate minting and burning on the bridge as
-the `Ownable2Step` owner. No other burn policy is registered as allowed, so `set_burn_policy`
-cannot open burns. Authority-gated configuration falls back to the faucet's `ADMIN` role,
-which cannot mint or change the owner. Removing the unreachable ownership-transfer procedures is
-tracked by [#2724](https://github.com/0xMiden/protocol/issues/2724).
+`MintOwnerOnly` and `BurnOwnerOnly` gate minting and burning on the bridge as the `Ownable2Step`
+owner. Authority-gated configuration falls back to `FAUCET_ADMIN`, which cannot mint or change the
+owner. [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the ownership-transfer
+procedures.
 
 ---
 
@@ -903,7 +884,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 ### 4.7 RBAC_CONFIG
 
 **Purpose:** Triggers a role-management action (`grant_role`, `revoke_role`, `set_role_admin`,
-`renounce_role`) on the bridge's RBAC component, enabling on-chain rotation of the `ADMIN`,
+`renounce_role`) on the bridge's RBAC component, enabling on-chain rotation of `BRIDGE_ADMIN`,
 `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles (see
 [Section 2.5](#25-administration)). This is the `miden-standards` `RBAC_CONFIG` note
 (`RbacConfigNote` in Rust), not a bridge-specific script.
@@ -1123,7 +1104,7 @@ agglayer-specific note; the bridge merely includes its script root in
 
 **Consumption:** The script loads the selector and `call`s the matching `PausableManager`
 procedure, which runs `authority::assert_authorized` before flipping the pause state. On the
-bridge that procedure has no mapped role, so the note sender must hold the bridge's `ADMIN` role.
+bridge that procedure has no mapped role, so the note sender must hold `BRIDGE_ADMIN`.
 
 The builder binds the note to the bridge via a `NetworkAccountTarget` attachment, which the
 script asserts against the consuming account; [`AggLayerBridge::pause_note`] wraps the builder
@@ -1133,7 +1114,7 @@ with clearer error reporting for non-public targets.
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Holders of the bridge's `ADMIN` role only -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (unmapped-procedure fallback) |
+| **Issuer** | `BRIDGE_ADMIN` only -- **enforced** by `PausableManager::pause` / `unpause` via `authority::assert_authorized` (unmapped-procedure fallback) |
 | **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ---
@@ -1145,17 +1126,15 @@ after deployment (see [Section 2.5](#25-administration)). Both the bridge and fa
 this `miden-standards` note.
 
 **Consumption:** The script asserts the consuming account matches its `NetworkAccountTarget`
-attachment, then calls `ConstantFeeManager::set_note_fee`. The sender must hold the account's
-`ADMIN` role, and the supplied asset ID must match its configured fee asset. Repricing remains
-available while the bridge is paused. Network authentication prices input notes after their
-scripts execute, so a config note updating its own script-root entry is charged the fee it
-writes; the sponsorship sizing caveats in [Section 2.5](#25-administration) apply.
+attachment, then calls `ConstantFeeManager::set_note_fee`. The sender must hold `BRIDGE_ADMIN` or
+the target's `FAUCET_ADMIN`, and the supplied asset ID must match its configured fee asset.
+Repricing remains available while the bridge is paused.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Holders of the consuming account's `ADMIN` role only -- **enforced** by `ConstantFeeManager::set_note_fee` via `authority::assert_authorized` (unmapped-procedure fallback) |
+| **Issuer** | `BRIDGE_ADMIN` or the target's `FAUCET_ADMIN` -- **enforced** by `ConstantFeeManager::set_note_fee` via `authority::assert_authorized` (unmapped-procedure fallback) |
 | **Consumer** | Bridge or faucet account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ---

@@ -152,18 +152,9 @@ impl AggLayerFaucet {
     // ALLOWED NOTES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns every input-note script root a newly deployed AggLayer faucet account accepts.
+    /// Returns the input-note script roots allowlisted on a newly deployed AggLayer faucet.
     ///
-    /// `NetworkNotePricer` turns this set into the faucet's deployed fee schedule.
-    ///
-    /// The faucet-specific entries are the MINT and BURN notes plus the
-    /// [`ConstantFeePolicyConfigNote`], through which the `ADMIN` role can reprice the faucet's fee
-    /// schedule after deployment. The bridge funds each MINT and BURN sponsorship from this
-    /// schedule. Bridging stalls if those prices no longer cover what the notes cost to consume at
-    /// the chain's current verification base fee.
-    ///
-    /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
-    /// can add or remove entries later, so read a live account's allowlist via
+    /// A live account's allowlist is available through
     /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         let mut notes = BTreeSet::from([

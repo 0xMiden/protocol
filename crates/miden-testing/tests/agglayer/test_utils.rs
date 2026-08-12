@@ -47,7 +47,6 @@ use miden_tx::NetworkNotePricer;
 /// test vectors.
 pub const MIDEN_NETWORK_ID: u32 = 77;
 
-/// Non-zero base fee used by the AggLayer fee-enabled end-to-end cases.
 pub const VERIFICATION_BASE_FEE: u32 = 500;
 
 // KECCAK-256
@@ -91,21 +90,18 @@ pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns the native fee faucet used by [`MockChainBuilder`] by default.
 pub fn fee_faucet_id() -> AccountId {
     ACCOUNT_ID_FEE_FAUCET
         .try_into()
         .expect("mock-chain fee faucet ID should be valid")
 }
 
-/// Returns the production note pricer configured for the fee-enabled AggLayer test chain.
 pub fn network_note_pricer(verification_base_fee: u32) -> NetworkNotePricer {
     NetworkNotePricer::builder()
         .fee_parameters(FeeParameters::new(fee_faucet_id(), verification_base_fee))
         .build()
 }
 
-/// Returns the first output note of `executed` created from `script_root`.
 pub fn find_output_note(
     executed: &ExecutedTransaction,
     script_root: NoteScriptRoot,
@@ -115,9 +111,6 @@ pub fn find_output_note(
     })
 }
 
-/// Adds the sponsorship paired with `feature_note`, using the production price of its script.
-///
-/// Returns `None` on a chain with a zero verification base fee, where nothing needs sponsoring.
 pub fn add_fee_sponsorship(
     builder: &mut MockChainBuilder,
     feature_note: &Note,
@@ -141,7 +134,6 @@ pub fn add_fee_sponsorship(
     Ok(Some(sponsorship))
 }
 
-/// Asserts that a fee-enabled transaction charged a non-zero fee and emitted its TX_FEE note.
 pub fn assert_transaction_paid_fee(executed: &ExecutedTransaction) {
     assert!(executed.compute_fee().as_u64() > 0, "transaction fee should be non-zero");
     assert!(
@@ -150,13 +142,9 @@ pub fn assert_transaction_paid_fee(executed: &ExecutedTransaction) {
     );
 }
 
-// The priced fixtures below cannot move into `miden_agglayer::testing` next to the zero-fee
-// ones: `NetworkNotePricer` lives in `miden-tx`, which itself depends on `miden-agglayer`.
-
-/// Builds an existing AggLayer bridge with its production-priced fee policy.
 pub fn create_existing_priced_bridge(
     seed: Word,
-    admin: AccountId,
+    bridge_admin: AccountId,
     faucet_manager: AccountId,
     ger_injector: AccountId,
     ger_remover: AccountId,
@@ -166,17 +154,16 @@ pub fn create_existing_priced_bridge(
         BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
     let fee_policy_manager = network_note_pricer(verification_base_fee)
         .basic_constant_fee_policy_manager(AggLayerBridge::allowed_notes())?;
-    Ok(
-        AggLayerBridge::account_builder(seed, admin, roles, MIDEN_NETWORK_ID, fee_policy_manager)
-            .build_existing()?,
+    Ok(AggLayerBridge::account_builder(
+        seed,
+        bridge_admin,
+        roles,
+        MIDEN_NETWORK_ID,
+        fee_policy_manager,
     )
+    .build_existing()?)
 }
 
-/// Returns a builder for an existing AggLayer faucet with its production-priced fee policy,
-/// administered by [`bridge_admin_account_id`].
-///
-/// Callers finish with `build_existing`, after opting into any account settings the scenario
-/// needs (e.g. asset callbacks).
 pub fn priced_faucet_builder(
     seed: Word,
     token_symbol: &str,
@@ -188,13 +175,14 @@ pub fn priced_faucet_builder(
 ) -> anyhow::Result<AccountBuilder> {
     let fee_policy_manager = network_note_pricer(verification_base_fee)
         .basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())?;
+    let faucet_admin = bridge_admin_account_id();
     Ok(AggLayerFaucet::account_builder(
         seed,
         token_symbol,
         decimals,
         max_supply,
         initial_supply,
-        bridge_admin_account_id(),
+        faucet_admin,
         bridge_account_id,
         fee_policy_manager,
     ))
@@ -246,9 +234,6 @@ pub struct BridgeSetup {
     pub ger_remover: Account,
 }
 
-/// Creates the faucet manager, GER injector, and GER remover wallets, builds the bridge account
-/// wired to those roles (with the fixed [`bridge_admin_account_id`] as the `ADMIN` member), and
-/// registers the bridge account with the builder.
 pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
     let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,

@@ -145,18 +145,6 @@ impl FeeSponsorshipNote {
         FEE_SPONSORSHIP_SCRIPT.root()
     }
 
-    /// Returns the feature notes among `roots`, i.e. those a fee schedule prices.
-    ///
-    /// A FEE_SPONSORSHIP note funds a feature note's price rather than having one of its own, so
-    /// `fees::collect_sponsored_fees` never asks a policy to price it. Building a schedule from a
-    /// note allowlist therefore means pricing the allowlist's feature notes.
-    pub fn feature_notes(
-        roots: impl IntoIterator<Item = NoteScriptRoot>,
-    ) -> impl Iterator<Item = NoteScriptRoot> {
-        let sponsorship_root = Self::script_root();
-        roots.into_iter().filter(move |root| *root != sponsorship_root)
-    }
-
     /// Returns the account ID of the network account the note's tag routes to.
     ///
     /// The tag is a discovery hint for the network transaction builder; the script itself does not

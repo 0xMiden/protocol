@@ -237,11 +237,7 @@ impl AuthNetworkAccount {
             .with_allowed_tx_scripts([ExpirationTransactionScript::script_root()]))
     }
 
-    /// Returns the note script roots added to the allowlist of every standard network account.
-    ///
-    /// Callers that derive configuration from a network account's complete allowlist, such as a
-    /// root-keyed fee schedule, should include these roots in addition to their account-specific
-    /// roots.
+    /// Returns the note script roots added to every standard network account's allowlist.
     pub fn default_allowed_note_scripts() -> [NoteScriptRoot; 2] {
         [NetworkAccountConfigNote::script_root(), FeeSponsorshipNote::script_root()]
     }
