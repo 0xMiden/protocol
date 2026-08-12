@@ -174,7 +174,7 @@ impl AggLayerBridge {
     /// network's current fee parameters.
     ///
     /// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
-    /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
+    /// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its allowed input notes.
     /// The tx-script allowlist contains only the canonical `ExpirationTransactionScript` so the
     /// network transaction builder can bound how long the bridge's transactions stay valid.
     ///

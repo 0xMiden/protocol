@@ -158,25 +158,19 @@ impl AggLayerFaucet {
     ///
     /// The faucet-specific entries are the MINT and BURN notes plus the
     /// [`ConstantFeePolicyConfigNote`], through which the `ADMIN` role can reprice the faucet's fee
-    /// schedule after deployment. The bridge sizes the sponsorship of every MINT and BURN note it
-    /// creates from that schedule, so bridging stalls if the schedule's prices stop covering what
-    /// those notes cost to consume at the chain's current verification base fee. The set also
-    /// includes the configuration and sponsorship notes that [`AuthNetworkAccount`] adds to every
-    /// standard network account.
+    /// schedule after deployment. The bridge funds each MINT and BURN sponsorship from this
+    /// schedule. Bridging stalls if those prices no longer cover what the notes cost to consume at
+    /// the chain's current verification base fee.
     ///
     /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
     /// can add or remove entries later, so read a live account's allowlist via
     /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
-    ///
-    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         let mut notes = BTreeSet::from([
             MintNote::script_root(),
             BurnNote::script_root(),
             ConstantFeePolicyConfigNote::script_root(),
         ]);
-        // NETWORK_ACCOUNT_CONFIG and FEE_SPONSORSHIP; `AuthNetworkAccount::new` adds these
-        // defaults to any set it is given.
         notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
         notes
     }

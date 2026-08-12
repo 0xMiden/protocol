@@ -482,15 +482,11 @@ impl AggLayerBridge {
     /// role-management [`RbacConfigNote`], which makes the bridge's RBAC role graph mutable
     /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration section
     /// of `SPEC.md` for the associated caveats), and the [`ConstantFeePolicyConfigNote`], so the
-    /// `ADMIN` role can reprice the bridge's fee schedule after deployment. On top of those, the
-    /// set includes the configuration and sponsorship notes that [`AuthNetworkAccount`] adds to
-    /// every standard network account.
+    /// `ADMIN` role can reprice the bridge's fee schedule after deployment.
     ///
     /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
     /// can add or remove entries later, so read a live account's allowlist via
     /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
-    ///
-    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
         let mut notes = BTreeSet::from([
             ClaimNote::script_root(),
@@ -503,8 +499,6 @@ impl AggLayerBridge {
             RbacConfigNote::script_root(),
             ConstantFeePolicyConfigNote::script_root(),
         ]);
-        // NETWORK_ACCOUNT_CONFIG and FEE_SPONSORSHIP; `AuthNetworkAccount::new` adds these
-        // defaults to any set it is given.
         notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
         notes
     }

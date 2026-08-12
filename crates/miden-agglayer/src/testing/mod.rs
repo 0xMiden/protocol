@@ -46,8 +46,6 @@ use crate::{
 /// Returns a zero-fee policy manager for tests that exercise AggLayer behavior independently of
 /// fee sponsorship. Production constructors require their deployment-time manager explicitly.
 pub fn zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
-    // Use the mock chain's native fee faucet so a test that later enables fees does not trip the
-    // native-fee-asset assertion in the network-account auth procedure.
     let fee_faucet_id =
         AccountId::try_from(ACCOUNT_ID_FEE_FAUCET).expect("mock-chain fee faucet id is valid");
 
