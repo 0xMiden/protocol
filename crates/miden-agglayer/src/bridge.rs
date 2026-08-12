@@ -477,14 +477,14 @@ impl AggLayerBridge {
     /// Any transaction consuming a note outside the account's allowlist is rejected by the auth
     /// procedure. `NetworkNotePricer` turns this set into the bridge's deployed fee schedule.
     ///
-    /// Besides the agglayer-specific notes, the bridge opts into three standards notes: the
-    /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, the
+    /// In addition to the agglayer-specific notes, the bridge accepts three other standard notes:
+    /// the [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, the
     /// role-management [`RbacConfigNote`], which makes the bridge's RBAC role graph mutable
-    /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration
-    /// section of `SPEC.md` for the associated caveats), and the
-    /// [`ConstantFeePolicyConfigNote`], so the `ADMIN` role can reprice the bridge's fee
-    /// schedule after deployment. On top of those, the set includes the configuration and
-    /// sponsorship notes that [`AuthNetworkAccount`] adds to every standard network account.
+    /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration section
+    /// of `SPEC.md` for the associated caveats), and the [`ConstantFeePolicyConfigNote`], so the
+    /// `ADMIN` role can reprice the bridge's fee schedule after deployment. On top of those, the
+    /// set includes the configuration and sponsorship notes that [`AuthNetworkAccount`] adds to
+    /// every standard network account.
     ///
     /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
     /// can add or remove entries later, so read a live account's allowlist via
