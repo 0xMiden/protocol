@@ -47,7 +47,7 @@ fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> 
         AssetId::new_fungible(fee_faucet_id()).to_word()
     );
 
-    for root in roots {
+    for root in FeeSponsorshipNote::feature_notes(roots) {
         let entry = account.storage().get_map_item(
             BasicConstantFeePolicy::fee_schedule_slot_name(),
             StorageMapKey::new(root.as_word()),

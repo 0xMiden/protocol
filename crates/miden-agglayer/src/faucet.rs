@@ -154,7 +154,7 @@ impl AggLayerFaucet {
 
     /// Returns every input-note script root a newly deployed AggLayer faucet account accepts.
     ///
-    /// The faucet's deployed fee policy must schedule a fee for every root in this set.
+    /// `NetworkNotePricer` turns this set into the faucet's deployed fee schedule.
     ///
     /// The faucet-specific entries are the MINT and BURN notes plus the
     /// [`ConstantFeePolicyConfigNote`], through which the `ADMIN` role can reprice the faucet's fee
@@ -162,9 +162,7 @@ impl AggLayerFaucet {
     /// creates from that schedule, so bridging stalls if the schedule's prices stop covering what
     /// those notes cost to consume at the chain's current verification base fee. The set also
     /// includes the configuration and sponsorship notes that [`AuthNetworkAccount`] adds to every
-    /// standard network account. The FEE_SPONSORSHIP schedule entry is never read - fee collection
-    /// prices sponsorship notes at zero without consulting the policy - it exists only so the
-    /// schedule covers the whole allowlist.
+    /// standard network account.
     ///
     /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
     /// can add or remove entries later, so read a live account's allowlist via

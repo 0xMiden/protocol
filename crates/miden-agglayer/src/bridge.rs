@@ -475,8 +475,7 @@ impl AggLayerBridge {
     /// Returns every input-note script root a newly deployed AggLayer bridge account accepts.
     ///
     /// Any transaction consuming a note outside the account's allowlist is rejected by the auth
-    /// procedure, and the bridge's deployed fee policy must schedule a fee for every root in the
-    /// set.
+    /// procedure. `NetworkNotePricer` turns this set into the bridge's deployed fee schedule.
     ///
     /// Besides the agglayer-specific notes, the bridge opts into three standards notes: the
     /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, the
@@ -486,9 +485,6 @@ impl AggLayerBridge {
     /// [`ConstantFeePolicyConfigNote`], so the `ADMIN` role can reprice the bridge's fee
     /// schedule after deployment. On top of those, the set includes the configuration and
     /// sponsorship notes that [`AuthNetworkAccount`] adds to every standard network account.
-    /// The FEE_SPONSORSHIP schedule entry is never read - fee collection prices sponsorship
-    /// notes at zero without consulting the policy - it exists only so the schedule covers the
-    /// whole allowlist.
     ///
     /// This is the deployment-time allowlist: an `ADMIN`-authored `NETWORK_ACCOUNT_CONFIG` note
     /// can add or remove entries later, so read a live account's allowlist via

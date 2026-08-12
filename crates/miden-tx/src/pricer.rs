@@ -7,8 +7,8 @@ use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
-use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
+use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 
 // NETWORK NOTE PRICER
 // ================================================================================================
@@ -114,19 +114,20 @@ impl NetworkNotePricer {
         AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
-    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] prices every supplied
-    /// note script root from its benchmarked consumption cost.
+    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] prices the feature
+    /// notes among the supplied script roots from their benchmarked consumption costs.
     ///
     /// The manager charges in the fee asset configured by [`Self::fee_parameters`], keeping the
     /// policy's bare fee amounts and their denomination together. Each root is priced through
     /// [`Self::price`], so the fee includes the default safety margin and the recursively priced
-    /// notes created by consuming it.
+    /// notes created by consuming it. Callers can pass a whole note allowlist:
+    /// [`FeeSponsorshipNote::feature_notes`] drops the roots a schedule does not price.
     pub fn basic_constant_fee_policy_manager(
         &self,
         note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> Result<FeePolicyManager, NotePricingError> {
         let mut policy = BasicConstantFeePolicy::new();
-        for root in note_script_roots {
+        for root in FeeSponsorshipNote::feature_notes(note_script_roots) {
             policy = policy.with_fee(root, self.price(root)?);
         }
 
@@ -138,16 +139,14 @@ impl NetworkNotePricer {
 
     /// Builds the production fee policy manager for an AggLayer bridge account.
     ///
-    /// Every root in [`AggLayerBridge::allowed_notes`] is priced through [`Self::price`] and
-    /// installed in the active [`BasicConstantFeePolicy`].
+    /// Prices [`AggLayerBridge::allowed_notes`] into the active [`BasicConstantFeePolicy`].
     pub fn agglayer_bridge_fee_policy_manager(&self) -> Result<FeePolicyManager, NotePricingError> {
         self.basic_constant_fee_policy_manager(AggLayerBridge::allowed_notes())
     }
 
     /// Builds the production fee policy manager for an AggLayer faucet account.
     ///
-    /// Every root in [`AggLayerFaucet::allowed_notes`] is priced through [`Self::price`] and
-    /// installed in the active [`BasicConstantFeePolicy`].
+    /// Prices [`AggLayerFaucet::allowed_notes`] into the active [`BasicConstantFeePolicy`].
     pub fn agglayer_faucet_fee_policy_manager(&self) -> Result<FeePolicyManager, NotePricingError> {
         self.basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())
     }
