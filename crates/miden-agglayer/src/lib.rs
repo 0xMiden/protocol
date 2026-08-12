@@ -155,7 +155,7 @@ fn create_agglayer_faucet_component(
 }
 
 impl AggLayerBridge {
-    /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration;
+    /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration.
     ///
     /// The bridge starts with an empty faucet registry. Faucets are registered at runtime via
     /// CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
@@ -188,6 +188,8 @@ impl AggLayerBridge {
     /// schedule and is driven by the allowlisted `CONSTANT_FEE_POLICY_CONFIG` note. The
     /// procedure has no entry in [`AggLayerBridge::procedure_roles`], so it falls back to the
     /// `ADMIN` role.
+    ///
+    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
     pub fn account_builder(
         seed: Word,
         admin: AccountId,
