@@ -2,8 +2,6 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::sync::Arc;
 
-use miden_assembly::Report;
-use miden_assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_core::mast::MastNodeExt;
 use miden_mast_package::Package;
 use miden_mast_package::debug_info::PackageDebugInfo;
@@ -37,8 +35,8 @@ pub enum MastForestScriptError {
     ProcedureNotFound(Box<str>),
     #[error("procedure at path '{0}' does not have the specified attribute")]
     ProcedureMissingAttribute(Box<str>),
-    #[error("failed to convert package to a program:\n{}", PrintDiagnostic::new(.0))]
-    PackageNotProgram(Report),
+    #[error("expected a library package, but the provided package is an executable")]
+    ExecutablePackage,
 }
 
 // MAST FOREST SCRIPT
@@ -74,28 +72,19 @@ impl MastForestScript {
         }
     }
 
-    /// Returns a new [MastForestScript] instantiated from the provided components and the
-    /// package-owned debug information of the provided package.
-    pub(crate) fn from_parts_with_package_debug_info(
-        package: &Package,
-        mast: Arc<MastForest>,
-        entrypoint: MastNodeId,
-    ) -> Self {
-        Self {
-            mast,
-            entrypoint,
-            package_debug_info: package_debug_info(package),
-        }
-    }
-
     /// Returns a new [MastForestScript] instantiated from the provided package.
     ///
-    /// The package must contain exactly one procedure with the specified `attribute`, which is used
-    /// as the entrypoint.
+    /// The package must be a library package containing exactly one procedure with the specified
+    /// `attribute`, which is used as the entrypoint. Executable packages are rejected: a script's
+    /// entrypoint is identified by its attribute, never by the package's program entrypoint.
     pub(crate) fn from_package(
         package: &Package,
         attribute: &str,
     ) -> Result<Self, MastForestScriptError> {
+        if package.is_program() {
+            return Err(MastForestScriptError::ExecutablePackage);
+        }
+
         let mut entrypoint = None;
 
         for export in package.manifest.exports() {
