@@ -8,15 +8,15 @@
 # - `Ownable2Step` — provides the owner storage slot the auth check reads.
 
 use miden::standards::access::ownable2step
-use miden::standards::fpi
+use miden::standards::expiration
 
 # POLICY PROCEDURES
 # ================================================================================================
 
 #! Owner-only burn predicate.
 #!
-#! Limits the transaction's expiration to [`fpi::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
-#! reference block, since the policy reads the mutable owner configuration.
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block, since the policy reads the mutable owner configuration.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
@@ -27,7 +27,7 @@ use miden::standards::fpi
 #! Invocation: call
 @account_procedure
 pub proc check_policy
-    exec.fpi::apply_default_expiration_delta
+    exec.expiration::apply_default
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     exec.ownable2step::assert_sender_is_owner

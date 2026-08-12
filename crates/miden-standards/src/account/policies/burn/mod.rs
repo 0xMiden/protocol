@@ -84,8 +84,8 @@ impl BurnPolicy {
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
     /// A custom policy that reads mutable account state should apply its own transaction
-    /// expiration limit as its first action (via the `miden::standards::fpi` helper), as the
-    /// bundled owner-only and min-burn-amount policies do.
+    /// expiration limit as its first action (via the `miden::standards::expiration` helper), as
+    /// the bundled owner-only and min-burn-amount policies do.
     ///
     /// # Errors
     ///

@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added the `miden::standards::fpi` MASM module with `apply_default_expiration_delta` for applying the default procedure-level transaction expiration limit ([#3504](https://github.com/0xMiden/protocol/issues/3504), [#3512](https://github.com/0xMiden/protocol/pull/3512)).
+- Added the `miden::standards::expiration` MASM module with `apply_default` for applying the default procedure-level transaction expiration limit ([#3504](https://github.com/0xMiden/protocol/issues/3504), [#3512](https://github.com/0xMiden/protocol/pull/3512)).
 
 ### Changes
 

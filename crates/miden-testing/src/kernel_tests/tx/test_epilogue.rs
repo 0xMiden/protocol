@@ -371,22 +371,22 @@ async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_fpi_expiration_helper() -> anyhow::Result<()> {
+async fn test_default_expiration_helper() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
     let code = r#"
         use miden::tx_kernel_core::prologue
         use miden::protocol::tx
-        use miden::standards::fpi
-        use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::fpi
+        use miden::standards::expiration
+        use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::expiration
 
         begin
             exec.prologue::prepare_transaction
 
-            exec.fpi::apply_default_expiration_delta
+            exec.expiration::apply_default
             exec.tx::get_expiration_block_delta
             push.DEFAULT_EXPIRATION_BLOCK_DELTA
-            assert_eq.err="FPI helper did not set the default expiration delta"
+            assert_eq.err="expiration helper did not set the default expiration delta"
         end
     "#;
 
