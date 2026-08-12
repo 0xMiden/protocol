@@ -70,9 +70,6 @@ end
 
 #! Returns the configured minimum burn amount.
 #!
-#! Sets no transaction expiration delta; whether FPI-exposed configuration getters should be
-#! bounded is discussed in issue #3504.
-#!
 #! Inputs:  [pad(16)]
 #! Outputs: [min_burn_amount, pad(15)]
 #!

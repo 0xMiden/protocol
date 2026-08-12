@@ -138,9 +138,6 @@ end
 
 #! Returns active fee policy root.
 #!
-#! Sets no transaction expiration delta; whether FPI-exposed configuration getters should be
-#! bounded is discussed in issue #3504.
-#!
 #! Inputs:  [pad(16)]
 #! Outputs: [FEE_POLICY_ROOT, pad(12)]
 #!

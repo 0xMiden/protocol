@@ -149,11 +149,6 @@ end
 #! Binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`], which
 #! applies the pause check and invokes the active send policy.
 #!
-#! The dispatcher sets no transaction expiration delta: each policy decides its own limit (see
-#! [`miden::standards::fpi`]). When the active policy sets none, the dispatcher's own reads of the
-#! active policy root and the pause flag are not expiration-bounded either; a protocol-wide FPI
-#! expiration backstop is discussed in issue #3504.
-#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
 #!
@@ -219,11 +214,6 @@ end
 #! Binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`],
 #! which applies the pause check and invokes the active receive policy (skipping both when no
 #! receive policy is configured).
-#!
-#! The dispatcher sets no transaction expiration delta: each policy decides its own limit (see
-#! [`miden::standards::fpi`]). When the active policy sets none, the dispatcher's own reads of the
-#! active policy root and the pause flag are not expiration-bounded either; a protocol-wide FPI
-#! expiration backstop is discussed in issue #3504.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
@@ -299,11 +289,6 @@ end
 #! the padding is truncated afterwards, so the policy sees exactly the ten values below and cannot
 #! observe or mutate anything deeper on the caller's stack.
 #!
-#! The dispatcher sets no transaction expiration delta: each policy decides its own limit (see
-#! [`miden::standards::fpi`]). When the active policy sets none, the dispatcher's own reads of the
-#! active policy root and the pause flag are not expiration-bounded either; a protocol-wide FPI
-#! expiration backstop is discussed in issue #3504.
-#!
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
 #! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
 #!
@@ -353,11 +338,6 @@ end
 #! frame is dropped afterwards, so the policy sees exactly the asset and cannot observe or mutate
 #! anything deeper on the caller's stack. The policy is a predicate: it consumes the asset and
 #! returns nothing, so callers that still need the asset must keep their own copy.
-#!
-#! The dispatcher sets no transaction expiration delta: each policy decides its own limit (see
-#! [`miden::standards::fpi`]). When the active policy sets none, the dispatcher's own reads of the
-#! active policy root and the pause flag are not expiration-bounded either; a protocol-wide FPI
-#! expiration backstop is discussed in issue #3504.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
