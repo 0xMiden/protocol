@@ -4,7 +4,7 @@
 
 ### Features
 
-- [BREAKING] AggLayer bridge and faucet accounts now take a priced fee policy manager at deployment (built by the new `NetworkNotePricer` helpers) and install the `ConstantFeeManager` for `ADMIN`-gated repricing; account creation is collapsed into `AggLayerBridge::account_builder` / `AggLayerFaucet::account_builder`, the faucet moves to `Authority::RbacControlled` with a deployment-seeded `ADMIN` that administers all of its authority-gated configuration; the faucet no longer registers `BurnAllowAll`, and both accounts' `allowed_notes` now return the full set of accepted note roots, which the deployed policy must price. Both account code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
+- [BREAKING] AggLayer bridge and faucet accounts deploy with a priced fee policy and `ADMIN`-gated repricing; both code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 
 ### Changes
 
