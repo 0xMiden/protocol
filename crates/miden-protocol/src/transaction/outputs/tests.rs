@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 
 use assert_matches::assert_matches;
 
-use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
+use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::AccountId;
 use crate::assembly::mast::{ExternalNodeBuilder, JoinNodeBuilder, MastForest};
 use crate::asset::FungibleAsset;
@@ -11,6 +11,12 @@ use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
     Note,
     NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteDetailsCommitment,
+    NoteHeader,
+    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
@@ -23,7 +29,7 @@ use crate::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_SENDER,
 };
-use crate::utils::serde::Serializable;
+use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 use crate::{Felt, Word};
 
 #[test]
@@ -75,6 +81,59 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     assert_eq!(bytes.len(), output_note.get_size_hint());
 
     Ok(())
+}
+
+#[test]
+fn private_output_note_rejects_attachment_header_mismatch() -> anyhow::Result<()> {
+    let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
+    let provided_attachments = note_attachments(2, Word::from([1, 2, 3, 4u32]));
+    let header = private_note_header(&committed_attachments);
+
+    let error = PrivateOutputNote::new(header, provided_attachments).unwrap_err();
+    assert_matches!(error, OutputNoteError::AttachmentHeadersMismatch(_));
+
+    Ok(())
+}
+
+#[test]
+fn private_output_note_rejects_attachments_commitment_mismatch() -> anyhow::Result<()> {
+    let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
+    let provided_attachments = note_attachments(1, Word::from([5, 6, 7, 8u32]));
+    let header = private_note_header(&committed_attachments);
+
+    let error = PrivateOutputNote::new(header, provided_attachments).unwrap_err();
+    assert_matches!(error, OutputNoteError::AttachmentsCommitmentMismatch(_));
+
+    Ok(())
+}
+
+#[test]
+fn private_output_note_deserialization_rejects_uncommitted_attachments() -> anyhow::Result<()> {
+    let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
+    let provided_attachments = note_attachments(1, Word::from([5, 6, 7, 8u32]));
+    let header = private_note_header(&committed_attachments);
+    let mut bytes = header.to_bytes();
+    bytes.extend_from_slice(&provided_attachments.to_bytes());
+
+    let error = PrivateOutputNote::read_from_bytes(&bytes).unwrap_err();
+
+    assert_matches!(error, DeserializationError::InvalidValue(message) if message.contains("attachments commitment does not match"));
+
+    Ok(())
+}
+
+fn note_attachments(scheme: u16, content: Word) -> NoteAttachments {
+    let scheme = NoteAttachmentScheme::new(scheme).expect("test attachment scheme should be valid");
+    NoteAttachment::with_word(scheme, content).into()
+}
+
+fn private_note_header(attachments: &NoteAttachments) -> NoteHeader {
+    let sender_id = ACCOUNT_ID_SENDER.try_into().expect("test account ID should be valid");
+    let partial_metadata = PartialNoteMetadata::new(sender_id, NoteType::Private);
+    let metadata = NoteMetadata::new(partial_metadata, attachments);
+    let details_commitment =
+        NoteDetailsCommitment::from_raw_commitments(Word::empty(), Word::empty());
+    NoteHeader::new(details_commitment, metadata)
 }
 
 // Construct a public note whose serialized size exceeds NOTE_MAX_SIZE by building a MastForest with

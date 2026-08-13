@@ -296,7 +296,7 @@ end
 #!
 #! Invocation: exec
 proc convert_asset
-    swapw exec.fungible_asset::value_into_amount movdn.4
+    swapw exec.fungible_asset::value_into_amount_unchecked movdn.4
     # => [ASSET_ID, amount]
 
     exec.asset::id_into_faucet_id
