@@ -945,6 +945,10 @@ pub enum TransactionOutputError {
 /// [`PrivateOutputNote`](crate::transaction::PrivateOutputNote).
 #[derive(Debug, Error)]
 pub enum OutputNoteError {
+    #[error("attachment headers do not match attachments for private note with id {0}")]
+    AttachmentHeadersMismatch(NoteId),
+    #[error("attachments commitment does not match attachments for private note with id {0}")]
+    AttachmentsCommitmentMismatch(NoteId),
     #[error("note with id {0} is private but expected a public note")]
     NoteIsPrivate(NoteId),
     #[error("note with id {0} is public but expected a private note")]
