@@ -158,16 +158,6 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
-fn build_fee_policy_manager(
-    fee_faucet_id: AccountId,
-    fee_policy: BasicConstantFeePolicy,
-) -> FeePolicyManager {
-    FeePolicyManager::builder()
-        .fee_faucet_id(fee_faucet_id)
-        .active_fee_policy(fee_policy.into())
-        .build()
-}
-
 impl AggLayerBridge {
     /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration.
     ///
@@ -182,7 +172,10 @@ impl AggLayerBridge {
         fee_faucet_id: AccountId,
         fee_policy: BasicConstantFeePolicy,
     ) -> AccountBuilder {
-        let fee_policy_manager = build_fee_policy_manager(fee_faucet_id, fee_policy);
+        let fee_policy_manager = FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id)
+            .active_fee_policy(fee_policy.into())
+            .build();
         NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
             .expect("bridge note allowlist is non-empty")
             .with_component(AggLayerBridge::new(network_id))
@@ -228,7 +221,10 @@ impl AggLayerFaucet {
         fee_faucet_id: AccountId,
         fee_policy: BasicConstantFeePolicy,
     ) -> AccountBuilder {
-        let fee_policy_manager = build_fee_policy_manager(fee_faucet_id, fee_policy);
+        let fee_policy_manager = FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id)
+            .active_fee_policy(fee_policy.into())
+            .build();
         let agglayer_component =
             create_agglayer_faucet_component(token_symbol, decimals, max_supply, initial_supply);
 

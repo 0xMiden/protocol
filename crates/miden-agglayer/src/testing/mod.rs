@@ -49,7 +49,10 @@ fn zero_fee_policy(allowed_notes: BTreeSet<NoteScriptRoot>) -> BasicConstantFeeP
 
 /// Returns a zero-fee policy manager for AggLayer test fixtures.
 pub fn zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
-    crate::build_fee_policy_manager(fee_faucet_id(), zero_fee_policy(allowed_notes))
+    FeePolicyManager::builder()
+        .fee_faucet_id(fee_faucet_id())
+        .active_fee_policy(zero_fee_policy(allowed_notes).into())
+        .build()
 }
 
 /// Returns the account ID used as `BRIDGE_ADMIN` in test fixtures.
