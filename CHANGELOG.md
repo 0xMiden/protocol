@@ -23,6 +23,7 @@
 
 ### Features
 
+- [BREAKING] AggLayer bridge and faucet accounts deploy with a priced fee policy and `ADMIN`-gated repricing; both code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - [BREAKING] The AggLayer bridge now accepts `RbacConfigNote`s, enabling on-chain rotation of its `ADMIN`, `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles; the `create_existing_bridge_account_with_roles` testing fixture now takes the `ADMIN` member explicitly ([#2706](https://github.com/0xMiden/protocol/issues/2706)).
 - Added the `ConstantFeeManager` account component, exposing the authority-gated `set_note_fee` procedure to update a `BasicConstantFeePolicy`'s fee schedule on a network account after deployment; the supplied fee asset's ID is validated against the account's configured fee asset and its value word is validated to be a well-formed fungible amount not exceeding the maximum ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Added the `miden-protocol-build-utils` crate with helpers to assemble MASM code ([#3334](https://github.com/0xMiden/protocol/pull/3334)).
@@ -76,6 +77,8 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] `TokenPolicyManager` now dispatches mint and burn policies via `dyncall` rather than `dynexec` ([#3510](https://github.com/0xMiden/protocol/pull/3510)).
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
 - [BREAKING] Replaced `RoleBasedAccessControl::new` with a validating `RoleBasedAccessControl::builder()` over `RoleConfig`s, which seeds each role's members together with its delegated admin, so exclusive delegation is established at account creation instead of through on-chain `set_role_admin` calls ([#3515](https://github.com/0xMiden/protocol/pull/3515)).
+- [BREAKING] Updated `NoteScript::from_package` and `TransactionScript::from_package` to reject executable packages with the new `MastForestScriptError::ExecutablePackage`, so scripts are identified only by their `@note_script` / `@transaction_script` attribute ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
+- [BREAKING] Updated `AccountComponent::from_package` to take `Package` by value ([#3528](https://github.com/0xMiden/protocol/pull/3528)).
 
 ### Fixes
 
