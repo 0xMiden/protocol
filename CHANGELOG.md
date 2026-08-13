@@ -6,6 +6,7 @@
 
 ### Changes
 
+- [BREAKING] AggLayer bridge and faucet account builders now take a concrete `BasicConstantFeePolicy` and fee faucet ID, constructing their `FeePolicyManager` internally ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).

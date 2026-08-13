@@ -101,13 +101,15 @@ fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
     let bridge_admin = bridge_admin_account_id();
     let roles =
         BridgeRoles::new([bridge_admin].into(), [bridge_admin].into(), [bridge_admin].into())?;
+    let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
+    let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
     Ok(AggLayerBridge::account_builder(
         Word::default(),
         bridge_admin,
         roles,
         MIDEN_NETWORK_ID,
-        network_note_pricer(VERIFICATION_BASE_FEE)
-            .basic_constant_fee_policy_manager(AggLayerBridge::allowed_notes())?,
+        pricer.fee_parameters().fee_faucet_id(),
+        fee_policy,
     ))
 }
 
@@ -126,7 +128,8 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             Felt::ZERO,
             account_admin,
             bridge.id(),
-            pricer.basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())?,
+            pricer.fee_parameters().fee_faucet_id(),
+            pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?,
         )
         .build_existing()?,
     })

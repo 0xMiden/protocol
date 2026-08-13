@@ -35,21 +35,21 @@ use crate::{
 // ACCOUNT HELPERS
 // ================================================================================================
 
+fn fee_faucet_id() -> AccountId {
+    AccountId::try_from(ACCOUNT_ID_FEE_FAUCET).expect("mock-chain fee faucet id is valid")
+}
+
+fn zero_fee_policy(allowed_notes: BTreeSet<NoteScriptRoot>) -> BasicConstantFeePolicy {
+    let mut fee_policy = BasicConstantFeePolicy::new();
+    for note_script in allowed_notes {
+        fee_policy = fee_policy.with_fee(note_script, AssetAmount::ZERO);
+    }
+    fee_policy
+}
+
 /// Returns a zero-fee policy manager for AggLayer test fixtures.
 pub fn zero_fee_policy_manager(allowed_notes: BTreeSet<NoteScriptRoot>) -> FeePolicyManager {
-    let fee_faucet_id =
-        AccountId::try_from(ACCOUNT_ID_FEE_FAUCET).expect("mock-chain fee faucet id is valid");
-
-    let mut basic_constant_fee_policy = BasicConstantFeePolicy::new();
-    for note_script in allowed_notes {
-        basic_constant_fee_policy =
-            basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
-    }
-
-    FeePolicyManager::builder()
-        .active_fee_policy(basic_constant_fee_policy.into())
-        .fee_faucet_id(fee_faucet_id)
-        .build()
+    crate::build_fee_policy_manager(fee_faucet_id(), zero_fee_policy(allowed_notes))
 }
 
 /// Returns the account ID used as `BRIDGE_ADMIN` in test fixtures.
@@ -66,7 +66,7 @@ pub fn create_existing_bridge_account_with_roles(
     ger_remover: AccountId,
     network_id: u32,
 ) -> Account {
-    let fee_policy_manager = zero_fee_policy_manager(AggLayerBridge::allowed_notes());
+    let fee_policy = zero_fee_policy(AggLayerBridge::allowed_notes());
     let roles = BridgeRoles::new(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
@@ -74,9 +74,16 @@ pub fn create_existing_bridge_account_with_roles(
     )
     .expect("single-holder role sets are non-empty");
 
-    AggLayerBridge::account_builder(seed, bridge_admin, roles, network_id, fee_policy_manager)
-        .build_existing()
-        .expect("bridge account should be valid")
+    AggLayerBridge::account_builder(
+        seed,
+        bridge_admin,
+        roles,
+        network_id,
+        fee_faucet_id(),
+        fee_policy,
+    )
+    .build_existing()
+    .expect("bridge account should be valid")
 }
 
 /// Creates an existing AggLayer faucet account with a zero-fee policy.
@@ -97,7 +104,8 @@ pub fn create_existing_agglayer_faucet(
         initial_supply,
         faucet_admin,
         bridge_account_id,
-        zero_fee_policy_manager(AggLayerFaucet::allowed_notes()),
+        fee_faucet_id(),
+        zero_fee_policy(AggLayerFaucet::allowed_notes()),
     )
     .build_existing()
     .expect("agglayer faucet account should be valid")

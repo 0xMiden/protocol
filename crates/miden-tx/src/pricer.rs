@@ -114,22 +114,33 @@ impl NetworkNotePricer {
         AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
-    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] prices every supplied
-    /// note script root from its benchmarked consumption cost.
+    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied note script root from its
+    /// benchmarked consumption cost.
     ///
-    /// The manager charges in the fee asset configured by [`Self::fee_parameters`], keeping the
-    /// policy's bare fee amounts and their denomination together. Each root is priced through
-    /// [`Self::price`], so the fee includes the default safety margin and the recursively priced
-    /// notes created by consuming it.
-    pub fn basic_constant_fee_policy_manager(
+    /// The policy's bare fee amounts are denominated in the fee asset configured by
+    /// [`Self::fee_parameters`]. Each root is priced through [`Self::price`], so the fee includes
+    /// the default safety margin and the recursively priced notes created by consuming it.
+    pub fn basic_constant_fee_policy(
         &self,
         note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
-    ) -> Result<FeePolicyManager, NotePricingError> {
+    ) -> Result<BasicConstantFeePolicy, NotePricingError> {
         let mut policy = BasicConstantFeePolicy::new();
         for root in note_script_roots {
             policy = policy.with_fee(root, self.price(root)?);
         }
+        Ok(policy)
+    }
 
+    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] prices every supplied
+    /// note script root from its benchmarked consumption cost.
+    ///
+    /// The manager charges in the fee asset configured by [`Self::fee_parameters`], keeping the
+    /// policy's bare fee amounts and their denomination together.
+    pub fn basic_constant_fee_policy_manager(
+        &self,
+        note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+    ) -> Result<FeePolicyManager, NotePricingError> {
+        let policy = self.basic_constant_fee_policy(note_script_roots)?;
         Ok(FeePolicyManager::builder()
             .fee_faucet_id(self.fee_parameters.fee_faucet_id())
             .active_fee_policy(policy.into())
@@ -376,10 +387,10 @@ mod tests {
     }
 
     #[test]
-    fn basic_constant_fee_policy_manager_rejects_unknown_roots() {
+    fn basic_constant_fee_policy_rejects_unknown_roots() {
         let unknown = NoteScriptRoot::from_array([9, 9, 9, 9]);
         assert!(matches!(
-            pricer(500, 0).basic_constant_fee_policy_manager([unknown]),
+            pricer(500, 0).basic_constant_fee_policy([unknown]),
             Err(NotePricingError::UnknownNoteScriptRoot(root)) if root == unknown
         ));
     }
