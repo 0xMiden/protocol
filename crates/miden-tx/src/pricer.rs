@@ -382,7 +382,9 @@ mod tests {
         assert_eq!(manager.active_fee_policy(), BasicConstantFeePolicy::root());
         assert_eq!(
             manager.fee_asset_id(),
-            miden_protocol::asset::AssetId::new_fungible(pricer.fee_parameters().fee_faucet_id())
+            Some(miden_protocol::asset::AssetId::new_fungible(
+                pricer.fee_parameters().fee_faucet_id()
+            ))
         );
     }
 

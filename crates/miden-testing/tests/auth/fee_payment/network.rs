@@ -1,13 +1,26 @@
 use std::collections::BTreeSet;
 
+use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetVault, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
+use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::faucets::{
+    FungibleFaucet,
+    TokenName,
+    create_network_fungible_faucet,
+};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::policies::{
+    BurnPolicy,
+    MintPolicy,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{NetworkAccountConfigNote, TxFeeNote};
 use miden_standards::testing::note::NoteBuilder;
@@ -136,6 +149,68 @@ async fn network_account_pays_fee_note() -> anyhow::Result<()> {
         .build()?
         .into();
     assert_eq!(output_note.id(), expected_note.id());
+
+    Ok(())
+}
+
+/// A network faucet can derive its account ID without embedding that ID in initial storage, then
+/// resolve the account issued asset at runtime and pay a nonzero chain fee in that asset.
+#[tokio::test]
+async fn network_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
+    let fee_policy_manager = FeePolicyManager::builder()
+        .account_issued_fee_asset()
+        .active_fee_policy(BasicConstantFeePolicy::new().into())
+        .build();
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("Native fee asset")?)
+        .symbol(TokenSymbol::new("NFA")?)
+        .decimals(6)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
+    let new_faucet = create_network_fungible_faucet(
+        [10; 32],
+        faucet,
+        AccessControl::Ownable2Step { owner: ACCOUNT_ID_SENDER.try_into()? },
+        token_policy_manager,
+        fee_policy_manager,
+    )?;
+    assert!(new_faucet.is_new());
+
+    // Genesis funding happens after the ID is known. Rewrap the new account as an existing account
+    // with a balance in the asset it issues, matching how a network faucet is initialized on chain.
+    let fee_faucet_id = new_faucet.id();
+    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
+    let (id, _vault, storage, code, _nonce, _seed) = new_faucet.into_parts();
+    let faucet_account =
+        Account::new(id, AssetVault::new(&[fee_asset])?, storage, code, Felt::ONE, None)?;
+
+    let mut builder = MockChain::builder()
+        .fee_faucet_id(fee_faucet_id)
+        .verification_base_fee(VERIFICATION_BASE_FEE);
+    builder.add_account(faucet_account)?;
+    let mock_chain = builder.build()?;
+
+    let executed_transaction =
+        mock_chain.build_transaction(fee_faucet_id).build()?.execute().await?;
+    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
+
+    let output_note = executed_transaction.output_notes().get_note(0);
+    assert_eq!(output_note.metadata().note_type(), NoteType::Public);
+    assert_eq!(output_note.assets().num_assets(), 1);
+    let paid_asset = output_note.assets().iter().next().expect("fee note should carry an asset");
+    let Asset::Fungible(paid_asset) = paid_asset else {
+        panic!("fee note asset should be fungible");
+    };
+
+    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
+    assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
+    assert!(paid_asset.amount() >= executed_transaction.compute_fee());
 
     Ok(())
 }

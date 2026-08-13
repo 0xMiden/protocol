@@ -4,6 +4,10 @@
 
 ### Features
 
+- [BREAKING] Added an account issued fee asset mode to `FeePolicyManager`, allowing a network faucet
+  to charge fees in its own fungible asset without embedding its account ID in initial storage
+  ([#3584](https://github.com/0xMiden/protocol/issues/3584)).
+
 ### Changes
 
 - [BREAKING] AggLayer bridge and faucet account builders now take a concrete `BasicConstantFeePolicy` and fee faucet ID, constructing their `FeePolicyManager` internally ([#3583](https://github.com/0xMiden/protocol/pull/3583)).

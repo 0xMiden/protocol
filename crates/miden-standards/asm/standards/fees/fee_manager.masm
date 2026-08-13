@@ -16,6 +16,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 
 use miden::standards::access::authority
+use miden::standards::assets::fungible_asset
 
 use {AccountProcedureRoot, Asset, AssetId, NoteRecipient} from miden::protocol::types
 use {ONE_WORD, ZERO_WORD} from miden::standards::utils
@@ -34,7 +35,8 @@ const ACTIVE_FEE_POLICY_PROC_ROOT_SLOT = word("miden::standards::auth::network_a
 # Allowlist map slot for fee policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT = word("miden::standards::auth::network_account::allowed_fee_policy_proc_roots")
 
-# Slot holding the ID of the asset fees are charged in. Layout: [FEE_ASSET_ID]
+# Slot holding the ID of the asset fees are charged in. The empty word selects the fungible asset
+# issued by the active account. Layout: [FEE_ASSET_ID]
 const FEE_ASSET_ID_SLOT = word("miden::standards::auth::network_account::fee_asset_id")
 
 # Map entry value marking a fee policy root as allowed.
@@ -344,7 +346,8 @@ proc get_fee_policy_root() -> AccountProcedureRoot
     # => [FEE_POLICY_ROOT]
 end
 
-#! Reads the fee asset ID from storage.
+#! Returns the fee asset ID configured in storage. An empty stored value resolves to the fungible
+#! asset issued by the active account.
 #!
 #! Inputs:  []
 #! Outputs: [FEE_ASSET_ID]
@@ -352,6 +355,18 @@ end
 #! Invocation: exec
 pub proc read_fee_asset_id() -> AssetId
     push.FEE_ASSET_ID_SLOT[0..2] exec.active_account::get_item
+    # => [STORED_FEE_ASSET_ID]
+
+    exec.word::testz
+    # => [is_account_issued, STORED_FEE_ASSET_ID]
+
+    if.true
+        dropw
+        # => []
+
+        exec.active_account::get_id exec.fungible_asset::create_id
+        # => [FEE_ASSET_ID]
+    end
     # => [FEE_ASSET_ID]
 end
 

@@ -51,11 +51,11 @@ static FEE_ASSET_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// need to be installed separately. The [`FeePolicyManager`] is not an account component itself and
 /// only exists to configure the auth component it is contained in.
 ///
-/// Construct via [`Self::builder`]. The builder requires the fee faucet and the active fee policy.
-/// Additional allowed policies for runtime switching may be registered.
+/// Construct via [`Self::builder`]. The builder requires a fee asset selection and the active fee
+/// policy. Additional allowed policies for runtime switching may be registered.
 #[derive(Debug, Clone)]
 pub struct FeePolicyManager {
-    fee_asset_id: AssetId,
+    fee_asset_id: Option<AssetId>,
     active_fee_policy_root: AccountProcedureRoot,
     policies: BTreeMap<AccountProcedureRoot, Vec<AccountComponent>>,
 }
@@ -64,17 +64,17 @@ pub struct FeePolicyManager {
 impl FeePolicyManager {
     /// Builder constructor for [`FeePolicyManager`].
     ///
-    /// The `fee_faucet_id` setter is required and sets the faucet issuing the fungible asset
-    /// fees are charged in. The `active_fee_policy` setter is required and registers the policy
-    /// the manager dispatches to. Each `allowed_fee_policy` setter registers an additional
-    /// reserved alternative for runtime switching via the `set_fee_policy` procedure.
+    /// Select the fee asset with either `fee_faucet_id` or
+    /// [`FeePolicyManagerBuilder::account_issued_fee_asset`]. The `active_fee_policy` setter is
+    /// also required and registers the policy the manager dispatches to. Each
+    /// `allowed_fee_policy` setter registers an additional reserved alternative for runtime
+    /// switching via the `set_fee_policy` procedure.
     #[builder]
     pub fn new(
         #[builder(field)] allowed_fee_policies: BTreeMap<AccountProcedureRoot, FeePolicy>,
-        fee_faucet_id: AccountId,
+        #[builder(required, setters(vis = ""))] fee_asset_id: Option<AssetId>,
         active_fee_policy: FeePolicy,
     ) -> Self {
-        let fee_asset_id = AssetId::new_fungible(fee_faucet_id);
         let active_fee_policy_root = active_fee_policy.root();
 
         let mut policies: BTreeMap<AccountProcedureRoot, Vec<AccountComponent>> = BTreeMap::new();
@@ -101,12 +101,33 @@ impl<S: fee_policy_manager_builder::State> FeePolicyManagerBuilder<S> {
     }
 }
 
+impl<S: fee_policy_manager_builder::State> FeePolicyManagerBuilder<S>
+where
+    S::FeeAssetId: fee_policy_manager_builder::IsUnset,
+{
+    /// Configures fees in the fungible asset issued by `fee_faucet_id`.
+    pub fn fee_faucet_id(
+        self,
+        fee_faucet_id: AccountId,
+    ) -> FeePolicyManagerBuilder<fee_policy_manager_builder::SetFeeAssetId<S>> {
+        self.fee_asset_id(Some(AssetId::new_fungible(fee_faucet_id)))
+    }
+
+    /// Configures fees in the fungible asset issued by the account carrying this manager.
+    pub fn account_issued_fee_asset(
+        self,
+    ) -> FeePolicyManagerBuilder<fee_policy_manager_builder::SetFeeAssetId<S>> {
+        self.fee_asset_id(None)
+    }
+}
+
 impl FeePolicyManager {
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the [`AssetId`] of the fungible asset fees are charged in.
-    pub fn fee_asset_id(&self) -> AssetId {
+    /// Returns the explicit [`AssetId`] fees are charged in, or `None` when the asset is issued by
+    /// the account carrying the manager.
+    pub fn fee_asset_id(&self) -> Option<AssetId> {
         self.fee_asset_id
     }
 
@@ -138,7 +159,7 @@ impl FeePolicyManager {
         &ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME
     }
 
-    /// Returns the storage slot holding the ID of the asset fees are charged in.
+    /// Returns the storage slot holding the explicit fee asset ID or the account issued marker.
     pub fn fee_asset_id_slot() -> &'static StorageSlotName {
         &FEE_ASSET_ID_SLOT_NAME
     }
@@ -168,7 +189,7 @@ impl FeePolicyManager {
             (
                 FEE_ASSET_ID_SLOT_NAME.clone(),
                 StorageSlotSchema::value(
-                    "ID of the asset fees are charged in",
+                    "Explicit fee asset ID, or an empty word for the account issued asset",
                     SchemaType::native_word(),
                 ),
             ),
@@ -198,7 +219,10 @@ impl FeePolicyManager {
                 self.active_fee_policy().as_word(),
             ),
             StorageSlot::with_map(ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME.clone(), allowed_map),
-            StorageSlot::with_value(FEE_ASSET_ID_SLOT_NAME.clone(), self.fee_asset_id().to_word()),
+            StorageSlot::with_value(
+                FEE_ASSET_ID_SLOT_NAME.clone(),
+                self.fee_asset_id.map_or_else(Word::empty, |asset_id| asset_id.to_word()),
+            ),
         ]
     }
 }
@@ -271,5 +295,26 @@ mod tests {
                 .any(|component| component.has_procedure(AuthNetworkAccount::get_fee_policy_root())),
             "the fee-policy procedures are exported by the auth component, not by the manager"
         );
+    }
+
+    /// Explicit fee assets retain their asset ID encoding, while the account issued mode stores an
+    /// empty marker so account construction does not depend on the ID being derived.
+    #[test]
+    fn fee_asset_storage_encoding_distinguishes_both_modes() {
+        let explicit_manager = FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id())
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
+            .build();
+        let account_issued_manager = FeePolicyManager::builder()
+            .account_issued_fee_asset()
+            .active_fee_policy(BasicConstantFeePolicy::new().into())
+            .build();
+
+        let expected_asset_id = AssetId::new_fungible(fee_faucet_id());
+        assert_eq!(explicit_manager.fee_asset_id(), Some(expected_asset_id));
+        assert_eq!(explicit_manager.to_storage_slots()[2].value(), expected_asset_id.to_word());
+
+        assert_eq!(account_issued_manager.fee_asset_id(), None);
+        assert_eq!(account_issued_manager.to_storage_slots()[2].value(), Word::empty());
     }
 }
