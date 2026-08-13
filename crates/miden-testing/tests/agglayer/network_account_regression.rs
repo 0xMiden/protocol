@@ -9,7 +9,8 @@
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
-use miden_agglayer::{ExitRoot, UpdateGerNote, create_existing_agglayer_faucet};
+use miden_agglayer::testing::create_existing_agglayer_faucet;
+use miden_agglayer::{ExitRoot, UpdateGerNote};
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
