@@ -11,3 +11,34 @@ path      = "authority.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Account-wide authority shared by procedures that gate state-mutating operations behind auth-only, owner-based, or RBAC role-based checks"
+name        = "miden::standards::access::authority"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Per-procedure role assignment (procedure root -> role symbol)"
+name        = "miden::standards::access::authority::procedure_roles"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "miden::standards::access::role_symbol"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Authority configuration"
+name        = "miden::standards::access::authority::authority_config"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "authority"
+type = "u8"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "is_frozen"
+type = "u8"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"

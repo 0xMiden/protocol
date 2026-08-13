@@ -1,3 +1,5 @@
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+
 pub mod access;
 pub mod auth;
 pub mod components;
@@ -91,3 +93,14 @@ macro_rules! account_component_code {
 }
 
 pub(crate) use account_component_code;
+
+/// Returns the [`AccountComponentMetadata`] embedded in a component package shipped by this crate.
+///
+/// The metadata - the component's name, description and storage schema - is declared in the
+/// component's `miden-project.toml` manifest and embedded into its package by the build script, so
+/// that it travels with the `.masp` file rather than being redeclared by each component's Rust
+/// bindings.
+pub(crate) fn package_metadata(code: &AccountComponentCode) -> AccountComponentMetadata {
+    AccountComponentMetadata::try_from(code.as_package())
+        .expect("shipped component package should declare account component metadata")
+}

@@ -12,3 +12,8 @@ miden-agglayer.workspace  = true
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "AggLayer faucet component"
+name        = "agglayer::faucet"
+version     = "1.0.0"

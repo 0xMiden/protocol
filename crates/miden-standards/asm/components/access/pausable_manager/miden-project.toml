@@ -11,3 +11,8 @@ path      = "pausable_manager.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "PausableManager: pause / unpause admin procedures gated by the account-wide Authority component. Requires the Pausable companion component for storage and the Authority component for auth dispatch."
+name        = "miden::standards::access::pausable::manager"
+version     = "1.0.0"

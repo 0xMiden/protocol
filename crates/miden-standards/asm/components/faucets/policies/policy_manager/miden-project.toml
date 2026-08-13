@@ -11,3 +11,60 @@ path      = "policy_manager.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Token policy manager for fungible faucets"
+name        = "miden::standards::faucets::policies::policy_manager"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Active receive policy procedure root"
+name        = "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Active send policy procedure root"
+name        = "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Active mint policy procedure root"
+name        = "miden::standards::faucets::policies::policy_manager::active_mint_policy_proc_root"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Active burn policy procedure root"
+name        = "miden::standards::faucets::policies::policy_manager::active_burn_policy_proc_root"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed send policy procedure roots"
+name        = "miden::standards::faucets::policies::policy_manager::allowed_send_policy_proc_roots"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed burn policy procedure roots"
+name        = "miden::standards::faucets::policies::policy_manager::allowed_burn_policy_proc_roots"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed receive policy procedure roots"
+name        = "miden::standards::faucets::policies::policy_manager::allowed_receive_policy_proc_roots"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed mint policy procedure roots"
+name        = "miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "word"

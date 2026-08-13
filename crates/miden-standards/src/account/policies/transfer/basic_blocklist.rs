@@ -1,14 +1,10 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
-use crate::account::account_component_code;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // BASIC BLOCKLIST TRANSFER POLICY
@@ -83,6 +79,11 @@ impl BasicBlocklist {
     pub fn root() -> AccountProcedureRoot {
         *BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        package_metadata(Self::code())
+    }
 }
 
 impl From<BlocklistStorage> for BasicBlocklist {
@@ -93,15 +94,7 @@ impl From<BlocklistStorage> for BasicBlocklist {
 
 impl From<BasicBlocklist> for AccountComponent {
     fn from(blocklist: BasicBlocklist) -> Self {
-        let storage_schema = StorageSchema::new([BlocklistStorage::blocked_accounts_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(BasicBlocklist::NAME)
-            .with_description(
-                "Basic blocklist transfer policy: predicate procedure plus the `blocked_accounts` \
-                 storage map it reads",
-            )
-            .with_storage_schema(storage_schema);
+        let metadata = BasicBlocklist::component_metadata();
 
         AccountComponent::new(BasicBlocklist::code().clone(), vec![blocklist.0.into_slot()], metadata)
             .expect(

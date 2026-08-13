@@ -14,13 +14,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -36,7 +30,7 @@ use miden_protocol::utils::sync::LazyLock;
 use super::burn::BurnPolicy;
 use super::mint::MintPolicy;
 use super::transfer::TransferPolicy;
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 account_component_code!(
@@ -515,73 +509,7 @@ impl TokenPolicyManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![
-            (
-                ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "Active mint policy procedure root",
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "Active burn policy procedure root",
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "Active send policy procedure root",
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "Active receive policy procedure root",
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
-                StorageSlotSchema::map(
-                    "Allowed mint policy procedure roots",
-                    SchemaType::native_word(),
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
-                StorageSlotSchema::map(
-                    "Allowed burn policy procedure roots",
-                    SchemaType::native_word(),
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ALLOWED_SEND_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
-                StorageSlotSchema::map(
-                    "Allowed send policy procedure roots",
-                    SchemaType::native_word(),
-                    SchemaType::native_word(),
-                ),
-            ),
-            (
-                ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
-                StorageSlotSchema::map(
-                    "Allowed receive policy procedure roots",
-                    SchemaType::native_word(),
-                    SchemaType::native_word(),
-                ),
-            ),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(Self::DESCRIPTION)
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 
     /// Returns `true` if at least one send or receive policy is configured, in which case the

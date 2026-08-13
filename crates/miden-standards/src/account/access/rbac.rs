@@ -2,13 +2,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -22,7 +16,7 @@ use miden_protocol::account::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 
 account_component_code!(RBAC_CODE, "miden-standards-access-rbac.masp");
 
@@ -332,41 +326,9 @@ impl RoleBasedAccessControl {
         &ROLE_MEMBERSHIP_SLOT_NAME
     }
 
-    /// Returns the schema entry for the per-role config map.
-    pub fn role_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::role_config_slot().clone(),
-            StorageSlotSchema::map(
-                "Per-role RBAC configuration (member count and delegated admin role)",
-                SchemaType::role_symbol(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    /// Returns the schema entry for the per-role membership map.
-    pub fn role_membership_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::role_membership_slot().clone(),
-            StorageSlotSchema::map(
-                "Role membership flag indexed by role symbol and account ID",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] describing this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![
-            Self::role_config_slot_schema(),
-            Self::role_membership_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Role-based access control component")
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 }
 

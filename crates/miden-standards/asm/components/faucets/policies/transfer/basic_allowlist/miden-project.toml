@@ -11,3 +11,16 @@ path      = "basic_allowlist.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Basic allowlist transfer policy: predicate procedure plus the `allowed_accounts` storage map it reads"
+name        = "miden::standards::faucets::policies::transfer::basic_allowlist"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Per-account allowed flag; zero word is not allowed, [1,0,0,0] is allowed"
+name        = "miden::standards::faucets::policies::transfer::allowlist::allowed_accounts"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "bool"

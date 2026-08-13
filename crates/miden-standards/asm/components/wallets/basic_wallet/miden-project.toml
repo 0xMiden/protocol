@@ -11,3 +11,8 @@ path      = "basic_wallet.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Basic wallet component for receiving and sending assets"
+name        = "miden::standards::wallets::basic_wallet"
+version     = "1.0.0"

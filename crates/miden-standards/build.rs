@@ -6,7 +6,9 @@ use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_core_lib::CoreLibrary;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
 use miden_protocol::ProtocolLib;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::utils::serde::Serializable;
 use miden_protocol_build_utils::{
     ErrorModule,
     PROJECT_MANIFEST,
@@ -72,11 +74,14 @@ fn main() -> Result<()> {
     )?;
     registry.cache_package(package).into_diagnostic()?;
 
-    // compile account components (each member of the components workspace becomes its own package)
+    // compile account components (each member of the components workspace becomes its own package),
+    // embedding the metadata each component manifest declares into its package. Parsing the
+    // metadata here means a malformed schema fails the build rather than the first instantiation.
     assemble_workspace(
         source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
         &target_dir.join(ASM_COMPONENTS_DIR),
+        |metadata| Ok(AccountComponentMetadata::from_toml(metadata).into_diagnostic()?.to_bytes()),
     )?;
 
     generate_error_constants(&source_dir, &build_dir)?;

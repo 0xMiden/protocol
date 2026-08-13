@@ -11,3 +11,8 @@ path      = "manager.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Authority-gated blocklist admin: wraps `blocklist::block_account` / `unblock_account` with the account-wide Authority component."
+name        = "miden::standards::faucets::policies::transfer::blocklist::manager"
+version     = "1.0.0"

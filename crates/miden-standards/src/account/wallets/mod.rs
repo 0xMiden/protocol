@@ -11,7 +11,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 
-use crate::account::account_component_code;
 use crate::account::auth::{
     Approver,
     ApproverSet,
@@ -22,6 +21,7 @@ use crate::account::auth::{
     AuthSingleSig,
     GuardianConfig,
 };
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // BASIC WALLET
@@ -119,8 +119,7 @@ impl BasicWallet {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Basic wallet component for receiving and sending assets")
+        package_metadata(Self::code())
     }
 }
 

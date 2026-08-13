@@ -11,3 +11,8 @@ path      = "owner_only.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "`owner_only` mint policy (owner-controlled family) for fungible faucets"
+name        = "miden::standards::faucets::policies::mint::owner_controlled::owner_only"
+version     = "1.0.0"

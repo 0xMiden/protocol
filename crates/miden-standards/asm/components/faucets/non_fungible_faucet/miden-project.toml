@@ -11,3 +11,420 @@ path      = "non_fungible_faucet.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Non-fungible faucet component bundling minting, burning, status, and metadata"
+name        = "miden::standards::faucets::non_fungible"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Description chunk 4"
+name        = "miden::standards::faucets::token_description_4"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "External link chunk 2"
+name        = "miden::standards::faucets::external_link_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "External link chunk 5"
+name        = "miden::standards::faucets::external_link_5"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Description chunk 2"
+name        = "miden::standards::faucets::token_description_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Logo URI chunk 3"
+name        = "miden::standards::faucets::logo_uri_3"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Description chunk 0"
+name        = "miden::standards::faucets::token_description_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Logo URI chunk 4"
+name        = "miden::standards::faucets::logo_uri_4"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Name chunk 1"
+name        = "miden::standards::faucets::token_name_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "External link chunk 3"
+name        = "miden::standards::faucets::external_link_3"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Logo URI chunk 5"
+name        = "miden::standards::faucets::logo_uri_5"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Mutability config"
+name        = "miden::standards::faucets::mutability_config"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "is_description_mutable"
+type = "bool"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "is_logo_uri_mutable"
+type = "bool"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "is_external_link_mutable"
+type = "bool"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "is_max_supply_mutable"
+type = "bool"
+
+[[package.metadata.account-component.storage.slots]]
+description = "External link chunk 4"
+name        = "miden::standards::faucets::external_link_4"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Token symbol"
+name        = "miden::standards::faucets::non_fungible::symbol"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "symbol"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Asset status registry. Key is the token ID padded to a word `[token_id_suffix, token_id_prefix, 0, 0]`; value is the status (0 = not issued, 1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`."
+name        = "miden::standards::faucets::non_fungible::asset_status"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "felt"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Description chunk 3"
+name        = "miden::standards::faucets::token_description_3"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Logo URI chunk 6"
+name        = "miden::standards::faucets::logo_uri_6"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Logo URI chunk 0"
+name        = "miden::standards::faucets::logo_uri_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "External link chunk 1"
+name        = "miden::standards::faucets::external_link_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Logo URI chunk 1"
+name        = "miden::standards::faucets::logo_uri_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Description chunk 5"
+name        = "miden::standards::faucets::token_description_5"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Description chunk 1"
+name        = "miden::standards::faucets::token_description_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Description chunk 6"
+name        = "miden::standards::faucets::token_description_6"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Logo URI chunk 2"
+name        = "miden::standards::faucets::logo_uri_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "External link chunk 0"
+name        = "miden::standards::faucets::external_link_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "External link chunk 6"
+name        = "miden::standards::faucets::external_link_6"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Name chunk 0"
+name        = "miden::standards::faucets::token_name_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_0"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_1"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_2"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "data_3"

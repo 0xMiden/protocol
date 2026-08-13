@@ -11,3 +11,16 @@ path      = "basic_blocklist.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Basic blocklist transfer policy: predicate procedure plus the `blocked_accounts` storage map it reads"
+name        = "miden::standards::faucets::policies::transfer::basic_blocklist"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Per-account blocked flag; zero word is not blocked, [1,0,0,0] is blocked"
+name        = "miden::standards::faucets::policies::transfer::blocklist::blocked_accounts"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "bool"

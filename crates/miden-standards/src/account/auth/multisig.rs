@@ -2,14 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -23,7 +16,7 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::{Approver, ApproverSet};
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 account_component_code!(MULTISIG_CODE, "miden-standards-auth-multisig.masp");
@@ -308,84 +301,9 @@ impl AuthMultisig {
         &PROCEDURE_THRESHOLDS_SLOT_NAME
     }
 
-    /// Returns the storage slot schema for the threshold configuration slot.
-    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::threshold_config_slot().clone(),
-            StorageSlotSchema::value(
-                "Threshold configuration",
-                [
-                    FeltSchema::u32("threshold"),
-                    FeltSchema::u32("num_approvers"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the approver public keys slot.
-    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::approver_public_keys_slot().clone(),
-            StorageSlotSchema::map(
-                "Approver public keys",
-                SchemaType::u32(),
-                SchemaType::pub_key(),
-            ),
-        )
-    }
-
-    // Returns the storage slot schema for the approver scheme IDs slot.
-    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::approver_scheme_ids_slot().clone(),
-            StorageSlotSchema::map(
-                "Approver scheme IDs",
-                SchemaType::u32(),
-                SchemaType::auth_scheme(),
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the executed transactions slot.
-    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::executed_transactions_slot().clone(),
-            StorageSlotSchema::map(
-                "Executed transactions",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the procedure thresholds slot.
-    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::procedure_thresholds_slot().clone(),
-            StorageSlotSchema::map(
-                "Procedure thresholds",
-                SchemaType::native_word(),
-                SchemaType::u32(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([
-            Self::threshold_config_slot_schema(),
-            Self::approver_public_keys_slot_schema(),
-            Self::approver_auth_scheme_slot_schema(),
-            Self::executed_transactions_slot_schema(),
-            Self::procedure_thresholds_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Multisig authentication component using hybrid signature schemes")
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 }
 

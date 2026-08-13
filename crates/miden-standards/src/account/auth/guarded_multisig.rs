@@ -3,13 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -24,7 +18,7 @@ use miden_protocol::utils::sync::LazyLock;
 
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use super::{Approver, ApproverSet};
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 
 account_component_code!(GUARDED_MULTISIG_CODE, "miden-standards-auth-guarded-multisig.masp");
 
@@ -82,29 +76,8 @@ impl GuardianConfig {
         &GUARDIAN_SCHEME_ID_SLOT_NAME
     }
 
-    fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::public_key_slot().clone(),
-            StorageSlotSchema::map(
-                "Guardian public keys",
-                SchemaType::u32(),
-                SchemaType::pub_key(),
-            ),
-        )
-    }
-
-    fn auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::scheme_id_slot().clone(),
-            StorageSlotSchema::map(
-                "Guardian scheme IDs",
-                SchemaType::u32(),
-                SchemaType::auth_scheme(),
-            ),
-        )
-    }
-
-    fn into_component_parts(self) -> (Vec<StorageSlot>, Vec<(StorageSlotName, StorageSlotSchema)>) {
+    /// Returns the storage slots holding the guardian's public key and signature scheme.
+    fn into_slots(self) -> Vec<StorageSlot> {
         let mut storage_slots = Vec::with_capacity(2);
 
         // Guardian public key slot (map: [0, 0, 0, 0] -> pubkey)
@@ -125,9 +98,7 @@ impl GuardianConfig {
             StorageMap::with_entries(guardian_scheme_id_entries).unwrap(),
         ));
 
-        let slot_metadata = vec![Self::public_key_slot_schema(), Self::auth_scheme_slot_schema()];
-
-        (storage_slots, slot_metadata)
+        storage_slots
     }
 }
 
@@ -270,60 +241,9 @@ impl AuthGuardedMultisig {
         GuardianConfig::scheme_id_slot()
     }
 
-    /// Returns the storage slot schema for the threshold configuration slot.
-    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::threshold_config_slot_schema()
-    }
-
-    /// Returns the storage slot schema for the approver public keys slot.
-    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_public_keys_slot_schema()
-    }
-
-    // Returns the storage slot schema for the approver scheme IDs slot.
-    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_auth_scheme_slot_schema()
-    }
-
-    /// Returns the storage slot schema for the executed transactions slot.
-    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::executed_transactions_slot_schema()
-    }
-
-    /// Returns the storage slot schema for the procedure thresholds slot.
-    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::procedure_thresholds_slot_schema()
-    }
-
-    /// Returns the storage slot schema for the guardian public key slot.
-    pub fn guardian_public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        GuardianConfig::public_key_slot_schema()
-    }
-
-    /// Returns the storage slot schema for the guardian scheme IDs slot.
-    pub fn guardian_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        GuardianConfig::auth_scheme_slot_schema()
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([
-            Self::threshold_config_slot_schema(),
-            Self::approver_public_keys_slot_schema(),
-            Self::approver_auth_scheme_slot_schema(),
-            Self::executed_transactions_slot_schema(),
-            Self::procedure_thresholds_slot_schema(),
-            Self::guardian_public_key_slot_schema(),
-            Self::guardian_auth_scheme_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Guarded multisig authentication component integrated \
-                 with a state guardian using hybrid signature schemes",
-            )
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 }
 
@@ -331,25 +251,11 @@ impl From<AuthGuardedMultisig> for AccountComponent {
     fn from(multisig: AuthGuardedMultisig) -> Self {
         let AuthGuardedMultisig { multisig, guardian_config } = multisig;
         let multisig_component = AccountComponent::from(multisig);
-        let (guardian_slots, guardian_slot_metadata) = guardian_config.into_component_parts();
 
         let mut storage_slots = multisig_component.storage_slots().to_vec();
-        storage_slots.extend(guardian_slots);
+        storage_slots.extend(guardian_config.into_slots());
 
-        let mut slot_schemas: Vec<(StorageSlotName, StorageSlotSchema)> = multisig_component
-            .storage_schema()
-            .iter()
-            .map(|(slot_name, slot_schema)| (slot_name.clone(), slot_schema.clone()))
-            .collect();
-        slot_schemas.extend(guardian_slot_metadata);
-
-        let storage_schema =
-            StorageSchema::new(slot_schemas).expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthGuardedMultisig::NAME)
-            .with_description(multisig_component.metadata().description())
-            .with_version(multisig_component.metadata().version().clone())
-            .with_storage_schema(storage_schema);
+        let metadata = AuthGuardedMultisig::component_metadata();
 
         AccountComponent::new(AuthGuardedMultisig::code().clone(), storage_slots, metadata).expect(
             "Guarded multisig auth component should satisfy the requirements of a valid \

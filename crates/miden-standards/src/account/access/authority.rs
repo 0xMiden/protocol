@@ -4,10 +4,7 @@ use alloc::vec;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
     StorageSchema,
-    StorageSlotSchema,
 };
 use miden_protocol::account::{
     AccountComponent,
@@ -25,7 +22,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // CONSTANTS
@@ -254,39 +251,25 @@ impl Authority {
     }
 
     /// Returns the [`AccountComponentMetadata`] for this configuration.
+    ///
+    /// The manifest declares the component's full storage surface, which only
+    /// [`Authority::RbacControlled`] installs in its entirety: the other authorities have no role
+    /// graph and therefore no `procedure_roles` slot, so their schema drops it.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
-        let mut slots = vec![(
-            AUTHORITY_SLOT_NAME.clone(),
-            StorageSlotSchema::value(
-                "Authority configuration",
-                [
-                    FeltSchema::u8("authority"),
-                    FeltSchema::u8("is_frozen"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )];
-
+        let metadata = package_metadata(Self::code());
         if matches!(self, Authority::RbacControlled { .. }) {
-            slots.push((
-                AUTHORITY_PROCEDURE_ROLES_SLOT_NAME.clone(),
-                StorageSlotSchema::map(
-                    "Per-procedure role assignment (procedure root -> role symbol)",
-                    SchemaType::native_word(),
-                    SchemaType::role_symbol(),
-                ),
-            ));
+            return metadata;
         }
 
-        let storage_schema = StorageSchema::new(slots).expect("storage schema should be valid");
+        let slots = metadata
+            .storage_schema()
+            .iter()
+            .filter(|(slot_name, _)| *slot_name != Self::procedure_roles_slot())
+            .map(|(slot_name, schema)| (slot_name.clone(), schema.clone()));
+        let storage_schema =
+            StorageSchema::new(slots).expect("a subset of a valid schema is valid");
 
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Account-wide authority shared by procedures that gate state-mutating \
-                 operations behind auth-only, owner-based, or RBAC role-based checks",
-            )
-            .with_storage_schema(storage_schema)
+        metadata.with_storage_schema(storage_schema)
     }
 
     // PRIVATE HELPERS

@@ -11,3 +11,47 @@ path      = "network_account.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Authentication component that restricts input notes and transaction scripts to fixed allowlists of script roots"
+name        = "miden::standards::auth::network_account"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed transaction script roots"
+name        = "miden::standards::auth::network_account::allowed_tx_scripts"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Active fee policy procedure root"
+name        = "miden::standards::auth::network_account::active_fee_policy_proc_root"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Whether sponsorships are capped at the fees collected in the same transaction"
+name        = "miden::standards::auth::network_account::sponsor_at_most_collected_fees"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed fee policy procedure roots"
+name        = "miden::standards::auth::network_account::allowed_fee_policy_proc_roots"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "ID of the asset fees are charged in"
+name        = "miden::standards::auth::network_account::fee_asset_id"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Allowed input note script roots"
+name        = "miden::standards::auth::network_account::allowed_note_scripts"
+
+[package.metadata.account-component.storage.slots.type]
+key   = "word"
+value = "word"

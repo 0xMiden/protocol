@@ -12,3 +12,8 @@ miden-agglayer.workspace  = true
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Bridge component for AggLayer"
+name        = "agglayer::bridge"
+version     = "1.0.0"
