@@ -595,7 +595,7 @@ proc execute_pswap
     # => [ASSET_ID, ASSET_VALUE]
 
     # Extract offered amount
-    exec.fungible_asset::to_amount
+    exec.fungible_asset::to_amount_unchecked
     # => [amount, ASSET_ID, ASSET_VALUE]
 
     loc_store.EXEC_AMT_OFFERED
