@@ -152,14 +152,15 @@ pub fn create_existing_priced_bridge(
 ) -> anyhow::Result<Account> {
     let roles =
         BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
-    let fee_policy_manager = network_note_pricer(verification_base_fee)
-        .basic_constant_fee_policy_manager(AggLayerBridge::allowed_notes())?;
+    let pricer = network_note_pricer(verification_base_fee);
+    let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
     Ok(AggLayerBridge::account_builder(
         seed,
         bridge_admin,
         roles,
         MIDEN_NETWORK_ID,
-        fee_policy_manager,
+        pricer.fee_parameters().fee_faucet_id(),
+        fee_policy,
     )
     .build_existing()?)
 }
@@ -173,8 +174,8 @@ pub fn priced_faucet_builder(
     bridge_account_id: AccountId,
     verification_base_fee: u32,
 ) -> anyhow::Result<AccountBuilder> {
-    let fee_policy_manager = network_note_pricer(verification_base_fee)
-        .basic_constant_fee_policy_manager(AggLayerFaucet::allowed_notes())?;
+    let pricer = network_note_pricer(verification_base_fee);
+    let fee_policy = pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?;
     let faucet_admin = bridge_admin_account_id();
     Ok(AggLayerFaucet::account_builder(
         seed,
@@ -184,7 +185,8 @@ pub fn priced_faucet_builder(
         initial_supply,
         faucet_admin,
         bridge_account_id,
-        fee_policy_manager,
+        pricer.fee_parameters().fee_faucet_id(),
+        fee_policy,
     ))
 }
 
