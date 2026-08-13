@@ -2,6 +2,7 @@ mod bridge_in;
 mod bridge_out;
 mod config_bridge;
 mod faucet_helpers;
+mod fee_policy;
 mod global_index;
 mod leaf_utils;
 mod merkle_tree_frontier;
