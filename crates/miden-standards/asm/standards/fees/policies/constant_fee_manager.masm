@@ -76,7 +76,7 @@ pub proc set_note_fee(note_lookup_key: word, fee_asset: Asset)
     # => [FEE_ASSET_VALUE, NOTE_LOOKUP_KEY, pad(8)]
 
     # Extract the asset amount from the value and assert that it was well-formed
-    exec.fungible_asset::try_value_to_amount
+    exec.fungible_asset::value_into_amount
     # => [amount, NOTE_LOOKUP_KEY, pad(11)]
 
     # build the fee schedule entry [amount, 0, 0, 1] with the set-marker as the last element

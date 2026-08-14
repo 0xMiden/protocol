@@ -2,7 +2,11 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
-use miden_agglayer::testing::{bridge_admin_account_id, create_existing_bridge_account_with_roles};
+use miden_agglayer::testing::{
+    bridge_admin_account_id,
+    create_existing_agglayer_faucet,
+    create_existing_bridge_account_with_roles,
+};
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -14,7 +18,6 @@ use miden_agglayer::{
     MetadataHash,
     RemoveGerNote,
     UpdateGerNote,
-    create_existing_agglayer_faucet,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
