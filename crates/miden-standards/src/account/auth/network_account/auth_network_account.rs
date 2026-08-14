@@ -419,6 +419,24 @@ impl IntoIterator for AuthNetworkAccount {
     /// Expands the configuration into its [`AccountComponent`]s: the auth component itself and all
     /// fee policy components registered with the [`FeePolicyManager`].
     fn into_iter(self) -> Self::IntoIter {
+        self.into_components(false)
+    }
+}
+
+impl AuthNetworkAccount {
+    /// Expands this configuration with an empty fee-asset slot.
+    ///
+    /// Used only while building the native faucet for genesis.
+    pub(crate) fn into_components_with_uninitialized_fee_asset(
+        self,
+    ) -> impl IntoIterator<Item = AccountComponent> {
+        self.into_components(true)
+    }
+
+    fn into_components(
+        self,
+        uninitialized_fee_asset: bool,
+    ) -> alloc::vec::IntoIter<AccountComponent> {
         let Self {
             allowed_notes,
             allowed_tx_scripts,
@@ -426,7 +444,11 @@ impl IntoIterator for AuthNetworkAccount {
             policy_manager,
         } = self;
 
-        let fee_policy_slots = policy_manager.to_storage_slots();
+        let fee_policy_slots = if uninitialized_fee_asset {
+            policy_manager.to_storage_slots_with_uninitialized_fee_asset()
+        } else {
+            policy_manager.to_storage_slots()
+        };
         let mut storage_slots = vec![
             allowed_notes.into_storage_slot(),
             allowed_tx_scripts.into_storage_slot(),

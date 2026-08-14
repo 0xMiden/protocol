@@ -14,6 +14,7 @@ use miden_protocol::account::{
     AccountCodeInterface,
     AccountComponent,
     AccountComponentName,
+    AccountId,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
@@ -21,7 +22,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, AssetId, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -36,8 +37,14 @@ use super::{
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
-use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
-use crate::account::fees::FeePolicyManager;
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthNetworkAccount,
+    AuthSingleSig,
+    NetworkAccount,
+};
+use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
@@ -643,10 +650,67 @@ pub fn create_network_fungible_faucet(
     fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
+    let account_builder = NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
+        .expect("MintNote + BurnNote allowlist is non-empty");
+
+    build_network_fungible_faucet(account_builder, faucet, access_control, token_policy_manager)
+}
+
+/// Creates the native fungible faucet for genesis.
+///
+/// The account ID is derived with an empty fee-asset slot. The slot is then set to the asset issued
+/// by the account. The returned account has nonce `1` and no seed.
+///
+/// The faucet is owned by `operator_id` through [`AccessControl::Ownable2Step`].
+///
+/// # Warning
+///
+/// This account can only be added at genesis. It cannot be deployed in a transaction.
+pub fn create_native_fungible_faucet_for_genesis(
+    init_seed: [u8; 32],
+    faucet: FungibleFaucet,
+    operator_id: AccountId,
+    token_policy_manager: TokenPolicyManager,
+    fee_policy: BasicConstantFeePolicy,
+) -> Result<Account, FungibleFaucetError> {
+    // This temporary fee asset is replaced with an empty word before the ID is derived.
+    let fee_policy_manager = FeePolicyManager::builder()
+        .fee_faucet_id(operator_id)
+        .active_fee_policy(fee_policy.into())
+        .build();
+    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
+    let auth_component = AuthNetworkAccount::new(note_allowlist, fee_policy_manager)
+        .expect("MintNote + BurnNote allowlist is non-empty");
+    let account_builder = AccountBuilder::new(init_seed)
+        .account_type(AccountType::Public)
+        .with_components(auth_component.into_components_with_uninitialized_fee_asset());
+
+    let partial_account = build_network_fungible_faucet(
+        account_builder,
+        faucet,
+        AccessControl::Ownable2Step { owner: operator_id },
+        token_policy_manager,
+    )?;
+    let fee_asset_id = AssetId::new_fungible(partial_account.id());
+    let (id, vault, mut storage, code, _nonce, _seed) = partial_account.into_parts();
+    let previous_fee_asset_id = storage
+        .set_item(FeePolicyManager::fee_asset_id_slot(), fee_asset_id.to_word())
+        .map_err(FungibleFaucetError::AccountError)?;
+    debug_assert_eq!(previous_fee_asset_id, Word::empty());
+
+    Account::new(id, vault, storage, code, Felt::ONE, None)
+        .map_err(FungibleFaucetError::AccountError)
+}
+
+fn build_network_fungible_faucet(
+    account_builder: AccountBuilder,
+    faucet: FungibleFaucet,
+    access_control: AccessControl,
+    token_policy_manager: TokenPolicyManager,
+) -> Result<Account, FungibleFaucetError> {
     let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
 
-    NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
-        .expect("MintNote + BurnNote allowlist is non-empty")
+    account_builder
         .with_asset_callbacks(asset_callbacks)
         .with_component(faucet)
         .with_components(access_control)

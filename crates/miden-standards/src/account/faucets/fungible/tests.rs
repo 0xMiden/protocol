@@ -1,13 +1,14 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageMapKey};
-use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
 use super::{
     FungibleFaucet,
     create_guarded_user_fungible_faucet,
     create_multisig_user_fungible_faucet,
+    create_native_fungible_faucet_for_genesis,
     create_network_fungible_faucet,
     create_singlesig_user_fungible_faucet,
 };
@@ -19,9 +20,10 @@ use crate::account::auth::{
     AuthNetworkAccount,
     AuthSingleSig,
     GuardianConfig,
+    NetworkAccount,
 };
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
-use crate::account::fees::FeePolicyManager;
+use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
 use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
@@ -231,6 +233,68 @@ fn network_fungible_faucet_allowlists_expiration_tx_script() {
         )
         .unwrap();
     assert_eq!(stored, [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into());
+}
+
+/// The genesis native faucet uses its own asset for fees.
+#[test]
+fn native_fungible_faucet_for_genesis_uses_its_own_fee_asset() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    const INIT_SEED: [u8; 32] = [9; 32];
+
+    let operator = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let account = create_native_fungible_faucet_for_genesis(
+        INIT_SEED,
+        sample_faucet(),
+        operator,
+        allow_all_policy_manager(),
+        BasicConstantFeePolicy::new(),
+    )
+    .unwrap();
+
+    assert_eq!(account.nonce(), Felt::ONE);
+    assert_eq!(account.seed(), None);
+    assert!(NetworkAccount::new(account.clone()).is_ok());
+    assert_eq!(
+        account.storage().get_item(FeePolicyManager::fee_asset_id_slot()).unwrap(),
+        AssetId::new_fungible(account.id()).to_word()
+    );
+    assert_eq!(
+        account.storage().get_item(FeePolicyManager::active_fee_policy_slot()).unwrap(),
+        BasicConstantFeePolicy::root().as_word()
+    );
+    assert_eq!(
+        account
+            .storage()
+            .get_map_item(
+                FeePolicyManager::allowed_fee_policies_slot(),
+                StorageMapKey::new(BasicConstantFeePolicy::root().as_word()),
+            )
+            .unwrap(),
+        Word::from([1u32, 0, 0, 0])
+    );
+
+    // Recreate the storage commitment used to derive the account ID.
+    let id = account.id();
+    let (_id, _vault, mut initial_storage, code, _nonce, _seed) = account.into_parts();
+    initial_storage
+        .set_item(FeePolicyManager::fee_asset_id_slot(), Word::empty())
+        .unwrap();
+    let code_commitment = code.commitment();
+    let storage_commitment = initial_storage.to_commitment();
+    let account_seed = AccountId::compute_account_seed(
+        INIT_SEED,
+        AccountType::Public,
+        id.asset_callback_flag(),
+        id.version(),
+        code_commitment,
+        storage_commitment,
+    )
+    .unwrap();
+    let derived_id =
+        AccountId::new(account_seed, id.version(), code_commitment, storage_commitment).unwrap();
+
+    assert_eq!(derived_id, id);
 }
 
 #[test]
