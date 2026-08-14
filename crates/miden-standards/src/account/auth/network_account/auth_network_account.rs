@@ -1,5 +1,5 @@
 use alloc::collections::BTreeSet;
-use alloc::vec;
+use alloc::vec::IntoIter;
 
 use miden_protocol::account::component::{
     AccountComponentCode,
@@ -414,7 +414,7 @@ impl AuthNetworkAccount {
 
 impl IntoIterator for AuthNetworkAccount {
     type Item = AccountComponent;
-    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+    type IntoIter = IntoIter<AccountComponent>;
 
     /// Expands the configuration into its [`AccountComponent`]s: the auth component itself and all
     /// fee policy components registered with the [`FeePolicyManager`].
@@ -433,10 +433,7 @@ impl AuthNetworkAccount {
         self.into_components(true)
     }
 
-    fn into_components(
-        self,
-        uninitialized_fee_asset: bool,
-    ) -> alloc::vec::IntoIter<AccountComponent> {
+    fn into_components(self, uninitialized_fee_asset: bool) -> IntoIter<AccountComponent> {
         let Self {
             allowed_notes,
             allowed_tx_scripts,
