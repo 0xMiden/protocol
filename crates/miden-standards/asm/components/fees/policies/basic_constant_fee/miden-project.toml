@@ -20,7 +20,4 @@ version     = "1.0.0"
 [[package.metadata.account-component.storage.slots]]
 description = "Fee charged per note script root"
 name        = "miden::standards::fees::policies::basic_constant_fee::fee_schedule"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "word"
+type        = { key = "word", value = "word" }

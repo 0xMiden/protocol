@@ -20,7 +20,4 @@ version     = "1.0.0"
 [[package.metadata.account-component.storage.slots]]
 description = "Per-account allowed flag; zero word is not allowed, [1,0,0,0] is allowed"
 name        = "miden::standards::faucets::policies::transfer::allowlist::allowed_accounts"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "bool"
+type        = { key = "word", value = "bool" }

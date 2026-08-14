@@ -232,10 +232,7 @@ type = "void"
 [[package.metadata.account-component.storage.slots]]
 description = "Asset status registry. Key is the token ID padded to a word `[token_id_suffix, token_id_prefix, 0, 0]`; value is the status (0 = not issued, 1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`."
 name        = "miden::standards::faucets::non_fungible::asset_status"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "felt"
+type        = { key = "word", value = "felt" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Description chunk 3"

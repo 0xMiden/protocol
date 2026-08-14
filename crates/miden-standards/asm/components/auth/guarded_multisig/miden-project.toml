@@ -20,50 +20,32 @@ version     = "1.0.0"
 [[package.metadata.account-component.storage.slots]]
 description = "Guardian public keys"
 name        = "miden::standards::auth::guardian::pub_key"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "u32"
-value = "miden::standards::auth::pub_key"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Executed transactions"
 name        = "miden::standards::auth::multisig::executed_transactions"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "word"
+type        = { key = "word", value = "word" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Approver public keys"
 name        = "miden::standards::auth::multisig::approver_public_keys"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "u32"
-value = "miden::standards::auth::pub_key"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Procedure thresholds"
 name        = "miden::standards::auth::multisig::procedure_thresholds"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "u32"
+type        = { key = "word", value = "u32" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Guardian scheme IDs"
 name        = "miden::standards::auth::guardian::scheme"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "u32"
-value = "miden::standards::auth::scheme"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Approver scheme IDs"
 name        = "miden::standards::auth::multisig::approver_schemes"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "u32"
-value = "miden::standards::auth::scheme"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Threshold configuration"

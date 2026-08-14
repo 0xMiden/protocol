@@ -20,10 +20,7 @@ version     = "1.0.0"
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed transaction script roots"
 name        = "miden::standards::auth::network_account::allowed_tx_scripts"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "word"
+type        = { key = "word", value = "word" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Active fee policy procedure root"
@@ -38,10 +35,7 @@ type        = "word"
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed fee policy procedure roots"
 name        = "miden::standards::auth::network_account::allowed_fee_policy_proc_roots"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "word"
+type        = { key = "word", value = "word" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "ID of the asset fees are charged in"
@@ -51,7 +45,4 @@ type        = "word"
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed input note script roots"
 name        = "miden::standards::auth::network_account::allowed_note_scripts"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "word"
+type        = { key = "word", value = "word" }

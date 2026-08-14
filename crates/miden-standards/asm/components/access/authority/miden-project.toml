@@ -20,10 +20,7 @@ version     = "1.0.0"
 [[package.metadata.account-component.storage.slots]]
 description = "Per-procedure role assignment (procedure root -> role symbol)"
 name        = "miden::standards::access::authority::procedure_roles"
-
-[package.metadata.account-component.storage.slots.type]
-key   = "word"
-value = "miden::standards::access::role_symbol"
+type        = { key = "word", value = "miden::standards::access::role_symbol" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Authority configuration"
