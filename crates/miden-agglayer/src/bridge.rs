@@ -20,7 +20,9 @@ use miden_protocol::note::{Note, NoteScriptRoot};
 #[cfg(any(feature = "testing", test))]
 use miden_standards::account::access::PausableStorage;
 use miden_standards::account::access::RoleConfig;
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::note::{
+    ConstantFeePolicyConfigNote,
     NetworkAccountTarget,
     NetworkAccountTargetError,
     NoteExecutionHint,
@@ -467,24 +469,15 @@ impl AggLayerBridge {
         &LET_NUM_LEAVES_SLOT_NAME
     }
 
-    // ALLOWED SCRIPTS
+    // ALLOWED NOTES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the set of input-note script roots that AggLayer bridge accounts accept.
+    /// Returns the input-note script roots allowlisted on a newly deployed AggLayer bridge.
     ///
-    /// The bridge's [`AuthNetworkAccount`] component is initialized with this allowlist, which
-    /// means any transaction consuming a note outside this set is rejected before reaching
-    /// `output_note::create`.
-    ///
-    /// Besides the agglayer-specific notes, the bridge accepts two standards notes: the
-    /// [`PauseConfigNote`], so the `ADMIN` role can toggle the emergency pause, and the
-    /// role-management [`RbacConfigNote`], which makes the bridge's RBAC role graph mutable
-    /// on-chain (see the [`RbacConfigNote`] security considerations and the Administration
-    /// section of `SPEC.md` for the associated caveats).
-    ///
-    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    /// A live account's allowlist is available through
+    /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
-        BTreeSet::from([
+        let mut notes = BTreeSet::from([
             ClaimNote::script_root(),
             B2AggNote::script_root(),
             ConfigAggBridgeNote::script_root(),
@@ -493,7 +486,10 @@ impl AggLayerBridge {
             RemoveGerNote::script_root(),
             PauseConfigNote::script_root(),
             RbacConfigNote::script_root(),
-        ])
+            ConstantFeePolicyConfigNote::script_root(),
+        ]);
+        notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
+        notes
     }
 
     // PAUSE NOTE
@@ -813,7 +809,7 @@ impl AggLayerBridge {
     /// Besides the [`AggLayerBridge`] component's own slots, this includes the standards-owned
     /// `is_paused` slot: `pausable::assert_not_paused` treats a missing slot as unpaused, so this
     /// testing-side validator certifies the slot exists. (In production the slot is guaranteed by
-    /// `create_bridge_account_builder` always installing the `Pausable` component.)
+    /// `AggLayerBridge::account_builder` always installing the `Pausable` component.)
     fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             &*GER_MAP_SLOT_NAME,
