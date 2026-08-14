@@ -126,9 +126,8 @@ impl AccountCode {
     /// Returns an error if:
     /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more packages export a procedure with the same MAST root.
-    /// - The first component doesn't contain exactly one authentication procedure.
-    /// - Other components contain authentication procedures.
+    /// - The components don't contain exactly one authentication component with exactly one
+    ///   authentication procedure.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of a component or of all
     ///   components exceeds 255.
     /// - [`MastForest::merge`] fails on all packages.
@@ -373,16 +372,14 @@ impl AccountProcedureBuilder {
         Self { procedures: Vec::new() }
     }
 
-    /// This method must be called before add_component is called.
     fn add_auth_component(&mut self, component: &AccountComponent) -> Result<(), AccountError> {
         let mut auth_proc_count = 0;
 
         for (proc_root, is_auth) in component.procedures() {
-            self.add_procedure(proc_root);
+            let proc_idx = self.add_procedure(proc_root);
 
             if is_auth {
-                let auth_proc_idx = self.procedures.len() - 1;
-                self.procedures.swap(0, auth_proc_idx);
+                self.procedures.swap(0, proc_idx);
                 auth_proc_count += 1;
             }
         }
@@ -407,11 +404,18 @@ impl AccountProcedureBuilder {
         Ok(())
     }
 
-    fn add_procedure(&mut self, proc_root: AccountProcedureRoot) {
-        // Allow procedures with the same MAST root from different components, but only add them
-        // once.
-        if !self.procedures.contains(&proc_root) {
-            self.procedures.push(proc_root);
+    /// Adds the procedure and returns its index, which is the index of the existing entry if the
+    /// procedure was added before.
+    ///
+    /// Different components may export procedures with the same MAST root, but the set of
+    /// procedures must not contain duplicates.
+    fn add_procedure(&mut self, proc_root: AccountProcedureRoot) -> usize {
+        match self.procedures.iter().position(|existing_root| existing_root == &proc_root) {
+            Some(existing_idx) => existing_idx,
+            None => {
+                self.procedures.push(proc_root);
+                self.procedures.len() - 1
+            },
         }
     }
 
@@ -474,7 +478,9 @@ fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
 mod tests {
     use alloc::vec::Vec;
 
+    use anyhow::Context;
     use assert_matches::assert_matches;
+    use rstest::rstest;
 
     use super::{AccountCode, ByteWriter, Deserializable, DeserializationError, Serializable};
     use crate::Word;
@@ -566,6 +572,66 @@ mod tests {
         let err = AccountCode::from_components(&[component]).unwrap_err();
 
         assert_matches!(err, AccountError::AccountComponentMultipleAuthProcedures);
+    }
+
+    /// Tests that the auth procedure is at index 0 even if its MAST root was already added by a
+    /// previously processed non-auth component, no matter at which index that component sits.
+    #[rstest]
+    #[case::duplicate_first(true)]
+    #[case::duplicate_second(false)]
+    fn test_account_code_auth_procedure_at_index_zero_on_duplicate_root(
+        #[case] duplicate_first: bool,
+    ) -> anyhow::Result<()> {
+        // Same body as the auth procedure of NoopAuthComponent, so it has the same MAST root.
+        let duplicate_of_auth = "
+            @account_procedure
+            pub proc noop
+                push.0 drop
+            end
+        ";
+        let duplicate_component = AccountComponent::new(
+            assemble_test_package(
+                "test-account-code-duplicate-auth-root",
+                "test::duplicate_auth_root",
+                duplicate_of_auth,
+            ),
+            vec![],
+            AccountComponentMetadata::new("test::duplicate_auth_root"),
+        )?;
+
+        let other_component = AccountComponent::new(
+            assemble_test_package("test-account-code-other", "test::other", CODE),
+            vec![],
+            AccountComponentMetadata::new("test::other"),
+        )?;
+
+        let auth_component = AccountComponent::from(NoopAuthComponent);
+        let auth_proc_root = auth_component
+            .procedures()
+            .find_map(|(proc_root, is_auth)| is_auth.then_some(proc_root))
+            .context("auth component should export an auth procedure")?;
+
+        // Without this the test would not cover the deduplication path it guards.
+        let duplicate_proc_root = duplicate_component
+            .procedures()
+            .next()
+            .context("duplicate component should export a procedure")?
+            .0;
+        assert_eq!(duplicate_proc_root, auth_proc_root);
+
+        let components = if duplicate_first {
+            [duplicate_component, other_component, auth_component]
+        } else {
+            [other_component, duplicate_component, auth_component]
+        };
+
+        let code = AccountCode::from_components(&components)?;
+
+        assert_eq!(code.procedures()[0], auth_proc_root);
+        // The procedure displaced by moving the auth procedure to index 0 must be retained.
+        assert_eq!(code.num_procedures(), 3);
+
+        Ok(())
     }
 
     #[test]
