@@ -1986,8 +1986,8 @@ pub proc tx_exec_foreign_proc
     # => [FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
 
     # bind the executed code to the account whose state it reads by requiring the procedure to be
-    # part of the foreign account's code. this is NOT the same as the account procedure
-    # authentication the kernel already does. without this, the called procedure could dyncall into
+    # part of the foreign account's code. This is NOT the same as the account procedure
+    # authentication the kernel already does. Without this, the called procedure could dyncall into
     # a genuine procedure of the account and it would pass.
     exec.account::assert_procedure_in_account drop
     # => [foreign_procedure_inputs(16)]
