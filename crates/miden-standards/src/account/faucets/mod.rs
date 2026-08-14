@@ -12,6 +12,7 @@ mod token_metadata;
 pub use fungible::{
     FungibleFaucet,
     FungibleFaucetBuilder,
+    NativeFungibleFaucetAccountBuilder,
     create_guarded_user_fungible_faucet,
     create_multisig_user_fungible_faucet,
     create_native_fungible_faucet_for_genesis,

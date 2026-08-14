@@ -567,6 +567,73 @@ impl TryFrom<&Account> for FungibleFaucet {
 // FACTORY
 // ================================================================================================
 
+/// Builds a native fungible faucet account for genesis from a caller-defined component set.
+///
+/// The supplied [`AuthNetworkAccount`] determines the note allowlist, transaction-script allowlist,
+/// sponsorship policy, and fee policies. Its configured fee asset is ignored: the fee-asset slot is
+/// empty while the account ID is derived and is then set to the fungible asset issued by that
+/// account. Additional components can be supplied with [`Self::with_component`] and
+/// [`Self::with_components`].
+///
+/// The resulting account is public, has nonce `1`, has no seed, and must contain the
+/// [`FungibleFaucet`] interface. It can only be added at genesis and cannot be deployed in a
+/// transaction.
+#[derive(Debug, Clone)]
+pub struct NativeFungibleFaucetAccountBuilder {
+    account_builder: AccountBuilder,
+}
+
+impl NativeFungibleFaucetAccountBuilder {
+    /// Creates a native faucet builder with the supplied network-account authentication
+    /// configuration.
+    pub fn new(init_seed: [u8; 32], auth_component: AuthNetworkAccount) -> Self {
+        let account_builder = AccountBuilder::new(init_seed)
+            .account_type(AccountType::Public)
+            .with_components(auth_component.into_components_with_uninitialized_fee_asset());
+
+        Self { account_builder }
+    }
+
+    /// Sets whether assets issued by the faucet trigger asset callbacks.
+    pub fn with_asset_callbacks(mut self, asset_callbacks: AssetCallbackFlag) -> Self {
+        self.account_builder = self.account_builder.with_asset_callbacks(asset_callbacks);
+        self
+    }
+
+    /// Adds an account component to the native faucet composition.
+    pub fn with_component(mut self, component: impl Into<AccountComponent>) -> Self {
+        self.account_builder = self.account_builder.with_component(component);
+        self
+    }
+
+    /// Adds account components to the native faucet composition.
+    pub fn with_components<I, C>(mut self, components: I) -> Self
+    where
+        I: IntoIterator<Item = C>,
+        C: Into<AccountComponent>,
+    {
+        self.account_builder = self.account_builder.with_components(components);
+        self
+    }
+
+    /// Builds the genesis account and configures it to pay fees in its own fungible asset.
+    pub fn build(self) -> Result<Account, FungibleFaucetError> {
+        let partial_account =
+            self.account_builder.build().map_err(FungibleFaucetError::AccountError)?;
+        FungibleFaucet::try_from(&partial_account)?;
+
+        let fee_asset_id = AssetId::new_fungible(partial_account.id());
+        let (id, vault, mut storage, code, _nonce, _seed) = partial_account.into_parts();
+        let previous_fee_asset_id = storage
+            .set_item(FeePolicyManager::fee_asset_id_slot(), fee_asset_id.to_word())
+            .map_err(FungibleFaucetError::AccountError)?;
+        debug_assert_eq!(previous_fee_asset_id, Word::empty());
+
+        Account::new(id, vault, storage, code, Felt::ONE, None)
+            .map_err(FungibleFaucetError::AccountError)
+    }
+}
+
 /// Creates a new **user-account** fungible faucet authenticated by a single signature.
 /// The account's auth component is the sole gate for authority-protected setters
 /// ([`Authority::AuthControlled`] is installed directly).
@@ -681,25 +748,16 @@ pub fn create_native_fungible_faucet_for_genesis(
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
     let auth_component = AuthNetworkAccount::new(note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty");
-    let account_builder = AccountBuilder::new(init_seed)
-        .account_type(AccountType::Public)
-        .with_components(auth_component.into_components_with_uninitialized_fee_asset());
+    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
 
-    let partial_account = build_network_fungible_faucet(
-        account_builder,
-        faucet,
-        AccessControl::Ownable2Step { owner: operator_id },
-        token_policy_manager,
-    )?;
-    let fee_asset_id = AssetId::new_fungible(partial_account.id());
-    let (id, vault, mut storage, code, _nonce, _seed) = partial_account.into_parts();
-    let previous_fee_asset_id = storage
-        .set_item(FeePolicyManager::fee_asset_id_slot(), fee_asset_id.to_word())
-        .map_err(FungibleFaucetError::AccountError)?;
-    debug_assert_eq!(previous_fee_asset_id, Word::empty());
-
-    Account::new(id, vault, storage, code, Felt::ONE, None)
-        .map_err(FungibleFaucetError::AccountError)
+    NativeFungibleFaucetAccountBuilder::new(init_seed, auth_component)
+        .with_asset_callbacks(asset_callbacks)
+        .with_component(faucet)
+        .with_components(AccessControl::Ownable2Step { owner: operator_id })
+        .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
+        .with_component(PausableManager)
+        .build()
 }
 
 fn build_network_fungible_faucet(
