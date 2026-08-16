@@ -1,4 +1,5 @@
 use alloc::borrow::ToOwned;
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -156,8 +157,8 @@ impl RoutingParameters {
     pub(crate) fn encode_to_string(&self) -> String {
         let encoded = self.encode_to_bytes();
 
-        let bech32_str =
-            bech32::encode::<Bech32m>(*ROUTING_PARAMETERS_HRP, &encoded).expect("TODO");
+        let bech32_str = bech32::encode::<Bech32m>(*ROUTING_PARAMETERS_HRP, &encoded)
+            .expect("encoding routing parameters with valid HRP and payload should not fail");
         let encoded_str = bech32_str
             .strip_prefix(ROUTING_PARAMETERS_HRP.as_str())
             .expect("bech32 str should start with the hrp");
@@ -168,17 +169,17 @@ impl RoutingParameters {
     }
 
     /// Decodes [`RoutingParameters`] from a bech32 string _without_ the leading hrp and separator.
-    pub(crate) fn decode(mut bech32_string: String) -> Result<Self, AddressError> {
+    pub(crate) fn decode(bech32_str: &str) -> Result<Self, AddressError> {
         // ------ Decode bech32 string into bytes ------
 
-        // Reinsert the expected HRP into the string that is stripped during encoding.
-        bech32_string.insert_str(0, BECH32_SEPARATOR);
-        bech32_string.insert_str(0, ROUTING_PARAMETERS_HRP.as_str());
+        // Reconstruct the full HRP-prefixed string stripped during encoding.
+        let full_bech32_string =
+            format!("{}{}{}", ROUTING_PARAMETERS_HRP.as_str(), BECH32_SEPARATOR, bech32_str);
 
         // We use CheckedHrpString with an explicit checksum algorithm so we don't allow the
         // `Bech32` or `NoChecksum` algorithms.
         let checked_string =
-            CheckedHrpstring::new::<Bech32m>(&bech32_string).map_err(|source| {
+            CheckedHrpstring::new::<Bech32m>(&full_bech32_string).map_err(|source| {
                 // The CheckedHrpStringError does not implement core::error::Error, only
                 // std::error::Error, so for now we convert it to a String. Even if it will
                 // implement the trait in the future, we should include it as an opaque
@@ -448,7 +449,7 @@ mod tests {
         // Test case 1: No explicit tag length
         let params_no_tag = RoutingParameters::new(AddressInterface::BasicWallet);
         let encoded = params_no_tag.encode_to_string();
-        let decoded = RoutingParameters::decode(encoded)?;
+        let decoded = RoutingParameters::decode(&encoded)?;
         assert_eq!(params_no_tag, decoded);
         assert_eq!(decoded.note_tag_len(), None);
 
@@ -456,7 +457,7 @@ mod tests {
         let params_tag_0 =
             RoutingParameters::new(AddressInterface::BasicWallet).with_note_tag_len(0)?;
         let encoded = params_tag_0.encode_to_string();
-        let decoded = RoutingParameters::decode(encoded)?;
+        let decoded = RoutingParameters::decode(&encoded)?;
         assert_eq!(params_tag_0, decoded);
         assert_eq!(decoded.note_tag_len(), Some(0));
 
@@ -464,7 +465,7 @@ mod tests {
         let params_tag_6 =
             RoutingParameters::new(AddressInterface::BasicWallet).with_note_tag_len(6)?;
         let encoded = params_tag_6.encode_to_string();
-        let decoded = RoutingParameters::decode(encoded)?;
+        let decoded = RoutingParameters::decode(&encoded)?;
         assert_eq!(params_tag_6, decoded);
         assert_eq!(decoded.note_tag_len(), Some(6));
 
@@ -472,7 +473,7 @@ mod tests {
         let params_tag_max = RoutingParameters::new(AddressInterface::BasicWallet)
             .with_note_tag_len(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)?;
         let encoded = params_tag_max.encode_to_string();
-        let decoded = RoutingParameters::decode(encoded)?;
+        let decoded = RoutingParameters::decode(&encoded)?;
         assert_eq!(params_tag_max, decoded);
         assert_eq!(decoded.note_tag_len(), Some(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH));
 
@@ -526,7 +527,7 @@ mod tests {
 
             // Test bech32 encoding/decoding
             let encoded = routing_params.encode_to_string();
-            let decoded = RoutingParameters::decode(encoded)?;
+            let decoded = RoutingParameters::decode(&encoded)?;
             assert_eq!(routing_params, decoded);
             assert_eq!(decoded.encryption_key(), Some(&encryption_key));
 

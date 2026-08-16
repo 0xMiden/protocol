@@ -173,7 +173,7 @@ impl Address {
         let mut address = Address::new(identifier);
 
         if let Some(encoded_routing_params) = split.next() {
-            let routing_params = RoutingParameters::decode(encoded_routing_params.to_owned())?;
+            let routing_params = RoutingParameters::decode(encoded_routing_params)?;
             address = address.with_routing_parameters(routing_params);
         }
 
