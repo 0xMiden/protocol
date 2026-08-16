@@ -1,6 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use miden::tx_kernel_core::asset
+use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::memory
 use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_NONE} from miden::tx_kernel_core::asset
 
@@ -111,12 +112,24 @@ end
 #!
 #! Panics if:
 #! - the asset's composition is Custom (not yet supported).
+#! - the asset is fungible but not well formed (see fungible_asset::validate).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 pub proc remove_asset
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+
+    # validate a fungible caller value so a non-canonical value (non-zero upper limbs) cannot slip
+    # past the full-word removal check below and leave a dangling asset slot; non-fungible assets
+    # are removed by exact-word match, so their value is intentionally not validated here
+    exec.asset::is_fungible_asset_id
+    # => [is_fungible, ASSET_ID, ASSET_VALUE, input_note_ptr]
+    if.true
+        exec.fungible_asset::validate
+        # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+    end
     # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
 
     # set up the linear scan over the note's asset slots
@@ -210,9 +223,23 @@ pub proc remove_asset
         exec.asset::split
         # => [FINAL_ASSET_VALUE, found_asset_ptr]
 
-        # write the reduced value back to the note's asset slot
-        movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le
-        # => [FINAL_ASSET_VALUE]
+        # if nothing remains, clear the whole slot instead of leaving a dangling asset ID with an
+        # empty value
+        exec.word::testz
+        # => [is_empty_remainder, FINAL_ASSET_VALUE, found_asset_ptr]
+
+        if.true
+            # clear the asset's slot; the removed asset becomes (EMPTY_WORD, EMPTY_WORD)
+            dropw padw padw movup.8 exec.asset::store
+            # => []
+
+            padw
+            # => [FINAL_ASSET_VALUE]
+        else
+            # write the reduced value back to the note's asset slot
+            movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le
+            # => [FINAL_ASSET_VALUE]
+        end
     end
 end
 
