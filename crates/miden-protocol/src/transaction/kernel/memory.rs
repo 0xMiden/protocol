@@ -256,6 +256,10 @@ pub const NATIVE_ACCT_ID_AND_NONCE_PTR: MemoryAddress =
 /// The index of the account nonce within the account ID and nonce data.
 pub const ACCT_NONCE_IDX: DataIndex = 0;
 
+/// The index of the reserved element within the account ID and nonce data. This element must always
+/// be zero per the canonical encoding.
+pub const ACCT_RESERVED_IDX: DataIndex = 1;
+
 /// The index of the account ID within the account ID and nonce data.
 pub const ACCT_ID_SUFFIX_IDX: DataIndex = 2;
 pub const ACCT_ID_PREFIX_IDX: DataIndex = 3;

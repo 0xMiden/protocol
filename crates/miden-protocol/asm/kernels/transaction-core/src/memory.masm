@@ -201,6 +201,8 @@ pub const ACCOUNT_DATA_LENGTH = 8192
 # The offsets at which the account data is stored relative to the start of the account data segment.
 pub const ACCT_NONCE_OFFSET = 0
 pub const ACCT_ID_AND_NONCE_OFFSET = 0
+# Reserved element of the account header word; must always be zero per the canonical encoding.
+const ACCT_RESERVED_OFFSET = 1
 pub const ACCT_ID_SUFFIX_OFFSET = 2
 pub const ACCT_ID_PREFIX_OFFSET = 3
 const ACCT_VAULT_ROOT_OFFSET = 4
@@ -1089,6 +1091,19 @@ end
 #! - nonce is the nonce of the active account.
 pub proc get_account_nonce
     exec.get_active_account_data_ptr add.ACCT_NONCE_OFFSET
+    mem_load
+end
+
+#! Returns the reserved element of the active account's header word.
+#!
+#! Inputs:  []
+#! Outputs: [reserved]
+#!
+#! Where:
+#! - reserved is the reserved element of the account header word, which must always be zero per the
+#!   canonical encoding.
+pub proc get_account_reserved
+    exec.get_active_account_data_ptr add.ACCT_RESERVED_OFFSET
     mem_load
 end
 

@@ -45,6 +45,9 @@ const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE =
 const ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID =
     "account storage slot has an unsupported type"
 
+const ERR_ACCOUNT_STORAGE_SLOT_RESERVED_ELEMENT_MUST_BE_ZERO =
+    "reserved element of an account storage slot must be zero"
+
 const ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE =
     "account procedures following the authentication procedure must be unique and sorted in ascending order"
 
@@ -948,8 +951,9 @@ pub proc validate_seed
     # => []
 end
 
-#! Validates that slot IDs are sorted in ascending order, that slot IDs are unique, and that every
-#! slot's type belongs to the set of supported types (value or map).
+#! Validates that slot IDs are sorted in ascending order, that slot IDs are unique, that every
+#! slot's type belongs to the set of supported types (value or map), and that the reserved element
+#! of every slot record is zero.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -958,12 +962,13 @@ end
 #! - each slot's ID is not strictly less than the next slot's ID.
 #!    - this ensures sorting and uniqueness among slot IDs.
 #! - any slot has a type that is not a supported storage slot type.
+#! - any slot's reserved element is not zero.
 pub proc validate_storage
     exec.memory::get_num_storage_slots
     # => [num_slots]
 
     # iterate over all slots from the last one down to slot 0, validating each slot's type and
-    # comparing each slot's ID against the previous slot's ID
+    # reserved element and comparing each slot's ID against the previous slot's ID
     dup neq.0
     # => [should_loop, num_slots]
 
@@ -980,6 +985,11 @@ pub proc validate_storage
         # assert the slot type is value or map
         dup eq.STORAGE_SLOT_TYPE_VALUE swap eq.STORAGE_SLOT_TYPE_MAP or
         assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
+        # => [curr_slot_idx]
+
+        # assert the reserved element of the slot record is zero
+        dup exec.get_slot_reserved eq.0
+        assert.err=ERR_ACCOUNT_STORAGE_SLOT_RESERVED_ELEMENT_MUST_BE_ZERO
         # => [curr_slot_idx]
 
         # compare the slot's ID against the previous slot's ID, unless this is slot 0
@@ -1601,6 +1611,31 @@ pub proc get_slot_id
 
     exec.get_slot_id_inner
     # => [slot_id_suffix, slot_id_prefix]
+end
+
+#! Gets the reserved element of the storage slot at the provided index.
+#!
+#! WARNING: The index must be in bounds.
+#!
+#! Inputs:  [index]
+#! Outputs: [reserved]
+#!
+#! Where:
+#! - index is the index of the slot.
+#! - reserved is the reserved element of the slot record, which must be zero per the canonical
+#!   encoding.
+proc get_slot_reserved
+    # convert the index into a memory offset
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # => [offset]
+
+    exec.memory::get_account_active_storage_slots_section_ptr
+    add
+    # => [slot_ptr]
+
+    # the reserved element is the first element of the slot record
+    mem_load
+    # => [reserved]
 end
 
 
