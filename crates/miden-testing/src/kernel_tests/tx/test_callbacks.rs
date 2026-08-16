@@ -299,6 +299,72 @@ async fn test_faucet_without_callback_slot_skips_callback(
     Ok(())
 }
 
+/// The expected error when the faucet's callback slot holds a root that is not part of its code.
+const ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE: MasmError =
+    MasmError::from_static_str(
+        "the faucet callback procedure root is not part of the faucet's account code",
+    );
+
+/// Tests that consuming a callbacks-enabled asset fails when the issuing faucet's callback slot
+/// holds a procedure root that is not part of the faucet's account code.
+#[tokio::test]
+async fn test_faucet_with_invalid_callback_root_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    // Create a faucet whose ID enables callbacks and whose callback slot holds an arbitrary root
+    // that does not correspond to any of the faucet's procedures.
+    let arbitrary_root = Word::from([1u32, 2, 3, 4]);
+    let name = "miden::testing::callbacks";
+    let slots = AssetCallbacks::new()
+        .on_before_asset_added_to_account(arbitrary_root)
+        .into_storage_slots();
+    let component = AccountComponent::new(
+        CodeBuilder::new().compile_component_code(name, "pub proc dummy nop end")?,
+        slots,
+        AccountComponentMetadata::mock(name),
+    )?;
+
+    let account_builder = AccountBuilder::new([45u8; 32])
+        .account_type(AccountType::Public)
+        .with_asset_callbacks(AssetCallbackFlag::Enabled)
+        .with_component(MockFaucetComponent)
+        .with_component(component);
+
+    let faucet = builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+    let note =
+        builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE
+    );
+
+    Ok(())
+}
+
 // ON_ASSET_ADDED_TO_ACCOUNT TESTS
 // ================================================================================================
 
