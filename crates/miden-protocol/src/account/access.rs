@@ -17,7 +17,7 @@ use crate::utils::ShortCapitalString;
 /// actually used as the on-chain role key — rather than lexicographically by their text. The two
 /// orderings diverge (for example `"AB"` encodes above `"B"`), so ordering by the encoded value
 /// keeps in-memory ordering consistent with the on-chain key.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RoleSymbol(ShortCapitalString);
 
 impl RoleSymbol {
@@ -78,6 +78,20 @@ impl PartialOrd for RoleSymbol {
 impl fmt::Display for RoleSymbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl AsRef<str> for RoleSymbol {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl core::str::FromStr for RoleSymbol {
+    type Err = RoleSymbolError;
+
+    fn from_str(role_symbol: &str) -> Result<Self, Self::Err> {
+        Self::new(role_symbol)
     }
 }
 
@@ -157,5 +171,18 @@ mod tests {
         assert!(ab.as_element().as_canonical_u64() > b.as_element().as_canonical_u64());
         assert!(ab > b);
         assert!(b < ab);
+    }
+
+    #[test]
+    fn test_role_symbol_from_str_and_hash() {
+        use alloc::collections::BTreeSet;
+
+        let role: RoleSymbol = "MINTER_ADMIN".parse().unwrap();
+        assert_eq!(role.as_ref(), "MINTER_ADMIN");
+        assert_eq!(role.to_string(), "MINTER_ADMIN");
+
+        let mut set = BTreeSet::new();
+        set.insert(role.clone());
+        assert!(set.contains(&role));
     }
 }

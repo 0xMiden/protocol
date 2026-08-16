@@ -9,7 +9,7 @@ use crate::utils::ShortCapitalString;
 ///
 /// The label is stored internally as a validated short uppercase string and can be converted to a
 /// [`Felt`] encoding via [`as_element()`](Self::as_element).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenSymbol(ShortCapitalString);
 
 impl TokenSymbol {
@@ -70,6 +70,20 @@ impl TokenSymbol {
 impl fmt::Display for TokenSymbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl AsRef<str> for TokenSymbol {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl core::str::FromStr for TokenSymbol {
+    type Err = TokenSymbolError;
+
+    fn from_str(symbol: &str) -> Result<Self, Self::Err> {
+        TokenSymbol::new(symbol)
     }
 }
 
@@ -243,13 +257,24 @@ mod test {
 
     #[test]
     #[should_panic(expected = "invalid token symbol")]
-    fn token_symbol_panics_on_invalid_character() {
-        TokenSymbol::new_unchecked("ET$");
+    fn token_symbol_panics_on_number() {
+        TokenSymbol::new_unchecked("ETH1");
     }
 
     #[test]
-    #[should_panic(expected = "invalid token symbol")]
-    fn token_symbol_panics_on_number() {
-        TokenSymbol::new_unchecked("ETH1");
+    fn test_token_symbol_from_str_and_hash_and_ordering() {
+        use alloc::collections::BTreeSet;
+
+        let symbol: TokenSymbol = "ETH".parse().unwrap();
+        assert_eq!(symbol.as_ref(), "ETH");
+        assert_eq!(symbol.to_string(), "ETH");
+
+        let mut set = BTreeSet::new();
+        set.insert(symbol.clone());
+        assert!(set.contains(&symbol));
+
+        let a: TokenSymbol = "A".parse().unwrap();
+        let b: TokenSymbol = "B".parse().unwrap();
+        assert!(a < b);
     }
 }

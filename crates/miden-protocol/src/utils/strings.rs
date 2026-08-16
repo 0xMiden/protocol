@@ -14,12 +14,17 @@ use crate::errors::ShortCapitalStringError;
 /// The text is stored as a [`String`] and can be converted to a [`Felt`] encoding via
 /// [`as_element()`](Self::as_element), and decoded back via
 /// [`try_from_encoded_felt()`](Self::try_from_encoded_felt).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ShortCapitalString(String);
 
 impl ShortCapitalString {
     /// Maximum allowed string length.
     pub const MAX_LENGTH: usize = 12;
+
+    /// Returns a string slice of the inner value.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 
     /// Constructs a value from up to 12 uppercase ASCII Latin letters (`A`–`Z`).
     ///
