@@ -3,6 +3,10 @@ use {Asset} from miden::protocol::types
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
+#! Note that this procedure only adds the asset to the input vault; it does not enforce a maximum
+#! issuance for fungible assets or uniqueness for non-fungible assets across transactions - those
+#! invariants must be enforced by the faucet's account component.
+#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #!
@@ -13,9 +17,6 @@ use {Asset} from miden::protocol::types
 #! Panics if:
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
-#! - for fungible faucets if the total issuance after minting is greater than the maximum amount
-#!   allowed.
-#! - for non-fungible faucets if the non-fungible asset being minted already exists.
 #!
 #! Invocation: exec
 pub proc mint(asset: Asset)

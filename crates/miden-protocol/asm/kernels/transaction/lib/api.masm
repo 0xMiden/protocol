@@ -931,6 +931,10 @@ end
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
+#! Note that this procedure only adds the asset to the input vault; it does not enforce a maximum
+#! issuance for fungible assets or uniqueness for non-fungible assets across transactions - those
+#! invariants must be enforced by the faucet's account component.
+#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
@@ -943,10 +947,6 @@ end
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
-#! - For fungible faucets:
-#!   - if the total issuance after minting is greater than the maximum amount allowed.
-#! - For non-fungible faucets:
-#!   - if the non-fungible asset being minted already exists.
 #!
 #! Invocation: dynexec
 pub proc faucet_mint_asset
