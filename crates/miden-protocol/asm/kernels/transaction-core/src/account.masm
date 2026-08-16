@@ -42,6 +42,9 @@ const ERR_ACCOUNT_PROC_NOT_AUTH_PROC =
 const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE =
     "slot IDs must be unique and sorted in ascending order"
 
+const ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID =
+    "account storage slot has an unsupported type"
+
 const ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME = "storage slot with the provided name does not exist"
 
 const ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH =
@@ -931,7 +934,8 @@ pub proc validate_seed
     # => []
 end
 
-#! Validates that slot IDs are sorted in ascending order and that slot IDs are unique.
+#! Validates that slot IDs are sorted in ascending order, that slot IDs are unique, and that every
+#! slot's type belongs to the set of supported types (value or map).
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -939,7 +943,11 @@ end
 #! Pancis if:
 #! - each slot's ID is not strictly less than the next slot's ID.
 #!    - this ensures sorting and uniqueness among slot IDs.
+#! - any slot has a type that is not a supported storage slot type.
 pub proc validate_storage
+    exec.validate_storage_slot_types
+    # => []
+
     exec.memory::get_num_storage_slots
     # => [num_slots]
 
@@ -986,6 +994,46 @@ pub proc validate_storage
         # => [should_continue, prev_slot_idx]
     end
     # => [prev_slot_idx]
+
+    drop
+    # => []
+end
+
+#! Validates that every storage slot has a supported type (value or map).
+#!
+#! Unlike the sort check, this loop runs for every slot, including single-slot accounts.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - any slot has a type that is not a supported storage slot type.
+proc validate_storage_slot_types
+    exec.memory::get_num_storage_slots
+    # => [num_slots]
+
+    dup neq.0
+    # => [should_loop, num_slots]
+
+    while.true
+        # first iteration: remaining = num_slots, slot index = remaining - 1
+        # => [remaining]
+
+        sub.1
+        # => [slot_idx]
+
+        dup exec.get_native_storage_slot_type
+        # => [slot_type, slot_idx]
+
+        # assert the slot type is value or map
+        dup eq.STORAGE_SLOT_TYPE_VALUE swap eq.STORAGE_SLOT_TYPE_MAP or
+        assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
+        # => [slot_idx]
+
+        dup neq.0
+        # => [should_continue, slot_idx]
+    end
+    # => [slot_idx]
 
     drop
     # => []

@@ -37,6 +37,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_UNKNOWN_VERSION,
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
+    ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
 use miden_protocol::field::PrimeField64;
@@ -71,6 +72,7 @@ use crate::{
     ExecError,
     MockChain,
     TestTransactionBuilder,
+    assert_execution_error,
     assert_transaction_executor_error,
 };
 
@@ -585,6 +587,36 @@ async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
         assert_eq!(exec_output.get_stack_word(8), Word::empty(), "the rest of the stack is empty");
         assert_eq!(exec_output.get_stack_word(12), Word::empty(), "the rest of the stack is empty");
     }
+
+    Ok(())
+}
+
+/// Tests that `validate_storage` rejects a storage slot whose type is outside the supported set
+/// (value or map) instead of silently committing it as a map (audit finding L-11).
+#[tokio::test]
+async fn validate_storage_rejects_unsupported_slot_type() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
+
+    // Overwrite the type element (offset 1) of the first storage slot with an unsupported type,
+    // then run the new-account storage validation which must reject it.
+    let code = "
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::memory
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.2
+            exec.memory::get_native_account_active_storage_slots_ptr add.1
+            mem_store
+
+            exec.account::validate_storage
+        end
+        ";
+
+    let exec_output = mock_tx.execute_code(code).await;
+    assert_execution_error!(exec_output, ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID);
 
     Ok(())
 }
