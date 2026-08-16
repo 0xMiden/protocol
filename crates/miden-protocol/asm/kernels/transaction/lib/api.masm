@@ -1116,6 +1116,7 @@ end
 #! - is_active_note is false and the invocation does not originate from the account context.
 #! - is_active_note is true and no input note is being processed (attempted to access note assets
 #!   from incorrect context).
+#! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.

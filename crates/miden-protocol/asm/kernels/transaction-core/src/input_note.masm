@@ -25,6 +25,8 @@ const ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS =
 const ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS =
     "requested asset index should be less than the number of assets in the input note"
 
+const ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY = "asset ID to remove must not be the empty word"
+
 const ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND = "asset to remove was not found in the input note"
 
 const ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND =
@@ -110,11 +112,20 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 pub proc remove_asset
+    # reject the empty asset ID; an empty slot means the asset was already removed, and without
+    # this check the linear scan below would wrongly report it as found
+    exec.word::testz not assert.err=ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+
+    exec.asset::validate_id
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
