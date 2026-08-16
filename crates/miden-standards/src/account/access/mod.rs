@@ -33,7 +33,9 @@ pub mod rbac;
 ///
 /// use miden_protocol::account::AccountBuilder;
 /// use miden_standards::account::access::AccessControl;
-/// # let admin: miden_protocol::account::AccountId = unimplemented!();
+/// # let admin = miden_protocol::account::AccountId::try_from(
+/// #     miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+/// # ).unwrap();
 /// # let init_seed = [0u8; 32];
 /// AccountBuilder::new(init_seed)
 ///     .with_components(AccessControl::Rbac { admin, procedure_roles: BTreeMap::new() });
