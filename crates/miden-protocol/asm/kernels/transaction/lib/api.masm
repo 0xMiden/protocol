@@ -221,6 +221,9 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_upgrade
+    # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
+    # account as validated in account::{validate_storage, validate_procedures}.
+
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
