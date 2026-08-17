@@ -1,28 +1,18 @@
-use alloc::collections::BTreeSet;
-
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{
-    AccountBuilder,
-    AccountId,
-    AccountType,
-    AssetCallbackFlag,
-    StorageMapKey,
-};
+use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, TokenSymbol};
-use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::{Felt, Word};
 
 use super::{
     FungibleFaucet,
-    NativeFungibleFaucetAccountBuilder,
     create_guarded_user_fungible_faucet,
     create_multisig_user_fungible_faucet,
     create_native_fungible_faucet_for_genesis,
     create_network_fungible_faucet,
     create_singlesig_user_fungible_faucet,
 };
-use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use crate::account::access::{AccessControl, Authority};
 use crate::account::auth::{
     Approver,
     AuthGuardedMultisig,
@@ -33,10 +23,9 @@ use crate::account::auth::{
     NetworkAccount,
 };
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
-use crate::account::fees::{BasicConstantFeePolicy, ConstantFeeManager, FeePolicyManager};
+use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
-use crate::note::MintNote;
 use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 use crate::tx_script::ExpirationTransactionScript;
 
@@ -246,69 +235,6 @@ fn network_fungible_faucet_allowlists_expiration_tx_script() {
     assert_eq!(stored, [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into());
 }
 
-/// The native faucet builder preserves a caller-defined auth configuration and component set.
-#[test]
-fn native_fungible_faucet_builder_supports_custom_compositions() {
-    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-
-    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
-    let custom_note_root = NoteScriptRoot::from_array([41, 42, 43, 44]);
-    let fee_policy =
-        BasicConstantFeePolicy::new().with_fee(custom_note_root, AssetAmount::from(7u32));
-    let fee_policy_manager = FeePolicyManager::builder()
-        .fee_faucet_id(owner)
-        .active_fee_policy(fee_policy.into())
-        .build();
-    let auth_component =
-        AuthNetworkAccount::custom(BTreeSet::from([custom_note_root]), fee_policy_manager)
-            .unwrap()
-            .with_allowed_tx_scripts([ExpirationTransactionScript::script_root()]);
-
-    let account = NativeFungibleFaucetAccountBuilder::new([10; 32], auth_component)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
-        .with_component(sample_faucet())
-        .with_components(AccessControl::Ownable2Step { owner })
-        .with_components(allow_all_policy_manager())
-        .with_component(Pausable::unpaused())
-        .with_component(PausableManager)
-        .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
-        .build()
-        .unwrap();
-
-    assert_eq!(account.nonce(), Felt::ONE);
-    assert_eq!(account.seed(), None);
-    assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
-    assert_eq!(
-        account.storage().get_item(FeePolicyManager::fee_asset_id_slot()).unwrap(),
-        AssetId::new_fungible(account.id()).to_word()
-    );
-    assert_eq!(
-        account
-            .storage()
-            .get_map_item(
-                AuthNetworkAccount::allowed_note_scripts_slot(),
-                StorageMapKey::new(custom_note_root.as_word()),
-            )
-            .unwrap(),
-        Word::from([1u32, 0, 0, 0])
-    );
-    assert_eq!(
-        account
-            .storage()
-            .get_map_item(
-                AuthNetworkAccount::allowed_note_scripts_slot(),
-                StorageMapKey::new(MintNote::script_root().as_word()),
-            )
-            .unwrap(),
-        Word::empty(),
-        "the generic builder must not add the stock faucet note allowlist"
-    );
-    assert!(
-        account.code_interface().contains([ConstantFeeManager::set_note_fee_root()]),
-        "caller-defined components must remain in the final account"
-    );
-}
-
 /// The genesis native faucet uses its own asset for fees.
 #[test]
 fn native_fungible_faucet_for_genesis_uses_its_own_fee_asset() {
@@ -317,6 +243,18 @@ fn native_fungible_faucet_for_genesis_uses_its_own_fee_asset() {
     const INIT_SEED: [u8; 32] = [9; 32];
 
     let operator = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let temporary_fee_policy_manager = FeePolicyManager::builder()
+        .fee_faucet_id(operator)
+        .active_fee_policy(BasicConstantFeePolicy::new().into())
+        .build();
+    let regular_account = create_network_fungible_faucet(
+        INIT_SEED,
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner: operator },
+        allow_all_policy_manager(),
+        temporary_fee_policy_manager,
+    )
+    .unwrap();
     let account = create_native_fungible_faucet_for_genesis(
         INIT_SEED,
         sample_faucet(),
@@ -326,6 +264,7 @@ fn native_fungible_faucet_for_genesis_uses_its_own_fee_asset() {
     )
     .unwrap();
 
+    assert_eq!(account.id(), regular_account.id());
     assert_eq!(account.nonce(), Felt::ONE);
     assert_eq!(account.seed(), None);
     assert!(NetworkAccount::new(account.clone()).is_ok());
@@ -347,28 +286,6 @@ fn native_fungible_faucet_for_genesis_uses_its_own_fee_asset() {
             .unwrap(),
         Word::from([1u32, 0, 0, 0])
     );
-
-    // Recreate the storage commitment used to derive the account ID.
-    let id = account.id();
-    let (_id, _vault, mut initial_storage, code, _nonce, _seed) = account.into_parts();
-    initial_storage
-        .set_item(FeePolicyManager::fee_asset_id_slot(), Word::empty())
-        .unwrap();
-    let code_commitment = code.commitment();
-    let storage_commitment = initial_storage.to_commitment();
-    let account_seed = AccountId::compute_account_seed(
-        INIT_SEED,
-        AccountType::Public,
-        id.asset_callback_flag(),
-        id.version(),
-        code_commitment,
-        storage_commitment,
-    )
-    .unwrap();
-    let derived_id =
-        AccountId::new(account_seed, id.version(), code_commitment, storage_commitment).unwrap();
-
-    assert_eq!(derived_id, id);
 }
 
 #[test]

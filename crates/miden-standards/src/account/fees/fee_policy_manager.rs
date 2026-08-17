@@ -183,17 +183,6 @@ impl FeePolicyManager {
     /// Exposed so tests and tooling can reproduce the fee-policy storage without building the full
     /// auth component.
     pub fn to_storage_slots(&self) -> [StorageSlot; 3] {
-        self.to_storage_slots_with_fee_asset(self.fee_asset_id().to_word())
-    }
-
-    /// Builds the fee-policy storage slots with an empty fee-asset value.
-    ///
-    /// Used only while building the native faucet for genesis.
-    pub(crate) fn to_storage_slots_with_uninitialized_fee_asset(&self) -> [StorageSlot; 3] {
-        self.to_storage_slots_with_fee_asset(Word::empty())
-    }
-
-    fn to_storage_slots_with_fee_asset(&self, fee_asset_id: Word) -> [StorageSlot; 3] {
         let allowed_flag = Word::from([1u32, 0, 0, 0]);
         let allowed_entries: Vec<_> = self
             .allowed_fee_policies()
@@ -209,7 +198,7 @@ impl FeePolicyManager {
                 self.active_fee_policy().as_word(),
             ),
             StorageSlot::with_map(ALLOWED_FEE_POLICY_PROC_ROOTS_SLOT_NAME.clone(), allowed_map),
-            StorageSlot::with_value(FEE_ASSET_ID_SLOT_NAME.clone(), fee_asset_id),
+            StorageSlot::with_value(FEE_ASSET_ID_SLOT_NAME.clone(), self.fee_asset_id().to_word()),
         ]
     }
 }
