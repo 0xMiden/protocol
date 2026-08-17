@@ -3,7 +3,12 @@ use alloc::vec::Vec;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use miden_protocol::batch::{BatchKernel, ProposedBatch};
+use miden_protocol::batch::{
+    BatchKernel,
+    INPUT_NOTE_LIST_KEY,
+    OUTPUT_NOTE_LIST_KEY,
+    ProposedBatch,
+};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::{MasmError, ProvenBatchError, batch_kernel};
 use miden_protocol::transaction::RawOutputNote;
@@ -251,8 +256,7 @@ fn batch_kernel_rejects_input_note_missing_from_list() -> anyhow::Result<()> {
 
     let mut blob = input_note_list_blob(&batch);
     blob.truncate(blob.len() - FELTS_PER_NOTE_ENTRY); // drop the last (highest-nullifier) note
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_IN_LIST);
@@ -270,8 +274,7 @@ fn batch_kernel_rejects_duplicated_input_note_list_entry() -> anyhow::Result<()>
     // Prepend a copy of the first entry, so two equal nullifiers are adjacent.
     let mut duplicated: Vec<Felt> = blob[0..FELTS_PER_NOTE_ENTRY].to_vec();
     duplicated.extend_from_slice(&blob);
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), duplicated)]);
+    let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, duplicated)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_NOT_SORTED);
@@ -289,8 +292,7 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
     let mut blob = input_note_list_blob(&batch);
     // Corrupt the first entry's note-id word only, so the entry is still found by nullifier.
     blob[4] += Felt::from(1u32);
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_ID_MISMATCH);
@@ -324,8 +326,7 @@ fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
 
     let mut blob = output_note_list_blob(&batch);
     blob.truncate(blob.len() - FELTS_PER_NOTE_ENTRY); // drop the last (highest-note-id) output note
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST);
@@ -355,8 +356,7 @@ fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
         blob.extend_from_slice(note_id.as_elements());
         blob.extend_from_slice(Word::empty().as_elements());
     }
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED);
@@ -388,8 +388,7 @@ fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
         blob.extend_from_slice(nullifier.as_elements());
         blob.extend_from_slice(note_id_or_empty.as_elements());
     }
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_CONSUMED);
@@ -418,8 +417,7 @@ fn batch_kernel_rejects_uncreated_output_note() -> anyhow::Result<()> {
         blob.extend_from_slice(note_id.as_elements());
         blob.extend_from_slice(Word::empty().as_elements());
     }
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_CREATED);
@@ -435,8 +433,7 @@ fn batch_kernel_rejects_oversized_input_note_list() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let blob = vec![Felt::from(0u32); (MAX_INPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);
@@ -451,8 +448,7 @@ fn batch_kernel_rejects_oversized_output_note_list() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let blob = vec![Felt::from(0u32); (MAX_OUTPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
-    let override_advice =
-        AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
+    let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);

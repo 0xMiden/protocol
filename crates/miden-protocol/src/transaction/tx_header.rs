@@ -9,6 +9,7 @@ use crate::transaction::{
     InputNotes,
     ProvenTransaction,
     RawOutputNotes,
+    TransactionCommitments,
     TransactionId,
 };
 use crate::utils::serde::{
@@ -60,12 +61,12 @@ impl TransactionHeader {
         let input_notes_commitment = input_notes.commitment();
         let output_notes_commitment = RawOutputNotes::compute_commitment(output_notes.iter());
 
-        let id = TransactionId::new(
+        let id = TransactionId::new(TransactionCommitments::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes_commitment,
             output_notes_commitment,
-        );
+        ));
 
         Self {
             id,
