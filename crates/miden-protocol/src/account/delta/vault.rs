@@ -102,8 +102,10 @@ impl AccountVaultDelta {
             }
         }
 
-        let num_added_assets =
-            delta.values().filter(|asset| asset.delta_op() == AssetDeltaOperation::Add).count();
+        let num_added_assets = delta
+            .values()
+            .filter(|asset| asset.delta_op() == AssetDeltaOperation::Add)
+            .count();
         if num_added_assets > Self::MAX_ASSETS_PER_OPERATION {
             return Err(AccountDeltaError::TooManyVaultAssetDeltas {
                 operation: "added",
@@ -112,8 +114,10 @@ impl AccountVaultDelta {
             });
         }
 
-        let num_removed_assets =
-            delta.values().filter(|asset| asset.delta_op() == AssetDeltaOperation::Remove).count();
+        let num_removed_assets = delta
+            .values()
+            .filter(|asset| asset.delta_op() == AssetDeltaOperation::Remove)
+            .count();
         if num_removed_assets > Self::MAX_ASSETS_PER_OPERATION {
             return Err(AccountDeltaError::TooManyVaultAssetDeltas {
                 operation: "removed",
