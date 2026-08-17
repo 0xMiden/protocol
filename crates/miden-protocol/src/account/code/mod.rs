@@ -442,6 +442,12 @@ impl AccountProcedureBuilder {
     }
 
     fn build(mut self) -> Result<Vec<AccountProcedureRoot>, AccountError> {
+        if self.procedures.len() < AccountCode::MIN_NUM_PROCEDURES {
+            return Err(AccountError::AccountCodeNoProcedures);
+        } else if self.procedures.len() > AccountCode::MAX_NUM_PROCEDURES {
+            return Err(AccountError::AccountCodeTooManyProcedures(self.procedures.len()));
+        }
+
         // Sorting makes the account code commitment independent of the order in which components
         // were provided. The auth procedure at index 0 is excluded from the sort so it keeps the
         // position the transaction kernel expects.
