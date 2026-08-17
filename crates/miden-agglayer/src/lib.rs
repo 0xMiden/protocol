@@ -158,38 +158,24 @@ fn create_agglayer_faucet_component(
         .into()
 }
 
-fn assert_basic_constant_fee_policy_manager(fee_policy_manager: &FeePolicyManager) {
-    let policy_root = BasicConstantFeePolicy::root();
-    assert_eq!(
-        fee_policy_manager.active_fee_policy(),
-        policy_root,
-        "AggLayer accounts require BasicConstantFeePolicy as the active fee policy"
-    );
-    assert_eq!(
-        fee_policy_manager.allowed_fee_policies().as_slice(),
-        &[policy_root],
-        "AggLayer accounts do not support additional fee policies"
-    );
-}
-
 impl AggLayerBridge {
     /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration.
     ///
-    /// `bridge_admin` is the initial member of the bridge's built-in `ADMIN` role. The fee policy
-    /// manager must contain only an active [`BasicConstantFeePolicy`] with entries for
-    /// [`AggLayerBridge::allowed_notes`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the fee policy manager contains a different or additional fee policy.
+    /// `bridge_admin` is the initial member of the bridge's built-in `ADMIN` role. `fee_policy`
+    /// must contain entries for [`AggLayerBridge::allowed_notes`], denominated in the asset issued
+    /// by `fee_faucet_id`.
     pub fn account_builder(
         seed: Word,
         bridge_admin: AccountId,
         roles: BridgeRoles,
         network_id: u32,
-        fee_policy_manager: FeePolicyManager,
+        fee_faucet_id: AccountId,
+        fee_policy: BasicConstantFeePolicy,
     ) -> AccountBuilder {
-        assert_basic_constant_fee_policy_manager(&fee_policy_manager);
+        let fee_policy_manager = FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id)
+            .active_fee_policy(fee_policy.into())
+            .build();
         NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes(), fee_policy_manager)
             .expect("bridge note allowlist is non-empty")
             .with_component(AggLayerBridge::new(network_id))
@@ -217,13 +203,12 @@ impl AggLayerFaucet {
     /// configuration.
     ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role;
-    /// `bridge_account_id` is its [`Ownable2Step`] owner. The fee policy manager must contain only
-    /// an active [`BasicConstantFeePolicy`] with entries for [`AggLayerFaucet::allowed_notes`].
+    /// `bridge_account_id` is its [`Ownable2Step`] owner. `fee_policy` must contain entries for
+    /// [`AggLayerFaucet::allowed_notes`], denominated in the asset issued by `fee_faucet_id`.
     ///
     /// # Panics
     ///
-    /// Panics if the token metadata is invalid or the fee policy manager contains a different or
-    /// additional fee policy.
+    /// Panics if the token metadata is invalid.
     #[allow(clippy::too_many_arguments)]
     pub fn account_builder(
         seed: Word,
@@ -233,9 +218,13 @@ impl AggLayerFaucet {
         initial_supply: Felt,
         faucet_admin: AccountId,
         bridge_account_id: AccountId,
-        fee_policy_manager: FeePolicyManager,
+        fee_faucet_id: AccountId,
+        fee_policy: BasicConstantFeePolicy,
     ) -> AccountBuilder {
-        assert_basic_constant_fee_policy_manager(&fee_policy_manager);
+        let fee_policy_manager = FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id)
+            .active_fee_policy(fee_policy.into())
+            .build();
         let agglayer_component =
             create_agglayer_faucet_component(token_symbol, decimals, max_supply, initial_supply);
 
@@ -266,7 +255,6 @@ impl AggLayerFaucet {
 #[cfg(test)]
 mod tests {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-    use miden_standards::account::fees::FeePolicy;
     use miden_standards::tx_script::ExpirationTransactionScript;
 
     use super::*;
@@ -295,30 +283,5 @@ mod tests {
             let network_account = NetworkAccount::try_from(account).unwrap();
             assert!(network_account.allows_tx_script(&ExpirationTransactionScript::script_root()));
         }
-    }
-
-    #[test]
-    #[should_panic(expected = "require BasicConstantFeePolicy")]
-    fn agglayer_accounts_reject_a_different_active_fee_policy() {
-        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-        let policy = FeePolicy::custom(PausableManager::pause_root(), [PausableManager]).unwrap();
-        let manager =
-            FeePolicyManager::builder().fee_faucet_id(id).active_fee_policy(policy).build();
-
-        assert_basic_constant_fee_policy_manager(&manager);
-    }
-
-    #[test]
-    #[should_panic(expected = "do not support additional fee policies")]
-    fn agglayer_accounts_reject_additional_fee_policies() {
-        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-        let policy = FeePolicy::custom(PausableManager::pause_root(), [PausableManager]).unwrap();
-        let manager = FeePolicyManager::builder()
-            .fee_faucet_id(id)
-            .active_fee_policy(BasicConstantFeePolicy::new().into())
-            .allowed_fee_policy(policy)
-            .build();
-
-        assert_basic_constant_fee_policy_manager(&manager);
     }
 }
