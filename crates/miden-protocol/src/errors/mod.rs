@@ -41,6 +41,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
+use crate::script::MastForestScriptError;
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
@@ -417,16 +418,8 @@ pub enum NetworkIdError {
 pub enum AccountDeltaError {
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
-    #[error("non fungible vault can neither be added nor removed twice")]
-    DuplicateNonFungibleVaultUpdate(NonFungibleAsset),
-    #[error(
-        "fungible asset issued by faucet {faucet_id} has delta {delta} which overflows when added to current value {current}"
-    )]
-    FungibleAssetDeltaOverflow {
-        faucet_id: AccountId,
-        current: i64,
-        delta: i64,
-    },
+    #[error("asset {0} is changed by more than one asset delta")]
+    DuplicateAssetDelta(AssetId),
     #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
     )]
@@ -441,10 +434,6 @@ pub enum AccountDeltaError {
     },
     #[error("non-empty account storage or vault delta with zero nonce delta is not allowed")]
     NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
-    #[error(
-        "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
-    )]
-    NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
     #[error("a full state delta must only contain storage create operations")]
@@ -724,14 +713,8 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
-    #[error("package does not contain a procedure with @note_script attribute")]
-    NoteScriptNoProcedureWithAttribute,
-    #[error("package contains multiple procedures with @note_script attribute")]
-    NoteScriptMultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in package")]
-    NoteScriptProcedureNotFound(Box<str>),
-    #[error("procedure at path '{0}' does not have @note_script attribute")]
-    NoteScriptProcedureMissingAttribute(Box<str>),
+    #[error("error while creating note script: {0}")]
+    MastForestScript(#[source] MastForestScriptError),
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
@@ -868,25 +851,6 @@ impl PartialBlockchainError {
     }
 }
 
-// TRANSACTION SCRIPT ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum TransactionScriptError {
-    #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
-    AssemblyError(Report),
-    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
-    PackageNotProgram(Report),
-    #[error("package does not contain a procedure with @transaction_script attribute")]
-    NoProcedureWithAttribute,
-    #[error("package contains multiple procedures with @transaction_script attribute")]
-    MultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in package")]
-    ProcedureNotFound(Box<str>),
-    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
-    ProcedureMissingAttribute(Box<str>),
-}
-
 // TRANSACTION INPUT ERROR
 // ================================================================================================
 
@@ -981,6 +945,10 @@ pub enum TransactionOutputError {
 /// [`PrivateOutputNote`](crate::transaction::PrivateOutputNote).
 #[derive(Debug, Error)]
 pub enum OutputNoteError {
+    #[error("attachment headers do not match attachments for private note with id {0}")]
+    AttachmentHeadersMismatch(NoteId),
+    #[error("attachments commitment does not match attachments for private note with id {0}")]
+    AttachmentsCommitmentMismatch(NoteId),
     #[error("note with id {0} is private but expected a public note")]
     NoteIsPrivate(NoteId),
     #[error("note with id {0} is public but expected a private note")]

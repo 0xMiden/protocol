@@ -3,7 +3,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_processor::advice::{AdviceInputs, AdviceStack};
-use miden_processor::{EMPTY_WORD, ExecutionOutput, Felt};
+use miden_processor::{EMPTY_WORD, ExecutionError, ExecutionOutput, Felt};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -53,7 +53,7 @@ use miden_protocol::transaction::memory::{
 use miden_protocol::{Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
-use miden_tx::LocalTransactionProver;
+use miden_tx::{LocalTransactionProver, TransactionKernelError};
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::{Auth, MockChainBuilder, assert_execution_error, assert_transaction_executor_error};
@@ -1258,6 +1258,143 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
 
     // Prove the executed transaction which uses FPI across two foreign accounts.
     LocalTransactionProver::default().prove(executed_transaction)?;
+
+    Ok(())
+}
+
+/// Test that a procedure can only be invoked against the account whose code contains it.
+///
+/// The transaction script hands the kernel a procedure that belongs to no account at all, but which
+/// reaches the foreign account's genuine interface through a nested `dyncall` while that account is
+/// active. Without binding the root to the account, such a procedure runs under the account's
+/// identity and can return a manipulated function of its authentic state.
+#[tokio::test]
+async fn test_fpi_procedure_not_part_of_foreign_account() -> anyhow::Result<()> {
+    let source_manager = Arc::new(DefaultSourceManager::default());
+
+    let foreign_account_component = AccountComponent::new(
+        CodeBuilder::with_kernel_core_package(source_manager.clone()).compile_component_code(
+            "foreign_account",
+            r#"
+            use miden::protocol::active_account
+
+            #! Reads authentic state of the account this procedure belongs to.
+            @account_procedure
+            pub proc get_active_id
+                exec.active_account::get_id
+                # => [account_id_suffix, account_id_prefix, pad(16)]
+
+                # truncate the stack
+                swapw dropw
+            end
+            "#,
+        )?,
+        vec![],
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
+
+    let foreign_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(foreign_account_component.clone())
+        .build_existing()?;
+
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([native_account.clone(), foreign_account.clone()])?
+            .build()?;
+    mock_chain.prove_next_block()?;
+
+    let foreign_account_inputs = mock_chain
+        .get_foreign_account_inputs(foreign_account.id())
+        .expect("failed to get foreign account inputs");
+
+    // `injected_proc` is part of the transaction script, not of the foreign account's code, yet the
+    // FPI call names the foreign account as the account to execute it against.
+    let code = format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::tx
+
+        const NESTED_PROC_ROOT_LOC = 0
+
+        #! Invokes a genuine procedure of the foreign account and negates the value it returns.
+        #!
+        #! Inputs:  [pad(16)]
+        #! Outputs: [negated_account_id_suffix, account_id_prefix, pad(14)]
+        @locals(4)
+        proc injected_proc
+            # store the root of the account's own procedure for the nested dyncall
+            procref.::foreign_account::get_active_id
+            loc_storew_le.NESTED_PROC_ROOT_LOC dropw
+            # => [pad(16)]
+
+            # invoke the account's own procedure, which is accepted by its procedure table since the
+            # foreign account is still the active account
+            locaddr.NESTED_PROC_ROOT_LOC dyncall
+            # => [account_id_suffix, account_id_prefix, pad(14)]
+
+            dup push.{foreign_suffix}
+            assert_eq.err="nested call did not return the foreign account ID suffix"
+            dup.1 push.{foreign_prefix}
+            assert_eq.err="nested call did not return the foreign account ID prefix"
+
+            # return a manipulated function of the account's authentic state
+            neg
+            # => [negated_account_id_suffix, account_id_prefix, pad(14)]
+        end
+
+        @transaction_script
+        pub proc main
+            # pad the stack for the `execute_foreign_procedure` execution
+            padw padw padw push.0.0.0
+            # => [pad(15)]
+
+            # get the hash of the `injected_proc` procedure
+            procref.injected_proc
+
+            # push the ID of the foreign account
+            push.{foreign_prefix} push.{foreign_suffix}
+            # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, pad(15)]
+
+            exec.tx::execute_foreign_procedure
+
+            exec.sys::truncate_stack
+        end
+        "#,
+        foreign_prefix = foreign_account.id().prefix().as_felt(),
+        foreign_suffix = foreign_account.id().suffix(),
+    );
+
+    let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
+        .compile_tx_script(code)?;
+
+    let result = mock_chain
+        .build_transaction(native_account.id())
+        .foreign_accounts(vec![foreign_account_inputs])
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?
+        .execute()
+        .await;
+
+    // The host cannot resolve an index for a root that is absent from the foreign account's code,
+    // so it rejects the lookup before the kernel's own assertion on the resolved index is
+    // reached.
+    // Test the real kernel error once https://github.com/0xMiden/protocol/issues/3441 lands.
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
+    );
 
     Ok(())
 }
