@@ -30,13 +30,20 @@ const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed 
 #! Outputs: []
 proc assert_all_output_notes_created
     exec.memory::get_num_output_notes
+    # => [num_output_notes]
     push.0
+    # => [idx, num_output_notes]
     dup.1 dup.1 neq
+    # => [should_loop, idx, num_output_notes]
     while.true
         dup exec.memory::output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET mem_load
+        # => [is_created, idx, num_output_notes]
         assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
+        # => [idx, num_output_notes]
         add.1
+        # => [idx+1, num_output_notes]
         dup.1 dup.1 neq
+        # => [should_loop, idx+1, num_output_notes]
     end
     drop drop
 end
@@ -64,6 +71,37 @@ proc absorb_input_entry
     drop drop
 end
 
+#! Processes one input-note list entry: asserts the entry was consumed exactly once and is not
+#! left expected-to-be-erased, then absorbs it into the batch hasher unless it was erased.
+#!
+#! The absorbed_count is only incremented by 1 if the entry was not erased (erasure != 2).
+#!
+#! Inputs:  [idx, absorbed_count, num]
+#! Outputs: [idx + 1, absorbed_count, num]
+proc process_input_entry
+    # Assert this entry was consumed exactly once and is not left expected-to-be-erased.
+    dup exec.memory::input_note_flags_ptr
+    # => [flags_ptr, idx, absorbed_count, num]
+    dup add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
+    # => [consumption, flags_ptr, idx, absorbed_count, num]
+    assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
+    # => [flags_ptr, idx, absorbed_count, num]
+    mem_load
+    # => [erasure, idx, absorbed_count, num]
+    dup neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
+    # => [erasure, idx, absorbed_count, num]
+
+    # Absorb the entry unless it was erased (created-and-consumed in this batch).
+    neq.2
+    # => [not_erased, idx, absorbed_count, num]
+    if.true
+        dup exec.absorb_input_entry
+        swap add.1 swap
+        # => [idx, absorbed_count+1, num]
+    end
+    add.1
+end
+
 #! Computes INPUT_NOTES_COMMITMENT as the sequential poseidon2 hash of the non-erased
 #! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the nullifier-sorted input-note list (entries with
 #! erasure flag == 2 are skipped).
@@ -85,29 +123,10 @@ proc compute_input_notes_commitment
     dup dup.3 neq
     # => [should_loop, idx, absorbed_count, num]
     while.true
-        # Assert this entry was consumed exactly once and is not left expected-to-be-erased.
-        dup exec.memory::input_note_flags_ptr
-        # => [flags_ptr, idx, absorbed_count, num]
-        dup add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
-        # => [consumption, flags_ptr, idx, absorbed_count, num]
-        assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
-        # => [flags_ptr, idx, absorbed_count, num]
-        mem_load
-        # => [erasure, idx, absorbed_count, num]
-        dup neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
-        # => [erasure, idx, absorbed_count, num]
-
-        # Absorb the entry unless it was erased (created-and-consumed in this batch).
-        neq.2
-        # => [not_erased, idx, absorbed_count, num]
-        if.true
-            dup exec.absorb_input_entry
-            swap add.1 swap
-            # => [idx, absorbed_count+1, num]
-        end
-        add.1
+        exec.process_input_entry
+        # => [idx+1, absorbed_count, num] (absorbed_count + 1 if entry was not erased)
         dup dup.3 neq
-        # => [should_loop, idx, absorbed_count, num]
+        # => [should_loop, idx+1, absorbed_count, num]
     end
     # => [idx, absorbed_count, num]
     drop swap drop
