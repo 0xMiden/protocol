@@ -456,7 +456,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Added `Ownable2Step` account component with two-step ownership transfer (`transfer_ownership`, `accept_ownership`, `renounce_ownership`) and `owner`, `nominated_owner` procedures ([#2292](https://github.com/0xMiden/miden-base/pull/2292)).
 - Added double-word array data structure abstraction over storage maps ([#2299](https://github.com/0xMiden/miden-base/pull/2299)).
 - Added `BlockNumber::MAX` constant to represent the maximum block number ([#2324](https://github.com/0xMiden/miden-base/pull/2324)).
-- Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/protocol/issues/2344)).
+- Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
 - Added `AccountTargetNetworkNote` type and `NetworkNoteExt` trait with `is_network_note()` / `as_account_target_network_note()` helpers ([#2365](https://github.com/0xMiden/miden-base/pull/2365)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
