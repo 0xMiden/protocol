@@ -62,15 +62,17 @@ fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
 /// asset; [`Self::fee_parameters`] exposes the parameters for that check.
 #[derive(Debug, Clone, bon::Builder)]
 pub struct NetworkNotePricer {
+    /// Benchmarked costs overriding or extending the built-in tables: a root present here is
+    /// priced from this map, shadowing the standard and agglayer cost tables. Populated through
+    /// the builder's [`note_cost`](NetworkNotePricerBuilder::note_cost) and
+    /// [`note_costs`](NetworkNotePricerBuilder::note_costs) extensions.
+    #[builder(field)]
+    note_costs: BTreeMap<NoteScriptRoot, NoteCost>,
     /// The chain's fee parameters, providing the verification base fee.
     fee_parameters: FeeParameters,
     /// Safety margin in verification cycles added on top of the kernel formula.
     #[builder(default = 1)]
     safety_margin_verification_cycles: u32,
-    /// Benchmarked costs overriding or extending the built-in tables: a root present here is
-    /// priced from this map, shadowing the standard and agglayer cost tables.
-    #[builder(default, with = FromIterator::from_iter)]
-    note_costs: BTreeMap<NoteScriptRoot, NoteCost>,
 }
 
 impl NetworkNotePricer {
@@ -168,6 +170,27 @@ impl NetworkNotePricer {
         pricing_stack.pop();
 
         Ok(total)
+    }
+}
+
+// BUILDER EXTENSIONS
+// ================================================================================================
+
+impl<S: network_note_pricer_builder::State> NetworkNotePricerBuilder<S> {
+    /// Adds a single benchmarked note cost, overriding or extending the built-in tables for the
+    /// given script root.
+    pub fn note_cost(mut self, root: NoteScriptRoot, cost: NoteCost) -> Self {
+        self.note_costs.insert(root, cost);
+        self
+    }
+
+    /// Adds multiple benchmarked note costs, overriding or extending the built-in tables.
+    pub fn note_costs(
+        mut self,
+        note_costs: impl IntoIterator<Item = (NoteScriptRoot, NoteCost)>,
+    ) -> Self {
+        self.note_costs.extend(note_costs);
+        self
     }
 }
 
@@ -341,6 +364,28 @@ mod tests {
         let expected = pricer.fee(fee_inputs(1 << 16)).unwrap().as_u64()
             + pricer.fee(fee_inputs(P2ID_CONSUMPTION_CYCLES)).unwrap().as_u64();
         assert_eq!(pricer.price(custom).unwrap().as_u64(), expected);
+    }
+
+    /// Individual costs can be supplied one at a time through the `note_cost` builder extension,
+    /// accumulating across chained calls just like the iterator-taking `note_costs`.
+    #[test]
+    fn individual_note_costs_can_be_supplied_one_at_a_time() {
+        let first = NoteScriptRoot::from_array([7, 0, 0, 0]);
+        let second = NoteScriptRoot::from_array([8, 0, 0, 0]);
+        let pricer = NetworkNotePricer::builder()
+            .fee_parameters(fee_parameters(500))
+            .safety_margin_verification_cycles(0)
+            .note_cost(first, NoteCost::new(1 << 16, Vec::new()))
+            .note_cost(second, NoteCost::new(1 << 10, Vec::new()))
+            .build();
+        assert_eq!(
+            pricer.price(first).unwrap().as_u64(),
+            pricer.fee(fee_inputs(1 << 16)).unwrap().as_u64()
+        );
+        assert_eq!(
+            pricer.price(second).unwrap().as_u64(),
+            pricer.fee(fee_inputs(1 << 10)).unwrap().as_u64()
+        );
     }
 
     /// A root present in both the supplied costs and the built-in tables is priced from the
