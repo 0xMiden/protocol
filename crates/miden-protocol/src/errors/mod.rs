@@ -425,6 +425,14 @@ pub enum AccountDeltaError {
     #[error("asset {0} is changed by more than one asset delta")]
     DuplicateAssetDelta(AssetId),
     #[error(
+        "number of {operation} assets in account vault delta is {count} but max possible number is {max}"
+    )]
+    TooManyVaultAssetDeltas {
+        operation: &'static str,
+        count: usize,
+        max: usize,
+    },
+    #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
     )]
     IncompatibleAccountUpdates {

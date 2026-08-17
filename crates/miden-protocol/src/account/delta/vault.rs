@@ -79,6 +79,9 @@ impl AccountVaultDelta {
     /// Domain separator for assets in the account delta commitment.
     pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(3);
 
+    /// Maximum number of added or removed assets representable by the transaction kernel.
+    pub const MAX_ASSETS_PER_OPERATION: usize = 1024;
+
     /// Validates and creates an [`AccountVaultDelta`] from the given asset deltas.
     ///
     /// # Errors
@@ -91,15 +94,34 @@ impl AccountVaultDelta {
 
         for asset_delta in asset_deltas {
             match delta.entry(asset_delta.asset_id()) {
-                Entry::Vacant(entry) => {
+                alloc::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(asset_delta);
                 },
-                Entry::Occupied(entry) => {
-                    return Err(AccountDeltaError::DuplicateAssetDelta(*entry.key()));
+                alloc::collections::btree_map::Entry::Occupied(_) => {
+                    return Err(AccountDeltaError::DuplicateAssetDelta(asset_delta.asset_id()));
                 },
             }
         }
 
+        let num_added_assets =
+            delta.values().filter(|asset| asset.delta_op() == AssetDeltaOperation::Add).count();
+        if num_added_assets > Self::MAX_ASSETS_PER_OPERATION {
+            return Err(AccountDeltaError::TooManyVaultAssetDeltas {
+                operation: "added",
+                count: num_added_assets,
+                max: Self::MAX_ASSETS_PER_OPERATION,
+            });
+        }
+
+        let num_removed_assets =
+            delta.values().filter(|asset| asset.delta_op() == AssetDeltaOperation::Remove).count();
+        if num_removed_assets > Self::MAX_ASSETS_PER_OPERATION {
+            return Err(AccountDeltaError::TooManyVaultAssetDeltas {
+                operation: "removed",
+                count: num_removed_assets,
+                max: Self::MAX_ASSETS_PER_OPERATION,
+            });
+        }
         Ok(Self { delta })
     }
 
@@ -198,6 +220,16 @@ impl Serializable for AccountVaultDelta {
 impl Deserializable for AccountVaultDelta {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_added_assets = source.read_usize()?;
+        if num_added_assets > Self::MAX_ASSETS_PER_OPERATION {
+            return Err(DeserializationError::InvalidValue(
+                AccountDeltaError::TooManyVaultAssetDeltas {
+                    operation: "added",
+                    count: num_added_assets,
+                    max: Self::MAX_ASSETS_PER_OPERATION,
+                }
+                .to_string(),
+            ));
+        }
         // The capacity is not reserved upfront since the number of assets is not yet validated
         // against the remaining bytes at this point.
         let mut asset_deltas = Vec::new();
@@ -206,6 +238,16 @@ impl Deserializable for AccountVaultDelta {
         }
 
         let num_removed_assets = source.read_usize()?;
+        if num_removed_assets > Self::MAX_ASSETS_PER_OPERATION {
+            return Err(DeserializationError::InvalidValue(
+                AccountDeltaError::TooManyVaultAssetDeltas {
+                    operation: "removed",
+                    count: num_removed_assets,
+                    max: Self::MAX_ASSETS_PER_OPERATION,
+                }
+                .to_string(),
+            ));
+        }
         for asset in source.read_many_iter::<Asset>(num_removed_assets)? {
             asset_deltas.push(AssetDelta::new(AssetDeltaOperation::Remove, asset?));
         }
@@ -250,6 +292,41 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn account_vault_delta_deserialization_rejects_too_many_added_assets() {
+        let mut bytes = Vec::new();
+        bytes.write_usize(AccountVaultDelta::MAX_ASSETS_PER_OPERATION + 1);
+
+        let error = AccountVaultDelta::read_from_bytes(&bytes)
+            .expect_err("delta with too many added assets should not deserialize");
+
+        let expected = AccountDeltaError::TooManyVaultAssetDeltas {
+            operation: "added",
+            count: AccountVaultDelta::MAX_ASSETS_PER_OPERATION + 1,
+            max: AccountVaultDelta::MAX_ASSETS_PER_OPERATION,
+        }
+        .to_string();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) if message == expected);
+    }
+    #[test]
+    fn account_vault_delta_deserialization_rejects_too_many_removed_assets() {
+        let mut bytes = Vec::new();
+        bytes.write_usize(0);
+        bytes.write_usize(AccountVaultDelta::MAX_ASSETS_PER_OPERATION + 1);
+
+        let error = AccountVaultDelta::read_from_bytes(&bytes)
+            .expect_err("delta with too many removed assets should not deserialize");
+
+        let expected = AccountDeltaError::TooManyVaultAssetDeltas {
+            operation: "removed",
+            count: AccountVaultDelta::MAX_ASSETS_PER_OPERATION + 1,
+            max: AccountVaultDelta::MAX_ASSETS_PER_OPERATION,
+        }
+        .to_string();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) if message == expected);
+    }
     /// A crafted byte stream that changes the same asset in both the added and the removed section
     /// must be rejected rather than silently collapsing into a single entry.
     #[test]
