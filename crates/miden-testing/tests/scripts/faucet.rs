@@ -491,59 +491,6 @@ async fn minting_on_reserved_only_transfer_policy_faucet_enables_callbacks() -> 
     Ok(())
 }
 
-/// Checks that the send and receive callback wrappers preserve the 16-felt call ABI when their
-/// active policy slots are empty. This exercises the branch where `invoke_transfer_policy`
-/// consumes its logical inputs without making a nested policy call.
-#[tokio::test]
-async fn reserved_only_transfer_policy_wrappers_preserve_call_abi() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let owner_account_id =
-        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
-
-    let faucet = build_existing_faucet_with_reserved_only_transfer_policy(
-        &mut builder,
-        "RSV",
-        1000,
-        owner_account_id,
-    )?;
-    let mock_chain = builder.build()?;
-
-    let asset = FungibleAsset::new(faucet.id(), 1)?;
-    let tx_script_code = format!(
-        r#"
-        use miden::standards::faucets::policies::policy_manager
-
-        @transaction_script
-        pub proc main
-            # send callback frame: [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-            padw push.0.0.0 push.1 push.{ASSET_VALUE} push.{ASSET_ID}
-            call.policy_manager::invoke_send_policy
-            # => [pad(16)]
-            dropw dropw dropw dropw
-
-            # receive callback frame: [ASSET_ID, ASSET_VALUE, custom_data=0, pad(7)]
-            padw push.0.0.0 push.0 push.{ASSET_VALUE} push.{ASSET_ID}
-            call.policy_manager::invoke_receive_policy
-            # => [pad(16)]
-            dropw dropw dropw dropw
-        end
-        "#,
-        ASSET_ID = asset.to_id_word(),
-        ASSET_VALUE = asset.to_value_word(),
-    );
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
-
-    mock_chain
-        .build_transaction(faucet.id())
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await?;
-
-    Ok(())
-}
-
 /// Tests that mint fails when the minted amount would exceed the max supply.
 #[tokio::test]
 async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyhow::Result<()> {

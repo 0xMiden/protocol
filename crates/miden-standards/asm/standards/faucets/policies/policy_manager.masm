@@ -532,10 +532,6 @@ end
 #! holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op when the
 #! [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
 #!
-#! The helper accepts only its logical inputs. Before `dyncall`, it pads the policy inputs into an
-#! isolated call frame, then drops that frame after the policy returns, preserving any caller stack
-#! state beneath its inputs.
-#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
 #! Outputs: []
 #!
@@ -567,10 +563,9 @@ proc invoke_transfer_policy
         loc_storew_le.POLICY_PROC_ROOT_PTR dropw
         # => [ASSET_ID, ASSET_VALUE, custom_data]
 
-        # pad the callback inputs into a full call frame
-        push.0.0.0.0.0.0.0
+        # pad the policy inputs to 16 elements
         repeat.7
-            movdn.15
+            push.0 movdn.9
         end
         # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
@@ -580,7 +575,6 @@ proc invoke_transfer_policy
         dyncall
         # => [pad(16)]
 
-        # drop the call frame the policy returns
         dropw dropw dropw dropw
         # => []
     end
