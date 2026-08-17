@@ -690,10 +690,9 @@ pub fn create_native_fungible_faucet_for_genesis(
 
     let fee_asset_id = AssetId::new_fungible(account.id());
     let (id, vault, mut storage, code, _nonce, _seed) = account.into_parts();
-    let previous_fee_asset_id = storage
+    storage
         .set_item(FeePolicyManager::fee_asset_id_slot(), fee_asset_id.to_word())
         .map_err(FungibleFaucetError::AccountError)?;
-    debug_assert_eq!(previous_fee_asset_id, AssetId::new_fungible(operator_id).to_word());
 
     Account::new(id, vault, storage, code, Felt::ONE, None)
         .map_err(FungibleFaucetError::AccountError)

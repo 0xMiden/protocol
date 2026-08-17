@@ -191,10 +191,12 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
     assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
     assert_eq!(output_note.assets().num_assets(), 1);
-    let paid_asset = output_note.assets().iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(paid_asset) = paid_asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid_asset = output_note
+        .assets()
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible();
 
     assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
     assert!(paid_asset.amount() >= executed_transaction.compute_fee());
