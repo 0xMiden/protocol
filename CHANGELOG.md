@@ -22,6 +22,7 @@
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 - [BREAKING] Added an emergency pause to the AggLayer bridge via the standards `Pausable`/`PausableManager` components: all bridge entry points except `remove_ger` abort while paused, and the `ADMIN`-gated standards `PAUSE_CONFIG` note toggles the state; the bridge code commitment and note allowlist change ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
 - Added the `MinBurnAmountConfigNote` standard note ([#3511](https://github.com/0xMiden/protocol/pull/3511)).
+- Exposed AggLayer bridge storage readers such as `is_ger_registered`, `network_id`, and `cgi_chain_hash` outside the `testing` feature ([#3617](https://github.com/0xMiden/protocol/pull/3617)).
 
 ### Changes
 
