@@ -8,7 +8,6 @@ use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::output_note
 use miden::tx_kernel_core::tx
 
-use miden::core::word
 use {KERNEL_PROCEDURES_PTR, UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR, UPCOMING_FOREIGN_PROCEDURE_PTR}
     from miden::tx_kernel_core::memory
 use {AccountId} from miden::protocol_utils::types
@@ -51,9 +50,6 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED 
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED =
     "failed to access note id of active note because no note is currently being processed"
-
-const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO =
-    "root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
 
 const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
     "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
@@ -225,6 +221,9 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_upgrade
+    # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
+    # account as validated in account::{validate_storage, validate_procedures}.
+
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
@@ -1957,7 +1956,7 @@ end
 #! Panics if:
 #! - foreign context is created against the native account.
 #! - the ID of the foreign account loaded from the kernel memory is zero (ID was not set).
-#! - the root of the foreign procedure loaded from the kernel memory is zero (root was not set).
+#! - the root of the foreign procedure is not part of the foreign account's code.
 #!
 #! Invocation: dynexec
 pub proc tx_exec_foreign_proc
@@ -1985,15 +1984,19 @@ pub proc tx_exec_foreign_proc
     exec.tx::start_foreign_context
     # => [foreign_procedure_inputs(16)]
 
+    # load the root of the foreign procedure
+    padw mem_loadw_le.UPCOMING_FOREIGN_PROCEDURE_PTR
+    # => [FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
+
+    # bind the executed code to the account whose state it reads by requiring the procedure to be
+    # part of the foreign account's code. This is NOT the same as the account procedure
+    # authentication the kernel already does. Without this, the called procedure could dyncall into
+    # a genuine procedure of the account and it would pass.
+    exec.account::assert_procedure_in_account drop
+    # => [foreign_procedure_inputs(16)]
+
     # get the pointer to the foreign procedure root to perform the dyncall
     push.UPCOMING_FOREIGN_PROCEDURE_PTR
-    # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
-
-    # check that the foreign procedure root is not zero
-    padw mem_loadw_le.UPCOMING_FOREIGN_PROCEDURE_PTR
-    # => [FOREIGN_PROC_ROOT, foreign_proc_root_ptr, foreign_procedure_inputs(16)]
-
-    exec.word::eqz assertz.err=ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO
     # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
 
     # call the foreign procedure

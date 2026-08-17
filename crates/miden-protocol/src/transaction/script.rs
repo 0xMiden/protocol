@@ -76,10 +76,13 @@ impl TransactionScript {
 
     /// Returns a new [TransactionScript] instantiated from the provided MAST forest and entrypoint.
     ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        Self(MastForestScript::from_parts(mast, entrypoint))
+    /// # Errors
+    /// Returns an error if the specified entrypoint is not in the provided MAST forest.
+    pub fn from_parts(
+        mast: Arc<MastForest>,
+        entrypoint: MastNodeId,
+    ) -> Result<Self, MastForestScriptError> {
+        MastForestScript::from_parts(mast, entrypoint).map(Self)
     }
 
     /// Creates a [TransactionScript] from a [`Package`].

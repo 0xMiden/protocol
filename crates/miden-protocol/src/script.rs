@@ -27,6 +27,8 @@ use crate::{MastForest, MastNodeId, Word};
 /// Errors that can occur while resolving a `MastForestScript` from a package.
 #[derive(Debug, Error)]
 pub enum MastForestScriptError {
+    #[error("entrypoint node {0} is not in the provided MAST forest")]
+    EntrypointNotInForest(MastNodeId),
     #[error("package does not contain a procedure with '@{0}' attribute")]
     NoProcedureWithAttribute(Box<str>),
     #[error("package contains multiple procedures with '@{0}' attribute")]
@@ -61,15 +63,20 @@ impl MastForestScript {
 
     /// Returns a new [MastForestScript] instantiated from the provided components.
     ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        assert!(mast.get_node_by_id(entrypoint).is_some());
-        Self {
+    /// # Errors
+    /// Returns an error if the specified entrypoint is not in the provided MAST forest.
+    pub fn from_parts(
+        mast: Arc<MastForest>,
+        entrypoint: MastNodeId,
+    ) -> Result<Self, MastForestScriptError> {
+        if mast.get_node_by_id(entrypoint).is_none() {
+            return Err(MastForestScriptError::EntrypointNotInForest(entrypoint));
+        }
+        Ok(Self {
             mast,
             entrypoint,
             package_debug_info: None,
-        }
+        })
     }
 
     /// Returns a new [MastForestScript] instantiated from the provided package.
@@ -105,11 +112,8 @@ impl MastForestScript {
         let entrypoint = entrypoint
             .ok_or_else(|| MastForestScriptError::NoProcedureWithAttribute(attribute.into()))?;
 
-        Ok(Self {
-            mast: package.mast_forest().clone(),
-            entrypoint,
-            package_debug_info: package_debug_info(package),
-        })
+        Ok(Self::from_parts(package.mast_forest().clone(), entrypoint)?
+            .with_package_debug_info(package))
     }
 
     /// Returns a new [MastForestScript] containing only a reference to a procedure in the provided
@@ -143,11 +147,7 @@ impl MastForestScript {
 
         let (mast, entrypoint) = create_external_node_forest(digest);
 
-        Ok(Self {
-            mast: Arc::new(mast),
-            entrypoint,
-            package_debug_info: package_debug_info(package),
-        })
+        Ok(Self::from_parts(Arc::new(mast), entrypoint)?.with_package_debug_info(package))
     }
 
     // PUBLIC ACCESSORS
@@ -178,22 +178,26 @@ impl MastForestScript {
         self.package_debug_info = None;
     }
 
+    /// Returns a new [MastForestScript] with the package-owned debug information of the provided
+    /// package attached.
+    pub fn with_package_debug_info(mut self, package: &Package) -> Self {
+        self.package_debug_info = package_debug_info(package);
+        self
+    }
+
     /// Returns a new [MastForestScript] with the provided advice map entries merged into the
     /// underlying [MastForest].
     ///
     /// This allows adding advice map entries to an already-compiled program, which is useful when
     /// the entries are determined after compilation.
-    pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
+    pub fn with_advice_map(mut self, advice_map: AdviceMap) -> Self {
         if advice_map.is_empty() {
             return self;
         }
 
         let mast = (*self.mast).clone().with_advice_map(advice_map);
-        Self {
-            mast: Arc::new(mast),
-            entrypoint: self.entrypoint,
-            package_debug_info: self.package_debug_info,
-        }
+        self.mast = Arc::new(mast);
+        self
     }
 }
 
@@ -230,6 +234,7 @@ impl Deserializable for MastForestScript {
         let mast = MastForest::read_from(source)?;
         let entrypoint = MastNodeId::from_u32_safe(source.read_u32()?, &mast)?;
 
-        Ok(Self::from_parts(Arc::new(mast), entrypoint))
+        Self::from_parts(Arc::new(mast), entrypoint)
+            .map_err(|e| DeserializationError::InvalidValue(e.to_string()))
     }
 }
