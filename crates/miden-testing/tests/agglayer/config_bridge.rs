@@ -406,9 +406,8 @@ fn bridge_roles_new_rejects_empty_role() {
             }
         });
         let [faucet_managers, ger_injectors, ger_removers, fee_managers] = sets;
-        let err = BridgeRoles::new(faucet_managers, ger_injectors, ger_removers, fee_managers)
-            .unwrap_err();
-        assert!(matches!(err, AgglayerBridgeError::EmptyBridgeRole(_)));
+        let result = BridgeRoles::new(faucet_managers, ger_injectors, ger_removers, fee_managers);
+        assert!(matches!(result, Err(AgglayerBridgeError::EmptyBridgeRole(_))));
     }
 }
 
