@@ -21,7 +21,7 @@ pub use miden_standards::interop::eth::{
     EthAmountError,
     EthEmbeddedAccountId,
 };
-use miden_standards::note::{BurnNote, ConstantFeePolicyConfigNote, MintNote};
+use miden_standards::note::{BurnNote, ConstantFeePolicyConfigNote, MintNote, RbacConfigNote};
 use thiserror::Error;
 
 use super::agglayer_faucet_component_package;
@@ -161,6 +161,7 @@ impl AggLayerFaucet {
             MintNote::script_root(),
             BurnNote::script_root(),
             ConstantFeePolicyConfigNote::script_root(),
+            RbacConfigNote::script_root(),
         ]);
         notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
         notes
