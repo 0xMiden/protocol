@@ -74,6 +74,7 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
         BTreeSet::from([ger_remover]),
+        BTreeSet::from([bridge_admin]),
     )
     .expect("single-holder role sets are non-empty");
 
@@ -105,6 +106,7 @@ pub fn create_existing_agglayer_faucet(
         decimals,
         max_supply,
         initial_supply,
+        faucet_admin,
         faucet_admin,
         bridge_account_id,
         fee_faucet_id(),
