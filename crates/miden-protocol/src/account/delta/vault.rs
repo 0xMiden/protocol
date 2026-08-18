@@ -1,5 +1,4 @@
 use alloc::collections::BTreeMap;
-use alloc::collections::btree_map::Entry;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -94,49 +93,15 @@ impl AccountVaultDelta {
     pub fn new(
         asset_deltas: impl IntoIterator<Item = AssetDelta>,
     ) -> Result<Self, AccountDeltaError> {
-        let mut delta = BTreeMap::new();
-        let mut num_added_assets = 0usize;
-        let mut num_removed_assets = 0usize;
+        let mut vault_delta = Self::default();
 
         for asset_delta in asset_deltas {
-            match asset_delta.delta_op {
-                AssetDeltaOperation::Add => num_added_assets += 1,
-                AssetDeltaOperation::Remove => num_removed_assets += 1,
-            }
-
-            match delta.entry(asset_delta.asset_id()) {
-                Entry::Vacant(entry) => {
-                    entry.insert(asset_delta);
-                },
-                Entry::Occupied(_) => {
-                    return Err(AccountDeltaError::DuplicateAssetDelta(asset_delta.asset_id()));
-                },
+            if vault_delta.insert(asset_delta)?.is_some() {
+                return Err(AccountDeltaError::DuplicateAssetDelta(asset_delta.asset_id()));
             }
         }
 
-        if num_added_assets > Self::MAX_ASSETS_PER_DELTA_OP as usize {
-            return Err(AccountDeltaError::TooManyVaultAssetDeltas {
-                delta_op: AssetDeltaOperation::Add,
-                num_ops: num_added_assets,
-            });
-        }
-        // We have just validated that it fits in a u16.
-        let num_added_assets = num_added_assets as u16;
-
-        if num_removed_assets > Self::MAX_ASSETS_PER_DELTA_OP as usize {
-            return Err(AccountDeltaError::TooManyVaultAssetDeltas {
-                delta_op: AssetDeltaOperation::Remove,
-                num_ops: num_removed_assets,
-            });
-        }
-        // We have just validated that it fits in a u16.
-        let num_removed_assets = num_removed_assets as u16;
-
-        Ok(Self {
-            num_added_assets,
-            num_removed_assets,
-            delta,
-        })
+        Ok(vault_delta)
     }
 
     /// Inserts an asset delta, overwriting the previous delta of the same asset.
@@ -151,27 +116,22 @@ impl AccountVaultDelta {
         &mut self,
         asset_delta: AssetDelta,
     ) -> Result<Option<AssetDelta>, AccountDeltaError> {
-        match asset_delta.delta_op {
-            AssetDeltaOperation::Add => {
-                self.num_added_assets = self.num_added_assets.checked_add(1).ok_or_else(|| {
-                    AccountDeltaError::TooManyVaultAssetDeltas {
-                        delta_op: AssetDeltaOperation::Add,
-                        num_ops: (self.num_added_assets as usize) + 1,
-                    }
-                })?;
-            },
-            AssetDeltaOperation::Remove => {
-                self.num_removed_assets =
-                    self.num_removed_assets.checked_add(1).ok_or_else(|| {
-                        AccountDeltaError::TooManyVaultAssetDeltas {
-                            delta_op: AssetDeltaOperation::Remove,
-                            num_ops: (self.num_removed_assets as usize) + 1,
-                        }
-                    })?;
-            },
+        let previous_delta_op = self.delta.get(&asset_delta.asset_id()).map(AssetDelta::delta_op);
+
+        // Increment the asset op count only if the new delta replaces a delta with a different
+        // delta op. Replacing a delta of the same operation leaves both counts unchanged.
+        if previous_delta_op != Some(asset_delta.delta_op) {
+            self.increment_asset_count(asset_delta.delta_op)?;
+
+            // Decrement the count of the previous delta op, if any.
+            if let Some(previous_delta_op) = previous_delta_op {
+                self.decrement_asset_count(previous_delta_op);
+            }
         }
 
-        Ok(self.delta.insert(asset_delta.asset_id(), asset_delta))
+        let prev_delta = self.delta.insert(asset_delta.asset_id(), asset_delta);
+
+        Ok(prev_delta)
     }
 
     /// Returns true if this vault delta contains no updates.
@@ -208,6 +168,44 @@ impl AccountVaultDelta {
 
     // HELPER FUNCTIONS
     // ---------------------------------------------------------------------------------------------
+
+    /// Returns a mutable reference to the number of assets changed by the given operation.
+    fn asset_count_mut(&mut self, delta_op: AssetDeltaOperation) -> &mut u16 {
+        match delta_op {
+            AssetDeltaOperation::Add => &mut self.num_added_assets,
+            AssetDeltaOperation::Remove => &mut self.num_removed_assets,
+        }
+    }
+
+    /// Decrements the number of assets changed by the given operation assuming that the count is at
+    /// least one.
+    fn decrement_asset_count(&mut self, delta_op: AssetDeltaOperation) {
+        *self.asset_count_mut(delta_op) -= 1;
+    }
+
+    /// Increments the number of assets changed by the given operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the incremented count would exceed
+    /// [`Self::MAX_ASSETS_PER_DELTA_OP`].
+    fn increment_asset_count(
+        &mut self,
+        delta_op: AssetDeltaOperation,
+    ) -> Result<(), AccountDeltaError> {
+        let num_assets = self.asset_count_mut(delta_op);
+
+        if *num_assets >= Self::MAX_ASSETS_PER_DELTA_OP {
+            return Err(AccountDeltaError::TooManyVaultAssetDeltas {
+                delta_op,
+                num_ops: *num_assets + 1,
+            });
+        }
+
+        *num_assets += 1;
+
+        Ok(())
+    }
 
     /// Returns an iterator over all assets that were changed by the provided operation.
     fn filter_by_op(&self, delta_op: AssetDeltaOperation) -> impl Iterator<Item = Asset> + '_ {
@@ -269,7 +267,7 @@ impl Deserializable for AccountVaultDelta {
             return Err(DeserializationError::InvalidValue(
                 AccountDeltaError::TooManyVaultAssetDeltas {
                     delta_op: AssetDeltaOperation::Add,
-                    num_ops: usize::from(num_added_assets),
+                    num_ops: num_added_assets,
                 }
                 .to_string(),
             ));
@@ -287,7 +285,7 @@ impl Deserializable for AccountVaultDelta {
             return Err(DeserializationError::InvalidValue(
                 AccountDeltaError::TooManyVaultAssetDeltas {
                     delta_op: AssetDeltaOperation::Remove,
-                    num_ops: usize::from(num_removed_assets),
+                    num_ops: num_removed_assets,
                 }
                 .to_string(),
             ));
@@ -339,7 +337,7 @@ mod tests {
         Ok(())
     }
 
-    fn generate_asset_deltas(delta_op: AssetDeltaOperation, num_deltas: usize) -> Vec<AssetDelta> {
+    fn generate_asset_deltas(delta_op: AssetDeltaOperation, num_deltas: u16) -> Vec<AssetDelta> {
         (0..num_deltas)
             .map(|_| {
                 let asset =
@@ -356,10 +354,8 @@ mod tests {
     fn account_vault_delta_accepts_max_num_changed_assets(
         #[case] expected_delta_op: AssetDeltaOperation,
     ) -> anyhow::Result<()> {
-        let asset_deltas = generate_asset_deltas(
-            expected_delta_op,
-            AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP as usize,
-        );
+        let asset_deltas =
+            generate_asset_deltas(expected_delta_op, AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP);
 
         AccountVaultDelta::new(asset_deltas)?;
 
@@ -372,17 +368,39 @@ mod tests {
     fn account_vault_delta_rejects_more_than_max_num_changed_assets(
         #[case] expected_delta_op: AssetDeltaOperation,
     ) -> anyhow::Result<()> {
-        let asset_deltas = generate_asset_deltas(
-            expected_delta_op,
-            AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP as usize + 1,
-        );
-        let expected_num_ops = asset_deltas.len();
+        let expected_num_ops = AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP + 1;
+        let asset_deltas = generate_asset_deltas(expected_delta_op, expected_num_ops);
 
         let err = AccountVaultDelta::new(asset_deltas).unwrap_err();
         assert_matches!(err, AccountDeltaError::TooManyVaultAssetDeltas { delta_op, num_ops } => {
             assert_eq!(delta_op, expected_delta_op);
             assert_eq!(num_ops, expected_num_ops);
         });
+
+        Ok(())
+    }
+
+    /// Overwriting the delta of an asset must not count that asset twice, otherwise the counts
+    /// would not match the actual number of changed assets.
+    #[test]
+    fn account_vault_delta_insert_overwrites_asset_delta() -> anyhow::Result<()> {
+        let asset = NonFungibleAsset::mock(&[10, 21, 32, 43]);
+        let added_delta = AssetDelta::new(AssetDeltaOperation::Add, asset);
+        let removed_delta = AssetDelta::new(AssetDeltaOperation::Remove, asset);
+
+        let mut vault_delta = AccountVaultDelta::default();
+        assert_eq!(vault_delta.insert(added_delta)?, None);
+        assert_eq!(vault_delta.insert(added_delta)?, Some(added_delta));
+        assert_eq!(vault_delta.insert(removed_delta)?, Some(added_delta));
+
+        assert_eq!(vault_delta.num_assets(), 1);
+        assert_eq!(vault_delta.added_assets().count(), 0);
+        assert_eq!(vault_delta.removed_assets().count(), 1);
+
+        // A serialization roundtrip fails if the counts and the changed assets are out of sync.
+        let serialized = vault_delta.to_bytes();
+        assert_eq!(AccountVaultDelta::read_from_bytes(&serialized)?, vault_delta);
+        assert_eq!(vault_delta.get_size_hint(), serialized.len());
 
         Ok(())
     }
