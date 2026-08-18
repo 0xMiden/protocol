@@ -189,7 +189,8 @@ impl FungibleAsset {
 
 impl From<FungibleAsset> for Asset {
     fn from(asset: FungibleAsset) -> Self {
-        Asset::Fungible(asset)
+        Asset::from_id_and_value(asset.id(), asset.to_value_word())
+            .expect("fungible asset should be a valid asset")
     }
 }
 
@@ -226,16 +227,7 @@ impl Deserializable for FungibleAsset {
                 "expected fungible asset composition but found {composition:?}"
             )));
         }
-        FungibleAsset::deserialize_body(source)
-    }
-}
 
-impl FungibleAsset {
-    /// Reads the remaining body of a fungible asset, after the leading composition byte has
-    /// already been consumed.
-    pub(super) fn deserialize_body<R: ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, DeserializationError> {
         let faucet_id: AccountId = source.read()?;
         let amount: u64 = source.read()?;
 

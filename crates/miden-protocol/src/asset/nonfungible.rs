@@ -19,7 +19,15 @@ use crate::utils::serde::{
 
 /// A commitment to a non-fungible asset.
 ///
-/// See [`Asset`] for details on how it is constructed.
+/// This is the standard interpretation of an [`Asset`] with [`AssetComposition::None`]: its value
+/// is the hash of the asset's data, compressing an asset of arbitrary length to 4 field elements,
+/// and its asset class is the first two elements of that hash. The protocol itself does not enforce
+/// this interpretation, see [`Asset`].
+///
+/// The collision resistance of non-fungible assets issued by the same faucet is ~2^64, due to the
+/// 128-bit asset class that is unique per non-fungible asset. In other words, two non-fungible
+/// assets issued by the same faucet are very unlikely to have the same asset ID and thus should
+/// not collide when stored in the same account's vault.
 ///
 /// [`NonFungibleAsset`] itself does not contain the actual asset data. The container for this data
 /// is [`NonFungibleAssetDetails`].
@@ -141,7 +149,8 @@ impl fmt::Display for NonFungibleAsset {
 
 impl From<NonFungibleAsset> for Asset {
     fn from(asset: NonFungibleAsset) -> Self {
-        Asset::NonFungible(asset)
+        Asset::from_id_and_value(asset.id(), asset.to_value_word())
+            .expect("non-fungible asset should be a valid asset")
     }
 }
 
@@ -171,16 +180,7 @@ impl Deserializable for NonFungibleAsset {
                 "expected non-fungible asset composition but found {composition:?}"
             )));
         }
-        NonFungibleAsset::deserialize_body(source)
-    }
-}
 
-impl NonFungibleAsset {
-    /// Reads the remaining body of a non-fungible asset, after the leading composition byte has
-    /// already been consumed.
-    pub(super) fn deserialize_body<R: ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, DeserializationError> {
         let faucet_id: AccountId = source.read()?;
         let value: Word = source.read()?;
 
