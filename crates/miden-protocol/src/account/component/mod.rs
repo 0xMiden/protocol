@@ -18,7 +18,7 @@ use crate::assembly::Path;
 use crate::errors::AccountError;
 
 /// The attribute name used to mark the authentication procedure in an account component.
-const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
+pub const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 
 /// The attribute name used to mark a procedure as a member of an account component's interface.
 const ACCOUNT_PROCEDURE_ATTRIBUTE: &str = "account_procedure";
