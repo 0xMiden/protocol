@@ -150,8 +150,12 @@ pub fn create_existing_priced_bridge(
     ger_remover: AccountId,
     verification_base_fee: u32,
 ) -> anyhow::Result<Account> {
-    let roles =
-        BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
+    let roles = BridgeRoles::new(
+        [faucet_manager].into(),
+        [ger_injector].into(),
+        [ger_remover].into(),
+        [bridge_admin].into(),
+    )?;
     let pricer = network_note_pricer(verification_base_fee);
     let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
     Ok(AggLayerBridge::account_builder(
@@ -183,6 +187,7 @@ pub fn priced_faucet_builder(
         decimals,
         max_supply,
         initial_supply,
+        faucet_admin,
         faucet_admin,
         bridge_account_id,
         pricer.fee_parameters().fee_faucet_id(),
