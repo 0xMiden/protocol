@@ -229,7 +229,7 @@ async fn paused_bridge_allows_role_rotation() -> anyhow::Result<()> {
 
     let pause = AggLayerBridge::pause_note(
         PauseConfig::Pause,
-        bridge_admin_account_id(),
+        setup.pauser.id(),
         bridge_id,
         builder.rng_mut(),
     )?;
