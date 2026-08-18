@@ -189,7 +189,7 @@ impl FungibleAsset {
 
 impl From<FungibleAsset> for Asset {
     fn from(asset: FungibleAsset) -> Self {
-        Asset::from_id_and_value(asset.id(), asset.to_value_word())
+        Asset::new(asset.id(), asset.to_value_word())
             .expect("fungible asset should be a valid asset")
     }
 }

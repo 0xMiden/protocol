@@ -149,7 +149,7 @@ impl fmt::Display for NonFungibleAsset {
 
 impl From<NonFungibleAsset> for Asset {
     fn from(asset: NonFungibleAsset) -> Self {
-        Asset::from_id_and_value(asset.id(), asset.to_value_word())
+        Asset::new(asset.id(), asset.to_value_word())
             .expect("non-fungible asset should be a valid asset")
     }
 }

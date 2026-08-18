@@ -93,7 +93,7 @@ impl Asset {
     ///
     /// Returns an error if:
     /// - The asset is fungible and [`FungibleAsset::from_id_and_value`] fails.
-    pub fn from_id_and_value(id: AssetId, value: Word) -> Result<Self, AssetError> {
+    pub fn new(id: AssetId, value: Word) -> Result<Self, AssetError> {
         // An AssetId cannot be constructed with a Custom composition, so only the fungible case
         // needs to be validated here.
         if id.composition().is_fungible() {
@@ -106,16 +106,16 @@ impl Asset {
 
     /// Creates an asset from the provided ID and value.
     ///
-    /// Prefer [`Self::from_id_and_value`] for more type safety.
+    /// Prefer [`Self::new`] for more type safety.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The provided ID does not contain a valid faucet ID.
-    /// - [`Self::from_id_and_value`] fails.
+    /// - [`Self::new`] fails.
     pub fn from_id_and_value_words(id: Word, value: Word) -> Result<Self, AssetError> {
         let asset_id = AssetId::try_from(id)?;
-        Self::from_id_and_value(asset_id, value)
+        Self::new(asset_id, value)
     }
 
     /// Returns true if this asset is the same as the specified asset.
@@ -212,7 +212,7 @@ impl Deserializable for Asset {
         let id: AssetId = source.read()?;
         let value: AssetValue = source.read()?;
 
-        Asset::from_id_and_value(id, value.as_word())
+        Asset::new(id, value.as_word())
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
@@ -340,7 +340,7 @@ mod tests {
             AssetComposition::None,
         )?;
         let value = Word::from([7, 8, 9, 10u32]);
-        let asset = Asset::from_id_and_value(asset_id, value)?;
+        let asset = Asset::new(asset_id, value)?;
 
         assert_eq!(asset.id(), asset_id);
         assert_eq!(asset.to_value_word(), value);

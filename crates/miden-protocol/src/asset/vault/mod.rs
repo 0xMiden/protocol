@@ -102,7 +102,7 @@ impl AssetVault {
             None
         } else {
             Some(
-                Asset::from_id_and_value(asset_id, asset_value)
+                Asset::new(asset_id, asset_value)
                     .expect("asset vault should only store valid assets"),
             )
         }
@@ -135,8 +135,7 @@ impl AssetVault {
     pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
         // SAFETY: The entries map only tracks valid assets.
         self.entries.iter().map(|(id, value)| {
-            Asset::from_id_and_value(*id, *value)
-                .expect("asset vault should only store valid assets")
+            Asset::new(*id, *value).expect("asset vault should only store valid assets")
         })
     }
 
