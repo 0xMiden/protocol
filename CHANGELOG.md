@@ -4,6 +4,8 @@
 
 ### Features
 
+- [BREAKING] Implemented partial batch kernel verification to check the transaction list against `BATCH_ID` and compute `INPUT_NOTES_COMMITMENT`; `BatchExecutor::execute` now additionally takes caller `AdviceInputs` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
+
 ### Changes
 
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
@@ -219,22 +221,6 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - [BREAKING] Replaced the `MintNote` marker type and its `MintNote::create` factory with a struct built via a `bon` typestate builder (`MintNote::builder()`); a `MintNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `BurnNote` marker type and its `BurnNote::create` factory with a struct built via a `bon` typestate builder (`BurnNote::builder()`); a `BurnNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
 - [BREAKING] Replaced the `P2ideNote` marker type and its `P2ideNote::create` factory with a `P2ideNote` struct built via a `bon` typestate builder (`P2ideNote::builder()`). P2IDE notes must now carry at least one asset; the optional `reclaim_height`/`timelock_height` are set via the builder, `P2ideNoteStorage::into_recipient` is now infallible, and a `P2ideNote` converts into a `Note` via `Note::from` ([#2283](https://github.com/0xMiden/protocol/issues/2283)).
-- Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
-- The batch kernel verifies the transaction list against `BATCH_ID` and computes the nullifier-sorted `INPUT_NOTES_COMMITMENT` matching `ProposedBatch::input_notes().commitment()` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
-
-- [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
-- [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002), [#3154](https://github.com/0xMiden/protocol/pull/3154)).
-- [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).
-- [BREAKING] Block validator signatures are now verified against the validator key committed to by the parent block, enabling safe validator key rotation. `BlockHeader::validator_key` now denotes the signer of the *next* block, `ProvenBlock`/`SignedBlock` `new` no longer verify the signature (pass the parent header to `validate` to authenticate a block against its parent's validator key), and `ProposedBlock` serialization gained a trailing `next_validator_key` field ([#3030](https://github.com/0xMiden/protocol/pull/3030)).
-- [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
-- Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
-- Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
-- Clarified the Notes page: the purpose and roles of a note, the serial number's commitment/nullifier role, and the terms of the nullifier formula ([#3016](https://github.com/0xMiden/protocol/pull/3016)).
-- Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
-- Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
-- [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
-- Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
-- Added `Note::has_attachments` and `NoteMetadata::has_attachments` helpers, and retained private note attachments in `MockChain` ([#3060](https://github.com/0xMiden/protocol/pull/3060)).
 - [BREAKING] Reworked `NoteFile` variants into `NoteId`, `ExpectedNote`, and `Committed`, added `NoteSyncHint` carrying a required `NoteTag`, and moved `NoteFile` and `NoteSyncHint` from `miden-protocol` to `miden-standards` ([#1983](https://github.com/0xMiden/protocol/issues/1983)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - [BREAKING] Removed `AuthMethod` enum, `AccountAuthComponent` / `AccountAuthScheme`, and the `AccessControl::AuthControlled` variant. Faucet and wallet factories now take concrete auth-component types so invalid configurations are rejected at compile time ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
