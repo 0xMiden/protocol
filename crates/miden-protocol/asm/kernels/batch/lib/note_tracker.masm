@@ -14,6 +14,7 @@ use {
     OUTPUT_NOTES_PTR,
     TX_NOTES_SCRATCH_PTR,
 } from miden::batch_kernel::memory
+use {ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED} from miden::batch_kernel::errors
 
 # ERRORS
 # =================================================================================================
@@ -27,8 +28,6 @@ const ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE="a nullifier-sorted input-note list en
 const ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST="a transaction output note is missing from the note-id-sorted output-note list"
 
 const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE="a note-id-sorted output-note list entry was created by more than one transaction"
-
-const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it"
 
 const ERR_BATCH_TX_TOO_MANY_NOTES="a transaction's note set contains more notes than the maximum allowed"
 
