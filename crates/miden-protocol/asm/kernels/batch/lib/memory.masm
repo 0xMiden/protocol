@@ -50,115 +50,115 @@
 # BOOK KEEPING
 # =================================================================================================
 
-#! Single-felt slot holding `num_transactions` after Layer 1 verification.
-const NUM_TRANSACTIONS_PTR=0
+# Single-felt slot holding `num_transactions` after Layer 1 verification.
+const NUM_TRANSACTIONS_PTR = 0
 
 # BATCH HASHER STATE
 # =================================================================================================
 
-#! Word holding the RATE0 portion of the batch-level poseidon2 hasher state.
-const BATCH_HASHER_RATE0_PTR=4
+# Word holding the RATE0 portion of the batch-level poseidon2 hasher state.
+const BATCH_HASHER_RATE0_PTR = 4
 
-#! Word holding the RATE1 portion of the batch-level poseidon2 hasher state.
-const BATCH_HASHER_RATE1_PTR=8
+# Word holding the RATE1 portion of the batch-level poseidon2 hasher state.
+const BATCH_HASHER_RATE1_PTR = 8
 
-#! Word holding the CAPACITY portion of the batch-level poseidon2 hasher state.
-const BATCH_HASHER_CAP_PTR=12
+# Word holding the CAPACITY portion of the batch-level poseidon2 hasher state.
+const BATCH_HASHER_CAP_PTR = 12
 
 # NOTE LIST BOOKKEEPING
 # =================================================================================================
 
-#! Single-felt slot holding the number of entries in the nullifier-sorted input-note list.
-const NUM_INPUT_NOTES_PTR=18
+# Single-felt slot holding the number of entries in the nullifier-sorted input-note list.
+const NUM_INPUT_NOTES_PTR = 18
 
-#! Single-felt slot holding the number of entries in the note-id-sorted output-note list.
-const NUM_OUTPUT_NOTES_PTR=19
+# Single-felt slot holding the number of entries in the note-id-sorted output-note list.
+const NUM_OUTPUT_NOTES_PTR = 19
 
 # PIPED DATA REGIONS
 # =================================================================================================
 
-#! Base of the Layer 1 piped data region. Per transaction, 8 felts:
-#!   `[TX_ID, account_id_suffix, account_id_prefix, 0, 0]`.
-pub const TX_TUPLES_PTR=20
+# Base of the Layer 1 piped data region. Per transaction, 8 felts:
+#   `[TX_ID, account_id_suffix, account_id_prefix, 0, 0]`.
+pub const TX_TUPLES_PTR = 20
 
-#! Number of felts each transaction occupies in TX_TUPLES_PTR.
-const TX_TUPLE_FELT_LEN=8
+# Number of felts each transaction occupies in TX_TUPLES_PTR.
+const TX_TUPLE_FELT_LEN = 8
 
-#! Base of the Layer 2 piped data region. Per transaction, 16 felts:
-#!   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]`.
-#! This must match the felt-sequence layout of `TransactionId::new`.
-const TX_HEADERS_PTR=8212
+# Base of the Layer 2 piped data region. Per transaction, 16 felts:
+#   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]`.
+# This must match the felt-sequence layout of `TransactionId::new`.
+const TX_HEADERS_PTR = 8212
 
-#! Number of felts each transaction occupies in TX_HEADERS_PTR.
-const TX_HEADER_FELT_LEN=16
+# Number of felts each transaction occupies in TX_HEADERS_PTR.
+const TX_HEADER_FELT_LEN = 16
 
-#! Felt offset within a transaction header where INPUT_NOTES_COMMITMENT starts.
-const TX_HEADER_INPUT_NOTES_OFFSET=8
+# Felt offset within a transaction header where INPUT_NOTES_COMMITMENT starts.
+const TX_HEADER_INPUT_NOTES_OFFSET = 8
 
-#! Felt offset within a transaction header where OUTPUT_NOTES_COMMITMENT starts.
-const TX_HEADER_OUTPUT_NOTES_OFFSET=12
+# Felt offset within a transaction header where OUTPUT_NOTES_COMMITMENT starts.
+const TX_HEADER_OUTPUT_NOTES_OFFSET = 12
 
-#! Per-transaction scratch space for Layer 3a / 3b note data, overwritten between iterations.
-pub const TX_NOTES_SCRATCH_PTR=24596
+# Per-transaction scratch space for Layer 3a / 3b note data, overwritten between iterations.
+pub const TX_NOTES_SCRATCH_PTR = 24596
 
 # SORTED NOTE LISTS
 # =================================================================================================
 
-#! Base of the nullifier-sorted input-note list. Per note, an 8-felt sorted-array entry
-#!   `[NULLIFIER, NOTE_ID_OR_EMPTY]`
-#! where the KEY word is the nullifier (the `sorted_array` lookup key) and the VALUE word is the
-#! note id (for unauthenticated notes) or the empty word. The VALUE word doubles as the second half
-#! of the `(nullifier, note_id_or_empty)` tuple hashed into INPUT_NOTES_COMMITMENT.
-pub const INPUT_NOTES_PTR=32788
+# Base of the nullifier-sorted input-note list. Per note, an 8-felt sorted-array entry
+#   `[NULLIFIER, NOTE_ID_OR_EMPTY]`
+# where the KEY word is the nullifier (the `sorted_array` lookup key) and the VALUE word is the
+# note id (for unauthenticated notes) or the empty word. The VALUE word doubles as the second half
+# of the `(nullifier, note_id_or_empty)` tuple hashed into INPUT_NOTES_COMMITMENT.
+pub const INPUT_NOTES_PTR = 32788
 
-#! Number of felts each note occupies in INPUT_NOTES_PTR / OUTPUT_NOTES_PTR (KEY word + VALUE word).
-pub const NOTE_ENTRY_FELT_LEN=8
+# Number of felts each note occupies in INPUT_NOTES_PTR / OUTPUT_NOTES_PTR (KEY word + VALUE word).
+pub const NOTE_ENTRY_FELT_LEN = 8
 
-#! Base of the parallel input-note flags array. Per note, one word `[erasure, consumption, 0, 0]`.
-#! `erasure` is 0 (not erased / external), 1 (expected to be erased: the input note's id matches an
-#! output note created by another transaction within this batch -- its "creator" -- which has not
-#! been processed yet) or 2 (erased: the creator output note has been processed). `consumption` is
-#! 0 or 1.
-pub const INPUT_NOTE_FLAGS_PTR=40980
+# Base of the parallel input-note flags array. Per note, one word `[erasure, consumption, 0, 0]`.
+# `erasure` is 0 (not erased / external), 1 (expected to be erased: the input note's id matches an
+# output note created by another transaction within this batch -- its "creator" -- which has not
+# been processed yet) or 2 (erased: the creator output note has been processed). `consumption` is
+# 0 or 1.
+pub const INPUT_NOTE_FLAGS_PTR = 40980
 
-#! Number of felts each note occupies in the flag arrays (one word).
-pub const NOTE_FLAGS_FELT_LEN=4
+# Number of felts each note occupies in the flag arrays (one word).
+pub const NOTE_FLAGS_FELT_LEN = 4
 
-#! Felt offset of the `erasure` flag within an input-note flag word.
-pub const INPUT_NOTE_ERASURE_OFFSET=0
+# Felt offset of the `erasure` flag within an input-note flag word.
+pub const INPUT_NOTE_ERASURE_OFFSET = 0
 
-#! Felt offset of the `consumption` flag within an input-note flag word.
-pub const INPUT_NOTE_CONSUMPTION_OFFSET=1
+# Felt offset of the `consumption` flag within an input-note flag word.
+pub const INPUT_NOTE_CONSUMPTION_OFFSET = 1
 
-#! Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
-#!   `[NOTE_ID, 0, 0, 0, 0]`
-#! where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
-pub const OUTPUT_NOTES_PTR=45076
+# Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
+#   `[NOTE_ID, 0, 0, 0, 0]`
+# where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
+pub const OUTPUT_NOTES_PTR = 45076
 
-#! Base of the parallel output-note flags array. Per note, one word
-#!   `[will_be_erased, is_created, linked_input_index, 0]`.
-pub const OUTPUT_NOTE_FLAGS_PTR=53268
+# Base of the parallel output-note flags array. Per note, one word
+#   `[will_be_erased, is_created, linked_input_index, 0]`.
+pub const OUTPUT_NOTE_FLAGS_PTR = 53268
 
-#! Felt offset of the `will_be_erased` flag within an output-note flag word.
-pub const OUTPUT_NOTE_WILL_BE_ERASED_OFFSET=0
+# Felt offset of the `will_be_erased` flag within an output-note flag word.
+pub const OUTPUT_NOTE_WILL_BE_ERASED_OFFSET = 0
 
-#! Felt offset of the `is_created` flag within an output-note flag word.
-pub const OUTPUT_NOTE_IS_CREATED_OFFSET=1
+# Felt offset of the `is_created` flag within an output-note flag word.
+pub const OUTPUT_NOTE_IS_CREATED_OFFSET = 1
 
-#! Felt offset of the `linked_input_index` field within an output-note flag word.
-pub const OUTPUT_NOTE_LINKED_INPUT_OFFSET=2
+# Felt offset of the `linked_input_index` field within an output-note flag word.
+pub const OUTPUT_NOTE_LINKED_INPUT_OFFSET = 2
 
 # CAPACITY LIMITS
 # =================================================================================================
 
-#! Maximum number of transactions in a batch. The Layer 1/2 piped-data regions are sized to hold
-#! exactly this many transactions.
-pub const MAX_TRANSACTIONS_PER_BATCH=1024
+# Maximum number of transactions in a batch. The Layer 1/2 piped-data regions are sized to hold
+# exactly this many transactions.
+pub const MAX_TRANSACTIONS_PER_BATCH = 1024
 
-#! Maximum number of entries in a sorted note list and in a single transaction's note set. The
-#! input/output note regions and the per-transaction scratch region each hold exactly this many
-#! entries. Equals `MAX_INPUT_NOTES_PER_BATCH` = `MAX_OUTPUT_NOTES_PER_BATCH` in `src/constants.rs`.
-pub const MAX_NOTES_PER_BATCH=1024
+# Maximum number of entries in a sorted note list and in a single transaction's note set. The
+# input/output note regions and the per-transaction scratch region each hold exactly this many
+# entries. Equals `MAX_INPUT_NOTES_PER_BATCH` = `MAX_OUTPUT_NOTES_PER_BATCH` in `src/constants.rs`.
+pub const MAX_NOTES_PER_BATCH = 1024
 
 # NUM TRANSACTIONS
 # =================================================================================================

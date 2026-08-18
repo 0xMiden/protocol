@@ -11,9 +11,11 @@ use {ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED} from miden::batch_kernel::errors
 # ERRORS
 # =================================================================================================
 
-const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED="an input-note list entry was not consumed by any transaction"
+const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED =
+    "an input-note list entry was not consumed by any transaction"
 
-const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="an output-note list entry was not created by any transaction"
+const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED =
+    "an output-note list entry was not created by any transaction"
 
 # ASSERTIONS
 # =================================================================================================

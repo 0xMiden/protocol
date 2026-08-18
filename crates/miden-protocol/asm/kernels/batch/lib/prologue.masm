@@ -16,17 +16,19 @@ use {
 
 # Advice-map keys under which the sorted note lists (input notes by nullifier, output notes by
 # note id) are provided. Each key is the word hash of a domain message, matching `kernel.rs`.
-const INPUT_NOTE_LIST_KEY=word("miden::batch_kernel::input_note_list")
-const OUTPUT_NOTE_LIST_KEY=word("miden::batch_kernel::output_note_list")
+const INPUT_NOTE_LIST_KEY = word("miden::batch_kernel::input_note_list")
+const OUTPUT_NOTE_LIST_KEY = word("miden::batch_kernel::output_note_list")
 
 # ERRORS
 # =================================================================================================
 
-const ERR_BATCH_TOO_MANY_TRANSACTIONS="the batch contains more transactions than the maximum allowed"
+const ERR_BATCH_TOO_MANY_TRANSACTIONS =
+    "the batch contains more transactions than the maximum allowed"
 
-const ERR_BATCH_NOTE_LIST_NOT_SORTED="a batch note list is not strictly sorted by its key"
+const ERR_BATCH_NOTE_LIST_NOT_SORTED = "a batch note list is not strictly sorted by its key"
 
-const ERR_BATCH_NOTE_LIST_TOO_LONG="a batch note list contains more entries than the maximum allowed"
+const ERR_BATCH_NOTE_LIST_TOO_LONG =
+    "a batch note list contains more entries than the maximum allowed"
 
 # SORTED NOTE LIST LOADING
 # =================================================================================================

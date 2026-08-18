@@ -19,17 +19,23 @@ use {ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED} from miden::batch_kernel::errors
 # ERRORS
 # =================================================================================================
 
-const ERR_BATCH_INPUT_NOTE_NOT_IN_LIST="a transaction input note is missing from the nullifier-sorted input-note list"
+const ERR_BATCH_INPUT_NOTE_NOT_IN_LIST =
+    "a transaction input note is missing from the nullifier-sorted input-note list"
 
-const ERR_BATCH_INPUT_NOTE_ID_MISMATCH="a transaction input note id does not match its nullifier-sorted input-note list entry"
+const ERR_BATCH_INPUT_NOTE_ID_MISMATCH =
+    "a transaction input note id does not match its nullifier-sorted input-note list entry"
 
-const ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE="a nullifier-sorted input-note list entry was consumed by more than one transaction"
+const ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE =
+    "a nullifier-sorted input-note list entry was consumed by more than one transaction"
 
-const ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST="a transaction output note is missing from the note-id-sorted output-note list"
+const ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST =
+    "a transaction output note is missing from the note-id-sorted output-note list"
 
-const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE="a note-id-sorted output-note list entry was created by more than one transaction"
+const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE =
+    "a note-id-sorted output-note list entry was created by more than one transaction"
 
-const ERR_BATCH_TX_TOO_MANY_NOTES="a transaction's note set contains more notes than the maximum allowed"
+const ERR_BATCH_TX_TOO_MANY_NOTES =
+    "a transaction's note set contains more notes than the maximum allowed"
 
 # ERASURE CROSS-REFERENCE
 # =================================================================================================
