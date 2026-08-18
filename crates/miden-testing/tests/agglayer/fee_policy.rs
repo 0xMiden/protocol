@@ -23,7 +23,7 @@ use miden_standards::note::{
     PauseConfig,
     RbacConfigNote,
 };
-use miden_testing::{MockChain, assert_transaction_executor_error};
+use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
 use super::test_utils::{
@@ -192,13 +192,17 @@ fn repriced_root() -> NoteScriptRoot {
     NetworkAccountConfigNote::script_root()
 }
 
-fn fee_schedule_entry(amount: u64) -> Word {
-    Word::new([
-        Felt::new(amount).expect("a fee amount should fit in a field element"),
-        Felt::ZERO,
-        Felt::ZERO,
-        Felt::from(1u32),
-    ])
+fn fee_schedule_entry(amount: u64) -> anyhow::Result<Word> {
+    Ok(Word::new([Felt::new(amount)?, Felt::ZERO, Felt::ZERO, Felt::from(1u32)]))
+}
+
+fn add_required_sponsorship(
+    builder: &mut MockChainBuilder,
+    feature_note: &Note,
+    target: AccountId,
+) -> anyhow::Result<Note> {
+    add_fee_sponsorship(builder, feature_note, target, VERIFICATION_BASE_FEE)?
+        .ok_or_else(|| anyhow::anyhow!("expected a fee sponsorship note"))
 }
 
 fn committed_fee(
@@ -253,32 +257,28 @@ async fn fee_manager_reprices_the_fee_schedule(
     builder.add_account(account.clone())?;
     builder.add_output_note(RawOutputNote::Full(raise.clone()));
     builder.add_output_note(RawOutputNote::Full(lower.clone()));
-    let raise_sponsorship =
-        add_fee_sponsorship(&mut builder, &raise, account.id(), VERIFICATION_BASE_FEE)?
-            .expect("the priced config note should require sponsorship");
-    let lower_sponsorship =
-        add_fee_sponsorship(&mut builder, &lower, account.id(), VERIFICATION_BASE_FEE)?
-            .expect("the priced config note should require sponsorship");
+    let raise_sponsorship = add_required_sponsorship(&mut builder, &raise, account.id())?;
+    let lower_sponsorship = add_required_sponsorship(&mut builder, &lower, account.id())?;
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(deployed_fee),
+        fee_schedule_entry(deployed_fee)?,
         "the account should start at its deployment price"
     );
 
     consume_sponsored_note(&mut mock_chain, account.id(), &raise, &raise_sponsorship).await?;
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(RAISED_FEE),
+        fee_schedule_entry(RAISED_FEE)?,
         "the raised fee should replace the deployment price"
     );
 
     consume_sponsored_note(&mut mock_chain, account.id(), &lower, &lower_sponsorship).await?;
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(LOWERED_FEE),
+        fee_schedule_entry(LOWERED_FEE)?,
         "the lowered fee should replace the raised one"
     );
 
@@ -313,7 +313,7 @@ async fn admin_without_fee_manager_role_cannot_reprice_the_fee_schedule(
     assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(deployed_fee),
+        fee_schedule_entry(deployed_fee)?,
         "a rejected config note must leave the schedule untouched"
     );
 
@@ -336,15 +336,11 @@ async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
     builder.add_output_note(RawOutputNote::Full(pause.clone()));
-    let pause_sponsorship =
-        add_fee_sponsorship(&mut builder, &pause, bridge.id(), VERIFICATION_BASE_FEE)?
-            .expect("a non-zero base fee should produce a sponsorship");
+    let pause_sponsorship = add_required_sponsorship(&mut builder, &pause, bridge.id())?;
     let reprice =
         build_repricing_note(fee_manager_id(), bridge.id(), repriced_root(), REPRICED_FEE, 4)?;
     builder.add_output_note(RawOutputNote::Full(reprice.clone()));
-    let reprice_sponsorship =
-        add_fee_sponsorship(&mut builder, &reprice, bridge.id(), VERIFICATION_BASE_FEE)?
-            .expect("the priced config note should require sponsorship");
+    let reprice_sponsorship = add_required_sponsorship(&mut builder, &reprice, bridge.id())?;
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -362,7 +358,7 @@ async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
     consume_sponsored_note(&mut mock_chain, bridge.id(), &reprice, &reprice_sponsorship).await?;
     assert_eq!(
         committed_fee(&mock_chain, bridge.id(), repriced_root())?,
-        fee_schedule_entry(REPRICED_FEE),
+        fee_schedule_entry(REPRICED_FEE)?,
         "a paused bridge should still accept a repricing note"
     );
 
