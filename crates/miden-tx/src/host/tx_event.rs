@@ -245,19 +245,6 @@ impl TransactionEvent {
                     }
                 })?;
 
-                // TODO(generic_asset): The kernel treats the value of an asset that does not
-                // compose as opaque, so it may pass on values this crate cannot represent. Reject
-                // them here, where the failing asset is still known, rather than when the patch is
-                // built.
-                if !final_vault_value.is_empty() {
-                    Asset::from_id_and_value(asset_id, final_vault_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountVaultAfter{Add,Remove}Asset",
-                            source,
-                        }
-                    })?;
-                }
-
                 let patch = AssetPatch {
                     asset_id,
                     initial_vault_value,
