@@ -151,8 +151,6 @@ pub proc set_procedure_policy
         # => [is_delayed_threshold_zero, PROC_ROOT]
 
         if.true
-            # `eq.0 assert` produces the proper error when note_restrictions is non-zero;
-            # `assertz` would surface a generic "binary value expected" error for values 2 or 3.
             loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
             # => [PROC_ROOT]
         end

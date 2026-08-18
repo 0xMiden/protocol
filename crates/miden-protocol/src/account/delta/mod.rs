@@ -18,12 +18,7 @@ mod delta_op;
 pub use delta_op::AssetDeltaOperation;
 
 mod vault;
-pub use vault::{
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-};
+pub use vault::{AccountVaultDelta, AssetDelta};
 
 // ACCOUNT DELTA
 // ================================================================================================
