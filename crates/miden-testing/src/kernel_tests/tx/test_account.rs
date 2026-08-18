@@ -1272,7 +1272,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
 
     let mut account = mock_tx.account().clone();
 
-    let fungible_asset = Asset::Fungible(
+    let fungible_asset = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             5,
@@ -1358,7 +1358,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let faucet_new_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1368,11 +1368,11 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
-    let fungible_asset_for_note_new = Asset::Fungible(
+    let fungible_asset_for_note_new = Asset::from(
         FungibleAsset::new(faucet_new_asset, 20).context("fungible_asset_1 is invalid")?,
     );
 
@@ -1510,7 +1510,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let faucet_existing_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1520,7 +1520,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
@@ -1605,7 +1605,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let faucet_existing_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1615,7 +1615,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 

@@ -102,9 +102,7 @@ async fn network_account_pays_fee_note() -> anyhow::Result<()> {
     let assets = output_note.assets();
     assert_eq!(assets.num_assets(), 1);
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(paid_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid_asset = asset.unwrap_fungible();
     assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
 
     // the paid amount covers the fee required for the actual cycle count with a bounded

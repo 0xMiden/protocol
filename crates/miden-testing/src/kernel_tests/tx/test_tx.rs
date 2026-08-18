@@ -214,7 +214,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let removed_asset_1 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT / 2);
     let removed_asset_2 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT / 2);
 
-    let combined_asset = Asset::Fungible(
+    let combined_asset = Asset::from(
         FungibleAsset::new(
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().expect("id is valid"),
             FUNGIBLE_ASSET_AMOUNT,
@@ -222,7 +222,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         .expect("asset is valid"),
     );
     let removed_asset_3 = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA);
-    let removed_asset_4 = Asset::Fungible(
+    let removed_asset_4 = Asset::from(
         FungibleAsset::new(
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().expect("id is valid"),
             FUNGIBLE_ASSET_AMOUNT / 2,
