@@ -435,7 +435,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         // its accumulated delta before each computation, so no asset should be reported
         // twice.
         assert!(
-            self.update_tracker.update_asset_delta(delta).is_none(),
+            self.update_tracker.update_asset_delta(delta)?.is_none(),
             "each asset ID should be unique"
         );
 

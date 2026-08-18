@@ -45,8 +45,13 @@ impl VaultUpdateTracker {
     /// Inserts an asset delta, overwriting the previous delta of the same asset.
     ///
     /// Returns the overwritten delta, if the asset was already present.
-    pub fn update_delta(&mut self, delta: AssetDelta) -> Option<AssetDelta> {
-        self.delta.insert(delta)
+    pub fn update_delta(
+        &mut self,
+        delta: AssetDelta,
+    ) -> Result<Option<AssetDelta>, TransactionKernelError> {
+        self.delta.insert(delta).map_err(|source| {
+            TransactionKernelError::other_with_source("failed to update vault delta", source)
+        })
     }
 
     /// Clears the accumulating vault delta.

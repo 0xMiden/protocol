@@ -72,7 +72,10 @@ impl AccountUpdateTracker {
     /// Updates the vault delta, overwriting the previous delta of the same asset.
     ///
     /// Returns the overwritten delta, if the asset was already present.
-    pub fn update_asset_delta(&mut self, delta: AssetDelta) -> Option<AssetDelta> {
+    pub fn update_asset_delta(
+        &mut self,
+        delta: AssetDelta,
+    ) -> Result<Option<AssetDelta>, TransactionKernelError> {
         self.vault.update_delta(delta)
     }
 

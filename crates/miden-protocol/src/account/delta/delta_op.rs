@@ -37,3 +37,12 @@ impl TryFrom<u8> for AssetDeltaOperation {
         }
     }
 }
+
+impl core::fmt::Display for AssetDeltaOperation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            AssetDeltaOperation::Add => f.write_str("Add"),
+            AssetDeltaOperation::Remove => f.write_str("Remove"),
+        }
+    }
+}
