@@ -17,6 +17,7 @@ use miden_standards::note::{
     MintNote,
     NetworkAccountConfigNote,
     PauseConfig,
+    RbacConfigNote,
 };
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
@@ -78,6 +79,7 @@ fn faucet_allowed_notes_pin() {
         MintNote::script_root(),
         BurnNote::script_root(),
         ConstantFeePolicyConfigNote::script_root(),
+        RbacConfigNote::script_root(),
         NetworkAccountConfigNote::script_root(),
         FeeSponsorshipNote::script_root(),
     ]);
