@@ -30,72 +30,80 @@ use crate::tx_script::ExpirationTransactionScript;
 
 account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "miden-standards-auth-network-account.masp");
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`AuthNetworkAccount::NAME`], which mirrors the standards-side MASM module path.
+const NETWORK_ACCOUNT_AUTH_LIBRARY_PATH: &str =
+    "miden::standards::components::auth::network_account";
+
 procedure_root!(
     NETWORK_ACCOUNT_ADD_ALLOWED_NOTE_SCRIPT,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::ADD_ALLOWED_NOTE_SCRIPT_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     NETWORK_ACCOUNT_REMOVE_ALLOWED_NOTE_SCRIPT,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::REMOVE_ALLOWED_NOTE_SCRIPT_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     NETWORK_ACCOUNT_ADD_ALLOWED_TX_SCRIPT,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::ADD_ALLOWED_TX_SCRIPT_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     NETWORK_ACCOUNT_REMOVE_ALLOWED_TX_SCRIPT,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::REMOVE_ALLOWED_TX_SCRIPT_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     NETWORK_ACCOUNT_ESTIMATE_NOTE_FEE,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::ESTIMATE_NOTE_FEE_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     NETWORK_ACCOUNT_SET_FEE_POLICY,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::SET_FEE_POLICY_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     NETWORK_ACCOUNT_GET_FEE_POLICY,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::GET_FEE_POLICY_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     NETWORK_ACCOUNT_GET_FEE_ASSET_ID,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::GET_FEE_ASSET_ID_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     FEE_MANAGER_ADD_ALLOWED_FEE_POLICY,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::ADD_ALLOWED_FEE_POLICY_PROC_NAME,
     AuthNetworkAccount::code()
 );
 
 procedure_root!(
     FEE_MANAGER_REMOVE_ALLOWED_FEE_POLICY,
-    AuthNetworkAccount::NAME,
+    NETWORK_ACCOUNT_AUTH_LIBRARY_PATH,
     AuthNetworkAccount::REMOVE_ALLOWED_FEE_POLICY_PROC_NAME,
     AuthNetworkAccount::code()
 );
@@ -183,7 +191,7 @@ pub struct AuthNetworkAccount {
 
 impl AuthNetworkAccount {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::network_account";
+    pub const NAME: &'static str = "miden::standards::auth::network_account";
 
     const ADD_ALLOWED_NOTE_SCRIPT_PROC_NAME: &'static str = "add_allowed_note_script";
     const REMOVE_ALLOWED_NOTE_SCRIPT_PROC_NAME: &'static str = "remove_allowed_note_script";
@@ -224,10 +232,14 @@ impl AuthNetworkAccount {
         mut allowed_notes: BTreeSet<NoteScriptRoot>,
         fee_policy_manager: FeePolicyManager,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
-        allowed_notes.insert(NetworkAccountConfigNote::script_root());
-        allowed_notes.insert(FeeSponsorshipNote::script_root());
+        allowed_notes.extend(Self::default_allowed_note_scripts());
         Ok(Self::custom(allowed_notes, fee_policy_manager)?
             .with_allowed_tx_scripts([ExpirationTransactionScript::script_root()]))
+    }
+
+    /// Returns the note script roots added to every standard network account's allowlist.
+    pub fn default_allowed_note_scripts() -> [NoteScriptRoot; 2] {
+        [NetworkAccountConfigNote::script_root(), FeeSponsorshipNote::script_root()]
     }
 
     /// Creates a raw [`AuthNetworkAccount`] component from the given note-script allowlist, with an

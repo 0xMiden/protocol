@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_crypto::rand::test_utils::rand_value;
+use miden_crypto::rand::{FeltRng, RandomCoin};
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -15,6 +16,7 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     AccountId,
+    AccountProcedureRoot,
     AccountStorage,
     AccountType,
     StorageMap,
@@ -32,11 +34,13 @@ use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Linkage, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED,
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_UNKNOWN_VERSION,
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
+    ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
 use miden_protocol::field::PrimeField64;
@@ -60,7 +64,7 @@ use miden_protocol::vm::Package;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_tx::LocalTransactionProver;
+use miden_tx::{LocalTransactionProver, TransactionKernelError};
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -71,6 +75,7 @@ use crate::{
     ExecError,
     MockChain,
     TestTransactionBuilder,
+    assert_execution_error,
     assert_transaction_executor_error,
 };
 
@@ -700,6 +705,142 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Returns the requested number of distinct procedure roots sorted in ascending order.
+fn sorted_procedure_roots(num_procedures: usize) -> Vec<AccountProcedureRoot> {
+    let mut rng = RandomCoin::new([num_procedures as u32, 0, 0, 0].into());
+    let mut roots = (0..num_procedures as u32)
+        .map(|_| AccountProcedureRoot::from_raw(rng.draw_word()))
+        .collect::<Vec<_>>();
+    roots.sort_unstable();
+
+    roots
+}
+
+/// Returns a program that writes the provided procedure roots into the native account's procedure
+/// section and validates them.
+fn validate_procedures_program(procedure_roots: &[AccountProcedureRoot]) -> String {
+    let procedure_writes = procedure_roots
+        .iter()
+        .enumerate()
+        .map(|(index, root)| {
+            format!(
+                "push.{root}
+                exec.memory::get_account_procedures_section_ptr add.{offset} mem_storew_le dropw",
+                offset = index * Word::NUM_ELEMENTS
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::memory
+
+        begin
+            exec.memory::set_active_account_data_ptr_to_native_account
+
+            push.{num_procedures} exec.memory::set_num_account_procedures
+
+            {procedure_writes}
+
+            exec.account::validate_procedures
+        end
+        "#,
+        num_procedures = procedure_roots.len()
+    )
+}
+
+/// The auth procedure at index 0 is exempt from the ordering, so it is validated against roots that
+/// sort before, in between and after the other procedures.
+#[rstest::rstest]
+#[case::minimum_number_of_procedures(2, 0)]
+#[case::auth_procedure_sorts_first(8, 0)]
+#[case::auth_procedure_sorts_in_between(8, 4)]
+#[case::auth_procedure_sorts_last(8, 7)]
+#[tokio::test]
+async fn test_validate_procedures_accepts_sorted_and_unique_procedures(
+    #[case] num_procedures: usize,
+    #[case] auth_procedure_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(num_procedures);
+    let auth_procedure_root = procedure_roots.remove(auth_procedure_index);
+    procedure_roots.insert(0, auth_procedure_root);
+
+    CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await?;
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::first_pair_swapped(1, 2)]
+#[case::last_pair_swapped(6, 7)]
+#[case::first_and_last_swapped(1, 7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_unsorted_procedures(
+    #[case] left_index: usize,
+    #[case] right_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(8);
+    procedure_roots.swap(left_index, right_index);
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE);
+
+    Ok(())
+}
+
+/// The duplicated procedure is always the one preceding it, which must be at index 1 or greater so
+/// the duplicate does not involve the auth procedure at index 0.
+#[rstest::rstest]
+#[case::first_procedure(2)]
+#[case::middle_procedure(4)]
+#[case::last_procedure(7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_duplicated_procedure(
+    #[case] duplicated_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(8);
+    procedure_roots[duplicated_index] = procedure_roots[duplicated_index - 1];
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE);
+
+    Ok(())
+}
+
+/// A duplicated auth procedure is not caught by the ordering check, since the auth procedure is
+/// exempt from it, so it must be rejected by the explicit comparison against the root at index 0.
+#[rstest::rstest]
+#[case::minimum_number_of_procedures(2, 1)]
+#[case::first_procedure(8, 1)]
+#[case::middle_procedure(8, 4)]
+#[case::last_procedure(8, 7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_duplicated_auth_procedure(
+    #[case] num_procedures: usize,
+    #[case] duplicated_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(num_procedures);
+    procedure_roots[0] = procedure_roots[duplicated_index];
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED);
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_set_item() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
@@ -868,8 +1009,8 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that `native_account::upgrade` stores the code and storage upgrade commitments in the
-/// dedicated kernel memory region.
+/// Tests that `native_account::upgrade`, invoked from an account procedure, stores the code and
+/// storage upgrade commitments in the dedicated kernel memory region.
 #[tokio::test]
 async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
@@ -877,9 +1018,11 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
     let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
     let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
 
+    // `upgrade` is invoked through the mock account's `upgrade` procedure, so the caller is a
+    // procedure of the account and the authenticator accepts it.
     let code = format!(
         r#"
-        use miden::protocol::native_account
+        use mock::account as mock_account
         use miden::tx_kernel_core::prologue
 
         begin
@@ -887,10 +1030,11 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
 
             push.{storage_upgrade_commitment}
             push.{code_upgrade_commitment}
-            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
-            exec.native_account::upgrade
-            # => []
+            call.mock_account::upgrade
+            # => [pad(16)]
+            dropw dropw dropw dropw
         end
         "#,
         code_upgrade_commitment = &code_upgrade_commitment,
@@ -908,6 +1052,54 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
         exec_output.get_kernel_mem_word(STORAGE_UPGRADE_COMMITMENT_PTR),
         storage_upgrade_commitment,
         "storage upgrade commitment should be stored in kernel memory"
+    );
+
+    Ok(())
+}
+
+/// Tests that `account_upgrade` is gated by the account context: invoking it from outside an
+/// account procedure (so that `caller` is not a procedure of the account) must be rejected by the
+/// authenticator. This models what an untrusted transaction script could attempt.
+#[tokio::test]
+async fn test_native_account_upgrade_from_tx_script_is_rejected() -> anyhow::Result<()> {
+    let code_upgrade_commitment = Word::from([1, 2, 3, 4u32]);
+    let storage_upgrade_commitment = Word::from([5, 6, 7, 8u32]);
+
+    // A transaction script invokes `native_account::upgrade` directly. Its caller is the tx script,
+    // not a procedure of the account, so authentication must reject the invocation.
+    let tx_script_source = format!(
+        r#"
+        use miden::protocol::native_account
+
+        @transaction_script
+        pub proc main
+            push.{storage_upgrade_commitment}
+            push.{code_upgrade_commitment}
+            # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+            exec.native_account::upgrade
+        end
+        "#,
+        code_upgrade_commitment = &code_upgrade_commitment,
+        storage_upgrade_commitment = &storage_upgrade_commitment,
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_source)?;
+
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+
+    let execution_result = mock_tx.execute().await;
+
+    // The tx-script root is not a procedure of the account, so `authenticate_account_origin` fails
+    // while resolving the caller's procedure index.
+    assert_transaction_executor_error!(
+        execution_result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
     );
 
     Ok(())
@@ -1498,7 +1690,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
+async fn test_authenticate_procedure() -> anyhow::Result<()> {
     let mock_component = MockAccountComponent::with_empty_slots();
 
     let components: Vec<AccountComponent> =
@@ -1525,7 +1717,7 @@ async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
 
                 # authenticate procedure
                 push.{root}
-                exec.account::authenticate_and_track_procedure
+                exec.account::authenticate_procedure
 
                 # truncate the stack
                 dropw
@@ -1609,10 +1801,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
     // Create mock transaction and execute
     let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    mock_tx
-        .execute()
-        .await
-        .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+    mock_tx.execute().await?;
 
     Ok(())
 }
@@ -1814,10 +2003,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     // Create mock transaction and execute
     let mock_tx = TestTransactionBuilder::new(account).tx_script(tx_script).build().unwrap();
 
-    mock_tx
-        .execute()
-        .await
-        .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+    mock_tx.execute().await?;
 
     Ok(())
 }

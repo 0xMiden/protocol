@@ -90,7 +90,7 @@ end
 #! Checks whether the receiving account is in the block list. If so, panics.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @account_procedure
@@ -98,9 +98,8 @@ pub proc on_before_asset_added_to_account
     exec.assert_native_account_not_blocked
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    # drop unused asset ID
-    dropw
-    # => [ASSET_VALUE, pad(12)]
+    dropw dropw
+    # => [pad(16)]
 end
 
 #! Callback invoked when an asset with callbacks enabled is added to an output note.
@@ -108,7 +107,7 @@ end
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @account_procedure
@@ -116,9 +115,8 @@ pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-    # drop unused asset ID
-    dropw
-    # => [ASSET_VALUE, note_idx, pad(7)]
+    dropw dropw drop
+    # => [pad(16)]
 end
 "#;
 
@@ -321,7 +319,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     let account_callback_masm = format!(
         r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_account
         # Assert native account ID can be retrieved via native_account::get_id
@@ -331,23 +329,19 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
         # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-        # duplicate the asset value for returning
-        dupw.1 swapw
-        # => [ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
-
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, pad(8)]
         exec.::miden::standards::assets::fungible_asset::create
-        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
 
         movupw.2
         assert_eqw.err="callback received unexpected asset ID"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         assert_eqw.err="callback received unexpected asset value"
-        # => [ASSET_VALUE, pad(12)]
+        # => [pad(16)]
     end
     "#
     );
@@ -523,7 +517,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     const ERR_WRONG_NOTE_IDX = "callback received unexpected note_idx"
 
     #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_note
         # Assert native account ID can be retrieved via native_account::get_id
@@ -537,23 +531,22 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         dup.8 push.1 assert_eq.err=ERR_WRONG_NOTE_IDX
         # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-        # duplicate the asset value for returning
-        dupw.1 swapw
-        # => [ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
-
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
         exec.::miden::standards::assets::fungible_asset::create
-        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         movupw.2
         assert_eqw.err="callback received unexpected asset ID"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         assert_eqw.err="callback received unexpected asset value"
-        # => [ASSET_VALUE, note_idx, pad(7)]
+        # => [note_idx, pad(7)]
+
+        drop
+        # => [pad(16)]
     end
     "#
     );
@@ -625,21 +618,21 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let account_callback_masm = r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_account
-        dropw
-        # => [ASSET_VALUE, pad(12)]
+        dropw dropw
+        # => [pad(16)]
     end
     "#;
 
     let note_callback_masm = r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_note
-        dropw movup.4 drop
-        # => [ASSET_VALUE, pad(12)]
+        dropw dropw drop
+        # => [pad(16)]
     end
     "#;
 

@@ -120,8 +120,10 @@ runs:
     # during the verification step (related to cargo#14283, cargo#14789).
     # Specifically, this ensures the temp registry used during workspace
     # publish verification doesn't conflict with cached crates.io data.
+    # Unconditional: cargo unpacks the publish verification's temp registry
+    # under ~/.cargo/registry/src keyed only by name and version, so a cache
+    # restored from a branch at the same version supplies the wrong sources.
     - name: Clear cargo registry for fresh resolution
-      if: ${{ inputs.mode == 'dry-run' }}
       shell: bash
       run: |
         echo "Clearing cargo registry for fresh resolution"

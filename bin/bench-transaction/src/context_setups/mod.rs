@@ -2,7 +2,11 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
-use miden_agglayer::testing::{bridge_admin_account_id, create_existing_bridge_account_with_roles};
+use miden_agglayer::testing::{
+    bridge_admin_account_id,
+    create_existing_agglayer_faucet,
+    create_existing_bridge_account_with_roles,
+};
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -14,7 +18,6 @@ use miden_agglayer::{
     MetadataHash,
     RemoveGerNote,
     UpdateGerNote,
-    create_existing_agglayer_faucet,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
@@ -189,6 +192,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork => {
             network_config::tx_consume_faucet_metadata_config_note_network()
         },
+        ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork => {
+            network_config::tx_consume_min_burn_amount_config_note_network()
+        },
         ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
             network_config::tx_consume_allowlist_config_note_network()
         },
@@ -269,7 +275,6 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
         "
         use miden::core::sys
         use miden::standards::wallets::basic as basic_wallet
-        use miden::standards::note::note_creator
 
         @transaction_script
         pub proc main
@@ -283,7 +288,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
             push.{tag}
             # => [tag, note_type, RECIPIENT, pad(16)]
 
-            call.note_creator::create_note
+            call.basic_wallet::create_note
             # => [note_idx, pad(21)]
 
             # move the asset to the note

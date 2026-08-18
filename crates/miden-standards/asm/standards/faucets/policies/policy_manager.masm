@@ -37,7 +37,7 @@ const ALLOWED_SEND_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::polic
 # Allowlist map slot for receive policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_receive_policy_proc_roots")
 
-# Local memory pointer used to pass a policy root to `dynexec`.
+# Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR=0
 
 # ERRORS
@@ -150,11 +150,7 @@ end
 #! applies the pause check and invokes the active send policy.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
-#!
-#! Where:
-#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
-#!   if no send policy is configured.
+#! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the account is paused.
@@ -167,7 +163,7 @@ pub proc invoke_send_policy
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     exec.invoke_transfer_policy
-    # => [PROCESSED_ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 end
 
 #! Returns active send policy root.
@@ -220,12 +216,10 @@ end
 #! receive policy is configured).
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - custom_data is `0` for the receive callback.
-#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
-#!   if no receive policy is configured.
 #!
 #! Panics if:
 #! - the account is paused.
@@ -238,7 +232,7 @@ pub proc invoke_receive_policy
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
     exec.invoke_transfer_policy
-    # => [PROCESSED_ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 end
 
 #! Returns active receive policy root.
@@ -285,11 +279,15 @@ end
 # PUBLIC HELPERS
 # =================================================================================================
 
-#! Executes active mint policy by dynamic execution.
+#! Executes active mint policy by dynamic invocation.
 #!
 #! The policy operates on the full asset value word so the interface is shared across fungible
 #! and non-fungible faucets. The policy may adjust the asset value and the output note's `tag`,
 #! `note_type`, and `RECIPIENT`.
+#!
+#! The policy is invoked via `dyncall`. The inputs are padded to a full call frame beforehand and
+#! the padding is truncated afterwards, so the policy sees exactly the ten values below and cannot
+#! observe or mutate anything deeper on the caller's stack.
 #!
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
 #! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
@@ -316,14 +314,30 @@ pub proc execute_mint_policy
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
-    locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, ASSET_VALUE, tag, note_type, RECIPIENT]
+    # pad the ten inputs into a full call frame by sinking six zeros underneath them
+    push.0.0.0.0.0.0
+    repeat.6
+        movdn.15
+    end
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
-    dynexec
+    locaddr.POLICY_PROC_ROOT_PTR
+    # => [policy_root_ptr, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    dyncall
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # truncate the call frame's padding
+    movupw.3 dropw movup.11 drop movup.10 drop
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 end
 
-#! Executes active burn policy for the provided asset by dynamic execution.
+#! Executes active burn policy for the provided asset by dynamic invocation.
+#!
+#! The policy is invoked via `dyncall`. The asset is padded to a full call frame beforehand and the
+#! frame is dropped afterwards, so the policy sees exactly the asset and cannot observe or mutate
+#! anything deeper on the caller's stack. The policy is a predicate: it consumes the asset and
+#! returns nothing, so callers that still need the asset must keep their own copy.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
@@ -349,10 +363,18 @@ pub proc execute_burn_policy
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
     # => [ASSET_ID, ASSET_VALUE]
 
-    locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, ASSET_ID, ASSET_VALUE]
+    # pad the asset into a full call frame
+    padw padw swapdw
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    dynexec
+    locaddr.POLICY_PROC_ROOT_PTR
+    # => [policy_root_ptr, ASSET_ID, ASSET_VALUE, pad(8)]
+
+    dyncall
+    # => [pad(16)]
+
+    # drop the call frame the predicate returns
+    dropw dropw dropw dropw
     # => []
 end
 
@@ -506,18 +528,16 @@ end
 #! which differ only in which slot they bind.
 #!
 #! If the active root is the empty word (no policy configured for this kind), the transfer is
-#! accepted unchanged and the pause check is skipped — mirroring the kernel's behavior when a
-#! callback slot holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op
-#! when the [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
+#! accepted and the pause check is skipped — mirroring the kernel's behavior when a callback slot
+#! holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op when the
+#! [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
+#! Outputs: []
 #!
 #! Where:
 #! - slot_id_{suffix, prefix} identify the storage slot holding the active policy root.
 #! - custom_data is `0` for the receive callback and the output note index for the send callback.
-#! - PROCESSED_ASSET_VALUE is the asset value returned by the policy, or the original ASSET_VALUE
-#!   if no policy is configured.
 #!
 #! Panics if:
 #! - the account is paused.
@@ -527,27 +547,35 @@ end
 @locals(4)
 proc invoke_transfer_policy
     exec.active_account::get_item
-    # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
     exec.word::testz
-    # => [is_empty, POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # => [is_empty, POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
     if.true
-        # No policy configured: drop the empty root and asset ID, return the asset value
-        # unchanged. `movup.4 drop` removes custom_data so only ASSET_VALUE is returned.
-        dropw dropw movup.4 drop
-        # => [ASSET_VALUE, pad(7)]
+        # No policy configured: consume the callback inputs.
+        dropw dropw dropw drop
+        # => []
     else
         exec.pausable::assert_not_paused
-        # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+        # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
         loc_storew_le.POLICY_PROC_ROOT_PTR dropw
+        # => [ASSET_ID, ASSET_VALUE, custom_data]
+
+        # pad the policy inputs to 16 elements
+        repeat.7
+            push.0 movdn.9
+        end
         # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
         locaddr.POLICY_PROC_ROOT_PTR
         # => [policy_root_ptr, ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 
         dyncall
-        # => [PROCESSED_ASSET_VALUE, pad(12)]
+        # => [pad(16)]
+
+        dropw dropw dropw dropw
+        # => []
     end
 end

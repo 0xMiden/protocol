@@ -133,7 +133,7 @@ pub struct AuthMultisigSmart {
 
 impl AuthMultisigSmart {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::multisig_smart";
+    pub const NAME: &'static str = "miden::standards::auth::multisig_smart";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {

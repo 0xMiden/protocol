@@ -8,10 +8,9 @@ use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
-use miden::standards::note_tag
+use miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
-use miden::standards::note::note_creator
 
 # CONSTANTS
 # =================================================================================================
@@ -313,7 +312,7 @@ proc create_p2id_note
     # => [has_note_fill]
 
     if.true
-        loc_load.P2ID_NOTE_IDX movdn.8
+        loc_load.P2ID_NOTE_IDX
         # => [note_idx]
 
         # create the asset
@@ -390,7 +389,7 @@ proc create_remainder_note
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    call.note_creator::create_note
+    call.wallet::create_note
     # => [note_idx, pad(15)]
 
     movdn.15 dropw dropw dropw drop drop drop
@@ -596,7 +595,7 @@ proc execute_pswap
     # => [ASSET_ID, ASSET_VALUE]
 
     # Extract offered amount
-    exec.fungible_asset::to_amount
+    exec.fungible_asset::to_amount_unchecked
     # => [amount, ASSET_ID, ASSET_VALUE]
 
     loc_store.EXEC_AMT_OFFERED
@@ -788,10 +787,10 @@ end
 #! - `note_fill_amount`:    portion of the requested asset sourced from another note in the
 #!                          same transaction (cross-swap / net-zero flow, no vault debit).
 #!
-#! At least one of the two must be non-zero. If both are zero — which is the default in
-#! network transactions where the executor does not provide note_args — the script falls back
-#! to a full fill (`account_fill_amount = min_requested_amount`). If the consuming account is the note's
-#! creator, the script reclaims the offered asset back to the creator's vault instead.
+#! At least one of the two must be non-zero. If both are zero — which is the default in network
+#! transactions where the executor does not provide note_args — the script falls back to a full fill
+#! (`account_fill_amount = min_requested_amount`). If the consuming account is the note's creator,
+#! the script reclaims the offered asset back to the creator's vault instead.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::wallets::basic::receive_asset` procedure.

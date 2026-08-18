@@ -25,9 +25,13 @@ use miden_protocol_build_utils::{
     generate_error_file,
 };
 use miden_standards::StandardsLib;
-use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
+use miden_standards::account::access::{AccessControl, Pausable, PausableManager};
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::{
+    BasicConstantFeePolicy,
+    ConstantFeeManager,
+    FeePolicyManager,
+};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -110,12 +114,11 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     // The protocol package declares dependencies on the kernel and core packages, and the agglayer
     // projects depend on the standards package, so all of these must be available in the registry
     // for project dependency resolution to succeed.
-    for package in [
-        CoreLibrary::default().package(),
+    for package in CoreLibrary::default().packages().into_iter().chain([
         ProtocolLib::default().package(),
         TransactionKernel::package(),
         StandardsLib::default().package(),
-    ] {
+    ]) {
         registry.cache_package(package).into_diagnostic()?;
     }
 
@@ -189,69 +192,49 @@ fn generate_agglayer_constants(
             AccountComponent::new(Arc::unwrap_or_clone(package), vec![], dummy_metadata.clone())
                 .unwrap();
 
-        // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
-        // policies alongside the agglayer faucet component, since
-        // fungible::mint_and_send requires these for access control.
-        //
-        // Use a dummy owner for commitment computation - the actual owner is set at runtime. Only
-        // the component code (not storage) contributes to the code commitment.
-        let dummy_owner = miden_protocol::account::AccountId::try_from(
+        let dummy_account_id = miden_protocol::account::AccountId::try_from(
             miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
         )
         .unwrap();
 
-        // Both the bridge and the faucet install a FeePolicyManager (see
-        // `agglayer_fee_policy_manager` in lib.rs). Only its procedure code affects the commitment,
-        // so the fee faucet id backing the policy is immaterial here. The manager's active policy,
-        // allowed policies and fee asset initialize the fee-policy slots the auth component owns,
-        // but those are storage (not code) and so do not affect the commitment either.
         let fee_policy_manager = FeePolicyManager::builder()
             .active_fee_policy(BasicConstantFeePolicy::new().into())
-            .fee_faucet_id(dummy_owner)
+            .fee_faucet_id(dummy_account_id)
             .build();
 
-        // The allowlist lives in storage, not code, and here we only care about the code commitment
-        // of the accounts, so we can init the allowlists with dummy values.
         let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
         let auth_component = AuthNetworkAccount::new(placeholder_allowlist, fee_policy_manager)
             .expect("placeholder allowlist is non-empty");
 
-        // The auth component expands into itself followed by the fee policy manager's components,
-        // matching `NetworkAccount::builder`, which installs them via `with_components` before the
-        // account-specific components below.
         let mut components: Vec<AccountComponent> = auth_component.into_iter().collect();
         components.push(agglayer_component);
         if component_name == "bridge" {
-            // The bridge installs the RBAC access-control stack (RoleBasedAccessControl +
-            // Authority::RbacControlled), matching `create_bridge_account_builder` in lib.rs. An
-            // empty admin / role config suffices here since only component code affects the
-            // commitment.
             components.extend(AccessControl::Rbac {
-                admin: dummy_owner,
+                admin: dummy_account_id,
                 procedure_roles: std::collections::BTreeMap::new(),
             });
             components.push(AccountComponent::from(Pausable::unpaused()));
             components.push(AccountComponent::from(PausableManager));
+            components
+                .push(AccountComponent::from(ConstantFeeManager::for_basic_constant_fee_policy()));
         } else if component_name == "faucet" {
             components.push(AccountComponent::from(
-                miden_standards::account::access::Ownable2Step::new(dummy_owner),
+                miden_standards::account::access::Ownable2Step::new(dummy_account_id),
             ));
-            components.push(AccountComponent::from(Authority::OwnerControlled));
-            // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
-            // the compile-time code commitment matches the one computed at runtime.
-            //
-            // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
-            // is registered as Reserved so the owner can open burns at runtime via
-            // `set_burn_policy`.
+            components.extend(AccessControl::Rbac {
+                admin: dummy_account_id,
+                procedure_roles: std::collections::BTreeMap::new(),
+            });
             let token_policy_manager = TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::owner_only())
                 .active_burn_policy(BurnPolicy::owner_only())
-                .allowed_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(TransferPolicy::allow_all())
                 .active_receive_policy(TransferPolicy::allow_all())
                 .build();
 
             components.extend(token_policy_manager);
+            components
+                .push(AccountComponent::from(ConstantFeeManager::for_basic_constant_fee_policy()));
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

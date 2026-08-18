@@ -14,19 +14,18 @@ use miden::standards::access::ownable2step
 
 #! Owner-only burn predicate.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE]
-#! Outputs: []
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - note sender is not owner.
 #!
-#! Invocation: dynexec
-# TODO(call invocation)
+#! Invocation: call
 @account_procedure
 pub proc check_policy
     exec.ownable2step::assert_sender_is_owner
-    # => [ASSET_ID, ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     dropw dropw
-    # => []
+    # => [pad(16)]
 end

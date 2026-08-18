@@ -10,7 +10,6 @@ pub mod fees
 pub mod inspection
 pub mod interop
 pub mod note
-pub mod note_tag
 pub mod notes
 pub mod tx_scripts
 pub mod utils

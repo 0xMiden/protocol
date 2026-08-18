@@ -19,9 +19,17 @@ account_component_code!(
     "miden-standards-faucets-policies-transfer-basic-blocklist.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BasicBlocklist::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BASIC_BLOCKLIST_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::basic_blocklist";
+
 procedure_root!(
     BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT,
-    BasicBlocklist::NAME,
+    BASIC_BLOCKLIST_LIBRARY_PATH,
     BasicBlocklist::PROC_NAME,
     BasicBlocklist::code()
 );
@@ -33,6 +41,8 @@ procedure_root!(
 /// [`crate::account::policies::TokenPolicyManager`] whose send / receive policy maps include
 /// [`BasicBlocklist::root`]. When active, transfers fail if the native account (asset
 /// recipient or note creator) is currently blocked on the issuing faucet.
+///
+/// The issuing faucet is exempt from its own blocklist.
 ///
 /// The wrapped [`BlocklistStorage`] captures the initial blocklist contents (it can be empty
 /// for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
@@ -47,8 +57,7 @@ pub struct BasicBlocklist(BlocklistStorage);
 
 impl BasicBlocklist {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::basic_blocklist";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::basic_blocklist";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

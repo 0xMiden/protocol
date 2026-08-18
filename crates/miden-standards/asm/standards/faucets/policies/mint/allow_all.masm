@@ -5,10 +5,10 @@
 
 #! Mint policy that accepts every mint request.
 #!
-#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
-#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
-#! Invocation: dynexec
-# TODO(call invocation)
+#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#!
+#! Invocation: call
 @account_procedure
 pub proc check_policy
     push.0 drop

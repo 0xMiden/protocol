@@ -42,6 +42,7 @@ use miden_protocol::account::{
     AccountId,
     AccountPatch,
     AccountStorageHeader,
+    AssetDelta,
     PartialAccount,
     StorageMapKey,
     StorageSlotHeader,
@@ -68,7 +69,7 @@ pub(crate) use tx_event::{
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
-use crate::host::tx_event::{AssetDelta, AssetPatch};
+use crate::host::tx_event::AssetPatch;
 
 // TRANSACTION BASE HOST
 // ================================================================================================
@@ -288,7 +289,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         let is_found = Felt::from(note_idx.is_some() as u8);
         let note_idx = Felt::from(note_idx.unwrap_or(0));
 
-        vec![AdviceMutation::extend_stack([note_idx, is_found])]
+        vec![AdviceMutation::extend_advice_stack([note_idx, is_found].into_iter().collect())]
     }
 
     /// Handles the event if the core lib event handler registry contains a handler with the emitted
@@ -324,7 +325,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
-        vec![AdviceMutation::extend_stack(signature)]
+        vec![AdviceMutation::extend_advice_stack(signature.into())]
     }
 
     /// Adds an asset to the output note identified by the note index.
@@ -366,7 +367,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_stack([Felt::from(proc_idx)])])
+        Ok(vec![AdviceMutation::extend_advice_stack(
+            [Felt::from(proc_idx)].into_iter().collect(),
+        )])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.
@@ -428,7 +431,13 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         &mut self,
         delta: AssetDelta,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.update_asset_delta(delta);
+        // SAFETY: The kernel iterates the asset delta map once per computation and the host resets
+        // its accumulated delta before each computation, so no asset should be reported
+        // twice.
+        assert!(
+            self.update_tracker.update_asset_delta(delta).is_none(),
+            "each asset ID should be unique"
+        );
 
         Ok(Vec::new())
     }

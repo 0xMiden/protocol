@@ -8,7 +8,6 @@ use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::output_note
 use miden::tx_kernel_core::tx
 
-use miden::core::word
 use {KERNEL_PROCEDURES_PTR, UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR, UPCOMING_FOREIGN_PROCEDURE_PTR}
     from miden::tx_kernel_core::memory
 use {AccountId} from miden::protocol_utils::types
@@ -52,36 +51,18 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED =
     "failed to access note id of active note because no note is currently being processed"
 
-const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO =
-    "root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
-
 const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
     "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
 # AUTHENTICATION
 # =================================================================================================
 
-#! Authenticates that the invocation of a kernel procedure originates from the account context.
+#! Authenticates that the invocation of a kernel procedure originates from the account context, and
+#! conditionally tracks the call.
 #!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the invocation of the kernel procedure does not originate from the account context.
-#!
-#! Invocation: exec
-proc authenticate_and_track_account_origin
-    # get the hash of the caller
-    padw caller
-    # => [CALLER]
-
-    # assert that the caller is from the user context
-    exec.account::authenticate_and_track_procedure
-    # => []
-end
-
-#! Asserts that the invocation of a kernel procedure originates from the account context, without
-#! tracking the call (read-only counterpart of `authenticate_and_track_account_origin`).
+#! The call is tracked (i.e. the caller procedure is recorded as called) only when the active
+#! account is the native account and the epilogue is not currently executing the account's
+#! authentication procedure.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -95,8 +76,8 @@ proc authenticate_account_origin
     padw caller
     # => [CALLER]
 
-    # assert that the caller is a procedure of the active account (drop the returned index)
-    exec.account::assert_procedure_in_account drop
+    # assert that the caller is from the user context and conditionally track the call
+    exec.account::authenticate_procedure
     # => []
 end
 
@@ -116,7 +97,7 @@ proc assert_auth_procedure_origin
     padw caller
     # => [CALLER]
 
-    # assert that the caller is from the user context
+    # assert that the caller is from the auth context
     exec.account::assert_auth_procedure
     # => []
 end
@@ -136,8 +117,8 @@ end
 #! - INIT_COMMITMENT is the initial account commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_commitment
@@ -145,7 +126,7 @@ pub proc account_get_initial_commitment
     exec.memory::assert_native_account
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [pad(16)]
 
     # get the initial account commitment
@@ -171,7 +152,7 @@ end
 #! Invocation: dynexec
 pub proc account_compute_commitment
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [pad(16)]
 
     # compute the active account commitment
@@ -201,8 +182,8 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
 #!
 #! Invocation: dynexec
@@ -212,7 +193,7 @@ pub proc account_compute_delta_commitment
     # commits to the (public) empty word. We keep them for consistency with the other account
     # procedures and may drop them later.
     exec.memory::assert_native_account
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
 
     # compute the account delta commitment
     exec.account_update::compute_delta_commitment
@@ -235,12 +216,20 @@ end
 #! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_upgrade
+    # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
+    # account as validated in account::{validate_storage, validate_procedures}.
+
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
     exec.memory::set_code_upgrade_commitment
@@ -313,7 +302,7 @@ end
 #! Invocation: dynexec
 pub proc account_get_nonce
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [pad(16)]
 
     # get the account nonce
@@ -335,7 +324,7 @@ end
 #!   also be the final nonce of the account after transaction execution.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the authentication procedure
 #!   of the account.
 #! - the nonce has already been incremented.
@@ -391,8 +380,8 @@ end
 #! - INIT_STORAGE_COMMITMENT is the initial account storage commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_storage_commitment
@@ -400,7 +389,7 @@ pub proc account_get_initial_storage_commitment
     exec.memory::assert_native_account
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [pad(16)]
 
     # get the initial account storage commitment
@@ -423,7 +412,7 @@ end
 #! Invocation: dynexec
 pub proc account_compute_storage_commitment
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [pad(16)]
 
     # compute the account storage commitment
@@ -451,7 +440,7 @@ end
 #! Invocation: dynexec
 pub proc account_get_item
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the account storage item
@@ -476,7 +465,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_set_item
@@ -485,7 +475,7 @@ pub proc account_set_item
     # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # set the account storage item
@@ -511,7 +501,7 @@ end
 #! Invocation: dynexec
 pub proc account_get_map_item
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the map item from account storage
@@ -531,7 +521,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_item
@@ -540,7 +531,7 @@ pub proc account_get_initial_item
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the initial account storage item
@@ -567,7 +558,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_map_item
@@ -576,7 +568,7 @@ pub proc account_get_initial_map_item
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the initial map item from account storage
@@ -601,8 +593,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-#! - the procedure is called from a non-account context.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_set_map_item
@@ -611,7 +603,7 @@ pub proc account_set_map_item
     # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # set the new map item
@@ -632,8 +624,8 @@ end
 #! - INIT_VAULT_ROOT is the initial account vault root.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_vault_root
@@ -641,7 +633,7 @@ pub proc account_get_initial_vault_root
     exec.memory::assert_native_account
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [pad(16)]
 
     # get the initial account vault root
@@ -667,7 +659,7 @@ end
 #! Invocation: dynexec
 pub proc account_get_vault_root
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [pad(16)]
 
     # fetch the account vault root
@@ -697,7 +689,8 @@ end
 #! - the total value of the fungible asset is greater than or equal to 2^63 after the new asset was 
 #!   added.
 #! - the vault already contains the same non-fungible asset.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_add_asset
@@ -706,7 +699,7 @@ pub proc account_add_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # add the specified asset to the account vault, emitting the corresponding events
@@ -728,7 +721,8 @@ end
 #! - the fungible asset is not found in the vault.
 #! - the amount of the fungible asset in the vault is less than the amount to be removed.
 #! - the non-fungible asset is not found in the vault.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_remove_asset
@@ -737,7 +731,7 @@ pub proc account_remove_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # remove the specified asset from the account vault, emitting the corresponding events
@@ -761,7 +755,7 @@ end
 #! Invocation: dynexec
 pub proc account_get_asset
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [ASSET_ID, pad(12)]
 
     exec.asset::validate_id
@@ -782,8 +776,8 @@ end
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
@@ -791,7 +785,7 @@ pub proc account_get_initial_asset
     exec.memory::assert_native_account
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [ASSET_ID, pad(12)]
 
     exec.asset::validate_id
@@ -813,12 +807,12 @@ end
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
 #! - the procedure root is not part of the account code.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
 pub proc account_was_procedure_called
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [PROC_ROOT, pad(12)]
 
     # check that this procedure was executed against the native account
@@ -927,7 +921,7 @@ end
 #! Invocation: dynexec
 pub proc account_has_storage_slot
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # check whether the storage slot exists
@@ -948,7 +942,8 @@ end
 #! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - For fungible faucets:
@@ -963,7 +958,7 @@ pub proc faucet_mint_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # mint the asset
@@ -981,7 +976,8 @@ end
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
 #! - For fungible faucets:
@@ -997,7 +993,7 @@ pub proc faucet_burn_asset
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # burn the asset
@@ -1515,7 +1511,7 @@ end
 #! Invocation: dynexec
 pub proc output_note_create
     # authenticate that the procedure invocation originates from the account context
-    exec.authenticate_and_track_account_origin
+    exec.authenticate_account_origin
     # => [tag, note_type, RECIPIENT, pad(10)]
 
     # check that this procedure was executed against the native account
@@ -1960,7 +1956,7 @@ end
 #! Panics if:
 #! - foreign context is created against the native account.
 #! - the ID of the foreign account loaded from the kernel memory is zero (ID was not set).
-#! - the root of the foreign procedure loaded from the kernel memory is zero (root was not set).
+#! - the root of the foreign procedure is not part of the foreign account's code.
 #!
 #! Invocation: dynexec
 pub proc tx_exec_foreign_proc
@@ -1988,15 +1984,19 @@ pub proc tx_exec_foreign_proc
     exec.tx::start_foreign_context
     # => [foreign_procedure_inputs(16)]
 
+    # load the root of the foreign procedure
+    padw mem_loadw_le.UPCOMING_FOREIGN_PROCEDURE_PTR
+    # => [FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
+
+    # bind the executed code to the account whose state it reads by requiring the procedure to be
+    # part of the foreign account's code. This is NOT the same as the account procedure
+    # authentication the kernel already does. Without this, the called procedure could dyncall into
+    # a genuine procedure of the account and it would pass.
+    exec.account::assert_procedure_in_account drop
+    # => [foreign_procedure_inputs(16)]
+
     # get the pointer to the foreign procedure root to perform the dyncall
     push.UPCOMING_FOREIGN_PROCEDURE_PTR
-    # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
-
-    # check that the foreign procedure root is not zero
-    padw mem_loadw_le.UPCOMING_FOREIGN_PROCEDURE_PTR
-    # => [FOREIGN_PROC_ROOT, foreign_proc_root_ptr, foreign_procedure_inputs(16)]
-
-    exec.word::eqz assertz.err=ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO
     # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
 
     # call the foreign procedure

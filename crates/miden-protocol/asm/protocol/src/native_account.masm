@@ -50,7 +50,7 @@ end
 #!   also be the final nonce of the account after transaction execution.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the authentication procedure
 #!   of the account.
 #! - the nonce has already been incremented.
@@ -97,8 +97,8 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the vault or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment() -> word
     # pad the stack
@@ -130,7 +130,8 @@ end
 #! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
+#! - the invocation of this procedure does not originate from the account context.
 #!
 #! Invocation: exec
 pub proc upgrade(code_upgrade_commitment: word, storage_upgrade_commitment: word)
@@ -158,7 +159,8 @@ end
 #! - INIT_COMMITMENT is the initial account commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_commitment() -> word
@@ -191,7 +193,8 @@ end
 #! - INIT_STORAGE_COMMITMENT is the initial account storage commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_storage_commitment() -> word
@@ -219,7 +222,8 @@ end
 #! - INIT_VAULT_ROOT is the initial account vault root.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_vault_root() -> word
@@ -254,7 +258,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc set_item(slot_id: StorageSlotId, value: word) -> word
@@ -289,8 +294,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-#! - the procedure is called from a non-account context.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc set_map_item(slot_id: StorageSlotId, key: StorageMapKey, value: word) -> word
@@ -328,7 +333,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_item(slot_id: StorageSlotId) -> word
@@ -365,7 +371,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the slot item at index is not a map.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
@@ -466,7 +473,8 @@ end
 #!   present.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
@@ -497,7 +505,8 @@ end
 #! - has_asset is a boolean indicating whether the account vault had the asset.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc has_initial_asset(asset_id: AssetId) -> Bool
@@ -514,9 +523,19 @@ end
 
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
 #!
-#! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
-#! `exec.faucet::mint`) which trigger `authenticate_and_track_procedure`. Procedures that execute
-#! only local MASM instructions will return 0 even if they were executed.
+#! Notice that `was_procedure_called` returns 0 in the following cases:
+#! - the procedure with the provided root is `get_id`, which is intentionally left untracked and
+#!   therefore always reads 0 here, even when it was called.
+#! - the procedure with the provided root is the authentication procedure and it hasn't
+#!   started executing yet. Note that it would return 1 if it was invoked by a user,
+#!   but this would eventually result in the transaction aborting, so this statement is
+#!   true for correct transactions.
+#! - a procedure with the provided root was called as part of the authentication procedure. The
+#!   rationale for this approach is that procedure tracking is intended to be used by the auth
+#!   procedure to check which procedures were called during the transaction and make fine-grained
+#!   decisions based on this. The auth procedure does not need to authenticate procedure invocations
+#!   originating from itself, and so these are not tracked to avoid polluting the set of tracked
+#!   procedures.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [was_called]

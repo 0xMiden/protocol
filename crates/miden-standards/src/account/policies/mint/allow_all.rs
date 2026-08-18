@@ -12,9 +12,17 @@ account_component_code!(
     "miden-standards-faucets-policies-mint-allow-all.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`MintAllowAll::NAME`],
+/// which mirrors the standards-side MASM module path.
+const MINT_ALLOW_ALL_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::mint::allow_all";
+
 procedure_root!(
     ALLOW_ALL_POLICY_ROOT,
-    MintAllowAll::NAME,
+    MINT_ALLOW_ALL_LIBRARY_PATH,
     MintAllowAll::PROC_NAME,
     MintAllowAll::code()
 );
@@ -29,8 +37,7 @@ pub struct MintAllowAll;
 
 impl MintAllowAll {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::mint::allow_all";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::mint::allow_all";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

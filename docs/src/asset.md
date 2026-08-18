@@ -171,27 +171,23 @@ Account components that need to add callbacks to an account's storage should use
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet and the callback receives the asset ID and value and is expected to return the processed asset value.
-
-:::warning
-At this time, the processed asset value must be the same as the asset value, but in the future this limitation may be lifted.
-:::
+The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback receives the asset ID and value for inspection. The callback either completes successfully or aborts the transaction.
 
 The **account callback** receives:
 
 ```
 Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+Outputs: [pad(16)]
 ```
 
 The **note callback** receives the additional `note_idx` identifying which output note the asset is being added to:
 
 ```
 Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+Outputs: [pad(16)]
 ```
 
-Both callbacks are invoked via `call`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
+Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 
 #### Callback skipping
 

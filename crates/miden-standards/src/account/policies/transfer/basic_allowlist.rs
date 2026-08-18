@@ -19,9 +19,17 @@ account_component_code!(
     "miden-standards-faucets-policies-transfer-basic-allowlist.masp"
 );
 
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from [`BasicAllowlist::NAME`],
+/// which mirrors the standards-side MASM module path.
+const BASIC_ALLOWLIST_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::transfer::basic_allowlist";
+
 procedure_root!(
     BASIC_ALLOWLIST_TRANSFER_POLICY_ROOT,
-    BasicAllowlist::NAME,
+    BASIC_ALLOWLIST_LIBRARY_PATH,
     BasicAllowlist::PROC_NAME,
     BasicAllowlist::code()
 );
@@ -33,6 +41,8 @@ procedure_root!(
 /// native account (asset recipient or note creator) is not currently allowed on the
 /// issuing faucet.
 ///
+/// The issuing faucet is exempt from its own allowlist.
+///
 /// Allow / disallow administration is intentionally not part of this component. The
 /// `allow_account` / `disallow_account` procedures live in the standards library and require
 /// an auth-wrapped admin component (see [`super::AllowlistManager`]) to be safely
@@ -42,8 +52,7 @@ pub struct BasicAllowlist(AllowlistStorage);
 
 impl BasicAllowlist {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::faucets::policies::transfer::basic_allowlist";
+    pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::basic_allowlist";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 

@@ -42,6 +42,12 @@ const ERR_ACCOUNT_PROC_NOT_AUTH_PROC =
 const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE =
     "slot IDs must be unique and sorted in ascending order"
 
+const ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE =
+    "account procedures following the authentication procedure must be unique and sorted in ascending order"
+
+const ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED =
+    "the root of the authentication procedure must not appear among the account's other procedures"
+
 const ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME = "storage slot with the provided name does not exist"
 
 const ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH =
@@ -644,24 +650,24 @@ end
 #!   added.
 #! - the vault already contains the same non-fungible asset.
 pub proc add_asset_to_vault
-    swapw dupw.1
-    # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
+    # retain the original asset while the callback validates a copy
+    dupw.1 dupw.1
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE]
 
     exec.callbacks::on_before_asset_added_to_account
-    swapw
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE]
+    # => [ASSET_ID, ASSET_VALUE]
 
     # duplicate the asset ID for the later event and delta update
     swapw dupw.1
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, ASSET_ID]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
 
     # push the account vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.8
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
+    # => [ASSET_ID, ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
 
     # emit event to signal that an asset is going to be added to the account vault
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
-    # => [ASSET_ID, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
+    # => [ASSET_ID, ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
 
     # add the asset to the account vault
     exec.asset_vault::add_asset
@@ -768,8 +774,12 @@ end
 # CODE
 # -------------------------------------------------------------------------------------------------
 
-#! Verifies that the procedure root is part of the account code and tracks whether it has been
-#! called.
+#! Verifies that the procedure root is part of the account code and conditionally tracks whether it
+#! has been called.
+#!
+#! The call is tracked only when both of the following hold:
+#! - the active account is the native account
+#! - the epilogue is not currently executing the account's authentication procedure
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: []
@@ -779,38 +789,52 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
-pub proc authenticate_and_track_procedure
+pub proc authenticate_procedure
     # verify that the procedure is part of the account code and get its index
     exec.assert_procedure_in_account
-    # => [index]
+    # => [proc_idx]
 
-    # Set the was_called flag to 1 for this procedure
-    exec.set_was_procedure_called
-    # => []
+    # the call is tracked only if the active account is the native account and the epilogue is not
+    # currently executing the auth procedure
+    exec.memory::is_native_account
+    # => [is_native_account, proc_idx]
+
+    exec.memory::is_epilogue_auth_in_progress not and
+    # => [should_track, proc_idx]
+
+    if.true
+        # set the `was_called` flag to 1 for this procedure
+        exec.set_was_procedure_called
+        # => []
+    else
+        drop
+        # => []
+    end
 end
 
 #! Verifies that the procedure root is part of the account code and returns its index, WITHOUT
 #! tracking the call.
 #!
 #! Inputs:  [PROC_ROOT]
-#! Outputs: [index]
+#! Outputs: [proc_idx]
 #!
 #! Where:
 #! - PROC_ROOT is the hash of the procedure to authenticate.
+#! - proc_idx is the index of the requested account procedure.
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
 pub proc assert_procedure_in_account
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
-    # => [index, PROC_ROOT]
+    # => [proc_idx, PROC_ROOT]
 
     dup movdn.5 exec.get_procedure_root
-    # => [MEM_PROC_ROOT, PROC_ROOT, index]
+    # => [MEM_PROC_ROOT, PROC_ROOT, proc_idx]
 
     # verify that PROC_ROOT and MEM_PROC_ROOT fetched from memory match
     assert_eqw.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
-    # => [index]
+    # => [proc_idx]
 end
 
 #! Asserts that the specified procedure root is the root of the authentication procedure for an
@@ -827,13 +851,13 @@ end
 pub proc assert_auth_procedure
     # authentication procedure is always at index 0
     push.0
-    # => [index, PROC_ROOT]
+    # => [auth_proc_idx, PROC_ROOT]
 
-    # set was_called for the the auth procedure to true
+    # set was_called for the auth procedure to true
     dup exec.set_was_procedure_called
-    # => [index, PROC_ROOT]
+    # => [auth_proc_idx, PROC_ROOT]
 
-    # get procedure root from memory stored at index
+    # get procedure root from memory stored at index 0
     exec.get_procedure_root
     # => [MEM_PROC_ROOT, PROC_ROOT]
 
@@ -1008,6 +1032,79 @@ pub proc is_slot_id_lt
     # determines the outcome
     and or
     # => [is_prev_lt_curr]
+end
+
+#! Validates that the account procedures following the authentication procedure at index 0 are
+#! sorted in ascending order and that no procedure root appears more than once.
+#!
+#! The authentication procedure is exempt from the ordering requirement because the transaction
+#! kernel expects it at index 0.
+#!
+#! This procedure is public so it can be tested.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the procedure roots are not sorted.
+#! - the procedure roots are not unique.
+#! - the root of the auth procedure appears at an index other than 0.
+pub proc validate_procedures
+    exec.memory::get_num_account_procedures sub.1
+    # => [curr_proc_idx]
+
+    # keep the auth procedure root on the stack since every procedure is compared against it
+    push.0 exec.get_procedure_root
+    # => [AUTH_PROC_ROOT, curr_proc_idx]
+
+    dup.4 exec.get_procedure_root
+    # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+    # save_account_procedure_data guarantees that the account has at least MIN_NUM_PROCEDURES
+    # procedures, so curr_proc_idx is at least 1. the procedure at index 1 is handled after the loop
+    # because it has no predecessor to be compared against.
+    dup.8 neq.1
+    # => [should_loop, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+    while.true
+        # assert the current proc root is not the auth proc root
+        exec.word::test_eq
+        # => [is_auth_proc_dup, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+        assertz.err=ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED
+        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+
+        # step to the preceding procedure, whose root becomes the current one of the next iteration
+        movup.8 sub.1 movdn.8
+        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        dup.8 exec.get_procedure_root
+        # => [PREV_PROC_ROOT, CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        dupw movupw.2
+        # => [CURR_PROC_ROOT, PREV_PROC_ROOT, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        # word::lt returns whether PREV_PROC_ROOT is strictly less than CURR_PROC_ROOT, so this
+        # rejects duplicates as well as procedures that are out of order
+        exec.word::lt
+        # => [is_prev_lt_curr, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        assert.err=ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE
+        # => [PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+
+        # continue if prev_proc_idx != 1
+        dup.8 neq.1
+        # => [should_continue, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+    end
+    # => [PROC_ROOT_1, AUTH_PROC_ROOT, proc_idx = 1]
+
+    # the procedure at index 1 is the only one the loop did not compare against the auth procedure
+    exec.word::eq
+    # => [is_auth_proc_dup, proc_idx]
+
+    assertz.err=ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED
+    drop
+    # => []
 end
 
 # DATA LOADERS
@@ -1946,11 +2043,20 @@ proc refresh_storage_commitment
     end
 end
 
-#! Checks if a native account procedure has been called during transaction execution.
+#! This procedure returns 1 if the procedure with the provided root invoked account-restricted
+#! kernel APIs outside the authentication procedure. Otherwise it returns 0.
 #!
-#! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
-#! `exec.faucet::mint`) which trigger `authenticate_and_track_procedure`. Procedures that execute
-#! only local MASM instructions will return 0 even if they were executed.
+#! Notice that `was_procedure_called` returns 0 in the following cases:
+#! - the procedure with the provided root is the authentication procedure and it hasn't
+#!   started executing yet. Note that it would return 1 if it was invoked by a user,
+#!   but this would eventually result in the transaction aborting, so this statement is
+#!   true for correct transactions.
+#! - the procedure with the provided root was called as part of the authentication procedure. The
+#!   rationale for this approach is that procedure tracking is intended to be used by the auth
+#!   procedure to check which procedures were called during the transaction and make fine-grained
+#!   decisions based on this. The auth procedure does not need to authenticate procedure invocations
+#!   originating from itself, and so these are not tracked to avoid polluting the set of tracked
+#!   procedures.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [was_called]
