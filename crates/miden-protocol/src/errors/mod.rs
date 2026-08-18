@@ -30,7 +30,7 @@ use crate::account::{
 };
 use crate::address::AddressType;
 use crate::asset::AssetClass;
-use crate::batch::BatchId;
+use crate::batch::{BatchId, BatchOutputs};
 use crate::block::BlockNumber;
 use crate::note::{
     NoteAssets,
@@ -1190,6 +1190,13 @@ pub enum ProvenBatchError {
     BatchKernelExecutionFailed(#[source] ExecutionError),
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
+    #[error(
+        "batch kernel outputs do not match the outputs expected for the proposed batch (expected {expected:?}, actual {actual:?})"
+    )]
+    BatchKernelOutputMismatch {
+        expected: Box<BatchOutputs>,
+        actual: Box<BatchOutputs>,
+    },
     #[error(
         "input note {0} is authenticated within the batch, which the batch kernel does not yet support (see the note-authentication TODO in asm/kernels/batch/main.masm)"
     )]

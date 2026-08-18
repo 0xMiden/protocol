@@ -1,8 +1,11 @@
+use alloc::boxed::Box;
+
 use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcessor};
-use miden_protocol::CoreLibrary;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenBatchError;
 use miden_protocol::vm::AdviceInputs;
+use miden_protocol::{CoreLibrary, Word};
 
 use crate::ExecutedBatch;
 
@@ -31,7 +34,8 @@ impl BatchExecutor {
     /// - the batch contains a feature the kernel does not yet support (an input note authenticated
     ///   within the batch, or a pre-erasure note union exceeding the kernel's fixed-size regions);
     /// - the batch kernel program fails to execute;
-    /// - the kernel output stack fails to parse.
+    /// - the kernel output stack fails to parse;
+    /// - the kernel outputs do not match the outputs expected for the proposed batch.
     pub fn execute(
         &self,
         proposed_batch: ProposedBatch,
@@ -63,6 +67,19 @@ impl BatchExecutor {
         // Parse and validate the output stack shape (zero padding, u32 expiration).
         let batch_outputs = BatchOutputs::parse(trace_inputs.stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
+
+        // Reject if the kernel's outputs do not match the proposed batch, so drift is caught early.
+        let expected_outputs = BatchOutputs::new(
+            proposed_batch.input_notes().commitment(),
+            Word::empty(),
+            BlockNumber::from(0u32),
+        );
+        if batch_outputs != expected_outputs {
+            return Err(ProvenBatchError::BatchKernelOutputMismatch {
+                expected: Box::new(expected_outputs),
+                actual: Box::new(batch_outputs),
+            });
+        }
 
         Ok(ExecutedBatch::new(proposed_batch, trace_inputs, batch_outputs))
     }
