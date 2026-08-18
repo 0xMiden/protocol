@@ -31,10 +31,11 @@
 - Fixed the authentication procedure not ending up at index 0 of an account's code when its MAST root was already exported by another component ([#3566](https://github.com/0xMiden/protocol/pull/3566)).
 - [BREAKING] Foreign procedure invocation now requires the provided procedure root to be part of the foreign account's code, so a caller can no longer execute arbitrary code under a foreign account's identity ([#3575](https://github.com/0xMiden/protocol/pull/3575)).
 
-## v0.16.0 (2026-08-06)
+## v0.16.0 (2026-08-17)
 
 ### Features
 
+- Added `note_costs` to the `NetworkNotePricer` builder, a supplied cost map that extends or shadows the built-in cost tables ([#3602](https://github.com/0xMiden/protocol/pull/3602)).
 - [BREAKING] AggLayer bridge and faucet accounts deploy with a priced fee policy and `ADMIN`-gated repricing; both code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - [BREAKING] The AggLayer bridge now accepts `RbacConfigNote`s, enabling on-chain rotation of its `ADMIN`, `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles; the `create_existing_bridge_account_with_roles` testing fixture now takes the `ADMIN` member explicitly ([#2706](https://github.com/0xMiden/protocol/issues/2706)).
 - Added the `ConstantFeeManager` account component, exposing the authority-gated `set_note_fee` procedure to update a `BasicConstantFeePolicy`'s fee schedule on a network account after deployment; the supplied fee asset's ID is validated against the account's configured fee asset and its value word is validated to be a well-formed fungible amount not exceeding the maximum ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
@@ -52,6 +53,7 @@
 - Extended the standardized `NetworkAccountConfig` note with `AddAllowedFeePolicy` / `RemoveAllowedFeePolicy` actions, letting a network account manage its allowed fee policy roots post-deployment via the authority-gated `add_allowed_fee_policy` / `remove_allowed_fee_policy` procedures ([#3325](https://github.com/0xMiden/protocol/issues/3325)).
 - [BREAKING] Added an emergency pause to the AggLayer bridge via the standards `Pausable`/`PausableManager` components: all bridge entry points except `remove_ger` abort while paused, and the `ADMIN`-gated standards `PAUSE_CONFIG` note toggles the state; the bridge code commitment and note allowlist change ([#2696](https://github.com/0xMiden/protocol/issues/2696)).
 - Added the `MinBurnAmountConfigNote` standard note ([#3511](https://github.com/0xMiden/protocol/pull/3511)).
+- Exposed AggLayer bridge storage readers such as `is_ger_registered`, `network_id`, and `cgi_chain_hash` outside the `testing` feature ([#3617](https://github.com/0xMiden/protocol/pull/3617)).
 
 ### Changes
 
@@ -86,6 +88,7 @@ Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide 
 - Added test coverage for the `FungibleFaucet` metadata string setters (`set_description`, `set_logo_uri`, `set_external_link`) ([#3450](https://github.com/0xMiden/protocol/pull/3450)).
 - [BREAKING] Removed the `AuthSingleSigAcl` auth component, the `Auth::Acl` `miden-testing` mock-chain variant, and the `user_faucet_single_sig_acl` testing helper: the exempt (no-signature) branch let fee-charging accounts be drained via calls to exempt procedures. The plain `AuthSingleSig` component (every call requires a signature) remains available and now backs the "singlesig user faucet" factories; a `BurnNote` targeted at a singlesig user faucet, previously exempt via `receive_and_burn`, now requires the owner's signature to be consumed ([#3360](https://github.com/0xMiden/protocol/issues/3360)).
 - [BREAKING] Updated `miden-vm` dependencies to v0.29. Notable downstream changes: `CoreLibrary` now bundles a separate `miden-precompiles` package that must also be seeded into the package registry (`CoreLibrary::packages()`), the advice stack moved behind the typed `AdviceStack` API on `AdviceInputs`, `Kernel` was renamed to `KernelDescriptor` (with `Package::to_kernel` becoming `to_kernel_descriptor` and `Package::module_infos` becoming `module_descriptors`), and `miden_verifier::verify` now takes an `ExecutionClaim` and verifies bundled precompile proofs itself, replacing `verify_with_precompiles` ([#3492](https://github.com/0xMiden/protocol/pull/3492)).
+- Updated `miden-vm` dependencies to v0.29.1, picking up the `PartialSmt::from_unique_nodes()` reconstruction fix, the persistent `LargeSmtForest::entries()` iteration fix, support for Keccak-256 wrapper preimages covering never-written memory, and the new `ecdsa_k256_keccak::verify_bytes` procedure ([#3573](https://github.com/0xMiden/protocol/pull/3573)).
 - [BREAKING] `TokenPolicyManager` now dispatches mint and burn policies via `dyncall` rather than `dynexec` ([#3510](https://github.com/0xMiden/protocol/pull/3510)).
 - [BREAKING] Renamed `miden-standards` component `NAME` constants to mirror their module paths, with `procedure_root!` lookups now using dedicated `*_LIBRARY_PATH` constants ([#3495](https://github.com/0xMiden/protocol/pull/3495)).
 - [BREAKING] Replaced `RoleBasedAccessControl::new` with a validating `RoleBasedAccessControl::builder()` over `RoleConfig`s, which seeds each role's members together with its delegated admin, so exclusive delegation is established at account creation instead of through on-chain `set_role_admin` calls ([#3515](https://github.com/0xMiden/protocol/pull/3515)).
