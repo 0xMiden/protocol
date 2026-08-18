@@ -295,8 +295,8 @@ pub proc get_num_output_notes
     mem_load.NUM_OUTPUT_NOTES_PTR
 end
 
-#! Returns the end pointer of the nullifier-sorted input-note list (base + num_input_notes * 8), as required
-#! by `sorted_array::find_key_value`.
+#! Returns the end pointer of the nullifier-sorted input-note list (base + num_input_notes * 8),
+#! as required by `sorted_array::find_key_value`.
 #!
 #! Inputs:  []
 #! Outputs: [input_notes_end_ptr]

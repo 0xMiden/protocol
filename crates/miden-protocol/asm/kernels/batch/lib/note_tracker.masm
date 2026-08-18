@@ -67,10 +67,10 @@ proc set_output_erases_input
     drop
 end
 
-#! For input-note list entry `idx`: if it is unauthenticated (its note id is non-empty) and that note
-#! id appears in the output-note list, marks the input entry erasure-expected and links the matching
-#! output entry back to it. This is the static (order-independent) erasure determination; the
-#! temporal ordering is enforced during per-transaction processing.
+#! For input-note list entry `idx`: if it is unauthenticated (its note id is non-empty) and that
+#! note id appears in the output-note list, marks the input entry erasure-expected and links the
+#! matching output entry back to it. This is the static (order-independent) erasure determination;
+#! the temporal ordering is enforced during per-transaction processing.
 #!
 #! If two input entries carry the same note id (impossible for real notes, whose nullifier is
 #! derived from the note), the second link overwrites the first and the kernel later aborts.
@@ -155,9 +155,10 @@ proc flip_input_erasure_created
     push.2 swap mem_store
 end
 
-#! Binds one per-transaction output note (an 8-felt `[DETAILS_COMMITMENT, METADATA_COMMITMENT]` tuple
-#! at `scratch_entry_ptr`) to the note-id-sorted output-note list: derives its note id, looks it up, marks it
-#! created, and — if it erases an input note — advances that input note's erasure flag.
+#! Binds one per-transaction output note (an 8-felt `[DETAILS_COMMITMENT, METADATA_COMMITMENT]`
+#! tuple at `scratch_entry_ptr`) to the note-id-sorted output-note list: derives its note id,
+#! looks it up, marks it created, and — if it erases an input note — advances that input note's
+#! erasure flag.
 #!
 #! Inputs:  [scratch_entry_ptr]
 #! Outputs: []
@@ -281,8 +282,9 @@ proc assert_input_not_consumed_before_created
 end
 
 #! Binds one per-transaction input note (an 8-felt `[NULLIFIER, NOTE_ID_OR_EMPTY]` tuple at
-#! `scratch_entry_ptr`) to the nullifier-sorted input-note list: looks it up by nullifier, asserts it is present
-#! and that its note id matches, enforces the erasure ordering gate, then marks it consumed.
+#! `scratch_entry_ptr`) to the nullifier-sorted input-note list: looks it up by nullifier, asserts
+#! it is present and that its note id matches, enforces the erasure ordering gate, then marks it
+#! consumed.
 #!
 #! Inputs:  [scratch_entry_ptr]
 #! Outputs: []
@@ -308,7 +310,8 @@ proc bind_one_input_note
     assert_eqw.err=ERR_BATCH_INPUT_NOTE_ID_MISMATCH
     # => [key_ptr, scratch_entry_ptr]
 
-    # Enforce the erasure ordering gate (reject consume-before-create), then mark the entry consumed.
+    # Enforce the erasure ordering gate (reject consume-before-create), then mark the entry
+    # consumed.
     swap drop
     # => [key_ptr]
     exec.memory::input_entry_index_from_key_ptr
@@ -406,9 +409,9 @@ end
 # =================================================================================================
 
 #! Tracks the batch's notes: determines erasure by cross-referencing the prepared batch input- and
-#! output-note lists, then binds both lists to the verified per-transaction notes while enforcing the
-#! creator-before-consumer ordering gate. Assumes the prologue has loaded and strict-sorted the two
-#! sorted note lists into memory.
+#! output-note lists, then binds both lists to the verified per-transaction notes while enforcing
+#! the creator-before-consumer ordering gate. Assumes the prologue has loaded and strict-sorted
+#! the two sorted note lists into memory.
 #!
 #! Inputs:  []
 #! Outputs: []

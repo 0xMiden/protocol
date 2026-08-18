@@ -11,9 +11,9 @@ use miden::batch_kernel::epilogue
 #! aggregated into a block by the block kernel. This program validates the per-transaction data
 #! supplied via the advice provider, and computes the batch's `INPUT_NOTES_COMMITMENT`.
 #!
-#! Validation is done recursively by "unhashing" the layers. Each layer of advice data is keyed by a hash
-#! from the previous layer's verification step, so once `BATCH_ID` is anchored to the public input,
-#! every element that makes up `INPUT_NOTES_COMMITMENT` is transitively committed-to:
+#! Validation is done recursively by "unhashing" the layers. Each layer of advice data is keyed
+#! by a hash from the previous layer's verification step, so once `BATCH_ID` is anchored to the
+#! public input, every element that makes up `INPUT_NOTES_COMMITMENT` is transitively committed-to:
 #!
 #!   `BATCH_ID` (public input)        -> `(tx_id, account_id)` tuple list
 #!   each `tx_id`                     -> per-tx
