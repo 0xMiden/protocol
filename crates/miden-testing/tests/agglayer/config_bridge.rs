@@ -26,6 +26,7 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::access::PausableManager;
 use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::interop::eth::EthAddress;
@@ -55,7 +56,7 @@ fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) ->
 fn test_bridge_procedure_roles_mapping() {
     let roles = AggLayerBridge::procedure_roles();
 
-    assert_eq!(roles.len(), 6, "exactly the six role-gated procedures must be mapped");
+    assert_eq!(roles.len(), 7, "exactly the seven role-gated procedures must be mapped");
     assert_eq!(
         roles.get(&AggLayerBridge::register_faucet_root()),
         Some(&AggLayerBridge::faucet_manager_role()),
@@ -79,6 +80,11 @@ fn test_bridge_procedure_roles_mapping() {
     assert_eq!(
         roles.get(&ConstantFeeManager::set_note_fee_root()),
         Some(&AggLayerBridge::fee_manager_role()),
+    );
+    assert_eq!(roles.get(&PausableManager::pause_root()), Some(&AggLayerBridge::pauser_role()),);
+    assert!(
+        !roles.contains_key(&PausableManager::unpause_root()),
+        "unpause must fall back to ADMIN",
     );
 }
 
@@ -386,7 +392,7 @@ fn bridge_roles_new_rejects_empty_role() {
             .account_type(AccountType::Public)
             .build_with_seed([seed; 32])
     };
-    let (a, b, c, d) = (account(1), account(2), account(3), account(4));
+    let (a, b, c, d, e) = (account(1), account(2), account(3), account(4), account(5));
 
     // A non-empty set for every role succeeds.
     assert!(
@@ -395,21 +401,23 @@ fn bridge_roles_new_rejects_empty_role() {
             BTreeSet::from([b]),
             BTreeSet::from([c]),
             BTreeSet::from([d]),
+            BTreeSet::from([e]),
         )
         .is_ok()
     );
 
     // An empty set for any single role is rejected.
-    for empty in 0..4 {
-        let sets: [BTreeSet<AccountId>; 4] = core::array::from_fn(|i| {
+    for empty in 0..5 {
+        let sets: [BTreeSet<AccountId>; 5] = core::array::from_fn(|i| {
             if i == empty {
                 BTreeSet::new()
             } else {
                 BTreeSet::from([a])
             }
         });
-        let [faucet_managers, ger_injectors, ger_removers, fee_managers] = sets;
-        let result = BridgeRoles::new(faucet_managers, ger_injectors, ger_removers, fee_managers);
+        let [faucet_managers, ger_injectors, ger_removers, fee_managers, pausers] = sets;
+        let result =
+            BridgeRoles::new(faucet_managers, ger_injectors, ger_removers, fee_managers, pausers);
         assert!(matches!(result, Err(AgglayerBridgeError::EmptyBridgeRole(_))));
     }
 }

@@ -135,6 +135,7 @@ fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
         [bridge_admin].into(),
         [bridge_admin].into(),
         [fee_manager_id()].into(),
+        [bridge_admin].into(),
     )?;
     let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
     let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;

@@ -76,6 +76,7 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([ger_injector]),
         BTreeSet::from([ger_remover]),
         BTreeSet::from([fee_manager]),
+        BTreeSet::from([bridge_admin]),
     )
     .expect("single-holder role sets are non-empty");
 

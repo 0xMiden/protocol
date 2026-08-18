@@ -155,6 +155,7 @@ pub fn create_existing_priced_bridge(
         [ger_injector].into(),
         [ger_remover].into(),
         [bridge_admin].into(),
+        [bridge_admin].into(),
     )?;
     let pricer = network_note_pricer(verification_base_fee);
     let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
@@ -239,6 +240,7 @@ pub struct BridgeSetup {
     pub faucet_manager: Account,
     pub ger_injector: Account,
     pub ger_remover: Account,
+    pub pauser: Account,
 }
 
 pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
@@ -251,16 +253,29 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
+    let pauser = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
-    let bridge = create_existing_bridge_account_with_roles(
+    let bridge_admin = bridge_admin_account_id();
+    let roles = BridgeRoles::new(
+        [faucet_manager.id()].into(),
+        [ger_injector.id()].into(),
+        [ger_remover.id()].into(),
+        [bridge_admin].into(),
+        [pauser.id()].into(),
+    )?;
+    let pricer = network_note_pricer(0);
+    let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
+    let bridge = AggLayerBridge::account_builder(
         builder.rng_mut().draw_word(),
-        bridge_admin_account_id(),
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-        bridge_admin_account_id(),
+        bridge_admin,
+        roles,
         MIDEN_NETWORK_ID,
-    );
+        pricer.fee_parameters().fee_faucet_id(),
+        fee_policy,
+    )
+    .build_existing()?;
     builder.add_account(bridge.clone())?;
 
     Ok(BridgeSetup {
@@ -268,5 +283,6 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
         faucet_manager,
         ger_injector,
         ger_remover,
+        pauser,
     })
 }
