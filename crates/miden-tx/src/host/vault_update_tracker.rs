@@ -44,7 +44,7 @@ impl VaultUpdateTracker {
     }
 
     /// Records an asset delta reported by the kernel.
-    pub fn update_delta(&mut self, delta: AssetDelta) {
+    pub fn add_delta(&mut self, delta: AssetDelta) {
         self.asset_deltas.push(delta);
     }
 

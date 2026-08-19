@@ -70,8 +70,8 @@ impl AccountUpdateTracker {
     }
 
     /// Records an asset delta reported by the kernel.
-    pub fn update_asset_delta(&mut self, delta: AssetDelta) {
-        self.vault.update_delta(delta);
+    pub fn add_asset_delta(&mut self, delta: AssetDelta) {
+        self.vault.add_delta(delta);
     }
 
     /// Clears the accumulating vault delta so the next pass of the kernel's delta computation
