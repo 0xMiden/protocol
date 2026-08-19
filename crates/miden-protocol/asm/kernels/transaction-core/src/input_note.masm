@@ -227,7 +227,7 @@ pub proc remove_asset
 
         if.true
             # clear the asset's slot; the removed asset becomes (EMPTY_WORD, EMPTY_WORD)
-            dropw padw padw movup.8 exec.asset::store
+            padw movup.8 exec.asset::store
             # => []
 
             padw
