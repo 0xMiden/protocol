@@ -587,6 +587,24 @@ pub enum BatchAccountUpdateError {
     TransactionUpdateMergeError(TransactionId, #[source] Box<AccountPatchError>),
 }
 
+// BLOCK ACCOUNT UPDATE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockAccountUpdateError {
+    #[error("private account {0} should not have account details")]
+    PrivateAccountWithDetails(AccountId),
+    #[error("account {0} with public state is missing its account details")]
+    PublicStateAccountMissingDetails(AccountId),
+    #[error(
+        "block account update's account ID {account_id} and account patch ID {patch_account_id} must match"
+    )]
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+}
+
 // ASSET ERROR
 // ================================================================================================
 

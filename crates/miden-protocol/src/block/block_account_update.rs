@@ -1,5 +1,8 @@
+use alloc::string::ToString;
+
 use crate::Word;
 use crate::account::{AccountId, AccountUpdateDetails};
+use crate::errors::BlockAccountUpdateError;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -28,6 +31,31 @@ pub struct BlockAccountUpdate {
 }
 
 impl BlockAccountUpdate {
+    /// Returns a validated block account update.
+    pub fn try_new(
+        account_id: AccountId,
+        final_state_commitment: Word,
+        details: AccountUpdateDetails,
+    ) -> Result<Self, BlockAccountUpdateError> {
+        match (&details, account_id.is_private()) {
+            (AccountUpdateDetails::Private, true) => {},
+            (AccountUpdateDetails::Public(_), true) => {
+                return Err(BlockAccountUpdateError::PrivateAccountWithDetails(account_id));
+            },
+            (AccountUpdateDetails::Private, false) => {
+                return Err(BlockAccountUpdateError::PublicStateAccountMissingDetails(account_id));
+            },
+            (AccountUpdateDetails::Public(patch), false) if patch.id() != account_id => {
+                return Err(BlockAccountUpdateError::AccountIdMismatch {
+                    account_id,
+                    patch_account_id: patch.id(),
+                });
+            },
+            (AccountUpdateDetails::Public(_), false) => {},
+        }
+        Ok(Self::new(account_id, final_state_commitment, details))
+    }
+
     /// Returns a new [BlockAccountUpdate] instantiated from the specified components.
     pub const fn new(
         account_id: AccountId,
@@ -74,10 +102,11 @@ impl Serializable for BlockAccountUpdate {
 
 impl Deserializable for BlockAccountUpdate {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(Self {
-            account_id: AccountId::read_from(source)?,
-            final_state_commitment: Word::read_from(source)?,
-            details: AccountUpdateDetails::read_from(source)?,
-        })
+        Self::try_new(
+            AccountId::read_from(source)?,
+            Word::read_from(source)?,
+            AccountUpdateDetails::read_from(source)?,
+        )
+        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
 }
