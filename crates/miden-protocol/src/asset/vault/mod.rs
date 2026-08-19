@@ -216,7 +216,7 @@ impl AssetVault {
     pub fn add_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
         match asset.as_fungible() {
             Some(fungible_asset) => Ok(self.add_fungible_asset(fungible_asset)?.into()),
-            None => self.add_non_fungible_asset(asset),
+            None => self.add_non_composable_asset(asset),
         }
     }
 
@@ -244,12 +244,15 @@ impl AssetVault {
         Ok(new_asset)
     }
 
-    /// Add the specified non-fungible asset to the vault.
+    /// Adds the specified non-composable asset to the vault without checking its
+    /// [`AssetComposition`].
     ///
     /// # Errors
-    /// - If the vault already contains the same non-fungible asset.
-    /// - The maximum number of leaves per asset is exceeded.
-    fn add_non_fungible_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
+    ///
+    /// Returns an error if:
+    /// - the vault already contains an asset with the same [`AssetId`].
+    /// - the maximum number of leaves per asset is exceeded.
+    fn add_non_composable_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
         let old = self.insert_entry(asset.id(), asset.to_value_word())?;
 
         // if the asset already exists, return an error
@@ -279,7 +282,7 @@ impl AssetVault {
                 Ok(Some(remaining.into()))
             },
             None => {
-                self.remove_non_fungible_asset(asset)?;
+                self.remove_non_composable_asset(asset)?;
                 Ok(None)
             },
         }
@@ -325,12 +328,15 @@ impl AssetVault {
         Ok(new_asset)
     }
 
-    /// Remove the specified non-fungible asset from the vault.
+    /// Remove the specified non-composable asset from the vault without checking its
+    /// [`AssetComposition`].
     ///
     /// # Errors
-    /// - The non-fungible asset is not found in the vault.
-    /// - The maximum number of leaves per asset is exceeded.
-    fn remove_non_fungible_asset(&mut self, asset: Asset) -> Result<(), AssetVaultError> {
+    ///
+    /// Returns an error if:
+    /// - the asset is not found in the vault.
+    /// - the maximum number of leaves per asset is exceeded.
+    fn remove_non_composable_asset(&mut self, asset: Asset) -> Result<(), AssetVaultError> {
         let old = self.insert_entry(asset.id(), Smt::EMPTY_VALUE)?;
 
         // return an error if the asset did not exist in the vault.
