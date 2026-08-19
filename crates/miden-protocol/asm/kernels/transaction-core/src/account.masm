@@ -791,7 +791,7 @@ end
 #! - the procedure root is not part of the account code.
 pub proc authenticate_procedure
     # verify that the procedure is part of the account code and get its index
-    exec.assert_procedure_in_account
+    exec.assert_procedure_in_active_account
     # => [proc_idx]
 
     # the call is tracked only if the active account is the native account and the epilogue is not
@@ -812,8 +812,8 @@ pub proc authenticate_procedure
     end
 end
 
-#! Verifies that the procedure root is part of the account code and returns its index, WITHOUT
-#! tracking the call.
+#! Verifies that the procedure root is part of the active account's code and returns its index,
+#! WITHOUT tracking the call.
 #!
 #! Inputs:  [PROC_ROOT]
 #! Outputs: [proc_idx]
@@ -823,8 +823,8 @@ end
 #! - proc_idx is the index of the requested account procedure.
 #!
 #! Panics if:
-#! - the procedure root is not part of the account code.
-pub proc assert_procedure_in_account
+#! - the procedure root is not part of the active account's code.
+pub proc assert_procedure_in_active_account
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [proc_idx, PROC_ROOT]

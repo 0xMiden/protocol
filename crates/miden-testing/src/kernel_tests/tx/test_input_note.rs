@@ -10,6 +10,7 @@ use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::protocol::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_IS_NOT_NATIVE,
+    ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY,
     ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS,
     ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
@@ -1121,6 +1122,51 @@ async fn test_remove_asset_fails(
 
     let result = mock_tx.execute_code(&code).await;
     assert_execution_error!(result, expected_err);
+
+    Ok(())
+}
+
+/// Check that `active_note::remove_asset` rejects the empty asset ID, even when the note has a
+/// slot that was already cleared by a prior full removal. Without this guard, the empty ID
+/// wrongly matches a cleared (EMPTY_WORD, EMPTY_WORD) slot and the removal call, which should
+/// panic, would instead succeed (OpenZeppelin audit finding L-04).
+#[tokio::test]
+async fn test_remove_asset_rejects_empty_asset_id() -> anyhow::Result<()> {
+    let fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, 100)?);
+
+    let mock_tx = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+        let input_note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset]);
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
+    };
+
+    let code = format!(
+        r#"
+            use miden::tx_kernel_core::prologue
+            use miden::tx_kernel_core::note as note_internal
+            use miden::protocol::active_note
+
+            begin
+                exec.prologue::prepare_transaction
+                exec.note_internal::prepare_note
+                dropw dropw dropw dropw
+
+                # fully remove the asset, clearing its slot to (EMPTY_WORD, EMPTY_WORD)
+                push.{asset_value} push.{asset_id} exec.active_note::remove_asset
+                dropw
+
+                # the empty asset ID must not match the now-cleared slot
+                padw padw exec.active_note::remove_asset
+            end
+            "#,
+        asset_id = fungible_asset.to_id_word(),
+        asset_value = fungible_asset.to_value_word(),
+    );
+
+    let result = mock_tx.execute_code(&code).await;
+    assert_execution_error!(result, ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY);
 
     Ok(())
 }
