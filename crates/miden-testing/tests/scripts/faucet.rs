@@ -716,18 +716,17 @@ async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
         Some(token_supply.as_u64()),
     )?;
 
-    // Pick a non-fungible asset commitment whose first element is a valid fungible amount.
-    let (commitment, forged_amount) = (0u32..64)
-        .find_map(|salt| {
-            let commitment = NonFungibleFaucet::compute_asset_commitment(
-                b"not a fungible asset",
-                Word::from([salt, 0, 0, 0]),
-            );
-            AssetAmount::new(commitment[0].as_canonical_u64())
-                .ok()
-                .map(|amount| (commitment, amount))
-        })
-        .expect("some salt should yield a commitment whose first element is a valid amount");
+    // The salt is statically chosen so that the commitment's first element is a valid fungible
+    // amount, i.e. the forged asset would pass the amount check if the composition were not
+    // validated.
+    const SALT: u32 = 2;
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"not a fungible asset",
+        Word::from([SALT, 0, 0, 0]),
+    );
+    let forged_amount = AssetAmount::new(commitment[0].as_canonical_u64())
+        .expect("salt is chosen so that the commitment's first element is a valid amount");
 
     assert!(forged_amount <= token_supply);
 
