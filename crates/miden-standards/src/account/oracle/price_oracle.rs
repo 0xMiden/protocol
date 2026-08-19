@@ -60,9 +60,9 @@ static IMPLEMENTATION_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// The procedure's body does nothing but dispatch to the implementation root stored in
 /// [`PriceOracle::implementation_slot`]. That is deliberate: its MAST root is the address consumers
 /// resolve over FPI, so keeping the body fixed lets the pricing behind it be replaced without
-/// invalidating anyone's reference to it. Pair the component with an implementation such as
-/// [`PriceFeed`][crate::account::oracle::PriceFeed] and with an
-/// [`Authority`][crate::account::access::Authority], which gates `set_implementation`.
+/// invalidating anyone's reference to it. Pair the component with a pricing implementation
+/// installed on the same account, and with an [`Authority`][crate::account::access::Authority],
+/// which gates `set_implementation`.
 ///
 /// The wrapper is a stable address, not a gate. A dispatch target has to be an account procedure to
 /// be reachable by `dyncall`, which also makes it reachable directly over FPI, so an implementation
