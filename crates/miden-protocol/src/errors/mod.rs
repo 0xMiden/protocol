@@ -545,6 +545,33 @@ pub enum StorageMapError {
 #[derive(Debug, Error)]
 pub enum BatchAccountUpdateError {
     #[error(
+        "account update of size {update_size} for account {account_id} exceeds maximum update size of {ACCOUNT_UPDATE_MAX_SIZE}"
+    )]
+    AccountUpdateSizeLimitExceeded {
+        account_id: AccountId,
+        update_size: usize,
+    },
+    #[error("private account {0} should not have account details")]
+    PrivateAccountWithDetails(AccountId),
+    #[error("account {0} with public state is missing its account details")]
+    PublicStateAccountMissingDetails(AccountId),
+    #[error(
+        "batch account update's account ID {account_id} and account patch ID {patch_account_id} must match"
+    )]
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error(
+        "batch account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
+    )]
+    AccountFinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
+    #[error(
         "account update for account {expected_account_id} cannot be merged with update from transaction {transaction} which was executed against account {actual_account_id}"
     )]
     AccountUpdateIdMismatch {

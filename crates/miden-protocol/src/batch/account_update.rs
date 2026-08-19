@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
+use alloc::string::ToString;
 
-use crate::Word;
-use crate::account::{AccountId, AccountUpdateDetails};
+use crate::account::{Account, AccountId, AccountUpdateDetails};
 use crate::errors::BatchAccountUpdateError;
 use crate::transaction::ProvenTransaction;
 use crate::utils::serde::{
@@ -11,6 +11,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{ACCOUNT_UPDATE_MAX_SIZE, Word};
 
 // BATCH ACCOUNT UPDATE
 // ================================================================================================
@@ -48,6 +49,69 @@ impl BatchAccountUpdate {
             final_state_commitment: transaction.account_update().final_state_commitment(),
             details: transaction.account_update().details().clone(),
         }
+    }
+
+    /// Creates a validated [`BatchAccountUpdate`] from the provided parts.
+    ///
+    /// This enforces the same public/private account-detail invariants as transaction account
+    /// updates. For a new public account, the patch must contain the complete account state and
+    /// reconstruct to `final_state_commitment`.
+    pub fn new(
+        account_id: AccountId,
+        initial_state_commitment: Word,
+        final_state_commitment: Word,
+        details: AccountUpdateDetails,
+    ) -> Result<Self, BatchAccountUpdateError> {
+        let update = Self {
+            account_id,
+            initial_state_commitment,
+            final_state_commitment,
+            details,
+        };
+
+        let update_size = update.details.get_size_hint();
+        if update_size > ACCOUNT_UPDATE_MAX_SIZE as usize {
+            return Err(BatchAccountUpdateError::AccountUpdateSizeLimitExceeded {
+                account_id,
+                update_size,
+            });
+        }
+
+        if account_id.is_private() {
+            return if update.details.is_private() {
+                Ok(update)
+            } else {
+                Err(BatchAccountUpdateError::PrivateAccountWithDetails(account_id))
+            };
+        }
+
+        let AccountUpdateDetails::Public(patch) = update.details() else {
+            return Err(BatchAccountUpdateError::PublicStateAccountMissingDetails(account_id));
+        };
+        if patch.id() != account_id {
+            return Err(BatchAccountUpdateError::AccountIdMismatch {
+                account_id,
+                patch_account_id: patch.id(),
+            });
+        }
+
+        if initial_state_commitment.is_empty() {
+            let account = Account::try_from(patch).map_err(|source| {
+                BatchAccountUpdateError::NewPublicStateAccountRequiresFullStatePatch {
+                    id: account_id,
+                    source,
+                }
+            })?;
+            let account_commitment = account.to_commitment();
+            if account_commitment != final_state_commitment {
+                return Err(BatchAccountUpdateError::AccountFinalCommitmentMismatch {
+                    final_state_commitment,
+                    account_commitment,
+                });
+            }
+        }
+
+        Ok(update)
     }
 
     /// Creates a [`BatchAccountUpdate`] from the provided parts without checking any consistency.
@@ -160,11 +224,11 @@ impl Serializable for BatchAccountUpdate {
 
 impl Deserializable for BatchAccountUpdate {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(Self {
-            account_id: AccountId::read_from(source)?,
-            initial_state_commitment: Word::read_from(source)?,
-            final_state_commitment: Word::read_from(source)?,
-            details: AccountUpdateDetails::read_from(source)?,
-        })
+        let account_id = AccountId::read_from(source)?;
+        let initial_state_commitment = Word::read_from(source)?;
+        let final_state_commitment = Word::read_from(source)?;
+        let details = AccountUpdateDetails::read_from(source)?;
+        Self::new(account_id, initial_state_commitment, final_state_commitment, details)
+            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
 }
