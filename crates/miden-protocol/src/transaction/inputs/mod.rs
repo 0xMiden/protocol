@@ -506,16 +506,15 @@ impl Deserializable for TransactionInputs {
         let foreign_account_slot_names =
             BTreeMap::<StorageSlotId, StorageSlotName>::read_from(source)?;
 
-        Ok(TransactionInputs {
-            account,
-            block_header,
-            blockchain,
-            input_notes,
-            tx_args,
-            advice_inputs,
-            foreign_account_code,
-            foreign_account_slot_names,
-        })
+        TransactionInputs::new(account, block_header, blockchain, input_notes)
+            .map(|inputs| {
+                inputs
+                    .with_tx_args(tx_args)
+                    .with_advice_inputs(advice_inputs)
+                    .with_foreign_account_code(foreign_account_code)
+                    .with_foreign_account_slot_names(foreign_account_slot_names)
+            })
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

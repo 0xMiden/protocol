@@ -146,7 +146,7 @@ impl Serializable for BlockSignatures {
 impl Deserializable for BlockSignatures {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let signatures = Vec::<Signature>::read_from(source)?;
-        Ok(Self { signatures })
+        Self::new(signatures).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

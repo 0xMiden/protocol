@@ -58,9 +58,20 @@ We expect to keep making changes (including breaking changes) to all components.
 | [bench-note-checker](bin/bench-note-checker) | Note consumability benchmarks for the transaction executor. |
 | [bench-transaction](bin/bench-transaction) | Transaction execution and proving benchmarks. |
 
+## Getting started
+
+Install the Rust toolchain listed in [rust-toolchain.toml](rust-toolchain.toml), then clone the repository and initialize its submodules if your workflow requires them:
+
+```shell
+git clone https://github.com/0xMiden/protocol.git
+cd protocol
+```
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. The [Makefile](Makefile) contains the supported build, test, lint, and documentation commands.
+
 ## Make commands
 
-We use `make` to automate building, testing, and other processes. In most cases, `make` commands are just wrappers around `cargo` commands with specific arguments. You can view the list of available commands in the [Makefile](Makefile), or just run the following command:
+We use `make` to automate building, testing, and other processes. In most cases, `make` commands are just wrappers around `cargo` commands with specific arguments. You can view the list of available commands in the [Makefile](Makefile), or run the default target to list them:
 
 ```shell
 make
@@ -78,7 +89,9 @@ Some of the functions in this project are computationally intensive and may take
 
 ## Documentation
 
-The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://docs.miden.xyz/protocol/) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
+The Rust API documentation is generated from the workspace crates. The contributor documentation in `docs/` is built with Docusaurus and is automatically absorbed into the main [Miden documentation](https://docs.miden.xyz/protocol/) site. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
+
+For crate-specific guidance, start with the relevant crate README in the [project structure](#project-structure) table. Keep public API changes and protocol behavior changes documented in the appropriate crate or Docusaurus page.
 
 ## License
 

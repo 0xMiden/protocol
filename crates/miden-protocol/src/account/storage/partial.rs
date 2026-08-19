@@ -150,9 +150,8 @@ impl Deserializable for PartialStorage {
         let header: AccountStorageHeader = source.read()?;
         let map_smts: BTreeMap<Word, PartialStorageMap> = source.read()?;
 
-        let commitment = header.to_commitment();
-
-        Ok(PartialStorage { header, maps: map_smts, commitment })
+        PartialStorage::new(header, map_smts.into_values())
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

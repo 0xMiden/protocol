@@ -127,6 +127,17 @@ mod tests {
     use crate::errors::RoleSymbolError;
 
     #[test]
+    fn test_role_symbol_encoded_value_boundaries() {
+        let min = RoleSymbol::new("A").unwrap();
+        let max = RoleSymbol::new("____________").unwrap();
+
+        assert_eq!(min.as_element().as_canonical_u64(), RoleSymbol::MIN_ENCODED_VALUE);
+        assert_eq!(max.as_element().as_canonical_u64(), RoleSymbol::MAX_ENCODED_VALUE);
+        assert_eq!(RoleSymbol::try_from(Felt::new(RoleSymbol::MIN_ENCODED_VALUE)).unwrap(), min);
+        assert_eq!(RoleSymbol::try_from(Felt::new(RoleSymbol::MAX_ENCODED_VALUE)).unwrap(), max);
+    }
+
+    #[test]
     fn test_role_symbol_roundtrip_and_validation() {
         let role_symbols = ["MINTER", "BURNER", "MINTER_ADMIN", "A", "A_B_C"];
         for role_symbol in role_symbols {
