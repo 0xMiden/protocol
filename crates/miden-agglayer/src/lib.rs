@@ -5,12 +5,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 
 use miden_core::{Felt, Word};
-use miden_protocol::account::{
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AssetCallbackFlag,
-};
+use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AssetCallbackFlag};
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
