@@ -1133,7 +1133,7 @@ async fn test_remove_asset_fails(
 #[tokio::test]
 async fn test_remove_asset_rejects_empty_asset_id() -> anyhow::Result<()> {
     let fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
-    let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 100)?);
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, 100)?);
 
     let mock_tx = {
         let account =
