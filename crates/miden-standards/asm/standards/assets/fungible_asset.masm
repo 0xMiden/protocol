@@ -18,6 +18,10 @@ const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT = "fungible asset bui
 
 const ERR_FUNGIBLE_ASSET_VALUE_MALFORMED = "fungible asset value is not well-formed"
 
+const ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE = "fungible asset ID's composition must be fungible"
+
+const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO = "fungible asset ID asset class prefix and suffix must be zero"
+
 # PROCEDURES
 # ================================================================================================
 
@@ -199,4 +203,42 @@ pub proc value_into_amount
     assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
     assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
     # => [amount]
+end
+
+#! Validates that a fungible asset is well formed.
+#!
+#! This mirrors the kernel's fungible asset validation, except for the asset ID's account ID, whose
+#! structure the kernel validates and which is therefore not re-checked here.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset ID's composition is not fungible.
+#! - the asset ID's asset class is not zero.
+#! - the asset value is not well-formed (see value_into_amount).
+#!
+#! Invocation: exec
+pub proc validate
+    # assert the asset composition is fungible
+    exec.asset::id_to_composition
+    eq.COMPOSITION_FUNGIBLE
+    assert.err=ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # assert the asset class is zero, since a fungible asset ID does not encode an asset class
+    exec.asset::id_to_asset_class
+    # => [asset_class_suffix, asset_class_prefix, ASSET_ID, ASSET_VALUE]
+
+    assertz.err=ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
+    assertz.err=ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # assert the value word is well-formed, i.e. [amount, 0, 0, 0] with amount <= MAX_AMOUNT
+    dupw.1 exec.value_into_amount drop
+    # => [ASSET_ID, ASSET_VALUE]
 end
