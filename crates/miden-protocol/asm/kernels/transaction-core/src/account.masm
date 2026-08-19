@@ -946,7 +946,7 @@ end
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Pancis if:
+#! Panics if:
 #! - each slot's ID is not strictly less than the next slot's ID.
 #!    - this ensures sorting and uniqueness among slot IDs.
 #! - any slot has a type that is not a supported storage slot type.
