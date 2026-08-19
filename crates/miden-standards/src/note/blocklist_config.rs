@@ -46,9 +46,9 @@ static BLOCKLIST_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// [`BlocklistConfigNote`] triggers on the account that consumes it.
 ///
 /// The action, together with its argument, is encoded into the note's storage (see [`NoteStorage`]
-/// conversion below). Because the storage is fixed at note creation and bound into the note
-/// commitment, the authorized party is the note sender: the consuming account's `BlocklistManager`
-/// procedures authorize the sender through the account-wide `Authority` component.
+/// conversion below) and is fixed at note creation, bound into the note commitment. The consuming
+/// account's `BlocklistManager` procedures authorize the action through the account-wide
+/// [`Authority`](crate::account::access::Authority) component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlocklistConfig {
     /// Add `account` to the blocklist. Blocking an already blocked account is a noop.
@@ -106,13 +106,11 @@ impl From<BlocklistConfig> for NoteStorage {
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the component's
 /// admin procedures (`block_account`, `unblock_account`). Authorization is enforced by those
-/// procedures through the account-wide `Authority` component against the note sender, so the note
-/// carries no assets and its authorization is bound to `sender` at creation time.
+/// procedures through the account-wide [`Authority`](crate::account::access::Authority) component,
+/// so the note carries no assets.
 ///
 /// The note is always public and tagged for `target` — the account carrying the
-/// `BlocklistManager` component whose blocklist is being managed. The `sender` is the account
-/// authorized for the action per the target's `Authority` configuration (the owner under
-/// `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
+/// `BlocklistManager` component whose blocklist is being managed.
 ///
 /// The note is bound to `target` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
@@ -195,7 +193,8 @@ impl BlocklistConfigNote {
         BLOCKLIST_CONFIG_SCRIPT.root()
     }
 
-    /// Returns the account ID of the note's sender (the account authorized for the action).
+    /// Returns the account ID of the note's sender (the authorizing party under an owner- or
+    /// role-controlled `Authority`).
     pub fn sender(&self) -> AccountId {
         self.sender
     }

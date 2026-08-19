@@ -39,17 +39,16 @@ const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet poli
 #! FaucetPolicyConfig script: triggers a `TokenPolicyManager` policy-switch action against the
 #! consuming faucet, dispatched on a selector stored in the note storage item after the policy root.
 #!
-#! The selected action and its policy root are read from the note storage (fixed at note creation,
-#! so authorization is bound to the note sender):
+#! The selected action and its policy root are read from the note storage and are fixed at note
+#! creation:
 #! - `0` SetMintPolicy:    `[POLICY_ROOT, 0]`.
 #! - `1` SetBurnPolicy:    `[POLICY_ROOT, 1]`.
 #! - `2` SetSendPolicy:    `[POLICY_ROOT, 2]`.
 #! - `3` SetReceivePolicy: `[POLICY_ROOT, 3]`.
 #!
 #! Authorization is enforced by the called `TokenPolicyManager` procedures via the account-wide
-#! `Authority` component (`assert_authorized`), which resolves the note sender against the
-#! configured owner or role; this script only dispatches to them. Each procedure additionally
-#! rejects a policy root that is not registered as an allowed alternative for its kind.
+#! `Authority` component (`assert_authorized`); this script only dispatches to them. Each procedure
+#! additionally rejects a policy root that is not registered as an allowed alternative for its kind.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::policy_manager::{set_mint_policy, set_burn_policy,
@@ -63,8 +62,8 @@ const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet poli
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the note sender is not authorized, or the policy root is not an allowed alternative (per the
-#!   `TokenPolicyManager` procedures).
+#! - the caller is not authorized per the installed `Authority` component, or the policy root is not
+#!   an allowed alternative (per the `TokenPolicyManager` procedures).
 @note_script
 pub proc main
     dropw
@@ -153,8 +152,8 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_SET_POLICY.
-#! - the note sender is not authorized, or the root is not an allowed mint policy (per
-#!   `policy_manager::set_mint_policy`).
+#! - the caller is not authorized per the installed `Authority` component, or the root is not an
+#!   allowed mint policy (per `policy_manager::set_mint_policy`).
 #!
 #! Invocation: exec
 proc execute_set_mint_policy
@@ -175,8 +174,8 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_SET_POLICY.
-#! - the note sender is not authorized, or the root is not an allowed burn policy (per
-#!   `policy_manager::set_burn_policy`).
+#! - the caller is not authorized per the installed `Authority` component, or the root is not an
+#!   allowed burn policy (per `policy_manager::set_burn_policy`).
 #!
 #! Invocation: exec
 proc execute_set_burn_policy
@@ -197,8 +196,8 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_SET_POLICY.
-#! - the note sender is not authorized, or the root is not an allowed send policy (per
-#!   `policy_manager::set_send_policy`).
+#! - the caller is not authorized per the installed `Authority` component, or the root is not an
+#!   allowed send policy (per `policy_manager::set_send_policy`).
 #!
 #! Invocation: exec
 proc execute_set_send_policy
@@ -219,8 +218,8 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_SET_POLICY.
-#! - the note sender is not authorized, or the root is not an allowed receive policy (per
-#!   `policy_manager::set_receive_policy`).
+#! - the caller is not authorized per the installed `Authority` component, or the root is not an
+#!   allowed receive policy (per `policy_manager::set_receive_policy`).
 #!
 #! Invocation: exec
 proc execute_set_receive_policy

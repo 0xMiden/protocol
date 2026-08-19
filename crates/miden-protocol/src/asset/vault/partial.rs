@@ -116,8 +116,10 @@ impl PartialVault {
             // Validate that the (id, value) pair forms a valid asset, even when the value is
             // empty: an empty value paired with e.g. a non-fungible ID carrying a non-zero asset
             // class is malformed and must be rejected rather than silently tracked.
-            Asset::from_id_and_value(id, value).map_err(|source| {
-                PartialAssetVaultError::InvalidAssetForId { id, value, source }
+            Asset::new(id, value).map_err(|source| PartialAssetVaultError::InvalidAssetForId {
+                id,
+                value,
+                source,
             })?;
 
             // Skip empty values so `entries` stays in sync with the SMT, which treats empty values
@@ -154,8 +156,7 @@ impl PartialVault {
     /// Returns an iterator over the [`Asset`]s tracked by this partial vault.
     pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
         self.entries.iter().map(|(id, value)| {
-            Asset::from_id_and_value(*id, *value)
-                .expect("partial vault should only track valid assets")
+            Asset::new(*id, *value).expect("partial vault should only track valid assets")
         })
     }
 
@@ -199,8 +200,7 @@ impl PartialVault {
             Ok(None)
         } else {
             Ok(Some(
-                Asset::from_id_and_value(asset_id, value)
-                    .expect("partial vault should only track valid assets"),
+                Asset::new(asset_id, value).expect("partial vault should only track valid assets"),
             ))
         }
     }

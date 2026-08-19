@@ -37,7 +37,7 @@ impl AccountVaultPatch {
             // If the asset was not removed (final value != Word::empty), ensure the provided entry
             // is a valid asset.
             if !value.is_empty() {
-                Asset::from_id_and_value(*key, *value)?;
+                Asset::new(*key, *value)?;
             }
         }
 
@@ -118,9 +118,7 @@ impl AccountVaultPatch {
         self.entries
             .iter()
             .filter(|(_key, value)| !value.is_empty())
-            .map(|(key, value)| {
-                Asset::from_id_and_value(*key, *value).expect("patch should track valid assets")
-            })
+            .map(|(key, value)| Asset::new(*key, *value).expect("patch should track valid assets"))
     }
 }
 
