@@ -30,6 +30,7 @@ use miden_protocol::asset::{
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::tx_kernel::ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -298,12 +299,6 @@ async fn test_faucet_without_callback_slot_skips_callback(
 
     Ok(())
 }
-
-/// The expected error when the faucet's callback slot holds a root that is not part of its code.
-const ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE: MasmError =
-    MasmError::from_static_str(
-        "the faucet callback procedure root is not part of the faucet's account code",
-    );
 
 /// Tests that consuming a callbacks-enabled asset fails when the issuing faucet's callback slot
 /// holds a procedure root that is not part of the faucet's account code.
