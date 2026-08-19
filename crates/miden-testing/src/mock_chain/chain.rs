@@ -91,7 +91,7 @@ use crate::{MockChainBuilder, MockTransactionBuilder};
 /// let note = builder.add_p2id_note(
 ///     sender.id(),
 ///     receiver.id(),
-///     &[Asset::Fungible(fungible_asset)],
+///     &[Asset::from(fungible_asset)],
 ///     NoteType::Public,
 /// )?;
 ///
@@ -1367,7 +1367,7 @@ mod tests {
         let note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
-            &[Asset::Fungible(FungibleAsset::new(faucet_id, 1000u64).unwrap())],
+            &[Asset::from(FungibleAsset::new(faucet_id, 1000u64).unwrap())],
             NoteType::Private,
         )?;
 
@@ -1412,7 +1412,7 @@ mod tests {
                 .add_p2id_note(
                     ACCOUNT_ID_SENDER.try_into().unwrap(),
                     account.id(),
-                    &[Asset::Fungible(
+                    &[Asset::from(
                         FungibleAsset::new(
                             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into().unwrap(),
                             1000u64,

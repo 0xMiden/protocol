@@ -85,7 +85,7 @@ fn assert_vault_patch(
                 .iter()
                 .find(|asset| asset.id() == expected.id())
                 .expect("updated asset should be present");
-            assert_eq!(actual, &Asset::Fungible(expected));
+            assert_eq!(actual, &Asset::from(expected));
         }
     }
 }

@@ -14,9 +14,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO,
     ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
-    ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1,
-    ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0,
-    ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE,
     ERR_VAULT_ASSET_METADATA_NOT_U32,
     ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION,
 };
@@ -27,6 +24,11 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::{Felt, Word};
+use miden_standards::errors::standards::{
+    ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1,
+    ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0,
+    ERR_NON_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_NON_FUNGIBLE,
+};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -106,7 +108,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     Ok(())
 }
 
-const METADATA_BYTE_NONE: u64 = 0;
+const METADATA_BYTE_NONE: u64 = AssetComposition::None as u64;
 const METADATA_BYTE_FUNGIBLE: u64 = AssetComposition::Fungible as u64;
 
 /// Returns the third element of a synthesised asset ID, packing the faucet ID suffix with the
@@ -116,12 +118,7 @@ fn key_suffix_with_metadata(account_id: AccountId, metadata_byte: u64) -> Felt {
         .expect("metadata byte only occupies the lower 8 bits")
 }
 
-/// The kernel and standards `validate` procedures reject the same malformed non-fungible assets.
-///
-/// Both are exercised via the `namespace` matrix. The two procedures deliberately share the same
-/// error wording, so a single expectation matches both. The kernel proc additionally validates
-/// the account ID structure (which the standards proc leaves to the kernel); that difference is
-/// not covered by these shared cases.
+/// The standards `validate` procedure rejects malformed non-fungible assets.
 #[rstest::rstest]
 #[case::composition_is_not_non_fungible(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
@@ -147,11 +144,10 @@ async fn test_validate_non_fungible_asset(
     #[case] asset_class: AssetClass,
     #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
-    #[values("miden::tx_kernel_core", "miden::standards::assets")] namespace: &str,
 ) -> anyhow::Result<()> {
     let code = format!(
         "
-        use {namespace}::non_fungible_asset
+        use miden::standards::assets::non_fungible_asset
 
         begin
             # a random asset value
@@ -216,6 +212,64 @@ async fn test_validate_non_fungible_asset_standards_succeeds() -> anyhow::Result
 
     assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_id_word());
     assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
+
+    Ok(())
+}
+
+/// The kernel treats the value of an asset that is not fungible as opaque.
+///
+/// An asset with `AssetComposition::None` is valid even when its asset class is not derived from
+/// its value. The issuer and the metadata are still validated.
+#[rstest::rstest]
+#[case::asset_class_is_not_derived_from_value(METADATA_BYTE_NONE, None)]
+#[case::metadata_reserved_bits_are_set(
+    METADATA_BYTE_NONE | 0b100,
+    Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS)
+)]
+#[tokio::test]
+async fn test_validate_asset_with_non_fungible_composition(
+    #[case] metadata_byte: u64,
+    #[case] expected_err: Option<MasmError>,
+    #[values("validate", "validate_id")] procedure: &str,
+) -> anyhow::Result<()> {
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
+    // an asset class that is deliberately unrelated to the asset value
+    let asset_class = AssetClass::new(Felt::from(7u32), Felt::from(9u32));
+    let asset_value = Word::from([2, 3, 4, 5u32]);
+    let asset_id = Word::from([
+        asset_class.suffix(),
+        asset_class.prefix(),
+        key_suffix_with_metadata(faucet_id, metadata_byte),
+        faucet_id.prefix().as_felt(),
+    ]);
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::asset
+
+        begin
+            push.{asset_value}
+            push.{asset_id}
+            # => [ASSET_ID, ASSET_VALUE]
+
+            exec.asset::{procedure}
+
+            # truncate the stack
+            swapdw dropw dropw
+        end
+        "
+    );
+
+    let exec_result = CodeExecutor::with_default_host().run(&code).await;
+
+    match expected_err {
+        Some(err) => assert_execution_error!(exec_result, err),
+        None => {
+            let exec_output = exec_result?;
+            assert_eq!(exec_output.get_stack_word(0), asset_id);
+            assert_eq!(exec_output.get_stack_word(4), asset_value);
+        },
+    }
 
     Ok(())
 }
