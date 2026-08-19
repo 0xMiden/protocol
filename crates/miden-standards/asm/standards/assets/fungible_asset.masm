@@ -7,7 +7,7 @@ pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT} from miden::protocol::asset
 # RE-EXPORTS
 # ================================================================================================
 
-pub use {fungible_value_into_amount as value_into_amount} from miden::protocol::asset
+pub use {fungible_value_into_amount_unchecked as value_into_amount_unchecked} from miden::protocol::asset
 
 # ERRORS
 # ================================================================================================
@@ -125,7 +125,7 @@ pub proc get_initial_native_account_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.value_into_amount
+    exec.value_into_amount_unchecked
     # => [balance]
 end
 
@@ -154,7 +154,7 @@ pub proc get_active_account_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.value_into_amount
+    exec.value_into_amount_unchecked
     # => [balance]
 end
 
@@ -170,16 +170,13 @@ end
 #! - amount is the amount of the fungible asset.
 #!
 #! Invocation: exec
-pub proc to_amount
+pub proc to_amount_unchecked
     # => [ASSET_ID, [amount, 0, 0, 0]]
     dup.4
     # => [amount, ASSET_ID, ASSET_VALUE]
 end
 
-#! Validates the provided asset value and returns its amount.
-#!
-#! This procedure checks that the provided asset value is well-formed (first, second and third
-#! elements are zeros) and checks that the amount doesn't exceed the maximum.
+#! Validates the given fungible asset value and returns its amount, consuming it.
 #!
 #! Inputs:  [ASSET_VALUE]
 #! Outputs: [amount]
@@ -193,7 +190,7 @@ end
 #! - the asset amount exceeds maximum allowed amount.
 #!
 #! Invocation: exec
-pub proc try_value_to_amount
+pub proc value_into_amount
     # assert the amount does not exceed the maximum fungible asset amount
     dup lte.MAX_AMOUNT assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
     # => [amount, e1, e2, e3]
@@ -220,7 +217,7 @@ end
 #!
 #! Panics if:
 #! - the asset ID's composition is not fungible.
-#! - the asset value is not well-formed (see try_value_to_amount).
+#! - the asset value is not well-formed (see value_into_amount).
 #!
 #! Invocation: exec
 pub proc validate
@@ -231,6 +228,6 @@ pub proc validate
     # => [ASSET_ID, ASSET_VALUE]
 
     # assert the value word is well-formed, i.e. [amount, 0, 0, 0] with amount <= MAX_AMOUNT
-    dupw.1 exec.try_value_to_amount drop
+    dupw.1 exec.value_into_amount drop
     # => [ASSET_ID, ASSET_VALUE]
 end

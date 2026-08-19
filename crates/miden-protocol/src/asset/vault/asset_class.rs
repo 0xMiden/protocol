@@ -44,11 +44,12 @@ impl AssetClass {
 
 impl Display for AssetClass {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!(
+        write!(
+            f,
             "0x{:016x}{:016x}",
             self.prefix().as_canonical_u64(),
             self.suffix().as_canonical_u64()
-        ))
+        )
     }
 }
 

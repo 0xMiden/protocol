@@ -1,6 +1,5 @@
 use miden::protocol_utils::account_id
 use miden::tx_kernel_core::fungible_asset
-use miden::tx_kernel_core::non_fungible_asset
 use miden::protocol_utils::asset as asset_utils
 
 # ERRORS
@@ -19,7 +18,7 @@ const ERR_FAUCET_IS_NOT_ASSET_ORIGIN = "the faucet is not the origin of the asse
 # CONSTANT ACCESSORS
 # =================================================================================================
 
-pub use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_CUSTOM, COMPOSITION_FUNGIBLE, COMPOSITION_NONE, FUNGIBLE_ASSET_MAX_AMOUNT, id_to_faucet_id, id_into_faucet_id, id_to_asset_class, id_into_asset_class, id_to_composition, id_into_composition, load, store, validate_metadata, fungible_value_into_amount}
+pub use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_CUSTOM, COMPOSITION_FUNGIBLE, COMPOSITION_NONE, FUNGIBLE_ASSET_MAX_AMOUNT, id_to_faucet_id, id_into_faucet_id, id_to_asset_class, id_into_asset_class, id_to_composition, id_into_composition, load, store, validate_metadata, fungible_value_into_amount_unchecked}
     from miden::protocol_utils::asset
 
 # PROCEDURES
@@ -65,8 +64,8 @@ end
 #! - ASSET_ID is the asset ID of the asset to validate.
 #!
 #! Panics if:
-#! - the asset ID is not a valid fungible or non-fungible asset ID (see
-#!   fungible_asset::validate_id and non_fungible_asset::validate_id).
+#! - the asset is fungible and its ID is not valid (see fungible_asset::validate_id).
+#! - the asset's issuer or metadata is not valid (see validate_issuer).
 pub proc validate_id
     # check if the asset ID is fungible
     exec.is_fungible_asset_id
@@ -76,7 +75,8 @@ pub proc validate_id
         exec.fungible_asset::validate_id
         # => [ASSET_ID]
     else
-        exec.non_fungible_asset::validate_id
+        # the asset is not fungible, so the kernel only validates the parts of the ID it defines
+        exec.validate_issuer
         # => [ASSET_ID]
     end
     # => [ASSET_ID]
@@ -105,23 +105,6 @@ pub proc validate_issuer
     # => [ASSET_ID]
 end
 
-#! Returns a boolean indicating whether the asset is non-fungible.
-#!
-#! Inputs:  [ASSET_ID]
-#! Outputs: [is_non_fungible_asset, ASSET_ID]
-#!
-#! Where:
-#! - ASSET_ID is the asset ID of the asset to check.
-#! - is_non_fungible_asset is a boolean indicating whether the asset is non-fungible.
-pub proc is_non_fungible_asset_id
-    # => [ASSET_ID]
-    exec.id_to_composition
-    # => [asset_composition, ASSET_ID]
-
-    eq.COMPOSITION_NONE
-    # => [is_non_fungible_asset, ASSET_ID]
-end
-
 #! Asserts that the asset's composition is supported by the kernel today (i.e. not Custom).
 #!
 #! Inputs:  [ASSET_ID]
@@ -143,6 +126,8 @@ end
 
 #! Validates that an asset is well formed.
 #!
+#! Fungible assets are validated in full. For other assets, only the ID is validated.
+#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
@@ -151,8 +136,8 @@ end
 #! - ASSET_VALUE is the value of the asset to validate.
 #!
 #! Panics if:
-#! - the asset is not a valid fungible or non-fungible asset (see fungible_asset::validate and
-#!   non_fungible_asset::validate_id).
+#! - the asset is fungible and not valid (see fungible_asset::validate).
+#! - the asset's issuer or metadata is not valid (see validate_issuer).
 pub proc validate
     # check if the asset is fungible
     exec.is_fungible_asset_id
@@ -163,8 +148,8 @@ pub proc validate
         exec.fungible_asset::validate
         # => [ASSET_ID, ASSET_VALUE]
     else
-        # if the asset is non fungible, validate the non fungible asset
-        exec.non_fungible_asset::validate
+        # the asset is not fungible, so the kernel only validates the parts of the ID it defines
+        exec.validate_issuer
         # => [ASSET_ID, ASSET_VALUE]
     end
     # => [ASSET_ID, ASSET_VALUE]
