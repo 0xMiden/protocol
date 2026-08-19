@@ -432,7 +432,7 @@ pub enum AccountDeltaError {
     )]
     TooManyVaultAssetDeltas {
         delta_op: AssetDeltaOperation,
-        num_ops: u16,
+        num_ops: usize,
     },
     #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"

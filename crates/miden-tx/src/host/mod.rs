@@ -431,13 +431,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         &mut self,
         delta: AssetDelta,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        // SAFETY: The kernel iterates the asset delta map once per computation and the host resets
-        // its accumulated delta before each computation, so no asset should be reported
-        // twice.
-        assert!(
-            self.update_tracker.update_asset_delta(delta)?.is_none(),
-            "each asset ID should be unique"
-        );
+        self.update_tracker.update_asset_delta(delta);
 
         Ok(Vec::new())
     }
