@@ -116,19 +116,12 @@ end
 
 #! Returns the ID of the asset fees are charged in.
 #!
-#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
-#! after the reference block. The fee asset slot has no setter today, so this bounds the FPI read
-#! defensively rather than protecting against staleness.
-#!
 #! Inputs:  [pad(16)]
 #! Outputs: [FEE_ASSET_ID, pad(12)]
 #!
 #! Invocation: call
 @account_procedure
 pub proc get_fee_asset_id() -> AssetId
-    exec.expiration::apply_default
-    # => [pad(16)]
-
     exec.read_fee_asset_id
     # => [FEE_ASSET_ID, pad(16)]
 

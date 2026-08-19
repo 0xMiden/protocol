@@ -676,15 +676,13 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
-    let executed = mock_chain
+    mock_chain
         .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
-
-    super::assert_default_expiration_limit(&executed, "the fee asset getter");
 
     Ok(())
 }

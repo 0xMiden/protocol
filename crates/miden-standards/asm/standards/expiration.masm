@@ -19,8 +19,8 @@ pub const DEFAULT_EXPIRATION_BLOCK_DELTA = 20
 #! A procedure that reads mutable or time-sensitive state exposed through FPI should call this as
 #! its first action; a procedure needing a custom limit can call
 #! [`tx::update_expiration_block_delta`] directly. Policy dispatchers deliberately leave the limit
-#! to the invoked policy (see the token policy manager docs). The transaction-wide expiration can
-#! only decrease, so several procedures may safely apply different limits in the same transaction.
+#! to the invoked policy. The transaction-wide expiration can only decrease, so several procedures
+#! may safely apply different limits in the same transaction.
 #!
 #! Inputs:  []
 #! Outputs: []

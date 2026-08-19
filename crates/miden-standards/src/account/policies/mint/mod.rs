@@ -36,12 +36,6 @@ pub enum MintPolicyError {
 ///
 /// Construct via [`Self::allow_all`], [`Self::owner_only`], or [`Self::custom`]. Pass to the
 /// [`super::TokenPolicyManager`] builder via `active_mint_policy` or `allowed_mint_policy`.
-///
-/// The manager's dispatcher sets no transaction expiration delta: each policy decides its own
-/// limit, as the bundled owner-only policy does. When the active policy sets no delta (e.g.
-/// [`Self::allow_all`]), the transaction is not expiration-bounded; a protocol-wide FPI
-/// expiration backstop is discussed in
-/// [#3504](https://github.com/0xMiden/protocol/issues/3504).
 #[derive(Debug, Clone)]
 pub struct MintPolicy {
     root: AccountProcedureRoot,
@@ -67,10 +61,6 @@ impl MintPolicy {
 
     /// Returns a mint policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
-    ///
-    /// A custom policy that reads mutable account state should apply its own transaction
-    /// expiration limit as its first action (via the `miden::standards::expiration` helper), as
-    /// the bundled owner-only policy does.
     ///
     /// # Errors
     ///

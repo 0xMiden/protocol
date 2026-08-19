@@ -40,12 +40,6 @@ pub enum BurnPolicyError {
 /// Construct via [`Self::allow_all`], [`Self::owner_only`], [`Self::min_burn_amount`], or
 /// [`Self::custom`]. Pass to the [`super::TokenPolicyManager`] builder via `active_burn_policy`
 /// or `allowed_burn_policy`.
-///
-/// The manager's dispatcher sets no transaction expiration delta: each policy decides its own
-/// limit, as the bundled owner-only and min-burn-amount policies do. When the active policy sets
-/// no delta (e.g. [`Self::allow_all`], the [`Default`] policy), the transaction is not
-/// expiration-bounded; a protocol-wide FPI expiration backstop is discussed in
-/// [#3504](https://github.com/0xMiden/protocol/issues/3504).
 #[derive(Debug, Clone)]
 pub struct BurnPolicy {
     root: AccountProcedureRoot,
@@ -82,10 +76,6 @@ impl BurnPolicy {
 
     /// Returns a burn policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
-    ///
-    /// A custom policy that reads mutable account state should apply its own transaction
-    /// expiration limit as its first action (via the `miden::standards::expiration` helper), as
-    /// the bundled owner-only and min-burn-amount policies do.
     ///
     /// # Errors
     ///

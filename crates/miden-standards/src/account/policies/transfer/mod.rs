@@ -62,13 +62,7 @@ pub enum TransferPolicyError {
 /// an ordinary send. The bundled blocklist and allowlist policies therefore exempt the issuer by
 /// comparing the asset's faucet ID against the native account ID.
 ///
-/// The manager's dispatcher sets no transaction expiration delta: each policy decides its own
-/// limit, applied as its first action via the `miden::standards::expiration` helper, as the
-/// bundled [`BasicAllowlist`] and [`BasicBlocklist`] policies do. When the active policy sets no
-/// delta (e.g. [`TransferAllowAll`], the [`Default`] policy), the transaction is not
-/// expiration-bounded — this includes the dispatcher's own reads of the active policy root and
-/// the pause flag; a protocol-wide FPI expiration backstop is discussed in
-/// [#3504](https://github.com/0xMiden/protocol/issues/3504).
+/// Policies should apply a transaction expiration delta based on their staleness considerations.
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
@@ -133,10 +127,6 @@ impl TransferPolicy {
 
     /// Returns a transfer policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
-    ///
-    /// A custom policy that reads mutable account state should apply its own transaction
-    /// expiration limit as its first action (via the `miden::standards::expiration` helper); see
-    /// the expiration notes on [`TransferPolicy`].
     ///
     /// # Errors
     ///
