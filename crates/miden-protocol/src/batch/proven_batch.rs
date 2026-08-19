@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -16,7 +16,13 @@ use crate::utils::serde::{
     Serializable,
 };
 use crate::vm::ExecutionProof;
-use crate::{MIN_PROOF_SECURITY_LEVEL, Word};
+use crate::{
+    MAX_ACCOUNTS_PER_BATCH,
+    MAX_INPUT_NOTES_PER_BATCH,
+    MAX_OUTPUT_NOTES_PER_BATCH,
+    MIN_PROOF_SECURITY_LEVEL,
+    Word,
+};
 
 /// A transaction batch with an execution proof.
 /// Currently, this only carries a skeleton proof which does not attest to anything meaningful.
@@ -37,8 +43,86 @@ impl ProvenBatch {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
+    /// Creates a new [`ProvenBatch`] from the provided parts and validates its structural
+    /// constraints.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        reference_block_commitment: Word,
+        reference_block_num: BlockNumber,
+        account_updates: BTreeMap<AccountId, BatchAccountUpdate>,
+        input_notes: InputNotes<InputNoteCommitment>,
+        output_notes: Vec<OutputNote>,
+        batch_expiration_block_num: BlockNumber,
+        transactions: OrderedTransactionHeaders,
+        proof: ExecutionProof,
+    ) -> Result<Self, ProvenBatchError> {
+        if transactions.as_slice().is_empty() {
+            return Err(ProvenBatchError::EmptyTransactionBatch);
+        }
+        let mut transaction_ids = BTreeSet::new();
+        for transaction in transactions.as_slice() {
+            if !transaction_ids.insert(transaction.id()) {
+                return Err(ProvenBatchError::DuplicateTransaction(transaction.id()));
+            }
+        }
+        if account_updates.len() > MAX_ACCOUNTS_PER_BATCH {
+            return Err(ProvenBatchError::TooManyAccountUpdates(account_updates.len()));
+        }
+        for (map_account_id, update) in &account_updates {
+            if *map_account_id != update.account_id() {
+                return Err(ProvenBatchError::AccountUpdateKeyMismatch {
+                    map_account_id: *map_account_id,
+                    update_account_id: update.account_id(),
+                });
+            }
+            BatchAccountUpdate::new(
+                update.account_id(),
+                update.initial_state_commitment(),
+                update.final_state_commitment(),
+                update.details().clone(),
+            )
+            .map_err(|source| ProvenBatchError::InvalidAccountUpdate {
+                account_id: update.account_id(),
+                source,
+            })?;
+        }
+        let input_note_count = usize::from(input_notes.num_notes());
+        if input_note_count > MAX_INPUT_NOTES_PER_BATCH {
+            return Err(ProvenBatchError::TooManyInputNotes(input_note_count));
+        }
+        let mut input_nullifiers = BTreeSet::new();
+        for note in input_notes.iter() {
+            if !input_nullifiers.insert(note.nullifier()) {
+                return Err(ProvenBatchError::DuplicateInputNote(note.nullifier()));
+            }
+        }
+        if output_notes.len() > MAX_OUTPUT_NOTES_PER_BATCH {
+            return Err(ProvenBatchError::TooManyOutputNotes(output_notes.len()));
+        }
+        let mut output_note_ids = BTreeSet::new();
+        for note in &output_notes {
+            if !output_note_ids.insert(note.id()) {
+                return Err(ProvenBatchError::DuplicateOutputNote(note.id()));
+            }
+        }
+
+        let id =
+            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
+        Self::new_unchecked(
+            id,
+            reference_block_commitment,
+            reference_block_num,
+            account_updates,
+            input_notes,
+            output_notes,
+            batch_expiration_block_num,
+            transactions,
+            proof,
+        )
+    }
+
     /// Creates a new [`ProvenBatch`] from the provided parts without checking any constraints
-    /// except the ones listed in the errors section below.
+    /// except the expiration constraint listed below.
     ///
     /// This should essentially never be called by users.
     ///
@@ -189,11 +273,7 @@ impl Deserializable for ProvenBatch {
         let transactions = OrderedTransactionHeaders::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
 
-        let id =
-            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
-
-        Self::new_unchecked(
-            id,
+        Self::new(
             reference_block_commitment,
             reference_block_num,
             account_updates,

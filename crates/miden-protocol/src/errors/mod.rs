@@ -1219,6 +1219,39 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
+    #[error("transaction batch must contain at least one transaction")]
+    EmptyTransactionBatch,
+    #[error("transaction {0} appears twice in the proven batch")]
+    DuplicateTransaction(TransactionId),
+    #[error(
+        "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyInputNotes(usize),
+    #[error("input note with nullifier {0} appears twice in the proven batch")]
+    DuplicateInputNote(Nullifier),
+    #[error(
+        "transaction batch has {0} output notes but at most {MAX_OUTPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyOutputNotes(usize),
+    #[error(
+        "transaction batch has {0} account updates but at most {MAX_ACCOUNTS_PER_BATCH} are allowed"
+    )]
+    TooManyAccountUpdates(usize),
+    #[error("output note {0} appears twice in the proven batch")]
+    DuplicateOutputNote(NoteId),
+    #[error(
+        "account update stored under account {map_account_id} belongs to account {update_account_id}"
+    )]
+    AccountUpdateKeyMismatch {
+        map_account_id: AccountId,
+        update_account_id: AccountId,
+    },
+    #[error("invalid account update for {account_id}")]
+    InvalidAccountUpdate {
+        account_id: AccountId,
+        #[source]
+        source: BatchAccountUpdateError,
+    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]
