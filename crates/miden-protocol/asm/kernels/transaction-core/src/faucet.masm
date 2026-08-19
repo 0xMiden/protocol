@@ -33,9 +33,6 @@ const ACCOUNT_VAULT_BEFORE_BURN_ASSET_EVENT =
 #! Panics if:
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
-#! - For fungible faucets if the total issuance after minting is greater than the maximum amount
-#!   allowed.
-#! - For non-fungible faucets if the non-fungible asset being minted already exists.
 pub proc mint
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
