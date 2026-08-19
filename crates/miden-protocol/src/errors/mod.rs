@@ -17,7 +17,13 @@ use super::account::{AccountId, RoleSymbol};
 use super::asset::{Asset, AssetComposition, AssetId, FungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
-use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use super::{
+    MAX_ACCOUNTS_PER_BLOCK,
+    MAX_BATCHES_PER_BLOCK,
+    MAX_INPUT_NOTES_PER_BLOCK,
+    MAX_OUTPUT_NOTES_PER_BATCH,
+    Word,
+};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
 use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
@@ -603,6 +609,41 @@ pub enum BlockAccountUpdateError {
         account_id: AccountId,
         patch_account_id: AccountId,
     },
+}
+
+// BLOCK BODY ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockBodyError {
+    #[error("invalid account update for {account_id}")]
+    InvalidAccountUpdate {
+        account_id: AccountId,
+        #[source]
+        source: BlockAccountUpdateError,
+    },
+    #[error("block has {0} account updates but at most {MAX_ACCOUNTS_PER_BLOCK} are allowed")]
+    TooManyAccountUpdates(usize),
+    #[error("block has {0} nullifiers but at most {MAX_INPUT_NOTES_PER_BLOCK} are allowed")]
+    TooManyNullifiers(usize),
+    #[error("block has {0} output note batches but at most {MAX_BATCHES_PER_BLOCK} are allowed")]
+    TooManyOutputNoteBatches(usize),
+    #[error(
+        "output note batch {batch_index} has {note_count} notes but at most {MAX_OUTPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyOutputNotes { batch_index: usize, note_count: usize },
+    #[error("output note batch {batch_index} contains invalid note index {note_index}")]
+    InvalidOutputNoteIndex { batch_index: usize, note_index: usize },
+    #[error("output note batch {batch_index} contains note index {note_index} twice")]
+    DuplicateOutputNoteIndex { batch_index: usize, note_index: usize },
+    #[error("output note {0} appears twice in the block body")]
+    DuplicateOutputNote(NoteId),
+    #[error("account update for {0} appears twice in the block body")]
+    DuplicateAccountUpdate(AccountId),
+    #[error("nullifier {0} appears twice in the block body")]
+    DuplicateNullifier(Nullifier),
+    #[error("transaction {0} appears twice in the block body")]
+    DuplicateTransaction(TransactionId),
 }
 
 // ASSET ERROR

@@ -1,3 +1,5 @@
+use alloc::collections::BTreeSet;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_core::Word;
@@ -9,6 +11,7 @@ use crate::block::{
     OutputNoteBatch,
     ProposedBlock,
 };
+use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
 use crate::transaction::{OrderedTransactionHeaders, OutputNote};
 use crate::utils::serde::{
@@ -17,6 +20,12 @@ use crate::utils::serde::{
     Deserializable,
     DeserializationError,
     Serializable,
+};
+use crate::{
+    MAX_ACCOUNTS_PER_BLOCK,
+    MAX_BATCHES_PER_BLOCK,
+    MAX_INPUT_NOTES_PER_BLOCK,
+    MAX_OUTPUT_NOTES_PER_BATCH,
 };
 
 // BLOCK BODY
@@ -42,6 +51,89 @@ pub struct BlockBody {
 impl BlockBody {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
+
+    /// Creates a new [`BlockBody`] and validates its structural constraints.
+    pub fn new(
+        updated_accounts: Vec<BlockAccountUpdate>,
+        output_note_batches: Vec<OutputNoteBatch>,
+        created_nullifiers: Vec<Nullifier>,
+        transactions: OrderedTransactionHeaders,
+    ) -> Result<Self, BlockBodyError> {
+        if output_note_batches.len() > MAX_BATCHES_PER_BLOCK {
+            return Err(BlockBodyError::TooManyOutputNoteBatches(output_note_batches.len()));
+        }
+        if updated_accounts.len() > MAX_ACCOUNTS_PER_BLOCK {
+            return Err(BlockBodyError::TooManyAccountUpdates(updated_accounts.len()));
+        }
+        if created_nullifiers.len() > MAX_INPUT_NOTES_PER_BLOCK {
+            return Err(BlockBodyError::TooManyNullifiers(created_nullifiers.len()));
+        }
+
+        let mut account_ids = BTreeSet::new();
+        for update in &updated_accounts {
+            BlockAccountUpdate::try_new(
+                update.account_id(),
+                update.final_state_commitment(),
+                update.details().clone(),
+            )
+            .map_err(|source| BlockBodyError::InvalidAccountUpdate {
+                account_id: update.account_id(),
+                source,
+            })?;
+            if !account_ids.insert(update.account_id()) {
+                return Err(BlockBodyError::DuplicateAccountUpdate(update.account_id()));
+            }
+        }
+
+        let mut output_note_ids = BTreeSet::new();
+        for (batch_index, batch) in output_note_batches.iter().enumerate() {
+            if batch.len() > MAX_OUTPUT_NOTES_PER_BATCH {
+                return Err(BlockBodyError::TooManyOutputNotes {
+                    batch_index,
+                    note_count: batch.len(),
+                });
+            }
+            let mut note_indices = BTreeSet::new();
+            for (note_index, note) in batch {
+                if BlockNoteIndex::new(batch_index, *note_index).is_none() {
+                    return Err(BlockBodyError::InvalidOutputNoteIndex {
+                        batch_index,
+                        note_index: *note_index,
+                    });
+                }
+                if !note_indices.insert(*note_index) {
+                    return Err(BlockBodyError::DuplicateOutputNoteIndex {
+                        batch_index,
+                        note_index: *note_index,
+                    });
+                }
+                if !output_note_ids.insert(note.id()) {
+                    return Err(BlockBodyError::DuplicateOutputNote(note.id()));
+                }
+            }
+        }
+
+        let mut nullifiers = BTreeSet::new();
+        for nullifier in &created_nullifiers {
+            if !nullifiers.insert(*nullifier) {
+                return Err(BlockBodyError::DuplicateNullifier(*nullifier));
+            }
+        }
+
+        let mut transaction_ids = BTreeSet::new();
+        for transaction in transactions.as_slice() {
+            if !transaction_ids.insert(transaction.id()) {
+                return Err(BlockBodyError::DuplicateTransaction(transaction.id()));
+            }
+        }
+
+        Ok(Self::new_unchecked(
+            updated_accounts,
+            output_note_batches,
+            created_nullifiers,
+            transactions,
+        ))
+    }
 
     /// Creates a new [`BlockBody`] without performing any validation.
     ///
@@ -189,12 +281,12 @@ impl Serializable for BlockBody {
 
 impl Deserializable for BlockBody {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let block = Self {
-            updated_accounts: Vec::read_from(source)?,
-            output_note_batches: Vec::read_from(source)?,
-            created_nullifiers: Vec::read_from(source)?,
-            transactions: OrderedTransactionHeaders::read_from(source)?,
-        };
-        Ok(block)
+        Self::new(
+            Vec::read_from(source)?,
+            Vec::read_from(source)?,
+            Vec::read_from(source)?,
+            OrderedTransactionHeaders::read_from(source)?,
+        )
+        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
 }
