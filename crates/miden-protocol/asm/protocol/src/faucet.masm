@@ -3,10 +3,6 @@ use {Asset} from miden::protocol::types
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
-#! Note that this procedure only adds the asset to the input vault; it does not enforce a maximum
-#! issuance for fungible assets or uniqueness for non-fungible assets across transactions - those
-#! invariants must be enforced by the faucet's account component.
-#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE]
 #! Outputs: []
 #!
