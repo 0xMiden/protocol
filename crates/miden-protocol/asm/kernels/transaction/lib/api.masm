@@ -1992,7 +1992,7 @@ pub proc tx_exec_foreign_proc
     # part of the foreign account's code. This is NOT the same as the account procedure
     # authentication the kernel already does. Without this, the called procedure could dyncall into
     # a genuine procedure of the account and it would pass.
-    exec.account::assert_procedure_in_account drop
+    exec.account::assert_procedure_in_active_account drop
     # => [foreign_procedure_inputs(16)]
 
     # get the pointer to the foreign procedure root to perform the dyncall

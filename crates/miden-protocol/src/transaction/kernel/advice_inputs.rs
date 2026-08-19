@@ -145,7 +145,6 @@ impl TransactionAdviceInputs {
     ///     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
     ///     [0, 0, 0, 0]
     ///     NOTE_ROOT,
-    ///     kernel_version
     ///     [account_nonce, 0, account_id_suffix, account_id_prefix],
     ///     ACCOUNT_VAULT_ROOT,
     ///     ACCOUNT_STORAGE_COMMITMENT,
