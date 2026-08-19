@@ -10,6 +10,7 @@ use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::protocol::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_IS_NOT_NATIVE,
+    ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
     ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS,
     ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
@@ -1049,6 +1050,7 @@ async fn test_remove_asset_fails(
     #[values(
         "fungible_asset_not_found",
         "fungible_amount_exceeded",
+        "fungible_non_canonical_value",
         "non_fungible_wrong_value"
     )]
     scenario: &str,
@@ -1081,6 +1083,18 @@ async fn test_remove_asset_fails(
                 over_asset.to_id_word(),
                 over_asset.to_value_word(),
                 ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
+            )
+        },
+        "fungible_non_canonical_value" => {
+            // regression for audit finding L-03 (#3591): the amount limb matches the note's full
+            // amount, but a non-zero upper limb makes the value non-canonical. This used to dodge
+            // the full-removal equality check while the partial-removal path (which reads only the
+            // amount limb) computed an empty remainder, leaving a dangling slot with a non-empty
+            // ASSET_ID and an EMPTY_WORD value.
+            (
+                fungible_asset.to_id_word(),
+                Word::new([Felt::new(FUNGIBLE_AMOUNT)?, Felt::ONE, Felt::ZERO, Felt::ZERO]),
+                ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
             )
         },
         "non_fungible_wrong_value" => (
