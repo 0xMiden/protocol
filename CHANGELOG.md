@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and used the latter in the `OwnerConfig` and `FaucetPolicyConfig` ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
+- Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 
 ### Changes
 

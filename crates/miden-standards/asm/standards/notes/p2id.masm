@@ -14,6 +14,9 @@ const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transacti
 # CONSTANTS
 # =================================================================================================
 
+# The number of storage items of a P2ID note.
+const NUM_STORAGE_ITEMS = 2
+
 const STORAGE_PTR = 0
 const TARGET_ACCOUNT_ID_SUFFIX_PTR = STORAGE_PTR
 const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
@@ -42,11 +45,11 @@ const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 @note_script
 pub proc main
     # store the note storage to memory starting at address 0
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    # make sure the number of storage items is 2
-    eq.2 assert.err=ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # make sure the number of storage items is NUM_STORAGE_ITEMS
+    eq.NUM_STORAGE_ITEMS assert.err=ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
     # read the target account ID from the note storage

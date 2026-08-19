@@ -10,6 +10,9 @@ const PROOF_DATA_SIZE = 536
 const LEAF_DATA_SIZE = 32
 const OUTPUT_NOTE_SIZE = 8
 
+# The number of storage items of a CLAIM note, see the layout in the script's doc comment.
+const CLAIM_NOTE_NUM_STORAGE_ITEMS = 569
+
 const CLAIM_NOTE_STORAGE_PTR = 0
 const PROOF_DATA_START_PTR = CLAIM_NOTE_STORAGE_PTR
 const LEAF_DATA_START_PTR = 536
@@ -75,6 +78,7 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #! Panics if:
 #! - account does not expose claim procedure.
 #! - note attachment target account does not match the consuming account.
+#! - the note carries more than CLAIM_NOTE_NUM_STORAGE_ITEMS storage items.
 @note_script
 pub proc main
     dropw
@@ -86,7 +90,8 @@ pub proc main
     # => [pad(16)]
 
     # Load CLAIM note storage into memory, starting at address 0
-    push.CLAIM_NOTE_STORAGE_PTR exec.active_note::get_storage drop
+    push.CLAIM_NOTE_NUM_STORAGE_ITEMS push.CLAIM_NOTE_STORAGE_PTR
+    exec.active_note::get_bounded_storage drop
     # => [pad(16)]
 
     exec.write_claim_data_into_advice_map_by_key

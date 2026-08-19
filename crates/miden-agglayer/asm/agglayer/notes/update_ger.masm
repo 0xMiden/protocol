@@ -51,7 +51,8 @@ pub proc main
     # => [pad(16)]
 
     # Load note storage to memory
-    push.STORAGE_PTR_GER_LOWER exec.active_note::get_storage
+    push.UPDATE_GER_NOTE_NUM_STORAGE_ITEMS push.STORAGE_PTR_GER_LOWER
+    exec.active_note::get_bounded_storage
     # => [num_storage_items, pad(16)]
 
     # Validate the number of storage items
