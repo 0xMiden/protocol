@@ -878,10 +878,6 @@ end
 #! 1. Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
 #! 2. Assert the two least significant elements of the digest are equal to the native account ID.
 #!
-#! This procedure runs in the prologue, where the active account is always the native account.
-#! It therefore reads the code and storage commitments through the active accessors, which resolve
-#! to the native account's state.
-#!
 #! Inputs:
 #!   Operand stack: []
 #!   Advice map: { ACCOUNT_ID_KEY: [SEED] }
