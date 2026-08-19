@@ -1,0 +1,101 @@
+syntax = "proto3";
+package account;
+
+import "primitives.proto";
+
+message AccountId {
+  // Exactly 15 bytes in the protocol's canonical AccountId encoding.
+  bytes id = 1;
+}
+
+message AccountStorageHeader {
+  message StorageSlot {
+    string slot_name = 1;
+    uint32 slot_type = 2;
+    primitives.Digest commitment = 3;
+  }
+
+  repeated StorageSlot slots = 1;
+}
+
+message AccountHeader {
+  AccountId account_id = 1;
+  primitives.Digest vault_root = 2;
+  primitives.Digest storage_commitment = 3;
+  primitives.Digest code_commitment = 4;
+  uint64 nonce = 5;
+}
+
+message AccountWitness {
+  AccountId account_id = 1;
+  AccountId witness_id = 2;
+  primitives.Digest commitment = 3;
+  primitives.SparseMerklePath path = 4;
+}
+
+message AccountCode {
+  // Canonically serialized MastForest.
+  bytes mast = 1;
+  repeated primitives.Word procedure_roots = 2;
+}
+
+enum StoragePatchOperation {
+  STORAGE_PATCH_OPERATION_UNSPECIFIED = 0;
+  STORAGE_PATCH_OPERATION_CREATE = 1;
+  STORAGE_PATCH_OPERATION_UPDATE = 2;
+  STORAGE_PATCH_OPERATION_REMOVE = 3;
+}
+
+message StorageValuePatch {
+  StoragePatchOperation operation = 1;
+  primitives.Word value = 2;
+}
+
+message StorageMapEntry {
+  primitives.Word key = 1;
+  primitives.Word value = 2;
+}
+
+message StorageMapPatch {
+  StoragePatchOperation operation = 1;
+  repeated StorageMapEntry entries = 2;
+}
+
+message StorageSlotPatch {
+  string slot_name = 1;
+  oneof patch {
+    StorageValuePatch value = 2;
+    StorageMapPatch map = 3;
+  }
+}
+
+message AccountStoragePatch {
+  repeated StorageSlotPatch slots = 1;
+}
+
+message AccountVaultPatchEntry {
+  primitives.Word asset_id = 1;
+  // An empty word removes the asset; any other value must form a valid asset with asset_id.
+  primitives.Word value = 2;
+}
+
+message AccountVaultPatch {
+  repeated AccountVaultPatchEntry entries = 1;
+}
+
+message AccountPatch {
+  AccountId account_id = 1;
+  AccountStoragePatch storage = 2;
+  AccountVaultPatch vault = 3;
+  optional AccountCode code = 4;
+  optional primitives.Felt final_nonce = 5;
+}
+
+message PrivateAccountUpdate {}
+
+message AccountUpdateDetails {
+  oneof update {
+    PrivateAccountUpdate private = 1;
+    AccountPatch public = 2;
+  }
+}

@@ -12,7 +12,7 @@ export RUSTFLAGS="-D warnings"
 
 # Run cargo-hack with comprehensive feature checking
 # Focus on library packages that have significant feature matrices
-for package in miden-protocol miden-standards miden-agglayer miden-tx miden-testing miden-block-prover miden-tx-batch; do
+for package in miden-protocol miden-objects miden-standards miden-agglayer miden-tx miden-testing miden-block-prover miden-tx-batch; do
     echo "Checking package: $package"
     cargo hack check -p "$package" --each-feature --all-targets
 done

@@ -1,0 +1,18 @@
+syntax = "proto3";
+package blockchain;
+
+import "block_header.proto";
+import "primitives.proto";
+
+message TrackedMmrLeaf {
+  fixed64 position = 1;
+  primitives.Word leaf = 2;
+  repeated primitives.Word path = 3;
+}
+
+message PartialBlockchain {
+  fixed64 forest = 1;
+  repeated primitives.Word peaks = 2;
+  repeated TrackedMmrLeaf tracked_leaves = 3;
+  repeated BlockHeader block_headers = 4;
+}

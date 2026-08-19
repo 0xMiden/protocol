@@ -1,0 +1,71 @@
+syntax = "proto3";
+package note;
+
+import "account.proto";
+import "primitives.proto";
+
+enum NoteType {
+  NOTE_TYPE_UNSPECIFIED = 0;
+  NOTE_TYPE_PUBLIC = 1;
+  NOTE_TYPE_PRIVATE = 2;
+}
+
+message NoteId {
+  primitives.Digest id = 1;
+}
+
+message NoteMetadata {
+  account.AccountId sender = 1;
+  NoteType note_type = 2;
+  fixed32 tag = 3;
+  repeated fixed32 attachment_schemes = 4;
+  primitives.Digest attachments_commitment = 5;
+}
+
+message NoteAttachment {
+  uint32 scheme = 1;
+  repeated primitives.Word words = 2;
+}
+
+message NoteAttachments {
+  repeated NoteAttachment attachments = 1;
+}
+
+message NoteStorage {
+  repeated primitives.Felt items = 1;
+}
+
+message NoteRecipient {
+  primitives.Word serial_num = 1;
+  NoteScript script = 2;
+  NoteStorage storage = 3;
+}
+
+message NoteDetails {
+  repeated primitives.Asset assets = 1;
+  NoteRecipient recipient = 2;
+}
+
+message Note {
+  NoteMetadata metadata = 1;
+  optional NoteDetails note_details = 2;
+  NoteAttachments note_attachments = 3;
+}
+
+message NoteInclusionInBlockProof {
+  NoteId note_id = 1;
+  fixed32 block_num = 2;
+  uint32 note_index_in_block = 3;
+  primitives.SparseMerklePath inclusion_path = 4;
+}
+
+message NoteHeader {
+  primitives.Digest details_commitment = 1;
+  NoteMetadata metadata = 2;
+}
+
+message NoteScript {
+  uint32 entrypoint = 1;
+  // Canonically serialized MastForest.
+  bytes mast = 2;
+}

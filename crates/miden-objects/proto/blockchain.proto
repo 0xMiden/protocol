@@ -1,0 +1,50 @@
+syntax = "proto3";
+package blockchain;
+
+import "account.proto";
+import "block_header.proto";
+import "note.proto";
+import "primitives.proto";
+import "transaction.proto";
+
+message BlockNumber {
+  fixed32 block_num = 1;
+}
+
+message BlockSignature {
+  bytes signature = 1;
+}
+
+message BlockAccountUpdate {
+  account.AccountId account_id = 1;
+  primitives.Word final_state_commitment = 2;
+  account.AccountUpdateDetails details = 3;
+}
+
+message IndexedOutputNote {
+  uint32 note_index_in_batch = 1;
+  transaction.OutputNote note = 2;
+}
+
+message OutputNoteBatch {
+  repeated IndexedOutputNote notes = 1;
+}
+
+message BlockBody {
+  BlockBodyContents contents = 1;
+}
+
+message BlockBodyContents {
+  repeated BlockAccountUpdate updated_accounts = 1;
+  repeated OutputNoteBatch output_note_batches = 2;
+  repeated primitives.Word created_nullifiers = 3;
+  repeated transaction.TransactionHeader transactions = 4;
+}
+
+message BlockProof {}
+
+message SignedBlock {
+  BlockHeader header = 1;
+  BlockBody body = 2;
+  repeated BlockSignature signatures = 3;
+}

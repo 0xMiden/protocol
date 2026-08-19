@@ -4,6 +4,7 @@ members = [
   "bin/bench-transaction",
   "crates/miden-agglayer",
   "crates/miden-block-prover",
+  "crates/miden-objects",
   "crates/miden-protocol",
   "crates/miden-protocol-build-utils",
   "crates/miden-standards",
@@ -39,6 +40,7 @@ lto           = true
 # Workspace crates
 miden-agglayer             = { default-features = false, path = "crates/miden-agglayer", version = "0.17" }
 miden-block-prover         = { default-features = false, path = "crates/miden-block-prover", version = "0.17" }
+miden-objects              = { default-features = false, path = "crates/miden-objects", version = "0.17" }
 miden-protocol             = { default-features = false, path = "crates/miden-protocol", version = "0.17" }
 miden-protocol-build-utils = { default-features = false, path = "crates/miden-protocol-build-utils", version = "0.17" }
 miden-standards            = { default-features = false, path = "crates/miden-standards", version = "0.17" }
@@ -69,6 +71,10 @@ bon             = { default-features = false, version = "3" }
 criterion       = { default-features = false, version = "0.5" }
 fs-err          = { default-features = false, version = "3" }
 primitive-types = { default-features = false, version = "0.14" }
+prost           = { default-features = false, version = "0.14" }
+prost-build     = { default-features = false, version = "0.14" }
+prost-types     = { default-features = false, version = "0.14" }
+protox          = { default-features = false, version = "0.9" }
 rand            = { default-features = false, version = "0.10" }
 rand_chacha     = { default-features = false, version = "0.10" }
 regex           = { version = "1.11" }

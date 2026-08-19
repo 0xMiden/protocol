@@ -1,0 +1,60 @@
+syntax = "proto3";
+package primitives;
+
+message Felt {
+  // Exactly eight bytes containing a canonically serialized field element.
+  bytes encoded = 1;
+}
+
+message Word {
+  // Exactly 32 bytes containing four canonically serialized field elements.
+  bytes encoded = 1;
+}
+
+message Digest {
+  fixed64 d0 = 1;
+  fixed64 d1 = 2;
+  fixed64 d2 = 3;
+  fixed64 d3 = 4;
+}
+
+message Asset {
+  Digest key = 1;
+  Digest value = 2;
+}
+
+message MerklePath {
+  repeated Digest siblings = 1;
+}
+
+message SparseMerklePath {
+  fixed64 empty_nodes_mask = 1;
+  repeated Digest siblings = 2;
+}
+
+message MmrDelta {
+  uint64 forest = 1;
+  repeated Digest data = 2;
+}
+
+message SmtLeafEntry {
+  Digest key = 1;
+  Digest value = 2;
+}
+
+message SmtLeafEntryList {
+  repeated SmtLeafEntry entries = 1;
+}
+
+message SmtLeaf {
+  oneof leaf {
+    uint64 empty_leaf_index = 1;
+    SmtLeafEntry single = 2;
+    SmtLeafEntryList multiple = 3;
+  }
+}
+
+message SmtOpening {
+  SparseMerklePath path = 1;
+  SmtLeaf leaf = 2;
+}
