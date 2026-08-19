@@ -14,6 +14,7 @@ use miden_protocol::account::{
     AccountCodeInterface,
     AccountComponent,
     AccountComponentName,
+    AccountId,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
@@ -21,7 +22,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, AssetId, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -37,7 +38,7 @@ use super::{
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
-use crate::account::fees::FeePolicyManager;
+use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
@@ -658,5 +659,45 @@ pub fn create_network_fungible_faucet(
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
+        .map_err(FungibleFaucetError::AccountError)
+}
+
+/// Creates the native fungible faucet for genesis.
+///
+/// The account ID is derived by building a regular network faucet whose fee asset is temporarily
+/// issued by `operator_id`. The fee-asset slot is then set to the asset issued by the faucet
+/// itself. The returned account has nonce `1` and no seed.
+///
+/// The faucet is owned by `operator_id` through [`AccessControl::Ownable2Step`].
+///
+/// # Warning
+///
+/// This account can only be added at genesis. It cannot be deployed in a transaction.
+pub fn create_native_fungible_faucet_for_genesis(
+    init_seed: [u8; 32],
+    faucet: FungibleFaucet,
+    operator_id: AccountId,
+    token_policy_manager: TokenPolicyManager,
+    fee_policy: BasicConstantFeePolicy,
+) -> Result<Account, FungibleFaucetError> {
+    let fee_policy_manager = FeePolicyManager::builder()
+        .fee_faucet_id(operator_id)
+        .active_fee_policy(fee_policy.into())
+        .build();
+    let account = create_network_fungible_faucet(
+        init_seed,
+        faucet,
+        AccessControl::Ownable2Step { owner: operator_id },
+        token_policy_manager,
+        fee_policy_manager,
+    )?;
+
+    let fee_asset_id = AssetId::new_fungible(account.id());
+    let (id, vault, mut storage, code, _nonce, _seed) = account.into_parts();
+    storage
+        .set_item(FeePolicyManager::fee_asset_id_slot(), fee_asset_id.to_word())
+        .map_err(FungibleFaucetError::AccountError)?;
+
+    Account::new(id, vault, storage, code, Felt::ONE, None)
         .map_err(FungibleFaucetError::AccountError)
 }

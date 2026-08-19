@@ -353,7 +353,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(fungible_asset)],
+        &[Asset::from(fungible_asset)],
         NoteType::Public,
     )?;
 
@@ -556,7 +556,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     // Create a P2ID note with a callbacks-enabled fungible asset.
     // Consuming this note adds the asset to the wallet's vault.
     let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
-    let asset = Asset::Fungible(fungible_asset);
+    let asset = Asset::from(fungible_asset);
     let note =
         builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
 

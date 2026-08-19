@@ -582,12 +582,12 @@ mod tests {
     }
 
     fn fungible_asset() -> Asset {
-        Asset::Fungible(FungibleAsset::new(fungible_faucet(), 1000).unwrap())
+        Asset::from(FungibleAsset::new(fungible_faucet(), 1000).unwrap())
     }
 
     fn non_fungible_asset() -> Asset {
         let details = NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]);
-        Asset::NonFungible(NonFungibleAsset::new(&details))
+        Asset::from(NonFungibleAsset::new(&details))
     }
 
     fn dummy_target_id() -> AccountId {
@@ -768,7 +768,7 @@ mod tests {
         non_fungible_faucet_id_bytes[0] = 0xab;
         non_fungible_faucet_id_bytes[1] = 0xec;
 
-        let offered_asset = Asset::Fungible(
+        let offered_asset = Asset::from(
             FungibleAsset::new(
                 AccountId::dummy(
                     fungible_faucet_id_bytes,
@@ -781,16 +781,15 @@ mod tests {
             .unwrap(),
         );
 
-        let requested_asset =
-            Asset::NonFungible(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
-                AccountId::dummy(
-                    non_fungible_faucet_id_bytes,
-                    AccountIdVersion::Version1,
-                    AccountType::Public,
-                    AssetCallbackFlag::Disabled,
-                ),
-                vec![0xaa, 0xbb, 0xcc, 0xdd],
-            )));
+        let requested_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+            AccountId::dummy(
+                non_fungible_faucet_id_bytes,
+                AccountIdVersion::Version1,
+                AccountType::Public,
+                AssetCallbackFlag::Disabled,
+            ),
+            vec![0xaa, 0xbb, 0xcc, 0xdd],
+        )));
 
         // The fungible ID starts with 0xcdb1.
         // The non fungible ID starts with 0xabec.

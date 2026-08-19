@@ -47,19 +47,19 @@ miden-tx                   = { default-features = false, path = "crates/miden-tx
 miden-tx-batch             = { default-features = false, path = "crates/miden-tx-batch", version = "0.17" }
 
 # Miden dependencies
-miden-assembly         = { default-features = false, version = "0.29" }
-miden-assembly-syntax  = { default-features = false, version = "0.29" }
-miden-core             = { default-features = false, version = "0.29" }
-miden-core-lib         = { default-features = false, version = "0.29" }
-miden-crypto           = { default-features = false, version = "0.29" }
-miden-crypto-derive    = { default-features = false, version = "0.29" }
-miden-mast-package     = { default-features = false, version = "0.29" }
-miden-package-registry = { default-features = false, version = "0.29" }
-miden-processor        = { default-features = false, version = "0.29" }
-miden-project          = { default-features = false, version = "0.29" }
-miden-prover           = { default-features = false, version = "0.29" }
-miden-utils-sync       = { default-features = false, version = "0.29" }
-miden-verifier         = { default-features = false, version = "0.29" }
+miden-assembly         = { default-features = false, version = "0.29.1" }
+miden-assembly-syntax  = { default-features = false, version = "0.29.1" }
+miden-core             = { default-features = false, version = "0.29.1" }
+miden-core-lib         = { default-features = false, version = "0.29.1" }
+miden-crypto           = { default-features = false, version = "0.29.1" }
+miden-crypto-derive    = { default-features = false, version = "0.29.1" }
+miden-mast-package     = { default-features = false, version = "0.29.1" }
+miden-package-registry = { default-features = false, version = "0.29.1" }
+miden-processor        = { default-features = false, version = "0.29.1" }
+miden-project          = { default-features = false, version = "0.29.1" }
+miden-prover           = { default-features = false, version = "0.29.1" }
+miden-utils-sync       = { default-features = false, version = "0.29.1" }
+miden-verifier         = { default-features = false, version = "0.29.1" }
 
 # External dependencies
 alloy-sol-types = { default-features = false, version = "1.5" }

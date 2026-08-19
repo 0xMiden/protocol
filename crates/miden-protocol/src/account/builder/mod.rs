@@ -53,10 +53,10 @@ use crate::{Felt, Word};
 ///
 /// **Account Procedure Order**
 ///
-/// Note that the procedure in each components code are merged together in the same order as
-/// `with_component` is called, except for the auth component. The auth procedure is always moved to
-/// the first position, since the tx kernel assume procedure index 0 is the auth procedure within an
-/// [`AccountCode`].
+/// Note that the auth procedure is always moved to the first position, since the tx kernel assumes
+/// procedure index 0 is the auth procedure within an [`AccountCode`]. The procedures of all other
+/// components are merged and sorted, so the order in which `with_component` is called does not
+/// affect the resulting account code commitment.
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
@@ -118,7 +118,8 @@ impl AccountBuilder {
     /// All components will be merged to form the final code and storage of the built account.
     /// Exactly one of the added components must be an authentication component (see
     /// [`AccountComponent::is_auth_component`]); it is identified and moved to the front of the
-    /// procedure list automatically when [`Self::build`] is called.
+    /// procedure list automatically when [`Self::build`] is called, while all other procedures are
+    /// sorted.
     ///
     /// For composite configurations that expand into multiple components (such as
     /// `AccessControl` or `TokenPolicyManager`), use [`Self::with_components`].

@@ -227,6 +227,7 @@ end
 #!
 #! Panics if:
 #! - the provided foreign account ID is invalid.
+#! - FOREIGN_PROC_ROOT is not part of the foreign account's code.
 #!
 #! Invocation: exec
 @locals(6) # foreign proc root (4) + foreign account ID (2)

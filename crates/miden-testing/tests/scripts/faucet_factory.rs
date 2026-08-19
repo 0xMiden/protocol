@@ -7,7 +7,7 @@ use alloc::vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{Account, AccountId, AccountType, AssetCallbackFlag};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{Approver, GuardianConfig};
@@ -90,8 +90,7 @@ fn build_receive_asset_tx(
     recipient: AccountId,
 ) -> anyhow::Result<MockTransaction> {
     let asset = FungibleAsset::new(faucet_id, 100)?;
-    let note =
-        builder.add_p2id_note(faucet_id, recipient, &[Asset::Fungible(asset)], NoteType::Public)?;
+    let note = builder.add_p2id_note(faucet_id, recipient, &[asset.into()], NoteType::Public)?;
 
     let mock_chain = builder.build()?;
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet_id)?;
