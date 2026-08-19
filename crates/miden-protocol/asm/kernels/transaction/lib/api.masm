@@ -946,10 +946,6 @@ end
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
-#! - For fungible faucets:
-#!   - if the total issuance after minting is greater than the maximum amount allowed.
-#! - For non-fungible faucets:
-#!   - if the non-fungible asset being minted already exists.
 #!
 #! Invocation: dynexec
 pub proc faucet_mint_asset
