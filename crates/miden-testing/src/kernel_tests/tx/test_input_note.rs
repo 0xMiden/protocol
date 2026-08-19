@@ -1087,10 +1087,7 @@ async fn test_remove_asset_fails(
         },
         "fungible_non_canonical_value" => {
             // regression for audit finding L-03 (#3591): the amount limb matches the note's full
-            // amount, but a non-zero upper limb makes the value non-canonical. This used to dodge
-            // the full-removal equality check while the partial-removal path (which reads only the
-            // amount limb) computed an empty remainder, leaving a dangling slot with a non-empty
-            // ASSET_ID and an EMPTY_WORD value.
+            // amount, but a non-zero upper limb makes the value non-canonical.
             (
                 fungible_asset.to_id_word(),
                 Word::new([Felt::new(FUNGIBLE_AMOUNT)?, Felt::ONE, Felt::ZERO, Felt::ZERO]),
