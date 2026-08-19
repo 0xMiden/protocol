@@ -9,14 +9,19 @@ use crate::utils::serde::{
 /// Represents a proof of a block in the chain.
 ///
 /// NOTE: Block proving is not yet implemented. This is a placeholder struct.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct BlockProof {}
 
 impl BlockProof {
+    /// Creates the empty placeholder proof used until block proving is implemented.
+    pub const fn new() -> Self {
+        Self {}
+    }
+
     /// Creates a dummy `BlockProof` for testing purposes only.
     #[cfg(any(test, feature = "testing"))]
     pub fn new_dummy() -> Self {
-        Self {}
+        Self::new()
     }
 }
 
@@ -32,7 +37,7 @@ impl Serializable for BlockProof {
 impl Deserializable for BlockProof {
     fn read_from<R: ByteReader>(_source: &mut R) -> Result<Self, DeserializationError> {
         // TODO: Implement deserialization for BlockProof when fields exist.
-        let block = Self {};
+        let block = Self::new();
 
         Ok(block)
     }
