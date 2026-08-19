@@ -1718,8 +1718,7 @@ end
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 proc find_storage_slot
-    # construct the end pointer of the storage slots section in which we will search, moving the
-    # slot count into place rather than duplicating and later dropping it
+    # construct the end pointer of the storage slots section in which we will search
     swap mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH dup.1 add
     # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_suffix, slot_id_prefix]
 
