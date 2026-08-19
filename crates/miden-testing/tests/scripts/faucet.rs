@@ -14,7 +14,7 @@ use miden_protocol::account::{
     AssetCallbackFlag,
 };
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -34,7 +34,7 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::auth::SponsorshipPolicy;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
@@ -52,6 +52,7 @@ use miden_standards::errors::standards::{
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
+    ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
@@ -694,6 +695,59 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
         .await;
 
     assert_transaction_executor_error!(tx, ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY);
+    Ok(())
+}
+
+/// Tests that a non-fungible asset issued by the faucet account itself cannot be burned through
+/// the fungible faucet's `receive_and_burn`.
+#[tokio::test]
+async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
+    // issue the maximum representable supply so the burn below is not stopped by the
+    // `amount <= token_supply` check.
+    let token_supply = AssetAmount::MAX;
+
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        token_supply.as_u64(),
+        Some(token_supply.as_u64()),
+    )?;
+
+    const SALT: u32 = 2;
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"not a fungible asset",
+        Word::from([SALT, 0, 0, 0]),
+    );
+    let forged_amount = AssetAmount::new(commitment[0].as_canonical_u64())
+        .expect("salt is chosen so that the commitment's first element is a valid amount");
+
+    assert!(forged_amount <= token_supply);
+
+    let asset = Asset::from(NonFungibleAsset::from_parts(faucet.id(), commitment));
+
+    let note = Note::from(
+        BurnNote::builder()
+            .sender(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?)
+            .asset(asset)
+            .serial_number(Word::from([1, 2, 3, 4u32]))
+            .build()?,
+    );
+
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE);
     Ok(())
 }
 

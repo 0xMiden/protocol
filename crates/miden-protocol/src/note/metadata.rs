@@ -147,7 +147,7 @@ impl Deserializable for PartialNoteMetadata {
 /// - 3rd felt: Max value is `0xFFFEFFFE_FFFEFFFE` (schemes capped at 65534), which is less than
 ///   `p`.
 ///
-/// The version is hardcoded to 0 and is reserved for forward compatibility.
+/// The version is hardcoded to 1 and is reserved for forward compatibility.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct NoteMetadata {
     partial_metadata: PartialNoteMetadata,
