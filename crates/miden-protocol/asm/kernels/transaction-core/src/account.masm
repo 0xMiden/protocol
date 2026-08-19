@@ -1711,9 +1711,6 @@ end
 #! Finds the slot identified by the key [_, _, slot_id_suffix, slot_id_prefix] and returns a flag
 #! indicating whether the slot was found and the pointer to that slot.
 #!
-#! The caller provides both the section base pointer and the number of slots it contains, so that
-#! the section being searched and its extent always belong to the same account.
-#!
 #! Inputs:  [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 #! Outputs: [is_found, slot_ptr]
 #!
