@@ -168,7 +168,7 @@ async fn allow_receive_asset_succeeds_when_account_pre_allowed() -> anyhow::Resu
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -199,7 +199,7 @@ async fn allow_receive_asset_fails_when_recipient_not_allowed() -> anyhow::Resul
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -230,7 +230,7 @@ async fn allow_then_receive_succeeds() -> anyhow::Result<()> {
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -289,8 +289,8 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
         recipient = recipient,
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
-        asset_value = Asset::Fungible(asset).to_value_word(),
-        asset_id = Asset::Fungible(asset).to_id_word(),
+        asset_value = Asset::from(asset).to_value_word(),
+        asset_id = Asset::from(asset).to_id_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
@@ -326,7 +326,7 @@ async fn allow_then_disallow_blocks_subsequent_receive() -> anyhow::Result<()> {
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(fungible_asset)],
+        &[Asset::from(fungible_asset)],
         NoteType::Public,
     )?;
 
@@ -408,7 +408,7 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         other_account.id(),
-        &[Asset::Fungible(fungible_asset)],
+        &[Asset::from(fungible_asset)],
         NoteType::Public,
     )?;
 
@@ -514,7 +514,7 @@ async fn transfer_of_foreign_asset_by_a_faucet_is_not_exempt() -> anyhow::Result
     let p2id_note = builder.add_p2id_note(
         issuer.id(),
         other_faucet.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -605,13 +605,13 @@ async fn rbac_allowlister_can_allow_and_disallow() -> anyhow::Result<()> {
     let p2id_after_allow = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
     let p2id_after_disallow = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
