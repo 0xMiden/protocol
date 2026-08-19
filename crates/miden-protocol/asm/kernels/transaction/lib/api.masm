@@ -221,6 +221,9 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_upgrade
+    # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
+    # account as validated in account::{validate_storage, validate_procedures}.
+
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
@@ -943,10 +946,6 @@ end
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
-#! - For fungible faucets:
-#!   - if the total issuance after minting is greater than the maximum amount allowed.
-#! - For non-fungible faucets:
-#!   - if the non-fungible asset being minted already exists.
 #!
 #! Invocation: dynexec
 pub proc faucet_mint_asset
@@ -1990,7 +1989,7 @@ pub proc tx_exec_foreign_proc
     # part of the foreign account's code. This is NOT the same as the account procedure
     # authentication the kernel already does. Without this, the called procedure could dyncall into
     # a genuine procedure of the account and it would pass.
-    exec.account::assert_procedure_in_account drop
+    exec.account::assert_procedure_in_active_account drop
     # => [foreign_procedure_inputs(16)]
 
     # get the pointer to the foreign procedure root to perform the dyncall

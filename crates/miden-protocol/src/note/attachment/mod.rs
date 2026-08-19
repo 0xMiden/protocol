@@ -3,6 +3,7 @@ mod tests;
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use core::fmt::Display;
 
 use crate::crypto::SequentialCommit;
 use crate::errors::NoteError;
@@ -348,9 +349,9 @@ impl Default for NoteAttachmentScheme {
     }
 }
 
-impl core::fmt::Display for NoteAttachmentScheme {
+impl Display for NoteAttachmentScheme {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!("{}", self.0))
+        write!(f, "{}", self.0)
     }
 }
 

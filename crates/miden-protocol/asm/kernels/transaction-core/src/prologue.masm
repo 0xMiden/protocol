@@ -292,6 +292,11 @@ end
 #! - assert that the account vault is empty.
 #! - assert that the account nonce is set to 0.
 #! - read the account seed from the advice provider and assert it satisfies seed requirements.
+#! - assert that the storage slots and the account procedures are sorted and unique.
+#!
+#! Validating storage and procedures for new accounts is sufficient because the storage and code
+#! commitments of an existing account are bound to its committed state, which was produced by the
+#! transaction that created the account and therefore already passed this validation.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -325,6 +330,11 @@ proc validate_new_account
     # Assert the storage slots are sorted and unique.
     # ---------------------------------------------------------------------------------------------
     exec.account::validate_storage
+    # => []
+
+    # Assert the account procedures are sorted and unique.
+    # ---------------------------------------------------------------------------------------------
+    exec.account::validate_procedures
     # => []
 end
 
@@ -1127,8 +1137,7 @@ end
 #!   Advice map: {
 #!      PARTIAL_BLOCKCHAIN_COMMITMENT: [MMR_PEAKS],
 #!      INPUT_NOTES_COMMITMENT: [NOTE_DATA],
-#!      TX_KERNEL_COMMITMENT: [KERNEL_COMMITMENTS],
-#!      KERNEL_COMMITMENT: [KERNEL_PROCEDURE_ROOTS],
+#!      TX_KERNEL_COMMITMENT: [KERNEL_PROCEDURE_ROOTS],
 #!      ACCOUNT_CODE_COMMITMENT: [ACCOUNT_PROCEDURE_DATA],
 #!      ACCOUNT_STORAGE_COMMITMENT: [ACCOUNT_STORAGE_SLOT_DATA],
 #!   }
@@ -1143,7 +1152,7 @@ end
 #! - INITIAL_ACCOUNT_COMMITMENT is the account state prior to the transaction, EMPTY_WORD for new
 #!   accounts.
 #! - INPUT_NOTES_COMMITMENT, see `transaction::api::get_input_notes_commitment`.
-#! - TX_KERNEL_COMMITMENT is the sequential hash from all kernel commitments.
+#! - TX_KERNEL_COMMITMENT is the sequential hash of the kernel procedures.
 #! - PREV_BLOCK_COMMITMENT is the commitment to the previous block.
 #! - PARTIAL_BLOCKCHAIN_COMMITMENT is the sequential hash of the reference MMR.
 #! - ACCOUNT_ROOT is the root of the tree with latest account states for all accounts.

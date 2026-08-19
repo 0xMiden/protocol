@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{AccountVaultDelta, AccountVaultPatch, AssetDelta};
@@ -23,8 +24,8 @@ use crate::host::tx_event::AssetPatch;
 /// unchanged.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct VaultUpdateTracker {
-    /// The latest [`AssetDelta`] reported by the kernel for each touched asset ID.
-    delta: AccountVaultDelta,
+    /// The [`AssetDelta`]s reported by the kernel, one per touched asset ID.
+    asset_deltas: Vec<AssetDelta>,
     /// For each touched asset ID, the `(initial, final)` absolute values. The initial value is
     /// recorded only on the very first observation and never overwritten; the final value is
     /// updated on every observation.
@@ -42,21 +43,22 @@ impl VaultUpdateTracker {
         Ok(())
     }
 
-    /// Inserts an asset delta, overwriting the previous delta of the same asset.
-    ///
-    /// Returns the overwritten delta, if the asset was already present.
-    pub fn update_delta(&mut self, delta: AssetDelta) -> Option<AssetDelta> {
-        self.delta.insert(delta)
+    /// Records an asset delta reported by the kernel.
+    pub fn add_delta(&mut self, delta: AssetDelta) {
+        self.asset_deltas.push(delta);
     }
 
     /// Clears the accumulating vault delta.
     pub fn reset_delta(&mut self) {
-        self.delta = AccountVaultDelta::default();
+        self.asset_deltas.clear();
     }
 
     /// Consumes self and returns the vault delta.
     pub fn into_delta(self) -> AccountVaultDelta {
-        self.delta
+        // The kernel uses a map internally so it should never emit more than one delta per asset
+        // ID. The kernel also enforces the maximum number of assets per delta operation.
+        AccountVaultDelta::new(self.asset_deltas)
+            .expect("tx kernel should emit a valid vault delta")
     }
 
     /// Consumes self and returns the normalized vault patch.
@@ -75,6 +77,7 @@ impl VaultUpdateTracker {
             })
             .collect();
 
-        AccountVaultPatch::new(normalized).expect("tx kernel should only emit valid assets")
+        AccountVaultPatch::new(normalized)
+            .expect("vault update events should only be tracked for valid assets")
     }
 }

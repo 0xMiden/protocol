@@ -54,7 +54,8 @@ static NETWORK_ACCOUNT_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// The action is encoded into the note's storage (see [`NoteStorage`] conversion below). Because
 /// the storage is fixed at note creation and bound into the note commitment, the authorized party
 /// is the note sender: the consuming account's `AuthNetworkAccount` procedures authorize the sender
-/// through the account-wide `Authority` component.
+/// through the account-wide [`Authority`](crate::account::access::Authority) component, which the
+/// account must install in an owner- or role-controlled mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkAccountConfig {
     /// Adds `script_root` to the note script allowlist.
@@ -134,7 +135,9 @@ impl From<NetworkAccountConfig> for NoteStorage {
 /// A single note script dispatches on a selector in the note's storage to one of the
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component's allowlist or
 /// fee-policy procedures. Authorization is enforced by those procedures through the account-wide
-/// `Authority` component against the note sender.
+/// [`Authority`](crate::account::access::Authority) component, which the account must install in
+/// [`OwnerControlled`](crate::account::access::Authority::OwnerControlled) or
+/// [`RbacControlled`](crate::account::access::Authority::RbacControlled) mode.
 ///
 /// For the consuming network account to accept this note, its own script root must be in the
 /// account's note script allowlist. Every
@@ -218,7 +221,7 @@ impl NetworkAccountConfigNote {
     }
 
     /// Returns the account ID of the managed network account (the account the note is tagged for).
-    pub fn account(&self) -> AccountId {
+    pub fn target(&self) -> AccountId {
         self.target
     }
 
@@ -346,7 +349,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(note.sender(), sender);
-        assert_eq!(note.account(), account);
+        assert_eq!(note.target(), account);
 
         let note = Note::from(note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);

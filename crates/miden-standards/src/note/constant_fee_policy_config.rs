@@ -52,8 +52,9 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 /// `[NOTE_SCRIPT_ROOT, FEE_ASSET_ID, FEE_ASSET_VALUE]` (see the [`Note`] conversion below). Because
 /// the storage is fixed at note creation and bound into the note commitment, the authorized party
 /// is the note sender: the consuming account's `set_note_fee` procedure authorizes the sender
-/// through the account-wide [`Authority`](crate::account::access::Authority) component. The fee
-/// asset's ID must match the account's configured fee asset ID.
+/// through the account-wide [`Authority`](crate::account::access::Authority) component, which the
+/// requirements below mandate be owner- or role-controlled. The fee asset's ID must match the
+/// account's configured fee asset ID.
 ///
 /// The note is bound to the target `account` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts the
@@ -165,7 +166,7 @@ impl ConstantFeePolicyConfigNote {
 
     /// Returns the account ID of the managed account: the account the note is tagged for and bound
     /// to via its `NetworkAccountTarget` attachment (only this account can consume the note).
-    pub fn account(&self) -> AccountId {
+    pub fn target(&self) -> AccountId {
         self.target
     }
 
@@ -312,7 +313,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(note.sender(), sender);
-        assert_eq!(note.account(), account);
+        assert_eq!(note.target(), account);
 
         let note = Note::from(note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);

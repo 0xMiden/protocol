@@ -968,8 +968,8 @@ async fn test_get_asset_from_active_and_input_note() -> anyhow::Result<()> {
 
     let faucet_id_0 = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let faucet_id_1 = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?;
-    let asset_0 = Asset::Fungible(FungibleAsset::new(faucet_id_0, 100)?);
-    let asset_1 = Asset::Fungible(FungibleAsset::new(faucet_id_1, 50)?);
+    let asset_0 = Asset::from(FungibleAsset::new(faucet_id_0, 100)?);
+    let asset_1 = Asset::from(FungibleAsset::new(faucet_id_1, 50)?);
 
     // derive the asset order the note will store them in, so the expected asset per index is known
     let ordered_assets: Vec<Asset> =
@@ -1059,16 +1059,17 @@ async fn test_remove_asset_fails(
     let fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let non_fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1.try_into()?;
 
-    let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
-    ));
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
+    let non_fungible_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        non_fungible_faucet_id,
+        vec![1, 2, 3],
+    )));
 
     let (asset_id, asset_value, expected_err) = match scenario {
         "fungible_asset_not_found" => {
             // an asset from a faucet whose assets are not in the note
             let other_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?;
-            let other_asset = Asset::Fungible(FungibleAsset::new(other_faucet_id, 10)?);
+            let other_asset = Asset::from(FungibleAsset::new(other_faucet_id, 10)?);
             (
                 other_asset.to_id_word(),
                 other_asset.to_value_word(),
@@ -1077,7 +1078,7 @@ async fn test_remove_asset_fails(
         },
         "fungible_amount_exceeded" => {
             let over_asset =
-                Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT + 1)?);
+                Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT + 1)?);
             (
                 over_asset.to_id_word(),
                 over_asset.to_value_word(),
@@ -1221,14 +1222,15 @@ async fn test_remove_asset() -> anyhow::Result<()> {
     let fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let non_fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1.try_into()?;
 
-    let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
-    ));
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
+    let non_fungible_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        non_fungible_faucet_id,
+        vec![1, 2, 3],
+    )));
 
-    let partial_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, PARTIAL_AMOUNT)?);
+    let partial_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, PARTIAL_AMOUNT)?);
     let remaining_asset =
-        Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT - PARTIAL_AMOUNT)?);
+        Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT - PARTIAL_AMOUNT)?);
 
     let mock_tx = {
         let account =
@@ -1245,11 +1247,11 @@ async fn test_remove_asset() -> anyhow::Result<()> {
     let note_assets: Vec<Asset> = note.assets().iter().copied().collect();
     let fungible_index = note_assets
         .iter()
-        .position(|asset| matches!(asset, Asset::Fungible(_)))
+        .position(|asset| asset.is_fungible())
         .context("note should contain a fungible asset")?;
     let non_fungible_index = note_assets
         .iter()
-        .position(|asset| matches!(asset, Asset::NonFungible(_)))
+        .position(|asset| asset.is_non_fungible())
         .context("note should contain a non-fungible asset")?;
 
     let code = format!(
