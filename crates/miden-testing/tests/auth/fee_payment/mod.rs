@@ -1,4 +1,4 @@
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
@@ -52,9 +52,7 @@ fn assert_single_fee_note(
     let assets = output_note.assets();
     assert_eq!(assets.num_assets(), 1);
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(fee_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let fee_asset = asset.unwrap_fungible();
     assert_eq!(fee_asset.faucet_id(), ACCOUNT_ID_FEE_FAUCET.try_into()?);
 
     let required_fee = executed_transaction.compute_fee();
@@ -64,5 +62,5 @@ fn assert_single_fee_note(
         fee_asset.amount()
     );
 
-    Ok(*fee_asset)
+    Ok(fee_asset)
 }

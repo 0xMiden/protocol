@@ -50,7 +50,7 @@ const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW =
 #! - adding the two asset values would exceed MAX_AMOUNT.
 pub proc merge
     # extract amounts from assets
-    exec.asset::fungible_value_into_amount movdn.4 exec.asset::fungible_value_into_amount
+    exec.asset::fungible_value_into_amount_unchecked movdn.4 exec.asset::fungible_value_into_amount_unchecked
     # => [amount_1, amount_0]
 
     # compute max_add_amount = MAX_AMOUNT - amount_0
@@ -88,7 +88,7 @@ end
 #! - ASSET_VALUE_0 does not contain at least the amount of ASSET_VALUE_1.
 pub proc split
     # extract amounts from assets
-    exec.asset::fungible_value_into_amount movdn.4 exec.asset::fungible_value_into_amount swap
+    exec.asset::fungible_value_into_amount_unchecked movdn.4 exec.asset::fungible_value_into_amount_unchecked swap
     # => [amount_1, amount_0]
 
     # assert amount_1 <= amount_0 so we can safely subtract
@@ -118,7 +118,7 @@ end
 #! - ASSET_VALUE_{0, 1} are the assets to compare.
 #! - is_lt is 1 if ASSET_VALUE_0 is less than ASSET_VALUE_1.
 pub proc lt
-    exec.asset::fungible_value_into_amount movdn.4 exec.asset::fungible_value_into_amount swap
+    exec.asset::fungible_value_into_amount_unchecked movdn.4 exec.asset::fungible_value_into_amount_unchecked swap
     # => [amount_1, amount_0]
 
     lt

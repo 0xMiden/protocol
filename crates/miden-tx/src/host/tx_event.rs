@@ -8,6 +8,7 @@ use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
+    AssetDelta,
     StorageMap,
     StorageMapKey,
     StorageSlotName,
@@ -267,13 +268,12 @@ impl TransactionEvent {
                         source,
                     }
                 })?;
-                let asset =
-                    Asset::from_id_and_value(asset_id, delta_asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountOnAssetDeltaComputation",
-                            source,
-                        }
-                    })?;
+                let asset = Asset::new(asset_id, delta_asset_value).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountOnAssetDeltaComputation",
+                        source,
+                    }
+                })?;
                 let delta_op = AssetDeltaOperation::try_from(
                     u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
                         TransactionKernelError::other("failed to convert asset delta op to u8")
@@ -287,7 +287,7 @@ impl TransactionEvent {
                 })?;
 
                 TransactionEvent::AccountOnAssetDeltaComputation {
-                    delta: AssetDelta { delta_op, asset },
+                    delta: AssetDelta::new(delta_op, asset),
                 }
             }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
@@ -618,7 +618,7 @@ impl TxSummaryOrSignature {
     }
 }
 
-// ASSET PATCH AND DELTA
+// ASSET PATCH
 // ================================================================================================
 
 #[derive(Debug)]
@@ -628,12 +628,6 @@ pub(crate) struct AssetPatch {
     pub initial_vault_value: Word,
     /// The absolute value of `asset_id` in the vault after the operation.
     pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 // RECIPIENT DATA

@@ -43,7 +43,14 @@ const REMOVE_ASSET_ASSET_COMPOSITION_LOC = 1
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#!
+#! Panics if:
+#! - the asset's composition is Custom.
 pub proc get_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_ID, vault_root_ptr]
+
     # hash the asset ID before using it as the SMT key
     exec.hash_asset_id
     # => [ASSET_ID_HASH, vault_root_ptr]
