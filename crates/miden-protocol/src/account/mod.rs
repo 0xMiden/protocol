@@ -179,9 +179,8 @@ impl Account {
     /// Returns an error if:
     /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more packages export a procedure with the same MAST root.
-    /// - The first component doesn't contain exactly one authentication procedure.
-    /// - Other components contain authentication procedures.
+    /// - The components don't contain exactly one authentication component with exactly one
+    ///   authentication procedure.
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all packages.
     pub(super) fn initialize_from_components(

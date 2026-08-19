@@ -181,11 +181,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
 
     account.apply_patch(executed_transaction.account_patch())?;
     let resulting_asset = account.vault().assets().next().unwrap();
-    if let Asset::Fungible(asset) = resulting_asset {
-        assert_eq!(asset.amount().as_u64(), 123);
-    } else {
-        panic!("Resulting asset should be fungible");
-    }
+    assert_eq!(resulting_asset.unwrap_fungible().amount().as_u64(), 123);
 
     Ok(prove_and_verify_transaction(executed_transaction).await?)
 }
