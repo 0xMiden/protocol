@@ -34,6 +34,7 @@
 
 ### Features
 
+- Added a genesis-only native fungible faucet factory that configures the faucet to pay fees in its own asset ([#3584](https://github.com/0xMiden/protocol/issues/3584)).
 - Added `note_costs` to the `NetworkNotePricer` builder, a supplied cost map that extends or shadows the built-in cost tables ([#3602](https://github.com/0xMiden/protocol/pull/3602)).
 - [BREAKING] AggLayer bridge and faucet accounts deploy with a priced fee policy and `ADMIN`-gated repricing; both code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
 - [BREAKING] The AggLayer bridge now accepts `RbacConfigNote`s, enabling on-chain rotation of its `ADMIN`, `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles; the `create_existing_bridge_account_with_roles` testing fixture now takes the `ADMIN` member explicitly ([#2706](https://github.com/0xMiden/protocol/issues/2706)).
