@@ -716,9 +716,6 @@ async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
         Some(token_supply.as_u64()),
     )?;
 
-    // The salt is statically chosen so that the commitment's first element is a valid fungible
-    // amount, i.e. the forged asset would pass the amount check if the composition were not
-    // validated.
     const SALT: u32 = 2;
 
     let commitment = NonFungibleFaucet::compute_asset_commitment(
