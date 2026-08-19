@@ -244,6 +244,28 @@ pub proc get_note_id() -> NoteId
     # => [NOTE_ID]
 end
 
+#! Returns the storage commitment and the number of storage items of the active note.
+#!
+#! Inputs:  []
+#! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items]
+#!
+#! Where:
+#! - NOTE_STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - num_storage_items is the number of storage items the active note was created with.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_storage_info() -> (word, u16)
+    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    push.0.1
+    # => [is_active_note = 1, note_index = 0]
+
+    exec.input_note_internal::get_storage_info_raw
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
+end
+
 #! Writes the active note's storage to memory starting at the specified address.
 #!
 #! Inputs:
@@ -278,28 +300,6 @@ pub proc get_storage(dest_ptr: MemoryAddress) -> u16
     # => [num_storage_items]
 end
 
-#! Returns the storage commitment and the number of storage items of the active note.
-#!
-#! Inputs:  []
-#! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items]
-#!
-#! Where:
-#! - NOTE_STORAGE_COMMITMENT is the commitment to the note's storage.
-#! - num_storage_items is the number of storage items the active note was created with.
-#!
-#! Panics if:
-#! - no note is currently active.
-#!
-#! Invocation: exec
-pub proc get_storage_info() -> (word, u16)
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
-    push.0.1
-    # => [is_active_note = 1, note_index = 0]
-
-    exec.input_note_internal::get_storage_info_raw
-    # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
-end
-
 #! Writes the active note's storage to memory starting at the specified address, provided the note
 #! carries at most `max_num_storage_items` items.
 #!
@@ -322,19 +322,11 @@ end
 #!
 #! Invocation: exec
 pub proc get_bounded_storage(dest_ptr: MemoryAddress, max_num_storage_items: u16) -> u16
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
-    push.0.1
-    # => [is_active_note = 1, note_index = 0, dest_ptr, max_num_storage_items]
-
-    exec.input_note_internal::get_storage_info_raw
+    exec.get_storage_info
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, max_num_storage_items]
 
     # reject an oversized note before its storage preimage is loaded and hashed
-    dup.4 dup.7 lte assert.err=ERR_NOTE_TOO_MANY_STORAGE_ITEMS
-    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, max_num_storage_items]
-
-    # the bound is no longer needed
-    movup.6 drop
+    dup.4 movup.7 lte assert.err=ERR_NOTE_TOO_MANY_STORAGE_ITEMS
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
     # save num_storage_items for the return value
