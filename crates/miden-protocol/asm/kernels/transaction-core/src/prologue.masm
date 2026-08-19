@@ -292,6 +292,11 @@ end
 #! - assert that the account vault is empty.
 #! - assert that the account nonce is set to 0.
 #! - read the account seed from the advice provider and assert it satisfies seed requirements.
+#! - assert that the storage slots and the account procedures are sorted and unique.
+#!
+#! Validating storage and procedures for new accounts is sufficient because the storage and code
+#! commitments of an existing account are bound to its committed state, which was produced by the
+#! transaction that created the account and therefore already passed this validation.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -325,6 +330,11 @@ proc validate_new_account
     # Assert the storage slots are sorted and unique.
     # ---------------------------------------------------------------------------------------------
     exec.account::validate_storage
+    # => []
+
+    # Assert the account procedures are sorted and unique.
+    # ---------------------------------------------------------------------------------------------
+    exec.account::validate_procedures
     # => []
 end
 

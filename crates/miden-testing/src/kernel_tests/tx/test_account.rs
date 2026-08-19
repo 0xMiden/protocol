@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_crypto::rand::test_utils::rand_value;
+use miden_crypto::rand::{FeltRng, RandomCoin};
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -15,6 +16,7 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     AccountId,
+    AccountProcedureRoot,
     AccountStorage,
     AccountType,
     StorageMap,
@@ -32,11 +34,13 @@ use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Linkage, ModuleKind, ModuleParser, Path};
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
+    ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED,
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_UNKNOWN_VERSION,
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
+    ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE,
     ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
@@ -732,6 +736,142 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Returns the requested number of distinct procedure roots sorted in ascending order.
+fn sorted_procedure_roots(num_procedures: usize) -> Vec<AccountProcedureRoot> {
+    let mut rng = RandomCoin::new([num_procedures as u32, 0, 0, 0].into());
+    let mut roots = (0..num_procedures as u32)
+        .map(|_| AccountProcedureRoot::from_raw(rng.draw_word()))
+        .collect::<Vec<_>>();
+    roots.sort_unstable();
+
+    roots
+}
+
+/// Returns a program that writes the provided procedure roots into the native account's procedure
+/// section and validates them.
+fn validate_procedures_program(procedure_roots: &[AccountProcedureRoot]) -> String {
+    let procedure_writes = procedure_roots
+        .iter()
+        .enumerate()
+        .map(|(index, root)| {
+            format!(
+                "push.{root}
+                exec.memory::get_account_procedures_section_ptr add.{offset} mem_storew_le dropw",
+                offset = index * Word::NUM_ELEMENTS
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::memory
+
+        begin
+            exec.memory::set_active_account_data_ptr_to_native_account
+
+            push.{num_procedures} exec.memory::set_num_account_procedures
+
+            {procedure_writes}
+
+            exec.account::validate_procedures
+        end
+        "#,
+        num_procedures = procedure_roots.len()
+    )
+}
+
+/// The auth procedure at index 0 is exempt from the ordering, so it is validated against roots that
+/// sort before, in between and after the other procedures.
+#[rstest::rstest]
+#[case::minimum_number_of_procedures(2, 0)]
+#[case::auth_procedure_sorts_first(8, 0)]
+#[case::auth_procedure_sorts_in_between(8, 4)]
+#[case::auth_procedure_sorts_last(8, 7)]
+#[tokio::test]
+async fn test_validate_procedures_accepts_sorted_and_unique_procedures(
+    #[case] num_procedures: usize,
+    #[case] auth_procedure_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(num_procedures);
+    let auth_procedure_root = procedure_roots.remove(auth_procedure_index);
+    procedure_roots.insert(0, auth_procedure_root);
+
+    CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await?;
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::first_pair_swapped(1, 2)]
+#[case::last_pair_swapped(6, 7)]
+#[case::first_and_last_swapped(1, 7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_unsorted_procedures(
+    #[case] left_index: usize,
+    #[case] right_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(8);
+    procedure_roots.swap(left_index, right_index);
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE);
+
+    Ok(())
+}
+
+/// The duplicated procedure is always the one preceding it, which must be at index 1 or greater so
+/// the duplicate does not involve the auth procedure at index 0.
+#[rstest::rstest]
+#[case::first_procedure(2)]
+#[case::middle_procedure(4)]
+#[case::last_procedure(7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_duplicated_procedure(
+    #[case] duplicated_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(8);
+    procedure_roots[duplicated_index] = procedure_roots[duplicated_index - 1];
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE);
+
+    Ok(())
+}
+
+/// A duplicated auth procedure is not caught by the ordering check, since the auth procedure is
+/// exempt from it, so it must be rejected by the explicit comparison against the root at index 0.
+#[rstest::rstest]
+#[case::minimum_number_of_procedures(2, 1)]
+#[case::first_procedure(8, 1)]
+#[case::middle_procedure(8, 4)]
+#[case::last_procedure(8, 7)]
+#[tokio::test]
+async fn test_validate_procedures_rejects_duplicated_auth_procedure(
+    #[case] num_procedures: usize,
+    #[case] duplicated_index: usize,
+) -> anyhow::Result<()> {
+    let mut procedure_roots = sorted_procedure_roots(num_procedures);
+    procedure_roots[0] = procedure_roots[duplicated_index];
+
+    let result = CodeExecutor::with_default_host()
+        .run(&validate_procedures_program(&procedure_roots))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED);
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_set_item() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build().unwrap();
@@ -1163,7 +1303,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
 
     let mut account = mock_tx.account().clone();
 
-    let fungible_asset = Asset::Fungible(
+    let fungible_asset = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?,
             5,
@@ -1249,7 +1389,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let faucet_new_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1259,11 +1399,11 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
-    let fungible_asset_for_note_new = Asset::Fungible(
+    let fungible_asset_for_note_new = Asset::from(
         FungibleAsset::new(faucet_new_asset, 20).context("fungible_asset_1 is invalid")?,
     );
 
@@ -1401,7 +1541,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let faucet_existing_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1411,7 +1551,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
@@ -1496,7 +1636,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let faucet_existing_asset =
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
 
-    let fungible_asset_for_account = Asset::Fungible(
+    let fungible_asset_for_account = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
@@ -1506,7 +1646,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         [fungible_asset_for_account],
     )?;
 
-    let fungible_asset_for_note_existing = Asset::Fungible(
+    let fungible_asset_for_note_existing = Asset::from(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
     );
 
