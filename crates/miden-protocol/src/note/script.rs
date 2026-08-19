@@ -87,10 +87,12 @@ impl NoteScript {
 
     /// Returns a new [NoteScript] instantiated from the provided components.
     ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        Self(MastForestScript::from_parts(mast, entrypoint))
+    /// # Errors
+    /// Returns an error if the specified entrypoint is not in the provided MAST forest.
+    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Result<Self, NoteError> {
+        MastForestScript::from_parts(mast, entrypoint)
+            .map_err(NoteError::MastForestScript)
+            .map(Self)
     }
 
     /// Returns a new [NoteScript] instantiated from the provided package.
@@ -100,6 +102,8 @@ impl NoteScript {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - The package is an executable (i.e., its target type is
+    ///   [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
     /// - The package does not contain a procedure with the `@note_script` attribute.
     /// - The package contains multiple procedures with the `@note_script` attribute.
     pub fn from_package(package: &Package) -> Result<Self, NoteError> {
@@ -253,7 +257,8 @@ impl TryFrom<&[Felt]> for NoteScript {
         // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
         let mast = MastForest::read_from_bytes(&data)?;
         let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)?;
-        Ok(NoteScript::from_parts(Arc::new(mast), entrypoint))
+        NoteScript::from_parts(Arc::new(mast), entrypoint)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -369,5 +374,24 @@ mod tests {
         let mast = script.mast();
         let stored = mast.advice_map().get(&key).expect("entry should be present");
         assert_eq!(stored.as_ref(), value.as_slice());
+    }
+
+    #[test]
+    fn test_note_script_from_executable_package() {
+        use assert_matches::assert_matches;
+
+        use crate::assembly::Assembler;
+        use crate::errors::NoteError;
+        use crate::script::MastForestScriptError;
+
+        // an executable package is rejected: note scripts are identified only by the @note_script
+        // attribute
+        let package = Assembler::default()
+            .assemble_program("test-note-script-executable", "begin nop end")
+            .unwrap();
+        assert_matches!(
+            NoteScript::from_package(&package),
+            Err(NoteError::MastForestScript(MastForestScriptError::ExecutablePackage))
+        );
     }
 }

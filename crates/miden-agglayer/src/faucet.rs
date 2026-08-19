@@ -12,6 +12,7 @@ use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::access::{Authority, Ownable2Step};
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, FungibleFaucetError, TokenName};
 use miden_standards::account::policies::TokenPolicyManager;
 pub use miden_standards::interop::eth::{
@@ -20,7 +21,7 @@ pub use miden_standards::interop::eth::{
     EthAmountError,
     EthEmbeddedAccountId,
 };
-use miden_standards::note::{BurnNote, MintNote};
+use miden_standards::note::{BurnNote, ConstantFeePolicyConfigNote, MintNote};
 use thiserror::Error;
 
 use super::agglayer_faucet_component_package;
@@ -151,14 +152,18 @@ impl AggLayerFaucet {
     // ALLOWED NOTES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the set of input-note script roots that AggLayer faucet accounts accept.
+    /// Returns the input-note script roots allowlisted on a newly deployed AggLayer faucet.
     ///
-    /// The faucet's [`AuthNetworkAccount`] component is initialized with this allowlist so only
-    /// MINT and BURN notes can drive the faucet.
-    ///
-    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    /// A live account's allowlist is available through
+    /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
-        BTreeSet::from([MintNote::script_root(), BurnNote::script_root()])
+        let mut notes = BTreeSet::from([
+            MintNote::script_root(),
+            BurnNote::script_root(),
+            ConstantFeePolicyConfigNote::script_root(),
+        ]);
+        notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
+        notes
     }
 
     /// Extracts the underlying [`FungibleFaucet`] component (which holds the token metadata)

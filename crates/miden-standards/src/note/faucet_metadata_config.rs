@@ -52,9 +52,9 @@ const STRING_NUM_ELEMENTS: usize = 28;
 /// that consumes it.
 ///
 /// The action, together with its arguments, is encoded into the note's storage (see [`NoteStorage`]
-/// conversion below). Because the storage is fixed at note creation and bound into the note
-/// commitment, the authorized party is the note sender: the consuming faucet's metadata setters
-/// authorize the sender through the account-wide `Authority` component.
+/// conversion below) and is fixed at note creation, bound into the note commitment. The consuming
+/// faucet's metadata setters authorize the action through the account-wide
+/// [`Authority`](crate::account::access::Authority) component.
 ///
 /// The three string actions apply to both faucet kinds, since
 /// [`FungibleFaucet`](crate::account::faucets::FungibleFaucet) and
@@ -152,16 +152,12 @@ impl From<FaucetMetadataConfig> for NoteStorage {
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the faucet's
 /// metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`).
-/// Authorization is enforced by those procedures through the account-wide `Authority` component
-/// against the note sender, so the note carries no assets and its authorization is bound to
-/// `sender` at creation time.
+/// Authorization is enforced by those procedures through the account-wide
+/// [`Authority`](crate::account::access::Authority) component, so the note carries no assets.
 ///
 /// See [`FaucetMetadataConfig`] for which actions apply to which faucet kind.
 ///
 /// The note is always public and tagged for `target` — the faucet whose metadata is being managed.
-/// The `sender` is the account authorized for the action per the target's `Authority` configuration
-/// (the owner under `Authority::OwnerControlled`, or a role member under
-/// `Authority::RbacControlled`).
 ///
 /// The note is bound to `target` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
@@ -243,7 +239,8 @@ impl FaucetMetadataConfigNote {
         FAUCET_METADATA_CONFIG_SCRIPT.root()
     }
 
-    /// Returns the account ID of the note's sender (the account authorized for the action).
+    /// Returns the account ID of the note's sender (the authorizing party under an owner- or
+    /// role-controlled `Authority`).
     pub fn sender(&self) -> AccountId {
         self.sender
     }
