@@ -484,12 +484,8 @@ async fn pausable_transfer_succeeds_when_unpaused() -> anyhow::Result<()> {
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
     let asset = FungibleAsset::new(faucet.id(), 100)?;
-    let note = builder.add_p2id_note(
-        faucet.id(),
-        target.id(),
-        &[Asset::Fungible(asset)],
-        NoteType::Public,
-    )?;
+    let note =
+        builder.add_p2id_note(faucet.id(), target.id(), &[Asset::from(asset)], NoteType::Public)?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -514,12 +510,8 @@ async fn pausable_transfer_fails_when_paused() -> anyhow::Result<()> {
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
     let asset = FungibleAsset::new(faucet.id(), 100)?;
-    let note = builder.add_p2id_note(
-        faucet.id(),
-        target.id(),
-        &[Asset::Fungible(asset)],
-        NoteType::Public,
-    )?;
+    let note =
+        builder.add_p2id_note(faucet.id(), target.id(), &[Asset::from(asset)], NoteType::Public)?;
 
     let pause_note = build_pause_note(*OWNER_ID)?;
     builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
@@ -551,12 +543,8 @@ async fn pausable_transfer_resumes_after_unpause() -> anyhow::Result<()> {
     let faucet = add_faucet_with_pause_and_policies(&mut builder, *OWNER_ID)?;
 
     let asset = FungibleAsset::new(faucet.id(), 100)?;
-    let note = builder.add_p2id_note(
-        faucet.id(),
-        target.id(),
-        &[Asset::Fungible(asset)],
-        NoteType::Public,
-    )?;
+    let note =
+        builder.add_p2id_note(faucet.id(), target.id(), &[Asset::from(asset)], NoteType::Public)?;
 
     let pause_note = build_pause_note(*OWNER_ID)?;
     let unpause_note = build_unpause_note(*OWNER_ID)?;
@@ -658,7 +646,7 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
     let burn_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
-        .add_assets([Asset::Fungible(burn_asset)])
+        .add_assets([Asset::from(burn_asset)])
         .script(burn_note_script)
         .build()?;
     builder.add_output_note(RawOutputNote::Full(burn_note.clone()));

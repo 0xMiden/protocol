@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anyhow::Context;
 use miden_processor::advice::{AdviceInputs, AdviceStack};
 use miden_processor::{EMPTY_WORD, ExecutionError, ExecutionOutput, Felt};
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -100,6 +101,14 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::foreign_account"),
     )?;
 
+    let get_item_foreign_root = foreign_account_component
+        .get_procedure_root_by_path("test::foreign_account::get_item_foreign")
+        .context("proc should be present")?;
+
+    let get_map_item_foreign_root = foreign_account_component
+        .get_procedure_root_by_path("test::foreign_account::get_map_item_foreign")
+        .context("proc should be present")?;
+
     let foreign_account = AccountBuilder::new(rand::random())
         .with_components(Auth::IncrNonce)
         .with_component(foreign_account_component)
@@ -130,8 +139,6 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // Check the correctness of the memory layout after `get_item_foreign` account procedure
     // invocation
-
-    let get_item_foreign_root = foreign_account.code().procedures()[1].mast_root();
 
     let code = format!(
         r#"
@@ -185,8 +192,6 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     // GET MAP ITEM
     // --------------------------------------------------------------------------------------------
     // Check the correctness of the memory layout after `get_map_item` account procedure invocation
-
-    let get_map_item_foreign_root = foreign_account.code().procedures()[2].mast_root();
 
     let code = format!(
         r#"
@@ -268,7 +273,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             push.MOCK_VALUE_SLOT0[0..2]
 
             # get the hash of the `get_item_foreign` procedure of the foreign account
-            push.{get_item_foreign_hash}
+            push.{get_item_foreign_root}
 
             # push the foreign account ID
             push.{foreign_prefix} push.{foreign_suffix}
@@ -287,7 +292,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             push.MOCK_VALUE_SLOT0[0..2]
 
             # get the hash of the `get_item_foreign` procedure of the foreign account
-            push.{get_item_foreign_hash}
+            push.{get_item_foreign_root}
 
             # push the foreign account ID
             push.{foreign_prefix} push.{foreign_suffix}
@@ -303,7 +308,6 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         mock_value_slot0 = mock_value_slot0.name(),
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
-        get_item_foreign_hash = foreign_account.code().procedures()[1].mast_root(),
     );
 
     let exec_output = &mock_tx.execute_code(&code).await?;
@@ -750,10 +754,11 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let non_fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
 
     // Create two different assets.
-    let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 1)?);
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
-    ));
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, 1)?);
+    let non_fungible_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        non_fungible_faucet_id,
+        vec![1, 2, 3],
+    )));
     let fungible_asset_id = AssetId::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
@@ -1032,6 +1037,10 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             .expect("failed to get foreign account inputs"),
     ];
 
+    let get_item_foreign_root = first_foreign_account_component
+        .get_procedure_root_by_path("first_foreign_account::get_item_foreign")
+        .context("proc should be present")?;
+
     // push the hashes of the foreign procedures and account IDs to the advice stack to be able to
     // call them dynamically.
     let mut advice_stack = AdviceStack::new();
@@ -1041,7 +1050,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             second_foreign_account.id().prefix().as_felt(),
             second_foreign_account.id().suffix(),
         ])
-        .append_elements(*first_foreign_account.code().procedures()[2].mast_root())
+        .append_elements(*get_item_foreign_root.mast_root())
         .append_elements([
             first_foreign_account.id().prefix().as_felt(),
             first_foreign_account.id().suffix(),
