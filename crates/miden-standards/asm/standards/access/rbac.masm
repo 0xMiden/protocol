@@ -196,7 +196,7 @@ end
 #! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - role_symbol is zero.
+#! - role_symbol is not a valid role symbol encoding.
 #! - the note sender is not authorized to administer the role (see
 #!   `assert_sender_is_role_admin`).
 #! - the account ID is invalid.
@@ -236,7 +236,7 @@ end
 #! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - role_symbol is zero.
+#! - role_symbol is not a valid role symbol encoding.
 #! - the note sender is not authorized to administer the role (see
 #!   `assert_sender_is_role_admin`).
 #! - the account does not hold the role.
@@ -266,7 +266,7 @@ end
 #! - role_symbol is the encoded role symbol to renounce.
 #!
 #! Panics if:
-#! - role_symbol is zero.
+#! - role_symbol is not a valid role symbol encoding.
 #! - the note sender does not hold the role.
 #!
 #! Invocation: call
@@ -300,11 +300,15 @@ end
 #! - role_symbol is the encoded role symbol.
 #!
 #! Panics if:
-#! - role_symbol is zero.
+#! - role_symbol is not a valid role symbol encoding.
 #! - the note sender does not hold the given role.
 #!
 #! Invocation: exec
 pub proc assert_sender_has_role
+    # A malformed symbol can never match a stored membership, since `grant_role` is the sole
+    # writer of the membership map and validates before writing. Validating here is therefore
+    # not what makes the check sound; it turns a misconfigured caller-supplied symbol into a
+    # precise error instead of a generic "sender lacks role".
     dup exec.role_symbol::validate_encoding
     # => [role_symbol]
 
