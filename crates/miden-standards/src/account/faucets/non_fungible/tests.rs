@@ -11,8 +11,12 @@ use super::{
 use crate::account::access::AccessControl;
 use crate::account::auth::{Approver, AuthSingleSig};
 use crate::account::faucets::TokenName;
+use crate::account::faucets::test_utils::{
+    allow_all_policy_manager,
+    mint_burn_only_policy_manager,
+};
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
+use crate::account::policies::TokenPolicyManager;
 
 /// Building a faucet exposes the configured fields.
 #[test]
@@ -33,25 +37,6 @@ fn sample_faucet() -> NonFungibleFaucet {
     NonFungibleFaucet::builder()
         .name(TokenName::new("Example Collection").unwrap())
         .symbol(TokenSymbol::new("EC").unwrap())
-        .build()
-}
-
-/// Builds a policy manager with AllowAll on every kind, so `has_transfer_policy` is true.
-fn allow_all_policy_manager() -> TokenPolicyManager {
-    TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::allow_all())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
-        .build()
-}
-
-/// Builds a policy manager with AllowAll mint and burn policies and no transfer policy, so
-/// `has_transfer_policy` is false and no asset callback slot is installed.
-fn mint_burn_only_policy_manager() -> TokenPolicyManager {
-    TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::allow_all())
-        .active_burn_policy(BurnPolicy::allow_all())
         .build()
 }
 

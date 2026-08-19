@@ -26,31 +26,16 @@ use crate::account::auth::{
     AuthSingleSig,
     GuardianConfig,
 };
+use crate::account::faucets::test_utils::{
+    allow_all_policy_manager,
+    mint_burn_only_policy_manager,
+};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
+use crate::account::policies::TokenPolicyManager;
 use crate::account::wallets::BasicWallet;
 use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 use crate::tx_script::ExpirationTransactionScript;
-
-/// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
-fn allow_all_policy_manager() -> TokenPolicyManager {
-    TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::allow_all())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
-        .build()
-}
-
-/// Builds a minimal policy manager with AllowAll mint and burn policies and no transfer policy, so
-/// `has_transfer_policy` is false and no asset callback slot is installed.
-fn mint_burn_only_policy_manager() -> TokenPolicyManager {
-    TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::allow_all())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .build()
-}
 
 /// Builds a sample `FungibleFaucet` shared by construction tests.
 fn sample_faucet() -> FungibleFaucet {
