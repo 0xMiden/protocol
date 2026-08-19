@@ -121,9 +121,7 @@ pub proc remove_asset
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
 
-    # validate a fungible caller value so a non-canonical value (non-zero upper limbs) cannot slip
-    # past the full-word removal check below and leave a dangling asset slot; non-fungible assets
-    # are removed by exact-word match, so their value is intentionally not validated here
+    # validate the supplied fungible value so a non-canonical value is caught
     exec.asset::is_fungible_asset_id
     # => [is_fungible, ASSET_ID, ASSET_VALUE, input_note_ptr]
     if.true
@@ -223,8 +221,7 @@ pub proc remove_asset
         exec.asset::split
         # => [FINAL_ASSET_VALUE, found_asset_ptr]
 
-        # if nothing remains, clear the whole slot instead of leaving a dangling asset ID with an
-        # empty value
+        # if nothing remains, clear the whole slot
         exec.word::testz
         # => [is_empty_remainder, FINAL_ASSET_VALUE, found_asset_ptr]
 
