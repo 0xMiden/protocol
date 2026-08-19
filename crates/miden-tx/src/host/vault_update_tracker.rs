@@ -77,6 +77,7 @@ impl VaultUpdateTracker {
             })
             .collect();
 
-        AccountVaultPatch::new(normalized).expect("tx kernel should only emit valid assets")
+        AccountVaultPatch::new(normalized)
+            .expect("vault update events should only be tracked for valid assets")
     }
 }

@@ -268,13 +268,12 @@ impl TransactionEvent {
                         source,
                     }
                 })?;
-                let asset =
-                    Asset::from_id_and_value(asset_id, delta_asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountOnAssetDeltaComputation",
-                            source,
-                        }
-                    })?;
+                let asset = Asset::new(asset_id, delta_asset_value).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountOnAssetDeltaComputation",
+                        source,
+                    }
+                })?;
                 let delta_op = AssetDeltaOperation::try_from(
                     u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
                         TransactionKernelError::other("failed to convert asset delta op to u8")
