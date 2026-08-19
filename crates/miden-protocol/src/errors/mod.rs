@@ -19,11 +19,13 @@ use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
+use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
+    AccountVaultDelta,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -424,6 +426,14 @@ pub enum AccountDeltaError {
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
     #[error("asset {0} is changed by more than one asset delta")]
     DuplicateAssetDelta(AssetId),
+    #[error(
+        "number of {delta_op} operations in account vault delta is {num_ops} but max is {max}",
+        max = AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP
+    )]
+    TooManyVaultAssetDeltas {
+        delta_op: AssetDeltaOperation,
+        num_ops: usize,
+    },
     #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
     )]
