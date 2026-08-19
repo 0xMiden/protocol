@@ -1,4 +1,5 @@
 use miden::protocol::active_note
+use miden::protocol::asset
 use miden::protocol::note
 use miden::standards::faucets::non_fungible as non_fungible
 
@@ -19,15 +20,13 @@ const NFT_MIN_NUM_STORAGE_ITEMS_PUBLIC = 20
 
 # Memory addresses of the non-fungible MINT note storage (private mode, 13 items total).
 const NFT_PRIVATE_RECIPIENT_PTR = STORAGE_PTR
-const NFT_PRIVATE_ASSET_ID_PTR = STORAGE_PTR + 4
-const NFT_PRIVATE_ASSET_VALUE_PTR = STORAGE_PTR + 8
+const NFT_PRIVATE_ASSET_PTR = STORAGE_PTR + 4
 const NFT_PRIVATE_TAG_PTR = STORAGE_PTR + 12
 
 # Memory addresses of the non-fungible MINT note storage (public mode, 20+ items total).
 const NFT_PUBLIC_SCRIPT_ROOT_PTR = STORAGE_PTR
 const NFT_PUBLIC_SERIAL_NUM_PTR = STORAGE_PTR + 4
-const NFT_PUBLIC_ASSET_ID_PTR = STORAGE_PTR + 8
-const NFT_PUBLIC_ASSET_VALUE_PTR = STORAGE_PTR + 12
+const NFT_PUBLIC_ASSET_PTR = STORAGE_PTR + 8
 const NFT_PUBLIC_TAG_PTR = STORAGE_PTR + 16
 const NFT_PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 20
 
@@ -62,17 +61,14 @@ proc mint_public
     exec.note::compute_and_store_recipient
     # => [RECIPIENT, pad(12)]
 
-    # push note_type and tag, then ASSET_VALUE and ASSET_ID on top
+    # push note_type and tag, then the asset on top
     push.NOTE_TYPE_PUBLIC
     # => [note_type, RECIPIENT, pad(12)]
 
     mem_load.NFT_PUBLIC_TAG_PTR
     # => [tag, note_type, RECIPIENT, pad(12)]
 
-    padw mem_loadw_le.NFT_PUBLIC_ASSET_VALUE_PTR
-    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
-
-    padw mem_loadw_le.NFT_PUBLIC_ASSET_ID_PTR
+    push.NFT_PUBLIC_ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
 end
 
@@ -92,17 +88,14 @@ proc mint_private
     mem_loadw_le.NFT_PRIVATE_RECIPIENT_PTR
     # => [RECIPIENT, pad(12)]
 
-    # push note_type and tag, then ASSET_VALUE and ASSET_ID on top
+    # push note_type and tag, then the asset on top
     push.NOTE_TYPE_PRIVATE
     # => [note_type, RECIPIENT, pad(12)]
 
     mem_load.NFT_PRIVATE_TAG_PTR
     # => [tag, note_type, RECIPIENT, pad(12)]
 
-    padw mem_loadw_le.NFT_PRIVATE_ASSET_VALUE_PTR
-    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
-
-    padw mem_loadw_le.NFT_PRIVATE_ASSET_ID_PTR
+    push.NFT_PRIVATE_ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(12)]
 end
 
