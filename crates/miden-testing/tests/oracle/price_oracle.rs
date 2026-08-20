@@ -1,7 +1,7 @@
 //! Tests for [`miden_standards::account::oracle::PriceOracle`], the price oracle interface.
 //!
 //! Every test reaches `get_conversion_rate` the way a consumer does: over FPI, by the wrapper's
-//! MAST root. The pricing behind it is supplied by test-only implementations, because the point
+//! MAST root. The pricing behind it is supplied by test-only rate providers, because the point
 //! under test is the interface and its dispatch, not any particular way of deriving a rate.
 
 use miden_protocol::Word;
@@ -25,14 +25,14 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain};
 
-// TEST IMPLEMENTATIONS
+// TEST RATE PROVIDERS
 // ================================================================================================
 
-const IMPLEMENTATIONS_PATH: &str = "test::oracle::implementations";
+const RATE_PROVIDERS_PATH: &str = "test::oracle::rate_providers";
 
-/// Two pricing implementations with the shape `get_conversion_rate` dispatches to. They return
-/// fixed rates so a test can tell which one answered.
-const IMPLEMENTATIONS_CODE: &str = r#"
+/// Rate providers with the shape `get_conversion_rate` dispatches to. They report fixed rates so a
+/// test can tell which one answered.
+const RATE_PROVIDERS_CODE: &str = r#"
     use miden::core::sys
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
@@ -65,7 +65,7 @@ const IMPLEMENTATIONS_CODE: &str = r#"
         exec.sys::truncate_stack
     end
 
-    #! An implementation that prices nothing, standing in for one whose data is missing or too old
+    #! A rate provider that prices nothing, standing in for one whose data is missing or too old
     #! to rely on. Both cases report the same rate.
     #!
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
@@ -87,38 +87,35 @@ const IMPLEMENTATIONS_CODE: &str = r#"
 // HELPERS
 // ================================================================================================
 
-/// Compiles the test implementations component.
-fn implementations_code() -> anyhow::Result<AccountComponentCode> {
-    Ok(
-        CodeBuilder::default()
-            .compile_component_code(IMPLEMENTATIONS_PATH, IMPLEMENTATIONS_CODE)?,
-    )
+/// Compiles the test rate providers component.
+fn rate_providers_code() -> anyhow::Result<AccountComponentCode> {
+    Ok(CodeBuilder::default().compile_component_code(RATE_PROVIDERS_PATH, RATE_PROVIDERS_CODE)?)
 }
 
-/// Returns the procedure root of one of the test implementations.
-fn implementation_root(
+/// Returns the procedure root of one of the test rate providers.
+fn rate_provider_root(
     code: &AccountComponentCode,
     name: &str,
 ) -> anyhow::Result<AccountProcedureRoot> {
-    code.get_procedure_root_by_path(format!("{IMPLEMENTATIONS_PATH}::{name}").as_str())
+    code.get_procedure_root_by_path(format!("{RATE_PROVIDERS_PATH}::{name}").as_str())
         .ok_or_else(|| anyhow::anyhow!("component should export {name}"))
 }
 
-/// Builds an oracle account carrying both test implementations, with `active` registered as the one
+/// Builds an oracle account carrying the test rate providers, with `active` registered as the one
 /// the interface dispatches to.
 fn oracle_account(
     code: &AccountComponentCode,
     active: Option<AccountProcedureRoot>,
 ) -> anyhow::Result<Account> {
     let oracle = match active {
-        Some(root) => PriceOracle::new().with_implementation(root),
+        Some(root) => PriceOracle::new().with_rate_provider(root),
         None => PriceOracle::new(),
     };
 
-    let implementations = AccountComponent::new(
+    let providers = AccountComponent::new(
         code.clone(),
         Vec::new(),
-        AccountComponentMetadata::mock(IMPLEMENTATIONS_PATH),
+        AccountComponentMetadata::mock(RATE_PROVIDERS_PATH),
     )?;
 
     Ok(AccountBuilder::new([31; 32])
@@ -126,7 +123,7 @@ fn oracle_account(
         .with_components(Auth::IncrNonce)
         .with_component(Authority::AuthControlled)
         .with_component(oracle)
-        .with_component(implementations)
+        .with_component(providers)
         .build_existing()?)
 }
 
@@ -188,12 +185,11 @@ fn assert_rate_tx_script_code(
 // TESTS
 // ================================================================================================
 
-/// The interface hands back whatever the registered implementation produced, unchanged.
+/// The interface hands back whatever the registered rate provider produced, unchanged.
 #[tokio::test]
-async fn the_interface_returns_the_implementations_rate() -> anyhow::Result<()> {
-    let code = implementations_code()?;
-    let oracle =
-        oracle_account(&code, Some(implementation_root(&code, "fixed_rate_1500_over_3")?))?;
+async fn the_interface_returns_the_rate_providers_rate() -> anyhow::Result<()> {
+    let code = rate_providers_code()?;
+    let oracle = oracle_account(&code, Some(rate_provider_root(&code, "fixed_rate_1500_over_3")?))?;
     let consumer = consumer_account()?;
 
     let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
@@ -220,11 +216,11 @@ async fn the_interface_returns_the_implementations_rate() -> anyhow::Result<()> 
     Ok(())
 }
 
-/// With no implementation registered the interface aborts rather than dispatching to the empty
-/// root, so an unconfigured oracle cannot be mistaken for one reporting nothing.
+/// With no rate provider registered the interface aborts rather than dispatching to the empty root,
+/// so an unconfigured oracle cannot be mistaken for one reporting nothing.
 #[tokio::test]
-async fn an_oracle_without_an_implementation_aborts() -> anyhow::Result<()> {
-    let code = implementations_code()?;
+async fn an_oracle_without_a_rate_provider_aborts() -> anyhow::Result<()> {
+    let code = rate_providers_code()?;
     let oracle = oracle_account(&code, None)?;
     let consumer = consumer_account()?;
 
@@ -249,30 +245,29 @@ async fn an_oracle_without_an_implementation_aborts() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert!(result.is_err(), "an oracle with no implementation should abort");
+    assert!(result.is_err(), "an oracle with no rate provider should abort");
 
     Ok(())
 }
 
-/// Replacing the pricing implementation leaves the interface's MAST root untouched, so a consumer
-/// that resolved it before the swap keeps reaching the oracle afterwards and sees the new pricing.
+/// Replacing the rate provider leaves the interface's MAST root untouched, so a consumer that
+/// resolved it before the swap keeps reaching the oracle afterwards and sees the new pricing.
 ///
 /// This is the property the wrapper exists for. Pinning the root in isolation does not demonstrate
 /// it; running the same root across a swap does.
 #[tokio::test]
-async fn swapping_the_implementation_keeps_the_interface_reachable() -> anyhow::Result<()> {
-    let code = implementations_code()?;
-    let oracle =
-        oracle_account(&code, Some(implementation_root(&code, "fixed_rate_1500_over_3")?))?;
+async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::Result<()> {
+    let code = rate_providers_code()?;
+    let oracle = oracle_account(&code, Some(rate_provider_root(&code, "fixed_rate_1500_over_3")?))?;
     let consumer = consumer_account()?;
-    let next_root = implementation_root(&code, "fixed_rate_7_over_1")?;
+    let next_root = rate_provider_root(&code, "fixed_rate_7_over_1")?;
 
     let mut builder = MockChain::builder();
     builder.add_account(oracle.clone())?;
     builder.add_account(consumer.clone())?;
     let mut mock_chain = builder.build()?;
 
-    // the originally registered implementation answers
+    // the originally registered provider answers
     let before = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
         oracle.id(),
         1_500,
@@ -287,7 +282,7 @@ async fn swapping_the_implementation_keeps_the_interface_reachable() -> anyhow::
         .execute()
         .await?;
 
-    // swap the implementation
+    // swap the rate provider
     let swap = CodeBuilder::default().compile_tx_script(format!(
         r#"
         use miden::core::sys
@@ -296,9 +291,9 @@ async fn swapping_the_implementation_keeps_the_interface_reachable() -> anyhow::
         @transaction_script
         pub proc main
             push.{next_root}
-            # => [IMPLEMENTATION_ROOT, ...]
+            # => [RATE_PROVIDER_PROC_ROOT, ...]
 
-            call.price_oracle::set_implementation
+            call.price_oracle::set_rate_provider
 
             exec.sys::truncate_stack
         end
@@ -318,12 +313,12 @@ async fn swapping_the_implementation_keeps_the_interface_reachable() -> anyhow::
         mock_chain
             .committed_account(oracle.id())?
             .storage()
-            .get_item(PriceOracle::implementation_slot())?,
+            .get_item(PriceOracle::active_rate_provider_slot())?,
         *next_root.mast_root(),
-        "set_implementation should have registered the new implementation"
+        "set_rate_provider should have registered the new provider"
     );
 
-    // the same wrapper root now answers with the new implementation's pricing
+    // the same wrapper root now answers with the new provider's pricing
     let after =
         CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(oracle.id(), 7, 1)?)?;
     let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
@@ -338,15 +333,15 @@ async fn swapping_the_implementation_keeps_the_interface_reachable() -> anyhow::
     Ok(())
 }
 
-/// The implementation supplied at genesis is the one the interface dispatches to.
+/// The rate provider supplied at genesis is the one the interface dispatches to.
 #[test]
-fn the_component_seeds_the_implementation() -> anyhow::Result<()> {
-    let code = implementations_code()?;
-    let root = implementation_root(&code, "fixed_rate_1500_over_3")?;
+fn the_component_seeds_the_rate_provider() -> anyhow::Result<()> {
+    let code = rate_providers_code()?;
+    let root = rate_provider_root(&code, "fixed_rate_1500_over_3")?;
     let oracle = oracle_account(&code, Some(root))?;
 
     assert_eq!(
-        oracle.storage().get_item(PriceOracle::implementation_slot())?,
+        oracle.storage().get_item(PriceOracle::active_rate_provider_slot())?,
         *root.mast_root()
     );
 
@@ -354,7 +349,7 @@ fn the_component_seeds_the_implementation() -> anyhow::Result<()> {
 }
 
 /// The interface's MAST root is the address consumers resolve against, so it must survive changes
-/// to the pricing implementation and to the rest of the standard.
+/// to the rate provider and to the rest of the standard.
 ///
 /// If this fails, `get_conversion_rate`'s body changed. That is a breaking change for every
 /// consumer that already resolved the old root, not a value to update in passing.
@@ -369,15 +364,15 @@ fn the_interface_root_is_stable() {
 
 /// The MAST root of `price_oracle::get_conversion_rate`.
 const PINNED_GET_CONVERSION_RATE_ROOT: &str =
-    "0x6721cd98b89feb04648ffa02212a20d30683230b8af554f17d2ad5e813569109";
+    "0xed1c07b8a0f3a24addec5ec6651ab0ec5b1e9615d70f00cd1c3f227cbd1a90d9";
 
-/// A pair the implementation cannot price comes back as a zero denominator, unchanged, rather than
+/// A pair the rate provider cannot price comes back as a zero denominator, unchanged, rather than
 /// aborting inside the oracle. The consumer decides what an unpriceable pair means to it, and one
 /// that does not check still fails closed once the rate reaches `fee::convert_amount`.
 #[tokio::test]
 async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Result<()> {
-    let code = implementations_code()?;
-    let oracle = oracle_account(&code, Some(implementation_root(&code, "unpriced")?))?;
+    let code = rate_providers_code()?;
+    let oracle = oracle_account(&code, Some(rate_provider_root(&code, "unpriced")?))?;
     let consumer = consumer_account()?;
 
     let tx_script =

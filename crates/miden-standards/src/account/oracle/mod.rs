@@ -4,18 +4,18 @@
 //! [`ConversionRate`] shape the fee standard applies through `fee::convert_amount`, so consumers
 //! reuse that arithmetic instead of restating it.
 //!
-//! The procedure body only dispatches to a stored implementation root, which keeps its MAST root -
+//! The procedure body only dispatches to a stored rate provider root, which keeps its MAST root -
 //! the address consumers resolve over FPI - stable while the pricing behind it changes. This module
-//! ships the interface and that dispatch mechanism; pricing implementations and consumer-side
-//! conversion helpers are separate components.
+//! ships the interface and that dispatch mechanism; rate providers and consumer-side conversion
+//! helpers are separate components.
 //!
 //! An asset pair the oracle cannot price yields `den = 0` rather than a failure, so a consumer
 //! valuing many assets can decide what an unpriceable one means to it. Ignoring the case still
 //! fails closed, because `fee::convert_amount` rejects a zero denominator.
 //!
-//! Staleness reaches a consumer through that same value. An implementation refuses to derive a rate
-//! from data it considers too old, reporting `den = 0` instead, because only the implementation
-//! knows the age of its inputs and how often they are refreshed.
+//! Staleness reaches a consumer through that same value. A rate provider refuses to derive a rate
+//! from data it considers too old, reporting `den = 0` instead, because only the provider knows the
+//! age of its inputs and how often they are refreshed.
 
 mod price_oracle;
 mod types;

@@ -1,10 +1,10 @@
 # The MASM code of the Price Oracle Account Component.
 #
 # Exposes the user-facing `get_conversion_rate`, whose MAST root is the address consumers resolve
-# against and must therefore stay stable, plus the authority-gated setter selecting the pricing
-# implementation it dispatches to.
+# against and must therefore stay stable, plus the authority-gated setter selecting the rate
+# provider it dispatches to.
 #
 # See the `PriceOracle` Rust type's documentation for more details.
 
 pub use {get_conversion_rate} from miden::standards::oracle::price_oracle
-pub use {set_implementation} from miden::standards::oracle::price_oracle
+pub use {set_rate_provider} from miden::standards::oracle::price_oracle
