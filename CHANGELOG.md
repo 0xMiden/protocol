@@ -34,6 +34,7 @@
 - Fixed `input_note::remove_asset` leaving a dangling asset slot when a non-canonical fungible value produced an empty removal remainder ([#3591](https://github.com/0xMiden/protocol/pull/3606)).
 - Fixed `input_note::remove_asset` succeeding when asked to remove an empty or malformed asset ID instead of reporting the asset as not found ([#3592](https://github.com/0xMiden/protocol/pull/3607)).
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
+- `TokenPolicyManager::component_metadata` now declares the two protocol-reserved asset-callback slots, so a manager built from its storage schema no longer silently deploys with transfer policies the kernel can never invoke.
 - [BREAKING] Enforced the limit of 1024 per asset delta op for added and removed account vault deltas inside and outside the tx kernel ([#3623](https://github.com/0xMiden/protocol/pull/3623)).
 
 ## v0.16.0 (2026-08-17)

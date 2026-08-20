@@ -20,6 +20,7 @@ use miden_protocol::account::component::{
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
+    WordSchema,
 };
 use miden_protocol::account::{
     AccountComponent,
@@ -215,7 +216,8 @@ struct PolicyConfig {
 /// `set_send_policy` / `set_receive_policy` enforces it against the whole circulating supply rather
 /// than only assets minted after the switch. The slots are omitted only when no send or receive
 /// policy of any kind is registered, in which case the faucet's account ID is created with
-/// [`AssetCallbackFlag::Disabled`][miden_protocol::account::AssetCallbackFlag::Disabled].
+/// [`AssetCallbackFlag::Disabled`][miden_protocol::account::AssetCallbackFlag::Disabled] and the
+/// slots are left free for a separate callback component.
 ///
 /// ## Storage layout
 ///
@@ -514,6 +516,13 @@ impl TokenPolicyManager {
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
+    ///
+    /// The schema declares the two protocol-reserved asset-callback slots unconditionally, with the
+    /// fixed `invoke_receive_policy` / `invoke_send_policy` wrapper roots as their defaults. The
+    /// schema is a static description of the component, so it cannot mirror
+    /// `manager_storage_slots`' configuration-dependent installation of those slots; declaring them
+    /// is what lets the schema-driven path ([`AccountComponent::from_package`]) build a manager
+    /// whose transfer policies are actually reachable by the kernel.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
             (
@@ -576,6 +585,26 @@ impl TokenPolicyManager {
                     SchemaType::native_word(),
                 ),
             ),
+            (
+                AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+                StorageSlotSchema::value(
+                    "on_before_asset_added_to_account callback: invoke_receive_policy wrapper root",
+                    WordSchema::new_simple_with_default(
+                        SchemaType::native_word(),
+                        Self::invoke_receive_policy_root().as_word(),
+                    ),
+                ),
+            ),
+            (
+                AssetCallbacks::on_before_asset_added_to_note_slot().clone(),
+                StorageSlotSchema::value(
+                    "on_before_asset_added_to_note callback: invoke_send_policy wrapper root",
+                    WordSchema::new_simple_with_default(
+                        SchemaType::native_word(),
+                        Self::invoke_send_policy_root().as_word(),
+                    ),
+                ),
+            ),
         ])
         .expect("storage schema should be valid");
 
@@ -630,11 +659,21 @@ impl TokenPolicyManager {
         ];
 
         // Register the protocol-reserved asset-callback slots only when at least one transfer
-        // policy is configured. The slots hold the fixed `invoke_*_policy` wrapper roots (not the
-        // active policy roots): the kernel `dyncall`s the wrapper, which applies the pause check
-        // and then dispatches to whatever active root lives in the `active_*_policy` slot above.
-        // This indirection lets `set_send_policy` / `set_receive_policy` switch the active policy
-        // for the entire circulating supply without touching the callback slots.
+        // policy is configured, leaving them free for a separate callback component otherwise. The
+        // slots hold the fixed `invoke_*_policy` wrapper roots (not the active policy roots): the
+        // kernel `dyncall`s the wrapper, which applies the pause check and then dispatches to
+        // whatever active root lives in the `active_*_policy` slot above. This indirection lets
+        // `set_send_policy` / `set_receive_policy` switch the active policy for the entire
+        // circulating supply without touching the callback slots.
+        //
+        // `component_metadata` declares both slots unconditionally, with these same wrapper roots
+        // as their schema defaults: a static schema cannot be configuration-dependent, and the
+        // schema-driven path (`AccountComponent::from_package`) builds a slot for every declared
+        // slot, so declaring them is what makes that path enforce the transfer policies at all.
+        // Only this direction of divergence is safe - a schema-built manager materializes the
+        // callback slots even when the policy configuration would not have required them, and a
+        // manager whose slots collide with a separate callback component fails loudly with
+        // `AccountError::DuplicateStorageSlotName`.
         if self.has_transfer_policy() {
             let callback_slots = AssetCallbacks::new()
                 .on_before_asset_added_to_account(Self::invoke_receive_policy_root().as_word())
@@ -718,6 +757,7 @@ impl IntoIterator for TokenPolicyManager {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::component::{InitStorageData, StorageValueName};
     use miden_protocol::asset::AssetCallbacks;
 
     use super::*;
@@ -830,9 +870,10 @@ mod tests {
         assert!(manager.allowed_receive_policies().contains(&TransferPolicy::allow_all().root()));
     }
 
-    /// A manager configured without send / receive policies must NOT register the
-    /// protocol callback slots — otherwise it would always needlessly mint assets with
-    /// callbacks enabled.
+    /// A manager configured without send / receive policies must NOT register the protocol
+    /// callback slots, so that a faucet using this manager for mint / burn policies only can still
+    /// install a separate component providing the asset callbacks (registering them here too would
+    /// fail with [`AccountError::DuplicateStorageSlotName`]).
     #[test]
     fn manager_without_transfer_policies_omits_protocol_callback_slots() {
         let manager = TokenPolicyManager::builder()
@@ -853,6 +894,84 @@ mod tests {
                 .is_none(),
             "without a send policy, the manager must leave the on_before_asset_added_to_note slot \
              to a separate component",
+        );
+    }
+
+    /// The schema-driven construction path must produce the same storage layout as a manager
+    /// configured with transfer policies, including the two protocol-reserved callback slots: this
+    /// is the path taken when a component is reconstructed from a published package plus
+    /// initialization data, and a missing callback slot there means the kernel silently skips the
+    /// transfer policies of the deployed faucet.
+    #[test]
+    fn storage_schema_covers_every_slot_of_a_transfer_policy_manager() {
+        let manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::allow_all())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .active_send_policy(TransferPolicy::allow_all())
+            .active_receive_policy(TransferPolicy::allow_all())
+            .build();
+
+        let manager_component = manager.to_manager_component();
+
+        // The active-policy roots are the only values the schema requires; everything else either
+        // defaults (the callback roots) or starts empty (the allowed-policy maps).
+        let allow_all_root = TransferAllowAll::root().as_word();
+        let mut init_storage_data = InitStorageData::default();
+        for (slot_name, root) in [
+            (TokenPolicyManager::active_mint_policy_slot(), MintPolicy::allow_all().root()),
+            (TokenPolicyManager::active_burn_policy_slot(), BurnPolicy::allow_all().root()),
+            (
+                TokenPolicyManager::active_send_policy_slot(),
+                TransferPolicy::allow_all().root(),
+            ),
+            (
+                TokenPolicyManager::active_receive_policy_slot(),
+                TransferPolicy::allow_all().root(),
+            ),
+        ] {
+            init_storage_data
+                .set_value(StorageValueName::from_slot_name(slot_name), root.as_word())
+                .expect("active policy root should be a valid init value");
+        }
+
+        let schema_slots = TokenPolicyManager::component_metadata()
+            .storage_schema()
+            .build_storage_slots(&init_storage_data)
+            .expect("schema should build the manager's storage slots");
+
+        let schema_slot_names: BTreeSet<_> =
+            schema_slots.iter().map(|slot| slot.name().clone()).collect();
+        let component_slot_names: BTreeSet<_> = manager_component
+            .storage_slots()
+            .iter()
+            .map(|slot| slot.name().clone())
+            .collect();
+        assert_eq!(
+            schema_slot_names, component_slot_names,
+            "the storage schema must declare exactly the slots the component installs",
+        );
+
+        // The schema-built callback slots must hold the wrapper roots the kernel dispatches to, and
+        // the active-policy slots the roots taken from the initialization data.
+        let find_schema_slot = |slot_name: &StorageSlotName| {
+            schema_slots
+                .iter()
+                .find(|slot| slot.name() == slot_name)
+                .expect("schema should build this slot")
+                .value()
+        };
+        assert_eq!(
+            find_schema_slot(AssetCallbacks::on_before_asset_added_to_account_slot()),
+            TokenPolicyManager::invoke_receive_policy_root().as_word(),
+        );
+        assert_eq!(
+            find_schema_slot(AssetCallbacks::on_before_asset_added_to_note_slot()),
+            TokenPolicyManager::invoke_send_policy_root().as_word(),
+        );
+        assert_eq!(find_schema_slot(TokenPolicyManager::active_send_policy_slot()), allow_all_root);
+        assert_eq!(
+            find_schema_slot(TokenPolicyManager::active_receive_policy_slot()),
+            allow_all_root
         );
     }
 
