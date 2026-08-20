@@ -11,7 +11,7 @@
 # so the rate provider can be replaced without changing the root.
 #
 # The wrapper is a stable address, NOT a gate. A dispatch target must itself be an account
-# procedure to be `dyncall` reachable, which also makes it reachable directly over FPI, so an
+# procedure to be `dyncall` reachable, which also makes it reachable directly over FPI, so a
 # rate provider cannot rely on the wrapper having run first: every guarantee it needs, including
 # its transaction expiration delta, has to be enforced in its own body.
 

@@ -48,24 +48,18 @@ static ACTIVE_RATE_PROVIDER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
         .expect("storage slot name should be valid")
 });
 
-/// The price oracle account component: the interface consumers ask "what is one asset worth in
-/// another".
+/// The price oracle account component.
 ///
-/// `get_conversion_rate` returns a numerator and a denominator rather than a converted amount, in
-/// the same shape the fee standard applies through `fee::convert_amount`, so both paths share one
-/// rounding convention and this standard restates no arithmetic. A pair it cannot price - because
-/// it has no data or because the data is too old to rely on - comes back as `den = 0`.
+/// Install it alongside a rate provider on the same account and an
+/// [`Authority`][crate::account::access::Authority], which gates `set_rate_provider`.
+/// `get_conversion_rate` dispatches to whichever provider is registered in
+/// [`PriceOracle::active_rate_provider_slot`], so the pricing can be replaced without changing the
+/// MAST root consumers reach it by.
 ///
-/// The procedure's body does nothing but dispatch to the rate provider root stored in
-/// [`PriceOracle::active_rate_provider_slot`]. That is deliberate: its MAST root is the address
-/// consumers resolve over FPI, so keeping the body fixed lets the pricing behind it be replaced
-/// without invalidating anyone's reference to it. Pair the component with a rate provider installed
-/// on the same account, and with an [`Authority`][crate::account::access::Authority], which gates
-/// `set_rate_provider`.
-///
-/// The wrapper is a stable address, not a gate. A dispatch target has to be an account procedure to
-/// be reachable by `dyncall`, which also makes it reachable directly over FPI, so a rate provider
-/// must enforce its own guarantees rather than assume the wrapper ran first.
+/// The wrapper is a stable address, NOT a gate. A dispatch target must itself be an account
+/// procedure to be `dyncall` reachable, which also makes it reachable directly over FPI, so a rate
+/// provider cannot rely on the wrapper having run first: every guarantee it needs, including its
+/// transaction expiration delta, has to be enforced in its own body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PriceOracle {
     rate_provider: Option<AccountProcedureRoot>,

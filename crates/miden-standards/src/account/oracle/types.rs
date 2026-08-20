@@ -9,10 +9,10 @@ use miden_protocol::{Felt, Word};
 /// `amount` of the source asset is worth `ceil(amount * num / den)` of the target asset, matching
 /// the `ConversionRate` the fee standard applies in `fee::convert_amount`.
 ///
-/// A rate with `den == 0` means the oracle cannot price the pair, whether because it has no data
-/// for it or because the data it has is too old to rely on. It is a value rather than a failure so
-/// a caller valuing many assets can decide what an unpriceable one means to it; passing such a rate
-/// to `fee::convert_amount` aborts, so overlooking the case still fails closed.
+/// `den = 0` means the oracle cannot price the pair, including when its data is too stale to rely
+/// on. It is returned rather than raised so a caller valuing many assets does not lose the whole
+/// transaction over one. A caller that does not check for it is not left with a wrong answer
+/// either: handing such a rate to `fee::convert_amount` aborts on its zero-denominator assertion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConversionRate {
     num: Felt,

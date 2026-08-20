@@ -1,21 +1,14 @@
-//! The price oracle interface: asking what one asset is worth in another.
+//! The user-facing price oracle interface: a single procedure returning the rate between two
+//! assets.
 //!
-//! [`PriceOracle`]'s `get_conversion_rate` answers with a numerator and a denominator, the same
-//! [`ConversionRate`] shape the fee standard applies through `fee::convert_amount`, so consumers
-//! reuse that arithmetic instead of restating it.
+//! The rate is returned as a [`ConversionRate`], rather than a converted amount. Callers apply it
+//! with `fee::convert_amount`, which computes `ceil(amount * num / den)` at 128-bit intermediate
+//! precision, so both paths round the same way.
 //!
-//! The procedure body only dispatches to a stored rate provider root, which keeps its MAST root -
-//! the address consumers resolve over FPI - stable while the pricing behind it changes. This module
-//! ships the interface and that dispatch mechanism; rate providers and consumer-side conversion
+//! [`PriceOracle`]'s body does nothing but read a rate provider root from storage and dispatch to
+//! it, so the provider can be replaced without changing the MAST root consumers reach it by. This
+//! module ships the interface and that dispatch; rate providers and consumer-side conversion
 //! helpers are separate components.
-//!
-//! An asset pair the oracle cannot price yields `den = 0` rather than a failure, so a consumer
-//! valuing many assets can decide what an unpriceable one means to it. Ignoring the case still
-//! fails closed, because `fee::convert_amount` rejects a zero denominator.
-//!
-//! Staleness reaches a consumer through that same value. A rate provider refuses to derive a rate
-//! from data it considers too old, reporting `den = 0` instead, because only the provider knows the
-//! age of its inputs and how often they are refreshed.
 
 mod price_oracle;
 mod types;
