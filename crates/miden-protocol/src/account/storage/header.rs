@@ -501,9 +501,7 @@ mod tests {
         reserved_elements[0] = Felt::ONE; // Reserved element must be zero.
         let err = AccountStorageHeader::try_from_elements(&reserved_elements, &empty_slot_names)
             .unwrap_err();
-        assert_matches!(err, AccountError::StorageSlotReservedElementNotZero(value) => {
-            assert_eq!(value, Felt::ONE);
-        });
+        assert_matches!(err, AccountError::StorageSlotReservedElementNotZero(value) if value == Felt::ONE);
     }
 
     #[test]
