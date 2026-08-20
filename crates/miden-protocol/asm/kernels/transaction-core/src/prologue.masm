@@ -702,6 +702,8 @@ proc process_note_num_storage_items
 
     # write the preimage to scratch memory and compute its commitment
     movup.5 movup.5
+    # => [num_storage_items, dest_ptr, NOTE_STORAGE_COMMITMENT, note_ptr]
+
     exec.mem_utils::pipe_elements_preimage_to_memory
     # => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT, note_ptr]
 
