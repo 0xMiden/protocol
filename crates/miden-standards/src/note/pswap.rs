@@ -268,9 +268,7 @@ impl From<PswapNoteAttachment> for NoteAttachment {
 /// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
 /// via the builder.
 ///
-/// Fills are priced against the note's initial offered asset - the amount the creator funded at
-/// note creation - which the on-chain script asserts still matches the asset remaining at
-/// consumption. Any pre-consumption removal from the note therefore aborts the transaction.
+/// Fills are priced against the note's initial offered asset.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {

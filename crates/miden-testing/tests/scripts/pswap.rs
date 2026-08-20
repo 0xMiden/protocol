@@ -2105,8 +2105,7 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
     let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     // A component that drains a specified asset from an input note by index into the account's own
-    // vault. Indexed removal is gated on the native-account context, so exposing it as an account
-    // procedure lets any note in the transaction reach it via `call`.
+    // vault.
     let drain_component = AccountComponent::new(
         CodeBuilder::default().compile_component_code(
             "attacker_account",
@@ -2143,8 +2142,6 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
         AccountComponentMetadata::mock("attacker_account"),
     )?;
 
-    // The consuming account bundles the basic wallet (required by the PSWAP script) with the
-    // indexed-removal procedure, and holds enough ETH to fill the swap.
     let consumer = builder.add_account_from_builder(
         BASIC_AUTH,
         Account::builder([9; 32])
@@ -2196,8 +2193,7 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
         .note_type(NoteType::Public)
         .script(helper_script)
         .build()?;
-    // Commit the helper note on-chain so it can be consumed as an authenticated input note, which
-    // keeps the input-note ordering explicit: helper at index 0, PSWAP at index 1.
+    // Commit the helper note so it can be consumed as an authenticated input note (index 0).
     builder.add_output_note(RawOutputNote::Full(helper_note.clone()));
 
     let mock_chain = builder.build()?;

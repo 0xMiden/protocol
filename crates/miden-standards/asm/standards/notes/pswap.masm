@@ -450,9 +450,7 @@ proc is_consumer_creator
     # => [is_creator]
 end
 
-#! Loads the note's single offered asset, asserting it still equals the asset the note was created
-#! with. Removals only shrink a note's remaining assets, never its initial assets, so binding the
-#! two ties the fill price to the amount the creator funded; any prior removal aborts the transaction.
+#! Loads the note's single offered asset, asserting it equals the amount the note was created with. 
 #!
 #! Inputs: []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
@@ -483,7 +481,7 @@ proc load_offered_asset
     locaddr.8 exec.asset::load
     # => [INITIAL_ASSET_ID, INITIAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE]
 
-    # the remaining offered asset must equal the initial one word-for-word (ID and value)
+    # the remaining offered asset must equal the initial one
     movupw.2 assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
     assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
     # => []
