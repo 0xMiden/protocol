@@ -64,7 +64,7 @@ const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
 const CALC_FILL_AMOUNT = 0
 const CALC_FILL_REFERENCE = 1
 
-# load_offered_asset locals (one asset occupies 8 locals, so the two buffers are 8 apart)
+# Procedure locals of load_offered_asset
 const OFFERED_REMAINING_ASSET_PTR = 0
 const OFFERED_INITIAL_ASSET_PTR = 8
 
