@@ -23,6 +23,9 @@ const ERR_ACCOUNT_DELTA_TOO_MANY_ADDED_ASSETS =
 const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS =
     "number of removed assets in the transaction exceeds the maximum limit of 1024"
 
+const ERR_ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_REPLACEMENT =
+    "removing a non-fungible asset and adding a different value under the same asset ID within one transaction is not supported as the account delta cannot encode the replacement"
+
 # EVENTS
 # =================================================================================================
 
@@ -788,6 +791,12 @@ end
 #! - ASSET_ID is the asset ID of the asset that is added.
 #! - INITIAL_ASSET_VALUE is the value of the asset before the update.
 #! - FINAL_ASSET_VALUE is the value of the asset after the update.
+#!
+#! Panics if:
+#! - the asset's composition is none and the update would leave the patch entry with two distinct
+#!   non-empty values, i.e. the value under the asset ID was removed and a different value was
+#!   added within the same transaction. The account delta cannot encode such a replacement (see
+#!   compute_asset_delta).
 pub proc update_asset
     swapw dupw.1 push.ACCOUNT_UPDATE_ASSET_PTR
     # => [asset_delta_map_ptr, ASSET_ID, INITIAL_ASSET_VALUE, ASSET_ID, FINAL_ASSET_VALUE]
@@ -810,6 +819,37 @@ pub proc update_asset
     cdropw
     # => [NEW_INITIAL_VALUE, ASSET_ID, FINAL_ASSET_VALUE]
 
+    # For an asset whose composition is none, the entry can only encode an addition (empty
+    # initial value), a removal (empty final value) or a no-op (equal values). Reject an entry
+    # holding two distinct non-empty values: compute_asset_delta would encode such a
+    # replacement incorrectly as a pure removal of the initial value.
+    dupw.1 exec.asset::id_into_composition eq.COMPOSITION_NONE
+    # => [is_composition_none, NEW_INITIAL_VALUE, ASSET_ID, FINAL_ASSET_VALUE]
+
+    if.true
+        swapw movdnw.2
+        # => [NEW_INITIAL_VALUE, FINAL_ASSET_VALUE, ASSET_ID]
+
+        exec.word::test_eq movdn.8
+        # => [NEW_INITIAL_VALUE, FINAL_ASSET_VALUE, are_values_equal, ASSET_ID]
+
+        exec.word::testz movdn.9
+        # => [NEW_INITIAL_VALUE, FINAL_ASSET_VALUE, are_values_equal, is_initial_empty, ASSET_ID]
+
+        swapw exec.word::testz
+        # => [is_final_empty, FINAL_ASSET_VALUE, NEW_INITIAL_VALUE, are_values_equal, is_initial_empty, ASSET_ID]
+
+        movup.9 or movup.9 or
+        # => [is_encodable, FINAL_ASSET_VALUE, NEW_INITIAL_VALUE, ASSET_ID]
+
+        assert.err=ERR_ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_REPLACEMENT
+        # => [FINAL_ASSET_VALUE, NEW_INITIAL_VALUE, ASSET_ID]
+
+        movdnw.2
+        # => [NEW_INITIAL_VALUE, ASSET_ID, FINAL_ASSET_VALUE]
+    end
+    # => [NEW_INITIAL_VALUE, ASSET_ID, FINAL_ASSET_VALUE]
+
     swapw push.ACCOUNT_UPDATE_ASSET_PTR
     # => [asset_delta_map_ptr, ASSET_ID, NEW_INITIAL_VALUE, FINAL_ASSET_VALUE]
 
@@ -825,8 +865,9 @@ end
 #! - If the composition of the asset is none:
 #!   - If the initial value is the empty word, the final value must be non-empty, so the asset was
 #!     added.
-#!   - Conversely, if the initial value is not the empty word, the final value must be empty
-#!     according to the asset vault guarantees, so the asset was removed.
+#!   - Conversely, if the initial value is not the empty word, the final value must be empty, so
+#!     the asset was removed. This holds because update_asset rejects entries holding two distinct
+#!     non-empty values and this procedure is only called when the values are not equal.
 #! - If the composition is not none:
 #!   - Compute the delta as `GREATER_ASSET_VALUE - LESSER_ASSET_VALUE` using `asset::lt` to find
 #!     the larger value and `asset::split` for the computation itself.

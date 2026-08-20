@@ -30,17 +30,24 @@ use miden_protocol::account::{
     StorageValuePatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_REPLACEMENT;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::{EMPTY_WORD, Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::account_component::{MockAccountComponent, MockFaucetComponent};
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 use rand::RngExt;
 
-use crate::{Auth, MockChain, TestTransactionBuilder};
+use crate::{
+    AccountState,
+    Auth,
+    MockChain,
+    TestTransactionBuilder,
+    assert_transaction_executor_error,
+};
 
 // ACCOUNT DELTA TESTS
 //
@@ -545,6 +552,96 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     }
     .execute()
     .await
+}
+
+/// Tests that replacing a non-fungible asset with a different value under the same asset ID within
+/// one transaction is rejected.
+///
+/// A non-fungible asset ID binds only the first two elements of the asset value, so an issuer can
+/// craft two distinct values V1 and V2 that share one asset ID. Removing V1 and then adding V2
+/// would leave the asset patch entry with two distinct non-empty values, which the account delta
+/// cannot encode: the update would be encoded incorrectly as a pure removal of V1, omitting the
+/// addition of V2. The kernel must reject the mutation that creates such an entry, even in a
+/// transaction that balances the vaults by burning V1 and minting V2.
+#[tokio::test]
+async fn non_fungible_asset_replacement_is_rejected() -> anyhow::Result<()> {
+    let auth = Auth::IncrNonce;
+    let faucet_builder = || {
+        AccountBuilder::new([7; 32])
+            .with_component(MockFaucetComponent)
+            .with_component(MockAccountComponent::with_empty_slots())
+    };
+
+    // The asset names the faucet as its origin, but the faucet must also hold it in its vault.
+    // Since the ID of an existing account does not depend on its vault, it can be taken from an
+    // asset-less build of the same faucet.
+    let (auth_components, _) = auth.build_components();
+    let faucet_id = faucet_builder().with_components(auth_components).build_existing()?.id();
+
+    // Craft two distinct asset values sharing one asset ID: changing the last element of the
+    // value yields a different value under the same ID.
+    let asset_v1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet_id, vec![42]));
+    let v1_value = asset_v1.to_value_word();
+    let v2_value = Word::from([v1_value[0], v1_value[1], v1_value[2], v1_value[3] + Felt::ONE]);
+    let asset_v2 = NonFungibleAsset::from_parts(faucet_id, v2_value);
+    assert_eq!(asset_v1.to_id_word(), asset_v2.to_id_word());
+    assert_ne!(asset_v1.to_value_word(), asset_v2.to_value_word());
+
+    let mut chain_builder = MockChain::builder();
+    let faucet = chain_builder.add_account_from_builder(
+        auth,
+        faucet_builder().with_assets([Asset::from(asset_v1)]),
+        AccountState::Exists,
+    )?;
+    let mock_chain = chain_builder.build()?;
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        "
+    use mock::account as mock_account
+    use mock::faucet as mock_faucet
+
+    @transaction_script
+    pub proc main
+        # remove V1 from the account vault; the asset patch entry becomes (V1, EMPTY_WORD)
+        push.{V1_VALUE}
+        push.{ASSET_ID}
+        call.mock_account::remove_asset dropw
+        # => []
+
+        # burn V1 and mint V2 so that the transaction's vaults balance
+        push.{V1_VALUE}
+        push.{ASSET_ID}
+        call.mock_faucet::burn
+        # => []
+
+        push.{V2_VALUE}
+        push.{ASSET_ID}
+        call.mock_faucet::mint
+        # => []
+
+        # adding V2 must fail: the asset patch entry would hold two distinct non-empty values,
+        # which the account delta cannot encode
+        push.{V2_VALUE}
+        push.{ASSET_ID}
+        call.mock_account::add_asset dropw
+        # => []
+    end
+    ",
+        ASSET_ID = asset_v1.to_id_word(),
+        V1_VALUE = asset_v1.to_value_word(),
+        V2_VALUE = asset_v2.to_value_word(),
+    ))?;
+
+    let result = mock_chain
+        .build_transaction(faucet)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_REPLACEMENT);
+
+    Ok(())
 }
 
 /// Tests that storage value/map updates combined with vault asset additions and removals are
