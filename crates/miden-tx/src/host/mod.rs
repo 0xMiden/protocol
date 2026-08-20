@@ -427,17 +427,15 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Tracks the computation of an asset delta for the account delta.
+    ///
+    /// The kernel iterates its asset delta map once per computation, so this is called at most once
+    /// per asset ID, and only after
+    /// [`Self::on_account_before_asset_delta_computation`] has reset the accumulated delta.
     pub fn on_account_on_asset_delta_computation(
         &mut self,
         delta: AssetDelta,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        // SAFETY: The kernel iterates the asset delta map once per computation and the host resets
-        // its accumulated delta before each computation, so no asset should be reported
-        // twice.
-        assert!(
-            self.update_tracker.update_asset_delta(delta).is_none(),
-            "each asset ID should be unique"
-        );
+        self.update_tracker.add_asset_delta(delta);
 
         Ok(Vec::new())
     }
