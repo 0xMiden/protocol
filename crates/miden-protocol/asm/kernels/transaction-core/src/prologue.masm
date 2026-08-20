@@ -666,7 +666,7 @@ end
 #!
 #! Panics if:
 #! - the number of storage items exceeds the maximum limit.
-#! - the advised number of storage items does not match the note's storage commitment.
+#! - the number of storage items from the advice map does not match the note's declared count.
 #! - the note's storage does not match its storage commitment.
 @locals(1024)
 proc process_note_num_storage_items
@@ -696,7 +696,7 @@ proc process_note_num_storage_items
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
     # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
 
-    # assert the advised item count matches the note's declared count
+    # assert the item count from the advice map matches the note's declared count
     adv_push dup.5 assert_eq.err=ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
 
