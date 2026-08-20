@@ -451,20 +451,6 @@ end
 
 #! Loads the offered asset from the active note and validates there is exactly one asset.
 #!
-#! The single-asset check fails if the offered asset was fully removed earlier in the transaction.
-#! A partially removed fungible asset still occupies its slot, and the reduced amount becomes the
-#! offered amount used downstream: the reclaim path returns only the remainder, and the fill path
-#! prices the fill and sizes the creator's remainder note from the reduced amount (see
-#! execute_pswap).
-#!
-#! Warning: the remaining amount is not bound to the amount the creator funded, so PSWAP prices
-#! the fill against a value the consumer can influence. If the consuming account exposes a
-#! procedure that performs indexed removal (input_note::remove_asset / remove_all_assets), any
-#! note script in the same transaction can invoke it to shrink this note's offered asset before
-#! the script runs; the fill is then priced against the reduced amount and the difference is
-#! shifted out of the creator's remainder note. Making PSWAP price against the note's initial
-#! assets is discussed in https://github.com/0xMiden/protocol/issues/3601.
-#!
 #! Inputs: []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
@@ -795,12 +781,6 @@ end
 #! Partially-fillable swap note script: exchanges a portion of the offered asset for a
 #! proportional amount of the requested asset, producing a P2ID payback note for the creator
 #! and, on partial fills, a remainder PSWAP note carrying the unfilled balance.
-#!
-#! Warning: the fill is priced against the offered asset remaining in the note at consumption
-#! time, not the amount the creator funded. A consumer able to perform indexed removal on the
-#! note can drain part of the offered asset outright before this script runs; on a partial fill
-#! the creator's remainder note then shrinks by the drained amount. See `load_offered_asset` for
-#! details.
 #!
 #! The consumer specifies two fill amounts via `NOTE_ARGS`:
 #! - `account_fill_amount`: portion of the requested asset debited from the consumer's vault.
