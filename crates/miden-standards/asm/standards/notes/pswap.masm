@@ -64,6 +64,10 @@ const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
 const CALC_FILL_AMOUNT = 0
 const CALC_FILL_REFERENCE = 1
 
+# load_offered_asset locals (one asset occupies 8 locals, so the two buffers are 8 apart)
+const OFFERED_REMAINING_ASSET_PTR = 0
+const OFFERED_INITIAL_ASSET_PTR = 8
+
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
 const P2ID_REQUESTED_FAUCET_SUFFIX = 1
@@ -462,23 +466,23 @@ end
 #!
 @locals(16)
 proc load_offered_asset
-    locaddr.0 exec.active_note::remove_all_assets
+    locaddr.OFFERED_REMAINING_ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets]
 
     push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
     # => []
 
     # initial assets are unaffected by removals; require exactly one
-    locaddr.8 exec.active_note::get_initial_assets
+    locaddr.OFFERED_INITIAL_ASSET_PTR exec.active_note::get_initial_assets
     # => [num_initial_assets]
 
     push.1 eq assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
     # => []
 
-    locaddr.0 exec.asset::load
+    locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE]
 
-    locaddr.8 exec.asset::load
+    locaddr.OFFERED_INITIAL_ASSET_PTR exec.asset::load
     # => [INITIAL_ASSET_ID, INITIAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE]
 
     # the remaining offered asset must equal the initial one
@@ -486,7 +490,7 @@ proc load_offered_asset
     assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
     # => []
 
-    locaddr.0 exec.asset::load
+    locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
     # => [ASSET_ID, ASSET_VALUE]
 end
 
