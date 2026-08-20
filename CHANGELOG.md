@@ -6,6 +6,7 @@
 
 ### Changes
 
+- Moved the transaction kernel API procedures into the kernel's `api` submodule, leaving `exec_kernel_proc` as the only `syscall`-invocable kernel procedure ([#3646](https://github.com/0xMiden/protocol/pull/3646)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
 - [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#2961](https://github.com/0xMiden/protocol/issues/2961)).
 - The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
