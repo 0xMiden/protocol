@@ -23,7 +23,7 @@ use miden::standards::expiration
 #! on custom_data.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
-#! after the reference block, since the policy reads mutable faucet state.
+#! after the reference block.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
