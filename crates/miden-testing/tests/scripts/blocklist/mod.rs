@@ -180,7 +180,7 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    assert_default_expiration_limit(&executed, "the blocklist callback");
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }

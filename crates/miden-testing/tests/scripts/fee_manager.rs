@@ -374,7 +374,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
         .execute()
         .await?;
 
-    assert_default_expiration_limit(&executed, "fee estimation");
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }
@@ -580,7 +580,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
         .execute()
         .await?;
 
-    assert_default_expiration_limit(&executed, "foreign fee estimation");
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }
