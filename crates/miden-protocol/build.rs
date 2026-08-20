@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 
@@ -36,6 +36,9 @@ const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 const TX_KERNEL_MAIN_TARGET: &str = "main";
 const TX_SCRIPT_MAIN_TARGET: &str = "tx-script-main";
 const BATCH_KERNEL_TARGET: &str = "miden-batch-kernel";
+
+/// Module of the kernel package that holds the procedures which `exec_kernel_proc` invokes.
+const KERNEL_API_MODULE_PATH: &str = "$kernel::api";
 
 const KERNEL_PROCEDURES_RS_FILE: &str = "procedures.rs";
 const TX_EVENTS_RS_FILE: &str = "transaction_events.rs";
@@ -121,8 +124,10 @@ fn main() -> Result<()> {
 ///
 /// The project is expected to have the following structure:
 ///
-/// - {project_dir}/lib/api.masm           -> defines exported procedures from the transaction
-///   kernel.
+/// - {project_dir}/lib/entrypoint.masm    -> defines `exec_kernel_proc`, the only syscall entry
+///   point of the transaction kernel.
+/// - {project_dir}/lib/api.masm           -> defines the kernel API procedures, which are invoked
+///   by `exec_kernel_proc` through `dynexec`.
 /// - {project_dir}/bin/main.masm          -> defines the executable program of the transaction
 ///   kernel.
 /// - {project_dir}/bin/tx_script_main.masm -> defines the executable program of the arbitrary
@@ -130,7 +135,7 @@ fn main() -> Result<()> {
 ///
 /// The following are written to the `target_dir`:
 ///
-/// - the kernel library package, compiled from lib/api.masm.
+/// - the kernel library package, compiled from lib/entrypoint.masm.
 /// - the kernel executable package, compiled from bin/main.masm.
 /// - the transaction script executor package, compiled from bin/tx_script_main.masm.
 ///
@@ -165,7 +170,7 @@ fn compile_tx_kernel(
 
     // Assemble the kernel internals as a plain library and write its package to the `target_dir`.
     // This is needed in test assemblers to access individual internal procedures which are not
-    // part of the kernel's public syscall API (api.masm).
+    // part of the kernel API (api.masm).
     #[cfg(any(feature = "testing", test))]
     {
         let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
@@ -179,16 +184,15 @@ fn compile_tx_kernel(
 ///
 /// The file is written to `{build_dir}/procedures.rs` and included via `include!` in the source.
 fn generate_kernel_proc_hash_file(kernel: &Package, build_dir: &str) -> Result<()> {
-    let to_exclude = BTreeSet::from_iter(["exec_kernel_proc"]);
     let offsets_filename = Path::new(ASM_DIR)
         .join(ASM_PROTOCOL_DIR)
         .join("src")
         .join("kernel_proc_offsets.masm");
     let offsets = parse_proc_offsets(&offsets_filename)?;
 
-    // Only direct `$kernel::<proc>` exports are dynamic kernel API procedures. Public support
-    // modules also appear in package exports as `$kernel::<module>::<proc>`, but those are not
-    // invoked through `exec_kernel_proc` and therefore do not belong in `KERNEL_PROCEDURES`.
+    // Only exports of the kernel API module are invoked through `exec_kernel_proc`. Other exports
+    // of the kernel package, such as `exec_kernel_proc` itself, do not belong in
+    // `KERNEL_PROCEDURES`.
     let kernel_api_exports: Vec<_> = kernel
         .manifest
         .exports()
@@ -201,10 +205,6 @@ fn generate_kernel_proc_hash_file(kernel: &Package, build_dir: &str) -> Result<(
 
     for proc_info in kernel_api_exports.iter() {
         let name = proc_info.path.last().unwrap();
-        if to_exclude.contains::<str>(name) {
-            continue;
-        }
-
         if !offsets.contains_key(name) {
             return Err(miette::miette!(
                 "Offset constant for kernel procedure `{}` not found in `{offsets_filename:?}`",
@@ -286,7 +286,8 @@ fn parse_proc_offsets(filename: impl AsRef<Path>) -> Result<BTreeMap<String, usi
 // ================================================================================================
 
 fn is_dynamic_kernel_api_export(path: &MasmPath) -> bool {
-    path.parent().is_some_and(|parent| parent.to_relative().as_str() == "$kernel")
+    path.parent()
+        .is_some_and(|parent| parent.to_relative().as_str() == KERNEL_API_MODULE_PATH)
 }
 
 // ERROR CONSTANTS FILE GENERATION

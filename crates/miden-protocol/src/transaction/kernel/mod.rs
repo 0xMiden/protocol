@@ -583,3 +583,24 @@ pub(crate) mod source_manager_ext {
         Ok(files)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tx_kernel_exports_only_exec_kernel_proc() {
+        let kernel_prog_info = TransactionKernel::program_info();
+        let proc_hashes = kernel_prog_info.kernel().proc_hashes();
+
+        assert_eq!(proc_hashes.len(), 1, "only one proc should be a syscallable export");
+
+        assert_eq!(
+            TransactionKernel::package()
+                .get_procedure_root_by_path("$kernel::exec_kernel_proc")
+                .unwrap(),
+            proc_hashes[0],
+            "only exec_kernel_proc should be a syscallable export"
+        );
+    }
+}
