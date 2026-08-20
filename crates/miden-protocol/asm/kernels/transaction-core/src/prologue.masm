@@ -21,8 +21,7 @@ use {BLOCK_DATA_SECTION_OFFSET, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PAR
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
 
-# Local in process_note_num_storage_items: buffer to which the note storage preimage is written
-# (MAX_NOTE_STORAGE_ITEMS elements)
+# Procedure locals in process_note_num_storage_items
 const PROCESS_NOTE_STORAGE_PREIMAGE_LOC = 0
 
 # ERRORS
@@ -679,7 +678,7 @@ proc process_note_num_storage_items
     assert.err=ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT
     # => [num_storage_items, note_ptr]
 
-    # store the number of storage items into the memory, keeping the count on the stack
+    # store the number of storage items into the memory
     dup dup.2 exec.memory::set_input_note_num_storage_items
     # => [num_storage_items, note_ptr]
 
@@ -690,8 +689,7 @@ proc process_note_num_storage_items
     locaddr.PROCESS_NOTE_STORAGE_PREIMAGE_LOC movdn.5
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
 
-    # load the storage preimage from the advice map, padded to the next multiple of 8 so it can be
-    # written with `pipe_elements_preimage_to_memory`
+    # load the storage preimage from the advice map, padded to the next multiple of 8
     adv.push_mapvaln.8
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
     # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
@@ -707,7 +705,6 @@ proc process_note_num_storage_items
     exec.mem_utils::pipe_elements_preimage_to_memory
     # => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT, note_ptr]
 
-    # assert the note's storage matches its authenticated commitment
     assert_eqw.err=ERR_PROLOGUE_NOTE_STORAGE_DOES_NOT_MATCH_COMMITMENT
     # => [note_ptr]
 end
