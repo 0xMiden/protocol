@@ -908,7 +908,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
 async fn test_get_asset_info() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let fungible_asset_0 = Asset::Fungible(
+    let fungible_asset_0 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("id should be valid"),
             5,
@@ -918,7 +918,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     // create the second asset with the different faucet ID to increase the number of assets in the
     // output note to 2.
-    let fungible_asset_1 = Asset::Fungible(
+    let fungible_asset_1 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).expect("id should be valid"),
             5,
