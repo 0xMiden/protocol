@@ -7,6 +7,8 @@ use crate::utils::FixedWidthStringError;
 
 mod fungible;
 mod non_fungible;
+#[cfg(test)]
+mod test_utils;
 mod token_metadata;
 
 pub use fungible::{
