@@ -21,6 +21,10 @@ use {BLOCK_DATA_SECTION_OFFSET, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PAR
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
 
+# Local in process_note_num_storage_items: buffer to which the note storage preimage is written
+# (MAX_NOTE_STORAGE_ITEMS elements)
+const PROCESS_NOTE_STORAGE_PREIMAGE_LOC = 0
+
 # ERRORS
 # =================================================================================================
 
@@ -683,7 +687,7 @@ proc process_note_num_storage_items
     dup.1 exec.memory::get_input_note_storage_commitment
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, note_ptr]
 
-    locaddr.0 movdn.5
+    locaddr.PROCESS_NOTE_STORAGE_PREIMAGE_LOC movdn.5
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
 
     # load the storage preimage from the advice map, padded to the next multiple of 8 so it can be
