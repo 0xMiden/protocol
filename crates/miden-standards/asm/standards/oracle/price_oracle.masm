@@ -33,7 +33,7 @@ pub const IMPLEMENTATION_SLOT = word("miden::standards::oracle::price_oracle::im
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Returns the rate converting the source asset into the target asset, and how fresh that rate is.
+#! Returns the rate converting the source asset into the target asset.
 #!
 #! WARNING: do not edit this procedure. See the module documentation: its MAST root is the address
 #! consumers resolve against, and the body exists only to keep that address stable across
@@ -45,17 +45,19 @@ pub const IMPLEMENTATION_SLOT = word("miden::standards::oracle::price_oracle::im
 #! aborts on its zero-denominator assertion, so ignoring the case still fails closed.
 #!
 #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-#! Outputs: [num, den, timestamp, pad(13)]
+#! Outputs: [num, den, pad(14)]
 #!
 #! Where:
 #! - SOURCE_ASSET_ID is the asset being converted from.
 #! - TARGET_ASSET_ID is the asset being converted to.
 #! - num and den express the rate: `amount` of the source asset is worth
 #!   `ceil(amount * num / den)` of the target asset.
-#! - den is 0 when the pair cannot be priced, in which case num and timestamp are 0 as well.
-#! - timestamp is the block timestamp, in seconds, of the stalest input the rate was derived from.
-#!   A rate is only as fresh as its stalest leg, so a caller enforcing a maximum age compares
-#!   against this value rather than trusting the oracle's own bound.
+#! - den is 0 when the pair cannot be priced, in which case num is 0 as well.
+#!
+#! An implementation must not derive a rate from data it considers too old to rely on: it reports
+#! `den = 0` for a stale pair exactly as it does for one it has never priced. Freshness is enforced
+#! there rather than reported here, because only the implementation knows the age of its inputs and
+#! how often they are refreshed.
 #!
 #! Panics if:
 #! - no implementation is configured.
@@ -64,7 +66,7 @@ pub const IMPLEMENTATION_SLOT = word("miden::standards::oracle::price_oracle::im
 #! Invocation: call
 @locals(4) # implementation procedure root
 @account_procedure
-pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (ConversionRate, u32)
+pub proc get_conversion_rate(source: AssetId, target: AssetId) -> ConversionRate
     push.IMPLEMENTATION_SLOT[0..2] exec.active_account::get_item
     # => [IMPLEMENTATION_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
@@ -75,7 +77,7 @@ pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (ConversionRat
     # => [implementation_root_ptr, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
     dyncall
-    # => [num, den, timestamp, pad(13)]
+    # => [num, den, pad(14)]
 end
 
 # CONFIGURATION PROCEDURES

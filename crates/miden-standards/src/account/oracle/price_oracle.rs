@@ -53,9 +53,8 @@ static IMPLEMENTATION_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// `get_conversion_rate` returns a numerator and a denominator rather than a converted amount, in
 /// the same shape the fee standard applies through `fee::convert_amount`, so both paths share one
-/// rounding convention and this standard restates no arithmetic. It also returns how fresh the rate
-/// is, since a rate derived from two prices is only as fresh as its stalest leg and how stale is
-/// too stale is a consumer decision.
+/// rounding convention and this standard restates no arithmetic. A pair it cannot price - because
+/// it has no data or because the data is too old to rely on - comes back as `den = 0`.
 ///
 /// The procedure's body does nothing but dispatch to the implementation root stored in
 /// [`PriceOracle::implementation_slot`]. That is deliberate: its MAST root is the address consumers

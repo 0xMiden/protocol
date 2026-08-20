@@ -34,10 +34,9 @@ const IMPLEMENTATIONS_PATH: &str = "test::oracle::implementations";
 /// fixed rates so a test can tell which one answered.
 const IMPLEMENTATIONS_CODE: &str = r#"
     use miden::core::sys
-    use miden::protocol::tx
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [num, den, timestamp, pad(13)]
+    #! Outputs: [num, den, pad(14)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -45,14 +44,14 @@ const IMPLEMENTATIONS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        exec.tx::get_block_timestamp push.3 push.1500
-        # => [num, den, timestamp, pad(8)]
+        push.3 push.1500
+        # => [num, den, pad(8)]
 
         exec.sys::truncate_stack
     end
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [num, den, timestamp, pad(13)]
+    #! Outputs: [num, den, pad(14)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -60,8 +59,26 @@ const IMPLEMENTATIONS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        exec.tx::get_block_timestamp push.1 push.7
-        # => [num, den, timestamp, pad(8)]
+        push.1 push.7
+        # => [num, den, pad(8)]
+
+        exec.sys::truncate_stack
+    end
+
+    #! An implementation that prices nothing, standing in for one whose data is missing or too old
+    #! to rely on. Both cases report the same rate.
+    #!
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [num, den, pad(14)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc unpriced
+        dropw dropw
+        # => [pad(8)]
+
+        push.0 push.0
+        # => [num = 0, den = 0, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -151,11 +168,11 @@ fn assert_rate_tx_script_code(
             #     foreign_procedure_inputs(16)]
 
             exec.tx::execute_foreign_procedure
-            # => [num, den, timestamp, pad(13)]
+            # => [num, den, pad(14)]
 
             push.{expected_num} assert_eq.err="unexpected rate numerator"
             push.{expected_den} assert_eq.err="unexpected rate denominator"
-            # => [timestamp, pad(13)]
+            # => [pad(14)]
 
             exec.sys::truncate_stack
         end
@@ -353,3 +370,33 @@ fn the_interface_root_is_stable() {
 /// The MAST root of `price_oracle::get_conversion_rate`.
 const PINNED_GET_CONVERSION_RATE_ROOT: &str =
     "0x6721cd98b89feb04648ffa02212a20d30683230b8af554f17d2ad5e813569109";
+
+/// A pair the implementation cannot price comes back as a zero denominator, unchanged, rather than
+/// aborting inside the oracle. The consumer decides what an unpriceable pair means to it, and one
+/// that does not check still fails closed once the rate reaches `fee::convert_amount`.
+#[tokio::test]
+async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Result<()> {
+    let code = implementations_code()?;
+    let oracle = oracle_account(&code, Some(implementation_root(&code, "unpriced")?))?;
+    let consumer = consumer_account()?;
+
+    let tx_script =
+        CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(oracle.id(), 0, 0)?)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(oracle.clone())?;
+    builder.add_account(consumer.clone())?;
+    let mock_chain = builder.build()?;
+
+    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
+
+    mock_chain
+        .build_transaction(consumer.id())
+        .foreign_accounts([foreign_oracle])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
