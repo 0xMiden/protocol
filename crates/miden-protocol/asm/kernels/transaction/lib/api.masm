@@ -1115,6 +1115,7 @@ end
 #! - is_active_note is false and the invocation does not originate from the account context.
 #! - is_active_note is true and no input note is being processed (attempted to access note assets
 #!   from incorrect context).
+#! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.
@@ -1988,7 +1989,7 @@ pub proc tx_exec_foreign_proc
     # part of the foreign account's code. This is NOT the same as the account procedure
     # authentication the kernel already does. Without this, the called procedure could dyncall into
     # a genuine procedure of the account and it would pass.
-    exec.account::assert_procedure_in_account drop
+    exec.account::assert_procedure_in_active_account drop
     # => [foreign_procedure_inputs(16)]
 
     # get the pointer to the foreign procedure root to perform the dyncall

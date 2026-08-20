@@ -95,7 +95,7 @@ pub(crate) fn build_mint_note(
     let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
     let note: Note = MintNote::builder()
         .sender(sender)
-        .mint_storage(MintNoteStorage::new_fungible_private(recipient_digest, asset, tag))
+        .mint_storage(MintNoteStorage::new_private(recipient_digest, asset, tag))
         .generate_serial_number(&mut rng)
         .build()?
         .into();
