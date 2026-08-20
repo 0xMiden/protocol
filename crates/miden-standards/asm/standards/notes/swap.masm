@@ -146,11 +146,7 @@ pub proc main
     push.ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets, pad(8)]
 
-    # make sure the number of assets is 1; this fails if the offered asset was fully removed
-    # earlier in the transaction, while a reduced fungible amount still passes and is claimed
-    # as-is. The loss falls on the consuming account, not the creator: the payback amount is
-    # fixed in note storage and is independent of the remaining offered amount. If the account
-    # exposes a procedure performing indexed removal, any note script it consumes can trigger it.
+    # make sure the number of assets is 1
     assert.err=ERR_SWAP_WRONG_NUMBER_OF_ASSETS
     # => [pad(8)]
 
