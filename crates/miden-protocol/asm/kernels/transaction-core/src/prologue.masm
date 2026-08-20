@@ -662,7 +662,7 @@ end
 #! - STORAGE_ITEMS are the note's storage items.
 #!
 #! Locals:
-#! - 0..1024: scratch buffer for the storage preimage (MAX_NOTE_STORAGE_ITEMS elements)
+#! - 0..1024: buffer to which the storage preimage is written (MAX_NOTE_STORAGE_ITEMS elements)
 #!
 #! Panics if:
 #! - the number of storage items exceeds the maximum limit.
@@ -683,7 +683,7 @@ proc process_note_num_storage_items
     dup dup.2 exec.memory::set_input_note_num_storage_items
     # => [num_storage_items, note_ptr]
 
-    # load the note's authenticated storage commitment and a scratch pointer for the preimage
+    # load the note's authenticated storage commitment and a pointer to the preimage memory locals
     dup.1 exec.memory::get_input_note_storage_commitment
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, note_ptr]
 
@@ -700,7 +700,7 @@ proc process_note_num_storage_items
     adv_push dup.5 assert_eq.err=ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
 
-    # write the preimage to scratch memory and compute its commitment
+    # write the preimage to the memory locals and compute its commitment
     movup.5 movup.5
     # => [num_storage_items, dest_ptr, NOTE_STORAGE_COMMITMENT, note_ptr]
 
