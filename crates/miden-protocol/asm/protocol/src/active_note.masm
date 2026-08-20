@@ -151,6 +151,7 @@ end
 #!
 #! Panics if:
 #! - no note is currently active.
+#! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.

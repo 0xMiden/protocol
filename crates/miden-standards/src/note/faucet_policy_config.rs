@@ -212,7 +212,7 @@ impl FaucetPolicyConfigNote {
     }
 
     /// Returns the account ID of the managed faucet (the account the note is tagged for).
-    pub fn account(&self) -> AccountId {
+    pub fn target(&self) -> AccountId {
         self.target
     }
 
@@ -329,7 +329,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(note.sender(), sender);
-        assert_eq!(note.account(), faucet);
+        assert_eq!(note.target(), faucet);
 
         let note = Note::from(note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
