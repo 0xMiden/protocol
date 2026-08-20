@@ -1,17 +1,14 @@
 # miden::standards::oracle::price_oracle
 #
-# The user-facing price oracle interface: a single procedure answering "how much of one asset is
-# another worth".
+# The user-facing price oracle interface: a single procedure returning the rate between two assets.
 #
-# A rate is returned rather than a converted amount, matching the `ConversionRate` vocabulary the
-# fee standard already uses. Consumers apply it with `fee::convert_amount`, which computes
-# `ceil(amount * num / den)` at 128-bit intermediate precision, so this standard does not restate
-# that arithmetic and both paths share one rounding convention.
+# The rate is returned as a `ConversionRate`, rather than a converted amount. 
+# Callers apply it with `fee::convert_amount`, which computes
+# `ceil(amount * num / den)` at 128-bit intermediate precision, so both paths round the same way.
 #
 # WARNING: the body of `get_conversion_rate` MUST NOT change. Consumers reach it over FPI by its
-# MAST root, which is a hash of that body, so any edit rewrites the address every consumer resolved
-# against. The body is deliberately trivial: it reads a procedure root from storage and dispatches
-# to it, which is what lets the rate provider be replaced while the address stays put.
+# MAST root. The body does nothing but read a procedure root from storage and dispatch to it, 
+# so the rate provider can be replaced without changing the root.
 #
 # The wrapper is a stable address, NOT a gate. A dispatch target must itself be an account
 # procedure to be `dyncall` reachable, which also makes it reachable directly over FPI, so an
@@ -36,14 +33,13 @@ pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::
 
 #! Returns the rate converting the source asset into the target asset.
 #!
-#! WARNING: do not edit this procedure. See the module documentation: its MAST root is the address
-#! consumers resolve against, and the body exists only to keep that address stable across
-#! rate provider changes.
+#! WARNING: do not edit this procedure since its MAST root is the address consumers resolve against.
 #!
-#! A rate of `den = 0` means the active rate provider cannot price this pair. It is returned rather
-#! than raised as a failure so a caller valuing many assets can decide what an unpriceable one
-#! means, instead of losing the whole transaction. Handing such a rate to `fee::convert_amount`
-#! aborts on its zero-denominator assertion, so ignoring the case still fails closed.
+#! `den = 0` means the active rate provider cannot price the pair, including when its data is too
+#! stale to rely on. It is returned rather than raised so a caller valuing many assets does not lose
+#! the whole transaction over one. A caller that does not check for it is not left with a wrong
+#! answer either: handing such a rate to `fee::convert_amount` aborts on its zero-denominator
+#! assertion.
 #!
 #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 #! Outputs: [num, den, pad(14)]
@@ -54,11 +50,6 @@ pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::
 #! - num and den express the rate: `amount` of the source asset is worth
 #!   `ceil(amount * num / den)` of the target asset.
 #! - den is 0 when the pair cannot be priced, in which case num is 0 as well.
-#!
-#! A rate provider must not derive a rate from data it considers too old to rely on: it reports
-#! `den = 0` for a stale pair exactly as it does for one it has never priced. Freshness is enforced
-#! there rather than reported here, because only the rate provider knows the age of its inputs and
-#! how often they are refreshed.
 #!
 #! Panics if:
 #! - no rate provider is configured.
