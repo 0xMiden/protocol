@@ -1,7 +1,14 @@
 use std::collections::BTreeMap;
 
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountType, AccountVaultPatch};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    AccountVaultPatch,
+};
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
@@ -10,14 +17,22 @@ use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
+    ERR_PSWAP_OFFERED_ASSET_ALTERED,
 };
 use miden_standards::note::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_transaction_executor_error,
+};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rstest::rstest;
@@ -2071,4 +2086,146 @@ fn pswap_parse_inputs_roundtrip() {
 
     // Verify requested amount from value word
     assert_eq!(parsed.min_requested_amount(), 25, "Requested amount should be 25");
+}
+
+/// Regression test for the offered-asset drain (issue #3601, PSWAP leg).
+///
+/// A PSWAP note offers 1000 USDC for a minimum of 100 ETH. The consuming account exposes an
+/// `@account_procedure` that performs indexed input-note asset removal
+/// (`input_note::remove_asset`), which the kernel permits only from the native-account context. An
+/// earlier helper input note (consumed at index 0) calls that procedure to drain 900 USDC out of
+/// the PSWAP note (index 1) into the consumer's own vault before the PSWAP script runs, leaving
+/// only 100 USDC in the note.
+///
+/// Pricing the fill against that 100 USDC residue - rather than the 1000 USDC the note was funded
+/// with - would let the consumer keep the drained 900 for free while the creator's remainder note
+/// absorbs the loss. The single-asset assertion still passes because a partially-removed fungible
+/// keeps its slot with the reduced value.
+///
+/// The fix binds the offered amount to the note's initial assets, so the drained note now aborts
+/// the whole transaction with `ERR_PSWAP_OFFERED_ASSET_ALTERED` instead of pricing against the
+/// residue.
+#[tokio::test]
+async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 10_000, Some(1_000))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 10_000, Some(100))?;
+
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    // A component that drains a specified asset from an input note by index into the account's own
+    // vault. Indexed removal is gated on the native-account context, so exposing it as an account
+    // procedure lets any note in the transaction reach it via `call`.
+    let drain_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "attacker_account",
+            "
+            use miden::protocol::asset
+            use miden::protocol::input_note
+            use miden::protocol::native_account
+
+            #! Removes the given asset from the input note at `note_index` and credits it to this
+            #! account's vault.
+            #!
+            #! Inputs:  [ASSET_ID, ASSET_VALUE, note_index, pad(7)]
+            #! Outputs: [pad(16)]
+            @account_procedure
+            @locals(8)
+            pub proc drain_note_asset
+                # keep a copy of the asset so it can be credited to the vault after removal
+                dupw.1 dupw.1 locaddr.0 exec.asset::store
+                # => [ASSET_ID, ASSET_VALUE, note_index, pad(7)]
+
+                exec.input_note::remove_asset
+                # => [FINAL_ASSET_VALUE, pad(7)]
+
+                dropw
+                # => [pad(7)]
+
+                # credit the drained asset to the consuming account's vault
+                locaddr.0 exec.asset::load exec.native_account::add_asset dropw
+                # => [pad(7)]
+            end
+            ",
+        )?,
+        Vec::new(),
+        AccountComponentMetadata::mock("attacker_account"),
+    )?;
+
+    // The consuming account bundles the basic wallet (required by the PSWAP script) with the
+    // indexed-removal procedure, and holds enough ETH to fill the swap.
+    let consumer = builder.add_account_from_builder(
+        BASIC_AUTH,
+        Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_component(BasicWallet)
+            .with_component(drain_component.clone())
+            .with_assets([FungibleAsset::new(eth_faucet.id(), 100)?.into()]),
+        AccountState::Exists,
+    )?;
+
+    // Alice's PSWAP note offers 1000 USDC for a minimum of 100 ETH.
+    let offered_asset = FungibleAsset::new(usdc_faucet.id(), 1_000)?;
+    let min_requested_asset = FungibleAsset::new(eth_faucet.id(), 100)?;
+    let (_, pswap_note) = build_pswap_note(
+        &mut builder,
+        alice,
+        offered_asset,
+        min_requested_asset,
+        NoteType::Public,
+    )?;
+
+    // Helper note (input note index 0) that drains 900 of the 1000 offered USDC out of the PSWAP
+    // note (input note index 1) via the consuming account's procedure.
+    let drained = FungibleAsset::new(usdc_faucet.id(), 900)?;
+    let pswap_input_note_index = 1u8;
+    let helper_code = format!(
+        r#"
+        use miden::core::sys
+
+        @note_script
+        pub proc main
+            # Drain the offered asset from the PSWAP note by index, via the native account's
+            # procedure, before the PSWAP script gets to consume its own remaining assets.
+            push.0.0.0.0 push.0.0.0
+            push.{pswap_input_note_index}
+            push.{asset_value}
+            push.{asset_id}
+            call.::attacker_account::drain_note_asset
+            exec.sys::truncate_stack
+        end
+    "#,
+        asset_value = drained.to_value_word(),
+        asset_id = drained.to_id_word(),
+    );
+    let helper_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(drain_component.component_code())?
+        .compile_note_script(helper_code)?;
+    let helper_note = NoteBuilder::new(alice, RandomCoin::new(Word::from([7, 7, 7, 7u32])))
+        .note_type(NoteType::Public)
+        .script(helper_script)
+        .build()?;
+    // Commit the helper note on-chain so it can be consumed as an authenticated input note, which
+    // keeps the input-note ordering explicit: helper at index 0, PSWAP at index 1.
+    builder.add_output_note(RawOutputNote::Full(helper_note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    // A 50-of-100 ETH partial fill: below the minimum, so absent the fix a remainder note would be
+    // created and priced against the drained residue.
+    let mut note_args_map = BTreeMap::new();
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(50, 0)?);
+
+    let result = mock_chain
+        .build_transaction(consumer.id())
+        .authenticated_input_notes([helper_note.id(), pswap_note.id()])
+        .extend_note_args(note_args_map)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PSWAP_OFFERED_ASSET_ALTERED);
+
+    Ok(())
 }

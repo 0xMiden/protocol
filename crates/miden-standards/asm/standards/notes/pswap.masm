@@ -100,6 +100,7 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
+const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
@@ -449,23 +450,53 @@ proc is_consumer_creator
     # => [is_creator]
 end
 
-#! Loads the offered asset from the active note and validates there is exactly one asset.
+#! Loads the offered asset from the active note, bound to the note's initial assets so a fill is
+#! always priced against the amount the creator funded rather than whatever remains at consumption.
+#!
+#! Asset removals (e.g. an earlier native-account indexed removal via `input_note::remove_asset`)
+#! only shrink the assets remaining in the note; they never affect its initial assets. This
+#! procedure therefore asserts that the single remaining offered asset still equals, word-for-word,
+#! the single asset the note was created with. Any prior removal from the PSWAP note aborts the whole
+#! transaction rather than letting the payout and remainder be sized from the residue.
 #!
 #! Inputs: []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
-@locals(8)
+#! Panics if:
+#! - the note does not carry exactly one remaining asset.
+#! - the note was not created with exactly one asset.
+#! - the remaining offered asset differs from the asset the note was created with.
+#!
+@locals(16)
 proc load_offered_asset
+    # Remove the note's remaining assets and require exactly one.
     locaddr.0 exec.active_note::remove_all_assets
     # => [num_assets]
 
     push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
     # => []
 
-    locaddr.0
-    # => [dest_ptr]
+    # Fetch the note's initial assets (unaffected by removals) and require exactly one.
+    locaddr.8 exec.active_note::get_initial_assets
+    # => [num_initial_assets]
 
-    exec.asset::load
+    push.1 eq assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    # => []
+
+    # Bind the offered asset to what the note was funded with: the remaining offered asset must match
+    # the initial offered asset word-for-word (asset ID and value).
+    locaddr.0 exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE]
+
+    locaddr.8 exec.asset::load
+    # => [INITIAL_ASSET_ID, INITIAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE]
+
+    movupw.2 assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    assert_eqw.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    # => []
+
+    # Re-load the offered asset (still in memory) as the return value.
+    locaddr.0 exec.asset::load
     # => [ASSET_ID, ASSET_VALUE]
 end
 
@@ -808,6 +839,8 @@ end
 #! Panics if:
 #! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
 #! - the note does not hold exactly one offered asset at consumption time.
+#! - the offered asset remaining in the note differs from the asset the note was created with (i.e.
+#!   it was partially removed before the script ran).
 #! - the total fill (account_fill + note_fill) overflows u64 or exceeds the max asset amount.
 #! - the account does not expose `receive_asset` / `move_asset_to_note`.
 @note_script

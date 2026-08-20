@@ -267,6 +267,12 @@ impl From<PswapNoteAttachment> for NoteAttachment {
 /// `[0, 0, 0, 0]`, triggering a full fill). To route a PSWAP note to a network account,
 /// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
 /// via the builder.
+///
+/// Fills are priced against the note's initial offered asset - the amount the creator funded, as
+/// recorded at note creation - rather than whatever remains at consumption time. The on-chain
+/// script asserts that the two are equal, so any pre-consumption asset removal (e.g. an earlier
+/// native-account indexed removal) aborts the transaction instead of letting a fill be priced
+/// against the residue.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {
