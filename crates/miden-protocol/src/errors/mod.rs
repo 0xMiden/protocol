@@ -14,16 +14,18 @@ use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetComposition, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{Asset, AssetComposition, AssetId, FungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
+use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
+    AccountVaultDelta,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -425,6 +427,14 @@ pub enum AccountDeltaError {
     #[error("asset {0} is changed by more than one asset delta")]
     DuplicateAssetDelta(AssetId),
     #[error(
+        "number of {delta_op} operations in account vault delta is {num_ops} but max is {max}",
+        max = AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP
+    )]
+    TooManyVaultAssetDeltas {
+        delta_op: AssetDeltaOperation,
+        num_ops: usize,
+    },
+    #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
     )]
     IncompatibleAccountUpdates {
@@ -683,11 +693,11 @@ pub enum AssetVaultError {
     #[error("provided assets contain duplicates")]
     DuplicateAsset(#[source] MerkleError),
     #[error("non fungible asset {0} already exists in the vault")]
-    DuplicateNonFungibleAsset(NonFungibleAsset),
+    DuplicateNonFungibleAsset(Asset),
     #[error("fungible asset {0} does not exist in the vault")]
     FungibleAssetNotFound(FungibleAsset),
     #[error("non fungible asset {0} does not exist in the vault")]
-    NonFungibleAssetNotFound(NonFungibleAsset),
+    NonFungibleAssetNotFound(Asset),
     #[error("subtracting fungible asset amounts would underflow")]
     SubtractFungibleAssetBalanceError(#[source] AssetError),
     #[error("maximum number of asset vault leaves exceeded")]
@@ -724,7 +734,7 @@ pub enum NoteError {
     #[error("duplicate fungible asset from issuer {0} in note")]
     DuplicateFungibleAsset(AccountId),
     #[error("duplicate non fungible asset {0} in note")]
-    DuplicateNonFungibleAsset(NonFungibleAsset),
+    DuplicateNonFungibleAsset(Asset),
     #[error("note type {0} is inconsistent with note tag {1}")]
     InconsistentNoteTag(NoteType, u64),
     #[error("adding fungible asset amounts would exceed maximum allowed amount")]

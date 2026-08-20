@@ -28,7 +28,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `note_root` is a commitment to all notes created in the current block.
 /// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
 ///   block.
-/// - `tx_kernel_commitment` a commitment to all transaction kernels supported by this block.
+/// - `tx_kernel_commitment` is the sequential hash of the kernel procedures.
 /// - `validator_keys` is the set of validator public keys authorized to sign the *next* block.
 /// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
 ///   [`FeeParameters`] for more details.

@@ -181,7 +181,7 @@ impl PauseConfigNote {
     }
 
     /// Returns the account ID of the managed account (the account the note is tagged for).
-    pub fn account(&self) -> AccountId {
+    pub fn target(&self) -> AccountId {
         self.target
     }
 
@@ -294,7 +294,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(note.sender(), sender);
-        assert_eq!(note.account(), managed);
+        assert_eq!(note.target(), managed);
 
         let note = Note::from(note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);

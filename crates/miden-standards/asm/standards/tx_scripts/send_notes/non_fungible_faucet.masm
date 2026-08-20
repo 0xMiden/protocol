@@ -6,19 +6,15 @@
 # set of output notes. See `send_notes::common` for the payload layout.
 #
 # Every note record must contain exactly one asset, which is minted by the faucet as part of
-# note creation. Unlike the fungible faucet, `non_fungible_faucet::mint_and_send` derives the
-# asset from the faucet itself, so only the asset's value word (its commitment) is read from the
-# record.
+# note creation.
 
+use miden::protocol::asset
 use miden::standards::faucets::non_fungible as non_fungible_faucet
 use miden::standards::tx_scripts::send_notes::common
-use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, PAYLOAD_ADDR, TAG_OFFSET, WORD_NUM_ELEMENTS} from miden::standards::tx_scripts::send_notes::common
+use {ITEMS_OFFSET, ITEM_NUM_ELEMENTS, NOTES_START_ADDR, NOTE_TYPE_OFFSET, NUM_ASSETS_OFFSET, NUM_ATTACHMENTS_OFFSET, NUM_NOTES_ADDR, PAYLOAD_ADDR, TAG_OFFSET} from miden::standards::tx_scripts::send_notes::common
 
 # CONSTANTS
 # =================================================================================================
-
-# Element offset of the single asset's value word within a note record, after its ID word.
-const ASSET_VALUE_OFFSET = ITEMS_OFFSET + WORD_NUM_ELEMENTS
 
 # Element offset of the first attachment item within a note record (after the single asset).
 const ATTACHMENTS_OFFSET = ITEMS_OFFSET + ITEM_NUM_ELEMENTS
@@ -109,21 +105,20 @@ proc process_notes
 
         # mint the asset and send it in a new note built from the record's fields
         # -----------------------------------------------------------------------------------------
-        push.0.0.0.0 push.0.0
-        # => [pad(6), notes_left, pad(16)]
+        push.0.0
+        # => [pad(2), notes_left, pad(16)]
 
         padw loc_load.PROCESS_NOTES_READ_PTR_LOC mem_loadw_le
-        # => [RECIPIENT, pad(6), notes_left, pad(16)]
+        # => [RECIPIENT, pad(2), notes_left, pad(16)]
 
         loc_load.PROCESS_NOTES_READ_PTR_LOC add.NOTE_TYPE_OFFSET mem_load
-        # => [note_type, RECIPIENT, pad(6), notes_left, pad(16)]
+        # => [note_type, RECIPIENT, pad(2), notes_left, pad(16)]
 
         loc_load.PROCESS_NOTES_READ_PTR_LOC add.TAG_OFFSET mem_load
-        # => [tag, note_type, RECIPIENT, pad(6), notes_left, pad(16)]
+        # => [tag, note_type, RECIPIENT, pad(2), notes_left, pad(16)]
 
-        # the faucet derives the asset from itself, so only the commitment is passed
-        padw loc_load.PROCESS_NOTES_READ_PTR_LOC add.ASSET_VALUE_OFFSET mem_loadw_le
-        # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6), notes_left, pad(16)]
+        loc_load.PROCESS_NOTES_READ_PTR_LOC add.ITEMS_OFFSET exec.asset::load
+        # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2), notes_left, pad(16)]
 
         call.non_fungible_faucet::mint_and_send
         # => [note_idx, pad(15), notes_left, pad(16)]
