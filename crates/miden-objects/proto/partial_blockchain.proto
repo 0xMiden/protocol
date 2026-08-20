@@ -1,7 +1,7 @@
 syntax = "proto3";
 package blockchain;
 
-import "block_header.proto";
+import "block.proto";
 import "primitives.proto";
 
 message TrackedMmrLeaf {

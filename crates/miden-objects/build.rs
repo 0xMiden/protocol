@@ -12,10 +12,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "primitives.proto",
         "account.proto",
         "note.proto",
-        "block_header.proto",
-        "blockchain.proto",
-        "partial_blockchain.proto",
         "transaction.proto",
+        "block.proto",
+        "partial_blockchain.proto",
+        "batch.proto",
     ];
 
     let mut compiler = protox::Compiler::new([&proto_dir])?;
