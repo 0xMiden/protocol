@@ -30,6 +30,8 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
+use super::assert_default_expiration_limit;
+
 // HELPERS
 // ================================================================================================
 
@@ -372,7 +374,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
         .execute()
         .await?;
 
-    super::assert_default_expiration_limit(&executed, "fee estimation");
+    assert_default_expiration_limit(&executed, "fee estimation");
 
     Ok(())
 }
@@ -578,7 +580,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
         .execute()
         .await?;
 
-    super::assert_default_expiration_limit(&executed, "foreign fee estimation");
+    assert_default_expiration_limit(&executed, "foreign fee estimation");
 
     Ok(())
 }

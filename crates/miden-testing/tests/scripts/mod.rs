@@ -26,8 +26,6 @@ mod tx_fee;
 
 use miden_protocol::transaction::ExecutedTransaction;
 
-/// Mirrors `DEFAULT_EXPIRATION_BLOCK_DELTA` in
-/// `crates/miden-standards/asm/standards/expiration.masm`.
 const DEFAULT_EXPIRATION_BLOCK_DELTA: u32 = 20;
 
 /// Asserts that the transaction's expiration was limited to the default expiration block delta

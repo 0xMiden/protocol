@@ -45,6 +45,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::assert_default_expiration_limit;
 use super::rbac::{build_grant_role_note, role, test_account_id};
 use super::transfer_policy::{add_faucet_with_wallet, assert_minted_note, build_mint_note};
 use crate::consume_note;
@@ -179,7 +180,7 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    super::assert_default_expiration_limit(&executed, "the blocklist callback");
+    assert_default_expiration_limit(&executed, "the blocklist callback");
 
     Ok(())
 }
