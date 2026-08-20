@@ -72,7 +72,18 @@ end
 # PUBLIC HELPERS
 # =================================================================================================
 
-#! Moves all assets from the active note to the native account's vault.
+#! Moves all assets remaining in the active note to the native account's vault.
+#!
+#! The moved assets are those remaining in the note at the time of the call; they are not compared
+#! against the note's initial assets info. Assets may already have been removed earlier in the
+#! transaction, by the note's own script or by a native-account procedure via indexed removal
+#! (input_note::remove_asset / remove_all_assets); in that case only the remainder is credited
+#! and note consumption still succeeds. This is intentional, but safe only where the consuming
+#! account is the beneficiary of the note's assets. Note that an account procedure performing
+#! indexed removal is callable by every note script in the transaction, not just by the account's
+#! owner. Logic that prices or validates a note based on its assets must use the note's initial
+#! assets (active_note::get_initial_assets for the values, or get_initial_assets_info /
+#! get_initial_num_assets for the commitment / count) rather than its remaining assets.
 #!
 #! Inputs:  []
 #! Outputs: []

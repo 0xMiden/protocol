@@ -96,7 +96,7 @@ end
 
 #! Extended Pay-to-ID note script (Reclaimable & Timelockable)
 #!
-#! Adds all assets from the note to the account if all of the following conditions are true:
+#! Adds the note's remaining assets to the account if all of the following conditions are true:
 #! - The transaction's reference block number is greater than or equal to the note's timelock block height.
 #! - Any of the following conditions is true:
 #!   - The account ID against which the transaction is executed matches the note's target account id.

@@ -54,6 +54,15 @@ static SWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Construct one with the [builder](SwapNote::builder), which defaults both the note type and the
 /// payback note type to [`NoteType::Private`] and adds no attachments; convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
+///
+/// # Warning
+///
+/// The consumer receives the offered asset *remaining* in the note at consumption time, while the
+/// payback is fixed in note storage. If the consuming account exposes a procedure that performs
+/// indexed removal, another note script in the same transaction can shrink the offered asset
+/// before this script runs; the consumer then pays the full payback for a reduced offered asset.
+/// The loss falls on the consuming account, not the creator. See
+/// [issue #3601](https://github.com/0xMiden/protocol/issues/3601).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwapNote {
     sender: AccountId,

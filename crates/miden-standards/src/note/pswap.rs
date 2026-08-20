@@ -267,6 +267,17 @@ impl From<PswapNoteAttachment> for NoteAttachment {
 /// `[0, 0, 0, 0]`, triggering a full fill). To route a PSWAP note to a network account,
 /// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
 /// via the builder.
+///
+/// # Warning
+///
+/// The fill is priced against the offered asset *remaining* in the note at consumption time,
+/// not the amount the creator funded. Indexed removal requires a native-account procedure, so
+/// this is only reachable when the consuming account exposes a procedure that performs it (via
+/// `input_note::remove_asset` / `remove_all_assets`) and another note script earlier in the same
+/// transaction invokes it; the standard basic wallet exposes no such procedure. Where it is
+/// reachable, the offered asset can be shrunk before the script runs and the difference shifted
+/// out of the creator's remainder note. See
+/// [issue #3601](https://github.com/0xMiden/protocol/issues/3601).
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {

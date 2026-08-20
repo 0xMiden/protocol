@@ -42,7 +42,7 @@ const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="SWAP script expects exactly 1
 
 const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset"
 
-#! Swap script: adds the offered asset from the note into the consumer's account and creates a
+#! Swap script: adds the note's remaining offered asset into the consumer's account and creates a
 #! P2ID payback note addressed to the creator carrying the requested asset.
 #!
 #! The payback note type (selected by the creator) determines how the payback recipient is
@@ -59,6 +59,7 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #!
 #! Panics if:
 #! - account does not expose the required wallet procedures.
+#! - the note does not hold exactly one asset at consumption time.
 #! - account vault does not contain the requested asset.
 #! - adding a fungible asset would result in amount overflow, i.e., the total amount would be
 #!   greater than 2^63.
@@ -145,7 +146,11 @@ pub proc main
     push.ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets, pad(8)]
 
-    # make sure the number of assets is 1
+    # make sure the number of assets is 1; this fails if the offered asset was fully removed
+    # earlier in the transaction, while a reduced fungible amount still passes and is claimed
+    # as-is. The loss falls on the consuming account, not the creator: the payback amount is
+    # fixed in note storage and is independent of the remaining offered amount. If the account
+    # exposes a procedure performing indexed removal, any note script it consumes can trigger it.
     assert.err=ERR_SWAP_WRONG_NUMBER_OF_ASSETS
     # => [pad(8)]
 
