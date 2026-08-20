@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 
 use miden_core::{Felt, Word};
-use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId};
+use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AssetCallbackFlag};
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
@@ -235,8 +235,11 @@ impl AggLayerFaucet {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
+        let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
+
         NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
             .expect("faucet note allowlist is non-empty")
+            .with_asset_callbacks(asset_callbacks)
             .with_component(agglayer_component)
             .with_component(Ownable2Step::new(bridge_account_id))
             .with_component(
