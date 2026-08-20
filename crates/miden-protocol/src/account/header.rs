@@ -290,8 +290,6 @@ mod tests {
         elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_RESERVED_IDX] = Felt::ONE;
 
         let err = AccountHeader::try_from_elements(&elements).unwrap_err();
-        assert_matches!(err, AccountError::HeaderReservedElementNotZero(value) => {
-            assert_eq!(value, Felt::ONE);
-        });
+        assert_matches!(err, AccountError::HeaderReservedElementNotZero(value) if value == Felt::ONE);
     }
 }
