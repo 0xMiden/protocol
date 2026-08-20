@@ -2091,20 +2091,10 @@ fn pswap_parse_inputs_roundtrip() {
 /// Regression test for the offered-asset drain (issue #3601, PSWAP leg).
 ///
 /// A PSWAP note offers 1000 USDC for a minimum of 100 ETH. The consuming account exposes an
-/// `@account_procedure` that performs indexed input-note asset removal
-/// (`input_note::remove_asset`), which the kernel permits only from the native-account context. An
-/// earlier helper input note (consumed at index 0) calls that procedure to drain 900 USDC out of
-/// the PSWAP note (index 1) into the consumer's own vault before the PSWAP script runs, leaving
-/// only 100 USDC in the note.
-///
-/// Pricing the fill against that 100 USDC residue - rather than the 1000 USDC the note was funded
-/// with - would let the consumer keep the drained 900 for free while the creator's remainder note
-/// absorbs the loss. The single-asset assertion still passes because a partially-removed fungible
-/// keeps its slot with the reduced value.
-///
-/// The fix binds the offered amount to the note's initial assets, so the drained note now aborts
-/// the whole transaction with `ERR_PSWAP_OFFERED_ASSET_ALTERED` instead of pricing against the
-/// residue.
+/// `@account_procedure` performing indexed input-note asset removal (`input_note::remove_asset`),
+/// permitted only from the native-account context. An earlier helper input note (index 0) calls it
+/// to drain 900 USDC out of the PSWAP note (index 1) before the PSWAP script runs. A partial fill
+/// must then abort with `ERR_PSWAP_OFFERED_ASSET_ALTERED`.
 #[tokio::test]
 async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -2212,8 +2202,7 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
 
     let mock_chain = builder.build()?;
 
-    // A 50-of-100 ETH partial fill: below the minimum, so absent the fix a remainder note would be
-    // created and priced against the drained residue.
+    // A 50-of-100 ETH partial fill, which exercises the remainder-note pricing path.
     let mut note_args_map = BTreeMap::new();
     note_args_map.insert(pswap_note.id(), PswapNote::create_args(50, 0)?);
 
