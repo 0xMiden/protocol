@@ -9,10 +9,12 @@ use {
     INPUT_NOTES_PTR,
     MAX_NOTES_PER_BATCH,
     NOTE_ENTRY_FELT_LEN,
+    NOTE_ENTRY_NUM_WORDS,
     OUTPUT_NOTE_IS_CREATED_OFFSET,
     OUTPUT_NOTE_LINKED_INPUT_OFFSET,
     OUTPUT_NOTES_PTR,
     TX_NOTES_SCRATCH_PTR,
+    WORD_NUM_ELEMENTS,
 } from miden::batch_kernel::memory
 use {ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED} from miden::batch_kernel::errors
 
@@ -239,10 +241,18 @@ proc process_tx_output_notes
         # Pipe this transaction's output-note tuples into the scratch region, asserting their
         # sequential hash equals OUTPUT_NOTES_COMMITMENT_idx.
         push.TX_NOTES_SCRATCH_PTR movdn.4
+        # => [OUTPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
+
         adv.push_mapvaln
-        adv_push div.4
-        # => [num_words, OUTPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
-        dup div.2 u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
+        # OS => [OUTPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
+        # AS => [tx_notes_len, [tx_note_tuples]]
+
+        adv_push div.WORD_NUM_ELEMENTS
+        # OS => [num_words, OUTPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
+        # AS => [[tx_note_tuples]]
+
+        dup div.NOTE_ENTRY_NUM_WORDS u32assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
+        u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
@@ -360,10 +370,18 @@ proc process_tx_input_notes
         # sequential hash equals INPUT_NOTES_COMMITMENT_idx (so the tuples are exactly the committed
         # ones).
         push.TX_NOTES_SCRATCH_PTR movdn.4
+        # => [INPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
+
         adv.push_mapvaln
-        adv_push div.4
-        # => [num_words, INPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
-        dup div.2 u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
+        # OS => [INPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
+        # AS => [tx_notes_len, [tx_note_tuples]]
+
+        adv_push div.WORD_NUM_ELEMENTS
+        # OS => [num_words, INPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
+        # AS => [[tx_note_tuples]]
+
+        dup div.NOTE_ENTRY_NUM_WORDS u32assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
+        u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]

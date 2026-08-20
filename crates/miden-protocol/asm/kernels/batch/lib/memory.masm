@@ -3,49 +3,36 @@
 #
 # Below is the memory layout used by the batch kernel:
 #
-# +-------------------+-------------------------+----------------------------------+
-# | Address range     | Constant                | Contents                         |
-# +-------------------+-------------------------+----------------------------------+
-# | 0                 | NUM_TRANSACTIONS_PTR    | num_transactions (1 felt).       |
-# | 4..8              | BATCH_HASHER_RATE0_PTR  | RATE0 of the batch-level         |
-# |                   |                         | poseidon2 hasher state.          |
-# | 8..12             | BATCH_HASHER_RATE1_PTR  | RATE1 of the batch-level hasher. |
-# | 12..16            | BATCH_HASHER_CAP_PTR    | CAPACITY of the batch-level      |
-# |                   |                         | hasher.                          |
-# | 18                | NUM_INPUT_NOTES_PTR     | number of entries in the         |
-# |                   |                         | input-note list.                 |
-# | 19                | NUM_OUTPUT_NOTES_PTR    | number of entries in the         |
-# |                   |                         | output-note list.                |
-# | 20..8212          | TX_TUPLES_PTR           | Layer 1 piped data: per          |
-# |                   |                         | transaction `[TX_ID,             |
-# |                   |                         | account_id_suffix,               |
-# |                   |                         | account_id_prefix, 0, 0]`        |
-# |                   |                         | (8 felts each, sized for up to   |
-# |                   |                         | 1024 transactions).              |
-# | 8212..24596       | TX_HEADERS_PTR          | Layer 2 piped data: per          |
-# |                   |                         | transaction `[INIT, FINAL,       |
-# |                   |                         | INPUT_NOTES_COMMITMENT,          |
-# |                   |                         | OUTPUT_NOTES_COMMITMENT]`        |
-# |                   |                         | (16 felts each, sized for up     |
-# |                   |                         | to 1024 transactions).           |
-# | 24596..32788      | TX_NOTES_SCRATCH_PTR    | Per-transaction scratch space    |
-# |                   |                         | for Layer 3a / Layer 3b note     |
-# |                   |                         | data (overwritten each tx).      |
-# | 32788..40980      | INPUT_NOTES_PTR         | Nullifier-sorted input-note      |
-# |                   |                         | list: `[NULLIFIER,               |
-# |                   |                         | NOTE_ID_OR_EMPTY]` per note      |
-# |                   |                         | (8 felts each, up to 1024).      |
-# | 40980..45076      | INPUT_NOTE_FLAGS_PTR    | Parallel input-note flags:       |
-# |                   |                         | `[erasure, consumption, 0, 0]`   |
-# |                   |                         | per note (4 felts each).         |
-# | 45076..53268      | OUTPUT_NOTES_PTR        | Note-id-sorted output-note       |
-# |                   |                         | list: `[NOTE_ID, 0, 0, 0,        |
-# |                   |                         | 0]` per note (8 felts each).     |
-# | 53268..57364      | OUTPUT_NOTE_FLAGS_PTR   | Parallel output-note flags:      |
-# |                   |                         | `[will_be_erased, is_created,    |
-# |                   |                         | linked_input_index, 0]` per note |
-# |                   |                         | (4 felts each).                  |
-# +-------------------+-------------------------+----------------------------------+
+# +-------------------+-------------------------+----------------------------------------------------------------------+
+# | Address range     | Constant                | Contents                                                             |
+# +-------------------+-------------------------+----------------------------------------------------------------------+
+# | 0                 | NUM_TRANSACTIONS_PTR    | num_transactions (1 felt).                                           |
+# | 4..8              | BATCH_HASHER_RATE0_PTR  | RATE0 of the batch-level poseidon2 hasher state.                     |
+# | 8..12             | BATCH_HASHER_RATE1_PTR  | RATE1 of the batch-level poseidon2 hasher state.                     |
+# | 12..16            | BATCH_HASHER_CAP_PTR    | CAPACITY of the batch-level poseidon2 hasher state.                  |
+# | 18                | NUM_INPUT_NOTES_PTR     | number of entries in the nullifier-sorted input-note list.           |
+# | 19                | NUM_OUTPUT_NOTES_PTR    | number of entries in the note-id-sorted output-note list.            |
+# | 20..8212          | TX_TUPLES_PTR           | Layer 1 piped data: `[TX_ID, account_id_suffix, account_id_prefix,   |
+# |                   |                         | 0, 0]` per transaction (8 felts each, up to 1024 transactions).      |
+# | 8212..24596       | TX_HEADERS_PTR          | Layer 2 piped data: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,           |
+# |                   |                         | OUTPUT_NOTES_COMMITMENT]` (16 felts per transaction, up to 1024).    |
+# | 24596..32788      | TX_NOTES_SCRATCH_PTR    | per-transaction scratch space for Layer 3a / Layer 3b note data      |
+# |                   |                         | (overwritten each transaction).                                      |
+# | 32788..40980      | INPUT_NOTES_PTR         | nullifier-sorted input-note list: `[NULLIFIER, NOTE_ID_OR_EMPTY]`    |
+# |                   |                         | per note (8 felts each, up to 1024 notes).                           |
+# | 40980..45076      | INPUT_NOTE_FLAGS_PTR    | parallel input-note flags: `[erasure, consumption, 0, 0]` per note   |
+# |                   |                         | (4 felts each).                                                      |
+# | 45076..53268      | OUTPUT_NOTES_PTR        | note-id-sorted output-note list: `[NOTE_ID, 0, 0, 0, 0]` per note    |
+# |                   |                         | (8 felts each, up to 1024 notes).                                    |
+# | 53268..57364      | OUTPUT_NOTE_FLAGS_PTR   | parallel output-note flags: `[will_be_erased, is_created,            |
+# |                   |                         | linked_input_index, 0]` per note (4 felts each).                     |
+# +-------------------+-------------------------+----------------------------------------------------------------------+
+
+# GENERAL CONSTANTS
+# =================================================================================================
+
+# The number of felts in a word.
+pub const WORD_NUM_ELEMENTS = 4
 
 # BOOK KEEPING
 # =================================================================================================
@@ -84,6 +71,9 @@ pub const TX_TUPLES_PTR = 20
 # Number of felts each transaction occupies in TX_TUPLES_PTR.
 const TX_TUPLE_FELT_LEN = 8
 
+# Number of words in a Layer 1 tuple (a TX_ID word plus an account-id word).
+pub const TX_TUPLE_NUM_WORDS = 2
+
 # Base of the Layer 2 piped data region. Per transaction, 16 felts:
 #   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]`.
 # This must match the felt-sequence layout of `TransactionId::new`.
@@ -113,6 +103,9 @@ pub const INPUT_NOTES_PTR = 32788
 
 # Number of felts each note occupies in INPUT_NOTES_PTR / OUTPUT_NOTES_PTR (KEY word + VALUE word).
 pub const NOTE_ENTRY_FELT_LEN = 8
+
+# Number of words in a sorted note list entry (a KEY word plus a VALUE word).
+pub const NOTE_ENTRY_NUM_WORDS = 2
 
 # Base of the parallel input-note flags array. Per note, one word `[erasure, consumption, 0, 0]`.
 # `erasure` is 0 (not erased / external), 1 (expected to be erased: the input note's id matches an

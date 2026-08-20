@@ -7,8 +7,11 @@ use {
     MAX_NOTES_PER_BATCH,
     MAX_TRANSACTIONS_PER_BATCH,
     NOTE_ENTRY_FELT_LEN,
+    NOTE_ENTRY_NUM_WORDS,
     OUTPUT_NOTES_PTR,
+    TX_TUPLE_NUM_WORDS,
     TX_TUPLES_PTR,
+    WORD_NUM_ELEMENTS,
 } from miden::batch_kernel::memory
 
 # CONSTANTS
@@ -25,6 +28,8 @@ const OUTPUT_NOTE_LIST_KEY = word("miden::batch_kernel::output_note_list")
 const ERR_BATCH_TOO_MANY_TRANSACTIONS =
     "the batch contains more transactions than the maximum allowed"
 
+const ERR_BATCH_NO_TRANSACTIONS = "the batch contains no transactions"
+
 const ERR_BATCH_NOTE_LIST_NOT_SORTED = "a batch note list is not strictly sorted by its key"
 
 const ERR_BATCH_NOTE_LIST_TOO_LONG =
@@ -37,31 +42,41 @@ const ERR_BATCH_NOTE_LIST_TOO_LONG =
 #! returns the number of entries. The list is not hashed against a commitment; its integrity is
 #! established later by binding every entry to a verified per-transaction note.
 #!
-#! Inputs:  [KEY, write_ptr]
-#! Outputs: [num_notes]
+#! Inputs:
+#!   Operand stack: [KEY, write_ptr]
+#!   Advice map:
+#!     KEY |-> [[KEY_0, VALUE_0], ..., [KEY_n, VALUE_n]]
+#! Outputs:
+#!   Operand stack: [num_notes]
 proc load_note_list
     adv.push_mapvaln
-    # AS: [len_felts, data...]
+    # OS => [KEY, write_ptr]
+    # AS => [len_felts, [note_list_entries]]
+
     adv_push
-    # => [len_felts, KEY, write_ptr]
-    div.4
+    # OS => [len_felts, KEY, write_ptr]
+    # AS => [[note_list_entries]]
+
+    div.WORD_NUM_ELEMENTS
     # => [num_words, KEY, write_ptr]
-    dup div.2
+
+    dup div.NOTE_ENTRY_NUM_WORDS
     # => [num_notes, num_words, KEY, write_ptr]
+
     # A length that is not a multiple of 8 felts wraps `num_notes` (field `div`) to a non-u32
-    # felt, which the range check below rejects.
-    dup u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
+    # felt, which the u32 assertion rejects.
+    dup u32assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
+    u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     movdn.6
     # => [num_words, KEY, write_ptr, num_notes]
-    movup.5
-    # => [write_ptr, num_words, KEY, num_notes]
-    swap
+
+    movup.5 swap
     # => [num_words, write_ptr, KEY, num_notes]
+
     exec.mem::pipe_words_to_memory
     # => [R0, R1, C, end_ptr, KEY, num_notes]
-    dropw dropw dropw drop
-    # => [KEY, num_notes]
-    dropw
+
+    dropw dropw dropw drop dropw
     # => [num_notes]
 end
 
@@ -142,7 +157,8 @@ end
 #! Performs two steps:
 #! - Layer 1: pipes the `(tx_id, account_id)` tuples from the advice map keyed by `BATCH_ID` into
 #!   [`memory::TX_TUPLES_PTR`], asserting that the sequential hash of the piped data matches
-#!   `BATCH_ID`. The number of transactions is derived from the piped length and stored in
+#!   `BATCH_ID`. The number of transactions is derived from the piped length, validated to be
+#!   non-zero and at most [`MAX_TRANSACTIONS_PER_BATCH`], and stored in
 #!   [`memory::NUM_TRANSACTIONS_PTR`].
 #! - Layer 2: for each transaction, pipes its pre-image from the advice map keyed by the verified
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
@@ -163,6 +179,7 @@ end
 #!   Operand stack: []
 #!
 #! Panics if:
+#! - the number of transactions is zero or exceeds the maximum allowed.
 #! - the `(tx_id, account_id)` tuple list piped from the advice map does not hash to `BATCH_ID`.
 #! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT)`
 #!   data piped from the advice map does not hash to its `tx_id`.
@@ -174,24 +191,26 @@ pub proc prepare_batch
     # Layer 1: pipe BATCH_ID's mapped value to tx_tuples_ptr + verify.
     # ---------------------------------------------------------------------------------------------
 
-    # => [BATCH_ID]
-    push.TX_TUPLES_PTR movdn.4
-    # => [BATCH_ID, tx_tuples_ptr]
-
     adv.push_mapvaln
+    # OS => [BATCH_ID]
     # AS => [tx_tuples_len, [TX_TUPLES]]
 
-    # adv_push reads the value's felt length; div.4 converts felts -> words (4 felts per word).
-    adv_push div.4
-    # => [num_words, BATCH_ID, tx_tuples_ptr]
+    # adv_push reads the value's felt length; div converts felts -> words.
+    adv_push div.WORD_NUM_ELEMENTS
+    # OS => [num_words, BATCH_ID]
+    # AS => [[TX_TUPLES]]
 
     # num_transactions = num_words / 2 (each tx contributes 2 words: tx_id + account_id_pair).
-    dup div.2
-    # => [num_transactions, num_words, BATCH_ID, tx_tuples_ptr]
-    dup u32lte.MAX_TRANSACTIONS_PER_BATCH assert.err=ERR_BATCH_TOO_MANY_TRANSACTIONS
-    exec.memory::set_num_transactions
+    dup div.TX_TUPLE_NUM_WORDS
+    # => [num_transactions, num_words, BATCH_ID]
 
-    movup.5 swap
+    dup u32assert.err=ERR_BATCH_TOO_MANY_TRANSACTIONS
+    u32lte.MAX_TRANSACTIONS_PER_BATCH assert.err=ERR_BATCH_TOO_MANY_TRANSACTIONS
+    dup neq.0 assert.err=ERR_BATCH_NO_TRANSACTIONS
+    exec.memory::set_num_transactions
+    # => [num_words, BATCH_ID]
+
+    push.TX_TUPLES_PTR swap
     # => [num_words, tx_tuples_ptr, BATCH_ID]
 
     # Pipe the tuples into memory, asserting their poseidon2 hash equals BATCH_ID.
@@ -203,40 +222,40 @@ pub proc prepare_batch
     # ---------------------------------------------------------------------------------------------
 
     exec.memory::get_num_transactions
-    push.0
-    # => [tx_index, num_transactions]
+    # => [num_transactions]
 
-    dup.1 dup.1 neq
-    # => [should_loop, tx_index, num_transactions]
-
+    # Layer 1 asserted num_transactions > 0, so enter the loop unconditionally and iterate
+    # tx_index from num_transactions - 1 down to 0.
+    push.1
     while.true
-        dup exec.memory::get_tx_id
-        # => [TX_ID, tx_index, num_transactions]
+        sub.1
+        # => [tx_index]
 
-        dup.4 exec.memory::tx_header_ptr movdn.4
-        # => [TX_ID, tx_header_ptr, tx_index, num_transactions]
+        dup exec.memory::get_tx_id
+        # => [TX_ID, tx_index]
 
         adv.push_mapvaln
+        # OS => [TX_ID, tx_index]
         # AS => [tx_header_len, [TX_HEADER]]
 
-        # adv_push reads the value's felt length; div.4 converts felts -> words (4 felts per word).
-        adv_push div.4
-        # => [num_words, TX_ID, tx_header_ptr, tx_index, num_transactions]
+        # adv_push reads the value's felt length; div converts felts -> words.
+        adv_push div.WORD_NUM_ELEMENTS
+        # OS => [num_words, TX_ID, tx_index]
+        # AS => [[TX_HEADER]]
 
-        movup.5 swap
-        # => [num_words, tx_header_ptr, TX_ID, tx_index, num_transactions]
+        dup.5 exec.memory::tx_header_ptr swap
+        # => [num_words, tx_header_ptr, TX_ID, tx_index]
 
         # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.
         exec.mem::pipe_preimage_to_memory
-        # => [end_ptr, tx_index, num_transactions]
+        # => [end_ptr, tx_index]
         drop
 
-        add.1
-        dup.1 dup.1 neq
-        # => [should_loop, tx_index, num_transactions]
+        dup neq.0
+        # => [should_loop, tx_index]
     end
 
-    drop drop
+    drop
 
     # Note lists: load the sorted note lists and assert each is strictly sorted by its key.
     # ---------------------------------------------------------------------------------------------
