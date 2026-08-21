@@ -40,6 +40,7 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds max supply"
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
+const ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO = "the amount to mint is zero"
 const ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
 
@@ -246,6 +247,7 @@ end
 #!
 #! Panics if:
 #! - active mint policy validation fails.
+#! - the amount to mint, after the mint policy ran, is zero.
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
 #! - the token supply exceeds the maximum supply.
 #! - the maximum supply exceeds the maximum representable fungible asset amount.
@@ -268,7 +270,11 @@ pub proc mint_and_send
 
     # ASSET_VALUE for a fungible asset is `[amount, 0, 0, 0]`. Keep amount, drop the rest.
     movdn.3 drop drop drop
-    # => [amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+
+    # Reject a zero amount.
+    dup neq.0 assert.err=ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
 
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
