@@ -446,6 +446,7 @@ fn setup_bridge_fixture(
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
 

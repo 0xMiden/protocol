@@ -277,7 +277,7 @@ mod tests {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
         let bridge =
-            create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, id, 77);
+            create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, id, id, 77);
         let faucet = create_existing_agglayer_faucet(
             Word::default(),
             "AGG",

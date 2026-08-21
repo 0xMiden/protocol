@@ -35,6 +35,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;

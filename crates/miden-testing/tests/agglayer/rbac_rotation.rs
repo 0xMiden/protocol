@@ -288,6 +288,7 @@ fn bridge_allowed_notes_pin() {
         dummy,
         dummy,
         dummy,
+        dummy,
         MIDEN_NETWORK_ID,
     );
     let network_account =

@@ -258,24 +258,16 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
     })?;
 
     let bridge_admin = bridge_admin_account_id();
-    let roles = BridgeRoles::new(
-        [faucet_manager.id()].into(),
-        [ger_injector.id()].into(),
-        [ger_remover.id()].into(),
-        [bridge_admin].into(),
-        [pauser.id()].into(),
-    )?;
-    let pricer = network_note_pricer(0);
-    let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
-    let bridge = AggLayerBridge::account_builder(
+    let bridge = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
         bridge_admin,
-        roles,
+        faucet_manager.id(),
+        ger_injector.id(),
+        ger_remover.id(),
+        bridge_admin,
+        pauser.id(),
         MIDEN_NETWORK_ID,
-        pricer.fee_parameters().fee_faucet_id(),
-        fee_policy,
-    )
-    .build_existing()?;
+    );
     builder.add_account(bridge.clone())?;
 
     Ok(BridgeSetup {
