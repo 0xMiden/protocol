@@ -123,6 +123,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -220,6 +221,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
@@ -342,6 +344,7 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -461,6 +464,7 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
@@ -608,6 +612,7 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -741,6 +746,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );

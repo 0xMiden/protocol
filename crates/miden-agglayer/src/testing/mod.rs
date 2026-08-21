@@ -61,6 +61,7 @@ pub fn bridge_admin_account_id() -> AccountId {
 }
 
 /// Creates an existing bridge account with one holder per operational role.
+#[allow(clippy::too_many_arguments)]
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
     bridge_admin: AccountId,
@@ -68,6 +69,7 @@ pub fn create_existing_bridge_account_with_roles(
     ger_injector: AccountId,
     ger_remover: AccountId,
     fee_manager: AccountId,
+    pauser: AccountId,
     network_id: u32,
 ) -> Account {
     let fee_policy = zero_fee_policy(AggLayerBridge::allowed_notes());
@@ -76,7 +78,7 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([ger_injector]),
         BTreeSet::from([ger_remover]),
         BTreeSet::from([fee_manager]),
-        BTreeSet::from([bridge_admin]),
+        BTreeSet::from([pauser]),
     )
     .expect("single-holder role sets are non-empty");
 

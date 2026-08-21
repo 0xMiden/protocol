@@ -22,12 +22,12 @@ implementation are called out inline with `TODO (Future)` markers.
 | **User** | End-user Miden account that holds assets and initiates bridge-out deposits, or receives assets from a bridge-in claim. | Any account with `basic_wallet` component |
 | **AggLayer Bridge** | Onchain bridge account that manages the Local Exit Tree (LET), faucet registry, and GER state. Consumes B2AGG, CONFIG, and UPDATE_GER notes. | Network-mode account with a single `bridge` component |
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
-| **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
-| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
-| **Bridge Admin (`BRIDGE_ADMIN`)** (offchain) | Holds the bridge account's built-in `ADMIN` role. Manages bridge roles, restores a paused bridge, and controls allowlists and fee-policy selection. | Not an onchain entity; creates RBAC_CONFIG, PAUSE_CONFIG, and NETWORK_ACCOUNT_CONFIG notes |
-| **Faucet Admin (`FAUCET_ADMIN`)** (offchain) | Holds a faucet account's separate built-in `ADMIN` role. Manages that faucet's roles, allowlists, and fee-policy selection but cannot mint or change its owner. | Not an onchain entity; creates RBAC_CONFIG and NETWORK_ACCOUNT_CONFIG notes |
-| **Fee Manager (`FEE_MNGR`)** (offchain) | Holds a bridge or faucet account's `FEE_MNGR` role and updates that account's note fee schedule. | Not an onchain entity; creates CONSTANT_FEE_POLICY_CONFIG notes |
-| **Pauser (`PAUSER`)** (offchain) | Holds the bridge account's `PAUSER` role and can halt bridge operations, but cannot resume them. | Not an onchain entity; creates PAUSE_CONFIG notes |
+| **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Creates notes targeting bridge/faucet |
+| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Creates config notes |
+| **Bridge Admin (`BRIDGE_ADMIN`)** (offchain) | Holds the bridge account's built-in `ADMIN` role. Manages bridge roles, restores a paused bridge, and controls allowlists and fee-policy selection. | Creates RBAC_CONFIG, PAUSE_CONFIG, and NETWORK_ACCOUNT_CONFIG notes |
+| **Faucet Admin (`FAUCET_ADMIN`)** (offchain) | Holds a faucet account's separate built-in `ADMIN` role. Manages that faucet's roles, allowlists, and fee-policy selection but cannot mint or change its owner. | Creates RBAC_CONFIG and NETWORK_ACCOUNT_CONFIG notes |
+| **Fee Manager (`FEE_MNGR`)** (offchain) | Holds a bridge or faucet account's `FEE_MNGR` role and updates that account's note fee schedule. | Creates CONSTANT_FEE_POLICY_CONFIG notes |
+| **Pauser (`PAUSER`)** (offchain) | Holds the bridge account's `PAUSER` role and can halt bridge operations, but cannot resume them. | Creates PAUSE_CONFIG notes |
 
 ---
 
