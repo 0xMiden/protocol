@@ -357,13 +357,6 @@ end
 #! installed on an account whose flag is disabled would therefore look correctly configured while
 #! never being invoked, silently and permanently disabling whatever the callback enforces.
 #!
-#! Only the presence of a callback slot is relevant, not its value: a slot's value can be rewritten
-#! over the account's lifetime, while its presence can only change through an account upgrade, so
-#! only the presence can be tied to the immutable flag.
-#!
-#! The converse is valid: an account may have the flag enabled without installing a callback slot,
-#! in which case the kernel skips the callback.
-#!
 #! Inputs:  []
 #! Outputs: []
 #!
