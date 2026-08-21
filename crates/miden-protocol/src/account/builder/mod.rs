@@ -65,7 +65,7 @@ pub struct AccountBuilder {
     nonce: Option<Felt>,
     components: Vec<AccountComponent>,
     account_type: AccountType,
-    force_asset_callbacks: bool,
+    asset_callbacks: AssetCallbackFlag,
     init_seed: [u8; 32],
     id_version: AccountIdVersion,
 }
@@ -84,7 +84,7 @@ impl AccountBuilder {
             components: vec![],
             init_seed,
             account_type: AccountType::Private,
-            force_asset_callbacks: false,
+            asset_callbacks: AssetCallbackFlag::Disabled,
             id_version: AccountIdVersion::Version1,
         }
     }
@@ -117,7 +117,7 @@ impl AccountBuilder {
     /// immutable, an account created without it can never have callbacks invoked, whereas an
     /// account created with it may install callback slots later.
     pub fn enable_asset_callbacks(mut self) -> Self {
-        self.force_asset_callbacks = true;
+        self.asset_callbacks = AssetCallbackFlag::Enabled;
         self
     }
 
@@ -195,7 +195,9 @@ impl AccountBuilder {
     /// disabled would look correctly configured while never being invoked, silently and permanently
     /// disabling whatever the callback enforces.
     fn derive_asset_callbacks(&self, storage: &AccountStorage) -> AssetCallbackFlag {
-        AssetCallbackFlag::from(self.force_asset_callbacks || AssetCallbacks::is_installed(storage))
+        AssetCallbackFlag::from(
+            self.asset_callbacks.is_enabled() || AssetCallbacks::is_installed(storage),
+        )
     }
 
     /// Grinds a new [`AccountId`] using the `init_seed` as a starting point.
