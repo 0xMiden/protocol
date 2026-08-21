@@ -143,6 +143,8 @@ pub enum AccountError {
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
     #[error("account header data has length {actual} but it must be of length {expected}")]
     HeaderDataIncorrectLength { actual: usize, expected: usize },
+    #[error("reserved element of the account header must be zero but was {0}")]
+    HeaderReservedElementNotZero(Felt),
     #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(
@@ -179,6 +181,8 @@ pub enum AccountError {
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]
     UnsortedStorageSlots,
+    #[error("reserved element of a storage slot must be zero but was {0}")]
+    StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(

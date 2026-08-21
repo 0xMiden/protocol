@@ -1,3 +1,7 @@
+use miden_core::program::KernelDescriptor;
+
+use crate::WORD_SIZE;
+
 // TYPE ALIASES
 // ================================================================================================
 
@@ -12,20 +16,20 @@ pub type StorageSlot = u8;
 
 // General layout
 //
-// | Section            | Start address | Size in elements | Comment                                    |
-// | ------------------ | ------------- | ---------------- | ------------------------------------------ |
-// | Bookkeeping        | 0             | 85               |                                            |
-// | Global inputs      | 400           | 40               |                                            |
-// | Block header       | 800           | 44               |                                            |
-// | Partial blockchain | 1_200         | 132              |                                            |
-// | Kernel data        | 1_600         | 224              | 56 procedures in total, 4 elements each    |
-// | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each        |
-// | Account delta      | 532_480       | 264              | fungible + non-fungible ptr + 256 patches  |
-// | Account upgrade    | 532_744       | 8                | code + storage upgrade commitment          |
-// | Input notes        | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)    |
-// |                    |               |                  | + 1024 input notes max, 1024 elements each |
-// | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each  |
-// | Link Map Memory    | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs       |
+// | Section            | Start address | Size in elements | Comment                                     |
+// | ------------------ | ------------- | ---------------- | ------------------------------------------- |
+// | Kernel procs       | 0             | 1_024            | 255 procedures, 4 elements each + num_procs |
+// | Bookkeeping        | 1_200         | 85               |                                             |
+// | Global inputs      | 1_600         | 40               |                                             |
+// | Block header       | 2_000         | 44               |                                             |
+// | Partial blockchain | 2_400         | 132              |                                             |
+// | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each         |
+// | Account delta      | 532_480       | 264              | fungible + non-fungible ptr + 256 patches   |
+// | Account upgrade    | 532_744       | 8                | code + storage upgrade commitment           |
+// | Input notes        | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)     |
+// |                    |               |                  | + 1024 input notes max, 1024 elements each  |
+// | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each   |
+// | Link Map Memory    | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs        |
 
 // Relative layout of one account
 //
@@ -51,40 +55,55 @@ pub type StorageSlot = u8;
 //
 // For now each Storage Map pointer (a link map ptr) occupies a single element.
 //
-// | Section                      | Start address | Size in elements | Comment                             |
-// | ---------------------------- | ------------- | ---------------- | ----------------------------------- |
-// | Fungible Asset Delta Ptr     | 0             | 4                |                                     |
-// | Non-Fungible Asset Delta Ptr | 4             | 4                |                                     |
-// | Storage Map Patch Ptrs       | 8             | 256              | Max 255 storage map patches         |
+// | Section                      | Start address | Size in elements | Comment                      |
+// | ---------------------------- | ------------- | ---------------- | ---------------------------- |
+// | Fungible Asset Delta Ptr     | 0             | 4                |                              |
+// | Non-Fungible Asset Delta Ptr | 4             | 4                |                              |
+// | Storage Map Patch Ptrs       | 8             | 256              | Max 255 storage map patches  |
+
+// KERNEL DATA
+// ------------------------------------------------------------------------------------------------
+
+/// The procedure roots of the kernel procedures.
+///
+/// Placed at address 0 so that multiple kernels can share the same dispatcher procedure.
+pub const KERNEL_PROCEDURES_PTR: MemoryAddress = 0;
+
+/// The maximum number of procedures which the transaction kernel can have.
+pub const MAX_KERNEL_PROCEDURES: usize = KernelDescriptor::MAX_NUM_PROCEDURES;
+
+/// The memory address at which the number of the kernel procedures is stored.
+pub const NUM_KERNEL_PROCEDURES_PTR: MemoryAddress =
+    MAX_KERNEL_PROCEDURES as MemoryAddress * WORD_SIZE as MemoryAddress;
 
 // BOOKKEEPING
 // ------------------------------------------------------------------------------------------------
 
 /// The memory address at which a pointer to the currently active input note is stored.
-pub const ACTIVE_INPUT_NOTE_PTR: MemoryAddress = 0;
+pub const ACTIVE_INPUT_NOTE_PTR: MemoryAddress = 1200;
 
 /// The memory address at which the number of output notes is stored.
-pub const NUM_OUTPUT_NOTES_PTR: MemoryAddress = 1;
+pub const NUM_OUTPUT_NOTES_PTR: MemoryAddress = 1201;
 
 /// The memory address at which the transaction expiration block number is stored.
-pub const TX_EXPIRATION_BLOCK_NUM_PTR: MemoryAddress = 2;
+pub const TX_EXPIRATION_BLOCK_NUM_PTR: MemoryAddress = 1202;
 
 /// The memory address at which the dirty flag of the storage commitment of the native account is
 /// stored.
 ///
 /// This binary flag specifies whether the commitment is outdated: it holds 1 if some changes were
 /// made to the account storage since the last re-computation, and 0 otherwise.
-pub const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR: MemoryAddress = 3;
+pub const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR: MemoryAddress = 1203;
 
 /// The memory address at which the input vault root is stored.
-pub const INPUT_VAULT_ROOT_PTR: MemoryAddress = 4;
+pub const INPUT_VAULT_ROOT_PTR: MemoryAddress = 1204;
 
 /// The memory address at which the output vault root is stored.
-pub const OUTPUT_VAULT_ROOT_PTR: MemoryAddress = 8;
+pub const OUTPUT_VAULT_ROOT_PTR: MemoryAddress = 1208;
 
 // Pointer to the suffix and prefix of the ID of the foreign account which will be loaded during the
 // upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
-pub const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR: MemoryAddress = 12;
+pub const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR: MemoryAddress = 1212;
 pub const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR: MemoryAddress =
     UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR + 1;
 
@@ -92,20 +111,20 @@ pub const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR: MemoryAddress =
 // FPI call. This "buffer" value helps to work around the 15 value limitation of the
 // `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
 // values, could be executed as foreign.
-pub const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR: MemoryAddress = 14;
+pub const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR: MemoryAddress = 1214;
 
 // The memory address at which the flag indicating that the epilogue is running the account's
 // authentication procedure is stored.
-pub const EPILOGUE_AUTH_IN_PROGRESS_FLAG_PTR: MemoryAddress = 15;
+pub const EPILOGUE_AUTH_IN_PROGRESS_FLAG_PTR: MemoryAddress = 1215;
 
 // Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
 // This root is updated during the `prepare_fpi_call` kernel procedure.
-pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 16;
+pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 1216;
 
 /// The memory address at which the pointer to the stack element containing the pointer to the
 /// active account data is stored.
 ///
-/// The stack starts at the address `29`. Stack has a length of `64` elements meaning that the
+/// The stack starts at the address `1221`. Stack has a length of `64` elements meaning that the
 /// maximum depth of FPI calls is `63` — the first slot is always occupied by the native account
 /// data pointer.
 ///
@@ -113,79 +132,79 @@ pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 16;
 /// ┌───────────────┬────────────────┬───────────────────┬─────┬────────────────────┐
 /// │ STACK TOP PTR │ NATIVE ACCOUNT │ FOREIGN ACCOUNT 1 │ ... │ FOREIGN ACCOUNT 63 │
 /// ├───────────────┼────────────────┼───────────────────┼─────┼────────────────────┤
-///        20               21                22                         84
+///       1220             1221              1222                      1284
 /// ```
-pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 20;
+pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 1220;
 
 // GLOBAL INPUTS
 // ------------------------------------------------------------------------------------------------
 
 /// The memory address at which the global inputs section begins.
-pub const GLOBAL_INPUTS_SECTION_OFFSET: MemoryOffset = 400;
+pub const GLOBAL_INPUTS_SECTION_OFFSET: MemoryOffset = 1600;
 
 /// The memory address at which the commitment of the transaction's reference block is stored.
-pub const BLOCK_COMMITMENT_PTR: MemoryAddress = 400;
+pub const BLOCK_COMMITMENT_PTR: MemoryAddress = 1600;
 
 /// The memory address at which the native account ID suffix provided as a global transaction input
 /// is stored.
-pub const GLOBAL_ACCOUNT_ID_SUFFIX_PTR: MemoryAddress = 404;
+pub const GLOBAL_ACCOUNT_ID_SUFFIX_PTR: MemoryAddress = 1604;
 /// The memory address at which the native account ID prefix provided as a global transaction input
 /// is stored.
 pub const GLOBAL_ACCOUNT_ID_PREFIX_PTR: MemoryAddress = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1;
 
 /// The memory address at which the initial account commitment is stored.
-pub const INIT_ACCT_COMMITMENT_PTR: MemoryAddress = 408;
+pub const INIT_ACCT_COMMITMENT_PTR: MemoryAddress = 1608;
 
 /// The memory address at which the initial nonce is stored.
-pub const INIT_NONCE_PTR: MemoryAddress = 412;
+pub const INIT_NONCE_PTR: MemoryAddress = 1612;
 
 /// The memory address at which the initial vault root of the native account is stored.
-pub const INIT_NATIVE_ACCT_VAULT_ROOT_PTR: MemoryAddress = 416;
+pub const INIT_NATIVE_ACCT_VAULT_ROOT_PTR: MemoryAddress = 1616;
 
 /// The memory address at which the initial storage commitment of the native account is stored.
-pub const INIT_NATIVE_ACCT_STORAGE_COMMITMENT_PTR: MemoryAddress = 420;
+pub const INIT_NATIVE_ACCT_STORAGE_COMMITMENT_PTR: MemoryAddress = 1620;
 
 /// The memory address at which the input notes commitment is stored.
-pub const INPUT_NOTES_COMMITMENT_PTR: MemoryAddress = 424;
+pub const INPUT_NOTES_COMMITMENT_PTR: MemoryAddress = 1624;
 
 /// The memory address at which the transaction script mast root is store
-pub const TX_SCRIPT_ROOT_PTR: MemoryAddress = 428;
+pub const TX_SCRIPT_ROOT_PTR: MemoryAddress = 1628;
 
 /// The memory address at which the transaction script arguments are stored.
-pub const TX_SCRIPT_ARGS: MemoryAddress = 432;
+pub const TX_SCRIPT_ARGS: MemoryAddress = 1632;
 
 /// The memory address at which the key of the auth procedure arguments is stored.
-pub const AUTH_ARGS_PTR: MemoryAddress = 436;
+pub const AUTH_ARGS_PTR: MemoryAddress = 1636;
 
 // BLOCK DATA
 // ------------------------------------------------------------------------------------------------
 
 /// The memory address at which the block data section begins.
-pub const BLOCK_DATA_SECTION_OFFSET: MemoryOffset = 800;
+pub const BLOCK_DATA_SECTION_OFFSET: MemoryOffset = 2000;
 
 /// The memory address at which the previous block commitment is stored.
-pub const PREV_BLOCK_COMMITMENT_PTR: MemoryAddress = 800;
+pub const PREV_BLOCK_COMMITMENT_PTR: MemoryAddress = 2000;
 
 /// The memory address at which the chain commitment is stored.
-pub const CHAIN_COMMITMENT_PTR: MemoryAddress = 804;
+pub const CHAIN_COMMITMENT_PTR: MemoryAddress = 2004;
 
 /// The memory address at which the state root is stored.
-pub const ACCT_DB_ROOT_PTR: MemoryAddress = 808;
+pub const ACCT_DB_ROOT_PTR: MemoryAddress = 2008;
 
 /// The memory address at which the nullifier db root is store.
-pub const NULLIFIER_DB_ROOT_PTR: MemoryAddress = 812;
+pub const NULLIFIER_DB_ROOT_PTR: MemoryAddress = 2012;
 
 /// The memory address at which the TX commitment is stored.
-pub const TX_COMMITMENT_PTR: MemoryAddress = 816;
+pub const TX_COMMITMENT_PTR: MemoryAddress = 2016;
 
 /// The memory address at which the transaction kernel commitment is stored.
-pub const TX_KERNEL_COMMITMENT_PTR: MemoryAddress = 820;
+pub const TX_KERNEL_COMMITMENT_PTR: MemoryAddress = 2020;
 
 /// The memory address at which the public key is stored.
-pub const VALIDATOR_KEY_COMMITMENT_PTR: MemoryAddress = 824;
+pub const VALIDATOR_KEY_COMMITMENT_PTR: MemoryAddress = 2024;
 
 /// The memory address at which the block number is stored.
-pub const BLOCK_METADATA_PTR: MemoryAddress = 828;
+pub const BLOCK_METADATA_PTR: MemoryAddress = 2028;
 
 /// The index of the block number within the block metadata.
 pub const BLOCK_NUMBER_IDX: DataIndex = 0;
@@ -197,7 +216,7 @@ pub const PROTOCOL_VERSION_IDX: DataIndex = 1;
 pub const TIMESTAMP_IDX: DataIndex = 2;
 
 /// The memory address at which the fee parameters are stored. These occupy a double word.
-pub const FEE_PARAMETERS_PTR: MemoryAddress = 832;
+pub const FEE_PARAMETERS_PTR: MemoryAddress = 2032;
 
 /// The index of the verification base fee within the block fee parameters.
 pub const VERIFICATION_BASE_FEE_IDX: DataIndex = 1;
@@ -209,29 +228,19 @@ pub const FEE_FAUCET_ID_SUFFIX_IDX: DataIndex = 2;
 pub const FEE_FAUCET_ID_PREFIX_IDX: DataIndex = 3;
 
 /// The memory address at which the note root is stored.
-pub const NOTE_ROOT_PTR: MemoryAddress = 840;
+pub const NOTE_ROOT_PTR: MemoryAddress = 2040;
 
 // CHAIN DATA
 // ------------------------------------------------------------------------------------------------
 
 /// The memory address at which the chain data section begins.
-pub const PARTIAL_BLOCKCHAIN_PTR: MemoryAddress = 1200;
+pub const PARTIAL_BLOCKCHAIN_PTR: MemoryAddress = 2400;
 
 /// The memory address at which the total number of leaves in the partial blockchain is stored.
-pub const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR: MemoryAddress = 1200;
+pub const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR: MemoryAddress = 2400;
 
 /// The memory address at which the partial blockchain peaks are stored.
-pub const PARTIAL_BLOCKCHAIN_PEAKS_PTR: MemoryAddress = 1204;
-
-// KERNEL DATA
-// ------------------------------------------------------------------------------------------------
-
-/// The memory address at which the number of the kernel procedures is stored.
-pub const NUM_KERNEL_PROCEDURES_PTR: MemoryAddress = 1600;
-
-/// The memory address at which the section, where the hashes of the kernel procedures are stored,
-/// begins.
-pub const KERNEL_PROCEDURES_PTR: MemoryAddress = 1604;
+pub const PARTIAL_BLOCKCHAIN_PEAKS_PTR: MemoryAddress = 2404;
 
 // ACCOUNT DATA
 // ------------------------------------------------------------------------------------------------
@@ -255,6 +264,10 @@ pub const NATIVE_ACCT_ID_AND_NONCE_PTR: MemoryAddress =
 
 /// The index of the account nonce within the account ID and nonce data.
 pub const ACCT_NONCE_IDX: DataIndex = 0;
+
+/// The index of the reserved element within the account ID and nonce data. This element must always
+/// be zero per the canonical encoding.
+pub const ACCT_RESERVED_IDX: DataIndex = 1;
 
 /// The index of the account ID within the account ID and nonce data.
 pub const ACCT_ID_SUFFIX_IDX: DataIndex = 2;
