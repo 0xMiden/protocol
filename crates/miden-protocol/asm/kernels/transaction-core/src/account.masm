@@ -951,6 +951,10 @@ end
 #! Validates that slot IDs are sorted in ascending order, that slot IDs are unique, and that every
 #! slot's type belongs to the set of supported types (value or map).
 #!
+#! This validates the storage of the native account, which is the only account whose storage is
+#! validated this way: a foreign account's storage is instead bound to the commitment verified
+#! against the account tree.
+#!
 #! Inputs:  []
 #! Outputs: []
 #!
@@ -959,7 +963,7 @@ end
 #!    - this ensures sorting and uniqueness among slot IDs.
 #! - any slot has a type that is not a supported storage slot type.
 pub proc validate_storage
-    exec.memory::get_num_storage_slots
+    exec.memory::get_native_num_storage_slots
     # => [num_slots]
 
     # iterate over all slots from the last one down to slot 0, validating each slot's type and
@@ -987,14 +991,14 @@ pub proc validate_storage
         # => [has_prev_slot, curr_slot_idx]
 
         if.true
-            dup exec.get_slot_id
+            dup exec.get_native_slot_id
             # => [curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
 
             # we are guaranteed to not underflow because curr_slot_idx is at least 1 in this branch
             dup.2 sub.1
             # => [prev_slot_idx, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
 
-            exec.get_slot_id
+            exec.get_native_slot_id
             # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
 
             # this effectively checks that slots are sorted _and_ unique, since duplicate slot IDs
@@ -1578,31 +1582,6 @@ pub proc get_native_slot_id
     exec.get_slot_id_inner
     # => [slot_id_suffix, slot_id_prefix]
 end
-
-#! Gets the slot ID of the storage slot at the provided index.
-#!
-#! WARNING: The index must be in bounds.
-#!
-#! Inputs:  [index]
-#! Outputs: [slot_id_suffix, slot_id_prefix]
-#!
-#! Where:
-#! - index is the index of the slot.
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
-pub proc get_slot_id
-    # convert the index into a memory offset
-    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
-    # => [offset]
-
-    exec.memory::get_account_active_storage_slots_section_ptr
-    add
-    # => [slot_ptr]
-
-    exec.get_slot_id_inner
-    # => [slot_id_suffix, slot_id_prefix]
-end
-
 
 #! Gets the slot ID of the storage slot pointed at by slot_ptr.
 #!
