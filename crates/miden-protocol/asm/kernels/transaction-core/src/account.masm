@@ -42,6 +42,12 @@ const ERR_ACCOUNT_PROC_NOT_AUTH_PROC =
 const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE =
     "slot IDs must be unique and sorted in ascending order"
 
+const ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID =
+    "account storage slot has an unsupported type"
+
+const ERR_ACCOUNT_STORAGE_SLOT_RESERVED_ELEMENT_MUST_BE_ZERO =
+    "reserved element of an account storage slot must be zero"
+
 const ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE =
     "account procedures following the authentication procedure must be unique and sorted in ascending order"
 
@@ -945,61 +951,77 @@ pub proc validate_seed
     # => []
 end
 
-#! Validates that slot IDs are sorted in ascending order and that slot IDs are unique.
+#! Validates that slot IDs are sorted in ascending order, that slot IDs are unique, that every
+#! slot's type belongs to the set of supported types (value or map), and that the reserved element
+#! of every slot record is zero.
+#!
+#! Validation should only ever happen on the storage of the native account.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Pancis if:
+#! Panics if:
 #! - each slot's ID is not strictly less than the next slot's ID.
 #!    - this ensures sorting and uniqueness among slot IDs.
+#! - any slot has a type that is not a supported storage slot type.
+#! - any slot's reserved element is not zero.
 pub proc validate_storage
-    exec.memory::get_num_storage_slots
+    exec.memory::get_native_num_storage_slots
     # => [num_slots]
 
-    # compute the number of slot ID comparisons we need to make
-    # generally, we need num_storage_slots - 1 comparisons, e.g., if we have 3 slots, we need 2
-    # comparisons: 2 with 1 and 1 with 0.
-    # we subtract 1 if any slots exist and 0 otherwise, notably:
-    # maps 1 storage slot -> 0 comparisons, since 1 slot is always sorted and unique
-    # maps 0 storage slots -> 0 comparisons
-    dup u32gt.0
-    # => [has_slots, num_slots]
-
-    sub
-    # => [num_comparisons]
-
-    # loop if we need to compare slots
+    # iterate over all slots from the last one down to slot 0, validating each slot's type and
+    # reserved element and comparing each slot's ID against the previous slot's ID
     dup neq.0
-    # => [should_loop, num_comparisons]
+    # => [should_loop, num_slots]
 
     while.true
-        # first iteration: number of comparisons = current slot index
+        # first iteration: remaining = num_slots, slot index = remaining - 1
+        # => [remaining]
+
+        sub.1
         # => [curr_slot_idx]
 
-        dup exec.get_slot_id
-        # => [curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
+        dup exec.get_native_storage_slot_type
+        # => [slot_type, curr_slot_idx]
 
-        # we are guaranteed to not underflow because curr_slot_idx is at least 1 at the
-        # beginning of the loop
-        dup.2 sub.1
-        # => [prev_slot_idx, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
-
-        exec.get_slot_id
-        # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
-
-        # this effectively checks that slots are sorted _and_ unique, since duplicate slot IDs are
-        # not less than each other
-        exec.is_slot_id_lt
-        # => [is_prev_lt_curr, curr_slot_idx]
-
-        assert.err=ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE
+        # assert the slot type is value or map
+        dup eq.STORAGE_SLOT_TYPE_VALUE swap eq.STORAGE_SLOT_TYPE_MAP or
+        assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
         # => [curr_slot_idx]
 
-        sub.1 dup neq.0
-        # => [should_continue, prev_slot_idx]
+        # assert the reserved element of the slot record is zero
+        dup exec.get_native_slot_reserved eq.0
+        assert.err=ERR_ACCOUNT_STORAGE_SLOT_RESERVED_ELEMENT_MUST_BE_ZERO
+        # => [curr_slot_idx]
+
+        # compare the slot's ID against the previous slot's ID, unless this is slot 0
+        dup neq.0
+        # => [has_prev_slot, curr_slot_idx]
+
+        if.true
+            dup exec.get_native_slot_id
+            # => [curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
+
+            # we are guaranteed to not underflow because curr_slot_idx is at least 1 in this branch
+            dup.2 sub.1
+            # => [prev_slot_idx, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
+
+            exec.get_native_slot_id
+            # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix, curr_slot_idx]
+
+            # this effectively checks that slots are sorted _and_ unique, since duplicate slot IDs
+            # are not less than each other
+            exec.is_slot_id_lt
+            # => [is_prev_lt_curr, curr_slot_idx]
+
+            assert.err=ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE
+            # => [curr_slot_idx]
+        end
+
+        dup neq.0
+        # => [should_continue, curr_slot_idx]
     end
-    # => [prev_slot_idx]
+    # => [curr_slot_idx]
 
     drop
     # => []
@@ -1569,30 +1591,30 @@ pub proc get_native_slot_id
     # => [slot_id_suffix, slot_id_prefix]
 end
 
-#! Gets the slot ID of the storage slot at the provided index.
+#! Gets the reserved element of the storage slot at the provided index for the native account.
 #!
 #! WARNING: The index must be in bounds.
 #!
 #! Inputs:  [index]
-#! Outputs: [slot_id_suffix, slot_id_prefix]
+#! Outputs: [reserved]
 #!
 #! Where:
 #! - index is the index of the slot.
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
-pub proc get_slot_id
+#! - reserved is the reserved element of the slot record, which must be zero per the canonical
+#!   encoding.
+proc get_native_slot_reserved
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
 
-    exec.memory::get_account_active_storage_slots_section_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     add
     # => [slot_ptr]
 
-    exec.get_slot_id_inner
-    # => [slot_id_suffix, slot_id_prefix]
+    # the reserved element is the first element of the slot record
+    mem_load
+    # => [reserved]
 end
-
 
 #! Gets the slot ID of the storage slot pointed at by slot_ptr.
 #!
