@@ -35,7 +35,7 @@ proc assert_all_output_notes_created
     exec.memory::get_num_output_notes
     # => [num_output_notes]
 
-    # Iterate idx from num_output_notes - 1 down to 0; the check is order-independent.
+    # Iterate from num_output_notes - 1 down to 0.
     dup neq.0
     while.true
         sub.1
@@ -124,8 +124,6 @@ proc compute_input_notes_commitment
     push.0 push.0
     # => [idx, absorbed_count, num]
 
-    # Entries must be absorbed in ascending index order to reproduce the sequential hash over the
-    # nullifier-sorted list.
     dup dup.3 neq
     # => [should_loop, idx, absorbed_count, num]
     while.true

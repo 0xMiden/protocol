@@ -46,7 +46,7 @@ const ERR_BATCH_TX_TOO_MANY_NOTES =
 # =================================================================================================
 
 #! Marks input-note list entry `idx` as expected-to-be-erased (erasure flag, at offset 0, set to
-#! [`INPUT_NOTE_ERASURE_EXPECTED`]).
+#! 1 = `INPUT_NOTE_ERASURE_EXPECTED`).
 #!
 #! Inputs:  [idx]
 #! Outputs: []
@@ -123,7 +123,7 @@ proc cross_reference_erasure
     exec.memory::get_num_input_notes
     # => [num_input_notes]
 
-    # Iterate idx from num_input_notes - 1 down to 0; the cross-reference is order-independent.
+    # Iterate from num_input_notes - 1 down to 0.
     dup neq.0
     while.true
         sub.1
@@ -152,8 +152,8 @@ proc mark_output_note_created
     push.1 swap mem_store
 end
 
-#! Advances input-note list entry `idx`'s erasure flag from [`INPUT_NOTE_ERASURE_EXPECTED`] to
-#! [`INPUT_NOTE_ERASED`] (its creator output note has been processed), asserting it was expected.
+#! Advances input-note list entry `idx`'s erasure flag from `INPUT_NOTE_ERASURE_EXPECTED` to
+#! `INPUT_NOTE_ERASED` (its creator output note has been processed), asserting it was expected.
 #!
 #! Inputs:  [idx]
 #! Outputs: []
@@ -226,7 +226,7 @@ end
 proc bind_scratch_output_notes
     # => [num_notes]
 
-    # Iterate i from num_notes - 1 down to 0; binding is order-independent within a transaction.
+    # Iterate from num_notes - 1 down to 0.
     dup neq.0
     while.true
         sub.1
@@ -365,7 +365,7 @@ end
 proc bind_scratch_input_notes
     # => [num_notes]
 
-    # Iterate i from num_notes - 1 down to 0; binding is order-independent within a transaction.
+    # Iterate from num_notes - 1 down to 0.
     dup neq.0
     while.true
         sub.1
@@ -446,8 +446,6 @@ proc bind_per_tx_notes
     push.0
     # => [tx_index, num_transactions]
 
-    # Transactions must be processed in batch order (ascending tx_index): the erasure ordering
-    # gate relies on a creating transaction being processed before the consuming one.
     dup.1 dup.1 neq
     # => [should_loop, tx_index, num_transactions]
     while.true

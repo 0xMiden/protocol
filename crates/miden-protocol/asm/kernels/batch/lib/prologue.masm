@@ -195,7 +195,6 @@ pub proc prepare_batch
     # OS => [BATCH_ID]
     # AS => [tx_tuples_len, [TX_TUPLES]]
 
-    # adv_push reads the value's felt length; div converts felts -> words.
     adv_push div.WORD_NUM_ELEMENTS
     # OS => [num_words, BATCH_ID]
     # AS => [[TX_TUPLES]]
@@ -238,7 +237,6 @@ pub proc prepare_batch
         # OS => [TX_ID, tx_index]
         # AS => [tx_header_len, [TX_HEADER]]
 
-        # adv_push reads the value's felt length; div converts felts -> words.
         adv_push div.WORD_NUM_ELEMENTS
         # OS => [num_words, TX_ID, tx_index]
         # AS => [[TX_HEADER]]
