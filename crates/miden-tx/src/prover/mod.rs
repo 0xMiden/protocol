@@ -35,12 +35,14 @@ pub use mast_store::TransactionMastStore;
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
 #[derive(Debug, Clone)]
 pub struct LocalTransactionProver {
+    execution_options: ExecutionOptions,
     proof_options: ProvingOptions,
 }
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
         Self {
+            execution_options: ExecutionOptions::default(),
             proof_options: ProvingOptions::new(Poseidon2),
         }
     }
@@ -49,7 +51,16 @@ impl Default for LocalTransactionProver {
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
     pub fn new(proof_options: ProvingOptions) -> Self {
-        Self { proof_options }
+        Self {
+            execution_options: ExecutionOptions::default(),
+            proof_options,
+        }
+    }
+
+    /// Replaces the execution options used when proving transactions.
+    pub fn with_execution_options(mut self, execution_options: ExecutionOptions) -> Self {
+        self.execution_options = execution_options;
+        self
     }
 
     fn build_proven_transaction(
@@ -148,7 +159,7 @@ impl LocalTransactionProver {
             stack_inputs,
             advice_inputs.clone(),
             &mut host,
-            ExecutionOptions::default(),
+            self.execution_options.clone(),
             self.proof_options.clone(),
         )
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
@@ -190,5 +201,31 @@ impl LocalTransactionProver {
             ref_block.commitment(),
             ExecutionProof::new_dummy(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_transaction_prover_uses_default_execution_options() {
+        let prover = LocalTransactionProver::default();
+
+        assert_eq!(
+            prover.execution_options.max_advice_size_bytes(),
+            ExecutionOptions::default().max_advice_size_bytes()
+        );
+    }
+
+    #[test]
+    fn local_transaction_prover_accepts_custom_advice_limit() {
+        const CUSTOM_ADVICE_LIMIT: usize = 8 * 1024 * 1024;
+
+        let execution_options =
+            ExecutionOptions::default().with_max_advice_size_bytes(CUSTOM_ADVICE_LIMIT);
+        let prover = LocalTransactionProver::default().with_execution_options(execution_options);
+
+        assert_eq!(prover.execution_options.max_advice_size_bytes(), CUSTOM_ADVICE_LIMIT);
     }
 }
