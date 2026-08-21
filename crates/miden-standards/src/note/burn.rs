@@ -230,11 +230,20 @@ mod tests {
     }
 
     fn faucet() -> AccountId {
-        typed_faucet(AccountType::Public)
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([2; 32])
     }
 
-    fn typed_faucet(account_type: AccountType) -> AccountId {
-        AccountId::builder().account_type(account_type).build_with_seed([2; 32])
+    fn private_faucet() -> AccountId {
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32])
+    }
+
+    /// Unwraps the [`NetworkAccountTargetError`] a note builder wrapped into `NoteError::Other`.
+    fn target_error(err: NoteError) -> NetworkAccountTargetError {
+        let NoteError::Other { source: Some(source), .. } = err else {
+            panic!("expected NoteError::Other with a source, got: {err}");
+        };
+
+        *source.downcast().expect("the source should be a NetworkAccountTargetError")
     }
 
     fn build_burn_note(
@@ -312,24 +321,21 @@ mod tests {
 
         let err = build_burn_note(faucet(), vec![rogue_target.into()]).unwrap_err();
 
-        assert_matches!(err, NoteError::Other { source, .. } => {
-            assert_matches!(
-              *source.unwrap().downcast().unwrap(),
-              NetworkAccountTargetError::TargetMismatch { .. }
-            )
-        });
+        assert_matches!(
+            target_error(err),
+            NetworkAccountTargetError::TargetMismatch { expected, actual }
+                if expected == faucet() && actual == other
+        );
     }
 
     /// A non-public faucet cannot be a network target, so the builder rejects it.
     #[test]
     fn builder_rejects_non_public_faucet() {
-        let err = build_burn_note(typed_faucet(AccountType::Private), Vec::new()).unwrap_err();
+        let err = build_burn_note(private_faucet(), Vec::new()).unwrap_err();
 
-        assert_matches!(err, NoteError::Other { source, .. } => {
-            assert_matches!(
-              *source.unwrap().downcast().unwrap(),
-              NetworkAccountTargetError::TargetNotPublic(_)
-            )
-        });
+        assert_matches!(
+            target_error(err),
+            NetworkAccountTargetError::TargetNotPublic(account_id) if account_id == private_faucet()
+        );
     }
 }

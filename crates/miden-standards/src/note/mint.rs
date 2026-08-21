@@ -89,8 +89,7 @@ impl MintNote {
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The network routes the note on this attachment; the stored ASSET_ID is what binds the
-        // script to the same faucet on consumption. That bind is a plain value comparison and so
-        // works for a private faucet too, which has no network target to derive.
+        // script to the same faucet on consumption.
         NetworkAccountTarget::ensure_presence_if_public(&mut attachments, storage.faucet_id())
             .map_err(|err| {
                 NoteError::other_with_source("failed to target the MINT note at its faucet", err)
@@ -201,8 +200,7 @@ where
 impl From<MintNote> for Note {
     fn from(note: MintNote) -> Self {
         // MINT notes are always public for network execution and carry no assets; the asset to mint
-        // lives in the note's storage. The tag and the NetworkAccountTarget attachment, when the
-        // faucet is public, both name the faucet that mints it, so they cannot disagree.
+        // lives in the note's storage.
         let faucet_id = note.storage.faucet_id();
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(faucet_id));
@@ -346,11 +344,11 @@ mod tests {
     };
 
     fn faucet() -> AccountId {
-        typed_faucet(AccountType::Public)
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([1; 32])
     }
 
-    fn typed_faucet(account_type: AccountType) -> AccountId {
-        AccountId::builder().account_type(account_type).build_with_seed([1; 32])
+    fn private_faucet() -> AccountId {
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
     }
 
     fn owner() -> AccountId {
@@ -360,6 +358,15 @@ mod tests {
     fn mint_storage_for(faucet_id: AccountId) -> MintNoteStorage {
         let asset = FungibleAsset::new(faucet_id, 50).unwrap();
         MintNoteStorage::new_private(Word::empty(), asset, NoteTag::default())
+    }
+
+    /// Unwraps the [`NetworkAccountTargetError`] a note builder wrapped into `NoteError::Other`.
+    fn target_error(err: NoteError) -> NetworkAccountTargetError {
+        let NoteError::Other { source: Some(source), .. } = err else {
+            panic!("expected NoteError::Other with a source, got: {err}");
+        };
+
+        *source.downcast().expect("the source should be a NetworkAccountTargetError")
     }
 
     fn build_mint_note(
@@ -441,19 +448,18 @@ mod tests {
 
         let err = build_mint_note(faucet(), vec![rogue_target.into()]).unwrap_err();
 
-        assert_matches!(err, NoteError::Other { source, .. } => {
-            assert_matches!(
-              *source.unwrap().downcast().unwrap(),
-              NetworkAccountTargetError::TargetMismatch { .. }
-            )
-        });
+        assert_matches!(
+            target_error(err),
+            NetworkAccountTargetError::TargetMismatch { expected, actual }
+                if expected == faucet() && actual == other
+        );
     }
 
     /// A private faucet is never a network account, so no target is derived for it. The note is
     /// still tagged for the faucet and remains consumable by it.
     #[test]
     fn builder_omits_network_target_for_private_faucet() {
-        let faucet = typed_faucet(AccountType::Private);
+        let faucet = private_faucet();
 
         let mint_note = build_mint_note(faucet, Vec::new()).unwrap();
 
@@ -471,14 +477,12 @@ mod tests {
         let other = AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32]);
         let rogue_target = NetworkAccountTarget::new(other, NoteExecutionHint::None).unwrap();
 
-        let err = build_mint_note(typed_faucet(AccountType::Private), vec![rogue_target.into()])
-            .unwrap_err();
+        let err = build_mint_note(private_faucet(), vec![rogue_target.into()]).unwrap_err();
 
-        assert_matches!(err, NoteError::Other { source, .. } => {
-            assert_matches!(
-              *source.unwrap().downcast().unwrap(),
-              NetworkAccountTargetError::TargetMismatch { .. }
-            )
-        });
+        assert_matches!(
+            target_error(err),
+            NetworkAccountTargetError::TargetMismatch { expected, actual }
+                if expected == private_faucet() && actual == other
+        );
     }
 }
