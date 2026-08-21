@@ -205,7 +205,7 @@ For a private note, the operator stores only its ID and never sees these compone
 
 The `miden::standards` library provides several standard note scripts that implement common use cases for asset transfers and interactions. These pre-built note types offer secure, tested implementations for typical scenarios.
 
-Input-note assets are stateful within a transaction: a note script claims the assets remaining in the note at consumption time, which may be less than the note was created with if assets were removed earlier in the transaction. Removal by index requires a native-account procedure, so any note script in the transaction can trigger it against another note when the consuming account exposes such a procedure. Logic that prices or validates a note based on its assets must use the note's initial assets info rather than its remaining assets.
+Input-note assets are stateful within a transaction: a note script claims the assets remaining in the note at consumption time, which may be less than the note was created with. Logic that prices or validates a note based on its assets must use the note's **initial assets** info rather than its remaining assets.
 
 ### P2ID (Pay-to-ID)
 

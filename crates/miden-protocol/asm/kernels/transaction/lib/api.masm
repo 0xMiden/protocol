@@ -8,24 +8,25 @@ use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::output_note
 use miden::tx_kernel_core::tx
 
-use {KERNEL_PROCEDURES_PTR, UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR, UPCOMING_FOREIGN_PROCEDURE_PTR}
-    from miden::tx_kernel_core::memory
+use {
+    UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
+    UPCOMING_FOREIGN_PROCEDURE_PTR,
+} from miden::tx_kernel_core::memory
 use {AccountId} from miden::protocol_utils::types
 
-# NOTE
+# PROCEDURE VISIBILITY & INVOCATION
 # =================================================================================================
-# `exec_kernel_proc` procedure is expected to be invoked using a `syscall` instruction. It makes  #
-# no guarantees about the contents of the `pad` elements shown in the inputs and outputs. It is   #
-# the caller's responsibility to make sure these elements do not contain any meaningful data.     #
-# All other procedures must be invoked using a `dynexec` instruction by their hashes stored in    #
-# the memory.                                                                                     #
+# The procedures are exported so that they become part of the assembled package and prevent dead  #
+# code elimination from removing them. The procedures are deliberately in a submodule so that     #
+# they do NOT become part of the kernel interface and cannot be invoked with `syscall`.           #
+#                                                                                                 #
+# All procedures of this module must be invoked by root using the `dynexec` instruction. The      #
+# kernel's only static `syscall` entry point is `exec_kernel_proc`, defined in the root module of #
+# the kernel.                                                                                     #
 # =================================================================================================
 
 # ERRORS
 # =================================================================================================
-
-const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
-    "provided kernel procedure offset is out of bounds"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED =
     "failed to access note assets of active note because no note is currently being processed"
@@ -223,7 +224,6 @@ end
 pub proc account_upgrade
     # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
     # account as validated in account::{validate_storage, validate_procedures}.
-
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
@@ -2044,38 +2044,6 @@ pub proc tx_get_expiration_delta
     # truncate the stack
     swap drop
     # => [block_height_delta, pad(15)]
-end
-
-#! Executes a kernel procedure specified by its offset.
-#!
-#! Inputs:  [procedure_offset, <procedure_inputs>, <pad>]
-#! Outputs: [<procedure_outputs>, <pad>]
-#!
-#! Where:
-#! - procedure_offset is an offset of the kernel procedure, specified in the
-#!   `miden/kernel_proc_offsets.masm` file.
-#! - procedure_inputs are inputs of the procedure to be executed, which is specified by the
-#!   procedure_offset. Note that the length of this inputs cannot exceed 15 elements, since the
-#!   first element on the stack will be occupied by the memory pointer to the procedure root.
-#! - procedure_outputs are the outputs of the procedure to be executed.
-#!
-#! Panics if:
-#! - the provided procedure offset exceeds the number of kernel procedures.
-#!
-#! Invocation: syscall
-pub proc exec_kernel_proc
-    # check that the provided procedure offset is within expected bounds
-    dup exec.memory::get_num_kernel_procedures
-    lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
-    # => [procedure_offset, <procedure_inputs>, <pad>]
-
-    # compute the memory pointer at which desired procedure is stored
-    mul.4 push.KERNEL_PROCEDURES_PTR add
-    # => [procedure_pointer, <procedure_inputs>, <pad>]
-
-    # execute loaded procedure
-    dynexec
-    # => [<procedure_outputs>, <pad>]
 end
 
 # HELPER PROCEDURES

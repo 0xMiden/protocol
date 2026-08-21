@@ -23,7 +23,7 @@ const MAX_U32=0x0000000100000000
 # StandardNoteAttachment::PswapAttachment in the Rust standards crate.
 const PSWAP_ATTACHMENT_SCHEME = 3
 
-# Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (7 felts, loaded at STORAGE_PTR by get_bounded_storage):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
 # - min_requested_amount       [2]  : 1 felt
@@ -843,7 +843,7 @@ pub proc main
     # => [account_fill_amount, note_fill_amount]
 
     # Load all note storage items to memory starting at address 0
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items, account_fill_amount, note_fill_amount]
 
     eq.NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS

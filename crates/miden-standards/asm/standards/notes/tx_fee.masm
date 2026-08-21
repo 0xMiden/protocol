@@ -20,11 +20,6 @@ const STORAGE_PTR = 0
 # Must be kept in sync with the Rust `TxFeeNote::TAG` constant.
 const TX_FEE_NOTE_TAG = 0xFEE
 
-# ERRORS
-# =================================================================================================
-
-const ERR_TX_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "TX_FEE note expects exactly 0 note storage items"
-
 # PROCEDURES
 # =================================================================================================
 
@@ -49,10 +44,7 @@ const ERR_TX_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "TX_FEE note expects exact
 @note_script
 pub proc main
     # make sure the note carries no storage items
-    push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items]
-
-    eq.0 assert.err=ERR_TX_FEE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage drop
     # => []
 
     exec.basic_wallet::move_note_assets_to_account

@@ -5,7 +5,7 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the OwnerConfig note storage.
@@ -23,6 +23,9 @@ const SELECTOR_RENOUNCE_OWNERSHIP = 2
 const NUM_ITEMS_TRANSFER_OWNERSHIP = 3
 const NUM_ITEMS_ACCEPT_OWNERSHIP = 1
 const NUM_ITEMS_RENOUNCE_OWNERSHIP = 1
+
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_TRANSFER_OWNERSHIP
 
 # ERRORS
 # =================================================================================================
@@ -58,6 +61,7 @@ const ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner config note s
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized for the selected action (per the `Ownable2Step` procedures).
@@ -73,7 +77,7 @@ pub proc main
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR
