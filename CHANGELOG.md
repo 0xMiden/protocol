@@ -44,6 +44,7 @@
 - Storage slot types are now validated against the supported set at account creation, and the delta commitment rejects an unrecognized slot type instead of treating it as a map ([#3598](https://github.com/0xMiden/protocol/pull/3608)).
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
 - [BREAKING] Enforced the limit of 1024 per asset delta op for added and removed account vault deltas inside and outside the tx kernel ([#3623](https://github.com/0xMiden/protocol/pull/3623)).
+- [BREAKING] Priced PSWAP fills against the note's initial offered asset rather than its remaining assets ([#3601](https://github.com/0xMiden/protocol/issues/3601)).
 - Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
 
