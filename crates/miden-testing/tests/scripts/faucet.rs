@@ -11,7 +11,6 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountType,
-    AssetCallbackFlag,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, NonFungibleAsset, TokenSymbol};
@@ -301,7 +300,6 @@ fn build_network_faucet_with_burn_switching(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 
@@ -339,7 +337,6 @@ fn build_existing_faucet_with_reserved_only_transfer_policy(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -382,7 +379,6 @@ fn build_network_faucet_with_min_burn_amount(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 
@@ -2311,7 +2307,6 @@ fn build_network_faucet_mutable_max_supply(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 
@@ -2654,7 +2649,6 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 

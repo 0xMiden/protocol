@@ -25,7 +25,7 @@ use miden_agglayer::{
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -201,7 +201,6 @@ async fn test_bridge_in_claim_to_p2id(
         bridge_account.id(),
         verification_base_fee,
     )?
-    .with_asset_callbacks(AssetCallbackFlag::Enabled)
     .build_existing()?;
     builder.add_account(agglayer_faucet.clone())?;
 

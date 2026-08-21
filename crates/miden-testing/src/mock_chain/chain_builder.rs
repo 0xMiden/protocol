@@ -27,7 +27,6 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
-    AssetCallbackFlag,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -400,9 +399,6 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
-            .with_asset_callbacks(AssetCallbackFlag::from(
-                token_policy_manager.has_transfer_policy(),
-            ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager)
@@ -458,7 +454,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -492,7 +487,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Enabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused());
 
@@ -643,7 +637,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);

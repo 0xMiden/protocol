@@ -77,7 +77,6 @@ fn build_nft_faucet_with_type(
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(account_type)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
@@ -552,7 +551,6 @@ fn build_nft_faucet_with_blocklist(
 
     let account_builder = AccountBuilder::new([55u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
