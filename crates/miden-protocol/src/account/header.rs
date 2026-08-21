@@ -10,6 +10,7 @@ use crate::transaction::memory::{
     ACCT_ID_PREFIX_IDX,
     ACCT_ID_SUFFIX_IDX,
     ACCT_NONCE_IDX,
+    ACCT_RESERVED_IDX,
     ACCT_STORAGE_COMMITMENT_OFFSET,
     ACCT_VAULT_ROOT_OFFSET,
     MemoryOffset,
@@ -81,6 +82,12 @@ impl AccountHeader {
         )
         .map_err(AccountError::FinalAccountHeaderIdParsingFailed)?;
         let nonce = elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_NONCE_IDX];
+
+        let reserved = elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_RESERVED_IDX];
+        if reserved != Felt::ZERO {
+            return Err(AccountError::HeaderReservedElementNotZero(reserved));
+        }
+
         let vault_root = parse_word(elements, ACCT_VAULT_ROOT_OFFSET)
             .expect("we should have sliced off exactly 4 bytes");
         let storage_commitment = parse_word(elements, ACCT_STORAGE_COMMITMENT_OFFSET)
@@ -243,6 +250,7 @@ fn parse_word(data: &[Felt], offset: MemoryOffset) -> Result<Word, WordError> {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_core::Felt;
 
     use super::AccountHeader;
@@ -250,6 +258,8 @@ mod tests {
     use crate::account::StorageSlotContent;
     use crate::account::tests::build_account;
     use crate::asset::FungibleAsset;
+    use crate::errors::AccountError;
+    use crate::transaction::memory::{ACCT_ID_AND_NONCE_OFFSET, ACCT_RESERVED_IDX};
     use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
@@ -265,5 +275,21 @@ mod tests {
         let header_bytes = account_header.to_bytes();
         let deserialized_header = AccountHeader::read_from_bytes(&header_bytes).unwrap();
         assert_eq!(deserialized_header, account_header);
+    }
+
+    #[test]
+    fn test_try_from_elements_rejects_non_zero_reserved() {
+        let account = build_account(
+            vec![FungibleAsset::mock(99)],
+            Felt::from(1_u32),
+            vec![StorageSlotContent::Value(Word::from([1, 2, 3, 4u32]))],
+        );
+        let account_header: AccountHeader = account.into();
+
+        let mut elements = account_header.to_elements();
+        elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_RESERVED_IDX] = Felt::ONE;
+
+        let err = AccountHeader::try_from_elements(&elements).unwrap_err();
+        assert_matches!(err, AccountError::HeaderReservedElementNotZero(value) if value == Felt::ONE);
     }
 }

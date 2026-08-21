@@ -63,6 +63,9 @@ const ERR_PROLOGUE_INPUT_NOTES_COMMITMENT_MISMATCH =
 
 const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO = "new account must have a zero nonce"
 
+const ERR_PROLOGUE_NEW_ACCOUNT_RESERVED_HEADER_ELEMENT_MUST_BE_ZERO =
+    "reserved element of the new account header word must be zero"
+
 const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT =
     "number of note storage items exceeded the maximum limit of 1024"
 
@@ -317,6 +320,11 @@ proc validate_new_account
 
     # Assert the account nonce is 0
     exec.memory::get_account_nonce eq.0 assert.err=ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO
+    # => []
+
+    # Assert the reserved element of the account header word is 0
+    exec.memory::get_native_account_reserved eq.0
+    assert.err=ERR_PROLOGUE_NEW_ACCOUNT_RESERVED_HEADER_ELEMENT_MUST_BE_ZERO
     # => []
 
     # Assert the initial vault is empty
