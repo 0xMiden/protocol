@@ -390,6 +390,38 @@ pub proc get_storage_info(note_index: u16) -> (word, u16)
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
 end
 
+#! Writes the storage of the input note with the specified index into memory starting at the
+#! specified address.
+#!
+#! Inputs:
+#!   Operand stack: [dest_ptr, note_index]
+#!   Advice map: {
+#!     NOTE_STORAGE_COMMITMENT: [[STORAGE_ITEMS]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_storage_items]
+#!
+#! Where:
+#! - dest_ptr is the memory address the storage items are written to.
+#! - note_index is the index of the input note whose storage should be written.
+#! - NOTE_STORAGE_COMMITMENT is the storage commitment of the specified input note.
+#! - STORAGE_ITEMS are the storage items of the specified input note.
+#! - num_storage_items is the number of storage items of the specified input note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the advice map does not contain the storage items for NOTE_STORAGE_COMMITMENT.
+#! - the number of storage items from the advice map does not match the note's item count.
+#!
+#! Invocation: exec
+pub proc get_storage(dest_ptr: MemoryAddress, note_index: u16) -> u16
+    swap push.0
+    # => [is_active_note = 0, note_index, dest_ptr]
+
+    exec.input_note_internal::get_storage_raw
+    # => [num_storage_items]
+end
+
 #! Returns the script root of the input note with the specified index.
 #!
 #! Inputs:  [note_index]

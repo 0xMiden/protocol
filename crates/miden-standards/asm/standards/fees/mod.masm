@@ -22,7 +22,6 @@ use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 
 use miden::standards::assets::fungible_asset
 use miden::standards::attachments::network_account_target
-use miden::standards::note
 use miden::standards::note::note_tag
 use miden::standards::notes::fee_sponsorship
 use {NUM_ASSETS as SPONSORSHIP_NUM_ASSETS, FEATURE_NOTE_ID_ITEM_OFFSET} from miden::standards::notes::fee_sponsorship
@@ -424,7 +423,7 @@ end
 @locals(8)
 proc get_sponsored_feature_note_id
     # write the sponsorship note's storage items to memory
-    locaddr.SPONSORSHIP_STORAGE_LOC swap exec.note::input_note_get_storage
+    locaddr.SPONSORSHIP_STORAGE_LOC exec.input_note::get_storage drop
     # => []
 
     # load the sponsored feature note ID
