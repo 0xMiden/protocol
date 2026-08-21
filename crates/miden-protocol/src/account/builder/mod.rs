@@ -182,13 +182,6 @@ impl AccountBuilder {
     /// The flag is [`AssetCallbackFlag::Enabled`] if any component installs one of the
     /// protocol-reserved asset callback slots, or if [`Self::enable_asset_callbacks`] was called,
     /// and [`AssetCallbackFlag::Disabled`] otherwise.
-    ///
-    /// Deriving the flag rather than accepting it from the caller upholds the protocol rule that an
-    /// account which installs a callback slot must have callbacks enabled. The kernel decides
-    /// whether to invoke an account's asset callbacks solely from this flag, and the flag is
-    /// immutable once the ID is ground, so a callback slot installed on an account whose flag is
-    /// disabled would look correctly configured while never being invoked, silently and permanently
-    /// disabling whatever the callback enforces.
     fn derive_asset_callbacks(&self, storage: &AccountStorage) -> AssetCallbackFlag {
         AssetCallbackFlag::from(
             self.asset_callbacks.is_enabled() || AssetCallbacks::is_installed(storage),
