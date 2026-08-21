@@ -21,8 +21,8 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::StandardsLib;
+use crate::note::NetworkAccountTarget;
 use crate::note::costs::{BURN_CONSUMPTION_CYCLES, NoteConsumptionCost};
-use crate::note::{NetworkAccountTarget, NoteExecutionHint};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -51,6 +51,11 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// visible on-chain and discoverable by the network; whether consuming one requires a signature
 /// depends on the target faucet's auth component.
 ///
+/// The note is routed to that faucet by a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment derived from the asset.
+/// The attachment is the canonical target encoding the network routes on; the consume-side bind is
+/// the asset itself, which the faucet's `receive_and_burn` rejects if it did not issue it.
+///
 /// Construct one with the [builder](BurnNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
@@ -69,24 +74,26 @@ impl BurnNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - the asset's faucet is not a public account (the note is routed to it via a
+    ///   `NetworkAccountTarget`, which requires a public target).
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than that faucet.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
+    ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         #[builder(into)] asset: Asset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        let network_target =
-            NetworkAccountTarget::new(asset.faucet_id(), NoteExecutionHint::Always).map_err(
-                |err| {
-                    NoteError::other_with_source("failed to target BURN note at asset faucet", err)
-                },
-            )?;
-        let attachments = NoteAttachments::new(
-            core::iter::once(network_target.into()).chain(attachments).collect(),
+        // The network routes the note on this attachment; the asset it carries is what binds the
+        // script to the same faucet on consumption.
+        NetworkAccountTarget::ensure_presence(&mut attachments, asset.faucet_id()).map_err(
+            |err| NoteError::other_with_source("failed to target the BURN note at its faucet", err),
         )?;
+
+        let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
             sender,
@@ -209,34 +216,46 @@ impl NoteConsumptionCost for BurnNote {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::RandomCoin;
-    use miden_protocol::note::NoteTag;
+    use miden_protocol::note::{NoteAttachmentScheme, NoteTag};
 
     use super::*;
-    use crate::note::NetworkAccountTarget;
+    use crate::note::{NetworkAccountTarget, NetworkAccountTargetError, NoteExecutionHint};
 
     fn sender() -> AccountId {
         AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
     }
 
     fn faucet() -> AccountId {
-        AccountId::builder().account_type(AccountType::Public).build_with_seed([2; 32])
+        typed_faucet(AccountType::Public)
+    }
+
+    fn typed_faucet(account_type: AccountType) -> AccountId {
+        AccountId::builder().account_type(account_type).build_with_seed([2; 32])
+    }
+
+    fn build_burn_note(
+        faucet_id: AccountId,
+        attachments: Vec<NoteAttachment>,
+    ) -> Result<BurnNote, NoteError> {
+        let mut rng = RandomCoin::new(Word::empty());
+        BurnNote::builder()
+            .attachments(attachments)
+            .sender(sender())
+            .asset(FungibleAsset::new(faucet_id, 100).unwrap())
+            .generate_serial_number(&mut rng)
+            .build()
     }
 
     /// The builder produces a public note targeted at the faucet and carrying the asset to burn.
     #[test]
     fn builder_builds_public_burn_note() {
-        let mut rng = RandomCoin::new(Word::empty());
         let asset = FungibleAsset::new(faucet(), 100).unwrap();
 
-        let burn_note = BurnNote::builder()
-            .sender(sender())
-            .asset(asset)
-            .generate_serial_number(&mut rng)
-            .build()
-            .unwrap();
+        let burn_note = build_burn_note(faucet(), Vec::new()).unwrap();
 
         assert_eq!(burn_note.sender(), sender());
         assert_eq!(burn_note.faucet_id(), faucet());
@@ -252,5 +271,65 @@ mod tests {
         let target = NetworkAccountTarget::try_from(note.attachments()).unwrap();
         assert_eq!(target.target_id(), faucet());
         assert_eq!(target.execution_hint(), NoteExecutionHint::Always);
+    }
+
+    /// Caller-supplied attachments are kept in their order, with the derived network target
+    /// appended.
+    #[test]
+    fn builder_keeps_caller_attachments() {
+        let custom_scheme = NoteAttachmentScheme::new(64).unwrap();
+        let custom = NoteAttachment::with_word(custom_scheme, Word::from([7u32, 0, 0, 0]));
+
+        let burn_note = build_burn_note(faucet(), vec![custom.clone()]).unwrap();
+
+        // The target is appended, so the caller's attachment comes first.
+        assert_eq!(burn_note.attachments().num_attachments(), 2);
+        assert_eq!(burn_note.attachments().get(0), Some(&custom));
+        assert_eq!(
+            NetworkAccountTarget::try_from(burn_note.attachments()).unwrap().target_id(),
+            faucet()
+        );
+    }
+
+    /// A caller-supplied target for the faucet is kept as-is, so its execution hint survives and
+    /// no duplicate attachment is added.
+    #[test]
+    fn builder_keeps_caller_target_for_faucet() {
+        let supplied = NetworkAccountTarget::new(faucet(), NoteExecutionHint::None).unwrap();
+
+        let burn_note = build_burn_note(faucet(), vec![supplied.into()]).unwrap();
+
+        assert_eq!(burn_note.attachments().num_attachments(), 1);
+        assert_eq!(NetworkAccountTarget::try_from(burn_note.attachments()).unwrap(), supplied);
+    }
+
+    /// A caller-supplied `NetworkAccountTarget` for another account is rejected rather than
+    /// silently coexisting with the note's own target.
+    #[test]
+    fn builder_rejects_target_for_other_account() {
+        let other = AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32]);
+        let rogue_target = NetworkAccountTarget::new(other, NoteExecutionHint::None).unwrap();
+
+        let err = build_burn_note(faucet(), vec![rogue_target.into()]).unwrap_err();
+
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetMismatch { .. }
+            )
+        });
+    }
+
+    /// A non-public faucet cannot be a network target, so the builder rejects it.
+    #[test]
+    fn builder_rejects_non_public_faucet() {
+        let err = build_burn_note(typed_faucet(AccountType::Private), Vec::new()).unwrap_err();
+
+        assert_matches!(err, NoteError::Other { source, .. } => {
+            assert_matches!(
+              *source.unwrap().downcast().unwrap(),
+              NetworkAccountTargetError::TargetNotPublic(_)
+            )
+        });
     }
 }

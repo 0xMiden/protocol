@@ -36,6 +36,7 @@
 - Fixed the authentication procedure not ending up at index 0 of an account's code when its MAST root was already exported by another component ([#3566](https://github.com/0xMiden/protocol/pull/3566)).
 - [BREAKING] Foreign procedure invocation now requires the provided procedure root to be part of the foreign account's code, so a caller can no longer execute arbitrary code under a foreign account's identity ([#3575](https://github.com/0xMiden/protocol/pull/3575)).
 - Fixed `PrivateOutputNote` construction and deserialization accepting attachment data that is not committed by the note header ([#3556](https://github.com/0xMiden/protocol/pull/3579)).
+- MINT notes for a public faucet now carry the `NetworkAccountTarget` attachment that identifies them as network notes, and both MINT and BURN notes reject a caller-supplied attachment naming a different faucet ([#3433](https://github.com/0xMiden/protocol/issues/3433)).
 - Fixed `input_note::remove_asset` leaving a dangling asset slot when a non-canonical fungible value produced an empty removal remainder ([#3591](https://github.com/0xMiden/protocol/pull/3606)).
 - Fixed `input_note::remove_asset` succeeding when asked to remove an empty or malformed asset ID instead of reporting the asset as not found ([#3592](https://github.com/0xMiden/protocol/pull/3607)).
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
