@@ -17,6 +17,7 @@ use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH,
+    ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH,
     ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::NoteId;
@@ -198,6 +199,59 @@ async fn test_transaction_prologue_rejects_too_many_note_assets() -> anyhow::Res
 
     let result = mock_tx.execute_code(code).await;
     assert_execution_error!(result, ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_transaction_prologue_verifies_note_storage_against_commitment() -> anyhow::Result<()>
+{
+    // The number of storage items sits right after the 7 note-detail words in the note-data blob.
+    const NOTE_DATA_NUM_STORAGE_ITEMS_IDX: usize = 7 * WORD_SIZE;
+
+    let assets = vec![NonFungibleAsset::mock(&0u32.to_le_bytes())];
+    let input_note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, assets);
+    let mut mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .input_note(input_note)
+        .build()?;
+
+    let input_notes_commitment = mock_tx.input_notes().commitment();
+    let (_, advice_inputs) = TransactionKernel::prepare_inputs(mock_tx.tx_inputs());
+    let note_data = advice_inputs
+        .as_advice_inputs()
+        .map
+        .get(&input_notes_commitment)
+        .context("input-note advice should be present")?
+        .as_ref()
+        .to_vec();
+
+    let code = "
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+        end
+        ";
+
+    // The note has empty storage (count == 0): the prologue accepts it because the empty preimage
+    // hashes to the note's storage commitment.
+    assert_eq!(note_data[NOTE_DATA_NUM_STORAGE_ITEMS_IDX], ZERO);
+    mock_tx
+        .execute_code(code)
+        .await
+        .context("valid empty-storage note should be accepted")?;
+
+    // Forge a non-zero storage-item count that the note's storage commitment does not attest to.
+    // The count stays within the limit, so it bypasses the bounds check and must be caught by
+    // the commitment verification instead.
+    let mut note_data = note_data;
+    note_data[NOTE_DATA_NUM_STORAGE_ITEMS_IDX] = Felt::from(1u32);
+    mock_tx.set_tx_args(TransactionArgs::new(
+        BTreeMap::from([(input_notes_commitment, note_data)]).into(),
+    ));
+
+    let result = mock_tx.execute_code(code).await;
+    assert_execution_error!(result, ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH);
 
     Ok(())
 }
