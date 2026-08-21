@@ -40,9 +40,6 @@ const ERR_NOTE_STORAGE_ITEMS_COUNT_MISMATCH =
 #! Loads the storage preimage committed to by `NOTE_STORAGE_COMMITMENT` from the advice map onto
 #! the advice stack and asserts that it holds the expected number of items.
 #!
-#! The preimage is padded to the next multiple of 8 so that it can be consumed by
-#! `mem::pipe_elements_preimage_to_memory` or `mem::write_elements_to_memory`.
-#!
 #! Inputs:
 #!   Operand stack: [NOTE_STORAGE_COMMITMENT, num_storage_items]
 #!   Advice stack:  []
@@ -64,8 +61,7 @@ const ERR_NOTE_STORAGE_ITEMS_COUNT_MISMATCH =
 #!
 #! Invocation: exec
 pub proc load_storage_preimage
-    # load the storage preimage from the advice map onto the advice stack, prefixed with its
-    # element count and padded to the next multiple of 8
+    # load the preimage + element count from the advice map onto the advice stack
     adv.push_mapvaln.8
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items]
     # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
