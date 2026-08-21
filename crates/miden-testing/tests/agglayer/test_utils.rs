@@ -258,6 +258,7 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge.clone())?;

@@ -62,6 +62,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -118,6 +119,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -165,6 +167,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
         8,
         Felt::new(1_000_000).unwrap(),
         Felt::ZERO,
+        bridge_admin_account_id(),
         faucet_manager.id(),
     );
     builder.add_account(faucet.clone())?;
@@ -206,6 +209,7 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         8,
         Felt::new(1_000_000).unwrap(),
         Felt::ZERO,
+        bridge_admin_account_id(),
         faucet_manager.id(),
     );
     builder.add_account(faucet.clone())?;

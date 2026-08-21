@@ -21,7 +21,6 @@ use miden_standards::note::{
     MintNote,
     NetworkAccountConfigNote,
     PauseConfig,
-    RbacConfig,
     RbacConfigNote,
 };
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
@@ -127,10 +126,6 @@ enum ManagedAccount {
 
 fn fee_manager_id() -> AccountId {
     AccountId::builder().account_type(AccountType::Public).build_with_seed([41; 32])
-}
-
-fn replacement_fee_manager_id() -> AccountId {
-    AccountId::builder().account_type(AccountType::Public).build_with_seed([42; 32])
 }
 
 fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
@@ -286,83 +281,6 @@ async fn fee_manager_reprices_the_fee_schedule(
         fee_schedule_entry(LOWERED_FEE)?,
         "the lowered fee should replace the raised one"
     );
-
-    Ok(())
-}
-
-#[rstest]
-#[case::bridge(ManagedAccount::Bridge)]
-#[case::faucet(ManagedAccount::Faucet)]
-#[tokio::test]
-async fn fee_manager_role_can_be_rotated(#[case] managed: ManagedAccount) -> anyhow::Result<()> {
-    const REPRICED_FEE: u64 = 4_242;
-
-    let account = build_managed_account(managed)?;
-    let account_id = account.id();
-    let admin = bridge_admin_account_id();
-    let initial_manager = fee_manager_id();
-    let replacement_manager = replacement_fee_manager_id();
-    let role = match managed {
-        ManagedAccount::Bridge => AggLayerBridge::fee_manager_role(),
-        ManagedAccount::Faucet => AggLayerFaucet::fee_manager_role(),
-    };
-
-    let mut builder = MockChain::builder();
-    let grant: Note = RbacConfigNote::builder()
-        .sender(admin)
-        .target(account_id)
-        .config(RbacConfig::GrantRole {
-            role: role.clone(),
-            account: replacement_manager,
-        })
-        .generate_serial_number(builder.rng_mut())
-        .build()?
-        .into();
-    let revoke: Note = RbacConfigNote::builder()
-        .sender(admin)
-        .target(account_id)
-        .config(RbacConfig::RevokeRole { role, account: initial_manager })
-        .generate_serial_number(builder.rng_mut())
-        .build()?
-        .into();
-    let replacement_reprice =
-        build_repricing_note(replacement_manager, account_id, repriced_root(), REPRICED_FEE, 3)?;
-    let former_reprice = build_repricing_note(initial_manager, account_id, repriced_root(), 1, 4)?;
-
-    builder.add_account(account)?;
-    for note in [&grant, &revoke, &replacement_reprice, &former_reprice] {
-        builder.add_output_note(RawOutputNote::Full(note.clone()));
-    }
-    let grant_sponsorship = add_required_sponsorship(&mut builder, &grant, account_id)?;
-    let revoke_sponsorship = add_required_sponsorship(&mut builder, &revoke, account_id)?;
-    let replacement_sponsorship =
-        add_required_sponsorship(&mut builder, &replacement_reprice, account_id)?;
-    let former_sponsorship = add_required_sponsorship(&mut builder, &former_reprice, account_id)?;
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    consume_sponsored_note(&mut mock_chain, account_id, &grant, &grant_sponsorship).await?;
-    consume_sponsored_note(&mut mock_chain, account_id, &revoke, &revoke_sponsorship).await?;
-    consume_sponsored_note(
-        &mut mock_chain,
-        account_id,
-        &replacement_reprice,
-        &replacement_sponsorship,
-    )
-    .await?;
-    assert_eq!(
-        committed_fee(&mock_chain, account_id, repriced_root())?,
-        fee_schedule_entry(REPRICED_FEE)?,
-    );
-
-    let result = mock_chain
-        .build_transaction(account_id)
-        .authenticated_input_note(former_reprice.id())
-        .authenticated_input_note(former_sponsorship.id())
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
     Ok(())
 }

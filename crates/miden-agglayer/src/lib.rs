@@ -236,25 +236,18 @@ impl AggLayerFaucet {
             .build();
 
         let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
+        let rbac = RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(faucet_admin))
+            .role(RoleConfig::new(AggLayerFaucet::fee_manager_role()).with_member(fee_manager))
+            .build()
+            .expect("the faucet seeds non-empty roles administered by ADMIN");
 
         NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
             .expect("faucet note allowlist is non-empty")
             .with_asset_callbacks(asset_callbacks)
             .with_component(agglayer_component)
             .with_component(Ownable2Step::new(bridge_account_id))
-            .with_component(
-                RoleBasedAccessControl::builder()
-                    .role(
-                        RoleConfig::new(RoleBasedAccessControl::admin_role())
-                            .with_member(faucet_admin),
-                    )
-                    .role(
-                        RoleConfig::new(AggLayerFaucet::fee_manager_role())
-                            .with_member(fee_manager),
-                    )
-                    .build()
-                    .expect("the faucet seeds non-empty roles administered by ADMIN"),
-            )
+            .with_component(rbac)
             .with_component(Authority::RbacControlled {
                 procedure_roles: AggLayerFaucet::procedure_roles(),
             })
@@ -283,13 +276,15 @@ mod tests {
     fn agglayer_accounts_allowlist_expiration_tx_script() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, 77);
+        let bridge =
+            create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, id, 77);
         let faucet = create_existing_agglayer_faucet(
             Word::default(),
             "AGG",
             6,
             Felt::from(1000u32),
             Felt::ZERO,
+            id,
             id,
         );
 
