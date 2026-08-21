@@ -62,3 +62,61 @@ pub proc pipe_elements_preimage_to_memory
     movup.4 drop
     # => [COMPUTED_COMMITMENT]
 end
+
+#! Writes `num_elements` elements from the advice stack to memory starting at `dest_ptr`, without
+#! computing a commitment over them.
+#!
+#! This is the non-hashing counterpart of `pipe_elements_preimage_to_memory` and must only be used
+#! when the elements are already known to be authentic. It copies with the same `adv_pipe`
+#! instruction but omits the Poseidon2 permutations, so it requires the same input shape: the
+#! elements must already be on the advice stack, padded to the next multiple of 8 (e.g. via
+#! `adv.push_mapvaln.8`). The padding zeros are consumed and written to memory alongside the
+#! elements, so `dest_ptr` must have room for the padded length.
+#!
+#! Inputs:
+#!   Operand stack: [num_elements, dest_ptr]
+#!   Advice stack:  [[ELEMENTS]]
+#! Outputs:
+#!   Operand stack: []
+#!   Advice stack:  []
+#!
+#! Where:
+#! - num_elements is the number of elements to write.
+#! - dest_ptr is the memory pointer at which the elements are written.
+#! - ELEMENTS are the elements written to memory.
+#!
+#! Invocation: exec
+pub proc write_elements_to_memory
+    # compute the number of words required to store the elements: ceil(num_elements / 4)
+    u32divmod.WORD_NUM_ELEMENTS neq.0 add
+    # => [num_words, dest_ptr]
+
+    # round the number of words up to the next multiple of 2, since `adv_pipe` copies two at a time
+    dup is_odd add
+    # => [even_num_words, dest_ptr]
+
+    # compute end_ptr = dest_ptr + even_num_words * WORD_NUM_ELEMENTS
+    mul.WORD_NUM_ELEMENTS dup.1 add swap
+    # => [dest_ptr, end_ptr]
+
+    # `adv_pipe` reads the write pointer from position 12, so pad the rate and capacity words it
+    # overwrites. Their contents are irrelevant because no commitment is computed.
+    padw padw padw
+    # => [RATE0, RATE1, CAPACITY, dest_ptr, end_ptr]
+
+    dup.13 dup.13 neq
+    # => [has_more_words, RATE0, RATE1, CAPACITY, write_ptr, end_ptr]
+
+    # copy two words per iteration until write_ptr reaches end_ptr
+    while.true
+        adv_pipe
+        # => [RATE0', RATE1', CAPACITY, write_ptr', end_ptr]
+
+        dup.13 dup.13 neq
+        # => [has_more_words, RATE0', RATE1', CAPACITY, write_ptr', end_ptr]
+    end
+    # => [RATE0, RATE1, CAPACITY, end_ptr, end_ptr]
+
+    dropw dropw dropw drop drop
+    # => []
+end

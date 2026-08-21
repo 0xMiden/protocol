@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_protocol::account::auth::AuthScheme;
@@ -608,6 +609,84 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
     );
 
     mock_tx.execute_code(&code).await?;
+    Ok(())
+}
+
+/// Verifies that `active_note::get_storage` writes every storage item to memory for item counts
+/// that straddle the word and double-word boundaries of the underlying advice-stack copy.
+#[rstest]
+#[case::one_item(1)]
+#[case::one_word(4)]
+#[case::partial_second_word(5)]
+#[case::two_words(8)]
+#[case::partial_third_word(9)]
+#[case::three_words(12)]
+#[tokio::test]
+async fn test_active_note_get_storage_writes_all_items(
+    #[case] num_items: u32,
+) -> anyhow::Result<()> {
+    const DEST_PTR: u32 = 100_000_000;
+
+    let sender_id = ACCOUNT_ID_SENDER.try_into().context("failed to convert sender account ID")?;
+    let target_id = ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE
+        .try_into()
+        .context("failed to convert target account ID")?;
+
+    let serial_num = RandomCoin::new(Word::from([4u32; 4])).draw_word();
+    let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public)
+        .with_tag(NoteTag::with_account_target(target_id));
+    let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
+    let note_script = CodeBuilder::default()
+        .compile_note_script(DEFAULT_NOTE_SCRIPT)
+        .context("failed to parse note script")?;
+
+    let items: Vec<Felt> = (1..=num_items).map(Felt::from).collect();
+    let recipient = NoteRecipient::new(
+        serial_num,
+        note_script,
+        NoteStorage::new(items.clone()).context("failed to create note storage")?,
+    );
+
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .input_note(Note::new(vault, metadata, recipient))
+        .build()?;
+
+    // assert every written word, including the zero padding of the final partial word
+    let mut storage_assertions = String::new();
+    for (word_idx, chunk) in items.chunks(WORD_SIZE).enumerate() {
+        let mut storage_word = EMPTY_WORD;
+        storage_word.as_mut_slice()[..chunk.len()].copy_from_slice(chunk);
+        let word_ptr = DEST_PTR as usize + word_idx * WORD_SIZE;
+
+        storage_assertions += &format!(
+            r#"
+            padw push.{word_ptr} mem_loadw_le
+            push.{storage_word} assert_eqw.err="storage items are incorrect"
+            "#
+        );
+    }
+
+    let tx_code = format!(
+        r#"
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::active_note
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{DEST_PTR} exec.active_note::get_storage
+            # => [num_storage_items]
+
+            eq.{num_items} assert.err="unexpected num_storage_items"
+            # => []
+
+            {storage_assertions}
+        end
+        "#
+    );
+
+    mock_tx.execute_code(&tx_code).await.context("transaction execution failed")?;
+
     Ok(())
 }
 

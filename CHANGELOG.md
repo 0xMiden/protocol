@@ -23,6 +23,7 @@
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
 - [BREAKING] The transaction kernel no longer requires assets with `AssetComposition::None` to have the non-fungible asset layout ([#3624](https://github.com/0xMiden/protocol/pull/3624)).
 - [BREAKING] Refactored `Asset` into a struct holding `AssetId` and `AssetValue` ([#3625](https://github.com/0xMiden/protocol/pull/3625)).
+- [BREAKING] Replaced `miden::protocol::active_note::write_storage_to_memory` and `miden::standards::note::input_note_get_storage` with `miden::protocol::input_note::get_storage`, which reads the note's storage without recomputing its commitment now that the prologue verifies it ([#3593](https://github.com/0xMiden/protocol/issues/3593)).
 
 ### Fixes
 
