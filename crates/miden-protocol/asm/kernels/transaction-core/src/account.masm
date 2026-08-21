@@ -951,9 +951,7 @@ end
 #! Validates that slot IDs are sorted in ascending order, that slot IDs are unique, and that every
 #! slot's type belongs to the set of supported types (value or map).
 #!
-#! This validates the storage of the native account, which is the only account whose storage is
-#! validated this way: a foreign account's storage is instead bound to the commitment verified
-#! against the account tree.
+#! Validation should only ever happen on the storage of the native account.
 #!
 #! Inputs:  []
 #! Outputs: []
