@@ -26,7 +26,6 @@
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
 - [BREAKING] The transaction kernel no longer requires assets with `AssetComposition::None` to have the non-fungible asset layout ([#3624](https://github.com/0xMiden/protocol/pull/3624)).
 - [BREAKING] Refactored `Asset` into a struct holding `AssetId` and `AssetValue` ([#3625](https://github.com/0xMiden/protocol/pull/3625)).
-- Removed a redundant `dupw`/`dropw` pair around the `loc_storew_le` in `non_fungible::mint_and_send` ([#3660](https://github.com/0xMiden/protocol/pull/3660)).
 
 ### Fixes
 
