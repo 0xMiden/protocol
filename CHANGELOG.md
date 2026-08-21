@@ -26,6 +26,7 @@
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
 - [BREAKING] The transaction kernel no longer requires assets with `AssetComposition::None` to have the non-fungible asset layout ([#3624](https://github.com/0xMiden/protocol/pull/3624)).
 - [BREAKING] Refactored `Asset` into a struct holding `AssetId` and `AssetValue` ([#3625](https://github.com/0xMiden/protocol/pull/3625)).
+- [BREAKING] Made the presence of an asset callback slot imply an enabled asset callback flag: the transaction kernel rejects new accounts that violate this and `AccountBuilder` derives the flag from the installed callback slots, replacing `with_asset_callbacks` with `enable_asset_callbacks`. The kernel commitment changes (TODO: PR link).
 
 ### Fixes
 
