@@ -111,11 +111,6 @@ impl AccountBuilder {
     /// [`AssetCallbackFlag::Disabled`] otherwise. There is deliberately no way to disable the flag
     /// for an account that does install such a slot, since the kernel gates callback invocation on
     /// the flag alone and the flag cannot be changed after the ID is ground.
-    ///
-    /// This method is only needed to enable callbacks up front without installing a callback slot
-    /// yet, which reserves the capability for the account's lifetime: because the flag is
-    /// immutable, an account created without it can never have callbacks invoked, whereas an
-    /// account created with it may install callback slots later.
     pub fn enable_asset_callbacks(mut self) -> Self {
         self.asset_callbacks = AssetCallbackFlag::Enabled;
         self
