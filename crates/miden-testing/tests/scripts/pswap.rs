@@ -2205,7 +2205,7 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
 
     let result = mock_chain
         .build_transaction(consumer.id())
-        .authenticated_input_notes([helper_note.id(), pswap_note.id()])
+        .authenticated_input_notes([helper_note_id, pswap_note.id()])
         .extend_note_args(note_args_map)
         .build()?
         .execute()
