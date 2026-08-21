@@ -9,7 +9,7 @@ use miden::standards::wallets::basic as basic_wallet
 
 const NUM_STORAGE_ITEMS=6
 
-# Note storage layout (6 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (6 felts, loaded at STORAGE_PTR by get_bounded_storage):
 # - reclaimer_suffix        [0]  : suffix of the account allowed to reclaim the note
 # - reclaimer_prefix        [1]  : prefix of the account allowed to reclaim the note
 # - target_suffix           [2]  : suffix of the account for which the note is intended
@@ -129,7 +129,7 @@ end
 @note_script
 pub proc main
     # store the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     # make sure the number of storage items is 6

@@ -17,6 +17,9 @@ const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED =
 const ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED =
     "final nonce in patch must have been incremented if account vault or account storage changed"
 
+const ERR_ACCOUNT_DELTA_TOO_MANY_ADDED_ASSETS =
+    "number of added assets in the transaction exceeds the maximum limit of 1024"
+
 const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS =
     "number of removed assets in the transaction exceeds the maximum limit of 1024"
 
@@ -93,7 +96,7 @@ const COMMIT_ASSET_PATCH_NUM_CHANGED_LOC = 2
 #!
 #! This limit is arbitrary and can be increased accordingly with the number of locals of
 #! commit_asset_delta.
-const COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS = 1024
+const MAX_ASSETS_PER_DELTA_OP = 1024
 
 # PROCEDURES
 # =================================================================================================
@@ -123,7 +126,7 @@ pub proc compute_patch_commitment
 
     # get the nonce of the account and assume it is the final nonce
     # we later assert that the nonce was incremented (unless the patch is empty)
-    exec.memory::get_account_nonce
+    exec.memory::get_native_account_nonce
     push.DOMAIN_PATCH
     # => [domain_patch, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
     # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
@@ -476,7 +479,7 @@ end
 #! - 1: iter
 #! - 2: num_added_assets
 #! - 3: num_removed_assets
-#! - 4..8196: removed_assets (COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS * ASSET_SIZE elements)
+#! - 4..8196: removed_assets (MAX_ASSETS_PER_DELTA_OP * ASSET_SIZE elements)
 @locals(8196)
 proc commit_asset_delta
     # initialize num_added_assets = 0 and num_removed_assets = 0
@@ -526,8 +529,11 @@ proc commit_asset_delta
             # => [is_addition, ASSET_ID, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
             if.true
-                # increment num_added_assets
                 loc_load.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
+                dup neq.MAX_ASSETS_PER_DELTA_OP
+                assert.err=ERR_ACCOUNT_DELTA_TOO_MANY_ADDED_ASSETS
+
+                # increment num_added_assets
                 add.1
                 loc_store.COMMIT_ASSET_DELTA_NUM_ADDED_LOC
                 # => [ASSET_ID, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
@@ -543,7 +549,7 @@ proc commit_asset_delta
                 # => [num_removed_assets, ASSET_ID, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
                 # make sure we do not write outside the assigned number of locals
-                dup neq.COMMIT_ASSET_DELTA_MAX_REMOVED_ASSETS
+                dup neq.MAX_ASSETS_PER_DELTA_OP
                 assert.err=ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS
                 # => [num_removed_assets, ASSET_ID, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 

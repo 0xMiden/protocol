@@ -34,7 +34,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::policies::MintPolicy;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
+use miden_standards::errors::standards::ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
 use miden_standards::interop::eth::{EthAddress, EthEmbeddedAccountId};
 use miden_standards::note::{FeeSponsorshipNote, P2idNote, StandardNote};
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
@@ -485,7 +485,7 @@ async fn test_bridge_in_claim_to_p2id(
 /// consuming faucet A's MINT note is the faucet bind itself. The MINT note embeds the full
 /// `ASSET` (`ASSET_ID` + `ASSET_VALUE`) in its storage; `fungible::mint_and_send` derives the
 /// asset for the consuming faucet and rejects it with
-/// `ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET` when its key does not match the stored
+/// `ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET` when its key does not match the stored
 /// `ASSET_ID`. Before this fix the MINT note carried only the amount, so faucet B would mint its
 /// own token and the cross-faucet consumption would succeed.
 #[tokio::test]
@@ -675,10 +675,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         .build()?;
 
     let attack_result = attack_mock_tx.execute().await;
-    assert_transaction_executor_error!(
-        attack_result,
-        ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
-    );
+    assert_transaction_executor_error!(attack_result, ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET);
 
     Ok(())
 }
