@@ -1,0 +1,56 @@
+# Root module of the transaction kernel.
+#
+# `exec_kernel_proc` is the only procedure of this module, and therefore the only procedure that
+# account code can invoke with a `syscall`. The kernel API procedures live in the `api` submodule.
+
+pub mod api
+
+use miden::tx_kernel_core::memory
+
+use {KERNEL_PROCEDURES_PTR} from miden::tx_kernel_core::memory
+use {WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
+
+# ERRORS
+# =================================================================================================
+
+const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
+    "provided kernel procedure offset is out of bounds"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Executes a kernel procedure specified by its offset.
+#!
+#! This procedure makes no guarantees about the contents of the `pad` elements of the invoked
+#! procedure. It is the caller's responsibility to make sure these elements do not contain any
+#! meaningful data.
+#!
+#! Inputs:  [procedure_offset, <procedure_inputs>, <pad>]
+#! Outputs: [<procedure_outputs>, <pad>]
+#!
+#! Where:
+#! - procedure_offset is an offset of the kernel procedure, specified in the
+#!   `miden/kernel_proc_offsets.masm` file.
+#! - procedure_inputs are inputs of the procedure to be executed, which is specified by the
+#!   procedure_offset. Note that the length of this inputs cannot exceed 15 elements, since the
+#!   first element on the stack will be occupied by the memory pointer to the procedure root.
+#! - procedure_outputs are the outputs of the procedure to be executed.
+#!
+#! Panics if:
+#! - the provided procedure offset exceeds the number of kernel procedures.
+#!
+#! Invocation: syscall
+pub proc exec_kernel_proc
+    # check that the provided procedure offset is within expected bounds
+    dup exec.memory::get_num_kernel_procedures
+    lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
+    # => [procedure_offset, <procedure_inputs>, <pad>]
+
+    # compute the memory pointer at which desired procedure is stored
+    mul.WORD_NUM_ELEMENTS add.KERNEL_PROCEDURES_PTR
+    # => [procedure_pointer, <procedure_inputs>, <pad>]
+
+    # execute loaded procedure
+    dynexec
+    # => [<procedure_outputs>, <pad>]
+end

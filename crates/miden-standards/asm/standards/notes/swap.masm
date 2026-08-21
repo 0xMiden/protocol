@@ -9,7 +9,7 @@ use miden::standards::wallets::basic as wallet
 
 const SWAP_NOTE_NUM_STORAGE_ITEMS=16
 
-# Note storage layout (16 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (16 felts, loaded at STORAGE_PTR by get_bounded_storage):
 # - requested_asset_id       [0..3]
 # - requested_asset_value    [4..7]
 # - payback_recipient        [8..11]  (private mode only; zero in public mode)
@@ -70,7 +70,7 @@ pub proc main
     # => []
 
     # store note storage into memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.SWAP_NOTE_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     # check number of storage items

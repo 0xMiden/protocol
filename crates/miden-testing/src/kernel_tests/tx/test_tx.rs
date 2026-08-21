@@ -1228,3 +1228,27 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// Tests that dynamic kernel procedures cannot be invoked directly with syscall but need to be
+// invoked using exec_kernel_proc.
+#[tokio::test]
+async fn kernel_procedures_are_not_directly_syscallable() -> anyhow::Result<()> {
+    // The kernel's root module holds exec_kernel_proc only, so a syscall to a kernel procedure by
+    // name does not resolve.
+    let script_source = "@transaction_script pub proc main syscall.account_get_id end";
+    let Err(error) = CodeBuilder::default().compile_tx_script(script_source) else {
+        anyhow::bail!("syscall to a kernel procedure by name should be rejected");
+    };
+    assert!(error.to_string().contains("undefined item '::$kernel::account_get_id'"));
+
+    // The kernel procedures are exported from the kernel package, but they are not part of the
+    // kernel interface, so a syscall to their MAST root is rejected as well.
+    let procedure_root = TransactionKernel::PROCEDURES[0];
+    let script_source = format!("@transaction_script pub proc main syscall.{procedure_root} end");
+    let Err(error) = CodeBuilder::default().compile_tx_script(script_source) else {
+        anyhow::bail!("syscall to kernel procedure {procedure_root} should be rejected");
+    };
+    assert!(error.to_string().contains("is not an exported kernel procedure"));
+
+    Ok(())
+}
