@@ -2,7 +2,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::delta::AssetDeltaOperation;
-use crate::asset::AssetVault;
+use crate::asset::{AssetCallbacks, AssetVault};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
@@ -132,6 +132,8 @@ impl Account {
     /// - an account seed is not provided but the account's nonce indicates the account is new.
     /// - an account seed is provided but the account ID derived from it is invalid or does not
     ///   match the provided account's ID.
+    /// - the storage contains an asset callback slot while the account ID's [`AssetCallbackFlag`]
+    ///   is [`AssetCallbackFlag::Disabled`].
     pub fn new(
         id: AccountId,
         vault: AssetVault,
@@ -141,6 +143,7 @@ impl Account {
         seed: Option<Word>,
     ) -> Result<Self, AccountError> {
         validate_account_seed(id, code.commitment(), storage.to_commitment(), seed, nonce)?;
+        validate_asset_callbacks(id, &storage)?;
 
         Ok(Self::new_unchecked(id, vault, storage, code, nonce, seed))
     }
@@ -529,6 +532,37 @@ impl Deserializable for Account {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Validates that an account which installs an asset callback slot has callbacks enabled.
+///
+/// The transaction kernel decides whether to invoke an account's asset callbacks solely from the
+/// [`AssetCallbackFlag`] encoded in its [`AccountId`], and that flag is immutable once the ID is
+/// ground. A callback slot installed on an account whose flag is disabled would therefore look
+/// correctly configured while never being invoked, silently and permanently disabling whatever the
+/// callback enforces. The transaction kernel rejects such accounts when they are created; this
+/// mirrors that rule for accounts that are constructed or deserialized outside of a transaction.
+///
+/// The converse is valid: an account may enable the flag without installing a callback slot, in
+/// which case the kernel skips the callback.
+pub(super) fn validate_asset_callbacks(
+    id: AccountId,
+    storage: &AccountStorage,
+) -> Result<(), AccountError> {
+    if id.asset_callback_flag().is_enabled() {
+        return Ok(());
+    }
+
+    for slot_name in AssetCallbacks::slot_names() {
+        if storage.get(slot_name).is_some() {
+            return Err(AccountError::AssetCallbackSlotWithDisabledFlag {
+                account_id: id,
+                slot_name: slot_name.clone(),
+            });
+        }
+    }
+
+    Ok(())
+}
 
 /// Validates that the provided seed is valid for the provided account components.
 pub(super) fn validate_account_seed(

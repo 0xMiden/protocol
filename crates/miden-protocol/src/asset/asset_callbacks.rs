@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::account::{StorageSlot, StorageSlotName};
+use crate::account::{AccountStorage, StorageSlot, StorageSlotName};
 use crate::utils::sync::LazyLock;
 
 // CONSTANTS
@@ -71,6 +71,26 @@ impl AssetCallbacks {
     /// procedure root is stored.
     pub fn on_before_asset_added_to_note_slot() -> &'static StorageSlotName {
         &ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT_NAME
+    }
+
+    /// Returns the names of all protocol-reserved asset callback storage slots.
+    pub fn slot_names() -> [&'static StorageSlotName; 2] {
+        [
+            Self::on_before_asset_added_to_account_slot(),
+            Self::on_before_asset_added_to_note_slot(),
+        ]
+    }
+
+    /// Returns `true` if `storage` contains at least one of the protocol-reserved asset callback
+    /// slots, `false` otherwise.
+    ///
+    /// This is the criterion by which an account's
+    /// [`AssetCallbackFlag`](crate::account::AssetCallbackFlag) is derived: the slot's presence
+    /// alone is decisive, its value is not. A slot's value can be rewritten over the account's
+    /// lifetime, while its presence can only change through an account upgrade, so only the
+    /// presence can be tied to the immutable flag encoded in the account ID.
+    pub fn is_installed(storage: &AccountStorage) -> bool {
+        Self::slot_names().iter().any(|slot_name| storage.get(slot_name).is_some())
     }
 
     /// Returns the procedure root of the `on_before_asset_added_to_account` callback.
