@@ -218,10 +218,10 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
         let (prefix, suffix) = account_id_felts(account_id)?;
 
         let code = "
-            use miden::protocol::account_id
+            use miden::tx_kernel_core::account
 
             begin
-                exec.account_id::validate
+                exec.account::validate_id
             end
             ";
 
