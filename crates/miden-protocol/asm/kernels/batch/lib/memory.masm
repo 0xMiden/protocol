@@ -107,11 +107,12 @@ pub const NOTE_ENTRY_FELT_LEN = 8
 # Number of words in a sorted note list entry (a KEY word plus a VALUE word).
 pub const NOTE_ENTRY_NUM_WORDS = 2
 
+# Felt offset of the VALUE word within a sorted note list entry.
+pub const NOTE_ENTRY_VALUE_OFFSET = 4
+
 # Base of the parallel input-note flags array. Per note, one word `[erasure, consumption, 0, 0]`.
-# `erasure` is 0 (not erased / external), 1 (expected to be erased: the input note's id matches an
-# output note created by another transaction within this batch -- its "creator" -- which has not
-# been processed yet) or 2 (erased: the creator output note has been processed). `consumption` is
-# 0 or 1.
+# `erasure` is 0 (not erased / external), [`INPUT_NOTE_ERASURE_EXPECTED`] or
+# [`INPUT_NOTE_ERASED`]. `consumption` is 0 or 1.
 pub const INPUT_NOTE_FLAGS_PTR = 40980
 
 # Number of felts each note occupies in the flag arrays (one word).
@@ -122,6 +123,14 @@ pub const INPUT_NOTE_ERASURE_OFFSET = 0
 
 # Felt offset of the `consumption` flag within an input-note flag word.
 pub const INPUT_NOTE_CONSUMPTION_OFFSET = 1
+
+# Erasure flag value: the input note is expected to be erased -- its note id matches an output note
+# created by another transaction within this batch (its "creator") which has not been processed
+# yet.
+pub const INPUT_NOTE_ERASURE_EXPECTED = 1
+
+# Erasure flag value: the input note is erased -- its creator output note has been processed.
+pub const INPUT_NOTE_ERASED = 2
 
 # Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
 #   `[NOTE_ID, 0, 0, 0, 0]`

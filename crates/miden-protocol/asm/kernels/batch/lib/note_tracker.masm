@@ -6,10 +6,13 @@ use miden::core::collections::sorted_array
 use miden::batch_kernel::memory
 use {
     INPUT_NOTE_CONSUMPTION_OFFSET,
+    INPUT_NOTE_ERASED,
+    INPUT_NOTE_ERASURE_EXPECTED,
     INPUT_NOTES_PTR,
     MAX_NOTES_PER_BATCH,
     NOTE_ENTRY_FELT_LEN,
     NOTE_ENTRY_NUM_WORDS,
+    NOTE_ENTRY_VALUE_OFFSET,
     OUTPUT_NOTE_IS_CREATED_OFFSET,
     OUTPUT_NOTE_LINKED_INPUT_OFFSET,
     OUTPUT_NOTES_PTR,
@@ -42,14 +45,16 @@ const ERR_BATCH_TX_TOO_MANY_NOTES =
 # ERASURE CROSS-REFERENCE
 # =================================================================================================
 
-#! Marks input-note list entry `idx` as expected-to-be-erased (erasure flag, offset 0, set to 1).
+#! Marks input-note list entry `idx` as expected-to-be-erased (erasure flag, at offset 0, set to
+#! [`INPUT_NOTE_ERASURE_EXPECTED`]).
 #!
 #! Inputs:  [idx]
 #! Outputs: []
 proc set_input_erasure_expected
     exec.memory::input_note_flags_ptr
     # => [erasure_ptr]   (erasure flag is at offset 0)
-    push.1 swap mem_store
+
+    push.INPUT_NOTE_ERASURE_EXPECTED swap mem_store
 end
 
 #! Records on output-note list entry `j` that it erases input-note list entry `idx`: sets
@@ -80,7 +85,7 @@ end
 #! Inputs:  [idx]
 #! Outputs: []
 proc cross_reference_one_input
-    dup exec.memory::input_note_entry_ptr add.4
+    dup exec.memory::input_note_entry_ptr add.NOTE_ENTRY_VALUE_OFFSET
     # => [note_id_ptr, idx]
     padw movup.4 mem_loadw_le
     # => [NOTE_ID, idx]
@@ -116,15 +121,20 @@ end
 #! Outputs: []
 proc cross_reference_erasure
     exec.memory::get_num_input_notes
-    push.0
-    # => [idx, num]
-    dup.1 dup.1 neq
+    # => [num_input_notes]
+
+    # Iterate idx from num_input_notes - 1 down to 0; the cross-reference is order-independent.
+    dup neq.0
     while.true
+        sub.1
+        # => [idx]
+
         dup exec.cross_reference_one_input
-        add.1
-        dup.1 dup.1 neq
+
+        dup neq.0
+        # => [should_loop, idx]
     end
-    drop drop
+    drop
 end
 
 # PER-TRANSACTION OUTPUT NOTES
@@ -142,19 +152,22 @@ proc mark_output_note_created
     push.1 swap mem_store
 end
 
-#! Advances input-note list entry `idx`'s erasure flag from 1 (expected) to 2 (its creator output
-#! note has been processed), asserting it was 1.
+#! Advances input-note list entry `idx`'s erasure flag from [`INPUT_NOTE_ERASURE_EXPECTED`] to
+#! [`INPUT_NOTE_ERASED`] (its creator output note has been processed), asserting it was expected.
 #!
 #! Inputs:  [idx]
 #! Outputs: []
 proc flip_input_erasure_created
     exec.memory::input_note_flags_ptr
     # => [erasure_ptr]
+
     dup mem_load
     # => [erasure, erasure_ptr]
-    eq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
+
+    eq.INPUT_NOTE_ERASURE_EXPECTED assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
     # => [erasure_ptr]
-    push.2 swap mem_store
+
+    push.INPUT_NOTE_ERASED swap mem_store
 end
 
 #! Binds one per-transaction output note (an 8-felt `[DETAILS_COMMITMENT, METADATA_COMMITMENT]`
@@ -168,7 +181,7 @@ proc bind_one_output_note
     # Derive the output note's id as merge(details_commitment, metadata_commitment).
     dup padw movup.4 mem_loadw_le
     # => [DETAILS, scratch_entry_ptr]
-    dup.4 add.4 padw movup.4 mem_loadw_le
+    dup.4 add.NOTE_ENTRY_VALUE_OFFSET padw movup.4 mem_loadw_le
     # => [METADATA, DETAILS, scratch_entry_ptr]
     swapw
     # => [DETAILS, METADATA, scratch_entry_ptr]
@@ -193,7 +206,7 @@ proc bind_one_output_note
     # => [j]
 
     # If this output note erases an input note (cross-referenced earlier), advance that input note's
-    # erasure flag from 1 (expected) to 2 (creator processed).
+    # erasure flag from expected to erased.
     dup exec.memory::output_note_flags_ptr mem_load
     # => [will_be_erased, j]
     if.true
@@ -211,25 +224,35 @@ end
 #! Inputs:  [num_notes]
 #! Outputs: []
 proc bind_scratch_output_notes
-    push.0
-    # => [i, num_notes]
-    dup.1 dup.1 neq
+    # => [num_notes]
+
+    # Iterate i from num_notes - 1 down to 0; binding is order-independent within a transaction.
+    dup neq.0
     while.true
+        sub.1
+        # => [i]
+
         dup mul.NOTE_ENTRY_FELT_LEN add.TX_NOTES_SCRATCH_PTR
-        # => [scratch_entry_ptr, i, num_notes]
+        # => [scratch_entry_ptr, i]
+
         exec.bind_one_output_note
-        add.1
-        dup.1 dup.1 neq
+
+        dup neq.0
+        # => [should_loop, i]
     end
-    drop drop
+    drop
 end
 
 #! Verifies transaction `tx_index`'s `OUTPUT_NOTES_COMMITMENT_idx` against its piped
 #! `(DETAILS_COMMITMENT, METADATA_COMMITMENT)` tuples, then binds each of those notes to the batch
 #! output-note list (see [`bind_per_tx_notes`] for what binding proves).
 #!
-#! Inputs:  [tx_index]
-#! Outputs: []
+#! Inputs:
+#!   Operand stack: [tx_index]
+#!   Advice map:
+#!     OUTPUT_NOTES_COMMITMENT_idx |-> [[DETAILS_COMMITMENT_0, METADATA_COMMITMENT_0], ...]
+#! Outputs:
+#!   Operand stack: []
 proc process_tx_output_notes
     dup exec.memory::get_tx_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
@@ -279,16 +302,17 @@ proc mark_input_note_consumed
     push.1 swap mem_store
 end
 
-#! Asserts input-note list entry `idx` is not expected-to-be-erased (erasure flag != 1) at the
-#! point it is consumed: if it is created in this batch, its creator has already been
-#! processed. Rejects consume-before-create / circular dependencies.
+#! Asserts input-note list entry `idx` is not expected-to-be-erased at the point it is consumed:
+#! if it is created in this batch, its creator has already been processed. Rejects
+#! consume-before-create / circular dependencies.
 #!
 #! Inputs:  [idx]
 #! Outputs: []
 proc assert_input_not_consumed_before_created
     exec.memory::input_note_flags_ptr mem_load
     # => [erasure]
-    neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
+
+    neq.INPUT_NOTE_ERASURE_EXPECTED assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
 end
 
 #! Binds one per-transaction input note (an 8-felt `[NULLIFIER, NOTE_ID_OR_EMPTY]` tuple at
@@ -313,9 +337,9 @@ proc bind_one_input_note
 
     # Assert the list entry's note id equals the per-transaction note's, binding the id as well as
     # the nullifier (so an unauthenticated note cannot be matched to the wrong list entry).
-    dup add.4 padw movup.4 mem_loadw_le
+    dup add.NOTE_ENTRY_VALUE_OFFSET padw movup.4 mem_loadw_le
     # => [LIST_NOTE_ID, key_ptr, scratch_entry_ptr]
-    dup.5 add.4 padw movup.4 mem_loadw_le
+    dup.5 add.NOTE_ENTRY_VALUE_OFFSET padw movup.4 mem_loadw_le
     # => [PERTX_NOTE_ID, LIST_NOTE_ID, key_ptr, scratch_entry_ptr]
     assert_eqw.err=ERR_BATCH_INPUT_NOTE_ID_MISMATCH
     # => [key_ptr, scratch_entry_ptr]
@@ -339,25 +363,35 @@ end
 #! Inputs:  [num_notes]
 #! Outputs: []
 proc bind_scratch_input_notes
-    push.0
-    # => [i, num_notes]
-    dup.1 dup.1 neq
+    # => [num_notes]
+
+    # Iterate i from num_notes - 1 down to 0; binding is order-independent within a transaction.
+    dup neq.0
     while.true
+        sub.1
+        # => [i]
+
         dup mul.NOTE_ENTRY_FELT_LEN add.TX_NOTES_SCRATCH_PTR
-        # => [scratch_entry_ptr, i, num_notes]
+        # => [scratch_entry_ptr, i]
+
         exec.bind_one_input_note
-        add.1
-        dup.1 dup.1 neq
+
+        dup neq.0
+        # => [should_loop, i]
     end
-    drop drop
+    drop
 end
 
 #! Verifies transaction `tx_index`'s `INPUT_NOTES_COMMITMENT_idx` against its piped
 #! `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples, then binds each of those notes to the batch input-note
 #! list (see [`bind_per_tx_notes`] for what binding proves).
 #!
-#! Inputs:  [tx_index]
-#! Outputs: []
+#! Inputs:
+#!   Operand stack: [tx_index]
+#!   Advice map:
+#!     INPUT_NOTES_COMMITMENT_idx |-> [[NULLIFIER_0, NOTE_ID_OR_EMPTY_0], ...]
+#! Outputs:
+#!   Operand stack: []
 proc process_tx_input_notes
     dup exec.memory::get_tx_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
@@ -411,11 +445,15 @@ proc bind_per_tx_notes
     exec.memory::get_num_transactions
     push.0
     # => [tx_index, num_transactions]
+
+    # Transactions must be processed in batch order (ascending tx_index): the erasure ordering
+    # gate relies on a creating transaction being processed before the consuming one.
     dup.1 dup.1 neq
     # => [should_loop, tx_index, num_transactions]
     while.true
         dup exec.process_tx_input_notes
         dup exec.process_tx_output_notes
+
         add.1
         dup.1 dup.1 neq
         # => [should_loop, tx_index, num_transactions]
