@@ -50,6 +50,7 @@
 - [BREAKING] Priced PSWAP fills against the note's initial offered asset rather than its remaining assets ([#3601](https://github.com/0xMiden/protocol/issues/3601)).
 - Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
+- Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
 
 ## v0.16.0 (2026-08-17)
 
