@@ -1,10 +1,9 @@
-//! Tests on-chain rotation of the AggLayer bridge's RBAC roles via `RBAC_CONFIG` notes.
+//! Tests on-chain rotation of AggLayer account RBAC roles via `RBAC_CONFIG` notes.
 //!
 //! The generic RBAC component and note-script tests live in `tests/scripts/rbac/`
-//! and run against a bare RBAC account. This suite proves the bridge-specific wiring: an
-//! `RBAC_CONFIG` note passes the bridge's [`AuthNetworkAccount`] allowlist and zero-fee schedule,
-//! and a rotated role actually changes which senders may invoke the bridge's role-gated
-//! procedures.
+//! and run against a bare RBAC account. This suite proves the AggLayer account wiring: an
+//! `RBAC_CONFIG` note passes the bridge or faucet's [`AuthNetworkAccount`] allowlist and zero-fee
+//! schedule, and a rotated role actually changes which senders may invoke role-gated procedures.
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
@@ -12,6 +11,7 @@ extern crate alloc;
 
 use alloc::collections::BTreeSet;
 
+use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -23,11 +23,12 @@ use miden_agglayer::{
     UpdateGerNote,
 };
 use miden_crypto::rand::FeltRng;
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
+use miden_standards::account::access::RoleBasedAccessControl;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::note::{
@@ -62,16 +63,16 @@ const GER_BYTES: [u8; 32] = [
 // HELPERS
 // ================================================================================================
 
-/// Builds an `RBAC_CONFIG` note for `config` sent by `sender` and targeted at the bridge.
-fn bridge_rbac_config_note(
+/// Builds an `RBAC_CONFIG` note for `config` sent by `sender` and targeted at `account_id`.
+fn rbac_config_note(
     sender: AccountId,
-    bridge_id: AccountId,
+    account_id: AccountId,
     config: RbacConfig,
     rng: &mut impl FeltRng,
 ) -> anyhow::Result<Note> {
     let note = RbacConfigNote::builder()
         .sender(sender)
-        .target(bridge_id)
+        .target(account_id)
         .config(config)
         .generate_serial_number(rng)
         .build()?
@@ -81,6 +82,50 @@ fn bridge_rbac_config_note(
 
 // TESTS
 // ================================================================================================
+
+/// The faucet accepts an allowlisted `RBAC_CONFIG` note and applies its role update.
+#[tokio::test]
+async fn faucet_accepts_rbac_config_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let initial_admin = bridge_admin_account_id();
+    let new_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let faucet = create_existing_agglayer_faucet(
+        builder.rng_mut().draw_word(),
+        "AGG",
+        6,
+        Felt::from(1_000u32),
+        Felt::ZERO,
+        initial_admin,
+        initial_admin,
+    );
+    let faucet_id = faucet.id();
+    let admin_role = RoleBasedAccessControl::admin_role();
+
+    let grant = rbac_config_note(
+        initial_admin,
+        faucet_id,
+        RbacConfig::GrantRole {
+            role: admin_role.clone(),
+            account: new_admin.id(),
+        },
+        builder.rng_mut(),
+    )?;
+
+    builder.add_account(faucet)?;
+    builder.add_output_note(RawOutputNote::Full(grant.clone()));
+    let mut mock_chain = builder.build()?;
+
+    consume_note(&mut mock_chain, faucet_id, &grant).await?;
+    assert!(is_role_member(
+        mock_chain.committed_account(faucet_id)?,
+        &admin_role,
+        new_admin.id(),
+    )?);
+
+    Ok(())
+}
 
 /// End-to-end rotation of an operational role: the admin grants `GER_INJECTOR` to a fresh
 /// account via an `RBAC_CONFIG` note consumed by the bridge, and the new holder's `UPDATE_GER`
@@ -94,7 +139,7 @@ async fn granted_ger_injector_can_update_ger() -> anyhow::Result<()> {
     })?;
     let bridge_id = setup.bridge.id();
 
-    let grant = bridge_rbac_config_note(
+    let grant = rbac_config_note(
         bridge_admin_account_id(),
         bridge_id,
         RbacConfig::GrantRole {
@@ -135,7 +180,7 @@ async fn revoked_ger_injector_cannot_update_ger() -> anyhow::Result<()> {
     let setup = setup_bridge(&mut builder)?;
     let bridge_id = setup.bridge.id();
 
-    let revoke = bridge_rbac_config_note(
+    let revoke = rbac_config_note(
         bridge_admin_account_id(),
         bridge_id,
         RbacConfig::RevokeRole {
@@ -190,7 +235,7 @@ async fn paused_bridge_allows_role_rotation() -> anyhow::Result<()> {
     )?;
     builder.add_output_note(RawOutputNote::Full(pause.clone()));
 
-    let grant = bridge_rbac_config_note(
+    let grant = rbac_config_note(
         bridge_admin_account_id(),
         bridge_id,
         RbacConfig::GrantRole {
@@ -238,6 +283,7 @@ fn bridge_allowed_notes_pin() {
     let dummy = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
         Word::default(),
+        dummy,
         dummy,
         dummy,
         dummy,
