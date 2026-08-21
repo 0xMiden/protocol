@@ -292,6 +292,9 @@ mod tests {
     #[rstest::rstest]
     #[case::version_zero(0)]
     #[case::version_two(2)]
+    // The lower 8 bits encode the supported version, so this guards against the upper bits being
+    // truncated instead of rejected.
+    #[case::version_exceeding_u8((1 << 8) | u32::from(AccountHeader::VERSION_1))]
     fn account_header_rejects_unsupported_version(#[case] version: u32) -> anyhow::Result<()> {
         let mut elements = mock_header()?.to_elements();
         elements[AccountHeader::VERSION_IDX] = Felt::from(version);

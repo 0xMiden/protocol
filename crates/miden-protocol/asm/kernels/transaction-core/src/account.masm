@@ -1154,7 +1154,6 @@ end
 #! - the computed account storage commitment does not match the provided account storage commitment.
 #! - the foreign account ID obtained from the advice map doesn't match the ID provided to the
 #!   procedure.
-#! - the foreign account version obtained from the advice map is not ACCOUNT_VERSION_1.
 pub proc load_foreign_account
     emit.ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT
     # => [account_id_suffix, account_id_prefix]
