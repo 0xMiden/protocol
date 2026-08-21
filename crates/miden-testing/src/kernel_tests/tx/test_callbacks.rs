@@ -767,12 +767,6 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
 /// Tests that a new account whose storage contains an asset callback slot is rejected if its
 /// account ID has the asset callback flag disabled.
-///
-/// The kernel gates callback invocation on the flag alone and the flag is immutable once the ID is
-/// ground, so such an account would look correctly configured while its callbacks could never be
-/// invoked. The account is assembled by grinding a seed for the disabled flag over the storage that
-/// contains the callback slot, so the seed and the ID are consistent and the prologue's
-/// account-seed check passes; only the callback rule rejects it.
 #[tokio::test]
 async fn test_new_account_with_callback_slot_and_disabled_flag_fails() -> anyhow::Result<()> {
     let mut mock_chain = MockChain::new();
