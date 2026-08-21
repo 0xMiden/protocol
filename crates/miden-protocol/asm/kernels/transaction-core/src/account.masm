@@ -345,9 +345,10 @@ pub use {get_init_native_account_vault_root as get_initial_vault_root}
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 pub proc get_item
-    # get account storage slots section offset
+    # get the active account storage slots section offset and its slot count
+    exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
-    # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
+    # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 
     exec.get_storage_slot_ptr
     # => [slot_ptr]
@@ -372,9 +373,10 @@ end
 #! - is_found is 1 if the slot was found, 0 otherwise.
 #! - VALUE is the value of the item, or the empty word if the slot was not found.
 pub proc find_item
-    # get account storage slots section offset
+    # get the active account storage slots section offset and its slot count
+    exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
-    # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
+    # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 
     exec.find_storage_slot
     # => [is_found, slot_ptr]
@@ -405,9 +407,10 @@ end
 #!   the first two felts of the hashed slot name.
 #! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
 pub proc has_storage_slot
-    # get account storage slots section offset
+    # get the active account storage slots section offset and its slot count
+    exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
-    # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
+    # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 
     exec.find_storage_slot
     # => [has_slot, slot_ptr]
@@ -431,9 +434,10 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 pub proc get_typed_item
-    # get account storage slots section offset
+    # get the active account storage slots section offset and its slot count
+    exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
-    # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
+    # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 
     exec.get_storage_slot_ptr
     # => [slot_ptr]
@@ -459,9 +463,10 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 pub proc get_initial_item
-    # get native account initial storage slots section offset
+    # get the native account initial storage slots section offset and the native slot count
+    exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_initial_storage_slots_ptr
-    # => [native_account_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+    # => [native_account_initial_storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 
     exec.get_storage_slot_ptr
     # => [slot_ptr]
@@ -489,8 +494,9 @@ pub proc set_item
     emit.ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT
     # => [slot_id_suffix, slot_id_prefix, VALUE]
 
+    exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_active_storage_slots_ptr
-    # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, VALUE]
+    # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, VALUE]
 
     exec.get_storage_slot_ptr
     # => [slot_ptr, VALUE]
@@ -537,8 +543,9 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 pub proc get_map_item
+    exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
-    # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
+    # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, KEY]
 
     exec.get_map_item_raw
 end
@@ -558,8 +565,9 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 pub proc get_initial_map_item
+    exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_initial_storage_slots_ptr
-    # => [native_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
+    # => [native_initial_storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, KEY]
 
     exec.get_map_item_raw
 end
@@ -583,8 +591,9 @@ end
 #! - the storage slot type is not map.
 #! - no map with the root of the slot is found.
 pub proc set_map_item
+    exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_active_storage_slots_ptr
-    # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
+    # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
 
     # resolve the slot name to its pointer
     exec.get_storage_slot_ptr
@@ -662,7 +671,7 @@ pub proc add_asset_to_vault
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
 
     # push the account vault root ptr
-    exec.memory::get_account_vault_root_ptr movdn.8
+    exec.memory::get_native_account_vault_root_ptr movdn.8
     # => [ASSET_ID, ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
 
     # emit event to signal that an asset is going to be added to the account vault
@@ -704,7 +713,7 @@ pub proc remove_asset_from_vault
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
 
     # push the vault root ptr
-    exec.memory::get_account_vault_root_ptr movdn.8
+    exec.memory::get_native_account_vault_root_ptr movdn.8
     # => [ASSET_ID, ASSET_VALUE, account_vault_root_ptr, ASSET_ID]
 
     # emit event to signal that an asset is going to be removed from the account vault
@@ -873,8 +882,7 @@ end
 #!
 #! Validation is performed via the following steps:
 #! 1. Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
-#! 2. Assert the two least significant elements of the digest are equal to the account ID of the
-#!    account the transaction is being executed against.
+#! 2. Assert the two least significant elements of the digest are equal to the native account ID.
 #!
 #! Inputs:
 #!   Operand stack: []
@@ -925,7 +933,7 @@ pub proc validate_seed
     movup.2 drop movup.2 drop
     # => [hashed_account_id_suffix, hashed_account_id_prefix]
 
-    exec.memory::get_account_id movdn.3 movdn.3
+    exec.memory::get_native_account_id movdn.3 movdn.3
     # => [hashed_account_id_suffix, hashed_account_id_prefix, account_id_suffix, account_id_prefix]
 
     # shape suffix of hashed id by setting the lower 8 bits to zero
@@ -1359,7 +1367,7 @@ end
 #! Inputs:  []
 #! Outputs: []
 pub proc insert_new_storage
-    exec.memory::get_num_storage_slots
+    exec.memory::get_native_num_storage_slots
     # => [num_slots]
 
     # loop if there are storage slots
@@ -1408,7 +1416,7 @@ end
 #! Outputs: []
 proc insert_and_validate_storage_map
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
-    exec.memory::get_account_active_storage_slots_section_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     add
     # => [slot_ptr]
 
@@ -1728,11 +1736,12 @@ end
 #! Finds the storage map root in the storage slot with the provided name in the provided storage
 #! slots section and returns the VALUE associated with the KEY in the corresponding map.
 #!
-#! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
+#! Inputs:  [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [VALUE]
 #!
 #! Where:
 #! - storage_slots_ptr is the pointer to the storage slots section in which to look up the slot.
+#! - num_storage_slots is the number of slots contained in the storage slots section.
 #! - KEY is the key to look up in the map.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
@@ -1777,18 +1786,19 @@ end
 #! Finds the slot identified by the key [_, _, slot_id_suffix, slot_id_prefix] and returns a flag
 #! indicating whether the slot was found and the pointer to that slot.
 #!
-#! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+#! Inputs:  [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 #! Outputs: [is_found, slot_ptr]
 #!
 #! Where:
 #! - storage_slots_ptr is the pointer to the storage slots section.
+#! - num_storage_slots is the number of slots contained in the storage slots section.
 #! - is_found is 1 if the slot was found, 0 otherwise.
 #! - slot_ptr is the pointer to the resolved storage slot.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 proc find_storage_slot
-    # construct the start and end pointers of the storage slot section in which we will search
-    dup exec.memory::get_num_storage_slots mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH add
+    # construct the end pointer of the storage slots section in which we will search
+    swap mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH dup.1 add
     # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_suffix, slot_id_prefix]
 
     swap movup.3 movup.3
@@ -1805,11 +1815,12 @@ end
 #! Finds the slot identified by the key [_, _, slot_id_suffix, slot_id_prefix] and returns the
 #! pointer to that slot.
 #!
-#! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+#! Inputs:  [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix]
 #! Outputs: [slot_ptr]
 #!
 #! Where:
 #! - storage_slots_ptr is the pointer to the storage slots section.
+#! - num_storage_slots is the number of slots contained in the storage slots section.
 #! - slot_ptr is the pointer to the resolved storage slot.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
@@ -1836,7 +1847,7 @@ end
 #! - slot_ptr is the pointer to a "current" storage slot in the native account's memory section.
 #! - slot_idx is the index of the storage slot.
 proc slot_ptr_to_index
-    exec.memory::get_account_active_storage_slots_section_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     sub
     # => [slot_offset]
 
