@@ -126,7 +126,7 @@ pub proc compute_patch_commitment
 
     # get the nonce of the account and assume it is the final nonce
     # we later assert that the nonce was incremented (unless the patch is empty)
-    exec.memory::get_account_nonce
+    exec.memory::get_native_account_nonce
     push.DOMAIN_PATCH
     # => [domain_patch, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
     # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]

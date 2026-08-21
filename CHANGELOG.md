@@ -4,9 +4,12 @@
 
 ### Features
 
+- Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
+
 ### Changes
 
 - Moved the transaction kernel API procedures into the kernel's `api` submodule, leaving `exec_kernel_proc` as the only `syscall`-invocable kernel procedure ([#3646](https://github.com/0xMiden/protocol/pull/3646)).
+- [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
 - [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#2961](https://github.com/0xMiden/protocol/issues/2961)).
 - The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
@@ -27,6 +30,7 @@
 ### Fixes
 
 - [BREAKING] Bound the non-fungible MINT note to its faucet the same way the fungible one is bound: the note now stores the full asset and `non_fungible::mint_and_send` asserts the stored `ASSET_ID` against the asset it derives for the active faucet, unifying the two MINT note storage layouts and collapsing `MintNoteStorage` to `Private` / `Public` ([#3482](https://github.com/0xMiden/protocol/pull/3482)).
+- Fixed the multisig, guarded, non-fungible, and AggLayer faucet factories not enabling asset callbacks for faucets configured with a transfer policy ([#3547](https://github.com/0xMiden/protocol/pull/3547)).
 - Documented that `authority::assert_authorized` is a no-op under `Authority::AuthControlled` ([#3500](https://github.com/0xMiden/protocol/pull/3500)).
 - Fixed `FungibleFaucet::receive_and_burn` treating a non-fungible asset issued by the same account as a fungible burn, which reduced `token_supply` without burning any fungible supply; the asset is now validated with the new `miden::standards::assets::fungible_asset::validate` procedure ([#3553](https://github.com/0xMiden/protocol/pull/3553)).
 - Fixed the authentication procedure not ending up at index 0 of an account's code when its MAST root was already exported by another component ([#3566](https://github.com/0xMiden/protocol/pull/3566)).
@@ -36,6 +40,7 @@
 - Fixed `input_note::remove_asset` succeeding when asked to remove an empty or malformed asset ID instead of reporting the asset as not found ([#3592](https://github.com/0xMiden/protocol/pull/3607)).
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
 - [BREAKING] Enforced the limit of 1024 per asset delta op for added and removed account vault deltas inside and outside the tx kernel ([#3623](https://github.com/0xMiden/protocol/pull/3623)).
+- Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
 
 ## v0.16.0 (2026-08-17)
 

@@ -1154,6 +1154,28 @@ pub proc set_account_vault_root
     mem_storew_le
 end
 
+#! Returns the memory pointer to the native account's vault root.
+#!
+#! Inputs:  []
+#! Outputs: [account_vault_root_ptr]
+#!
+#! Where:
+#! - account_vault_root_ptr is the memory pointer to the native account's asset vault root.
+pub proc get_native_account_vault_root_ptr
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_VAULT_ROOT_OFFSET
+end
+
+#! Returns the native account's vault root.
+#!
+#! Inputs:  []
+#! Outputs: [ACCT_VAULT_ROOT]
+#!
+#! Where:
+#! - ACCT_VAULT_ROOT is the native account's asset vault root.
+pub proc get_native_account_vault_root
+    padw exec.get_native_account_vault_root_ptr mem_loadw_le
+end
+
 ### ACCOUNT CODE #################################################
 
 #! Returns the code commitment of the account.
@@ -1441,7 +1463,7 @@ pub proc mem_copy_native_account_initial_storage_slots
     # => [active_storage_slots_ptr, initial_storage_slots_ptr]
 
     # each slot takes up two words
-    exec.get_num_storage_slots mul.2
+    exec.get_native_num_storage_slots mul.2
     # => [num_storage_slot_words, active_storage_slots_ptr, initial_storage_slots_ptr]
 
     exec.mem::memcopy_words
