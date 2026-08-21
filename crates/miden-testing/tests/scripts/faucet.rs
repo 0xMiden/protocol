@@ -555,9 +555,6 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 }
 
 /// Tests that mint fails when the minted amount is zero.
-///
-/// A zero amount passes every upper bound trivially and leaves the token supply unchanged, so
-/// without an explicit check it would emit a valueless output note sent by the faucet.
 #[tokio::test]
 async fn faucet_contract_mint_fungible_asset_fails_zero_amount() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
