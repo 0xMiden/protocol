@@ -24,7 +24,7 @@ const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 # PROCEDURES
 # =================================================================================================
 
-#! Pay-to-ID script: adds all assets from the note to the account, assuming ID of the account
+#! Pay-to-ID script: adds the note's remaining assets to the account, assuming ID of the account
 #! matches target account ID specified by the note storage.
 #!
 #! Requires that the account exposes:

@@ -80,6 +80,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -311,6 +312,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -378,6 +380,7 @@ async fn update_ger_non_injector_sender_reverts() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;

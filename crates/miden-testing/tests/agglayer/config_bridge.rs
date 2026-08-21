@@ -26,6 +26,7 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::interop::eth::EthAddress;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -54,7 +55,7 @@ fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) ->
 fn test_bridge_procedure_roles_mapping() {
     let roles = AggLayerBridge::procedure_roles();
 
-    assert_eq!(roles.len(), 5, "exactly the five role-gated procedures must be mapped");
+    assert_eq!(roles.len(), 6, "exactly the six role-gated procedures must be mapped");
     assert_eq!(
         roles.get(&AggLayerBridge::register_faucet_root()),
         Some(&AggLayerBridge::faucet_manager_role()),
@@ -74,6 +75,10 @@ fn test_bridge_procedure_roles_mapping() {
     assert_eq!(
         roles.get(&AggLayerBridge::remove_ger_root()),
         Some(&AggLayerBridge::ger_remover_role()),
+    );
+    assert_eq!(
+        roles.get(&ConstantFeeManager::set_note_fee_root()),
+        Some(&AggLayerBridge::fee_manager_role()),
     );
 }
 
@@ -111,6 +116,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -208,6 +214,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -328,6 +335,7 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -378,25 +386,31 @@ fn bridge_roles_new_rejects_empty_role() {
             .account_type(AccountType::Public)
             .build_with_seed([seed; 32])
     };
-    let (a, b, c) = (account(1), account(2), account(3));
+    let (a, b, c, d) = (account(1), account(2), account(3), account(4));
 
     // A non-empty set for every role succeeds.
     assert!(
-        BridgeRoles::new(BTreeSet::from([a]), BTreeSet::from([b]), BTreeSet::from([c]),).is_ok()
+        BridgeRoles::new(
+            BTreeSet::from([a]),
+            BTreeSet::from([b]),
+            BTreeSet::from([c]),
+            BTreeSet::from([d]),
+        )
+        .is_ok()
     );
 
     // An empty set for any single role is rejected.
-    for empty in 0..3 {
-        let sets: [BTreeSet<AccountId>; 3] = core::array::from_fn(|i| {
+    for empty in 0..4 {
+        let sets: [BTreeSet<AccountId>; 4] = core::array::from_fn(|i| {
             if i == empty {
                 BTreeSet::new()
             } else {
                 BTreeSet::from([a])
             }
         });
-        let [faucet_managers, ger_injectors, ger_removers] = sets;
-        let err = BridgeRoles::new(faucet_managers, ger_injectors, ger_removers).unwrap_err();
-        assert!(matches!(err, AgglayerBridgeError::EmptyBridgeRole(_)));
+        let [faucet_managers, ger_injectors, ger_removers, fee_managers] = sets;
+        let result = BridgeRoles::new(faucet_managers, ger_injectors, ger_removers, fee_managers);
+        assert!(matches!(result, Err(AgglayerBridgeError::EmptyBridgeRole(_))));
     }
 }
 
@@ -439,6 +453,7 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -584,6 +599,7 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -717,6 +733,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;

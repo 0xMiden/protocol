@@ -22,6 +22,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_standards::account::access::{PausableStorage, RoleConfig};
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::note::{
     ConstantFeePolicyConfigNote,
     NetworkAccountTarget,
@@ -152,6 +153,8 @@ static GER_INJECTOR_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
 static GER_REMOVER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
     RoleSymbol::new("GER_REMOVER").expect("GER_REMOVER role symbol should be valid")
 });
+static FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
+    LazyLock::new(|| RoleSymbol::new("FEE_MNGR").expect("FEE_MNGR role symbol should be valid"));
 
 /// The assembled bridge account component code, used to resolve the roots of the bridge's
 /// role-gated procedures.
@@ -199,6 +202,7 @@ procedure_root!(
 /// - `FAUCET_MNGR` gates `register_faucet` and `store_faucet_metadata_hash`.
 /// - `GER_INJECTOR` gates `update_ger`.
 /// - `GER_REMOVER` gates `remove_ger`.
+/// - `FEE_MNGR` gates `set_note_fee`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRoles {
     roles: Vec<RoleConfig>,
@@ -211,18 +215,20 @@ impl BridgeRoles {
     ///
     /// # Errors
     ///
-    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the three roles is given an empty
+    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the four roles is given an empty
     /// set of holders.
     pub fn new(
         faucet_managers: BTreeSet<AccountId>,
         ger_injectors: BTreeSet<AccountId>,
         ger_removers: BTreeSet<AccountId>,
+        fee_managers: BTreeSet<AccountId>,
     ) -> Result<Self, AgglayerBridgeError> {
         let mut roles = Vec::new();
         for (role, members) in [
             (AggLayerBridge::faucet_manager_role(), &faucet_managers),
             (AggLayerBridge::ger_injector_role(), &ger_injectors),
             (AggLayerBridge::ger_remover_role(), &ger_removers),
+            (AggLayerBridge::fee_manager_role(), &fee_managers),
         ] {
             if members.is_empty() {
                 return Err(AgglayerBridgeError::EmptyBridgeRole(role));
@@ -347,6 +353,11 @@ impl AggLayerBridge {
         GER_REMOVER_ROLE.clone()
     }
 
+    /// Returns the `FEE_MNGR` role symbol. Holders may update the bridge's note fee schedule.
+    pub fn fee_manager_role() -> RoleSymbol {
+        FEE_MANAGER_ROLE.clone()
+    }
+
     /// Returns the procedure root of the bridge's `register_faucet` procedure.
     pub fn register_faucet_root() -> AccountProcedureRoot {
         *REGISTER_FAUCET_ROOT
@@ -382,6 +393,7 @@ impl AggLayerBridge {
             (Self::deregister_faucet_root(), Self::faucet_manager_role()),
             (Self::update_ger_root(), Self::ger_injector_role()),
             (Self::remove_ger_root(), Self::ger_remover_role()),
+            (ConstantFeeManager::set_note_fee_root(), Self::fee_manager_role()),
         ])
     }
 
