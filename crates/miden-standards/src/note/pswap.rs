@@ -483,6 +483,10 @@ impl PswapNote {
         let requested_faucet_id = self.storage.requested_faucet_id();
         let min_requested_amount = self.storage.min_requested_amount();
 
+        if payback_asset.faucet_id() != requested_faucet_id {
+            return Err(NoteError::other("fill asset faucet must match the requested faucet"));
+        }
+
         // Validate fill amount
         if fill_amount == 0 {
             return Err(NoteError::other("Fill amount must be greater than 0"));
@@ -1280,5 +1284,20 @@ mod tests {
 
         // Full fill → no remainder note.
         assert!(remainder.is_none(), "full fill must not produce a remainder");
+    }
+
+    #[test]
+    fn pswap_execute_rejects_fill_from_another_faucet() {
+        let creator_id = dummy_creator_id();
+        let consumer_id = dummy_consumer_id();
+        let offered_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap();
+        let requested_faucet = dummy_faucet_id(0xbb);
+        let requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
+        let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
+
+        let wrong_fill = FungibleAsset::new(dummy_faucet_id(0xcc), 50).unwrap();
+
+        let error = pswap.execute(consumer_id, Some(wrong_fill), None).unwrap_err();
+        assert!(error.to_string().contains("requested faucet"));
     }
 }
