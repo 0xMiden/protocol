@@ -5,6 +5,7 @@ use miden::core::word
 
 use miden::tx_kernel_core::account
 use miden::protocol_utils::account_id
+use miden::protocol_utils::mem as mem_utils
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::asset
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
@@ -21,6 +22,9 @@ use {BLOCK_DATA_SECTION_OFFSET, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PAR
 
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
+
+# Procedure locals in process_note_num_storage_items
+const PROCESS_NOTE_STORAGE_PREIMAGE_LOC = 0
 
 # ERRORS
 # =================================================================================================
@@ -66,6 +70,12 @@ const ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG =
 
 const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT =
     "number of note storage items exceeded the maximum limit of 1024"
+
+const ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH =
+    "the specified number of note storage items does not match its commitment"
+
+const ERR_PROLOGUE_NOTE_STORAGE_DOES_NOT_MATCH_COMMITMENT =
+    "note storage does not match the commitment"
 
 const ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED = "failed to authenticate note inclusion in block"
 
@@ -677,11 +687,15 @@ proc compute_note_metadata_commitment
     # => [NOTE_METADATA_COMMITMENT]
 end
 
-#! Checks that the number of note storage is within limit and stores it to memory.
+#! Checks that the number of note storage items is within limit, stores it to memory, and verifies
+#! the note's storage against its authenticated storage commitment.
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
 #!   Advice stack: [num_storage_items]
+#!   Advice map: {
+#!     NOTE_STORAGE_COMMITMENT: [[STORAGE_ITEMS]]
+#!   }
 #! Outputs:
 #!   Operand stack: [note_ptr]
 #!   Advice stack: []
@@ -689,6 +703,17 @@ end
 #! Where:
 #! - note_ptr is the memory location for the input note.
 #! - num_storage_items is the note's number of storage items.
+#! - NOTE_STORAGE_COMMITMENT is the note's storage commitment, already stored in note memory.
+#! - STORAGE_ITEMS are the note's storage items.
+#!
+#! Locals:
+#! - 0..1024: buffer to which the storage preimage is written (MAX_NOTE_STORAGE_ITEMS elements)
+#!
+#! Panics if:
+#! - the number of storage items exceeds the maximum limit.
+#! - the number of storage items from the advice map does not match the note's declared count.
+#! - the note's storage does not match its storage commitment.
+@locals(1024)
 proc process_note_num_storage_items
     # move the number of storage items from the advice stack to the operand stack
     adv_push
@@ -700,7 +725,34 @@ proc process_note_num_storage_items
     # => [num_storage_items, note_ptr]
 
     # store the number of storage items into the memory
-    dup.1 exec.memory::set_input_note_num_storage_items
+    dup dup.2 exec.memory::set_input_note_num_storage_items
+    # => [num_storage_items, note_ptr]
+
+    # load the note's authenticated storage commitment and a pointer to the preimage memory locals
+    dup.1 exec.memory::get_input_note_storage_commitment
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, note_ptr]
+
+    locaddr.PROCESS_NOTE_STORAGE_PREIMAGE_LOC movdn.5
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
+
+    # load the storage preimage from the advice map onto the advice stack, prefixed with its
+    # element count and padded to the next multiple of 8
+    adv.push_mapvaln.8
+    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
+    # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
+
+    # assert the item count from the advice map matches the note's declared count
+    adv_push dup.5 assert_eq.err=ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
+
+    # write the preimage to the memory locals and compute its commitment
+    movup.5 movup.5
+    # => [num_storage_items, dest_ptr, NOTE_STORAGE_COMMITMENT, note_ptr]
+
+    exec.mem_utils::pipe_elements_preimage_to_memory
+    # => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT, note_ptr]
+
+    assert_eqw.err=ERR_PROLOGUE_NOTE_STORAGE_DOES_NOT_MATCH_COMMITMENT
     # => [note_ptr]
 end
 
