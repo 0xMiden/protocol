@@ -24,6 +24,7 @@ use miden_protocol::assembly::{DefaultSourceManager, ModuleKind, ModuleParser, P
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
+use miden_protocol::errors::tx_kernel::ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -83,7 +84,7 @@ use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note, create_spawn_note};
-use crate::{Auth, MockChain, TestTransactionBuilder};
+use crate::{Auth, MockChain, TestTransactionBuilder, assert_transaction_executor_error};
 
 /// Tests that consuming a note created in a block that is newer than the reference block of the
 /// transaction fails.
@@ -1249,6 +1250,42 @@ async fn kernel_procedures_are_not_directly_syscallable() -> anyhow::Result<()> 
         anyhow::bail!("syscall to kernel procedure {procedure_root} should be rejected");
     };
     assert!(error.to_string().contains("is not an exported kernel procedure"));
+
+    Ok(())
+}
+
+/// Tests that `exec_kernel_proc` rejects the first procedure offset which is out of bounds.
+#[tokio::test]
+async fn exec_kernel_proc_rejects_out_of_bounds_offset() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let chain = builder.build()?;
+
+    // Procedure offsets are zero-based, so the number of kernel procedures is the smallest offset
+    // which no longer refers to a kernel procedure.
+    let out_of_bounds_offset = TransactionKernel::PROCEDURES.len();
+    let tx_script_source = format!(
+        "
+        @transaction_script
+        pub proc main
+            # pad the stack the way the protocol library does before a syscall
+            padw padw padw push.0.0.0
+
+            push.{out_of_bounds_offset}
+            syscall.exec_kernel_proc
+        end
+        "
+    );
+    let tx_script = CodeBuilder::new().compile_tx_script(&tx_script_source)?;
+
+    let result = chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS);
 
     Ok(())
 }

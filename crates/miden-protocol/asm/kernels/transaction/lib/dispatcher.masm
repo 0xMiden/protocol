@@ -5,9 +5,7 @@
 
 pub mod api
 
-use miden::tx_kernel_core::memory
-
-use {KERNEL_PROCEDURES_PTR} from miden::tx_kernel_core::memory
+use {NUM_KERNEL_PROCEDURES_PTR} from miden::tx_kernel_core::memory
 use {WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
 
 # ERRORS
@@ -42,13 +40,22 @@ const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
 #! Invocation: syscall
 pub proc exec_kernel_proc
     # check that the provided procedure offset is within expected bounds
-    dup exec.memory::get_num_kernel_procedures
-    lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
+    #
+    # the number of procedures is read from memory here instead of through a `memory` accessor so
+    # that the root of this procedure does not depend on the code of any other module
+    dup mem_load.NUM_KERNEL_PROCEDURES_PTR
+    # => [num_kernel_procedures, procedure_offset, procedure_offset, <procedure_inputs>, <pad>]
+
+    # assert procedure_offset < num_kernel_procedures
+    u32assert2.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
     # => [procedure_offset, <procedure_inputs>, <pad>]
 
     # compute the memory pointer at which desired procedure is stored
-    mul.WORD_NUM_ELEMENTS add.KERNEL_PROCEDURES_PTR
-    # => [procedure_pointer, <procedure_inputs>, <pad>]
+    #
+    # no base address is added because the kernel procedures section starts at address 0
+    mul.WORD_NUM_ELEMENTS
+    # => [procedure_ptr, <procedure_inputs>, <pad>]
 
     # execute loaded procedure
     dynexec
