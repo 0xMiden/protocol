@@ -17,7 +17,7 @@ use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH,
-    ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH,
+    ERR_NOTE_STORAGE_ITEMS_COUNT_MISMATCH,
     ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::NoteId;
@@ -251,7 +251,7 @@ async fn test_transaction_prologue_verifies_note_storage_against_commitment() ->
     ));
 
     let result = mock_tx.execute_code(code).await;
-    assert_execution_error!(result, ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH);
+    assert_execution_error!(result, ERR_NOTE_STORAGE_ITEMS_COUNT_MISMATCH);
 
     Ok(())
 }

@@ -6,6 +6,7 @@ use miden::core::word
 use miden::tx_kernel_core::account
 use miden::protocol_utils::account_id
 use miden::protocol_utils::mem as mem_utils
+use miden::protocol_utils::note as note_utils
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::asset
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
@@ -65,9 +66,6 @@ const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO = "new account must have a zer
 
 const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT =
     "number of note storage items exceeded the maximum limit of 1024"
-
-const ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH =
-    "the specified number of note storage items does not match its commitment"
 
 const ERR_PROLOGUE_NOTE_STORAGE_DOES_NOT_MATCH_COMMITMENT =
     "note storage does not match the commitment"
@@ -689,15 +687,9 @@ proc process_note_num_storage_items
     locaddr.PROCESS_NOTE_STORAGE_PREIMAGE_LOC movdn.5
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
 
-    # load the storage preimage from the advice map onto the advice stack, prefixed with its
-    # element count and padded to the next multiple of 8
-    adv.push_mapvaln.8
+    exec.note_utils::load_storage_preimage
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
-    # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
-
-    # assert the item count from the advice map matches the note's declared count
-    adv_push dup.5 assert_eq.err=ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH
-    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
+    # AS => [[STORAGE_ITEMS]]
 
     # write the preimage to the memory locals and compute its commitment
     movup.5 movup.5

@@ -24,6 +24,7 @@
 - [BREAKING] The transaction kernel no longer requires assets with `AssetComposition::None` to have the non-fungible asset layout ([#3624](https://github.com/0xMiden/protocol/pull/3624)).
 - [BREAKING] Refactored `Asset` into a struct holding `AssetId` and `AssetValue` ([#3625](https://github.com/0xMiden/protocol/pull/3625)).
 - [BREAKING] Replaced `miden::protocol::active_note::write_storage_to_memory` and `miden::standards::note::input_note_get_storage` with `miden::protocol::input_note::get_storage`, which reads the note's storage without recomputing its commitment now that the prologue verifies it ([#3593](https://github.com/0xMiden/protocol/issues/3593)).
+- [BREAKING] Renamed `ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH` to `ERR_NOTE_STORAGE_ITEMS_COUNT_MISMATCH`, now raised by the shared `miden::protocol_utils::note::load_storage_preimage` procedure ([#3656](https://github.com/0xMiden/protocol/pull/3656)).
 
 ### Fixes
 

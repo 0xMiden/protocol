@@ -2,14 +2,9 @@ use {INPUT_NOTE_GET_ASSET_OFFSET, INPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, 
     from miden::protocol::kernel_proc_offsets
 use miden::protocol::note_internal
 use miden::protocol_utils::mem
+use miden::protocol_utils::note as note_utils
 use {Asset, AssetId, AssetValue, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteScriptRoot}
     from miden::protocol::types
-
-# ERRORS
-# =================================================================================================
-
-const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS =
-    "the specified number of note storage items does not match the actual number"
 
 # PROCEDURES
 # =================================================================================================
@@ -395,14 +390,7 @@ pub proc get_storage_raw(is_active_note: Bool, note_index: u16, dest_ptr: Memory
     dup.4 movdn.6
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, num_storage_items]
 
-    # load the storage preimage from the advice map onto the advice stack, prefixed with its
-    # element count and padded to the next multiple of 8
-    adv.push_mapvaln.8
-    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, num_storage_items]
-    # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
-
-    # assert the item count from the advice map matches the note's item count
-    adv_push dup.5 assert_eq.err=ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS
+    exec.note_utils::load_storage_preimage
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, num_storage_items]
     # AS => [[STORAGE_ITEMS]]
 
