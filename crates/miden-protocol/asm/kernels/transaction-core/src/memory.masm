@@ -194,13 +194,15 @@ pub const NATIVE_ACCOUNT_DATA_PTR = 8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_STORAGE_SLOTS_OFFSET
+const NATIVE_ACCOUNT_VERSION_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_VERSION_OFFSET
 
 # The length of the memory interval that the account data occupies.
 pub const ACCOUNT_DATA_LENGTH = 8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
-pub const ACCT_NONCE_OFFSET = 0
-pub const ACCT_ID_AND_NONCE_OFFSET = 0
+pub const ACCT_METADATA_OFFSET = 0
+pub const ACCT_VERSION_OFFSET = 0
+pub const ACCT_NONCE_OFFSET = 1
 pub const ACCT_ID_SUFFIX_OFFSET = 2
 pub const ACCT_ID_PREFIX_OFFSET = 3
 const ACCT_VAULT_ROOT_OFFSET = 4
@@ -1033,7 +1035,7 @@ pub proc get_core_account_data_end_ptr
     exec.get_active_account_data_ptr add.ACCT_CORE_DATA_SECTION_END_OFFSET
 end
 
-### ACCOUNT ID AND NONCE #################################################
+### ACCOUNT METADATA #################################################
 
 #! Returns the ID of the active account.
 #!
@@ -1067,17 +1069,29 @@ pub proc get_native_account_id
     # => [account_id_suffix, account_id_prefix]
 end
 
-#! Sets the account ID and nonce.
+#! Sets the metadata word of the active account.
 #!
-#! Inputs:  [nonce, 0, account_id_suffix, account_id_prefix]
-#! Outputs: [nonce, 0, account_id_suffix, account_id_prefix]
+#! Inputs:  [account_version, nonce, account_id_suffix, account_id_prefix]
+#! Outputs: [account_version, nonce, account_id_suffix, account_id_prefix]
 #!
 #! Where:
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+#! - account_version is the version of the active account's metadata encoding.
 #! - nonce is the nonce of the active account.
-pub proc set_account_id_and_nonce
-    exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+pub proc set_active_account_metadata
+    exec.get_active_account_data_ptr add.ACCT_METADATA_OFFSET
     mem_storew_le
+end
+
+#! Returns the version of the native account of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [account_version]
+#!
+#! Where:
+#! - account_version is the version of the native account's metadata encoding.
+pub proc get_native_account_version
+    mem_load.NATIVE_ACCOUNT_VERSION_PTR
 end
 
 #! Returns the nonce of the active account.

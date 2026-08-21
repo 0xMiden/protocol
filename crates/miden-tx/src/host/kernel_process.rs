@@ -95,7 +95,7 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
 
     fn get_active_account_id(&self) -> Result<AccountId, TransactionKernelError> {
         let active_account_ptr = self.get_active_account_ptr()?;
-        let active_account_id_and_nonce = self
+        let active_account_metadata = self
             .get_mem_word(self.ctx(), active_account_ptr)
             .map_err(|_| {
                 TransactionKernelError::other("active account ptr should be word-aligned")
@@ -105,8 +105,8 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             })?;
 
         AccountId::try_from_elements(
-            active_account_id_and_nonce[ACCT_ID_SUFFIX_IDX],
-            active_account_id_and_nonce[ACCT_ID_PREFIX_IDX],
+            active_account_metadata[ACCT_ID_SUFFIX_IDX],
+            active_account_metadata[ACCT_ID_PREFIX_IDX],
         )
         .map_err(|_| {
             TransactionKernelError::other(

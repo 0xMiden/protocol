@@ -1,6 +1,8 @@
 // TYPE ALIASES
 // ================================================================================================
 
+use crate::account::AccountHeader;
+
 pub type MemoryAddress = u32;
 pub type MemoryOffset = u32;
 pub type DataIndex = usize;
@@ -31,7 +33,7 @@ pub type StorageSlot = u8;
 //
 // | Section            | Start address | Size in elements | Comment                                |
 // | ------------------ | ------------- | ---------------- | -------------------------------------- |
-// | ID and nonce       | 0             | 4                |                                        |
+// | Metadata           | 0             | 4                | version + nonce + account ID           |
 // | Vault root         | 4             | 4                |                                        |
 // | Storage commitment | 8             | 4                |                                        |
 // | Code commitment    | 12            | 4                |                                        |
@@ -236,29 +238,28 @@ pub const KERNEL_PROCEDURES_PTR: MemoryAddress = 1604;
 // ACCOUNT DATA
 // ------------------------------------------------------------------------------------------------
 
-/// The size of the memory segment allocated to core account data (excluding new code commitment).
-pub const ACCT_DATA_MEM_SIZE: MemSize = 16;
-
 /// The memory address at which the native account is stored.
 pub const NATIVE_ACCOUNT_DATA_PTR: MemoryAddress = 8192;
 
 /// The length of the memory interval that the account data occupies.
 pub const ACCOUNT_DATA_LENGTH: MemSize = 8192;
 
-/// The offset at which the account ID and nonce are stored relative to the start of
-/// the account data segment.
-pub const ACCT_ID_AND_NONCE_OFFSET: MemoryOffset = 0;
+/// The offset at which the account metadata word is stored relative to the start of the account
+/// data segment.
+pub const ACCT_METADATA_OFFSET: MemoryOffset = 0;
 
-/// The memory address at which the account ID and nonce are stored in the native account.
-pub const NATIVE_ACCT_ID_AND_NONCE_PTR: MemoryAddress =
-    NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_AND_NONCE_OFFSET;
+/// The memory address at which the account metadata word is stored in the native account.
+pub const NATIVE_ACCT_METADATA_PTR: MemoryAddress = NATIVE_ACCOUNT_DATA_PTR + ACCT_METADATA_OFFSET;
 
-/// The index of the account nonce within the account ID and nonce data.
-pub const ACCT_NONCE_IDX: DataIndex = 0;
+/// The index of the account version within the account metadata word.
+pub const ACCT_VERSION_IDX: DataIndex = AccountHeader::VERSION_IDX;
 
-/// The index of the account ID within the account ID and nonce data.
-pub const ACCT_ID_SUFFIX_IDX: DataIndex = 2;
-pub const ACCT_ID_PREFIX_IDX: DataIndex = 3;
+/// The index of the account nonce within the account metadata word.
+pub const ACCT_NONCE_IDX: DataIndex = AccountHeader::NONCE_IDX;
+
+/// The index of the account ID within the account metadata word.
+pub const ACCT_ID_SUFFIX_IDX: DataIndex = AccountHeader::ID_SUFFIX_IDX;
+pub const ACCT_ID_PREFIX_IDX: DataIndex = AccountHeader::ID_PREFIX_IDX;
 
 /// The offset at which the account vault root is stored relative to the start of the account
 /// data segment.

@@ -2,12 +2,12 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_crypto::SequentialCommit;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{ExecutionOutput, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
-    AccountHeader,
     AccountProcedureRoot,
     AccountType,
     StorageSlot,
@@ -59,7 +59,7 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTES_COMMITMENT_PTR,
     KERNEL_PROCEDURES_PTR,
     NATIVE_ACCT_CODE_COMMITMENT_PTR,
-    NATIVE_ACCT_ID_AND_NONCE_PTR,
+    NATIVE_ACCT_METADATA_PTR,
     NATIVE_ACCT_PROCEDURES_SECTION_PTR,
     NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR,
@@ -458,11 +458,11 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
 }
 
 fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
-    let header = AccountHeader::from(inputs.account());
+    let account_metadata = &inputs.account().to_elements()[0..4];
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
-        &header.to_elements()[0..4],
-        "The account ID and nonce should be stored at NATIVE_ACCT_ID_AND_NONCE_PTR"
+        exec_output.get_kernel_mem_word(NATIVE_ACCT_METADATA_PTR).as_elements(),
+        account_metadata,
+        "The account metadata word should be stored at NATIVE_ACCT_METADATA_PTR"
     );
 
     assert_eq!(
