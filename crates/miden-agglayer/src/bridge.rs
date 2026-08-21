@@ -20,7 +20,7 @@ use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScriptRoot};
-use miden_standards::account::access::{PausableStorage, RoleConfig};
+use miden_standards::account::access::{PausableManager, PausableStorage, RoleConfig};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::note::{
@@ -155,6 +155,8 @@ static GER_REMOVER_ROLE: LazyLock<RoleSymbol> = LazyLock::new(|| {
 });
 static FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
     LazyLock::new(|| RoleSymbol::new("FEE_MNGR").expect("FEE_MNGR role symbol should be valid"));
+static PAUSER_ROLE: LazyLock<RoleSymbol> =
+    LazyLock::new(|| RoleSymbol::new("PAUSER").expect("PAUSER role symbol should be valid"));
 
 /// The assembled bridge account component code, used to resolve the roots of the bridge's
 /// role-gated procedures.
@@ -203,6 +205,7 @@ procedure_root!(
 /// - `GER_INJECTOR` gates `update_ger`.
 /// - `GER_REMOVER` gates `remove_ger`.
 /// - `FEE_MNGR` gates `set_note_fee`.
+/// - `PAUSER` gates `pause`; `unpause` remains gated by `ADMIN`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRoles {
     roles: Vec<RoleConfig>,
@@ -215,13 +218,14 @@ impl BridgeRoles {
     ///
     /// # Errors
     ///
-    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the four roles is given an empty
+    /// Returns [`AgglayerBridgeError::EmptyBridgeRole`] if any of the five roles is given an empty
     /// set of holders.
     pub fn new(
         faucet_managers: BTreeSet<AccountId>,
         ger_injectors: BTreeSet<AccountId>,
         ger_removers: BTreeSet<AccountId>,
         fee_managers: BTreeSet<AccountId>,
+        pausers: BTreeSet<AccountId>,
     ) -> Result<Self, AgglayerBridgeError> {
         let mut roles = Vec::new();
         for (role, members) in [
@@ -229,6 +233,7 @@ impl BridgeRoles {
             (AggLayerBridge::ger_injector_role(), &ger_injectors),
             (AggLayerBridge::ger_remover_role(), &ger_removers),
             (AggLayerBridge::fee_manager_role(), &fee_managers),
+            (AggLayerBridge::pauser_role(), &pausers),
         ] {
             if members.is_empty() {
                 return Err(AgglayerBridgeError::EmptyBridgeRole(role));
@@ -358,6 +363,11 @@ impl AggLayerBridge {
         FEE_MANAGER_ROLE.clone()
     }
 
+    /// Returns the `PAUSER` role symbol. Holders may pause, but not unpause, the bridge.
+    pub fn pauser_role() -> RoleSymbol {
+        PAUSER_ROLE.clone()
+    }
+
     /// Returns the procedure root of the bridge's `register_faucet` procedure.
     pub fn register_faucet_root() -> AccountProcedureRoot {
         *REGISTER_FAUCET_ROOT
@@ -394,6 +404,7 @@ impl AggLayerBridge {
             (Self::update_ger_root(), Self::ger_injector_role()),
             (Self::remove_ger_root(), Self::ger_remover_role()),
             (ConstantFeeManager::set_note_fee_root(), Self::fee_manager_role()),
+            (PausableManager::pause_root(), Self::pauser_role()),
         ])
     }
 
@@ -509,7 +520,8 @@ impl AggLayerBridge {
     // --------------------------------------------------------------------------------------------
 
     /// Builds a [`PauseConfigNote`] that toggles the emergency pause of the bridge account
-    /// `bridge_id`. `sender` must hold the bridge's `ADMIN` role.
+    /// `bridge_id`. For [`PauseConfig::Pause`], `sender` must hold the bridge's `PAUSER` role; for
+    /// [`PauseConfig::Unpause`], `sender` must hold its `ADMIN` role.
     ///
     /// Use this instead of [`PauseConfigNote::builder`] directly: it reports a non-public
     /// `bridge_id` as [`AgglayerBridgeError::NonPublicPauseNoteTarget`] rather than as an opaque
