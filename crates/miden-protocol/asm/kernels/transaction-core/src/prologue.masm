@@ -689,7 +689,8 @@ proc process_note_num_storage_items
     locaddr.PROCESS_NOTE_STORAGE_PREIMAGE_LOC movdn.5
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
 
-    # load the storage preimage from the advice map, padded to the next multiple of 8
+    # load the storage preimage from the advice map onto the advice stack, prefixed with its
+    # element count and padded to the next multiple of 8
     adv.push_mapvaln.8
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, note_ptr]
     # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
