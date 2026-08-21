@@ -11,6 +11,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentCode,
     AccountId,
+    AccountIdVersion,
     AccountProcedureRoot,
     AccountType,
     AssetCallbackFlag,
@@ -24,13 +25,17 @@ use miden_protocol::asset::{
     AssetAmount,
     AssetCallbacks,
     AssetComposition,
+    AssetVault,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
-use miden_protocol::errors::tx_kernel::ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE;
+use miden_protocol::errors::tx_kernel::{
+    ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE,
+    ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
+};
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -41,7 +46,14 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
 
-use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use crate::{
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_execution_error,
+    assert_transaction_executor_error,
+};
 
 // CONSTANTS
 // ================================================================================================
@@ -244,15 +256,21 @@ async fn test_faucet_without_callback_slot_skips_callback(
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     // Create a faucet whose ID enables callbacks, but WITHOUT a populated AssetCallbacks slot.
+    // The flag has to be enabled explicitly here, since without a callback slot the builder would
+    // otherwise derive it as disabled.
     let mut account_builder = AccountBuilder::new([45u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
+        .enable_asset_callbacks()
         .with_component(MockFaucetComponent);
 
-    // If callback proc roots should be empty, add the empty storage slots.
+    // If callback proc roots should be empty, add the callback slots holding the empty word.
+    // `AssetCallbacks` cannot express these, since it only emits slots for non-empty roots.
     if has_empty_callback_proc_root {
         let name = "miden::testing::callbacks";
-        let slots = AssetCallbacks::new().into_storage_slots();
+        let slots = AssetCallbacks::slot_names()
+            .into_iter()
+            .map(|slot_name| StorageSlot::with_value(slot_name.clone(), Word::empty()))
+            .collect();
         let component = AccountComponent::new(
             CodeBuilder::new().compile_component_code(name, "pub proc dummy nop end")?,
             slots,
@@ -323,7 +341,6 @@ async fn test_faucet_with_invalid_callback_root_fails() -> anyhow::Result<()> {
 
     let account_builder = AccountBuilder::new([45u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(MockFaucetComponent)
         .with_component(component);
 
@@ -748,6 +765,75 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that a new account whose storage contains an asset callback slot is rejected if its
+/// account ID has the asset callback flag disabled.
+///
+/// The kernel gates callback invocation on the flag alone and the flag is immutable once the ID is
+/// ground, so such an account would look correctly configured while its callbacks could never be
+/// invoked. The account is assembled by grinding a seed for the disabled flag over the storage that
+/// contains the callback slot, so the seed and the ID are consistent and the prologue's
+/// account-seed check passes; only the callback rule rejects it.
+#[tokio::test]
+async fn test_new_account_with_callback_slot_and_disabled_flag_fails() -> anyhow::Result<()> {
+    let mut mock_chain = MockChain::new();
+    mock_chain.prove_next_block()?;
+
+    // The block list component installs both callback slots, so the builder derives an enabled
+    // flag for this account.
+    let faucet = AccountBuilder::new([45u8; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(MockFaucetComponent)
+        .with_component(BlockList::new(BTreeSet::new()))
+        .build()?;
+    assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
+
+    // Re-grind the ID of the very same code and storage, but with callbacks disabled.
+    let seed = AccountId::compute_account_seed(
+        [45; 32],
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+        AccountIdVersion::Version1,
+        faucet.code().commitment(),
+        faucet.storage().to_commitment(),
+    )?;
+    let account_id = AccountId::new(
+        seed,
+        AccountIdVersion::Version1,
+        faucet.code().commitment(),
+        faucet.storage().to_commitment(),
+    )?;
+    assert_eq!(account_id.asset_callback_flag(), AssetCallbackFlag::Disabled);
+
+    let account = Account::new_unchecked(
+        account_id,
+        AssetVault::default(),
+        faucet.storage().clone(),
+        faucet.code().clone(),
+        Felt::ZERO,
+        Some(seed),
+    );
+
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let code = "
+      use miden::tx_kernel_core::prologue
+
+      begin
+          exec.prologue::prepare_transaction
+      end
+      ";
+
+    let result = mock_tx.execute_code(code).await;
+
+    assert_execution_error!(
+        result,
+        ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG
+    );
+
+    Ok(())
+}
+
 // HELPERS
 // ================================================================================================
 
@@ -764,7 +850,6 @@ fn add_faucet_with_block_list(
 
     let account_builder = AccountBuilder::new([42u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(MockFaucetComponent)
         .with_component(block_list);
 
@@ -830,7 +915,6 @@ fn add_faucet_with_callbacks(
 
     let account_builder = AccountBuilder::new([42; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(

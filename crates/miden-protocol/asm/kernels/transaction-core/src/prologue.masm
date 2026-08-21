@@ -8,6 +8,8 @@ use miden::protocol_utils::account_id
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::asset
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
+use {ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT, ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT}
+    from miden::tx_kernel_core::callbacks
 use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
@@ -58,6 +60,9 @@ const ERR_PROLOGUE_INPUT_NOTES_COMMITMENT_MISMATCH =
     "note commitment computed from the input note data does not match given note commitment"
 
 const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO = "new account must have a zero nonce"
+
+const ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG =
+    "an account whose storage contains an asset callback slot must have the asset callback flag enabled"
 
 const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT =
     "number of note storage items exceeded the maximum limit of 1024"
@@ -293,6 +298,7 @@ end
 #! - assert that the account nonce is set to 0.
 #! - read the account seed from the advice provider and assert it satisfies seed requirements.
 #! - assert that the storage slots and the account procedures are sorted and unique.
+#! - assert that the asset callback flag is enabled if an asset callback slot is present.
 #!
 #! Validating storage and procedures for new accounts is sufficient because the storage and code
 #! commitments of an existing account are bound to its committed state, which was produced by the
@@ -335,6 +341,53 @@ proc validate_new_account
     # Assert the account procedures are sorted and unique.
     # ---------------------------------------------------------------------------------------------
     exec.account::validate_procedures
+    # => []
+
+    # Assert the asset callback flag is consistent with the installed asset callback slots.
+    # ---------------------------------------------------------------------------------------------
+    exec.validate_asset_callbacks
+    # => []
+end
+
+#! Validates that an account whose storage contains an asset callback slot has the asset callback
+#! flag of its account ID enabled.
+#!
+#! The kernel decides whether to invoke an account's asset callbacks solely from the asset callback
+#! flag encoded in its account ID, and that flag is immutable once the ID is ground. A callback slot
+#! installed on an account whose flag is disabled would therefore look correctly configured while
+#! never being invoked, silently and permanently disabling whatever the callback enforces.
+#!
+#! Only the presence of a callback slot is relevant, not its value: a slot's value can be rewritten
+#! over the account's lifetime, while its presence can only change through an account upgrade, so
+#! only the presence can be tied to the immutable flag.
+#!
+#! The converse is valid: an account may have the flag enabled without installing a callback slot,
+#! in which case the kernel skips the callback.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the account's storage contains an asset callback slot but its asset callback flag is disabled.
+proc validate_asset_callbacks
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2] exec.account::has_storage_slot
+    # => [has_account_callback_slot]
+
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2] exec.account::has_storage_slot
+    # => [has_note_callback_slot, has_account_callback_slot]
+
+    or
+    # => [has_callback_slot]
+
+    exec.memory::get_native_account_id drop exec.account_id::asset_callback_flag
+    # => [has_callbacks, has_callback_slot]
+
+    # the flag must be enabled if a callback slot is present, so reject the case where a slot is
+    # present but the flag is disabled
+    not and
+    # => [is_inconsistent]
+
+    assertz.err=ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG
     # => []
 end
 
