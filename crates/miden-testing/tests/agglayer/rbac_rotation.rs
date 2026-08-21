@@ -98,6 +98,7 @@ async fn faucet_accepts_rbac_config_note() -> anyhow::Result<()> {
         Felt::from(1_000u32),
         Felt::ZERO,
         initial_admin,
+        initial_admin,
     );
     let faucet_id = faucet.id();
     let admin_role = RoleBasedAccessControl::admin_role();
@@ -282,6 +283,7 @@ fn bridge_allowed_notes_pin() {
     let dummy = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
         Word::default(),
+        dummy,
         dummy,
         dummy,
         dummy,
