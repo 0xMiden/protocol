@@ -287,8 +287,7 @@ end
 #! the case when it is created, or when slots are added or removed (currently unimplemented).
 #! So, it should be sufficient to do this here instead of in save_account_storage_data.
 #!
-#! Validates that the native account, which is the account the transaction is being executed
-#! against, satisfies the criteria for a new account.
+#! Validates that the native account satisfies the criteria for a new account.
 #!
 #! Applies the following validation to the new account:
 #! - assert that the account ID uses the supported version and is otherwise valid.
