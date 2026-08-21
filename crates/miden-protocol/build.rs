@@ -124,7 +124,7 @@ fn main() -> Result<()> {
 ///
 /// The project is expected to have the following structure:
 ///
-/// - {project_dir}/lib/entrypoint.masm    -> defines `exec_kernel_proc`, the only syscall entry
+/// - {project_dir}/lib/dispatcher.masm    -> defines `exec_kernel_proc`, the only syscall entry
 ///   point of the transaction kernel.
 /// - {project_dir}/lib/api.masm           -> defines the kernel API procedures, which are invoked
 ///   by `exec_kernel_proc` through `dynexec`.
@@ -135,7 +135,7 @@ fn main() -> Result<()> {
 ///
 /// The following are written to the `target_dir`:
 ///
-/// - the kernel library package, compiled from lib/entrypoint.masm.
+/// - the kernel library package, compiled from lib/dispatcher.masm.
 /// - the kernel executable package, compiled from bin/main.masm.
 /// - the transaction script executor package, compiled from bin/tx_script_main.masm.
 ///
