@@ -13,9 +13,10 @@ use alloc::vec::Vec;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
@@ -141,7 +142,7 @@ async fn owner_sets_min_burn_amount() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose storage carries more than the single threshold item is rejected by the count
+/// A note whose storage does not carry exactly the single threshold item is rejected by the count
 /// guard, before anything is written to the faucet.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
@@ -153,13 +154,8 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // a threshold followed by a trailing item instead of the expected single item
-    let note = malformed_min_burn_amount_config_note(
-        owner,
-        faucet.id(),
-        vec![Felt::from(5u32), Felt::from(0u32)],
-        &mut rng,
-    )?;
+    // no threshold at all instead of the expected single item
+    let note = malformed_min_burn_amount_config_note(owner, faucet.id(), Vec::new(), &mut rng)?;
     let result = mock_chain
         .build_transaction(faucet.clone())
         .unauthenticated_input_note(note)
@@ -171,6 +167,32 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
         result,
         ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
+    Ok(())
+}
+
+/// A note carrying more storage items than the script accepts is rejected before its storage is
+/// loaded, so the work an oversized note can impose on whoever attempts to consume it is bounded by
+/// the layout the script accepts rather than by `MAX_NOTE_STORAGE_ITEMS`.
+#[tokio::test]
+async fn oversized_storage_is_rejected_before_the_storage_is_loaded() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let faucet = create_faucet_with_min_burn_amount(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(faucet.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let storage = vec![Felt::from(0u32); MAX_NOTE_STORAGE_ITEMS];
+    let note = malformed_min_burn_amount_config_note(owner, faucet.id(), storage, &mut rng)?;
+    let result = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_TOO_MANY_STORAGE_ITEMS);
     Ok(())
 }
 

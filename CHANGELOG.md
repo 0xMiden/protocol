@@ -4,6 +4,8 @@
 
 ### Features
 
+- Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
+
 ### Changes
 
 - [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
