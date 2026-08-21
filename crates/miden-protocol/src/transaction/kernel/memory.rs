@@ -19,7 +19,6 @@ pub type StorageSlot = u8;
 // | Section            | Start address | Size in elements | Comment                                     |
 // | ------------------ | ------------- | ---------------- | ------------------------------------------- |
 // | Kernel procs       | 0             | 1_024            | 255 procedures, 4 elements each + num_procs |
-// | Num kernel procs   | 1024          | 1                |                                             |
 // | Bookkeeping        | 1_200         | 85               |                                             |
 // | Global inputs      | 1_600         | 40               |                                             |
 // | Block header       | 2_000         | 44               |                                             |
