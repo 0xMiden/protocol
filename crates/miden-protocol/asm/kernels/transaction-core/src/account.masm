@@ -988,7 +988,7 @@ pub proc validate_storage
         # => [curr_slot_idx]
 
         # assert the reserved element of the slot record is zero
-        dup exec.get_slot_reserved eq.0
+        dup exec.get_native_slot_reserved eq.0
         assert.err=ERR_ACCOUNT_STORAGE_SLOT_RESERVED_ELEMENT_MUST_BE_ZERO
         # => [curr_slot_idx]
 
@@ -1613,7 +1613,7 @@ pub proc get_slot_id
     # => [slot_id_suffix, slot_id_prefix]
 end
 
-#! Gets the reserved element of the storage slot at the provided index.
+#! Gets the reserved element of the storage slot at the provided index for the native account.
 #!
 #! WARNING: The index must be in bounds.
 #!
@@ -1624,12 +1624,12 @@ end
 #! - index is the index of the slot.
 #! - reserved is the reserved element of the slot record, which must be zero per the canonical
 #!   encoding.
-proc get_slot_reserved
+proc get_native_slot_reserved
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
 
-    exec.memory::get_account_active_storage_slots_section_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     add
     # => [slot_ptr]
 

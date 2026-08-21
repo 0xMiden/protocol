@@ -1094,19 +1094,6 @@ pub proc get_account_nonce
     mem_load
 end
 
-#! Returns the reserved element of the active account's header word.
-#!
-#! Inputs:  []
-#! Outputs: [reserved]
-#!
-#! Where:
-#! - reserved is the reserved element of the account header word, which must always be zero per the
-#!   canonical encoding.
-pub proc get_account_reserved
-    exec.get_active_account_data_ptr add.ACCT_RESERVED_OFFSET
-    mem_load
-end
-
 #! Returns the nonce of the native account of the transaction.
 #!
 #! Inputs:  []
@@ -1116,6 +1103,19 @@ end
 #! - nonce is the nonce of the native account of the transaction.
 pub proc get_native_account_nonce
     push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_NONCE_OFFSET
+    mem_load
+end
+
+#! Returns the reserved element of the native account's header word.
+#!
+#! Inputs:  []
+#! Outputs: [reserved]
+#!
+#! Where:
+#! - reserved is the reserved element of the account header word, which must always be zero per the
+#!   canonical encoding.
+pub proc get_native_account_reserved
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_RESERVED_OFFSET
     mem_load
 end
 

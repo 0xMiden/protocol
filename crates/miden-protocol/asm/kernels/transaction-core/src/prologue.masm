@@ -313,7 +313,7 @@ proc validate_new_account
     # => []
 
     # Assert the reserved element of the account header word is 0
-    exec.memory::get_account_reserved eq.0
+    exec.memory::get_native_account_reserved eq.0
     assert.err=ERR_PROLOGUE_NEW_ACCOUNT_RESERVED_HEADER_ELEMENT_MUST_BE_ZERO
     # => []
 
