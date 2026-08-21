@@ -205,9 +205,11 @@ For a private note, the operator stores only its ID and never sees these compone
 
 The `miden::standards` library provides several standard note scripts that implement common use cases for asset transfers and interactions. These pre-built note types offer secure, tested implementations for typical scenarios.
 
+Input-note assets are stateful within a transaction: a note script claims the assets remaining in the note at consumption time, which may be less than the note was created with. Logic that prices or validates a note based on its assets must use the note's **initial assets** info rather than its remaining assets.
+
 ### P2ID (Pay-to-ID)
 
-The P2ID note script implements a simple pay-to-account-ID pattern. It adds all assets from the note to a specific target account.
+The P2ID note script implements a simple pay-to-account-ID pattern. It adds the note's remaining assets to a specific target account.
 
 **Key characteristics:**
 
@@ -243,7 +245,7 @@ The P2IDE note script extends P2ID with additional features including time-locki
 
 ### TX_FEE
 
-The TX_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds all assets from the note to the consuming account, without restricting who that account is.
+The TX_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds the note's remaining assets to the consuming account, without restricting who that account is.
 
 **Key characteristics:**
 

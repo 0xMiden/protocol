@@ -469,7 +469,7 @@ proc load_offered_asset
     # => [ASSET_ID, ASSET_VALUE]
 end
 
-#! Reclaims all assets from the note back to the creator's vault.
+#! Reclaims the note's remaining assets back to the creator's vault.
 #!
 #! Called when the consumer IS the creator (cancel/reclaim path).
 #!
@@ -807,7 +807,7 @@ end
 #!
 #! Panics if:
 #! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
-#! - the note does not carry exactly one offered asset.
+#! - the note does not hold exactly one offered asset at consumption time.
 #! - the total fill (account_fill + note_fill) overflows u64 or exceeds the max asset amount.
 #! - the account does not expose `receive_asset` / `move_asset_to_note`.
 @note_script
