@@ -25,7 +25,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must hold the `FAUCET_MNGR` role. | Not an onchain entity; creates config notes |
 | **Bridge Admin (`BRIDGE_ADMIN`)** (offchain) | Holds the bridge account's built-in `ADMIN` role. Manages bridge roles, pause state, allowlists, and fee schedule. | Not an onchain entity; creates RBAC_CONFIG, PAUSE_CONFIG, NETWORK_ACCOUNT_CONFIG, and CONSTANT_FEE_POLICY_CONFIG notes |
-| **Faucet Admin (`FAUCET_ADMIN`)** (offchain) | Holds a faucet account's separate built-in `ADMIN` role. Manages that faucet's allowlists and fee schedule but cannot mint or change its owner. | Not an onchain entity; creates NETWORK_ACCOUNT_CONFIG and CONSTANT_FEE_POLICY_CONFIG notes |
+| **Faucet Admin (`FAUCET_ADMIN`)** (offchain) | Holds a faucet account's separate built-in `ADMIN` role. Manages that faucet's roles, allowlists, and fee schedule but cannot mint or change its owner. | Not an onchain entity; creates RBAC_CONFIG, NETWORK_ACCOUNT_CONFIG, and CONSTANT_FEE_POLICY_CONFIG notes |
 
 ---
 
@@ -229,9 +229,8 @@ Roles are managed on-chain via [`RBAC_CONFIG`](#47-rbac_config) notes, which dis
 RBAC component's `grant_role` / `revoke_role` / `set_role_admin` / `renounce_role` procedures.
 Authorization is enforced by those procedures against the note sender: a member of the target
 role's effective admin role for grant / revoke / set-admin, or the role holder itself for
-renounce. This makes every bridge role rotatable after account creation, including `BRIDGE_ADMIN`
-itself. The faucet does not allowlist RBAC_CONFIG, so its roles are not rotatable this way (see
-the trust model in [Section 1](#1-entities-and-trust-model)).
+renounce. This makes every bridge and faucet role rotatable after account creation, including each
+account's built-in `ADMIN` role.
 
 Role management via notes comes with caveats. The generic hazards are documented on the
 miden-standards [`RoleBasedAccessControl`](../miden-standards/src/account/access/rbac.rs)
@@ -251,9 +250,10 @@ bridge-specific consequences are:
 - **Consumption order is not under the operator's control.** The bridge executes without a
   signature gate, so any party chooses which pending note is consumed first; never have an
   `BRIDGE_ADMIN` grant and a `BRIDGE_ADMIN` revoke/renounce in flight simultaneously.
-- **`FAUCET_ADMIN` is fixed at deployment.** The faucet does not allowlist `RBAC_CONFIG`, so this
-  role cannot be rotated or revoked on-chain. [#3570](https://github.com/0xMiden/protocol/issues/3570)
-  tracks making it rotatable.
+- **`FAUCET_ADMIN` must retain a live administration path.** Allowlisting `RBAC_CONFIG` makes the
+  role rotatable, but it cannot recover a faucet after its only administrator becomes unavailable.
+  A compromised administrator also remains able to change the faucet's roles and allowlists until
+  it is revoked.
 
 #### Emergency pause
 
@@ -884,8 +884,8 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 ### 4.7 RBAC_CONFIG
 
 **Purpose:** Triggers a role-management action (`grant_role`, `revoke_role`, `set_role_admin`,
-`renounce_role`) on the bridge's RBAC component, enabling on-chain rotation of `BRIDGE_ADMIN`,
-`FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles (see
+`renounce_role`) on a bridge or faucet RBAC component, enabling on-chain rotation of
+`BRIDGE_ADMIN`, `FAUCET_ADMIN`, `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles (see
 [Section 2.5](#25-administration)). This is the `miden-standards` `RBAC_CONFIG` note
 (`RbacConfigNote` in Rust), not a bridge-specific script.
 
@@ -897,7 +897,7 @@ while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain
 |-------|-------|
 | `sender` | The account authorized for the selected action: a member of the role's effective admin role for `grant_role` / `revoke_role` / `set_role_admin`, or the role holder itself for `renounce_role` (enforced by the RBAC procedures) |
 | `note_type` | `NoteType::Public` |
-| `tag` | `NoteTag::with_account_target(bridge)` |
+| `tag` | `NoteTag::with_account_target(managed_account)` |
 | `attachment` | `NetworkAccountTarget` (target: the managed account; execution hint: Always), added by the builder unless the caller supplies one. The script asserts the consuming account matches this target. |
 
 **`NoteDetails`**
@@ -930,7 +930,7 @@ procedure. Authorization is enforced by those procedures against the note sender
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Member of the role's effective admin role (grant / revoke / set-admin) or the role holder (renounce) -- **enforced** by the `rbac` procedures |
-| **Consumer** | Bridge account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
+| **Consumer** | Bridge or faucet account -- **enforced**: the script asserts the consuming account matches the `NetworkAccountTarget` attachment |
 
 ### 4.8 BURN (generated)
 
