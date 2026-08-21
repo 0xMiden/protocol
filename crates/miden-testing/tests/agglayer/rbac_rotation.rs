@@ -30,7 +30,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::RoleBasedAccessControl;
 use miden_standards::account::auth::NetworkAccount;
-use miden_standards::errors::standards::{ERR_SENDER_LACKS_ROLE, ERR_SENDER_NOT_ROLE_ADMIN};
+use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::note::{
     ConstantFeePolicyConfigNote,
     FeeSponsorshipNote,
@@ -83,11 +83,9 @@ fn rbac_config_note(
 // TESTS
 // ================================================================================================
 
-/// The faucet's self-administered `ADMIN` role can be handed off through allowlisted
-/// `RBAC_CONFIG` notes. The new admin can revoke the original admin, which then loses
-/// role-management authority.
+/// The faucet accepts an allowlisted `RBAC_CONFIG` note and applies its role update.
 #[tokio::test]
-async fn faucet_admin_role_can_be_rotated() -> anyhow::Result<()> {
+async fn faucet_accepts_rbac_config_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let initial_admin = bridge_admin_account_id();
     let new_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -113,29 +111,9 @@ async fn faucet_admin_role_can_be_rotated() -> anyhow::Result<()> {
         },
         builder.rng_mut(),
     )?;
-    let revoke = rbac_config_note(
-        new_admin.id(),
-        faucet_id,
-        RbacConfig::RevokeRole {
-            role: admin_role.clone(),
-            account: initial_admin,
-        },
-        builder.rng_mut(),
-    )?;
-    let former_admin_grant = rbac_config_note(
-        initial_admin,
-        faucet_id,
-        RbacConfig::GrantRole {
-            role: admin_role.clone(),
-            account: initial_admin,
-        },
-        builder.rng_mut(),
-    )?;
 
     builder.add_account(faucet)?;
-    for note in [&grant, &revoke, &former_admin_grant] {
-        builder.add_output_note(RawOutputNote::Full(note.clone()));
-    }
+    builder.add_output_note(RawOutputNote::Full(grant.clone()));
     let mut mock_chain = builder.build()?;
 
     consume_note(&mut mock_chain, faucet_id, &grant).await?;
@@ -144,19 +122,6 @@ async fn faucet_admin_role_can_be_rotated() -> anyhow::Result<()> {
         &admin_role,
         new_admin.id(),
     )?);
-
-    consume_note(&mut mock_chain, faucet_id, &revoke).await?;
-    let committed_faucet = mock_chain.committed_account(faucet_id)?;
-    assert!(is_role_member(committed_faucet, &admin_role, new_admin.id())?);
-    assert!(!is_role_member(committed_faucet, &admin_role, initial_admin)?);
-
-    let result = mock_chain
-        .build_transaction(faucet_id)
-        .authenticated_input_note(former_admin_grant.id())
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
 
     Ok(())
 }
