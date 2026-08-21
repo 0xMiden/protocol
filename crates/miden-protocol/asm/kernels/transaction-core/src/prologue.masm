@@ -287,8 +287,8 @@ end
 #! the case when it is created, or when slots are added or removed (currently unimplemented).
 #! So, it should be sufficient to do this here instead of in save_account_storage_data.
 #!
-#! Validates that the account the transaction is being executed against satisfies the criteria
-#! for a new account.
+#! Validates that the native account, which is the account the transaction is being executed
+#! against, satisfies the criteria for a new account.
 #!
 #! Applies the following validation to the new account:
 #! - assert that the account ID uses the supported version and is otherwise valid.
@@ -305,11 +305,12 @@ end
 #! Outputs: []
 proc validate_new_account
     # Assert the account ID of the account is valid
-    exec.memory::get_account_id exec.account_id::validate
+    exec.memory::get_native_account_id exec.account_id::validate
     # => []
 
     # Assert the account nonce is 0
-    exec.memory::get_account_nonce eq.0 assert.err=ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO
+    exec.memory::get_native_account_nonce eq.0
+    assert.err=ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO
     # => []
 
     # Assert the reserved element of the account header word is 0
@@ -320,7 +321,7 @@ proc validate_new_account
     # Assert the initial vault is empty
     # ---------------------------------------------------------------------------------------------
     # get the account vault root
-    exec.memory::get_account_vault_root
+    exec.memory::get_native_account_vault_root
     # => [ACCT_VAULT_ROOT]
 
     # push empty vault root onto stack
