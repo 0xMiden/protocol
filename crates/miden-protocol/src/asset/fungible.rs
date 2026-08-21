@@ -257,8 +257,10 @@ mod tests {
 
     #[test]
     fn fungible_asset_from_id_and_value_words_fails_on_invalid_composition() -> anyhow::Result<()> {
-        let asset_id =
-            set_asset_metadata(FungibleAsset::mock(25).id(), AssetComposition::None.as_u8());
+        let asset_id = set_asset_metadata(
+            FungibleAsset::mock(25).id(),
+            AssetId::encode_metadata(AssetComposition::None),
+        );
 
         let err = FungibleAsset::from_id_and_value_words(
             asset_id,

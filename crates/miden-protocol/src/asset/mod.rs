@@ -74,7 +74,8 @@ pub use vault::{AssetClass, AssetId, AssetIdHash, AssetVault, AssetWitness, Part
 /// - the remaining elements in the value word must be zero.
 /// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetComposition`]). See [`AssetId`] for more details on the ID's layout.
+///   asset metadata, which is the encoding version together with the [`AssetComposition`]. See
+///   [`AssetId`] for more details on the ID's layout.
 /// - the asset class limbs must be zero, which means two instances of the same fungible asset have
 ///   the same asset ID and will be merged together when stored in the same account's vault.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

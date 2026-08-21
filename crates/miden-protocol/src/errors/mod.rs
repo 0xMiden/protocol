@@ -601,6 +601,8 @@ pub enum AssetError {
     },
     #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
     ReservedAssetMetadata(u8),
+    #[error("unknown asset ID version: {0}")]
+    UnknownAssetIdVersion(u8),
 }
 
 // TOKEN SYMBOL ERROR
