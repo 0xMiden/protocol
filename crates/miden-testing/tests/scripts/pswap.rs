@@ -2194,7 +2194,8 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
         .script(helper_script)
         .build()?;
     // Commit the helper note so it can be consumed as an authenticated input note (index 0).
-    builder.add_output_note(RawOutputNote::Full(helper_note.clone()));
+    let helper_note_id = helper_note.id();
+    builder.add_output_note(RawOutputNote::Full(helper_note));
 
     let mock_chain = builder.build()?;
 

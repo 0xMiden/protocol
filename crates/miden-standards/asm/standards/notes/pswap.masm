@@ -454,7 +454,7 @@ proc is_consumer_creator
     # => [is_creator]
 end
 
-#! Loads the note's single offered asset, asserting it equals the amount the note was created with. 
+#! Loads the note's single offered asset, asserting it equals the amount the note was created with.
 #!
 #! Inputs: []
 #! Outputs: [ASSET_ID, ASSET_VALUE]
@@ -476,7 +476,7 @@ proc load_offered_asset
     locaddr.OFFERED_INITIAL_ASSET_PTR exec.active_note::get_initial_assets
     # => [num_initial_assets]
 
-    push.1 eq assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    eq.1 assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
     # => []
 
     locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load
