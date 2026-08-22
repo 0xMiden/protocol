@@ -184,6 +184,8 @@ pub enum AccountError {
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]
     UnsortedStorageSlots,
+    #[error("reserved element of a storage slot must be zero but was {0}")]
+    StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
