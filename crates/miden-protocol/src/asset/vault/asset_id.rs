@@ -19,6 +19,8 @@ use crate::utils::serde::{
 };
 use crate::{Felt, Hasher, Word};
 
+type AssetIdVersion = u8;
+
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///
 /// Its [`Word`] layout is:
@@ -54,8 +56,9 @@ impl AssetId {
     /// The serialized size of an [`AssetId`] with [`AssetComposition::Fungible`] in bytes.
     ///
     /// The asset class of a fungible asset is always empty and so it is not serialized.
-    const FUNGIBLE_SERIALIZED_SIZE: usize =
-        AssetComposition::SERIALIZED_SIZE + AccountId::SERIALIZED_SIZE;
+    const FUNGIBLE_SERIALIZED_SIZE: usize = core::mem::size_of::<AssetIdVersion>()
+        + AssetComposition::SERIALIZED_SIZE
+        + AccountId::SERIALIZED_SIZE;
 
     /// The serialized size of an [`AssetId`] with any other [`AssetComposition`] in bytes.
     const NON_FUNGIBLE_SERIALIZED_SIZE: usize =
@@ -306,7 +309,7 @@ impl Serializable for AssetId {
     /// asset class of a fungible asset is always empty, it is not written, saving
     /// [`AssetClass::SERIALIZED_SIZE`] bytes per fungible ID.
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Lead with the asset composition byte.
+        target.write(AssetId::VERSION_1);
         target.write(self.composition);
         target.write(self.faucet_id);
 
@@ -326,6 +329,16 @@ impl Serializable for AssetId {
 
 impl Deserializable for AssetId {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version: u8 = source.read()?;
+
+        if version != Self::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "asset version is {} but only version {} is supported",
+                version,
+                Self::VERSION_1,
+            )));
+        }
+
         let composition: AssetComposition = source.read()?;
         let faucet_id: AccountId = source.read()?;
         let asset_class = if composition.is_fungible() {
@@ -344,6 +357,8 @@ impl Deserializable for AssetId {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
     use crate::asset::AssetComposition;
     use crate::asset::tests::{asset_metadata, set_asset_metadata};
@@ -421,5 +436,14 @@ mod tests {
         assert_eq!(asset_metadata(non_fungible), 0b0000_0001);
 
         Ok(())
+    }
+
+    #[test]
+    fn asset_id_deserialization_rejects_unsupported_version() {
+        let error = AssetId::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("asset version is 0"));
+        });
     }
 }

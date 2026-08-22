@@ -305,17 +305,6 @@ mod tests {
         Ok(())
     }
 
-    /// Asserts that every serialized asset leads with the [`AssetComposition`] byte of its
-    /// [`AssetId`]. Deserialization of the ID relies on this discriminator.
-    #[test]
-    fn test_composition_byte_is_serialized_first() {
-        let fungible_bytes = FungibleAsset::mock(300).to_bytes();
-        assert_eq!(fungible_bytes[0], AssetComposition::Fungible.as_u8());
-
-        let non_fungible_bytes = NonFungibleAsset::mock(&[0xaa, 0xbb]).to_bytes();
-        assert_eq!(non_fungible_bytes[0], AssetComposition::None.as_u8());
-    }
-
     /// `Asset::from_id_and_value` must reject a [`AssetComposition::Custom`] asset ID with
     /// `UnsupportedAssetComposition`.
     #[test]
