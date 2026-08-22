@@ -495,26 +495,6 @@ impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
 // KEYS, SIGNATURES, AND FEES
 // ================================================================================================
 
-impl TryFrom<proto::blockchain::ValidatorPublicKey> for PublicKey {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::ValidatorPublicKey) -> Result<Self, Self::Error> {
-        PublicKey::decode_bytes(&value.validator_key, "PublicKey")
-    }
-}
-
-impl From<&PublicKey> for proto::blockchain::ValidatorPublicKey {
-    fn from(value: &PublicKey) -> Self {
-        Self { validator_key: value.to_bytes() }
-    }
-}
-
-impl From<PublicKey> for proto::blockchain::ValidatorPublicKey {
-    fn from(value: PublicKey) -> Self {
-        (&value).into()
-    }
-}
-
 impl TryFrom<proto::blockchain::BlockSignature> for Signature {
     type Error = ConversionError;
 

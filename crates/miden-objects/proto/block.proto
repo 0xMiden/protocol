@@ -5,10 +5,6 @@ import "account.proto";
 import "primitives.proto";
 import "transaction.proto";
 
-message ValidatorPublicKey {
-  bytes validator_key = 1;
-}
-
 message FeeParameters {
   account.AccountId native_asset_id = 1;
   fixed32 verification_base_fee = 2;
@@ -23,7 +19,7 @@ message BlockHeader {
   primitives.Digest nullifier_root = 6;
   primitives.Digest note_root = 7;
   primitives.Digest tx_commitment = 8;
-  repeated ValidatorPublicKey validator_keys = 9;
+  repeated primitives.PublicKey validator_keys = 9;
   primitives.Digest tx_kernel_commitment = 10;
   FeeParameters fee_parameters = 11;
   fixed32 timestamp = 12;

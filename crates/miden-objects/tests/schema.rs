@@ -84,6 +84,7 @@ fn canonical_scalar_wire_types_are_pinned() {
         ("primitives", "Word", "encoded", 1, Type::Bytes),
         ("primitives", "ExecutionProof", "encoded", 1, Type::Bytes),
         ("primitives", "MastForest", "encoded", 1, Type::Bytes),
+        ("primitives", "PublicKey", "encoded", 1, Type::Bytes),
         ("primitives", "MmrDelta", "forest", 1, Type::Uint64),
         ("primitives", "SmtLeaf", "empty_leaf_index", 1, Type::Uint64),
         ("account", "AccountHeader", "nonce", 5, Type::Uint64),
@@ -122,4 +123,27 @@ fn canonical_scalar_wire_types_are_pinned() {
             "wrong wire type for {package}.{message_name}.{field_name}"
         );
     }
+}
+
+#[test]
+fn block_header_uses_the_primitive_public_key() {
+    let descriptor = FileDescriptorSet::decode(FILE_DESCRIPTOR_SET).unwrap();
+    let block_header = descriptor
+        .file
+        .iter()
+        .filter(|file| file.package() == "blockchain")
+        .flat_map(|file| &file.message_type)
+        .find(|message| message.name() == "BlockHeader")
+        .unwrap();
+    let validator_keys = block_header
+        .field
+        .iter()
+        .find(|field| field.name() == "validator_keys")
+        .unwrap();
+
+    assert_eq!(validator_keys.type_name(), ".primitives.PublicKey");
+    assert!(descriptor.file.iter().all(|file| {
+        file.package() != "blockchain"
+            || file.message_type.iter().all(|message| message.name() != "ValidatorPublicKey")
+    }));
 }

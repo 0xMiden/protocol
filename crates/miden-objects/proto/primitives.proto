@@ -21,6 +21,10 @@ message MastForest {
   bytes encoded = 1;
 }
 
+message PublicKey {
+  bytes encoded = 1;
+}
+
 message Digest {
   fixed64 d0 = 1;
   fixed64 d1 = 2;

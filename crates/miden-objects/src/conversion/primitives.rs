@@ -1,6 +1,7 @@
 use alloc::format;
 
 use miden_protocol::asset::Asset;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::note::NoteId;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
@@ -142,6 +143,36 @@ impl TryFrom<&proto::primitives::MastForest> for MastForest {
     fn try_from(value: &proto::primitives::MastForest) -> Result<Self, Self::Error> {
         Self::read_from_bytes(&value.encoded)
             .map_err(|error| ConversionError::deserialization("MastForest", error))
+            .map_err(|error| error.context("encoded"))
+    }
+}
+
+impl From<&PublicKey> for proto::primitives::PublicKey {
+    fn from(value: &PublicKey) -> Self {
+        Self { encoded: value.to_bytes() }
+    }
+}
+
+impl From<PublicKey> for proto::primitives::PublicKey {
+    fn from(value: PublicKey) -> Self {
+        (&value).into()
+    }
+}
+
+impl TryFrom<proto::primitives::PublicKey> for PublicKey {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::PublicKey) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+impl TryFrom<&proto::primitives::PublicKey> for PublicKey {
+    type Error = ConversionError;
+
+    fn try_from(value: &proto::primitives::PublicKey) -> Result<Self, Self::Error> {
+        Self::read_from_bytes(&value.encoded)
+            .map_err(|error| ConversionError::deserialization("PublicKey", error))
             .map_err(|error| error.context("encoded"))
     }
 }
