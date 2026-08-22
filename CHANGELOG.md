@@ -10,6 +10,8 @@
 
 ### Changes
 
+- [BREAKING] `tx::get_block_commitment` now takes the block number to read. Its direct replacement is `get_reference_block_commitment`. `tx::get_block_number` was renamed to `tx::get_reference_block_number` ([#3699](https://github.com/0xMiden/protocol/issues/3699)).
+- [BREAKING] The transaction summary gained a version and the bound block number ([#3699](https://github.com/0xMiden/protocol/issues/3699)).
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
 - [BREAKING] Widened the note metadata version field from 4 to 6 bits, moving the note type to bit 6 ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
 - [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
