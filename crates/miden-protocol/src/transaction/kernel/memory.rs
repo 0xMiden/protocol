@@ -1,10 +1,8 @@
 use miden_core::program::KernelDescriptor;
 
 use crate::WORD_SIZE;
-
 // TYPE ALIASES
 // ================================================================================================
-
 use crate::account::AccountHeader;
 
 pub type MemoryAddress = u32;
