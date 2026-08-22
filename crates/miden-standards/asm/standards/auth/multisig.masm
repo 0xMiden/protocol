@@ -734,8 +734,8 @@ pub proc auth_tx(user_params: [felt; 7])
 
     # ------ Computing transaction summary ------
 
-    exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    exec.auth::create_tx_summary_with_ref_block
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted
     # into the advice map for extraction by the host

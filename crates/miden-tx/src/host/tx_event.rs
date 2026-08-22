@@ -749,9 +749,10 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-///         BLOCK_COMMITMENT, [expiration_delta, user_param0, user_param1, user_param2],
-///         [user_param3, user_param4, user_param5, user_param6]
+///         [metadata, user_param0, user_param1, user_param2],
+///         [user_param3, user_param4, user_param5, user_param6],
+///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
 ///     ]
 /// }
 /// ```
@@ -766,25 +767,35 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    // This also validates the preimage length, which is what makes the commitment words below
-    // safe to slice out.
-    let (expiration_delta, user_params) = TransactionSummary::try_params_from_elements(commitments)
+    // This also validates the preimage length and the layout version, which is what makes the
+    // commitment words below safe to slice out.
+    let (metadata, user_params) = TransactionSummary::try_params_from_elements(commitments)
         .map_err(|source| {
             TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(source))
         })?;
 
-    let account_delta_commitment = extract_word(commitments, 0);
-    let input_notes_commitment = extract_word(commitments, 4);
-    let output_notes_commitment = extract_word(commitments, 8);
-    let block_commitment = extract_word(commitments, 12);
+    let account_delta_commitment = extract_word(commitments, 8);
+    let input_notes_commitment = extract_word(commitments, 12);
+    let output_notes_commitment = extract_word(commitments, 16);
+    let block_commitment = extract_word(commitments, 20);
 
-    // Validate the expiration delta against the kernel state so that a summary preimage
-    // carrying a fabricated delta is rejected rather than presented to the signer.
+    // Validate the metadata against the kernel state so that a summary preimage carrying
+    // fabricated values is rejected rather than presented to the signer.
     let expected_expiration_delta = process.get_expiration_block_delta()?;
-    if expiration_delta != expected_expiration_delta {
+    if metadata.expiration_delta() != expected_expiration_delta {
         return Err(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
             expected: expected_expiration_delta,
-            actual: expiration_delta,
+            actual: metadata.expiration_delta(),
+        });
+    }
+
+    // TODO(#3695): allow binding a block older than the reference block once the multisig
+    // component and the callers can extend the transaction's `ref_blocks`.
+    let expected_block_number = process.get_reference_block_number()?;
+    if metadata.block_number() != expected_block_number {
+        return Err(TransactionKernelError::TransactionSummaryBlockNumberMismatch {
+            expected: expected_block_number,
+            actual: metadata.block_number(),
         });
     }
 
@@ -792,8 +803,9 @@ fn extract_tx_summary<'store, STORE>(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
+        metadata.block_number(),
         block_commitment,
-        expiration_delta,
+        metadata.expiration_delta(),
         user_params,
     )?;
 

@@ -1,6 +1,7 @@
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::crypto::hashes::poseidon2
+use {BlockNumber} from miden::protocol::types
 
 pub mod guardian
 pub mod multisig
@@ -15,53 +16,106 @@ pub mod tx_script_allowlist
 # =================================================================================================
 
 # hash_and_insert_tx_summary locals: the six words of the summary preimage in hashing order.
-const SUMMARY_ACCOUNT_DELTA_LOC = 0
-const SUMMARY_INPUT_NOTES_LOC = 4
-const SUMMARY_OUTPUT_NOTES_LOC = 8
-const SUMMARY_BLOCK_COMMITMENT_LOC = 12
-const SUMMARY_PARAMS_HEAD_LOC = 16
-const SUMMARY_PARAMS_TAIL_LOC = 20
+const SUMMARY_PARAMS_HEAD_LOC = 0
+const SUMMARY_PARAMS_TAIL_LOC = 4
+const SUMMARY_ACCOUNT_DELTA_LOC = 8
+const SUMMARY_INPUT_NOTES_LOC = 12
+const SUMMARY_OUTPUT_NOTES_LOC = 16
+const SUMMARY_BLOCK_COMMITMENT_LOC = 20
 
-# Number of felts in the transaction summary preimage (6 words). Must match
-# TransactionSummary::NUM_ELEMENTS in miden-protocol
-# (crates/miden-protocol/src/transaction/tx_summary.rs).
+# Number of felts in the transaction summary preimage (6 words).
 const TX_SUMMARY_NUM_ELEMENTS = 24
+
+# Layout version of the transaction summary preimage.
+const TX_SUMMARY_VERSION = 1
+
+# Multipliers placing the block number and the expiration delta in the metadata felt, i.e. shifts by
+# 8 and 40 bits.
+const TX_SUMMARY_BLOCK_NUMBER_MULTIPLIER = 0x100
+const TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER = 0x10000000000
 
 #! Creates the transaction summary and returns it in the order in which it will be hashed.
 #!
-#! Inputs:  [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
-#!           user_param6]
-#! Outputs: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!           BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+#! Inputs:  [block_number, user_param0, user_param1, user_param2, user_param3, user_param4,
+#!           user_param5, user_param6]
+#! Outputs: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+#!           OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 #!
 #! Where:
+#! - block_number is the number of the block the summary binds. It must not exceed the transaction
+#!   reference block number.
 #! - user_param0 through user_param6 are arbitrary, user-defined inputs which are bound by the
 #!   transaction summary. They are opaque: binding them enforces no meaning, so any semantics (e.g.
 #!   replay protection or a maximum fee) must be implemented by the calling component.
-#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2].
+#! - PARAMS_HEAD is the word [metadata, user_param0, user_param1, user_param2].
 #! - PARAMS_TAIL is the word [user_param3, user_param4, user_param5, user_param6].
-#! - expiration_delta is the transaction's expiration block delta, or 0 if it has not been set.
-#! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
+#! - metadata packs the summary layout version, block_number and the transaction's expiration block
+#!   delta into a single felt.
+#! - BLOCK_COMMITMENT is the commitment to the block identified by block_number.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 #!
+#! Panics if:
+#! - block_number is not a u32 or exceeds the transaction reference block number.
+#!
 #! Invocation: exec
-pub proc create_tx_summary(user_params: [felt; 7]) -> (word, word, word, word, word, word)
-    exec.tx::get_expiration_block_delta
-    # => [PARAMS_HEAD, PARAMS_TAIL]
+pub proc create_tx_summary(block_number: BlockNumber, user_params: [felt; 7])
+    -> (word, word, word, word, word, word)
+    # the expiration delta is bounded to a u16 by the kernel and the block number to a u32 by
+    # tx::get_block_commitment below, so the packed felt stays below 2^56
+    exec.tx::get_expiration_block_delta mul.TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER
+    # => [expiration_delta_bits, block_number, user_params(7)]
+
+    dup.1 mul.TX_SUMMARY_BLOCK_NUMBER_MULTIPLIER add add.TX_SUMMARY_VERSION
+    # => [metadata, block_number, user_params(7)]
+
+    # the seven user params below already form the tail of PARAMS_HEAD and all of PARAMS_TAIL, so
+    # swapping the metadata into their place completes both words
+    swap
+    # => [block_number, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.tx::get_block_commitment
     # => [BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
-    exec.tx::get_output_notes_commitment
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    # sink the commitment below the params; index 11 is the last params element at every depth
+    movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, BLOCK_COMMITMENT]
 
-    exec.tx::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    exec.tx::get_output_notes_commitment movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
-    exec.native_account::compute_delta_commitment
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    exec.tx::get_input_notes_commitment movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+    #     BLOCK_COMMITMENT]
+
+    exec.native_account::compute_delta_commitment movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+    #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+end
+
+#! Creates the transaction summary bound to the transaction's reference block and returns it in the
+#! order in which it will be hashed.
+#!
+#! This is the common case; see `create_tx_summary` for binding an earlier block instead.
+#!
+#! Inputs:  [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
+#!           user_param6]
+#! Outputs: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+#!           OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+#!
+#! Where:
+#! - all inputs and outputs are as described in `create_tx_summary`.
+#!
+#! Invocation: exec
+pub proc create_tx_summary_with_ref_block(user_params: [felt; 7])
+    -> (word, word, word, word, word, word)
+    exec.tx::get_reference_block_number
+    # => [reference_block_number, user_params(7)]
+
+    exec.create_tx_summary
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+    #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 end
 
 #! Hashes the provided transaction summary, inserts its preimage into the advice map keyed by the
@@ -71,20 +125,20 @@ end
 #! when handling authentication events.
 #!
 #! Inputs:
-#!   Operand stack: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!                   BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+#!   Operand stack: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+#!                   OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!   Advice map: {
-#!     TX_SUMMARY_COMMITMENT: [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-#!                             OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+#!     TX_SUMMARY_COMMITMENT: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT,
+#!                             INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 #!   }
 #!
 #! Where:
-#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2] and
-#!   PARAMS_TAIL the word [user_param3, user_param4, user_param5, user_param6], together binding the
-#!   transaction's expiration block delta and the seven user-defined parameters.
-#! - BLOCK_COMMITMENT is the commitment to the transaction's reference block.
+#! - PARAMS_HEAD is the word [metadata, user_param0, user_param1, user_param2] and PARAMS_TAIL the
+#!   word [user_param3, user_param4, user_param5, user_param6], together binding the summary
+#!   metadata and the seven user-defined parameters. See `create_tx_summary` for the metadata felt.
+#! - BLOCK_COMMITMENT is the commitment to the block bound by the summary.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
@@ -93,58 +147,58 @@ end
 #! Invocation: exec
 @locals(24)
 pub proc hash_and_insert_tx_summary(
+    params_head: word,
+    params_tail: word,
     account_delta_commitment: word,
     input_notes_commitment: word,
     output_notes_commitment: word,
-    block_commitment: word,
-    params_head: word,
-    params_tail: word
+    block_commitment: word
 ) -> word
     # save the first pair of rate words to the locals for the advice map insertion below
-    loc_storew_le.SUMMARY_ACCOUNT_DELTA_LOC
-    swapw loc_storew_le.SUMMARY_INPUT_NOTES_LOC swapw
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    loc_storew_le.SUMMARY_PARAMS_HEAD_LOC
+    swapw loc_storew_le.SUMMARY_PARAMS_TAIL_LOC swapw
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # pad capacity element of the hasher
     padw movdnw.2
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    # => [RATE0, RATE1, CAPACITY, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # drop rate words
     dropw dropw
-    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    # => [CAPACITY, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     movdnw.2
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # save the second pair of rate words to the locals
-    loc_storew_le.SUMMARY_OUTPUT_NOTES_LOC
-    swapw loc_storew_le.SUMMARY_BLOCK_COMMITMENT_LOC swapw
-    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+    loc_storew_le.SUMMARY_ACCOUNT_DELTA_LOC
+    swapw loc_storew_le.SUMMARY_INPUT_NOTES_LOC swapw
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # drop rate words
     dropw dropw
-    # => [CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     movdnw.2
-    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY]
 
     # save the third pair of rate words to the locals
-    loc_storew_le.SUMMARY_PARAMS_HEAD_LOC
-    swapw loc_storew_le.SUMMARY_PARAMS_TAIL_LOC swapw
-    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
+    loc_storew_le.SUMMARY_OUTPUT_NOTES_LOC
+    swapw loc_storew_le.SUMMARY_BLOCK_COMMITMENT_LOC swapw
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY]
 
     exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
     # => [TX_SUMMARY_COMMITMENT]
 
     # insert the preimage stored in the locals into the advice map keyed by the commitment
-    locaddr.SUMMARY_ACCOUNT_DELTA_LOC dup add.TX_SUMMARY_NUM_ELEMENTS
+    locaddr.SUMMARY_PARAMS_HEAD_LOC dup add.TX_SUMMARY_NUM_ELEMENTS
     # => [end_ptr, start_ptr, TX_SUMMARY_COMMITMENT]
 
     movdn.5 movdn.4
