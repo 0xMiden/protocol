@@ -98,13 +98,15 @@ impl PartialNoteMetadata {
 
 impl Serializable for PartialNoteMetadata {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        NoteMetadata::VERSION_1.write_into(target);
         self.note_type().write_into(target);
         self.sender().write_into(target);
         self.tag().write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.note_type().get_size_hint()
+        NoteMetadata::VERSION_1.get_size_hint()
+            + self.note_type().get_size_hint()
             + self.sender().get_size_hint()
             + self.tag().get_size_hint()
     }
@@ -112,6 +114,16 @@ impl Serializable for PartialNoteMetadata {
 
 impl Deserializable for PartialNoteMetadata {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version = u8::read_from(source)?;
+
+        if version != NoteMetadata::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "note version is {} but only version {} is supported",
+                version,
+                NoteMetadata::VERSION_1,
+            )));
+        }
+
         let note_type = NoteType::read_from(source)?;
         let sender = AccountId::read_from(source)?;
         let tag = NoteTag::read_from(source)?;
@@ -378,6 +390,8 @@ fn merge_schemes(headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT]) ->
 #[cfg(test)]
 mod tests {
 
+    use assert_matches::assert_matches;
+
     use super::*;
     use crate::note::{NoteAttachment, NoteAttachmentScheme};
     use crate::testing::account_id::ACCOUNT_ID_MAX_ONES;
@@ -475,5 +489,14 @@ mod tests {
         assert_eq!(u64::from(NoteMetadata::VERSION_1), 1);
 
         Ok(())
+    }
+
+    #[test]
+    fn partial_note_metadata_deserialization_rejects_unsupported_version() {
+        let error = PartialNoteMetadata::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("note version is 0"));
+        });
     }
 }

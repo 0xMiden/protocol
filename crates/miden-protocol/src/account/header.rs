@@ -42,10 +42,7 @@ impl AccountHeader {
     /// The version occupies the first element of the account metadata word, so a reader can get it
     /// before it interprets the rest of the header. Version 0 is unused, which means an all-zero
     /// word is never valid account metadata.
-    ///
-    /// If we make this public, we may want to instead consider introducing an `AccountVersion`
-    /// struct, similar to [`AccountIdVersion`](crate::account::AccountIdVersion).
-    const VERSION_1: u8 = 1;
+    pub(crate) const VERSION_1: u8 = 1;
 
     /// The number of elements in an account header.
     pub(crate) const NUM_ELEMENTS: u8 = 16;
@@ -221,6 +218,7 @@ impl SequentialCommit for AccountHeader {
 
 impl Serializable for AccountHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        Self::VERSION_1.write_into(target);
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -231,6 +229,16 @@ impl Serializable for AccountHeader {
 
 impl Deserializable for AccountHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version = u8::read_from(source)?;
+
+        if version != Self::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "account version is {} but only version {} is supported",
+                version,
+                Self::VERSION_1,
+            )));
+        }
+
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;
@@ -272,7 +280,7 @@ mod tests {
     use crate::asset::FungibleAsset;
     use crate::errors::AccountError;
     use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-    use crate::utils::serde::{Deserializable, Serializable};
+    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 
     /// Builds an account header whose fields are all distinguishable from one another so that a
     /// swapped element in the encoding is visible.
@@ -322,5 +330,14 @@ mod tests {
         let header_bytes = account_header.to_bytes();
         let deserialized_header = AccountHeader::read_from_bytes(&header_bytes).unwrap();
         assert_eq!(deserialized_header, account_header);
+    }
+
+    #[test]
+    fn account_header_deserialization_rejects_unsupported_version() {
+        let error = AccountHeader::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("account version is 0"));
+        });
     }
 }
