@@ -68,9 +68,6 @@ impl AssetId {
     pub(in crate::asset) const METADATA_BYTE_MASK: u8 = 0xff;
 
     /// Version 1 of the asset ID encoding.
-    ///
-    /// If we make this public, we may want to instead consider introducing an `AssetIdVersion`
-    /// struct, similar to [`AccountIdVersion`](crate::account::AccountIdVersion).
     pub(in crate::asset) const VERSION_1: u8 = 1;
 
     /// Bits 0-3 of the metadata byte encode the version.
@@ -78,7 +75,6 @@ impl AssetId {
 
     /// Bits 4-5 of the metadata byte encode the [`AssetComposition`].
     pub(in crate::asset) const COMPOSITION_SHIFT: u8 = 4;
-    pub(in crate::asset) const COMPOSITION_MASK: u8 = 0b11 << Self::COMPOSITION_SHIFT;
 
     /// Bits 6-7 of the metadata byte are reserved and must be zero.
     pub(in crate::asset) const METADATA_RESERVED_MASK: u8 = 0b1100_0000;
@@ -265,9 +261,7 @@ impl TryFrom<Word> for AssetId {
             return Err(AssetError::ReservedAssetMetadata(metadata_byte));
         }
 
-        let composition = AssetComposition::try_from(
-            (metadata_byte & Self::COMPOSITION_MASK) >> Self::COMPOSITION_SHIFT,
-        )?;
+        let composition = AssetComposition::try_from(metadata_byte >> Self::COMPOSITION_SHIFT)?;
 
         let faucet_id_suffix = Felt::try_from(raw & !(Self::METADATA_BYTE_MASK as u64))
             .expect("clearing lower bits should not produce an invalid felt");
@@ -398,7 +392,7 @@ mod tests {
     )]
     // Composition value 3 is the unused bit pattern within the 2-bit field.
     #[case::unknown_composition(
-        AssetId::COMPOSITION_MASK | AssetId::VERSION_1,
+        0b0011_0000 | AssetId::VERSION_1,
         AssetError::UnknownAssetComposition(0b11)
     )]
     fn decoding_word_with_invalid_metadata_fails(
