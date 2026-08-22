@@ -222,8 +222,7 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
     Ok(())
 }
 
-/// Tests that minting a fungible asset on a non-faucet account fails when the key has its asset
-/// metadata (lower 8 bits) set to u8::MAX.
+/// Tests that minting a fungible asset fails when a reserved bit of the asset metadata is set.
 #[tokio::test]
 async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result<()> {
     let asset = FungibleAsset::mock(50);
