@@ -483,7 +483,6 @@ mod tests {
             ValidatorKeys::new(alloc::vec![SigningKey::with_rng(&mut rng).public_key()]).unwrap();
 
         BlockHeader::new(
-            0,
             Word::empty(),
             block_num.into(),
             Word::empty(),
