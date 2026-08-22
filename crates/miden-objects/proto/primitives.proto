@@ -11,6 +11,11 @@ message Word {
   bytes encoded = 1;
 }
 
+message ExecutionProof {
+  // Canonically serialized protocol execution proof.
+  bytes encoded = 1;
+}
+
 message Digest {
   fixed64 d0 = 1;
   fixed64 d1 = 2;

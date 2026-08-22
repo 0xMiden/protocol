@@ -15,7 +15,6 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionHeader,
 };
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{
     MAX_ACCOUNTS_PER_BATCH,
@@ -127,7 +126,7 @@ impl From<&ProvenBatch> for proto::transaction::ProvenBatch {
             output_notes: value.output_notes().iter().map(Into::into).collect(),
             expiration_block_num: value.batch_expiration_block_num().as_u32(),
             transactions: value.transactions().as_slice().iter().map(Into::into).collect(),
-            proof: value.proof().to_bytes(),
+            proof: Some(value.proof().into()),
         }
     }
 }
@@ -214,9 +213,7 @@ impl DecodedProvenBatch {
                 TransactionHeader::try_from(tx).context(format!("transactions[{index}]"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let proof = ExecutionProof::read_from_bytes(&value.proof)
-            .map_err(|source| ConversionError::deserialization("ExecutionProof", source))
-            .context("proof")?;
+        let proof = required!(decoder, value.proof)?;
 
         Ok(Self {
             reference_block_commitment,

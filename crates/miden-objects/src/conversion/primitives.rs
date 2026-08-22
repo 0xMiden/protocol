@@ -3,6 +3,7 @@ use alloc::format;
 use miden_protocol::asset::Asset;
 use miden_protocol::note::NoteId;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{Felt, Word};
 
 use crate::{ConversionError, proto};
@@ -82,6 +83,36 @@ impl TryFrom<&proto::primitives::Word> for Word {
         ensure_exact_length(&value.encoded, WORD_SERIALIZED_SIZE, "word.encoded")?;
         Self::read_from_bytes(&value.encoded)
             .map_err(|error| ConversionError::deserialization("word.encoded", error))
+    }
+}
+
+impl From<&ExecutionProof> for proto::primitives::ExecutionProof {
+    fn from(value: &ExecutionProof) -> Self {
+        Self { encoded: value.to_bytes() }
+    }
+}
+
+impl From<ExecutionProof> for proto::primitives::ExecutionProof {
+    fn from(value: ExecutionProof) -> Self {
+        (&value).into()
+    }
+}
+
+impl TryFrom<proto::primitives::ExecutionProof> for ExecutionProof {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::ExecutionProof) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+impl TryFrom<&proto::primitives::ExecutionProof> for ExecutionProof {
+    type Error = ConversionError;
+
+    fn try_from(value: &proto::primitives::ExecutionProof) -> Result<Self, Self::Error> {
+        Self::read_from_bytes(&value.encoded)
+            .map_err(|error| ConversionError::deserialization("ExecutionProof", error))
+            .map_err(|error| error.context("encoded"))
     }
 }
 
@@ -196,5 +227,12 @@ mod tests {
     fn digest_rejects_non_canonical_limbs() {
         let digest = proto::primitives::Digest { d0: Felt::ORDER, d1: 0, d2: 0, d3: 0 };
         assert!(Word::try_from(digest).is_err());
+    }
+
+    #[test]
+    fn execution_proof_roundtrips() {
+        let proof = ExecutionProof::new_dummy();
+        let encoded = proto::primitives::ExecutionProof::from(&proof);
+        assert_eq!(ExecutionProof::try_from(encoded).unwrap(), proof);
     }
 }

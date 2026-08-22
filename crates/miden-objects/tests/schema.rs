@@ -82,6 +82,7 @@ fn canonical_scalar_wire_types_are_pinned() {
     let expected = [
         ("primitives", "Felt", "encoded", 1, Type::Bytes),
         ("primitives", "Word", "encoded", 1, Type::Bytes),
+        ("primitives", "ExecutionProof", "encoded", 1, Type::Bytes),
         ("primitives", "MmrDelta", "forest", 1, Type::Uint64),
         ("primitives", "SmtLeaf", "empty_leaf_index", 1, Type::Uint64),
         ("account", "AccountHeader", "nonce", 5, Type::Uint64),
@@ -91,6 +92,8 @@ fn canonical_scalar_wire_types_are_pinned() {
         ("blockchain", "BlockHeader", "version", 1, Type::Uint32),
         ("blockchain", "BlockBody", "contents", 1, Type::Message),
         ("blockchain", "IndexedOutputNote", "note_index_in_batch", 1, Type::Uint32),
+        ("transaction", "ProvenTransactionData", "proof", 7, Type::Message),
+        ("transaction", "ProvenBatch", "proof", 8, Type::Message),
     ];
 
     for (package, message_name, field_name, number, field_type) in expected {

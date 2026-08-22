@@ -30,6 +30,5 @@ message ProvenBatch {
   repeated OutputNote output_notes = 5;
   fixed32 expiration_block_num = 6;
   repeated TransactionHeader transactions = 7;
-  // Canonically serialized ExecutionProof.
-  bytes proof = 8;
+  primitives.ExecutionProof proof = 8;
 }

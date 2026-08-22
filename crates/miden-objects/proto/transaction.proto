@@ -56,6 +56,5 @@ message ProvenTransactionData {
   fixed32 reference_block_num = 4;
   primitives.Word reference_block_commitment = 5;
   fixed32 expiration_block_num = 6;
-  // Canonically serialized ExecutionProof.
-  bytes proof = 7;
+  primitives.ExecutionProof proof = 7;
 }
