@@ -26,7 +26,6 @@ use crate::utils::serde::{
 /// - code_commitment: a commitment to the account's code ([super::AccountCode]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountHeader {
-    version: u8,
     id: AccountId,
     nonce: Felt,
     vault_root: Word,
@@ -43,7 +42,10 @@ impl AccountHeader {
     /// The version occupies the first element of the account metadata word, so a reader can get it
     /// before it interprets the rest of the header. Version 0 is unused, which means an all-zero
     /// word is never valid account metadata.
-    pub(crate) const VERSION_1: u8 = 1;
+    ///
+    /// If we make this public, we may want to instead consider introducing an `AccountVersion`
+    /// struct, similar to [`AccountIdVersion`](crate::account::AccountIdVersion).
+    const VERSION_1: u8 = 1;
 
     /// The number of elements in an account header.
     pub(crate) const NUM_ELEMENTS: u8 = 16;
@@ -81,7 +83,6 @@ impl AccountHeader {
         code_commitment: Word,
     ) -> Self {
         Self {
-            version: Self::VERSION_1,
             id,
             nonce,
             vault_root,
@@ -174,7 +175,6 @@ impl AccountHeader {
 impl From<&PartialAccount> for AccountHeader {
     fn from(account: &PartialAccount) -> Self {
         Self {
-            version: Self::VERSION_1,
             id: account.id(),
             nonce: account.nonce(),
             vault_root: account.vault().root(),
@@ -187,7 +187,6 @@ impl From<&PartialAccount> for AccountHeader {
 impl From<&Account> for AccountHeader {
     fn from(account: &Account) -> Self {
         Self {
-            version: Self::VERSION_1,
             id: account.id(),
             nonce: account.nonce(),
             vault_root: account.vault().root(),
@@ -222,7 +221,6 @@ impl SequentialCommit for AccountHeader {
 
 impl Serializable for AccountHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.version.write_into(target);
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -233,16 +231,6 @@ impl Serializable for AccountHeader {
 
 impl Deserializable for AccountHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let version = u8::read_from(source)?;
-
-        if version != Self::VERSION_1 {
-            return Err(DeserializationError::InvalidValue(format!(
-                "account version is {} but only {} is not supported",
-                version,
-                Self::VERSION_1,
-            )));
-        }
-
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;
@@ -250,7 +238,6 @@ impl Deserializable for AccountHeader {
         let code_commitment = Word::read_from(source)?;
 
         Ok(AccountHeader {
-            version,
             id,
             nonce,
             vault_root,
