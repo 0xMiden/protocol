@@ -511,6 +511,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -718,6 +719,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -870,6 +872,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
@@ -1040,6 +1043,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1199,6 +1203,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
@@ -1490,6 +1495,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1742,6 +1748,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1888,6 +1895,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );

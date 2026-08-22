@@ -453,6 +453,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
@@ -591,6 +592,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -693,6 +695,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
@@ -870,6 +873,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -998,6 +1002,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1014,6 +1019,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
@@ -1087,6 +1093,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );

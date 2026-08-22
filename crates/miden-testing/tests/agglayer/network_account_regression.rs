@@ -63,6 +63,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
         ger_injector.id(),
         ger_remover.id(),
         bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -119,6 +120,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
         bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
