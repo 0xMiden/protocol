@@ -60,7 +60,7 @@ While the asset value is unique to each type of asset, the asset ID has a common
 - `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issue assets when the faucet ID matches its own ID.
 - `asset_class_suffix` and `asset_class_prefix` is a class that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
 - `composition` describes how assets compose. Read on for more details.
-- `version` determines how the remainder of the asset is decoded. It is located at a static offset so a parser can read it first and then decode the rest of the asset accordingly. The only valid version is currently `1`. Version `0` is unassigned and invalid, which means an empty word is guaranteed to _not_ be a valid asset ID.
+- `version` determines how the remainder of the asset is decoded. The only valid version is currently `1`. Version `0` is unassigned and invalid, which means an empty word is guaranteed to _not_ be a valid asset ID.
 - `reserved` bits are reserved for future use and should be assumed to be undefined and therefore not relied upon.
 
 Whether the asset triggers [callbacks](#callbacks) is not part of the asset ID: it is an immutable property of the issuing faucet's account ID.
