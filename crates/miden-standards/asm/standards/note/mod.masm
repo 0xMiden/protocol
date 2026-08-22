@@ -5,8 +5,6 @@
 
 use miden::core::crypto::hashes::poseidon2
 
-use miden::protocol::active_note
-use miden::protocol::input_note
 use miden::protocol::output_note
 
 use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
@@ -22,34 +20,6 @@ const ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage from the advice
 
 # PROCEDURES
 # =================================================================================================
-
-#! TODO: Move this to miden::protocol::input_note.
-#!
-#! Loads the storage items of the input note at `note_index` into memory at `dest_ptr`.
-#!
-#! The items are read from the advice map keyed by the note's storage commitment and validated
-#! against it, so a host that supplies wrong storage aborts the transaction.
-#!
-#! Inputs:  [note_index, dest_ptr]
-#! Outputs: []
-#!
-#! Where:
-#! - note_index is the index of the input note whose storage is loaded.
-#! - dest_ptr is the memory address the storage items are written to.
-#!
-#! Panics if:
-#! - the note index is greater or equal to the total number of input notes.
-#! - the advice-provided storage does not match the note's storage commitment.
-#!
-#! Invocation: exec
-pub proc input_note_get_storage
-    exec.input_note::get_storage_info
-    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
-
-    # note that this call does NOT depend on the active note, it is merely a helper
-    exec.active_note::write_storage_to_memory
-    # => []
-end
 
 #! TODO: Move this to miden::protocol::output_note.
 #!

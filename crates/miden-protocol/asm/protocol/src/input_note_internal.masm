@@ -1,8 +1,15 @@
 use {INPUT_NOTE_GET_ASSET_OFFSET, INPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, INPUT_NOTE_GET_INITIAL_ASSETS_INFO_OFFSET, INPUT_NOTE_GET_METADATA_OFFSET, INPUT_NOTE_GET_NOTE_ID_OFFSET, INPUT_NOTE_GET_RECIPIENT_OFFSET, INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET, INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET, INPUT_NOTE_GET_STORAGE_INFO_OFFSET, INPUT_NOTE_REMOVE_ALL_ASSETS_OFFSET, INPUT_NOTE_REMOVE_ASSET_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::protocol::note_internal
+use miden::protocol_utils::mem
 use {Asset, AssetId, AssetValue, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteScriptRoot}
     from miden::protocol::types
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS =
+    "the specified number of note storage items does not match the actual number"
 
 # PROCEDURES
 # =================================================================================================
@@ -345,6 +352,100 @@ pub proc get_storage_info_raw(is_active_note: Bool, note_index: u16) -> (word, u
         movup.5 drop
     end
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
+end
+
+#! Writes the storage of the input note with the specified index or the active note, depending on
+#! the provided flag, into memory starting at the specified address.
+#!
+#! This is the shared implementation used by both `input_note::get_storage` and
+#! `active_note::get_storage`.
+#!
+#! The storage items are read from the advice map under the note's storage commitment. They are not
+#! re-hashed here: the transaction prologue already verified every input note's storage against its
+#! authenticated commitment, and the advice map rejects rebinding a key to different values, so the
+#! preimage returned for that key is the one the prologue verified.
+#!
+#! Inputs:
+#!   Operand stack: [is_active_note, note_index, dest_ptr]
+#!   Advice map: {
+#!     NOTE_STORAGE_COMMITMENT: [[STORAGE_ITEMS]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_storage_items]
+#!
+#! Where:
+#! - is_active_note is 0 for indexed access, 1 for the currently active note.
+#! - note_index is the index of the input note.
+#! - dest_ptr is the memory address the storage items are written to.
+#! - NOTE_STORAGE_COMMITMENT is the storage commitment of the specified input note.
+#! - STORAGE_ITEMS are the storage items of the specified input note.
+#! - num_storage_items is the number of storage items of the specified input note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the advice map does not contain the storage items for NOTE_STORAGE_COMMITMENT.
+#! - the number of storage items from the advice map does not match the note's item count.
+#!
+#! Invocation: exec
+pub proc get_storage_raw(is_active_note: Bool, note_index: u16, dest_ptr: MemoryAddress) -> u16
+    exec.get_storage_info_raw
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+
+    # save num_storage_items for the return value
+    dup.4 movdn.6
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, num_storage_items]
+
+    exec.write_storage_to_memory
+    # => [num_storage_items]
+end
+
+#! Writes the storage items committed to by the provided note storage commitment into memory
+#! starting at the specified address.
+#!
+#! The storage items are read from the advice map under the note's storage commitment. They are not
+#! re-hashed here: the transaction prologue already verified every input note's storage against its
+#! authenticated commitment, and the advice map rejects rebinding a key to different values, so the
+#! preimage returned for that key is the one the prologue verified. That argument only holds for a
+#! commitment read from kernel memory, so callers must source NOTE_STORAGE_COMMITMENT from
+#! `get_storage_info_raw` rather than from an untrusted input.
+#!
+#! Inputs:
+#!   Operand stack: [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+#!   Advice map: {
+#!     NOTE_STORAGE_COMMITMENT: [[STORAGE_ITEMS]]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - NOTE_STORAGE_COMMITMENT is the storage commitment of the note.
+#! - num_storage_items is the number of storage items the note was created with.
+#! - dest_ptr is the memory address the storage items are written to.
+#! - STORAGE_ITEMS are the storage items of the note.
+#!
+#! Panics if:
+#! - the advice map does not contain the storage items for NOTE_STORAGE_COMMITMENT.
+#! - the number of storage items from the advice map does not match the note's item count.
+#!
+#! Invocation: exec
+pub proc write_storage_to_memory
+    # load the storage preimage from the advice map onto the advice stack, prefixed with its
+    # element count and padded to the next multiple of 8
+    adv.push_mapvaln.8
+    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [advice_num_storage_items, [STORAGE_ITEMS]]
+
+    # assert the item count from the advice map matches the note's item count
+    adv_push dup.5 assert_eq.err=ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS
+    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[STORAGE_ITEMS]]
+
+    # drop the commitment, which was only needed as the advice map key
+    dropw
+    # => [num_storage_items, dest_ptr]
+
+    exec.mem::write_elements_to_memory
+    # => []
 end
 
 #! Returns the script root of the input note with the specified index or the active note,
