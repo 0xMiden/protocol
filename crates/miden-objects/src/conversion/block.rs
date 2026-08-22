@@ -25,10 +25,9 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     TransactionHeader,
 };
-use miden_protocol::utils::serde::Serializable;
 use miden_protocol::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 
-use super::{DecodeBytesExt, MessageDecodeExt, required};
+use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // BLOCK NUMBER
@@ -494,26 +493,6 @@ impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
 
 // KEYS, SIGNATURES, AND FEES
 // ================================================================================================
-
-impl TryFrom<proto::blockchain::BlockSignature> for Signature {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::BlockSignature) -> Result<Self, Self::Error> {
-        Signature::decode_bytes(&value.signature, "Signature")
-    }
-}
-
-impl From<&Signature> for proto::blockchain::BlockSignature {
-    fn from(value: &Signature) -> Self {
-        Self { signature: value.to_bytes() }
-    }
-}
-
-impl From<Signature> for proto::blockchain::BlockSignature {
-    fn from(value: Signature) -> Self {
-        (&value).into()
-    }
-}
 
 impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
     type Error = ConversionError;

@@ -85,6 +85,7 @@ fn canonical_scalar_wire_types_are_pinned() {
         ("primitives", "ExecutionProof", "encoded", 1, Type::Bytes),
         ("primitives", "MastForest", "encoded", 1, Type::Bytes),
         ("primitives", "PublicKey", "encoded", 1, Type::Bytes),
+        ("primitives", "Signature", "encoded", 1, Type::Bytes),
         ("primitives", "MmrDelta", "forest", 1, Type::Uint64),
         ("primitives", "SmtLeaf", "empty_leaf_index", 1, Type::Uint64),
         ("account", "AccountHeader", "nonce", 5, Type::Uint64),
@@ -145,5 +146,27 @@ fn block_header_uses_the_primitive_public_key() {
     assert!(descriptor.file.iter().all(|file| {
         file.package() != "blockchain"
             || file.message_type.iter().all(|message| message.name() != "ValidatorPublicKey")
+    }));
+}
+
+#[test]
+fn signed_block_uses_the_primitive_signature() {
+    let descriptor = FileDescriptorSet::decode(FILE_DESCRIPTOR_SET).unwrap();
+    let signed_block = descriptor
+        .file
+        .iter()
+        .filter(|file| file.package() == "blockchain")
+        .flat_map(|file| &file.message_type)
+        .find(|message| message.name() == "SignedBlock")
+        .unwrap();
+    let signatures = signed_block.field.iter().find(|field| field.name() == "signatures").unwrap();
+
+    assert_eq!(signatures.type_name(), ".primitives.Signature");
+    assert!(descriptor.file.iter().all(|file| {
+        file.package() != "blockchain"
+            || file
+                .message_type
+                .iter()
+                .all(|message| message.name() != "BlockSignature" && message.name() != "Signature")
     }));
 }

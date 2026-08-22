@@ -1,7 +1,7 @@
 use alloc::format;
 
 use miden_protocol::asset::Asset;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::note::NoteId;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
@@ -173,6 +173,36 @@ impl TryFrom<&proto::primitives::PublicKey> for PublicKey {
     fn try_from(value: &proto::primitives::PublicKey) -> Result<Self, Self::Error> {
         Self::read_from_bytes(&value.encoded)
             .map_err(|error| ConversionError::deserialization("PublicKey", error))
+            .map_err(|error| error.context("encoded"))
+    }
+}
+
+impl From<&Signature> for proto::primitives::Signature {
+    fn from(value: &Signature) -> Self {
+        Self { encoded: value.to_bytes() }
+    }
+}
+
+impl From<Signature> for proto::primitives::Signature {
+    fn from(value: Signature) -> Self {
+        (&value).into()
+    }
+}
+
+impl TryFrom<proto::primitives::Signature> for Signature {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::Signature) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+impl TryFrom<&proto::primitives::Signature> for Signature {
+    type Error = ConversionError;
+
+    fn try_from(value: &proto::primitives::Signature) -> Result<Self, Self::Error> {
+        Self::read_from_bytes(&value.encoded)
+            .map_err(|error| ConversionError::deserialization("Signature", error))
             .map_err(|error| error.context("encoded"))
     }
 }

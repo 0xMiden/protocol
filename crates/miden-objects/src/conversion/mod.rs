@@ -10,7 +10,6 @@ mod transaction;
 use core::marker::PhantomData;
 
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
-use miden_protocol::utils::serde::Deserializable;
 
 use crate::ConversionError;
 
@@ -59,15 +58,6 @@ pub(crate) trait MessageDecodeExt: prost::Message + Sized {
 }
 
 impl<T: prost::Message> MessageDecodeExt for T {}
-
-pub(crate) trait DecodeBytesExt: Deserializable {
-    fn decode_bytes(bytes: &[u8], entity: &'static str) -> Result<Self, ConversionError> {
-        Self::read_from_bytes(bytes)
-            .map_err(|source| ConversionError::deserialization(entity, source))
-    }
-}
-
-impl<T: Deserializable> DecodeBytesExt for T {}
 
 macro_rules! required {
     ($decoder:ident, $message:ident. $field:ident) => {

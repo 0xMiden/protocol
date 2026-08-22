@@ -29,10 +29,6 @@ message BlockNumber {
   fixed32 block_num = 1;
 }
 
-message BlockSignature {
-  bytes signature = 1;
-}
-
 message BlockAccountUpdate {
   account.AccountId account_id = 1;
   primitives.Word final_state_commitment = 2;
@@ -64,5 +60,5 @@ message BlockProof {}
 message SignedBlock {
   BlockHeader header = 1;
   BlockBody body = 2;
-  repeated BlockSignature signatures = 3;
+  repeated primitives.Signature signatures = 3;
 }
