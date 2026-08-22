@@ -13,6 +13,9 @@ use {ACCOUNT_PROCEDURE_DATA_LENGTH, EMPTY_SMT_ROOT, STORAGE_SLOT_TYPE_MAP, STORA
 use {ACCOUNT_DATA_LENGTH, ACCT_ID_PREFIX_OFFSET, ACCT_ID_SUFFIX_OFFSET, MAX_FOREIGN_ACCOUNT_PTR, NATIVE_ACCOUNT_DATA_PTR}
     from miden::tx_kernel_core::memory
 
+# Re-exported for testing purposes.
+pub use {validate as validate_id} from miden::protocol_utils::account_id
+
 # ERRORS
 # =================================================================================================
 
