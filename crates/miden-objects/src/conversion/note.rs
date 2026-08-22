@@ -23,10 +23,9 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::utils::serde::Serializable;
-use miden_protocol::{Felt, MastForest, MastNodeId, Word};
+use miden_protocol::{Felt, MastNodeId, Word};
 
-use super::{DecodeBytesExt, MessageDecodeExt, MessageDecoder, required};
+use super::{MessageDecodeExt, MessageDecoder, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // NOTE TYPE
@@ -397,7 +396,7 @@ impl From<&NoteScript> for proto::note::NoteScript {
     fn from(script: &NoteScript) -> Self {
         Self {
             entrypoint: script.entrypoint().into(),
-            mast: script.mast().to_bytes(),
+            mast: Some(script.mast().as_ref().into()),
         }
     }
 }
@@ -406,9 +405,9 @@ impl TryFrom<proto::note::NoteScript> for NoteScript {
     type Error = ConversionError;
 
     fn try_from(value: proto::note::NoteScript) -> Result<Self, Self::Error> {
-        let proto::note::NoteScript { entrypoint, mast } = value;
-
-        let mast = MastForest::decode_bytes(&mast, "note_script.mast")?;
+        let decoder = value.decoder();
+        let mast = required!(decoder, value.mast)?;
+        let entrypoint = value.entrypoint;
         let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)
             .map_err(|err| ConversionError::deserialization("note_script.entrypoint", err))?;
 

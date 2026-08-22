@@ -66,6 +66,5 @@ message NoteHeader {
 
 message NoteScript {
   uint32 entrypoint = 1;
-  // Canonically serialized MastForest.
-  bytes mast = 2;
+  primitives.MastForest mast = 2;
 }

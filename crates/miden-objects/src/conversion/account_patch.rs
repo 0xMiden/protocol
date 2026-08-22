@@ -4,6 +4,7 @@ use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
     AccountPatch,
@@ -20,10 +21,8 @@ use miden_protocol::account::{
     StorageValuePatch,
 };
 use miden_protocol::asset::AssetId;
-use miden_protocol::utils::serde::Serializable;
-use miden_protocol::{MastForest, Word};
 
-use super::{DecodeBytesExt, MessageDecodeExt, required};
+use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // ACCOUNT CODE
@@ -32,7 +31,7 @@ use crate::{ConversionError, ConversionResultExt, proto};
 impl From<&AccountCode> for proto::account::AccountCode {
     fn from(code: &AccountCode) -> Self {
         Self {
-            mast: code.mast().to_bytes(),
+            mast: Some(code.mast().as_ref().into()),
             procedure_roots: code.procedure_roots().map(Into::into).collect(),
         }
     }
@@ -48,7 +47,8 @@ impl TryFrom<proto::account::AccountCode> for AccountCode {
     type Error = ConversionError;
 
     fn try_from(code: proto::account::AccountCode) -> Result<Self, Self::Error> {
-        let mast = MastForest::decode_bytes(&code.mast, "MastForest").context("mast")?;
+        let decoder = code.decoder();
+        let mast = required!(decoder, code.mast)?;
         let procedure_roots = code
             .procedure_roots
             .into_iter()

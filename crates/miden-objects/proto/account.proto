@@ -34,8 +34,7 @@ message AccountWitness {
 }
 
 message AccountCode {
-  // Canonically serialized MastForest.
-  bytes mast = 1;
+  primitives.MastForest mast = 1;
   repeated primitives.Word procedure_roots = 2;
 }
 

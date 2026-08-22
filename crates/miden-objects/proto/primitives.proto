@@ -16,6 +16,11 @@ message ExecutionProof {
   bytes encoded = 1;
 }
 
+message MastForest {
+  // Canonically serialized MAST forest.
+  bytes encoded = 1;
+}
+
 message Digest {
   fixed64 d0 = 1;
   fixed64 d1 = 2;

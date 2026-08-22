@@ -4,7 +4,7 @@ use miden_protocol::asset::Asset;
 use miden_protocol::note::NoteId;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, MastForest, Word};
 
 use crate::{ConversionError, proto};
 
@@ -112,6 +112,36 @@ impl TryFrom<&proto::primitives::ExecutionProof> for ExecutionProof {
     fn try_from(value: &proto::primitives::ExecutionProof) -> Result<Self, Self::Error> {
         Self::read_from_bytes(&value.encoded)
             .map_err(|error| ConversionError::deserialization("ExecutionProof", error))
+            .map_err(|error| error.context("encoded"))
+    }
+}
+
+impl From<&MastForest> for proto::primitives::MastForest {
+    fn from(value: &MastForest) -> Self {
+        Self { encoded: value.to_bytes() }
+    }
+}
+
+impl From<MastForest> for proto::primitives::MastForest {
+    fn from(value: MastForest) -> Self {
+        (&value).into()
+    }
+}
+
+impl TryFrom<proto::primitives::MastForest> for MastForest {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::MastForest) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+impl TryFrom<&proto::primitives::MastForest> for MastForest {
+    type Error = ConversionError;
+
+    fn try_from(value: &proto::primitives::MastForest) -> Result<Self, Self::Error> {
+        Self::read_from_bytes(&value.encoded)
+            .map_err(|error| ConversionError::deserialization("MastForest", error))
             .map_err(|error| error.context("encoded"))
     }
 }
@@ -234,5 +264,12 @@ mod tests {
         let proof = ExecutionProof::new_dummy();
         let encoded = proto::primitives::ExecutionProof::from(&proof);
         assert_eq!(ExecutionProof::try_from(encoded).unwrap(), proof);
+    }
+
+    #[test]
+    fn mast_forest_roundtrips() {
+        let mast = MastForest::new();
+        let encoded = proto::primitives::MastForest::from(&mast);
+        assert_eq!(MastForest::try_from(encoded).unwrap(), mast);
     }
 }
