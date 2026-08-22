@@ -203,6 +203,11 @@ impl Account {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
+    /// Returns the [`AccountHeader`] of this account.
+    pub fn to_header(&self) -> AccountHeader {
+        AccountHeader::from(self)
+    }
+
     /// Returns the commitment of this account.
     ///
     /// See [`AccountHeader::to_commitment`] for details on how it is computed.

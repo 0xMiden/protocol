@@ -121,6 +121,10 @@ const ACCOUNT_SLOT_ID_PREFIX_OFFSET = 3
 # The offset of the slot value in the storage slot.
 const ACCOUNT_SLOT_VALUE_OFFSET = 4
 
+# Version 1 of the account.
+# Version 0 is unused so that a zeroed word is never valid account metadata.
+pub const ACCOUNT_VERSION_1 = 1
+
 # EVENTS
 # =================================================================================================
 
@@ -1148,7 +1152,7 @@ end
 #! Inputs:
 #!   Operand stack: [account_id_suffix, account_id_prefix]
 #!   Advice map: {
-#!     ACCOUNT_ID_KEY: [[account_id_suffix, account_id_prefix, 0, account_nonce],
+#!     ACCOUNT_ID_KEY: [[account_version, account_nonce, account_id_suffix, account_id_prefix],
 #!                      VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT],
 #!     STORAGE_COMMITMENT: [[STORAGE_SLOT_DATA]],
 #!     CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
@@ -1159,6 +1163,7 @@ end
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the ID of the account.
 #! - ACCOUNT_ID_KEY is the map key constructed from the account ID as done by create_id_key.
+#! - account_version is the version of the account metadata encoding.
 #! - account_nonce is the nonce of the account.
 #! - VAULT_ROOT is the commitment of the account's vault.
 #! - STORAGE_COMMITMENT is the commitment to the account's storage.
@@ -1185,27 +1190,27 @@ pub proc load_foreign_account
     # move the core account data to the advice stack
     adv.push_mapval
     # OS => [ACCOUNT_ID_KEY, account_id_suffix, account_id_prefix]
-    # AS => [ACCOUNT_ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+    # AS => [ACCOUNT_METADATA, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
-    # load the id and nonce of the foreign account from the advice stack overwriting the ID key
+    # load the metadata of the foreign account from the advice stack overwriting the ID key
     adv_loadw
-    # OS => [account_nonce, 0, adv_account_id_suffix, adv_account_id_prefix, account_id_suffix, account_id_prefix]
+    # OS => [account_version, account_nonce, adv_account_id_suffix, adv_account_id_prefix, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     movup.5 movup.5
-    # OS => [account_id_suffix, account_id_prefix, account_nonce, 0, adv_account_id_suffix, adv_account_id_prefix]
+    # OS => [account_id_suffix, account_id_prefix, account_version, account_nonce, adv_account_id_suffix, adv_account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # check that the account ID provided by the advice map matches the one provided by the operand
     # stack
     dup.5 dup.5
     exec.account_id::eq assert.err=ERR_FOREIGN_ACCOUNT_ID_MISMATCH
-    # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
+    # OS => [account_version, account_nonce, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
-    # store the id and nonce of the foreign account to memory
-    exec.memory::set_account_id_and_nonce
-    # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
+    # store the metadata of the foreign account to memory
+    exec.memory::set_active_account_metadata
+    # OS => [account_version, account_nonce, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the vault root of the foreign account to the memory

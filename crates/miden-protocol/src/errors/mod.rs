@@ -22,6 +22,7 @@ use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueN
 use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
+    AccountHeader,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
@@ -141,10 +142,12 @@ pub enum AccountError {
     BuildError(String, #[source] Option<Box<AccountError>>),
     #[error("failed to parse account ID from final account header")]
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
-    #[error("account header data has length {actual} but it must be of length {expected}")]
-    HeaderDataIncorrectLength { actual: usize, expected: usize },
-    #[error("reserved element of the account header must be zero but was {0}")]
-    HeaderReservedElementNotZero(Felt),
+    #[error("account header data has length {actual} but it must be of length {expected}",
+        expected = AccountHeader::NUM_ELEMENTS
+    )]
+    UnexpectedHeaderLength { actual: usize },
+    #[error("account has an unsupported version {0}")]
+    UnsupportedAccountVersion(u64),
     #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(

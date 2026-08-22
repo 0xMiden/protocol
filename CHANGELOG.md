@@ -27,6 +27,7 @@
 - [BREAKING] AggLayer bridge and faucet account builders now take a concrete `BasicConstantFeePolicy` and fee faucet ID, constructing their `FeePolicyManager` internally ([#3583](https://github.com/0xMiden/protocol/pull/3583)).
 - [BREAKING] The transaction kernel no longer requires assets with `AssetComposition::None` to have the non-fungible asset layout ([#3624](https://github.com/0xMiden/protocol/pull/3624)).
 - [BREAKING] Refactored `Asset` into a struct holding `AssetId` and `AssetValue` ([#3625](https://github.com/0xMiden/protocol/pull/3625)).
+- [BREAKING] The account now carries an 8-bit version ([#3661](https://github.com/0xMiden/protocol/pull/3661)).
 - Moved the transaction kernel API procedures into the kernel's `api` submodule, leaving `exec_kernel_proc` as the only `syscall`-invocable kernel procedure ([#3646](https://github.com/0xMiden/protocol/pull/3646)).
 - Documented that standard note scripts claim only the assets remaining in a note at consumption time ([#3650](https://github.com/0xMiden/protocol/pull/3650)).
 - [BREAKING] Moved the kernel data section of the transaction kernel memory to address `0`, so that `exec_kernel_proc` becomes reusable across multiple kernels ([#3655](https://github.com/0xMiden/protocol/pull/3655)).
