@@ -131,7 +131,7 @@ impl Deserializable for PartialNoteMetadata {
 /// The metadata word is encoded as a single [`Word`] (4 felts) with the following layout:
 ///
 /// ```text
-/// 0th felt: [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
+/// 0th felt: [sender_id_suffix (56 bits) | reserved (1 bit) | note_type (1 bit) | version (6 bits)]
 /// 1st felt: [sender_id_prefix (64 bits)]
 /// 2nd felt: [reserved (32 bits) | note_tag (32 bits)]
 /// 3rd felt: [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
@@ -160,12 +160,11 @@ impl NoteMetadata {
     // --------------------------------------------------------------------------------------------
 
     /// The number of bits by which the note type is offset in the first felt of the metadata word.
-    const NOTE_TYPE_SHIFT: u64 = 4;
+    const NOTE_TYPE_SHIFT: u64 = 6;
 
     /// Version 1 of the note metadata encoding.
     ///
-    /// If we make this public, we may want to instead consider introducing a `NoteMetadataVersion`
-    /// struct, similar to `AccountIdVersion`.
+    /// It is encoded using 6 bits.
     const VERSION_1: u8 = 1;
 
     // CONSTRUCTORS
@@ -333,7 +332,7 @@ impl Deserializable for NoteMetadata {
 /// The layout is as follows:
 ///
 /// ```text
-/// [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
+/// [sender_id_suffix (56 bits) | reserved (1 bit) | note_type (1 bit) | version (6 bits)]
 /// ```
 ///
 /// The most significant bit of the suffix is guaranteed to be zero, so the felt retains its
@@ -345,7 +344,7 @@ fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType
 
     let note_type_byte = note_type as u8;
     debug_assert!(note_type_byte < 2, "note type must not contain values >= 2");
-    // note_type at bit 4, version at bits 0..=3 (hardcoded to NoteMetadata::VERSION_1)
+    // note_type at bit 6, version at bits 0..=5 (hardcoded to NoteMetadata::VERSION_1)
     merged |= (note_type_byte as u64) << NoteMetadata::NOTE_TYPE_SHIFT;
     merged |= NoteMetadata::VERSION_1 as u64;
 
@@ -452,16 +451,29 @@ mod tests {
         Ok(())
     }
 
+    /// Pins the note metadata layout.
+    #[rstest::rstest]
+    #[case::private(NoteType::Private, 0b0000_0001)]
+    #[case::public(NoteType::Public, 0b0100_0001)]
     #[test]
-    fn note_metadata_header_encodes_v1_as_one() {
-        let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
-        let metadata = PartialNoteMetadata::new(sender, NoteType::Private);
-        let metadata = NoteMetadata::new(metadata, &NoteAttachments::default());
+    fn note_metadata_first_felt_layout(
+        #[case] note_type: NoteType,
+        #[case] expected_low_byte: u64,
+    ) -> anyhow::Result<()> {
+        const SUFFIX_MASK: u64 = !0xff;
 
-        let metadata = metadata.to_metadata_word();
-        let version = metadata[0].as_canonical_u64() & 0b1111;
+        // Use the Account ID with the maximum one bits to check that the suffix is untouched even
+        // when all of its non-constrained bits are set.
+        let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES)?;
+        let partial_metadata = PartialNoteMetadata::new(sender, note_type);
+        let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
 
-        assert_eq!(version, NoteMetadata::VERSION_1 as u64);
-        assert_eq!(version, 1);
+        let first_felt = metadata.to_metadata_word()[0].as_canonical_u64();
+
+        assert_eq!(first_felt & !SUFFIX_MASK, expected_low_byte);
+        assert_eq!(first_felt & SUFFIX_MASK, sender.suffix().as_canonical_u64());
+        assert_eq!(u64::from(NoteMetadata::VERSION_1), 1);
+
+        Ok(())
     }
 }
