@@ -32,6 +32,7 @@
 - Documented that standard note scripts claim only the assets remaining in a note at consumption time ([#3650](https://github.com/0xMiden/protocol/pull/3650)).
 - [BREAKING] Moved the kernel data section of the transaction kernel memory to address `0`, so that `exec_kernel_proc` becomes reusable across multiple kernels ([#3655](https://github.com/0xMiden/protocol/pull/3655)).
 - [BREAKING] Added a 4-bit version to the lowest bits of the asset ID's metadata byte, moving the asset composition to bits 4-5 ([#3670](https://github.com/0xMiden/protocol/pull/3670)).
+- [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 
 ### Fixes
 
