@@ -2549,13 +2549,11 @@ dependencies = [
 name = "miden-objects"
 version = "0.17.0"
 dependencies = [
- "assert_matches",
  "miden-protocol",
  "prost",
  "prost-build",
  "prost-types",
  "protox",
- "thiserror",
 ]
 
 [[package]]
