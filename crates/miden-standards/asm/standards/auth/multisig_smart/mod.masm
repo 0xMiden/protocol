@@ -9,6 +9,8 @@ use {THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 
+pub mod delayed_execution
+
 # STORAGE SLOTS
 # =================================================================================================
 
@@ -77,6 +79,25 @@ const DEFAULT_THRESHOLD_LOC = 1
 
 const NEW_NUM_OF_APPROVERS_LOC = 0
 const INIT_NUM_OF_APPROVERS_LOC = 1
+
+# LOCAL ADDRESSES (auth_tx)
+# =================================================================================================
+
+# The six words of the transaction summary preimage, stashed so it can be hashed twice: once for
+# the signed tx-summary commitment and once for the block-independent transaction effects commitment.
+const AUTH_TX_SUMMARY_W0_LOC = 0
+const AUTH_TX_SUMMARY_W1_LOC = 4
+const AUTH_TX_SUMMARY_W2_LOC = 8
+const AUTH_TX_SUMMARY_W3_LOC = 12
+const AUTH_TX_SUMMARY_W4_LOC = 16
+const AUTH_TX_SUMMARY_W5_LOC = 20
+
+# The block-independent transaction effects commitment that keys the delayed-execution proposal.
+const AUTH_TX_EFFECTS_COMMITMENT_LOC = 24
+
+const AUTH_TX_EXECUTION_MODE_LOC = 28
+const AUTH_TX_DEFAULT_THRESHOLD_LOC = 29
+const AUTH_TX_TX_THRESHOLD_LOC = 30
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -394,24 +415,27 @@ end
 #!   component. The components calling this procedure pass a cryptographically random salt in
 #!   user_param3 through user_param6 for replay protection.
 #!
+#! A propose/cancel transaction (delayed-execution timelock action) verifies its own signatures
+#! inside the called procedure, so this procedure only asserts that nothing else was bundled with
+#! it. Every other transaction is treated as an execution and runs the full signer-verification and
+#! per-procedure policy checks. The execution mode is derived from proposal presence: a transaction
+#! whose summary was proposed executes in DELAYED mode (through the timelock), everything else in
+#! IMMEDIATE mode.
+#!
 #! Locals:
-#! 0: policy_threshold
+#! 0: execution_mode
 #! 1: default_threshold
+#! 2: transaction_threshold
 #!
 #! Invocation: exec
 #!
-#! NOTE: This procedure is a temporary form covering signer verification and
-#! per-procedure policy enforcement. The following sections will be added:
+#! NOTE: This procedure is a temporary form covering signer verification, per-procedure policy
+#! enforcement, and delayed execution. The following section will be added:
 #! - Spending Limits + Amount-Based Thresholds: a prologue that calls
 #!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
 #!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
 #!   the final `compute_tx_threshold` fallback.
-#! - TimelockedAccount: after signature verification, assert the execute-path vs.
-#!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
-#!   `ERR_EXECUTE_PATH_MISMATCH`), then call
-#!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
-#!   propose/cancel/execute state.
-@locals(2)
+@locals(31)
 pub proc auth_tx(user_params: [felt; 7])
     exec.native_account::incr_nonce drop
     # => [user_params(7)]
@@ -420,50 +444,134 @@ pub proc auth_tx(user_params: [felt; 7])
     exec.auth::create_tx_summary
     # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
 
-    # the commitment to the tx summary is the message that is signed; the preimage is inserted
-    # into the advice map for extraction by the host
+    # Stash the summary preimage so it can be hashed twice below without recomputing the (expensive)
+    # account delta commitment: once for the signed tx-summary commitment and once for the
+    # block-independent transaction effects commitment used to match a delayed-execution proposal.
+    loc_storew_le.AUTH_TX_SUMMARY_W0_LOC dropw
+    loc_storew_le.AUTH_TX_SUMMARY_W1_LOC dropw
+    loc_storew_le.AUTH_TX_SUMMARY_W2_LOC dropw
+    loc_storew_le.AUTH_TX_SUMMARY_W3_LOC dropw
+    loc_storew_le.AUTH_TX_SUMMARY_W4_LOC dropw
+    loc_storew_le.AUTH_TX_SUMMARY_W5_LOC dropw
+    # => []
+
+    # ------ Action commitment (block- and expiration-independent) ------
+    # Keys the delayed-execution proposal. It must be stable between the moment the target
+    # transaction is proposed and the (later, different-block) moment it is executed, so it excludes
+    # the reference block and the expiration delta, which are execution context rather than intent.
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W5_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W4_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W3_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W2_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W1_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W0_LOC
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
+    exec.auth::hash_tx_effects_commitment
+    # => [TX_EFFECTS_COMMITMENT]
+
+    loc_storew_le.AUTH_TX_EFFECTS_COMMITMENT_LOC dropw
+    # => []
+
+    # ------ Tx-summary commitment (the signed message) ------
+    # The commitment to the full tx summary is the message that is signed; the preimage is inserted
+    # into the advice map for extraction by the host. It binds the reference block, expiration, and
+    # user parameters, as required for signature verification.
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W5_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W4_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W3_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W2_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W1_LOC
+    padw loc_loadw_le.AUTH_TX_SUMMARY_W0_LOC
     exec.auth::hash_and_insert_tx_summary
     # => [TX_SUMMARY_COMMITMENT]
 
-    # ------ Reading threshold config (default + num_approvers) ------
-    exec.multisig::get_initial_threshold_and_num_approvers
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # Save default_threshold for the procedure-policy enforcement and the final tx-threshold
-    # fallback below.
-    dup loc_store.1
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # ------ Enforcing procedure policy (consumes default_threshold) ------
-    exec.enforce_procedure_policy
-    # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    loc_store.0
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # ------ Verifying approver signatures ------
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    exec.::miden::standards::auth::signature::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    # ------ Computing final transaction threshold ------
-    # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
-    # falls back to `default_threshold`; otherwise it returns the policy max directly.
-    loc_load.0
-    loc_load.1
-    # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    exec.compute_tx_threshold
-    # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    u32assert2 u32lt
-    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+    # ------ Dispatch ------
+    # A propose/cancel transaction verifies its own signatures inside the called procedure, so the
+    # auth procedure only enforces that nothing else was bundled with it. Any other transaction is
+    # treated as an execution and runs the full checks below.
+    exec.delayed_execution::was_propose_or_cancel_called
+    # => [was_propose_or_cancel, TX_SUMMARY_COMMITMENT]
 
     if.true
-        emit.AUTH_UNAUTHORIZED_EVENT
-        push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+        # A delay action must be the only non-auth procedure called, otherwise it could be bundled
+        # with a state-mutating procedure to bypass the timelock.
+        exec.tx_policy::assert_only_one_non_auth_procedure_called
+        # => [TX_SUMMARY_COMMITMENT]
+    else
+        # ------ Execution path ------
+        # The execution mode is delayed iff this transaction's action was proposed (and is therefore
+        # being executed through the timelock); otherwise it is immediate. Deriving the mode from
+        # proposal presence (rather than from the called procedures' policies) is what lets a
+        # procedure configured for both modes execute under its delayed threshold when it went
+        # through a proposal. The proposal is keyed by the transaction effects commitment, not the tx-summary
+        # commitment, so it matches across the block change between propose and execute.
+        padw loc_loadw_le.AUTH_TX_EFFECTS_COMMITMENT_LOC
+        # => [TX_EFFECTS_COMMITMENT, TX_SUMMARY_COMMITMENT]
+
+        exec.delayed_execution::is_tx_proposed
+        # => [execution_mode, TX_SUMMARY_COMMITMENT]
+
+        loc_store.AUTH_TX_EXECUTION_MODE_LOC
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # ------ Reading threshold config (default + num_approvers) ------
+        exec.multisig::get_initial_threshold_and_num_approvers
+        # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        dup loc_store.AUTH_TX_DEFAULT_THRESHOLD_LOC
+        # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        # ------ Enforcing procedure policy with the derived execution mode ------
+        loc_load.AUTH_TX_EXECUTION_MODE_LOC
+        # => [execution_mode, default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        exec.enforce_procedure_policy
+        # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        # ------ Computing the transaction threshold ------
+        # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
+        # falls back to `default_threshold`; otherwise it returns the policy max directly.
+        loc_load.AUTH_TX_DEFAULT_THRESHOLD_LOC
+        # => [default_threshold, policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        exec.compute_tx_threshold
+        # => [transaction_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        loc_store.AUTH_TX_TX_THRESHOLD_LOC
+        # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        # ------ Verifying approver signatures ------
+        exec.multisig::verify_signatures
+        # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+        # ------ Checking the threshold ------
+        loc_load.AUTH_TX_TX_THRESHOLD_LOC
+        # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+        u32assert2 u32lt
+        # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+        if.true
+            emit.AUTH_UNAUTHORIZED_EVENT
+            push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+        end
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # ------ Delayed execution: enforce the timelock and consume the proposal ------
+        loc_load.AUTH_TX_EXECUTION_MODE_LOC
+        # => [execution_mode, TX_SUMMARY_COMMITMENT]
+
+        if.true
+            padw loc_loadw_le.AUTH_TX_EFFECTS_COMMITMENT_LOC
+            # => [TX_EFFECTS_COMMITMENT, TX_SUMMARY_COMMITMENT]
+
+            exec.delayed_execution::assert_and_consume_proposal
+            # => [TX_SUMMARY_COMMITMENT]
+        end
+        # => [TX_SUMMARY_COMMITMENT]
     end
+    # => [TX_SUMMARY_COMMITMENT]
 end
 
 # HELPER PROCEDURES
@@ -755,30 +863,26 @@ end
 #! - asserts the union of note restrictions against the transaction's input/output notes,
 #! - returns the effective threshold required by the called procedure policies.
 #!
-#! Always uses IMMEDIATE_EXECUTION_MODE; procedures whose policies require the delayed mode
-#! panic via [`compute_called_proc_policy`] because this component has no timelock.
+#! Procedures whose policies require the opposite execution mode panic via
+#! [`compute_called_proc_policy`].
 #!
-#! Inputs:  [default_threshold]
+#! Inputs:  [execution_mode, default_threshold]
 #! Outputs: [policy_threshold]
 #!
 #! Where:
+#! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1). The auth
+#!   procedure derives it from proposal presence: a transaction executing through a delayed-
+#!   execution proposal runs in DELAYED mode, every other transaction in IMMEDIATE mode.
 #! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
 #!   contribution for any called procedure without an explicit policy.
 #!
 #! Invocation: exec
-#!
-#! NOTE: This procedure is a temporary form. Once the TimelockedAccount feature lands, the
-#! hardcoded IMMEDIATE_EXECUTION_MODE push will be replaced with a call to
-#! `timelock_controller::execution_mode`, and the procedure will also expose
-#! `policy_requires_delay` for downstream enforcement.
-proc enforce_procedure_policy(default_threshold: u32)
-    push.IMMEDIATE_EXECUTION_MODE
-    # => [execution_mode, default_threshold]
-
+proc enforce_procedure_policy(execution_mode: u32, default_threshold: u32)
     exec.compute_called_proc_policy
     # => [policy_threshold, policy_requires_delay, note_restrictions]
 
-    # policy_requires_delay is always 0 on IMMEDIATE_EXECUTION_MODE; drop it.
+    # The auth procedure derives the delayed mode from proposal presence, not from this flag, so
+    # `policy_requires_delay` is not needed here; drop it.
     swap drop
     # => [policy_threshold, note_restrictions]
 

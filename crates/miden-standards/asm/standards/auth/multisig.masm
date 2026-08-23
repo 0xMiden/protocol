@@ -654,6 +654,29 @@ pub proc get_initial_threshold_and_num_approvers
     # => [default_threshold, num_approvers]
 end
 
+#! Verifies the configured approver signatures over `MSG` and returns how many of them are valid.
+#!
+#! Thin wrapper over [`signature::verify_signatures`] that supplies this component's approver
+#! public-key and scheme-id storage slots, so callers don't need to know the slot layout. It does
+#! not enforce any threshold, the caller compares the returned count against the required threshold.
+#!
+#! Inputs:  [num_of_approvers, MSG]
+#! Outputs: [num_verified_signatures, MSG]
+#!
+#! Invocation: exec
+pub proc verify_signatures
+    # => [num_of_approvers, MSG]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, MSG]
+
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, MSG]
+
+    exec.::miden::standards::auth::signature::verify_signatures
+    # => [num_verified_signatures, MSG]
+end
+
 #! Records the transaction as executed and asserts it was not already executed, providing replay
 #! protection and finalizing multisig authentication.
 #!

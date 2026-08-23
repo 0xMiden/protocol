@@ -156,3 +156,71 @@ pub proc hash_and_insert_tx_summary(
     movup.4 drop movup.4 drop
     # => [TX_SUMMARY_COMMITMENT]
 end
+
+#! Hashes a transaction summary with the block commitment and expiration block delta zeroed out,
+#! yielding a commitment to the transaction's *effects* that is independent of its execution context.
+#!
+#! This mirrors the hashing of [`hash_and_insert_tx_summary`] exactly, except that it substitutes an
+#! empty word for `BLOCK_COMMITMENT` and a zero for `expiration_delta` in `PARAMS_HEAD`, and it does
+#! not insert the preimage into the advice map. The reference block and the expiration delta are
+#! execution context that legitimately differs between the moment a transaction is planned and the
+#! moment it runs, so binding them would make the commitment change across blocks. Everything that
+#! identifies the transaction's *effects* - the account delta, the input/output notes, and the user
+#! parameters - stays bound.
+#!
+#! It is used by the delayed-execution flow to key a proposal on a stable identifier: the proposer
+#! commits to the effects, and the auth procedure recomputes the same commitment when the
+#! transaction is later executed against a different reference block. Because it does not bind the
+#! reference block or expiration, it must not be used as the message that authorizes execution (that
+#! would reintroduce the binding gap that binding the block into the tx summary closed); execution is
+#! still authorized by signatures over the full tx-summary commitment.
+#!
+#! Inputs:  [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
+#!           BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+#! Outputs: [TX_EFFECTS_COMMITMENT]
+#!
+#! Where:
+#! - PARAMS_HEAD is the word [expiration_delta, user_param0, user_param1, user_param2] and
+#!   PARAMS_TAIL the word [user_param3, user_param4, user_param5, user_param6].
+#! - TX_EFFECTS_COMMITMENT is the block- and expiration-independent commitment to the transaction's
+#!   effects.
+#!
+#! Invocation: exec
+pub proc hash_tx_effects_commitment(
+    account_delta_commitment: word,
+    input_notes_commitment: word,
+    output_notes_commitment: word,
+    block_commitment: word,
+    params_head: word,
+    params_tail: word
+) -> word
+    # pad capacity element of the hasher
+    padw movdnw.2
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
+    exec.poseidon2::permute
+    dropw dropw
+    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
+    movdnw.2
+    # => [OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    # Replace BLOCK_COMMITMENT with an empty word so the commitment is block-independent.
+    swapw dropw padw swapw
+    # => [OUTPUT_NOTES_COMMITMENT, EMPTY_WORD, CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    exec.poseidon2::permute
+    dropw dropw
+    # => [CAPACITY, PARAMS_HEAD, PARAMS_TAIL]
+
+    movdnw.2
+    # => [PARAMS_HEAD, PARAMS_TAIL, CAPACITY]
+
+    # Zero the expiration_delta (top element of PARAMS_HEAD), keeping the user parameters.
+    drop push.0
+    # => [PARAMS_HEAD', PARAMS_TAIL, CAPACITY]
+
+    exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
+    # => [TX_EFFECTS_COMMITMENT]
+end
