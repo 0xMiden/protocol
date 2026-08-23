@@ -11,16 +11,14 @@
 ### Changes
 
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
-- [BREAKING] Widened the note metadata version field from 4 to 6 bits, moving the note type to bit 6 ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
-- [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
-- [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
-- The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
+- [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
 - [BREAKING] `NoteScript::from_parts` and `TransactionScript::from_parts` now return a `Result` instead of panicking when the specified entrypoint is not in the provided MAST forest ([#3548](https://github.com/0xMiden/protocol/pull/3548)).
 - [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#2961](https://github.com/0xMiden/protocol/pull/3565)).
+- The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
 - [BREAKING] Renamed the fungible asset amount extraction procedures so the unsuffixed name is the validating one ([#3576](https://github.com/0xMiden/protocol/pull/3576)):
   - `miden::protocol::asset::fungible_value_into_amount` -> `fungible_value_into_amount_unchecked`.
   - `miden::standards::assets::fungible_asset::value_into_amount` to `value_into_amount_unchecked`.
@@ -29,12 +27,15 @@
 - [BREAKING] AggLayer bridge and faucet account builders now take a concrete `BasicConstantFeePolicy` and fee faucet ID, constructing their `FeePolicyManager` internally ([#3583](https://github.com/0xMiden/protocol/pull/3583)).
 - [BREAKING] The transaction kernel no longer requires assets with `AssetComposition::None` to have the non-fungible asset layout ([#3624](https://github.com/0xMiden/protocol/pull/3624)).
 - [BREAKING] Refactored `Asset` into a struct holding `AssetId` and `AssetValue` ([#3625](https://github.com/0xMiden/protocol/pull/3625)).
-- [BREAKING] The account now carries an 8-bit version ([#3661](https://github.com/0xMiden/protocol/pull/3661)).
 - Moved the transaction kernel API procedures into the kernel's `api` submodule, leaving `exec_kernel_proc` as the only `syscall`-invocable kernel procedure ([#3646](https://github.com/0xMiden/protocol/pull/3646)).
 - Documented that standard note scripts claim only the assets remaining in a note at consumption time ([#3650](https://github.com/0xMiden/protocol/pull/3650)).
 - [BREAKING] Moved the kernel data section of the transaction kernel memory to address `0`, so that `exec_kernel_proc` becomes reusable across multiple kernels ([#3655](https://github.com/0xMiden/protocol/pull/3655)).
+- [BREAKING] The account now carries an 8-bit version ([#3661](https://github.com/0xMiden/protocol/pull/3661)).
 - [BREAKING] Added a 4-bit version to the lowest bits of the asset ID's metadata byte, moving the asset composition to bits 4-5 ([#3670](https://github.com/0xMiden/protocol/pull/3670)).
+- [BREAKING] Widened the note metadata version field from 4 to 6 bits, moving the note type to bit 6 ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
+- [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
+- [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
 
 ### Fixes
 
