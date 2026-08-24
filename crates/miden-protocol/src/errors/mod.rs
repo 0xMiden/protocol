@@ -1216,6 +1216,15 @@ pub enum BatchOutputError {
     ExpirationBlockNumberTooLarge(Felt),
 }
 
+// BLOCK OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockOutputError {
+    #[error("block kernel output stack is invalid: {0}")]
+    OutputStackInvalid(String),
+}
+
 // PROPOSED BLOCK ERROR
 // ================================================================================================
 

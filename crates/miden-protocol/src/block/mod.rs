@@ -10,6 +10,12 @@ pub use block_number::BlockNumber;
 mod block_proof;
 pub use block_proof::BlockProof;
 
+mod kernel;
+pub use kernel::BlockKernel;
+
+mod output;
+pub use output::BlockOutputs;
+
 mod proposed_block;
 pub use proposed_block::ProposedBlock;
 

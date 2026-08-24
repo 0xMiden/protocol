@@ -7,6 +7,7 @@
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
+- [BREAKING] Added the block kernel skeleton, establishing its `[PREV_BLOCK_COMMITMENT, BATCHES_COMMITMENT]` to `[BLOCK_COMMITMENT, NULLIFIER_COMMITMENT]` contract along with `BlockKernel`, `BlockOutputs`, `OrderedBatches::commitment` and the `BlockExecutor` / `LocalBlockProver` plumbing; `BlockProof` now carries an `ExecutionProof` ([#1706](https://github.com/0xMiden/protocol/issues/1706)).
 
 ### Changes
 

@@ -1,46 +1,61 @@
-use miden_protocol::batch::OrderedBatches;
-use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof};
+use miden_protocol::block::BlockProof;
+use miden_prover::{ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
 
-use crate::BlockProverError;
+use crate::{BlockProverError, ExecutedBlock};
 
 // LOCAL BLOCK PROVER
 // ================================================================================================
 
 /// A local prover for blocks in the chain.
-#[derive(Clone)]
-pub struct LocalBlockProver {}
+///
+/// Proves an [`ExecutedBlock`] (produced by [`BlockExecutor`](crate::BlockExecutor)) into a
+/// [`BlockProof`] over the block's public commitments.
+///
+/// # Warning
+///
+/// The current block kernel is a skeleton that drops its inputs and emits an all-zero output
+/// region, so the produced proof attests only that the kernel program ran over the block's
+/// `[PREV_BLOCK_COMMITMENT, BATCHES_COMMITMENT]` public inputs. It does **not** yet bind the
+/// block's account updates, notes or nullifiers, so a block whose contents were mutated would
+/// still carry a valid proof. This must therefore not be relied on at a trust boundary until the
+/// kernel verification logic that emits and binds the real commitments lands.
+#[derive(Clone, Default)]
+pub struct LocalBlockProver {
+    proving_options: ProvingOptions,
+}
 
 impl LocalBlockProver {
     /// Creates a new [`LocalBlockProver`] instance.
     pub fn new(_proof_security_level: u32) -> Self {
         // TODO: This will eventually take the security level as a parameter, but until we verify
-        // batches it is ignored.
-        Self {}
+        // blocks it is ignored.
+        Self::default()
     }
 
-    /// Generates a proof of a block in the chain based on the given header and inputs.
+    /// Proves the [`ExecutedBlock`] into a [`BlockProof`].
     ///
-    /// NOTE: Block proving is not yet implemented. This is a placeholder struct.
-    pub fn prove(
-        &self,
-        _tx_batches: OrderedBatches,
-        _block_header: &BlockHeader,
-        _block_inputs: BlockInputs,
-    ) -> Result<BlockProof, BlockProverError> {
-        Ok(BlockProof {})
+    /// Builds the execution trace from the executed block and generates the proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if proof generation fails.
+    pub fn prove(&self, executed_block: ExecutedBlock) -> Result<BlockProof, BlockProverError> {
+        let trace_inputs = executed_block.into_trace_inputs();
+
+        let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
+            trace_inputs,
+            self.proving_options.clone(),
+        ))
+        .map_err(BlockProverError::BlockKernelExecutionFailed)?;
+
+        Ok(BlockProof::new(proof))
     }
 
-    /// A mock implementation of the execution of a proof of a block in the chain based on the given
-    /// header and inputs.
+    /// Returns a [`BlockProof`] carrying a dummy execution proof, without running the block kernel.
     ///
     /// This is exposed for testing purposes.
     #[cfg(any(feature = "testing", test))]
-    pub fn prove_dummy(
-        &self,
-        _tx_batches: OrderedBatches,
-        _block_header: BlockHeader,
-        _block_inputs: BlockInputs,
-    ) -> Result<BlockProof, BlockProverError> {
-        Ok(BlockProof {})
+    pub fn prove_dummy(&self) -> BlockProof {
+        BlockProof::new_dummy()
     }
 }

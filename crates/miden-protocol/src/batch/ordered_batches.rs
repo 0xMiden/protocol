@@ -9,6 +9,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{Hasher, Word};
 
 // ORDERED BATCHES
 // ================================================================================================
@@ -30,6 +31,24 @@ impl OrderedBatches {
     /// Returns a reference to the underlying proven batches.
     pub fn as_slice(&self) -> &[ProvenBatch] {
         &self.0
+    }
+
+    /// Computes a commitment to the batches in this block.
+    ///
+    /// This is a sequential hash over the [`BatchId`](crate::batch::BatchId) of each batch, in
+    /// order. Since a batch ID is itself a commitment to the batch's transactions, this commits to
+    /// the transactions of the block as well as to the way they are grouped into batches and the
+    /// order of those groups.
+    ///
+    /// The hashed element sequence is `BATCH_ID_0 || BATCH_ID_1 || ... || BATCH_ID_N`, where each
+    /// batch ID contributes its four field elements.
+    pub fn commitment(&self) -> Word {
+        let mut elements = Vec::with_capacity(self.0.len() * Word::NUM_ELEMENTS);
+        for batch in self.0.iter() {
+            elements.extend_from_slice(batch.id().as_word().as_elements());
+        }
+
+        Hasher::hash_elements(&elements)
     }
 
     /// Converts the transactions in batches into ordered transaction headers.
