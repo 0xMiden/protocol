@@ -1,6 +1,5 @@
 use alloc::vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -52,17 +51,11 @@ static ACTIVE_RATE_PROVIDER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 ///
 /// Install it alongside a rate provider on the same account and an
 /// [`Authority`][crate::account::access::Authority], which gates `set_rate_provider`.
-/// `get_conversion_rate` dispatches to whichever provider is registered in
-/// [`PriceOracle::active_rate_provider_slot`], so the pricing can be replaced without changing the
-/// MAST root consumers reach it by.
-///
-/// The wrapper is a stable address, NOT a gate. A dispatch target must itself be an account
-/// procedure to be `dyncall` reachable, which also makes it reachable directly over FPI, so a rate
-/// provider cannot rely on the wrapper having run first: every guarantee it needs, including its
-/// transaction expiration delta, has to be enforced in its own body.
+/// `get_conversion_rate` invokes the registered provider dynamically, so the pricing can be
+/// replaced without changing the procedure root consumers reach it by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PriceOracle {
-    rate_provider: Option<AccountProcedureRoot>,
+    rate_provider: AccountProcedureRoot,
 }
 
 impl PriceOracle {
@@ -72,21 +65,12 @@ impl PriceOracle {
     pub(crate) const GET_CONVERSION_RATE_PROC_NAME: &'static str = "get_conversion_rate";
     const SET_RATE_PROVIDER_PROC_NAME: &'static str = "set_rate_provider";
 
-    /// Creates an oracle with no rate provider attached yet.
-    ///
-    /// `get_conversion_rate` aborts until one is registered, either at genesis through
-    /// [`PriceOracle::with_rate_provider`] or later through the `set_rate_provider` procedure.
-    pub const fn new() -> Self {
-        Self { rate_provider: None }
-    }
-
-    /// Registers the rate provider `get_conversion_rate` dispatches to.
+    /// Creates an oracle dispatching to the given rate provider.
     ///
     /// The root must belong to a procedure of the same account, since `dyncall` only reaches the
     /// account's own procedures.
-    pub const fn with_rate_provider(mut self, rate_provider: AccountProcedureRoot) -> Self {
-        self.rate_provider = Some(rate_provider);
-        self
+    pub const fn new(rate_provider: AccountProcedureRoot) -> Self {
+        Self { rate_provider }
     }
 
     /// Returns the canonical [`AccountComponentName`] of this component.
@@ -100,9 +84,6 @@ impl PriceOracle {
     }
 
     /// Returns the procedure root of the `get_conversion_rate` account procedure.
-    ///
-    /// This is the address consumers resolve over FPI. It must not change across releases: see the
-    /// type-level documentation.
     pub fn get_conversion_rate_root() -> AccountProcedureRoot {
         *PRICE_ORACLE_GET_CONVERSION_RATE_ROOT
     }
@@ -117,8 +98,8 @@ impl PriceOracle {
         &ACTIVE_RATE_PROVIDER_SLOT_NAME
     }
 
-    /// Returns the registered rate provider, or `None` when none is attached.
-    pub const fn rate_provider(&self) -> Option<AccountProcedureRoot> {
+    /// Returns the registered rate provider.
+    pub const fn rate_provider(&self) -> AccountProcedureRoot {
         self.rate_provider
     }
 
@@ -144,21 +125,13 @@ impl PriceOracle {
     }
 }
 
-impl Default for PriceOracle {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl From<PriceOracle> for AccountComponent {
     fn from(oracle: PriceOracle) -> Self {
-        let rate_provider = oracle.rate_provider.map_or_else(Word::empty, |root| *root.mast_root());
-
         AccountComponent::new(
             PriceOracle::code().clone(),
             vec![StorageSlot::with_value(
                 PriceOracle::active_rate_provider_slot().clone(),
-                rate_provider,
+                *oracle.rate_provider.mast_root(),
             )],
             PriceOracle::component_metadata(),
         )

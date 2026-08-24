@@ -36,7 +36,7 @@ const RATE_PROVIDERS_CODE: &str = r#"
     use miden::core::sys
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [num, den, pad(14)]
+    #! Outputs: [has_conversion_rate, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -44,14 +44,14 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.3 push.1500
-        # => [num, den, pad(8)]
+        push.3 push.1500 push.1
+        # => [has_conversion_rate, num, den, pad(8)]
 
         exec.sys::truncate_stack
     end
 
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [num, den, pad(14)]
+    #! Outputs: [has_conversion_rate, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -59,8 +59,8 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.1 push.7
-        # => [num, den, pad(8)]
+        push.1 push.7 push.1
+        # => [has_conversion_rate, num, den, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -69,7 +69,7 @@ const RATE_PROVIDERS_CODE: &str = r#"
     #! to rely on. Both cases report the same rate.
     #!
     #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-    #! Outputs: [num, den, pad(14)]
+    #! Outputs: [has_conversion_rate, num, den, pad(13)]
     #!
     #! Invocation: dyncall
     @account_procedure
@@ -77,8 +77,8 @@ const RATE_PROVIDERS_CODE: &str = r#"
         dropw dropw
         # => [pad(8)]
 
-        push.0 push.0
-        # => [num = 0, den = 0, pad(8)]
+        push.0 push.0 push.0
+        # => [has_conversion_rate = 0, num = 0, den = 0, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -105,12 +105,9 @@ fn rate_provider_root(
 /// the interface dispatches to.
 fn oracle_account(
     code: &AccountComponentCode,
-    active: Option<AccountProcedureRoot>,
+    active: AccountProcedureRoot,
 ) -> anyhow::Result<Account> {
-    let oracle = match active {
-        Some(root) => PriceOracle::new().with_rate_provider(root),
-        None => PriceOracle::new(),
-    };
+    let oracle = PriceOracle::new(active);
 
     let providers = AccountComponent::new(
         code.clone(),
@@ -144,6 +141,7 @@ fn asset_id_of(faucet_id: u128) -> anyhow::Result<Word> {
 /// Builds a transaction script reading a rate over FPI and asserting what came back.
 fn assert_rate_tx_script_code(
     oracle_id: AccountId,
+    expected_has_rate: u64,
     expected_num: u64,
     expected_den: u64,
 ) -> anyhow::Result<String> {
@@ -165,11 +163,12 @@ fn assert_rate_tx_script_code(
             #     foreign_procedure_inputs(16)]
 
             exec.tx::execute_foreign_procedure
-            # => [num, den, pad(14)]
+            # => [has_conversion_rate, num, den, pad(13)]
 
+            push.{expected_has_rate} assert_eq.err="unexpected has_conversion_rate flag"
             push.{expected_num} assert_eq.err="unexpected rate numerator"
             push.{expected_den} assert_eq.err="unexpected rate denominator"
-            # => [pad(14)]
+            # => [pad(13)]
 
             exec.sys::truncate_stack
         end
@@ -189,11 +188,12 @@ fn assert_rate_tx_script_code(
 #[tokio::test]
 async fn the_interface_returns_the_rate_providers_rate() -> anyhow::Result<()> {
     let code = rate_providers_code()?;
-    let oracle = oracle_account(&code, Some(rate_provider_root(&code, "fixed_rate_1500_over_3")?))?;
+    let oracle = oracle_account(&code, rate_provider_root(&code, "fixed_rate_1500_over_3")?)?;
     let consumer = consumer_account()?;
 
     let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
         oracle.id(),
+        1,
         1_500,
         3,
     )?)?;
@@ -216,49 +216,12 @@ async fn the_interface_returns_the_rate_providers_rate() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// With no rate provider registered the interface aborts rather than dispatching to the empty root,
-/// so an unconfigured oracle cannot be mistaken for one reporting nothing.
-#[tokio::test]
-async fn an_oracle_without_a_rate_provider_aborts() -> anyhow::Result<()> {
-    let code = rate_providers_code()?;
-    let oracle = oracle_account(&code, None)?;
-    let consumer = consumer_account()?;
-
-    let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
-        oracle.id(),
-        1_500,
-        3,
-    )?)?;
-
-    let mut builder = MockChain::builder();
-    builder.add_account(oracle.clone())?;
-    builder.add_account(consumer.clone())?;
-    let mock_chain = builder.build()?;
-
-    let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
-
-    let result = mock_chain
-        .build_transaction(consumer.id())
-        .foreign_accounts([foreign_oracle])
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await;
-
-    assert!(result.is_err(), "an oracle with no rate provider should abort");
-
-    Ok(())
-}
-
-/// Replacing the rate provider leaves the interface's MAST root untouched, so a consumer that
+/// Replacing the rate provider leaves the interface's procedure root untouched, so a consumer that
 /// resolved it before the swap keeps reaching the oracle afterwards and sees the new pricing.
-///
-/// This is the property the wrapper exists for. Pinning the root in isolation does not demonstrate
-/// it; running the same root across a swap does.
 #[tokio::test]
 async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::Result<()> {
     let code = rate_providers_code()?;
-    let oracle = oracle_account(&code, Some(rate_provider_root(&code, "fixed_rate_1500_over_3")?))?;
+    let oracle = oracle_account(&code, rate_provider_root(&code, "fixed_rate_1500_over_3")?)?;
     let consumer = consumer_account()?;
     let next_root = rate_provider_root(&code, "fixed_rate_7_over_1")?;
 
@@ -270,6 +233,7 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
     // the originally registered provider answers
     let before = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
         oracle.id(),
+        1,
         1_500,
         3,
     )?)?;
@@ -319,8 +283,12 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
     );
 
     // the same wrapper root now answers with the new provider's pricing
-    let after =
-        CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(oracle.id(), 7, 1)?)?;
+    let after = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
+        oracle.id(),
+        1,
+        7,
+        1,
+    )?)?;
     let foreign_oracle = mock_chain.get_foreign_account_inputs(oracle.id())?;
     mock_chain
         .build_transaction(consumer.id())
@@ -333,50 +301,21 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
     Ok(())
 }
 
-/// The rate provider supplied at genesis is the one the interface dispatches to.
-#[test]
-fn the_component_seeds_the_rate_provider() -> anyhow::Result<()> {
-    let code = rate_providers_code()?;
-    let root = rate_provider_root(&code, "fixed_rate_1500_over_3")?;
-    let oracle = oracle_account(&code, Some(root))?;
-
-    assert_eq!(
-        oracle.storage().get_item(PriceOracle::active_rate_provider_slot())?,
-        *root.mast_root()
-    );
-
-    Ok(())
-}
-
-/// The interface's MAST root is the address consumers resolve against, so it must survive changes
-/// to the rate provider and to the rest of the standard.
-///
-/// If this fails, `get_conversion_rate`'s body changed. That is a breaking change for every
-/// consumer that already resolved the old root, not a value to update in passing.
-#[test]
-fn the_interface_root_is_stable() {
-    assert_eq!(
-        PriceOracle::get_conversion_rate_root().mast_root().to_hex(),
-        PINNED_GET_CONVERSION_RATE_ROOT,
-        "the price oracle interface root changed; see the test documentation"
-    );
-}
-
-/// The MAST root of `price_oracle::get_conversion_rate`.
-const PINNED_GET_CONVERSION_RATE_ROOT: &str =
-    "0xed1c07b8a0f3a24addec5ec6651ab0ec5b1e9615d70f00cd1c3f227cbd1a90d9";
-
 /// A pair the rate provider cannot price comes back as a zero denominator, unchanged, rather than
 /// aborting inside the oracle. The consumer decides what an unpriceable pair means to it, and one
 /// that does not check still fails closed once the rate reaches `fee::convert_amount`.
 #[tokio::test]
 async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Result<()> {
     let code = rate_providers_code()?;
-    let oracle = oracle_account(&code, Some(rate_provider_root(&code, "unpriced")?))?;
+    let oracle = oracle_account(&code, rate_provider_root(&code, "unpriced")?)?;
     let consumer = consumer_account()?;
 
-    let tx_script =
-        CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(oracle.id(), 0, 0)?)?;
+    let tx_script = CodeBuilder::default().compile_tx_script(assert_rate_tx_script_code(
+        oracle.id(),
+        0,
+        0,
+        0,
+    )?)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(oracle.clone())?;

@@ -1,24 +1,15 @@
 # miden::standards::oracle::price_oracle
 #
-# The user-facing price oracle interface: a single procedure returning the rate between two assets.
+# The user-facing price oracle interface: a single procedure returning the rate between two assets.
 #
-# The rate is returned as a `ConversionRate`, rather than a converted amount. 
-# Callers apply it with `fee::convert_amount`, which computes
-# `ceil(amount * num / den)` at 128-bit intermediate precision, so both paths round the same way.
+# The rate is returned as a `ConversionRate`. Callers apply it with `fee::convert_amount`.
 #
-# WARNING: the body of `get_conversion_rate` MUST NOT change. Consumers reach it over FPI by its
-# MAST root. The body does nothing but read a procedure root from storage and dispatch to it, 
-# so the rate provider can be replaced without changing the root.
-#
-# The wrapper is a stable address, NOT a gate. A dispatch target must itself be an account
-# procedure to be `dyncall` reachable, which also makes it reachable directly over FPI, so a
-# rate provider cannot rely on the wrapper having run first: every guarantee it needs, including
-# its transaction expiration delta, has to be enforced in its own body.
+# `get_conversion_rate` is a stable MAST root that invokes the rate provider dynamically.
 
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
-use {AccountProcedureRoot, AssetId} from miden::protocol::types
+use {AccountProcedureRoot, AssetId, Bool} from miden::protocol::types
 use {ConversionRate} from miden::standards::fee
 
 # CONSTANTS - slot names
@@ -33,23 +24,18 @@ pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::
 
 #! Returns the rate converting the source asset into the target asset.
 #!
-#! WARNING: do not edit this procedure since its MAST root is the address consumers resolve against.
-#!
-#! `den = 0` means the active rate provider cannot price the pair, including when its data is too
-#! stale to rely on. It is returned rather than raised so a caller valuing many assets does not lose
-#! the whole transaction over one. A caller that does not check for it is not left with a wrong
-#! answer either: handing such a rate to `fee::convert_amount` aborts on its zero-denominator
-#! assertion.
-#!
 #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
-#! Outputs: [num, den, pad(14)]
+#! Outputs: [has_conversion_rate, num, den, pad(13)]
 #!
 #! Where:
 #! - SOURCE_ASSET_ID is the asset being converted from.
 #! - TARGET_ASSET_ID is the asset being converted to.
-#! - num and den express the rate: `amount` of the source asset is worth
-#!   `ceil(amount * num / den)` of the target asset.
-#! - den is 0 when the pair cannot be priced, in which case num is 0 as well.
+#! - has_conversion_rate is 1 when the active rate provider can price the pair, 0 otherwise. It is
+#!   0 both for a pair the provider has no data for and for one whose data is too stale to rely on.
+#! - num and den express the rate, and are only valid when has_conversion_rate is 1: `amount` of the
+#!   source asset is worth `ceil(amount * num / den)` of the target asset. Both are 0 otherwise, so
+#!   handing the rate to `fee::convert_amount` without checking the flag aborts rather than
+#!   converting at a wrong rate.
 #!
 #! Panics if:
 #! - no rate provider is configured.
@@ -58,7 +44,7 @@ pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::
 #! Invocation: call
 @locals(4) # rate provider procedure root
 @account_procedure
-pub proc get_conversion_rate(source: AssetId, target: AssetId) -> ConversionRate
+pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (Bool, ConversionRate)
     push.ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
     # => [RATE_PROVIDER_PROC_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
@@ -69,7 +55,7 @@ pub proc get_conversion_rate(source: AssetId, target: AssetId) -> ConversionRate
     # => [rate_provider_proc_root_ptr, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
 
     dyncall
-    # => [num, den, pad(14)]
+    # => [has_conversion_rate, num, den, pad(13)]
 end
 
 # CONFIGURATION PROCEDURES

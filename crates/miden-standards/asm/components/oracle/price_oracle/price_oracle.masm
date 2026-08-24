@@ -1,7 +1,6 @@
 # The MASM code of the Price Oracle Account Component.
 #
-# Exposes the user-facing `get_conversion_rate`, whose MAST root is the address consumers resolve
-# against and must therefore stay stable, plus the authority-gated setter selecting the rate
+# Exposes the user-facing `get_conversion_rate`, plus the authority-gated setter selecting the rate
 # provider it dispatches to.
 #
 # See the `PriceOracle` Rust type's documentation for more details.

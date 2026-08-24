@@ -1,4 +1,22 @@
-use miden_protocol::{Felt, Word};
+use miden_protocol::Felt;
+use miden_protocol::account::AccountId;
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::errors::AssetError;
+
+// ERRORS
+// ================================================================================================
+
+/// Errors that can occur when applying a [`ConversionRate`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ConversionRateError {
+    #[error("cannot convert at a rate whose numerator or denominator is zero")]
+    RateUnpriced,
+    #[error("converted amount {0} does not fit in a u64")]
+    ConvertedAmountTooBig(u128),
+    #[error("failed to build the converted asset")]
+    Asset(#[from] AssetError),
+}
 
 // CONVERSION RATE
 // ================================================================================================
@@ -10,9 +28,7 @@ use miden_protocol::{Felt, Word};
 /// the `ConversionRate` the fee standard applies in `fee::convert_amount`.
 ///
 /// `den = 0` means the oracle cannot price the pair, including when its data is too stale to rely
-/// on. It is returned rather than raised so a caller valuing many assets does not lose the whole
-/// transaction over one. A caller that does not check for it is not left with a wrong answer
-/// either: handing such a rate to `fee::convert_amount` aborts on its zero-denominator assertion.
+/// on. `num` is 0 as well in that case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConversionRate {
     num: Felt,
@@ -45,8 +61,35 @@ impl ConversionRate {
         self.den != Felt::ZERO
     }
 
-    /// Returns the rate as the operand stack layout `[num, den, 0, 0]`.
-    pub fn to_word(self) -> Word {
-        Word::new([self.num, self.den, Felt::ZERO, Felt::ZERO])
+    /// Converts a fungible asset into one issued by `target_faucet_id` at this rate.
+    ///
+    /// The converted amount is `ceil(amount * num / den)`, which is what `fee::convert_amount`
+    /// computes on chain, so both sides round the same way. The intermediate product is held in a
+    /// `u128`, which cannot overflow because an asset amount and a rate term each fit in a `u64`.
+    ///
+    /// The target faucet is a parameter rather than part of the rate: a rate is a pure ratio and
+    /// carries no asset identity, so the same one converts between any pair it was derived for.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the rate cannot price the pair, if the converted amount does not fit in
+    /// a `u64`, or if it exceeds [`FungibleAsset::MAX_AMOUNT`].
+    pub fn convert(
+        &self,
+        source: FungibleAsset,
+        target_faucet_id: AccountId,
+    ) -> Result<FungibleAsset, ConversionRateError> {
+        let num = self.num.as_canonical_u64();
+        let den = self.den.as_canonical_u64();
+        if num == 0 || den == 0 {
+            return Err(ConversionRateError::RateUnpriced);
+        }
+
+        let converted =
+            (u128::from(source.amount().as_u64()) * u128::from(num)).div_ceil(u128::from(den));
+        let converted = u64::try_from(converted)
+            .map_err(|_| ConversionRateError::ConvertedAmountTooBig(converted))?;
+
+        Ok(FungibleAsset::new(target_faucet_id, converted)?)
     }
 }
