@@ -151,7 +151,7 @@ impl TryFrom<proto::blockchain::PartialBlockchain> for PartialBlockchain {
 impl From<&BlockHeader> for proto::blockchain::BlockHeader {
     fn from(header: &BlockHeader) -> Self {
         Self {
-            version: header.version(),
+            version: u32::from(header.version()),
             prev_block_commitment: Some(header.prev_block_commitment().into()),
             block_num: header.block_num().as_u32(),
             chain_commitment: Some(header.chain_commitment().into()),
@@ -186,6 +186,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
 
     fn try_from(value: proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
+        let version = value.version;
         let prev_block_commitment = required!(decoder, value.prev_block_commitment)?;
         let chain_commitment = required!(decoder, value.chain_commitment)?;
         let account_root = required!(decoder, value.account_root)?;
@@ -204,8 +205,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
             .context("validator_keys")?;
         let fee_parameters = required!(decoder, value.fee_parameters)?;
 
-        Ok(BlockHeader::new(
-            value.version,
+        let header = BlockHeader::new(
             prev_block_commitment,
             value.block_num.into(),
             chain_commitment,
@@ -217,7 +217,17 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
             validator_keys,
             fee_parameters,
             value.timestamp,
-        ))
+        );
+
+        let supported_version = u32::from(header.version());
+        if version != supported_version {
+            return Err(ConversionError::message(format!(
+                "block version is {version} but only version {supported_version} is supported"
+            ))
+            .context("version"));
+        }
+
+        Ok(header)
     }
 }
 
