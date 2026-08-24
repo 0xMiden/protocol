@@ -1342,6 +1342,15 @@ async fn check_consumability(
 /// the intact pairs are never rebuilt. A FEE_SPONSORSHIP note whose feature note is absent but
 /// which the account can reclaim poisons a batch the same way, for the same reason.
 ///
+/// Writing `F` for a feature note, `S` for the sponsorship bound to it and `S'` for an underfunded
+/// one, the cases below are:
+///
+/// ```text
+/// [F0, S0]           ->  successful {F0, S0}          failed {}
+/// [F0, S0, F1]       ->  successful {}                failed {F0, S0, F1}
+/// [F0, S0, F1, S1']  ->  successful {}                failed {F0, S0, F1, S1'}
+/// ```
+///
 /// This is the checker's limitation rather than the desired behaviour, so these assertions are
 /// expected to change once it can eliminate such pairs atomically.
 #[rstest]
