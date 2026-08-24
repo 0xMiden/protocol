@@ -209,8 +209,7 @@ struct PolicyConfig {
 /// least one send or receive policy of either kind is registered - active or reserved - even when
 /// only reserved policies exist and no active root is set yet (see [`Self::has_transfer_policy`]).
 /// Installing those slots is what makes the faucet's account ID carry
-/// [`AssetCallbackFlag::Enabled`][miden_protocol::account::AssetCallbackFlag::Enabled], since
-/// [`AccountBuilder`][miden_protocol::account::AccountBuilder] derives the flag from them. Because
+/// [`AssetCallbackFlag::Enabled`][miden_protocol::account::AssetCallbackFlag::Enabled]. Because
 /// the flag is an immutable property of the account ID, it applies for the faucet's entire
 /// lifetime, so promoting a reserved policy later via `set_send_policy` / `set_receive_policy`
 /// enforces it against the whole circulating supply rather than only assets minted after the
