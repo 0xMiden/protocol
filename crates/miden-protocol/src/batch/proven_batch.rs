@@ -123,14 +123,15 @@ impl ProvenBatch {
     /// Creates a new [`ProvenBatch`] from the provided parts without checking any constraints
     /// except the expiration constraint listed below.
     ///
-    /// This should essentially never be called by users.
+    /// Callers must ensure that the batch satisfies the structural constraints checked by
+    /// [`ProvenBatch::new`].
     ///
     /// # Errors
     ///
     /// Returns an error if the batch expiration block number is not greater than the reference
     /// block number.
     #[allow(clippy::too_many_arguments)]
-    pub fn new_unchecked(
+    pub(crate) fn new_unchecked(
         id: BatchId,
         reference_block_commitment: Word,
         reference_block_num: BlockNumber,

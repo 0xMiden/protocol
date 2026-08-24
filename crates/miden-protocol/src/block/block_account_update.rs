@@ -31,19 +31,22 @@ pub struct BlockAccountUpdate {
 }
 
 impl BlockAccountUpdate {
-    /// Returns a validated block account update.
-    pub fn try_new(
+    /// Returns a new validated [`BlockAccountUpdate`].
+    pub fn new(
         account_id: AccountId,
         final_state_commitment: Word,
         details: AccountUpdateDetails,
     ) -> Result<Self, BlockAccountUpdateError> {
-        let update = Self::new(account_id, final_state_commitment, details);
+        let update = Self::new_unchecked(account_id, final_state_commitment, details);
         update.validate()?;
         Ok(update)
     }
 
-    /// Returns a new [BlockAccountUpdate] instantiated from the specified components.
-    pub const fn new(
+    /// Returns a new [`BlockAccountUpdate`] without validating its invariants.
+    ///
+    /// Callers must ensure that the update details are compatible with the account ID and that a
+    /// full-state public account update matches the final state commitment.
+    pub(crate) const fn new_unchecked(
         account_id: AccountId,
         final_state_commitment: Word,
         details: AccountUpdateDetails,
@@ -101,7 +104,7 @@ impl Serializable for BlockAccountUpdate {
 
 impl Deserializable for BlockAccountUpdate {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Self::try_new(
+        Self::new(
             AccountId::read_from(source)?,
             Word::read_from(source)?,
             AccountUpdateDetails::read_from(source)?,
@@ -142,7 +145,7 @@ mod tests {
     fn accepts_full_state_patch_matching_final_commitment() {
         let (account, patch) = public_account_and_full_patch();
 
-        BlockAccountUpdate::try_new(
+        BlockAccountUpdate::new(
             account.id(),
             account.to_commitment(),
             AccountUpdateDetails::Public(patch),
@@ -157,7 +160,7 @@ mod tests {
         let account_commitment = account.to_commitment();
         assert_ne!(final_state_commitment, account_commitment);
 
-        let error = BlockAccountUpdate::try_new(
+        let error = BlockAccountUpdate::new(
             account.id(),
             final_state_commitment,
             AccountUpdateDetails::Public(patch),
@@ -180,7 +183,7 @@ mod tests {
         let final_state_commitment = Word::empty();
         let account_commitment = account.to_commitment();
         assert_ne!(final_state_commitment, account_commitment);
-        let invalid_update = BlockAccountUpdate::new(
+        let invalid_update = BlockAccountUpdate::new_unchecked(
             account.id(),
             final_state_commitment,
             AccountUpdateDetails::Public(patch),
@@ -201,7 +204,7 @@ mod tests {
     fn accepts_partial_public_account_patch() {
         let (account, _) = public_account_and_full_patch();
 
-        BlockAccountUpdate::try_new(
+        BlockAccountUpdate::new(
             account.id(),
             Word::empty(),
             AccountUpdateDetails::Public(AccountPatch::empty(account.id())),

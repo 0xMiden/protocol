@@ -134,9 +134,9 @@ impl BlockBody {
     ///
     /// # Warning
     ///
-    /// This does not validate any of the guarantees of this type. It should only be used internally
-    /// (in miden-lib) or in tests.
-    pub fn new_unchecked(
+    /// Callers must ensure that the block body satisfies the structural constraints checked by
+    /// [`BlockBody::new`].
+    pub(crate) fn new_unchecked(
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
@@ -247,7 +247,9 @@ impl From<ProposedBlock> for BlockBody {
                     _initial_state_proof,
                     details,
                 ) = update_witness.into_parts();
-                BlockAccountUpdate::new(account_id, final_state_commitment, details)
+                // The proposed block's account update witnesses were validated while the block
+                // was assembled.
+                BlockAccountUpdate::new_unchecked(account_id, final_state_commitment, details)
             })
             .collect();
         let created_nullifiers = created_nullifiers.keys().copied().collect::<Vec<_>>();

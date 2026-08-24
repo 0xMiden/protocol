@@ -242,6 +242,7 @@ impl MockChain {
     pub(super) fn from_genesis_block(
         genesis_block: ProvenBlock,
         account_tree: AccountTree,
+        private_accounts: BTreeMap<AccountId, Account>,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_keys: Vec<SigningKey>,
         genesis_notes: Vec<Note>,
@@ -254,7 +255,7 @@ impl MockChain {
             pending_transactions: Vec::new(),
             pending_batches: Vec::new(),
             committed_notes: BTreeMap::new(),
-            committed_accounts: BTreeMap::new(),
+            committed_accounts: private_accounts,
             account_authenticators,
             validator_secret_keys: secret_keys,
         };
@@ -1292,6 +1293,27 @@ mod tests {
         let block = chain.prove_until_block(5)?;
         assert_eq!(block.header().block_num(), 5u32.into());
         assert_eq!(chain.proven_blocks().len(), 6);
+
+        Ok(())
+    }
+
+    #[test]
+    fn genesis_private_account_uses_private_update_details() -> anyhow::Result<()> {
+        let account_builder = AccountBuilder::new([5; 32])
+            .account_type(AccountType::Private)
+            .with_component(BasicWallet);
+        let mut builder = MockChain::builder();
+        let account = builder.add_account_from_builder(
+            Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+            account_builder,
+            AccountState::Exists,
+        )?;
+
+        let chain = builder.build()?;
+        let update = &chain.blocks[0].body().updated_accounts()[0];
+
+        assert!(update.details().is_private());
+        assert_eq!(chain.committed_account(account.id())?, &account);
 
         Ok(())
     }

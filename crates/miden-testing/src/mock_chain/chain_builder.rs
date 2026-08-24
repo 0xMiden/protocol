@@ -200,6 +200,15 @@ impl MockChainBuilder {
 
     /// Consumes the builder, creates the genesis block of the chain and returns the [`MockChain`].
     pub fn build(self) -> anyhow::Result<MockChain> {
+        // The genesis block only publishes commitments for private accounts, but the mock chain
+        // retains their concrete state so tests can execute transactions against them.
+        let private_accounts = self
+            .accounts
+            .iter()
+            .filter(|(account_id, _)| account_id.is_private())
+            .map(|(account_id, account)| (*account_id, account.clone()))
+            .collect();
+
         // Create the genesis block, consisting of the provided accounts and notes.
         let block_account_updates: Vec<BlockAccountUpdate> = self
             .accounts
@@ -207,13 +216,17 @@ impl MockChainBuilder {
             .map(|account| {
                 let account_id = account.id();
                 let account_commitment = account.to_commitment();
-                let account_patch = AccountPatch::try_from(account)
-                    .expect("chain builder should only store existing accounts without seeds");
-                let update_details = AccountUpdateDetails::Public(account_patch);
+                let update_details = if account_id.is_private() {
+                    AccountUpdateDetails::Private
+                } else {
+                    let account_patch = AccountPatch::try_from(account)
+                        .expect("chain builder should only store existing accounts without seeds");
+                    AccountUpdateDetails::Public(account_patch)
+                };
 
                 BlockAccountUpdate::new(account_id, account_commitment, update_details)
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         let account_tree = AccountTree::with_entries(
             block_account_updates
@@ -279,12 +292,12 @@ impl MockChainBuilder {
             timestamp,
         );
 
-        let body = BlockBody::new_unchecked(
+        let body = BlockBody::new(
             block_account_updates,
             output_note_batches,
             created_nullifiers,
             transactions,
-        );
+        )?;
 
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
@@ -308,6 +321,7 @@ impl MockChainBuilder {
         MockChain::from_genesis_block(
             genesis_block,
             account_tree,
+            private_accounts,
             self.account_authenticators,
             validator_secret_keys,
             full_notes,
