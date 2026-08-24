@@ -1,7 +1,7 @@
 use alloc::string::ToString;
 
 use crate::Word;
-use crate::account::{AccountId, AccountUpdateDetails};
+use crate::account::{AccountId, AccountUpdateDetails, validate_new_public_account};
 use crate::errors::BlockAccountUpdateError;
 use crate::utils::serde::{
     ByteReader,
@@ -57,7 +57,14 @@ impl BlockAccountUpdate {
 
     /// Validates that this account update's details are compatible with its account ID.
     pub fn validate(&self) -> Result<(), BlockAccountUpdateError> {
-        self.details.validate_for_account(self.account_id)?;
+        let Some(patch) = self.details.validate_for_account(self.account_id)? else {
+            return Ok(());
+        };
+
+        if patch.is_full_state() {
+            validate_new_public_account(patch, self.final_state_commitment)?;
+        }
+
         Ok(())
     }
 
@@ -100,5 +107,105 @@ impl Deserializable for BlockAccountUpdate {
             AccountUpdateDetails::read_from(source)?,
         )
         .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use super::BlockAccountUpdate;
+    use crate::Word;
+    use crate::account::{Account, AccountPatch, AccountType, AccountUpdateDetails};
+    use crate::errors::BlockAccountUpdateError;
+    use crate::testing::add_component::AddComponent;
+    use crate::testing::noop_auth_component::NoopAuthComponent;
+    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+
+    fn public_account_and_full_patch() -> (Account, AccountPatch) {
+        let account = Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()
+            .unwrap();
+        let patch = AccountPatch::try_from(account.clone()).unwrap();
+        assert!(patch.is_full_state());
+
+        (account, patch)
+    }
+
+    #[test]
+    fn accepts_full_state_patch_matching_final_commitment() {
+        let (account, patch) = public_account_and_full_patch();
+
+        BlockAccountUpdate::try_new(
+            account.id(),
+            account.to_commitment(),
+            AccountUpdateDetails::Public(patch),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn rejects_full_state_patch_not_matching_final_commitment() {
+        let (account, patch) = public_account_and_full_patch();
+        let final_state_commitment = Word::empty();
+        let account_commitment = account.to_commitment();
+        assert_ne!(final_state_commitment, account_commitment);
+
+        let error = BlockAccountUpdate::try_new(
+            account.id(),
+            final_state_commitment,
+            AccountUpdateDetails::Public(patch),
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            error,
+            BlockAccountUpdateError::AccountFinalCommitmentMismatch {
+                final_state_commitment: actual_final_state_commitment,
+                account_commitment: actual_account_commitment,
+            } if actual_final_state_commitment == final_state_commitment
+                && actual_account_commitment == account_commitment
+        );
+    }
+
+    #[test]
+    fn deserialization_rejects_full_state_patch_not_matching_final_commitment() {
+        let (account, patch) = public_account_and_full_patch();
+        let final_state_commitment = Word::empty();
+        let account_commitment = account.to_commitment();
+        assert_ne!(final_state_commitment, account_commitment);
+        let invalid_update = BlockAccountUpdate::new(
+            account.id(),
+            final_state_commitment,
+            AccountUpdateDetails::Public(patch),
+        );
+
+        let error = BlockAccountUpdate::read_from_bytes(&invalid_update.to_bytes()).unwrap_err();
+
+        assert_matches!(
+            error,
+            DeserializationError::InvalidValue(message)
+                if message == format!(
+                    "block account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
+                )
+        );
+    }
+
+    #[test]
+    fn accepts_partial_public_account_patch() {
+        let (account, _) = public_account_and_full_patch();
+
+        BlockAccountUpdate::try_new(
+            account.id(),
+            Word::empty(),
+            AccountUpdateDetails::Public(AccountPatch::empty(account.id())),
+        )
+        .unwrap();
     }
 }

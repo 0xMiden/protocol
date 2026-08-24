@@ -640,6 +640,15 @@ pub enum BlockAccountUpdateError {
         account_id: AccountId,
         patch_account_id: AccountId,
     },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error(
+        "block account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
+    )]
+    AccountFinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
 }
 
 // BLOCK BODY ERROR
@@ -1273,6 +1282,23 @@ impl From<NewPublicAccountValidationError> for ProvenTransactionError {
 }
 
 impl From<NewPublicAccountValidationError> for BatchAccountUpdateError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
     fn from(error: NewPublicAccountValidationError) -> Self {
         match error {
             NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
