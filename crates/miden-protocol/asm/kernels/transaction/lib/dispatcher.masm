@@ -1,0 +1,63 @@
+# Root module of the transaction kernel.
+#
+# `exec_kernel_proc` is the only procedure of this module, and therefore the only procedure that
+# account code can invoke with a `syscall`. The kernel API procedures live in the `api` submodule.
+
+pub mod api
+
+use {NUM_KERNEL_PROCEDURES_PTR} from miden::tx_kernel_core::memory
+use {WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
+
+# ERRORS
+# =================================================================================================
+
+const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
+    "provided kernel procedure offset is out of bounds"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Executes a kernel procedure specified by its offset.
+#!
+#! This procedure makes no guarantees about the contents of the `pad` elements of the invoked
+#! procedure. It is the caller's responsibility to make sure these elements do not contain any
+#! meaningful data.
+#!
+#! Inputs:  [procedure_offset, <procedure_inputs>, <pad>]
+#! Outputs: [<procedure_outputs>, <pad>]
+#!
+#! Where:
+#! - procedure_offset is an offset of the kernel procedure, specified in the
+#!   `miden/kernel_proc_offsets.masm` file.
+#! - procedure_inputs are inputs of the procedure to be executed, which is specified by the
+#!   procedure_offset. Note that the length of this inputs cannot exceed 15 elements, since the
+#!   first element on the stack will be occupied by the memory pointer to the procedure root.
+#! - procedure_outputs are the outputs of the procedure to be executed.
+#!
+#! Panics if:
+#! - the provided procedure offset exceeds the number of kernel procedures.
+#!
+#! Invocation: syscall
+pub proc exec_kernel_proc
+    # check that the provided procedure offset is within expected bounds
+    #
+    # the number of procedures is read from memory here instead of through a `memory` accessor so
+    # that the root of this procedure does not depend on the code of any other module
+    dup mem_load.NUM_KERNEL_PROCEDURES_PTR
+    # => [num_kernel_procedures, procedure_offset, procedure_offset, <procedure_inputs>, <pad>]
+
+    # assert procedure_offset < num_kernel_procedures
+    u32assert2.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
+    # => [procedure_offset, <procedure_inputs>, <pad>]
+
+    # compute the memory pointer at which desired procedure is stored
+    #
+    # no base address is added because the kernel procedures section starts at address 0
+    mul.WORD_NUM_ELEMENTS
+    # => [procedure_ptr, <procedure_inputs>, <pad>]
+
+    # execute loaded procedure
+    dynexec
+    # => [<procedure_outputs>, <pad>]
+end

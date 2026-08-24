@@ -203,6 +203,11 @@ impl Account {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
+    /// Returns the [`AccountHeader`] of this account.
+    pub fn to_header(&self) -> AccountHeader {
+        AccountHeader::from(self)
+    }
+
     /// Returns the commitment of this account.
     ///
     /// See [`AccountHeader::to_commitment`] for details on how it is computed.
@@ -495,6 +500,7 @@ impl Serializable for Account {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let Account { id, vault, storage, code, nonce, seed } = self;
 
+        AccountHeader::VERSION_1.write_into(target);
         id.write_into(target);
         vault.write_into(target);
         storage.write_into(target);
@@ -504,7 +510,8 @@ impl Serializable for Account {
     }
 
     fn get_size_hint(&self) -> usize {
-        self.id.get_size_hint()
+        AccountHeader::VERSION_1.get_size_hint()
+            + self.id.get_size_hint()
             + self.vault.get_size_hint()
             + self.storage.get_size_hint()
             + self.code.get_size_hint()
@@ -515,6 +522,16 @@ impl Serializable for Account {
 
 impl Deserializable for Account {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version = u8::read_from(source)?;
+
+        if version != AccountHeader::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "account version is {} but only version {} is supported",
+                version,
+                AccountHeader::VERSION_1,
+            )));
+        }
+
         let id = AccountId::read_from(source)?;
         let vault = AssetVault::read_from(source)?;
         let storage = AccountStorage::read_from(source)?;
@@ -569,7 +586,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_crypto::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, DeserializationError, Serializable};
     use miden_crypto::{Felt, Word};
 
     use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
@@ -918,5 +935,14 @@ mod tests {
         let _partial_account = PartialAccount::from(&account);
 
         Ok(())
+    }
+
+    #[test]
+    fn account_deserialization_rejects_unsupported_version() {
+        let error = Account::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("account version is 0"));
+        });
     }
 }

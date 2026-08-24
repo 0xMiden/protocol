@@ -61,12 +61,15 @@ pub fn bridge_admin_account_id() -> AccountId {
 }
 
 /// Creates an existing bridge account with one holder per operational role.
+#[allow(clippy::too_many_arguments)]
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
     bridge_admin: AccountId,
     faucet_manager: AccountId,
     ger_injector: AccountId,
     ger_remover: AccountId,
+    fee_manager: AccountId,
+    pauser: AccountId,
     network_id: u32,
 ) -> Account {
     let fee_policy = zero_fee_policy(AggLayerBridge::allowed_notes());
@@ -74,6 +77,8 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
         BTreeSet::from([ger_remover]),
+        BTreeSet::from([fee_manager]),
+        BTreeSet::from([pauser]),
     )
     .expect("single-holder role sets are non-empty");
 
@@ -96,6 +101,7 @@ pub fn create_existing_agglayer_faucet(
     decimals: u8,
     max_supply: Felt,
     initial_supply: Felt,
+    fee_manager: AccountId,
     bridge_account_id: AccountId,
 ) -> Account {
     let faucet_admin = bridge_admin_account_id();
@@ -106,6 +112,7 @@ pub fn create_existing_agglayer_faucet(
         max_supply,
         initial_supply,
         faucet_admin,
+        fee_manager,
         bridge_account_id,
         fee_faucet_id(),
         zero_fee_policy(AggLayerFaucet::allowed_notes()),

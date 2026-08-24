@@ -5,7 +5,7 @@ use miden::standards::faucets::policies::policy_manager
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the FaucetPolicyConfig note storage. The policy root word comes first so that
@@ -60,6 +60,7 @@ const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet poli
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds NUM_ITEMS_SET_POLICY.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the caller is not authorized per the installed `Authority` component, or the policy root is not
@@ -76,7 +77,7 @@ pub proc main
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_ITEMS_SET_POLICY push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR

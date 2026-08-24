@@ -150,8 +150,13 @@ pub fn create_existing_priced_bridge(
     ger_remover: AccountId,
     verification_base_fee: u32,
 ) -> anyhow::Result<Account> {
-    let roles =
-        BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
+    let roles = BridgeRoles::new(
+        [faucet_manager].into(),
+        [ger_injector].into(),
+        [ger_remover].into(),
+        [bridge_admin].into(),
+        [bridge_admin].into(),
+    )?;
     let pricer = network_note_pricer(verification_base_fee);
     let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
     Ok(AggLayerBridge::account_builder(
@@ -183,6 +188,7 @@ pub fn priced_faucet_builder(
         decimals,
         max_supply,
         initial_supply,
+        faucet_admin,
         faucet_admin,
         bridge_account_id,
         pricer.fee_parameters().fee_faucet_id(),
@@ -234,6 +240,7 @@ pub struct BridgeSetup {
     pub faucet_manager: Account,
     pub ger_injector: Account,
     pub ger_remover: Account,
+    pub pauser: Account,
 }
 
 pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
@@ -246,13 +253,19 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
+    let pauser = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
+    let bridge_admin = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin_account_id(),
+        bridge_admin,
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin,
+        pauser.id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge.clone())?;
@@ -262,5 +275,6 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
         faucet_manager,
         ger_injector,
         ger_remover,
+        pauser,
     })
 }

@@ -2,7 +2,7 @@
 #
 # This library holds the internal implementation modules of the transaction kernel (prologue,
 # epilogue, note processing, account, asset, memory, etc.). They are not part of the kernel's
-# public syscall API (defined in the `tx-kernel` library's `api.masm`).
+# API (defined in the `tx-kernel` library's `api.masm`).
 
 pub mod account
 pub mod account_update
