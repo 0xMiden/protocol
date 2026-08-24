@@ -35,6 +35,7 @@
 #!
 proc main
     dropw dropw
+    # => [pad(16)]
 end
 
 begin
