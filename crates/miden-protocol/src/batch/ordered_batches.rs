@@ -36,12 +36,7 @@ impl OrderedBatches {
     /// Computes a commitment to the batches in this block.
     ///
     /// This is a sequential hash over the [`BatchId`](crate::batch::BatchId) of each batch, in
-    /// order. Since a batch ID is itself a commitment to the batch's transactions, this commits to
-    /// the transactions of the block as well as to the way they are grouped into batches and the
-    /// order of those groups.
-    ///
-    /// The hashed element sequence is `BATCH_ID_0 || BATCH_ID_1 || ... || BATCH_ID_N`, where each
-    /// batch ID contributes its four field elements.
+    /// order.
     pub fn commitment(&self) -> Word {
         let mut elements = Vec::with_capacity(self.0.len() * Word::NUM_ELEMENTS);
         for batch in self.0.iter() {

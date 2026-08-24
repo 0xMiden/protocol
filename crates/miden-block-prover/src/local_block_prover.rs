@@ -8,7 +8,7 @@ use crate::{BlockProverError, ExecutedBlock};
 
 /// A local prover for blocks in the chain.
 ///
-/// Proves an [`ExecutedBlock`] (produced by [`BlockExecutor`](crate::BlockExecutor)) into a
+/// Proves an [`ExecutedBlock`] produced by [`BlockExecutor`](crate::BlockExecutor) into a
 /// [`BlockProof`] over the block's public commitments.
 ///
 /// # Warning
