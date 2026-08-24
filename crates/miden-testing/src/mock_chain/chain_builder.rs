@@ -248,7 +248,6 @@ impl MockChainBuilder {
         let note_tree = BlockNoteTree::from_note_batches(&output_note_batches)
             .context("failed to create block note tree")?;
 
-        let version = 0;
         let prev_block_commitment = Word::empty();
         let block_num = BlockNumber::from(0u32);
         let chain_commitment = Blockchain::new().commitment();
@@ -266,7 +265,6 @@ impl MockChainBuilder {
                 .expect("randomly generated genesis validator keys should be distinct");
 
         let header = BlockHeader::new(
-            version,
             prev_block_commitment,
             block_num,
             chain_commitment,

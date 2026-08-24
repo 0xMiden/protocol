@@ -22,6 +22,7 @@ use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueN
 use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
+    AccountHeader,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
@@ -148,8 +149,12 @@ pub enum AccountError {
     BuildError(String, #[source] Option<Box<AccountError>>),
     #[error("failed to parse account ID from final account header")]
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
-    #[error("account header data has length {actual} but it must be of length {expected}")]
-    HeaderDataIncorrectLength { actual: usize, expected: usize },
+    #[error("account header data has length {actual} but it must be of length {expected}",
+        expected = AccountHeader::NUM_ELEMENTS
+    )]
+    UnexpectedHeaderLength { actual: usize },
+    #[error("account has an unsupported version {0}")]
+    UnsupportedAccountVersion(u64),
     #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(
@@ -186,6 +191,8 @@ pub enum AccountError {
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]
     UnsortedStorageSlots,
+    #[error("reserved element of a storage slot must be zero but was {0}")]
+    StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
@@ -608,6 +615,8 @@ pub enum AssetError {
     },
     #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
     ReservedAssetMetadata(u8),
+    #[error("unknown asset ID version: {0}")]
+    UnknownAssetIdVersion(u8),
 }
 
 // TOKEN SYMBOL ERROR

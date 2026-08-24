@@ -2,8 +2,6 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
-
 use miden_core::{Felt, Word};
 use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::Path;
@@ -203,7 +201,8 @@ impl AggLayerFaucet {
     /// configuration.
     ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role;
-    /// `bridge_account_id` is its [`Ownable2Step`] owner. `fee_policy` must contain entries for
+    /// `fee_manager` is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its
+    /// [`Ownable2Step`] owner. `fee_policy` must contain entries for
     /// [`AggLayerFaucet::allowed_notes`], denominated in the asset issued by `fee_faucet_id`.
     ///
     /// # Panics
@@ -217,6 +216,7 @@ impl AggLayerFaucet {
         max_supply: Felt,
         initial_supply: Felt,
         faucet_admin: AccountId,
+        fee_manager: AccountId,
         bridge_account_id: AccountId,
         fee_faucet_id: AccountId,
         fee_policy: BasicConstantFeePolicy,
@@ -235,15 +235,20 @@ impl AggLayerFaucet {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
+        let rbac = RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(faucet_admin))
+            .role(RoleConfig::new(AggLayerFaucet::fee_manager_role()).with_member(fee_manager))
+            .build()
+            .expect("the faucet seeds non-empty roles administered by ADMIN");
+
         NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
             .expect("faucet note allowlist is non-empty")
             .with_component(agglayer_component)
             .with_component(Ownable2Step::new(bridge_account_id))
-            .with_component(
-                RoleBasedAccessControl::with_admins([faucet_admin])
-                    .expect("the faucet seeds a non-empty ADMIN role"),
-            )
-            .with_component(Authority::RbacControlled { procedure_roles: BTreeMap::new() })
+            .with_component(rbac)
+            .with_component(Authority::RbacControlled {
+                procedure_roles: AggLayerFaucet::procedure_roles(),
+            })
             .with_components(token_policy_manager)
             .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
     }
@@ -269,13 +274,15 @@ mod tests {
     fn agglayer_accounts_allowlist_expiration_tx_script() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, 77);
+        let bridge =
+            create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, id, id, 77);
         let faucet = create_existing_agglayer_faucet(
             Word::default(),
             "AGG",
             6,
             Felt::from(1000u32),
             Felt::ZERO,
+            id,
             id,
         );
 

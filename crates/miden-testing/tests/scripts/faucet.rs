@@ -53,6 +53,7 @@ use miden_standards::errors::standards::{
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
+    ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
@@ -546,6 +547,40 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
         .await;
 
     assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY);
+    Ok(())
+}
+
+/// Tests that mint fails when the minted amount is zero.
+#[tokio::test]
+async fn faucet_contract_mint_fungible_asset_fails_zero_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        200,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let params = FaucetTestParams {
+        recipient: Word::from([0, 1, 2, 3u32]),
+        tag: NoteTag::default(),
+        note_type: NoteType::Private,
+        amount: Felt::new_unchecked(0),
+    };
+
+    let tx_script =
+        CodeBuilder::default().compile_tx_script(create_mint_script_code(&params, faucet.id()))?;
+    let tx = mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO);
     Ok(())
 }
 

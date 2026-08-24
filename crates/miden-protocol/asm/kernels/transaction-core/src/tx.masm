@@ -131,7 +131,7 @@ end
 #! Inputs:
 #!   Operand stack: [foreign_account_id_suffix, foreign_account_id_prefix]
 #!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID_KEY: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
+#!     FOREIGN_ACCOUNT_ID_KEY: [[account_version, account_nonce, foreign_account_id_suffix, foreign_account_id_prefix],
 #!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
 #!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
 #!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
@@ -144,6 +144,7 @@ end
 #!   account whose procedure is going to be executed.
 #! - FOREIGN_ACCOUNT_ID_KEY is the map key constructed from the foreign_account_id as done by
 #!   account::create_id_key.
+#! - account_version is the version of the foreign account's metadata encoding.
 #! - account_nonce is the nonce of the foreign account.
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.

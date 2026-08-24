@@ -8,7 +8,10 @@ use miden_protocol::asset::{
     NonFungibleAssetDetails,
 };
 use miden_protocol::errors::MasmError;
-use miden_protocol::errors::protocol::ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS;
+use miden_protocol::errors::protocol::{
+    ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS,
+    ERR_VAULT_ASSET_METADATA_UNKNOWN_VERSION,
+};
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO,
@@ -108,8 +111,16 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     Ok(())
 }
 
-const METADATA_BYTE_NONE: u64 = AssetComposition::None as u64;
-const METADATA_BYTE_FUNGIBLE: u64 = AssetComposition::Fungible as u64;
+/// The only asset ID version the kernel accepts.
+const ASSET_VERSION_1: u64 = 1;
+
+/// Encodes the given composition into a metadata byte of version 1.
+const fn metadata_byte(composition: u64) -> u64 {
+    (composition << 4) | ASSET_VERSION_1
+}
+
+const METADATA_BYTE_NONE: u64 = metadata_byte(AssetComposition::None as u64);
+const METADATA_BYTE_FUNGIBLE: u64 = metadata_byte(AssetComposition::Fungible as u64);
 
 /// Returns the third element of a synthesised asset ID, packing the faucet ID suffix with the
 /// given metadata byte (lower 8 bits).
@@ -223,7 +234,7 @@ async fn test_validate_non_fungible_asset_standards_succeeds() -> anyhow::Result
 #[rstest::rstest]
 #[case::asset_class_is_not_derived_from_value(METADATA_BYTE_NONE, None)]
 #[case::metadata_reserved_bits_are_set(
-    METADATA_BYTE_NONE | 0b100,
+    METADATA_BYTE_NONE | 0b0100_0000,
     Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS)
 )]
 #[tokio::test]
@@ -351,22 +362,38 @@ async fn test_validate_fungible_asset(
 }
 
 #[rstest::rstest]
-// Valid: composition=None, callbacks=disabled.
-#[case::valid_none(0, None)]
-// Valid: composition=Fungible, callbacks=disabled.
+// Valid: composition=None.
+#[case::valid_none(METADATA_BYTE_NONE, None)]
+// Valid: composition=Fungible.
 #[case::valid_fungible(METADATA_BYTE_FUNGIBLE, None)]
 // Valid: composition=Custom.
-#[case::valid_custom(AssetComposition::Custom as u64, None)]
+#[case::valid_custom(metadata_byte(AssetComposition::Custom as u64), None)]
 // Metadata is not a valid u32 (does not fit in 32 bits).
 #[case::not_u32(u32::MAX as u64 + 1, Some(ERR_VAULT_ASSET_METADATA_NOT_U32))]
+// Version 0 is never valid.
+#[case::version_zero(0, Some(ERR_VAULT_ASSET_METADATA_UNKNOWN_VERSION))]
+// Version 2 is not known.
+#[case::unknown_version(ASSET_VERSION_1 + 1, Some(ERR_VAULT_ASSET_METADATA_UNKNOWN_VERSION))]
 // Metadata is not a valid byte.
-#[case::not_u8(u16::MAX as u64, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
-// Reserved bit 2 is set.
-#[case::reserved_bit_2_set(0b100, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
-// Reserved bit 3 is set.
-#[case::reserved_bits_set(0b1000, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
+#[case::not_u8(
+    METADATA_BYTE_NONE | 0x0100,
+    Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS)
+)]
+// Reserved bit 6 is set.
+#[case::reserved_bit_6_set(
+    METADATA_BYTE_NONE | 0b0100_0000,
+    Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS)
+)]
+// Reserved bit 7 is set.
+#[case::reserved_bit_7_set(
+    METADATA_BYTE_NONE | 0b1000_0000,
+    Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS)
+)]
 // Composition value 3 is the unused bit pattern within the 2-bit field.
-#[case::unknown_composition(0b011, Some(ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION))]
+#[case::unknown_composition(
+    metadata_byte(0b11),
+    Some(ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION)
+)]
 #[tokio::test]
 async fn test_validate_asset_metadata(
     #[case] asset_metadata: u64,

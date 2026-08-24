@@ -7,8 +7,12 @@ use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::auth::NetworkAccount;
-use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
+use miden_standards::account::fees::{
+    BasicConstantFeePolicy,
+    ConstantFeeManager,
+    FeePolicyManager,
+};
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
 use miden_standards::note::{
     BurnNote,
@@ -17,8 +21,9 @@ use miden_standards::note::{
     MintNote,
     NetworkAccountConfigNote,
     PauseConfig,
+    RbacConfigNote,
 };
-use miden_testing::{MockChain, assert_transaction_executor_error};
+use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
 use super::test_utils::{
@@ -78,10 +83,36 @@ fn faucet_allowed_notes_pin() {
         MintNote::script_root(),
         BurnNote::script_root(),
         ConstantFeePolicyConfigNote::script_root(),
+        RbacConfigNote::script_root(),
         NetworkAccountConfigNote::script_root(),
         FeeSponsorshipNote::script_root(),
     ]);
     assert_eq!(AggLayerFaucet::allowed_notes(), expected);
+}
+
+#[test]
+fn fee_management_procedure_role_mappings() {
+    let bridge_roles = AggLayerBridge::procedure_roles();
+    let faucet_roles = AggLayerFaucet::procedure_roles();
+
+    assert_eq!(
+        bridge_roles.get(&ConstantFeeManager::set_note_fee_root()),
+        Some(&AggLayerBridge::fee_manager_role()),
+    );
+    assert_eq!(
+        faucet_roles.get(&ConstantFeeManager::set_note_fee_root()),
+        Some(&AggLayerFaucet::fee_manager_role()),
+    );
+    assert_eq!(faucet_roles.len(), 1, "only note repricing uses the faucet FEE_MNGR role");
+
+    for admin_root in [
+        AuthNetworkAccount::set_fee_policy_root(),
+        AuthNetworkAccount::add_allowed_fee_policy_root(),
+        AuthNetworkAccount::remove_allowed_fee_policy_root(),
+    ] {
+        assert!(!bridge_roles.contains_key(&admin_root));
+        assert!(!faucet_roles.contains_key(&admin_root));
+    }
 }
 
 // POST-DEPLOYMENT FEE SCHEDULE UPDATES
@@ -93,14 +124,19 @@ enum ManagedAccount {
     Faucet,
 }
 
-fn outsider_id() -> AccountId {
-    AccountId::builder().account_type(AccountType::Public).build_with_seed([42; 32])
+fn fee_manager_id() -> AccountId {
+    AccountId::builder().account_type(AccountType::Public).build_with_seed([41; 32])
 }
 
 fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
     let bridge_admin = bridge_admin_account_id();
-    let roles =
-        BridgeRoles::new([bridge_admin].into(), [bridge_admin].into(), [bridge_admin].into())?;
+    let roles = BridgeRoles::new(
+        [bridge_admin].into(),
+        [bridge_admin].into(),
+        [bridge_admin].into(),
+        [fee_manager_id()].into(),
+        [bridge_admin].into(),
+    )?;
     let pricer = network_note_pricer(VERIFICATION_BASE_FEE);
     let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
     Ok(AggLayerBridge::account_builder(
@@ -127,6 +163,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             1_000u32.into(),
             Felt::ZERO,
             account_admin,
+            fee_manager_id(),
             bridge.id(),
             pricer.fee_parameters().fee_faucet_id(),
             pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?,
@@ -156,13 +193,17 @@ fn repriced_root() -> NoteScriptRoot {
     NetworkAccountConfigNote::script_root()
 }
 
-fn fee_schedule_entry(amount: u64) -> Word {
-    Word::new([
-        Felt::new(amount).expect("a fee amount should fit in a field element"),
-        Felt::ZERO,
-        Felt::ZERO,
-        Felt::from(1u32),
-    ])
+fn fee_schedule_entry(amount: u64) -> anyhow::Result<Word> {
+    Ok(Word::new([Felt::new(amount)?, Felt::ZERO, Felt::ZERO, Felt::from(1u32)]))
+}
+
+fn add_required_sponsorship(
+    builder: &mut MockChainBuilder,
+    feature_note: &Note,
+    target: AccountId,
+) -> anyhow::Result<Note> {
+    add_fee_sponsorship(builder, feature_note, target, VERIFICATION_BASE_FEE)?
+        .ok_or_else(|| anyhow::anyhow!("expected a fee sponsorship note"))
 }
 
 fn committed_fee(
@@ -200,47 +241,45 @@ async fn consume_sponsored_note(
 #[case::bridge(ManagedAccount::Bridge)]
 #[case::faucet(ManagedAccount::Faucet)]
 #[tokio::test]
-async fn admin_reprices_the_fee_schedule(#[case] managed: ManagedAccount) -> anyhow::Result<()> {
+async fn fee_manager_reprices_the_fee_schedule(
+    #[case] managed: ManagedAccount,
+) -> anyhow::Result<()> {
     const RAISED_FEE: u64 = 9_000;
     const LOWERED_FEE: u64 = 12;
 
-    let account_admin = bridge_admin_account_id();
+    let fee_manager = fee_manager_id();
     let account = build_managed_account(managed)?;
     let deployed_fee = network_note_pricer(VERIFICATION_BASE_FEE).price(repriced_root())?.as_u64();
 
-    let raise = build_repricing_note(account_admin, account.id(), repriced_root(), RAISED_FEE, 1)?;
-    let lower = build_repricing_note(account_admin, account.id(), repriced_root(), LOWERED_FEE, 2)?;
+    let raise = build_repricing_note(fee_manager, account.id(), repriced_root(), RAISED_FEE, 1)?;
+    let lower = build_repricing_note(fee_manager, account.id(), repriced_root(), LOWERED_FEE, 2)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     builder.add_output_note(RawOutputNote::Full(raise.clone()));
     builder.add_output_note(RawOutputNote::Full(lower.clone()));
-    let raise_sponsorship =
-        add_fee_sponsorship(&mut builder, &raise, account.id(), VERIFICATION_BASE_FEE)?
-            .expect("the priced config note should require sponsorship");
-    let lower_sponsorship =
-        add_fee_sponsorship(&mut builder, &lower, account.id(), VERIFICATION_BASE_FEE)?
-            .expect("the priced config note should require sponsorship");
+    let raise_sponsorship = add_required_sponsorship(&mut builder, &raise, account.id())?;
+    let lower_sponsorship = add_required_sponsorship(&mut builder, &lower, account.id())?;
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(deployed_fee),
+        fee_schedule_entry(deployed_fee)?,
         "the account should start at its deployment price"
     );
 
     consume_sponsored_note(&mut mock_chain, account.id(), &raise, &raise_sponsorship).await?;
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(RAISED_FEE),
+        fee_schedule_entry(RAISED_FEE)?,
         "the raised fee should replace the deployment price"
     );
 
     consume_sponsored_note(&mut mock_chain, account.id(), &lower, &lower_sponsorship).await?;
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(LOWERED_FEE),
+        fee_schedule_entry(LOWERED_FEE)?,
         "the lowered fee should replace the raised one"
     );
 
@@ -251,12 +290,13 @@ async fn admin_reprices_the_fee_schedule(#[case] managed: ManagedAccount) -> any
 #[case::bridge(ManagedAccount::Bridge)]
 #[case::faucet(ManagedAccount::Faucet)]
 #[tokio::test]
-async fn non_admin_cannot_reprice_the_fee_schedule(
+async fn admin_without_fee_manager_role_cannot_reprice_the_fee_schedule(
     #[case] managed: ManagedAccount,
 ) -> anyhow::Result<()> {
     let account = build_managed_account(managed)?;
     let deployed_fee = network_note_pricer(VERIFICATION_BASE_FEE).price(repriced_root())?.as_u64();
-    let attacker_note = build_repricing_note(outsider_id(), account.id(), repriced_root(), 1, 3)?;
+    let attacker_note =
+        build_repricing_note(bridge_admin_account_id(), account.id(), repriced_root(), 1, 3)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -274,7 +314,7 @@ async fn non_admin_cannot_reprice_the_fee_schedule(
     assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
     assert_eq!(
         committed_fee(&mock_chain, account.id(), repriced_root())?,
-        fee_schedule_entry(deployed_fee),
+        fee_schedule_entry(deployed_fee)?,
         "a rejected config note must leave the schedule untouched"
     );
 
@@ -297,15 +337,11 @@ async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
     builder.add_output_note(RawOutputNote::Full(pause.clone()));
-    let pause_sponsorship =
-        add_fee_sponsorship(&mut builder, &pause, bridge.id(), VERIFICATION_BASE_FEE)?
-            .expect("a non-zero base fee should produce a sponsorship");
+    let pause_sponsorship = add_required_sponsorship(&mut builder, &pause, bridge.id())?;
     let reprice =
-        build_repricing_note(bridge_admin, bridge.id(), repriced_root(), REPRICED_FEE, 4)?;
+        build_repricing_note(fee_manager_id(), bridge.id(), repriced_root(), REPRICED_FEE, 4)?;
     builder.add_output_note(RawOutputNote::Full(reprice.clone()));
-    let reprice_sponsorship =
-        add_fee_sponsorship(&mut builder, &reprice, bridge.id(), VERIFICATION_BASE_FEE)?
-            .expect("the priced config note should require sponsorship");
+    let reprice_sponsorship = add_required_sponsorship(&mut builder, &reprice, bridge.id())?;
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -323,7 +359,7 @@ async fn paused_bridge_allows_repricing() -> anyhow::Result<()> {
     consume_sponsored_note(&mut mock_chain, bridge.id(), &reprice, &reprice_sponsorship).await?;
     assert_eq!(
         committed_fee(&mock_chain, bridge.id(), repriced_root())?,
-        fee_schedule_entry(REPRICED_FEE),
+        fee_schedule_entry(REPRICED_FEE)?,
         "a paused bridge should still accept a repricing note"
     );
 

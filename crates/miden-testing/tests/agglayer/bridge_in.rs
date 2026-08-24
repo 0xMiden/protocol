@@ -509,6 +509,8 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -529,6 +531,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(faucet_a.clone())?;
@@ -546,6 +549,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(faucet_b.clone())?;
@@ -713,6 +717,8 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -744,6 +750,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -864,6 +871,8 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -887,6 +896,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -1031,6 +1041,8 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1054,6 +1066,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -1189,6 +1202,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1478,6 +1493,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1729,6 +1746,8 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1758,6 +1777,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -1874,6 +1894,8 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1899,6 +1921,7 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
