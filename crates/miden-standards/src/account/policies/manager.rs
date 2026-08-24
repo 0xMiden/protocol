@@ -207,17 +207,24 @@ struct PolicyConfig {
 /// [`TokenPolicyManagerBuilder::allowed_receive_policy`]) for runtime switching. The
 /// protocol-reserved asset-callback slots (see the storage layout below) are installed whenever at
 /// least one send or receive policy of either kind is registered - active or reserved - even when
-/// only reserved policies exist and no active root is set yet (see
-/// [`Self::has_transfer_policy`]). Installing those slots is what makes the faucet's account ID
-/// carry
+/// only reserved policies exist and no active root is set yet (see [`Self::has_transfer_policy`]).
+/// Installing those slots is what makes the faucet's account ID carry
 /// [`AssetCallbackFlag::Enabled`][miden_protocol::account::AssetCallbackFlag::Enabled], since
 /// [`AccountBuilder`][miden_protocol::account::AccountBuilder] derives the flag from them. Because
 /// the flag is an immutable property of the account ID, it applies for the faucet's entire
 /// lifetime, so promoting a reserved policy later via `set_send_policy` / `set_receive_policy`
 /// enforces it against the whole circulating supply rather than only assets minted after the
-/// switch. The slots are omitted only when no send or receive policy of any kind is registered, in
-/// which case the faucet's account ID is created with
-/// [`AssetCallbackFlag::Disabled`][miden_protocol::account::AssetCallbackFlag::Disabled].
+/// switch.
+///
+/// The slots are omitted only when no send or receive policy of any kind is registered, in which
+/// case the faucet's account ID is created with
+/// [`AssetCallbackFlag::Disabled`][miden_protocol::account::AssetCallbackFlag::Disabled] and no
+/// transfer policy can ever be enforced for that faucet. Such a faucet also avoids the cost the
+/// flag imposes: with callbacks enabled, the tx kernel starts a foreign context against the faucet
+/// on every movement of its assets, so every holder's transaction must supply the faucet's account
+/// state. A faucet that wants to keep the option of a transfer policy open without registering one
+/// yet can enable the flag explicitly with
+/// [`AccountBuilder::enable_asset_callbacks`][miden_protocol::account::AccountBuilder::enable_asset_callbacks].
 ///
 /// ## Storage layout
 ///
@@ -637,6 +644,14 @@ impl TokenPolicyManager {
         // and then dispatches to whatever active root lives in the `active_*_policy` slot above.
         // This indirection lets `set_send_policy` / `set_receive_policy` switch the active policy
         // for the entire circulating supply without touching the callback slots.
+        //
+        // The slots are what make the account ID carry an enabled asset callback flag, and that
+        // flag is immutable, so a faucet created without a transfer policy can never enforce one
+        // later. That is deliberate: an enabled flag makes the tx kernel start a foreign context
+        // against the faucet on every movement of its assets, so every holder's transaction has to
+        // supply the faucet's account state. A faucet that wants to keep the option open without
+        // registering a policy yet can enable the flag explicitly with
+        // `AccountBuilder::enable_asset_callbacks`.
         if self.has_transfer_policy() {
             let callback_slots = AssetCallbacks::new()
                 .on_before_asset_added_to_account(Self::invoke_receive_policy_root().as_word())
