@@ -12,7 +12,7 @@ mod min_burn_amount;
 mod owner_only;
 
 pub use allow_all::BurnAllowAll;
-pub use min_burn_amount::MinBurnAmount;
+pub use min_burn_amount::{MinBurnAmount, MinBurnAmountError};
 pub use owner_only::BurnOwnerOnly;
 
 // BURN POLICY ERROR

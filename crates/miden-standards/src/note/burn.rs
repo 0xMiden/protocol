@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::Asset;
+use miden_protocol::asset::{Asset, AssetAmount};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -51,6 +51,23 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// visible on-chain and discoverable by the network; whether consuming one requires a signature
 /// depends on the target faucet's auth component.
 ///
+/// # Policy evaluation happens at consumption time
+///
+/// The faucet evaluates its active burn policy - and its pause flag - when the note is consumed,
+/// not when it is created. An outstanding BURN note is therefore subject to whichever policy is
+/// active at that later moment: a policy switch, a pause, or a raised minimum burn amount can make
+/// an already-created note unconsumable, and because the note carries the asset, that amount stays
+/// counted against the faucet's `max_supply` for as long as the note cannot be burned.
+///
+/// Recovering from that state needs the faucet owner: the policy setters and `unpause` are gated
+/// only by the faucet's authority, so restoring a policy that admits the burn always makes the note
+/// consumable again. What the note itself cannot do is escape the state on its own.
+///
+/// The one case that needs no administrative action is a note created below the faucet's minimum
+/// burn amount, which is unconsumable from the moment it exists. To rule that out, pass the
+/// faucet's currently configured threshold to the builder's `min_burn_amount` input; read it with
+/// [`MinBurnAmount::try_from_storage`](crate::account::policies::MinBurnAmount::try_from_storage).
+///
 /// Construct one with the [builder](BurnNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
@@ -67,17 +84,46 @@ impl BurnNote {
     ///
     /// The target faucet is the asset's own issuing faucet.
     ///
+    /// `min_burn_amount` is the threshold the target faucet currently enforces through its
+    /// [`MinBurnAmount`](crate::account::policies::MinBurnAmount) burn policy, if it installs one.
+    /// When supplied, the asset's amount is checked against it at creation time so a note that the
+    /// policy would reject on consumption - stranding its asset against the faucet's `max_supply` -
+    /// is never produced. Read the current value with
+    /// [`MinBurnAmount::try_from_storage`](crate::account::policies::MinBurnAmount::try_from_storage).
+    /// The check is a client-side guard against a live threshold, not a guarantee: the faucet owner
+    /// can raise the minimum, switch the policy, or pause the faucet after the note exists.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - `min_burn_amount` is supplied and `asset` is not fungible, since the minimum burn amount
+    ///   policy applies to fungible amounts only.
+    /// - `min_burn_amount` is supplied and the asset's amount is below it.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
         #[builder(field)] attachments: Vec<NoteAttachment>,
         sender: AccountId,
         #[builder(into)] asset: Asset,
         serial_number: Word,
+        min_burn_amount: Option<AssetAmount>,
     ) -> Result<Self, NoteError> {
+        if let Some(min_burn_amount) = min_burn_amount {
+            let amount = asset.as_fungible().map(|asset| asset.amount()).ok_or_else(|| {
+                NoteError::other(
+                    "a minimum burn amount can only be enforced on a fungible burn asset",
+                )
+            })?;
+
+            if amount < min_burn_amount {
+                return Err(NoteError::other(format!(
+                    "burn amount {} is below the faucet's minimum burn amount of {}",
+                    amount.as_u64(),
+                    min_burn_amount.as_u64()
+                )));
+            }
+        }
+
         let network_target =
             NetworkAccountTarget::new(asset.faucet_id(), NoteExecutionHint::Always).map_err(
                 |err| {
@@ -209,10 +255,13 @@ impl NoteConsumptionCost for BurnNote {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
     use miden_protocol::account::AccountType;
-    use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::note::NoteTag;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET;
 
     use super::*;
     use crate::note::NetworkAccountTarget;
@@ -223,6 +272,64 @@ mod tests {
 
     fn faucet() -> AccountId {
         AccountId::builder().account_type(AccountType::Public).build_with_seed([2; 32])
+    }
+
+    fn non_fungible_asset() -> Asset {
+        let faucet = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
+        let details = NonFungibleAssetDetails::new(faucet, vec![0xaa, 0xbb]);
+        Asset::from(NonFungibleAsset::new(&details))
+    }
+
+    /// A burn amount below the faucet's configured minimum is rejected at note creation, so a note
+    /// the `MinBurnAmount` policy would reject on consumption is never produced.
+    #[test]
+    fn builder_rejects_amount_below_min_burn_amount() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let asset = FungibleAsset::new(faucet(), 49).unwrap();
+
+        let error = BurnNote::builder()
+            .sender(sender())
+            .asset(asset)
+            .min_burn_amount(AssetAmount::new(50).unwrap())
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap_err();
+
+        assert!(error.to_string().contains("below the faucet's minimum burn amount"));
+    }
+
+    /// A burn amount that meets the configured minimum is accepted (boundary case).
+    #[test]
+    fn builder_accepts_amount_at_min_burn_amount() {
+        let mut rng = RandomCoin::new(Word::empty());
+        let asset = FungibleAsset::new(faucet(), 50).unwrap();
+
+        let burn_note = BurnNote::builder()
+            .sender(sender())
+            .asset(asset)
+            .min_burn_amount(AssetAmount::new(50).unwrap())
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap();
+
+        assert_eq!(burn_note.asset(), asset.into());
+    }
+
+    /// The minimum burn amount policy compares fungible amounts, so supplying a threshold for a
+    /// non-fungible asset is rejected rather than silently ignored.
+    #[test]
+    fn builder_rejects_min_burn_amount_for_non_fungible_asset() {
+        let mut rng = RandomCoin::new(Word::empty());
+
+        let error = BurnNote::builder()
+            .sender(sender())
+            .asset(non_fungible_asset())
+            .min_burn_amount(AssetAmount::new(50).unwrap())
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap_err();
+
+        assert!(error.to_string().contains("only be enforced on a fungible burn asset"));
     }
 
     /// The builder produces a public note targeted at the faucet and carrying the asset to burn.

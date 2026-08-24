@@ -9,10 +9,12 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
+    AccountStorage,
     StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::errors::{AccountError, AssetError};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -87,6 +89,38 @@ impl MinBurnAmount {
     /// Creates a new `min_burn_amount` burn policy with the given initial minimum burn amount.
     pub fn new(min_burn_amount: AssetAmount) -> Self {
         Self { min_burn_amount }
+    }
+
+    /// Reads the currently configured minimum burn amount from account storage.
+    ///
+    /// Use this to learn the threshold a BURN note must meet before creating it, e.g. via
+    /// [`BurnNote::builder`](crate::note::BurnNote::builder)'s `min_burn_amount` input.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the account does not carry the [`MinBurnAmount`] slot (the policy is not installed).
+    /// - the stored threshold is not a valid [`AssetAmount`].
+    pub fn try_from_storage(storage: &AccountStorage) -> Result<Self, MinBurnAmountError> {
+        let word: Word = storage
+            .get_item(Self::slot_name())
+            .map_err(MinBurnAmountError::StorageLookupFailed)?;
+
+        Self::try_from_word(word)
+    }
+
+    /// Reconstructs a [`MinBurnAmount`] from a raw storage word.
+    ///
+    /// Format: `[min_burn_amount, 0, 0, 0]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stored threshold is not a valid [`AssetAmount`].
+    pub fn try_from_word(word: Word) -> Result<Self, MinBurnAmountError> {
+        let min_burn_amount =
+            AssetAmount::try_from(word[0]).map_err(MinBurnAmountError::InvalidMinBurnAmount)?;
+
+        Ok(Self { min_burn_amount })
     }
 
     /// Returns the canonical [`AccountComponentName`] of this component.
@@ -167,4 +201,16 @@ impl From<MinBurnAmount> for AccountComponent {
             "`min_burn_amount` burn policy component should satisfy the requirements of a valid account component",
         )
     }
+}
+
+// MIN BURN AMOUNT ERROR
+// ================================================================================================
+
+/// Errors that can occur when reading [`MinBurnAmount`] data from storage.
+#[derive(Debug, thiserror::Error)]
+pub enum MinBurnAmountError {
+    #[error("failed to read the minimum burn amount slot from storage")]
+    StorageLookupFailed(#[source] AccountError),
+    #[error("invalid minimum burn amount in storage")]
+    InvalidMinBurnAmount(#[source] AssetError),
 }

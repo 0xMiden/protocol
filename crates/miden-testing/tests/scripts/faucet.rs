@@ -2054,6 +2054,51 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     Ok(())
 }
 
+/// Tests that the `BurnNote` builder, given the faucet's live minimum burn amount, refuses to
+/// create the very note the faucet rejects on consumption - and accepts the note it would burn.
+#[test]
+fn test_burn_note_builder_enforces_faucet_min_burn_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
+
+    let faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    // The threshold the faucet currently enforces, read from its storage.
+    let min_burn_amount = MinBurnAmount::try_from_storage(faucet.storage())?.min_burn_amount();
+    assert_eq!(min_burn_amount, AssetAmount::new(50)?);
+
+    // A burn below the threshold is refused at creation instead of producing a note that would
+    // strand its asset against the faucet's max supply.
+    let mut rng = RandomCoin::new([Felt::from(620u32); 4].into());
+    let result = BurnNote::builder()
+        .sender(owner_account_id)
+        .asset(FungibleAsset::new(faucet.id(), 10)?)
+        .min_burn_amount(min_burn_amount)
+        .generate_serial_number(&mut rng)
+        .build();
+
+    assert!(result.is_err(), "a burn below the faucet's minimum burn amount must be refused");
+
+    // A burn that meets the threshold is created as before.
+    BurnNote::builder()
+        .sender(owner_account_id)
+        .asset(FungibleAsset::new(faucet.id(), 50)?)
+        .min_burn_amount(min_burn_amount)
+        .generate_serial_number(&mut rng)
+        .build()?;
+
+    Ok(())
+}
+
 /// Tests that a burn of exactly the configured minimum burn amount succeeds (boundary case).
 #[tokio::test]
 async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Result<()> {
