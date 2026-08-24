@@ -53,6 +53,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    MAX_TRANSACTIONS_PER_BATCH,
     NOTE_MAX_SIZE,
 };
 
@@ -1209,6 +1210,8 @@ pub enum ProvenBatchError {
         "batch has {0} pre-erasure output notes but the batch kernel temporarily supports at most {MAX_OUTPUT_NOTES_PER_BATCH} (see https://github.com/0xMiden/protocol/issues/3184)"
     )]
     TooManyPreErasureOutputNotes(usize),
+    #[error("batch has {0} transactions but at most {MAX_TRANSACTIONS_PER_BATCH} are allowed")]
+    TooManyTransactions(usize),
 }
 
 // BATCH OUTPUT ERROR

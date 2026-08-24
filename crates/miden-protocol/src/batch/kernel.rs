@@ -11,7 +11,13 @@ use crate::transaction::{OrderedTransactionHeaders, TransactionCommitments};
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
-use crate::{Felt, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use crate::{
+    Felt,
+    MAX_INPUT_NOTES_PER_BATCH,
+    MAX_OUTPUT_NOTES_PER_BATCH,
+    MAX_TRANSACTIONS_PER_BATCH,
+    Word,
+};
 
 // CONSTANTS
 // ================================================================================================
@@ -75,9 +81,12 @@ impl BatchKernel {
         (stack_inputs, advice_inputs)
     }
 
-    /// Rejects a [`ProposedBatch`] the batch kernel cannot yet correctly prove.
+    /// Rejects a [`ProposedBatch`] the batch kernel cannot prove.
     ///
-    /// Two temporary limitations:
+    /// The batch must fit the kernel's fixed-size memory regions, so it can hold at most
+    /// [`MAX_TRANSACTIONS_PER_BATCH`] transactions.
+    ///
+    /// Two of the checks cover temporary limitations:
     /// - Authenticated input notes (converted from unauthenticated via inclusion proof). The kernel
     ///   reconstructs their commitment from per-transaction `(NULLIFIER, NOTE_ID)` tuples, whereas
     ///   the batch commits `(NULLIFIER, EMPTY)` for such notes, so the two commitments diverge.
@@ -86,6 +95,11 @@ impl BatchKernel {
     ///   even when valid post-erasure. Tracked in
     ///   <https://github.com/0xMiden/protocol/issues/3184>.
     pub fn ensure_supported(proposed_batch: &ProposedBatch) -> Result<(), ProvenBatchError> {
+        let num_transactions = proposed_batch.transactions().len();
+        if num_transactions > MAX_TRANSACTIONS_PER_BATCH {
+            return Err(ProvenBatchError::TooManyTransactions(num_transactions));
+        }
+
         // The pre-erasure note unions must fit the kernel's fixed-size note regions.
         let num_input_notes = proposed_batch
             .transactions()

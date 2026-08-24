@@ -17,6 +17,7 @@ use miden_protocol::{
     Felt,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_OUTPUT_NOTES_PER_BATCH,
+    MAX_TRANSACTIONS_PER_BATCH,
     WORD_SIZE,
     Word,
 };
@@ -32,9 +33,6 @@ const FELTS_PER_NOTE_ENTRY: usize = 2 * WORD_SIZE;
 /// Felts per transaction header: INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT.
 /// Must match `TX_HEADER_FELT_LEN` in `asm/kernels/batch/lib/memory.masm`.
 const FELTS_PER_TX_HEADER: usize = 4 * WORD_SIZE;
-
-/// Must match `MAX_TRANSACTIONS_PER_BATCH` in `asm/kernels/batch/lib/memory.masm`.
-const MAX_TRANSACTIONS_PER_BATCH: usize = 1024;
 
 // SETUP HELPERS
 // ================================================================================================
@@ -239,6 +237,51 @@ fn batch_kernel_rejects_invalid_tx_header_length() -> anyhow::Result<()> {
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_TX_HEADER_INVALID_LENGTH);
+
+    Ok(())
+}
+
+/// A batch with more transactions than the kernel's per-transaction regions can hold is rejected
+/// before the kernel runs.
+#[test]
+fn batch_executor_rejects_too_many_transactions() -> anyhow::Result<()> {
+    let TestSetup { chain, account1, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+
+    // Chain the transactions against a single account: each one picks up where the previous left
+    // off, so they merge into one account update and stay under `MAX_ACCOUNTS_PER_BATCH`.
+    let num_transactions = MAX_TRANSACTIONS_PER_BATCH + 1;
+    let mut transactions = Vec::with_capacity(num_transactions);
+    let mut state_commitment = Word::empty();
+    for i in 0..num_transactions {
+        let next_state_commitment = Word::from([i as u32 + 1, 0, 0, 0]);
+        transactions.push(Arc::new(
+            MockProvenTxBuilder::with_account(
+                account1.id(),
+                state_commitment,
+                next_state_commitment,
+            )
+            .reference_block(&block1)
+            .build()?,
+        ));
+        state_commitment = next_state_commitment;
+    }
+
+    let batch = ProposedBatch::new_unverified(
+        transactions,
+        block1,
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    // `ExecutedBatch` is not `Debug`, so match on the result explicitly.
+    match BatchExecutor::new().execute(batch, AdviceInputs::default()) {
+        Err(ProvenBatchError::TooManyTransactions(count)) => {
+            assert_eq!(count, num_transactions);
+        },
+        Ok(_) => panic!("expected the batch execution to reject the oversized transaction list"),
+        Err(other) => panic!("expected TooManyTransactions, got: {other}"),
+    }
 
     Ok(())
 }
