@@ -259,6 +259,8 @@ impl AggLayerFaucet {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::AssetCallbackFlag;
+    use miden_protocol::asset::AssetCallbacks;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use miden_standards::tx_script::ExpirationTransactionScript;
 
@@ -267,6 +269,32 @@ mod tests {
         create_existing_agglayer_faucet,
         create_existing_bridge_account_with_roles,
     };
+
+    /// The agglayer faucet registers send and receive transfer policies, so its policy manager
+    /// installs the protocol-reserved asset callback slots and its account ID must carry an enabled
+    /// asset callback flag. Without the flag the kernel would never invoke those policies.
+    #[test]
+    fn agglayer_faucet_has_asset_callbacks_enabled() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+        let faucet = create_existing_agglayer_faucet(
+            Word::default(),
+            "AGG",
+            6,
+            Felt::from(1000u32),
+            Felt::ZERO,
+            id,
+            id,
+        );
+
+        for slot_name in AssetCallbacks::slot_names() {
+            assert!(
+                faucet.storage().get(slot_name).is_some(),
+                "faucet should install the {slot_name} callback slot"
+            );
+        }
+        assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
+    }
 
     /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
     /// which the network transaction builder attaches to every network transaction.
