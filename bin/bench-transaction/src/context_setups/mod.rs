@@ -445,6 +445,8 @@ fn setup_bridge_fixture(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
 
@@ -511,6 +513,7 @@ pub async fn tx_consume_claim_note(
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -707,6 +710,7 @@ pub async fn tx_consume_b2agg_note(
         8,
         FungibleAsset::MAX_AMOUNT.into(),
         Felt::new_unchecked(bridge_amount),
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(faucet.clone())?;
@@ -791,6 +795,7 @@ fn setup_faucet_registration(
         8,
         FungibleAsset::MAX_AMOUNT.into(),
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;

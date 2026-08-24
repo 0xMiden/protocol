@@ -55,9 +55,16 @@ const STATUS_BURNED = 2
 
 # The local memory address holding the asset value across the mint flow.
 const ASSET_VALUE_LOCAL = 0
+
+# The local memory address at which the MINT note's ASSET_ID is held across the mint policy and
+# status registry updates in `mint_and_send`. It is compared against the asset derived for the
+# active faucet, which binds the mint to the faucet the MINT note was created for.
+const MINT_ASSET_ID_LOCAL = 4
+
 const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
 const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
 const ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE = "mint policy must not modify the asset value"
+const ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 
 # =================================================================================================
 # PRIVATE HELPERS
@@ -171,12 +178,16 @@ end
 #!
 #! The active mint policy runs over the asset value, the token ID derived from it is marked issued
 #! in the status registry (asserting it was not already issued), and an output note carrying the
-#! asset is created.
+#! asset is created. The asset minted is derived for the active faucet; the `ASSET_ID` stored in
+#! the MINT note must equal it, so a MINT note created for one faucet cannot be minted by another
+#! faucet.
 #!
-#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
+#! - ASSET_ID is the asset ID of the asset to mint. It must equal the ID derived for the active
+#!   account from ASSET_VALUE, which implies its faucet ID is the active account.
 #! - ASSET_VALUE is the asset value, by convention an off-chain commitment. It is validated only
 #!   by the active mint policy.
 #! - tag, note_type configure the output note.
@@ -187,13 +198,18 @@ end
 #! - the active mint policy validation fails.
 #! - the faucet is paused.
 #! - the token ID derived from ASSET_VALUE has already been issued.
+#! - the asset stored in the MINT note does not belong to this faucet.
 #!
 #! Invocation: call
-@locals(4)
+@locals(8)
 @account_procedure
 pub proc mint_and_send
-    # stash the asset value for the status key and the asset creation
-    dupw loc_storew_le.ASSET_VALUE_LOCAL dropw
+    # save the MINT note's ASSET_ID
+    loc_storew_le.MINT_ASSET_ID_LOCAL dropw
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # save the asset value for the status key and the asset creation
+    loc_storew_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # run the active mint policy over the asset value
@@ -245,6 +261,13 @@ pub proc mint_and_send
     # the value's hash0/hash1), so the minted asset is well formed by construction and
     # non_fungible_asset::validate is deliberately skipped
     exec.non_fungible_asset::create
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+    # bind the mint to the faucet the MINT note was created for
+    padw loc_loadw_le.MINT_ASSET_ID_LOCAL dupw.1
+    # => [ASSET_ID, NOTE_ASSET_ID, ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
+
+    assert_eqw.err=ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx, pad(15)]
 
     dupw.1 dupw.1

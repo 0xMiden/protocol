@@ -19,11 +19,14 @@ use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
+use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
+    AccountHeader,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
+    AccountVaultDelta,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -139,8 +142,12 @@ pub enum AccountError {
     BuildError(String, #[source] Option<Box<AccountError>>),
     #[error("failed to parse account ID from final account header")]
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
-    #[error("account header data has length {actual} but it must be of length {expected}")]
-    HeaderDataIncorrectLength { actual: usize, expected: usize },
+    #[error("account header data has length {actual} but it must be of length {expected}",
+        expected = AccountHeader::NUM_ELEMENTS
+    )]
+    UnexpectedHeaderLength { actual: usize },
+    #[error("account has an unsupported version {0}")]
+    UnsupportedAccountVersion(u64),
     #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(
@@ -177,6 +184,8 @@ pub enum AccountError {
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]
     UnsortedStorageSlots,
+    #[error("reserved element of a storage slot must be zero but was {0}")]
+    StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
@@ -425,6 +434,14 @@ pub enum AccountDeltaError {
     #[error("asset {0} is changed by more than one asset delta")]
     DuplicateAssetDelta(AssetId),
     #[error(
+        "number of {delta_op} operations in account vault delta is {num_ops} but max is {max}",
+        max = AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP
+    )]
+    TooManyVaultAssetDeltas {
+        delta_op: AssetDeltaOperation,
+        num_ops: usize,
+    },
+    #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
     )]
     IncompatibleAccountUpdates {
@@ -591,6 +608,8 @@ pub enum AssetError {
     },
     #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
     ReservedAssetMetadata(u8),
+    #[error("unknown asset ID version: {0}")]
+    UnknownAssetIdVersion(u8),
 }
 
 // TOKEN SYMBOL ERROR

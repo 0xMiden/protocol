@@ -209,7 +209,7 @@ end
 
 #! Extracts the note type from the provided metadata.
 #!
-#! The note type is encoded as a single bit at the 4th position from the right side (LSB) of the
+#! The note type is encoded as a single bit at the 6th position from the right side (LSB) of the
 #! first felt of the metadata, where 0 = Private and 1 = Public.
 #!
 #! Inputs:  [METADATA]
@@ -219,7 +219,7 @@ end
 #! - METADATA is the metadata of a note, laid out on the stack as
 #!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
 #!   The first felt (sender_id_suffix_type_version) has the following bit layout:
-#!   [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
+#!   [sender_id_suffix (56 bits) | reserved (1 bit) | note_type (1 bit) | version (6 bits)]
 #! - note_type is the type of the note (0 for private, 1 for public).
 #!
 #! Invocation: exec
@@ -230,7 +230,7 @@ pub proc metadata_into_note_type(metadata: NoteMetadata) -> NoteType
     u32split swap drop
     # => [lo32]
 
-    u32shr.4
+    u32shr.6
     # => [shifted]
 
     u32and.1

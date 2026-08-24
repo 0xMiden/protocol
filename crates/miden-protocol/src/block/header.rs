@@ -28,7 +28,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `note_root` is a commitment to all notes created in the current block.
 /// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
 ///   block.
-/// - `tx_kernel_commitment` a commitment to all transaction kernels supported by this block.
+/// - `tx_kernel_commitment` is the sequential hash of the kernel procedures.
 /// - `validator_keys` is the set of validator public keys authorized to sign the *next* block.
 /// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
 ///   [`FeeParameters`] for more details.
@@ -38,7 +38,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `commitment` is a 2-to-1 hash of the sub_commitment and the note_root.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct BlockHeader {
-    version: u32,
+    version: u8,
     prev_block_commitment: Word,
     block_num: BlockNumber,
     chain_commitment: Word,
@@ -55,10 +55,20 @@ pub struct BlockHeader {
 }
 
 impl BlockHeader {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Version 1 of the block header.
+    ///
+    /// It is encoded using 8 bits.
+    const VERSION_1: u8 = 1;
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a new block header.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        version: u32,
         prev_block_commitment: Word,
         block_num: BlockNumber,
         chain_commitment: Word,
@@ -71,6 +81,8 @@ impl BlockHeader {
         fee_parameters: FeeParameters,
         timestamp: u32,
     ) -> Self {
+        let version = Self::VERSION_1;
+
         // Compute block sub commitment.
         let sub_commitment = Self::compute_sub_commitment(
             version,
@@ -113,8 +125,8 @@ impl BlockHeader {
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the protocol version.
-    pub fn version(&self) -> u32 {
+    /// Returns the block version.
+    pub fn version(&self) -> u8 {
         self.version
     }
 
@@ -281,7 +293,7 @@ impl BlockHeader {
     /// the `note_root`).
     #[allow(clippy::too_many_arguments)]
     fn compute_sub_commitment(
-        version: u32,
+        version: u8,
         prev_block_commitment: Word,
         chain_commitment: Word,
         account_root: Word,
@@ -343,7 +355,6 @@ impl BlockHeader {
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
         BlockHeader::new(
-            0,
             prev_block_commitment,
             BlockNumber::from(block_num),
             Word::empty(),
@@ -399,7 +410,16 @@ impl Serializable for BlockHeader {
 
 impl Deserializable for BlockHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let version = source.read()?;
+        let version = u8::read_from(source)?;
+
+        if version != Self::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "block version is {} but only version {} is supported",
+                version,
+                Self::VERSION_1,
+            )));
+        }
+
         let prev_block_commitment = source.read()?;
         let block_num = source.read()?;
         let chain_commitment = source.read()?;
@@ -413,7 +433,6 @@ impl Deserializable for BlockHeader {
         let timestamp = source.read()?;
 
         Ok(Self::new(
-            version,
             prev_block_commitment,
             block_num,
             chain_commitment,
@@ -523,11 +542,21 @@ pub(crate) enum ParentValidationError {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use miden_core::Word;
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
     use crate::testing::validator_keys::{random_validator_set, sign_all};
+
+    #[test]
+    fn block_header_deserialization_rejects_unsupported_version() {
+        let error = BlockHeader::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("block version is 0"));
+        });
+    }
 
     #[test]
     fn test_serde() {

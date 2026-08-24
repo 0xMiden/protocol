@@ -5,7 +5,7 @@ use miden::standards::fees::policies::constant_fee_manager
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the ConstantFeePolicyConfig note storage: the note script root word
@@ -71,7 +71,7 @@ pub proc main
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items, pad(16)]
 
     eq.NUM_STORAGE_ITEMS

@@ -11,6 +11,7 @@ use miden::protocol::account_id
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
+use miden::standards::expiration
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -19,6 +20,9 @@ use miden::standards::faucets::policies::transfer::blocklist
 #!
 #! The same procedure root is reusable as both send and receive policy because it does not depend
 #! on custom_data.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
@@ -33,6 +37,9 @@ use miden::standards::faucets::policies::transfer::blocklist
 #! Invocation: call
 @account_procedure
 pub proc check_policy
+    exec.expiration::apply_default
+    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+
     exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 
