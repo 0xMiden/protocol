@@ -8,8 +8,8 @@ use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
-use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
+use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 
 // NETWORK NOTE PRICER
 // ================================================================================================
@@ -117,25 +117,33 @@ impl NetworkNotePricer {
         AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
-    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied note script root from its
-    /// benchmarked consumption cost.
+    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied feature-note script root
+    /// from its benchmarked consumption cost.
     ///
     /// The policy's bare fee amounts are denominated in the fee asset configured by
-    /// [`Self::fee_parameters`]. Each root is priced through [`Self::price`], so the fee includes
-    /// the default safety margin and the recursively priced notes created by consuming it.
+    /// [`Self::fee_parameters`]. Each feature-note root is priced through [`Self::price`], so the
+    /// fee includes the default safety margin and the recursively priced notes created by
+    /// consuming it.
+    /// [`FeeSponsorshipNote`] is the exception: it is retained in the schedule with an explicit
+    /// zero fee because fee collection never requires sponsorship notes to sponsor themselves.
     pub fn basic_constant_fee_policy(
         &self,
         note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> Result<BasicConstantFeePolicy, NotePricingError> {
         let mut policy = BasicConstantFeePolicy::new();
         for root in note_script_roots {
-            policy = policy.with_fee(root, self.price(root)?);
+            let fee = if root == FeeSponsorshipNote::script_root() {
+                AssetAmount::ZERO
+            } else {
+                self.price(root)?
+            };
+            policy = policy.with_fee(root, fee);
         }
         Ok(policy)
     }
 
-    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] prices every supplied
-    /// note script root from its benchmarked consumption cost.
+    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] is generated from the
+    /// supplied note script roots.
     ///
     /// The manager charges in the fee asset configured by [`Self::fee_parameters`], keeping the
     /// policy's bare fee amounts and their denomination together.
@@ -220,7 +228,12 @@ mod tests {
         P2ID_CONSUMPTION_CYCLES,
         SWAP_CONSUMPTION_CYCLES,
     };
-    use miden_standards::note::{ConstantFeePolicyConfigNote, P2idNote, SwapNote};
+    use miden_standards::note::{
+        ConstantFeePolicyConfigNote,
+        FeeSponsorshipNote,
+        P2idNote,
+        SwapNote,
+    };
 
     use super::*;
 
@@ -446,6 +459,19 @@ mod tests {
         assert_eq!(
             manager.fee_asset_id(),
             miden_protocol::asset::AssetId::new_fungible(pricer.fee_parameters().fee_faucet_id())
+        );
+    }
+
+    #[test]
+    fn basic_constant_fee_policy_schedules_sponsorship_at_zero() {
+        let pricer = pricer(500, 0);
+        let root = FeeSponsorshipNote::script_root();
+        let policy = pricer.basic_constant_fee_policy([root]).unwrap();
+
+        assert_eq!(policy.fee_schedule().get(&root), Some(&AssetAmount::ZERO));
+        assert!(
+            pricer.price(root).unwrap().as_u64() > 0,
+            "the explicit schedule exemption should not discard the benchmarked standalone cost"
         );
     }
 
