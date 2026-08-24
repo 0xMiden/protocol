@@ -39,6 +39,45 @@ const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE =
 const ERR_BATCH_TX_TOO_MANY_NOTES =
     "a transaction's note set contains more notes than the maximum allowed"
 
+# SORTED NOTE LIST LOOKUP
+# =================================================================================================
+
+#! Looks `NULLIFIER` up in the nullifier-sorted input-note list.
+#!
+#! The returned pointer is only meaningful when `is_found` is 1.
+#!
+#! Inputs:  [NULLIFIER]
+#! Outputs: [is_found, input_note_ptr]
+proc find_input_note
+    push.INPUT_NOTES_PTR movdn.4
+    exec.memory::get_input_notes_end_ptr movdn.5
+    # => [NULLIFIER, input_notes_ptr, input_notes_end_ptr]
+
+    exec.sorted_array::find_key_value
+    # => [is_found, input_note_ptr, input_notes_ptr, input_notes_end_ptr]
+
+    movup.2 drop movup.2 drop
+    # => [is_found, input_note_ptr]
+end
+
+#! Looks `NOTE_ID` up in the note-id-sorted output-note list.
+#!
+#! The returned pointer is only meaningful when `is_found` is 1.
+#!
+#! Inputs:  [NOTE_ID]
+#! Outputs: [is_found, output_note_ptr]
+proc find_output_note
+    push.OUTPUT_NOTES_PTR movdn.4
+    exec.memory::get_output_notes_end_ptr movdn.5
+    # => [NOTE_ID, output_notes_ptr, output_notes_end_ptr]
+
+    exec.sorted_array::find_key_value
+    # => [is_found, output_note_ptr, output_notes_ptr, output_notes_end_ptr]
+
+    movup.2 drop movup.2 drop
+    # => [is_found, output_note_ptr]
+end
+
 # ERASURE CROSS-REFERENCE
 # =================================================================================================
 
@@ -85,14 +124,9 @@ proc cross_reference_one_input
     if.true
         dropw drop
     else
-        push.OUTPUT_NOTES_PTR movdn.4
-        exec.memory::get_output_notes_end_ptr movdn.5
-        # => [NOTE_ID, output_notes_ptr, output_notes_end_ptr, input_note_idx]
-        exec.sorted_array::find_key_value
-        # => [is_found, output_note_ptr, start_ptr, end_ptr, input_note_idx]
+        exec.find_output_note
+        # => [is_found, output_note_ptr, input_note_idx]
         if.true
-            swap drop swap drop
-            # => [output_note_ptr, input_note_idx]
             exec.memory::get_output_note_idx_from_ptr
             # => [output_note_idx, input_note_idx]
             dup.1 exec.set_input_erasure_expected
@@ -100,7 +134,7 @@ proc cross_reference_one_input
             exec.set_output_erases_input
             # => []
         else
-            drop drop drop drop
+            drop drop
         end
     end
 end
@@ -186,14 +220,9 @@ proc bind_one_output_note
     # => [NOTE_ID]
 
     # Look the note id up in the note-id-sorted output-note list and mark the entry created.
-    push.OUTPUT_NOTES_PTR movdn.4
-    exec.memory::get_output_notes_end_ptr movdn.5
-    # => [NOTE_ID, output_notes_ptr, output_notes_end_ptr]
-    exec.sorted_array::find_key_value
-    # => [is_found, claimed_output_note_ptr, start_ptr, end_ptr]
+    exec.find_output_note
+    # => [is_found, claimed_output_note_ptr]
     assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST
-    # => [claimed_output_note_ptr, start_ptr, end_ptr]
-    swap drop swap drop
     # => [claimed_output_note_ptr]
     exec.memory::get_output_note_idx_from_ptr
     # => [output_note_idx]
@@ -327,13 +356,9 @@ proc bind_one_input_note
     # Look the per-transaction note up in the nullifier-sorted input-note list by its nullifier.
     dup padw movup.4 mem_loadw_le
     # => [NULLIFIER, verified_input_note_ptr]
-    push.INPUT_NOTES_PTR movdn.4
-    exec.memory::get_input_notes_end_ptr movdn.5
-    # => [NULLIFIER, start_ptr, end_ptr, verified_input_note_ptr]
-    exec.sorted_array::find_key_value
-    # => [is_found, claimed_input_note_ptr, start_ptr, end_ptr, verified_input_note_ptr]
+    exec.find_input_note
+    # => [is_found, claimed_input_note_ptr, verified_input_note_ptr]
     assert.err=ERR_BATCH_INPUT_NOTE_NOT_IN_LIST
-    swap drop swap drop
     # => [claimed_input_note_ptr, verified_input_note_ptr]
 
     # Assert the list entry's note id equals the per-transaction note's, binding the id as well as
