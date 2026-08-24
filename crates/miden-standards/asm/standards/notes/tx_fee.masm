@@ -23,7 +23,7 @@ const TX_FEE_NOTE_TAG = 0xFEE
 # PROCEDURES
 # =================================================================================================
 
-#! TX_FEE note script: adds all assets from the note to the consuming account.
+#! TX_FEE note script: adds the note's remaining assets to the consuming account.
 #!
 #! A TX_FEE note is the canonical way for a transaction to pay its fee to the batch builder. Unlike
 #! P2ID, the note does not restrict who can consume it: any account can consume the note and claim

@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use crate::account::AccountVaultDelta;
 use crate::asset::{Asset, AssetId};
 use crate::errors::AssetError;
 use crate::utils::serde::{
@@ -23,8 +24,9 @@ pub struct AccountVaultPatch {
 }
 
 impl AccountVaultPatch {
-    /// Domain separator for assets in the account patch commitment.
-    const DOMAIN: Felt = Felt::new_unchecked(3);
+    /// The asset sections of a delta and a patch share one domain. They cannot collide,
+    /// because the delta and patch commitments already use distinct hasher domains.
+    const DOMAIN: Felt = AccountVaultDelta::DOMAIN;
 
     /// Creates a new vault patch directly from its raw key/value entries.
     ///

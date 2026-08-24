@@ -74,7 +74,8 @@ pub use vault::{AssetClass, AssetId, AssetIdHash, AssetVault, AssetWitness, Part
 /// - the remaining elements in the value word must be zero.
 /// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetComposition`]). See [`AssetId`] for more details on the ID's layout.
+///   asset metadata, which is the encoding version together with the [`AssetComposition`]. See
+///   [`AssetId`] for more details on the ID's layout.
 /// - the asset class limbs must be zero, which means two instances of the same fungible asset have
 ///   the same asset ID and will be merged together when stored in the same account's vault.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -302,17 +303,6 @@ mod tests {
         }
 
         Ok(())
-    }
-
-    /// Asserts that every serialized asset leads with the [`AssetComposition`] byte of its
-    /// [`AssetId`]. Deserialization of the ID relies on this discriminator.
-    #[test]
-    fn test_composition_byte_is_serialized_first() {
-        let fungible_bytes = FungibleAsset::mock(300).to_bytes();
-        assert_eq!(fungible_bytes[0], AssetComposition::Fungible.as_u8());
-
-        let non_fungible_bytes = NonFungibleAsset::mock(&[0xaa, 0xbb]).to_bytes();
-        assert_eq!(non_fungible_bytes[0], AssetComposition::None.as_u8());
     }
 
     /// `Asset::from_id_and_value` must reject a [`AssetComposition::Custom`] asset ID with

@@ -82,7 +82,6 @@ impl BlockHeader {
         };
 
         BlockHeader::new(
-            0,
             prev_block_commitment,
             block_num.into(),
             chain_commitment,

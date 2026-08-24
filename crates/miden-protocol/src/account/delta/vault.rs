@@ -76,8 +76,8 @@ pub struct AccountVaultDelta {
 }
 
 impl AccountVaultDelta {
-    /// Domain separator for assets in the account delta commitment.
-    pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(3);
+    /// Domain separator for assets in delta and patch commitments.
+    pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(1);
 
     /// Maximum number of added or removed assets in a vault delta.
     pub const MAX_ASSETS_PER_DELTA_OP: u16 = 1024;
