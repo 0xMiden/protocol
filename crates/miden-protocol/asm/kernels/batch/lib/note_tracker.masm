@@ -89,7 +89,7 @@ proc cross_reference_one_input
     # => [note_id_ptr, idx]
     padw movup.4 mem_loadw_le
     # => [NOTE_ID, idx]
-    dupw exec.word::eqz
+    exec.word::testz
     # => [is_empty, NOTE_ID, idx]
     if.true
         dropw drop
@@ -256,7 +256,7 @@ end
 proc process_tx_output_notes
     dup exec.memory::get_tx_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
-    dupw exec.word::eqz
+    exec.word::testz
     if.true
         # Empty commitment: the transaction has no output notes, so there is nothing to bind.
         dropw drop
@@ -395,7 +395,7 @@ end
 proc process_tx_input_notes
     dup exec.memory::get_tx_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
-    dupw exec.word::eqz
+    exec.word::testz
     if.true
         # Empty commitment: the transaction has no input notes, so there is nothing to bind.
         dropw drop
