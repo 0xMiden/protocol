@@ -1,7 +1,7 @@
-use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::{AccountId, AccountUpdateDetails};
 use miden_protocol::block::{
     BlockAccountUpdate,
@@ -25,7 +25,6 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     TransactionHeader,
 };
-use miden_protocol::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
@@ -262,13 +261,6 @@ impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
                 BlockAccountUpdate::try_from(update).context(format!("updated_accounts[{index}]"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if contents.output_note_batches.len() > MAX_BATCHES_PER_BLOCK {
-            return Err(ConversionError::message(format!(
-                "block has {} output note batches, maximum is {MAX_BATCHES_PER_BLOCK}",
-                contents.output_note_batches.len()
-            ))
-            .context("output_note_batches"));
-        }
         let output_note_batches = contents
             .output_note_batches
             .into_iter()
@@ -356,13 +348,6 @@ impl TryFrom<proto::blockchain::IndexedOutputNote> for (usize, OutputNote) {
     fn try_from(note: proto::blockchain::IndexedOutputNote) -> Result<Self, Self::Error> {
         let decoder = note.decoder();
         let index = usize::try_from(note.note_index_in_batch).context("note_index_in_batch")?;
-        if index >= MAX_OUTPUT_NOTES_PER_BATCH {
-            return Err(ConversionError::message(format!(
-                "note index {index} exceeds maximum {}",
-                MAX_OUTPUT_NOTES_PER_BATCH - 1
-            ))
-            .context("note_index_in_batch"));
-        }
         let output_note = required!(decoder, note.note)?;
         Ok((index, output_note))
     }
@@ -380,26 +365,12 @@ impl TryFrom<proto::blockchain::OutputNoteBatch> for OutputNoteBatch {
     type Error = ConversionError;
 
     fn try_from(batch: proto::blockchain::OutputNoteBatch) -> Result<Self, Self::Error> {
-        if batch.notes.len() > MAX_OUTPUT_NOTES_PER_BATCH {
-            return Err(ConversionError::message(format!(
-                "batch has {} notes, maximum is {MAX_OUTPUT_NOTES_PER_BATCH}",
-                batch.notes.len()
-            ))
-            .context("notes"));
-        }
-        let mut indices = BTreeSet::new();
         batch
             .notes
             .into_iter()
             .enumerate()
             .map(|(position, note)| {
-                let (index, note) =
-                    <(usize, OutputNote)>::try_from(note).context(format!("notes[{position}]"))?;
-                if !indices.insert(index) {
-                    return Err(ConversionError::message(format!("duplicate note index {index}"))
-                        .context(format!("notes[{position}].note_index_in_batch")));
-                }
-                Ok((index, note))
+                <(usize, OutputNote)>::try_from(note).context(format!("notes[{position}]"))
             })
             .collect()
     }
@@ -461,22 +432,6 @@ impl TryFrom<proto::blockchain::SignedBlock> for SignedBlock {
             .map_err(ConversionError::new)
             .context("signatures")?;
 
-        if header.tx_commitment() != body.transaction_commitment() {
-            return Err(ConversionError::message(format!(
-                "header transaction commitment {} does not match body transaction commitment {}",
-                header.tx_commitment(),
-                body.transaction_commitment(),
-            ))
-            .context("header.tx_commitment"));
-        }
-        let body_note_root = body.compute_block_note_tree().root();
-        if header.note_root() != body_note_root {
-            return Err(ConversionError::message(format!(
-                "header note root {} does not match body note root {body_note_root}",
-                header.note_root(),
-            ))
-            .context("header.note_root"));
-        }
         SignedBlock::new(header, body, signatures)
             .map_err(ConversionError::new)
             .context("body")

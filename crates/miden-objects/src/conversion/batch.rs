@@ -1,8 +1,9 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::{AccountId, AccountUpdateDetails};
 use miden_protocol::batch::{BatchAccountUpdate, ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockNumber;
@@ -16,12 +17,6 @@ use miden_protocol::transaction::{
     TransactionHeader,
 };
 use miden_protocol::vm::ExecutionProof;
-use miden_protocol::{
-    MAX_ACCOUNTS_PER_BATCH,
-    MAX_INPUT_NOTES_PER_BATCH,
-    MAX_OUTPUT_NOTES_PER_BATCH,
-    Word,
-};
 
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
@@ -153,11 +148,6 @@ impl DecodedProvenBatch {
         let decoder = value.decoder();
         let reference_block_commitment = required!(decoder, value.reference_block_commitment)?;
 
-        if value.account_updates.len() > MAX_ACCOUNTS_PER_BATCH {
-            return Err(
-                ConversionError::message("too many account updates").context("account_updates")
-            );
-        }
         let mut account_updates = BTreeMap::new();
         let mut previous_account_id = None;
         for (index, update) in value.account_updates.into_iter().enumerate() {
@@ -173,9 +163,6 @@ impl DecodedProvenBatch {
             account_updates.insert(update.account_id(), update);
         }
 
-        if value.input_notes.len() > MAX_INPUT_NOTES_PER_BATCH {
-            return Err(ConversionError::message("too many input notes").context("input_notes"));
-        }
         let input_notes = value
             .input_notes
             .into_iter()
@@ -184,18 +171,8 @@ impl DecodedProvenBatch {
                 InputNoteCommitment::try_from(note).context(format!("input_notes[{index}]"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let mut nullifiers = BTreeSet::new();
-        for (index, note) in input_notes.iter().enumerate() {
-            if !nullifiers.insert(note.nullifier()) {
-                return Err(ConversionError::message("duplicate input note nullifier")
-                    .context(format!("input_notes[{index}]")));
-            }
-        }
         let input_notes = InputNotes::new_unchecked(input_notes);
 
-        if value.output_notes.len() > MAX_OUTPUT_NOTES_PER_BATCH {
-            return Err(ConversionError::message("too many output notes").context("output_notes"));
-        }
         let output_notes = value
             .output_notes
             .into_iter()
