@@ -299,19 +299,16 @@ end
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #!
+#! The symbol is not validated here. Callers pass either a compile-time constant or a value they
+#! have already validated, and a non-canonical symbol can match no stored membership anyway, so it
+#! fails the assertion below. `authority::assert_authorized_rbac`, the one caller that forwards a
+#! symbol read from unvalidated storage, validates it before calling.
+#!
 #! Panics if:
-#! - role_symbol is not a valid role symbol encoding.
 #! - the note sender does not hold the given role.
 #!
 #! Invocation: exec
 pub proc assert_sender_has_role
-    # A malformed symbol can never match a stored membership, since `grant_role` is the sole
-    # writer of the membership map and validates before writing. Validating here is therefore
-    # not what makes the check sound; it turns a misconfigured caller-supplied symbol into a
-    # precise error instead of a generic "sender lacks role".
-    dup exec.role_symbol::validate_encoding
-    # => [role_symbol]
-
     exec.is_sender_in_role
     # => [has_role]
 

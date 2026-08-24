@@ -15,17 +15,17 @@ pub const SWAP_CONSUMPTION_CYCLES: u32 = 22432;
 /// Cycles of consuming a PSWAP note: full fill 25262, partial fill 29179 (maximum).
 pub const PSWAP_CONSUMPTION_CYCLES: u32 = 29179;
 
-/// Cycles of consuming a MINT note: fungible faucet 33915, non-fungible faucet 37337 (maximum).
-pub const MINT_CONSUMPTION_CYCLES: u32 = 37337;
+/// Cycles of consuming a MINT note: fungible faucet 34272, non-fungible faucet 37541 (maximum).
+pub const MINT_CONSUMPTION_CYCLES: u32 = 37541;
 
 /// Cycles of consuming a BURN note (single benchmarked path).
-pub const BURN_CONSUMPTION_CYCLES: u32 = 28499;
+pub const BURN_CONSUMPTION_CYCLES: u32 = 28703;
 
 /// Cycles of consuming a CONSTANT_FEE_POLICY_CONFIG note (single benchmarked path).
 pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 19683;
 
 /// Cycles of consuming a FAUCET_POLICY_CONFIG note (single benchmarked path).
-pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 26743;
+pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 26845;
 
 /// Cycles of consuming a FAUCET_METADATA_CONFIG note (single benchmarked path).
 pub const FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES: u32 = 27265;
