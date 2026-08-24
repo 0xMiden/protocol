@@ -273,11 +273,6 @@ proc assert_authorized_rbac
     else
         # => [mapped_role]
 
-        # No MASM procedure writes the procedure-roles map: it is populated at deployment, and the
-        # raw `AccountComponent::new` route checks only the slot count. The mapped role is
-        # therefore untrusted here, and this is the one place an unvalidated role symbol enters
-        # the RBAC surface. Holding it to the canonical encoding keeps on-chain authorization
-        # accepting exactly the values `Authority::try_from_storage` can decode off-chain.
         dup exec.role_symbol::validate_encoding
         # => [mapped_role]
 
