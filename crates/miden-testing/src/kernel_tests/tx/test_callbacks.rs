@@ -46,14 +46,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
 
-use crate::{
-    AccountState,
-    Auth,
-    MockChain,
-    MockChainBuilder,
-    assert_execution_error,
-    assert_transaction_executor_error,
-};
+use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
 // CONSTANTS
 // ================================================================================================
@@ -810,17 +803,9 @@ async fn test_new_account_with_callback_slot_and_disabled_flag_fails() -> anyhow
 
     let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let code = "
-      use miden::tx_kernel_core::prologue
+    let result = mock_tx.execute().await;
 
-      begin
-          exec.prologue::prepare_transaction
-      end
-      ";
-
-    let result = mock_tx.execute_code(code).await;
-
-    assert_execution_error!(
+    assert_transaction_executor_error!(
         result,
         ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG
     );
