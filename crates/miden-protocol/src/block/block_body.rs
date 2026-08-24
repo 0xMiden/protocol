@@ -71,12 +71,7 @@ impl BlockBody {
 
         let mut account_ids = BTreeSet::new();
         for update in &updated_accounts {
-            BlockAccountUpdate::try_new(
-                update.account_id(),
-                update.final_state_commitment(),
-                update.details().clone(),
-            )
-            .map_err(|source| BlockBodyError::InvalidAccountUpdate {
+            update.validate().map_err(|source| BlockBodyError::InvalidAccountUpdate {
                 account_id: update.account_id(),
                 source,
             })?;

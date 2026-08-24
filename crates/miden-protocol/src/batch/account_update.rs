@@ -69,17 +69,24 @@ impl BatchAccountUpdate {
             details,
         };
 
-        update.details.validate_size(account_id)?;
-
-        let Some(patch) = update.details.validate_for_account(account_id)? else {
-            return Ok(update);
-        };
-
-        if initial_state_commitment.is_empty() {
-            validate_new_public_account(patch, final_state_commitment)?;
-        }
+        update.validate()?;
 
         Ok(update)
+    }
+
+    /// Validates this account update's size and account-detail invariants.
+    pub fn validate(&self) -> Result<(), BatchAccountUpdateError> {
+        self.details.validate_size(self.account_id)?;
+
+        let Some(patch) = self.details.validate_for_account(self.account_id)? else {
+            return Ok(());
+        };
+
+        if self.initial_state_commitment.is_empty() {
+            validate_new_public_account(patch, self.final_state_commitment)?;
+        }
+
+        Ok(())
     }
 
     /// Creates a [`BatchAccountUpdate`] from the provided parts without checking any consistency.

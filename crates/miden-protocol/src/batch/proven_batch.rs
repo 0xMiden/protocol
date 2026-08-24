@@ -75,13 +75,7 @@ impl ProvenBatch {
                     update_account_id: update.account_id(),
                 });
             }
-            BatchAccountUpdate::new(
-                update.account_id(),
-                update.initial_state_commitment(),
-                update.final_state_commitment(),
-                update.details().clone(),
-            )
-            .map_err(|source| ProvenBatchError::InvalidAccountUpdate {
+            update.validate().map_err(|source| ProvenBatchError::InvalidAccountUpdate {
                 account_id: update.account_id(),
                 source,
             })?;

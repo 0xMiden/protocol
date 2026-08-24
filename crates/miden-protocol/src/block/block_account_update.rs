@@ -37,8 +37,9 @@ impl BlockAccountUpdate {
         final_state_commitment: Word,
         details: AccountUpdateDetails,
     ) -> Result<Self, BlockAccountUpdateError> {
-        details.validate_for_account(account_id)?;
-        Ok(Self::new(account_id, final_state_commitment, details))
+        let update = Self::new(account_id, final_state_commitment, details);
+        update.validate()?;
+        Ok(update)
     }
 
     /// Returns a new [BlockAccountUpdate] instantiated from the specified components.
@@ -52,6 +53,12 @@ impl BlockAccountUpdate {
             final_state_commitment,
             details,
         }
+    }
+
+    /// Validates that this account update's details are compatible with its account ID.
+    pub fn validate(&self) -> Result<(), BlockAccountUpdateError> {
+        self.details.validate_for_account(self.account_id)?;
+        Ok(())
     }
 
     /// Returns the ID of the updated account.
