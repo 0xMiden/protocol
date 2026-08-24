@@ -54,6 +54,13 @@ skip = [
   { name = "rand" },
   { name = "rand_chacha" },
   { name = "rand_core" },
+  # prost-build's petgraph dependency uses the older hashbrown/foldhash stack.
+  { name = "foldhash", version = "=0.1.5" },
+  { name = "hashbrown", version = "=0.15.5" },
+  # protox uses logos 0.15 in its parser and logos 0.16 in prost-reflect.
+  { name = "logos", version = "=0.15.1" },
+  { name = "logos-codegen", version = "=0.15.1" },
+  { name = "logos-derive", version = "=0.15.1" },
 ]
 skip-tree = [
   # Allow rustc_version v0.2.x - build dependency version
