@@ -43,6 +43,8 @@ use miden_standards::note::{
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockTransaction, assert_transaction_executor_error};
+use miden_tx::auth::UnreachableAuth;
+use miden_tx::{NoteConsumptionChecker, TransactionExecutor};
 use rand::SeedableRng;
 use rand::rngs::Xoshiro256PlusPlus;
 use rand::seq::SliceRandom;
@@ -1294,6 +1296,232 @@ async fn sponsoring_with_a_non_native_fee_asset_is_rejected() -> anyhow::Result<
     let result = test.transaction()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_FEE_ASSET_NOT_NATIVE);
+
+    Ok(())
+}
+
+// NOTE CONSUMPTION CHECKER
+// ================================================================================================
+//
+// These tests pin how `NoteConsumptionChecker` currently treats a FEE_SPONSORSHIP note and the
+// feature note it pays for. Its search adds one note at a time, so it has no notion of a set of
+// notes that is only consumable as a whole: the outcomes asserted below are the limitation, not
+// the desired behaviour, and they are expected to change once the checker can eliminate such sets
+// atomically.
+
+/// Runs [`NoteConsumptionChecker::check_notes_consumability`] over `notes` against the network
+/// account and returns the note ids it reports as `(successful, failed)`.
+async fn check_consumability(
+    mock_chain: &MockChain,
+    network_account_id: AccountId,
+    notes: Vec<Note>,
+) -> anyhow::Result<(BTreeSet<NoteId>, BTreeSet<NoteId>)> {
+    let mut builder = mock_chain.build_transaction(network_account_id);
+    for note in &notes {
+        builder = builder.authenticated_input_note(note.id());
+    }
+    let mock_tx = builder.build()?;
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
+        .with_source_manager(mock_tx.source_manager());
+    let info = NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(network_account_id, block_ref, notes, tx_args)
+        .await?;
+
+    Ok((
+        info.successful().iter().map(|note| note.note().id()).collect(),
+        info.failed().iter().map(|note| note.note().id()).collect(),
+    ))
+}
+
+/// One feature note whose fee is not covered makes [`NoteConsumptionChecker`] drop the intact
+/// (feature note, FEE_SPONSORSHIP) pairs sharing its batch, whether the uncovered note has no
+/// sponsorship at all or an underfunded one.
+///
+/// The uncovered note aborts `collect_sponsored_fees` in the auth procedure, which runs after note
+/// processing and so is reported as an epilogue failure. That routes the batch into
+/// `find_largest_executable_combination`, which grows its candidate set one note at a time. A
+/// feature note and its sponsorship are each unconsumable alone, so no single-note step is ever
+/// valid and the search cannot rebuild them: every note is reported as failed even though the
+/// intact pairs execute fine together.
+#[rstest]
+#[case::no_sponsorship(None)]
+#[case::underfunded_sponsorship(Some(FEE_AMOUNT - 1))]
+#[tokio::test]
+async fn note_checker_drops_intact_pairs_alongside_an_uncovered_note(
+    #[case] uncovered_sponsored_amount: Option<u64>,
+) -> anyhow::Result<()> {
+    let mut test_builder = Test::builder()
+        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .num_feature_notes(3)
+        .sponsorship(0, fee_asset(FEE_AMOUNT)?)
+        .sponsorship(1, fee_asset(FEE_AMOUNT)?);
+    if let Some(amount) = uncovered_sponsored_amount {
+        test_builder = test_builder.sponsorship(2, fee_asset(amount)?);
+    }
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = test_builder.build()?;
+
+    // control: the two intact pairs are consumable together
+    let intact = vec![
+        feature_notes[0].clone(),
+        sponsorship_notes[0].clone(),
+        feature_notes[1].clone(),
+        sponsorship_notes[1].clone(),
+    ];
+    let intact_ids: BTreeSet<NoteId> = intact.iter().map(Note::id).collect();
+    let (successful, failed) =
+        check_consumability(&mock_chain, network_account.id(), intact.clone()).await?;
+    assert_eq!(successful, intact_ids, "both intact pairs should be consumable together");
+    assert!(failed.is_empty(), "no note of an intact pair should fail");
+
+    // subject: the same pairs, plus the uncovered feature note and its underfunded sponsorship
+    let mut poisoned = intact;
+    poisoned.push(feature_notes[2].clone());
+    if uncovered_sponsored_amount.is_some() {
+        poisoned.push(sponsorship_notes[2].clone());
+    }
+    let poisoned_ids: BTreeSet<NoteId> = poisoned.iter().map(Note::id).collect();
+
+    let (successful, failed) =
+        check_consumability(&mock_chain, network_account.id(), poisoned).await?;
+    assert!(
+        successful.is_empty(),
+        "the checker drops both intact pairs because it cannot add a feature note and its \
+         sponsorship in the same step",
+    );
+    assert_eq!(
+        failed, poisoned_ids,
+        "every note in the batch is reported as failed, including the intact pairs",
+    );
+
+    Ok(())
+}
+
+/// A FEE_SPONSORSHIP note whose feature note is absent and which the consuming account cannot
+/// reclaim aborts inside its own note script. That is a per-note failure, so
+/// [`NoteConsumptionChecker`] eliminates it individually and the intact pair sharing its batch
+/// still executes.
+///
+/// This is the one shape of a split group the checker handles well, and it holds only because the
+/// orphan is unreclaimable; see
+/// [`note_checker_drops_intact_pairs_alongside_a_reclaimable_orphan`] for the reclaimable case.
+#[tokio::test]
+async fn note_checker_eliminates_an_unreclaimable_orphaned_sponsorship() -> anyhow::Result<()> {
+    // the fixture builds sponsorships with no reclaimer, so reclaim is disabled on both
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = Test::builder()
+        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .num_feature_notes(2)
+        .sponsorship(0, fee_asset(FEE_AMOUNT)?)
+        .sponsorship(1, fee_asset(FEE_AMOUNT)?)
+        .build()?;
+
+    // the first feature note is withheld, leaving its sponsorship orphaned
+    let notes = vec![
+        sponsorship_notes[0].clone(),
+        feature_notes[1].clone(),
+        sponsorship_notes[1].clone(),
+    ];
+    let (successful, failed) =
+        check_consumability(&mock_chain, network_account.id(), notes).await?;
+
+    assert_eq!(
+        successful,
+        BTreeSet::from([feature_notes[1].id(), sponsorship_notes[1].id()]),
+        "the intact pair should survive the orphan's elimination",
+    );
+    assert_eq!(
+        failed,
+        BTreeSet::from([sponsorship_notes[0].id()]),
+        "the orphaned sponsorship should be the only note reported as failed",
+    );
+
+    Ok(())
+}
+
+/// An orphaned FEE_SPONSORSHIP note that the consuming account *can* reclaim poisons its batch
+/// exactly like an uncovered feature note does.
+///
+/// Its note script takes the reclaim path and succeeds, so the failure only surfaces later, when
+/// `collect_sponsored_fees` rejects a sponsorship whose feature note is not an input note. That is
+/// an epilogue failure, which routes the batch into `find_largest_executable_combination` and
+/// costs the intact pair alongside it.
+#[tokio::test]
+async fn note_checker_drops_intact_pairs_alongside_a_reclaimable_orphan() -> anyhow::Result<()> {
+    let mut rng = RandomCoin::new(Word::empty());
+    let mut builder = MockChain::builder();
+    let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    // both feature notes share one script root, so one schedule entry prices both
+    let withheld_feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
+    let feature_note = builder.add_p2any_note(sponsor.id(), NoteType::Public, [])?;
+    let network_account = network_account(
+        Some((feature_note.script().root(), AssetAmount::new(FEE_AMOUNT)?)),
+        BTreeSet::from([feature_note.script().root()]),
+    )?;
+    builder.add_account(network_account.clone())?;
+
+    // the network account is the orphan's reclaimer, so the note script takes the reclaim path
+    // instead of aborting there
+    let orphan = Note::from(
+        FeeSponsorshipNote::builder()
+            .sender(sponsor.id())
+            .target_account(network_account.id())
+            .feature_note_id(withheld_feature_note.id())
+            .asset(fee_asset(FEE_AMOUNT)?)
+            .reclaimer(network_account.id())
+            .reclaim_height(BlockNumber::from(1u32))
+            .generate_serial_number(&mut rng)
+            .build()?,
+    );
+    builder.add_output_note(RawOutputNote::Full(orphan.clone()));
+
+    let sponsorship_note = Note::from(
+        FeeSponsorshipNote::builder()
+            .sender(sponsor.id())
+            .target_account(network_account.id())
+            .feature_note_id(feature_note.id())
+            .asset(fee_asset(FEE_AMOUNT)?)
+            .generate_serial_number(&mut rng)
+            .build()?,
+    );
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // control: the intact pair on its own is consumable
+    let intact = vec![feature_note.clone(), sponsorship_note.clone()];
+    let intact_ids: BTreeSet<NoteId> = intact.iter().map(Note::id).collect();
+    let (successful, failed) =
+        check_consumability(&mock_chain, network_account.id(), intact.clone()).await?;
+    assert_eq!(successful, intact_ids, "the intact pair should be consumable on its own");
+    assert!(failed.is_empty(), "no note of an intact pair should fail");
+
+    // subject: the same pair, plus the reclaimable orphan
+    let mut poisoned = intact;
+    poisoned.push(orphan.clone());
+    let poisoned_ids: BTreeSet<NoteId> = poisoned.iter().map(Note::id).collect();
+
+    let (successful, failed) =
+        check_consumability(&mock_chain, network_account.id(), poisoned).await?;
+    assert!(
+        successful.is_empty(),
+        "a reclaimable orphan fails in the epilogue rather than in its own script, so the intact \
+         pair is dropped with it",
+    );
+    assert_eq!(failed, poisoned_ids, "every note in the batch is reported as failed");
 
     Ok(())
 }
