@@ -8,29 +8,17 @@
 #! eventually verify, but currently does not yet perform any verification: it drops its inputs and
 #! exits, leaving the all-zero word output region as the stack's initial padding zeros.
 #!
-#! Inputs: [
-#!   PREV_BLOCK_COMMITMENT,
-#!   BATCHES_COMMITMENT,
-#!   pad(8),
-#! ]
-#!
-#! Outputs: [
-#!   BLOCK_COMMITMENT,
-#!   NULLIFIER_COMMITMENT,
-#!   pad(8),
-#! ]
+#! Inputs:  [PREV_BLOCK_COMMITMENT, BATCHES_COMMITMENT, pad(8)]
+#! Outputs: [BLOCK_COMMITMENT, NULLIFIER_COMMITMENT, pad(8)]
 #!
 #! Where:
-#! - PREV_BLOCK_COMMITMENT is the commitment of the block header this block builds on top of. The
-#!   previous header is supplied through the advice provider and will be bound to this input by
-#!   recomputing its commitment.
+#! - PREV_BLOCK_COMMITMENT is the commitment of the block header this block builds on top of.
 #! - BATCHES_COMMITMENT is the sequential hash over the `BatchId`s of the batches in this block. It
-#!   pins both which batches the block contains and the order they appear in, which determines note
-#!   erasure and the placement of output notes in the block note tree.
-#! - BLOCK_COMMITMENT will be the commitment of the newly created block header, which in turn
+#!   pins both which batches the block contains and the order they appear in.
+#! - BLOCK_COMMITMENT is be the commitment of the newly created block header, which in turn
 #!   commits to the block's account root, nullifier root, note root, chain commitment and
 #!   transaction commitment. In this skeleton it is the empty word.
-#! - NULLIFIER_COMMITMENT will be the commitment to the set of nullifiers created in this block. In
+#! - NULLIFIER_COMMITMENT is the commitment to the set of nullifiers created in this block. In
 #!   this skeleton it is the empty word.
 #!
 proc main
