@@ -42,7 +42,7 @@
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
 - [BREAKING] Enforced the limit of 1024 per asset delta op for added and removed account vault deltas inside and outside the tx kernel ([#3623](https://github.com/0xMiden/protocol/pull/3623)).
 - Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
-- Added an optional `min_burn_amount` input to `BurnNote::builder` and a `MinBurnAmount::try_from_storage` reader for it, so a BURN note below the faucet's active minimum - unconsumable from the moment it exists - is rejected at creation instead of stranding its asset against `max_supply`, and documented that outstanding MINT and BURN notes are evaluated against whichever faucet policy is active when they are consumed ([#XXXX](https://github.com/0xMiden/protocol/pull/XXXX)).
+- Added a rejection for a BURN note below the target faucet's active minimum burn amount at creation, via an optional `min_burn_amount` input on `BurnNote::builder` and the new `MinBurnAmount::try_from_storage` reader ([#3705](https://github.com/0xMiden/protocol/pull/3705)).
 
 ## v0.16.0 (2026-08-17)
 
