@@ -310,7 +310,7 @@ impl TxAccountUpdate {
     /// Returns a new [TxAccountUpdate] instantiated from the specified components.
     ///
     /// Returns an error if:
-    /// - The size of the serialized account update exceeds [`ACCOUNT_UPDATE_MAX_SIZE`].
+    /// - The size of the serialized account update exceeds [`crate::ACCOUNT_UPDATE_MAX_SIZE`].
     /// - The transaction was executed against an account with public state and its account ID does
     ///   not match the ID of the patch in the account update.
     /// - The transaction was executed against a _new_ account with public state and its commitment
