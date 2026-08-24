@@ -15,7 +15,7 @@
 #! - PREV_BLOCK_COMMITMENT is the commitment of the block header this block builds on top of.
 #! - BATCHES_COMMITMENT is the sequential hash over the `BatchId`s of the batches in this block. It
 #!   pins both which batches the block contains and the order they appear in.
-#! - BLOCK_COMMITMENT is be the commitment of the newly created block header, which in turn
+#! - BLOCK_COMMITMENT is the commitment of the newly created block header, which in turn
 #!   commits to the block's account root, nullifier root, note root, chain commitment and
 #!   transaction commitment. In this skeleton it is the empty word.
 #! - NULLIFIER_COMMITMENT is the commitment to the set of nullifiers created in this block. In

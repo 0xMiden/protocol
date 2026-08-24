@@ -7,10 +7,11 @@
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
-- [BREAKING] Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` / `LocalBlockProver` plumbing ([#1706](https://github.com/0xMiden/protocol/issues/1706)).
+- Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` that runs it ([#1706](https://github.com/0xMiden/protocol/issues/1706)).
 
 ### Changes
 
+- [BREAKING] `BlockProof` now carries an `ExecutionProof` and `LocalBlockProver::prove` takes an `ExecutedBlock`, replacing the placeholder that ignored its arguments ([#1706](https://github.com/0xMiden/protocol/issues/1706)).
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
