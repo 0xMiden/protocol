@@ -37,22 +37,7 @@ impl BlockAccountUpdate {
         final_state_commitment: Word,
         details: AccountUpdateDetails,
     ) -> Result<Self, BlockAccountUpdateError> {
-        match (&details, account_id.is_private()) {
-            (AccountUpdateDetails::Private, true) => {},
-            (AccountUpdateDetails::Public(_), true) => {
-                return Err(BlockAccountUpdateError::PrivateAccountWithDetails(account_id));
-            },
-            (AccountUpdateDetails::Private, false) => {
-                return Err(BlockAccountUpdateError::PublicStateAccountMissingDetails(account_id));
-            },
-            (AccountUpdateDetails::Public(patch), false) if patch.id() != account_id => {
-                return Err(BlockAccountUpdateError::AccountIdMismatch {
-                    account_id,
-                    patch_account_id: patch.id(),
-                });
-            },
-            (AccountUpdateDetails::Public(_), false) => {},
-        }
+        details.validate_for_account(account_id)?;
         Ok(Self::new(account_id, final_state_commitment, details))
     }
 

@@ -244,6 +244,37 @@ impl AccountError {
     }
 }
 
+/// Error returned when account update details are incompatible with an account ID.
+#[derive(Debug)]
+pub(crate) enum AccountUpdateDetailsValidationError {
+    PrivateAccountWithDetails(AccountId),
+    PublicStateAccountMissingDetails(AccountId),
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+}
+
+/// Error returned when serialized account update details exceed the size limit.
+#[derive(Debug)]
+pub(crate) struct AccountUpdateSizeValidationError {
+    pub(crate) account_id: AccountId,
+    pub(crate) update_size: usize,
+}
+
+/// Error returned when a new public account cannot be reconstructed from its update details.
+#[derive(Debug)]
+pub(crate) enum NewPublicAccountValidationError {
+    RequiresFullStatePatch {
+        id: AccountId,
+        source: AccountError,
+    },
+    FinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
+}
+
 // ACCOUNT ID ERROR
 // ================================================================================================
 
@@ -1150,6 +1181,112 @@ pub enum ProvenTransactionError {
     },
     #[error("note with id {0} is both created and consumed by the transaction")]
     NoteCreatedAndConsumed(NoteId),
+}
+
+impl From<AccountUpdateDetailsValidationError> for ProvenTransactionError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch {
+                tx_account_id: account_id,
+                details_account_id: patch_account_id,
+            },
+        }
+    }
+}
+
+impl From<AccountUpdateSizeValidationError> for ProvenTransactionError {
+    fn from(error: AccountUpdateSizeValidationError) -> Self {
+        Self::AccountUpdateSizeLimitExceeded {
+            account_id: error.account_id,
+            update_size: error.update_size,
+        }
+    }
+}
+
+impl From<AccountUpdateSizeValidationError> for BatchAccountUpdateError {
+    fn from(error: AccountUpdateSizeValidationError) -> Self {
+        Self::AccountUpdateSizeLimitExceeded {
+            account_id: error.account_id,
+            update_size: error.update_size,
+        }
+    }
+}
+
+impl From<AccountUpdateDetailsValidationError> for BatchAccountUpdateError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch { account_id, patch_account_id },
+        }
+    }
+}
+
+impl From<AccountUpdateDetailsValidationError> for BlockAccountUpdateError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch { account_id, patch_account_id },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for ProvenTransactionError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                tx_final_commitment: final_state_commitment,
+                details_commitment: account_commitment,
+            },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for BatchAccountUpdateError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            },
+        }
+    }
 }
 
 // PROPOSED BATCH ERROR

@@ -1,7 +1,8 @@
 use alloc::boxed::Box;
 use alloc::string::ToString;
 
-use crate::account::{Account, AccountId, AccountUpdateDetails};
+use crate::Word;
+use crate::account::{AccountId, AccountUpdateDetails, validate_new_public_account};
 use crate::errors::BatchAccountUpdateError;
 use crate::transaction::ProvenTransaction;
 use crate::utils::serde::{
@@ -11,7 +12,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{ACCOUNT_UPDATE_MAX_SIZE, Word};
 
 // BATCH ACCOUNT UPDATE
 // ================================================================================================
@@ -69,46 +69,14 @@ impl BatchAccountUpdate {
             details,
         };
 
-        let update_size = update.details.get_size_hint();
-        if update_size > ACCOUNT_UPDATE_MAX_SIZE as usize {
-            return Err(BatchAccountUpdateError::AccountUpdateSizeLimitExceeded {
-                account_id,
-                update_size,
-            });
-        }
+        update.details.validate_size(account_id)?;
 
-        if account_id.is_private() {
-            return if update.details.is_private() {
-                Ok(update)
-            } else {
-                Err(BatchAccountUpdateError::PrivateAccountWithDetails(account_id))
-            };
-        }
-
-        let AccountUpdateDetails::Public(patch) = update.details() else {
-            return Err(BatchAccountUpdateError::PublicStateAccountMissingDetails(account_id));
+        let Some(patch) = update.details.validate_for_account(account_id)? else {
+            return Ok(update);
         };
-        if patch.id() != account_id {
-            return Err(BatchAccountUpdateError::AccountIdMismatch {
-                account_id,
-                patch_account_id: patch.id(),
-            });
-        }
 
         if initial_state_commitment.is_empty() {
-            let account = Account::try_from(patch).map_err(|source| {
-                BatchAccountUpdateError::NewPublicStateAccountRequiresFullStatePatch {
-                    id: account_id,
-                    source,
-                }
-            })?;
-            let account_commitment = account.to_commitment();
-            if account_commitment != final_state_commitment {
-                return Err(BatchAccountUpdateError::AccountFinalCommitmentMismatch {
-                    final_state_commitment,
-                    account_commitment,
-                });
-            }
+            validate_new_public_account(patch, final_state_commitment)?;
         }
 
         Ok(update)
