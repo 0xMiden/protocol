@@ -82,8 +82,10 @@ proc load_note_list
     dup div.NOTE_ENTRY_NUM_WORDS
     # => [num_notes, num_words, write_ptr]
 
-    # Both divisions are field divisions, so a length that is not a multiple of 8 felts yields a
-    # huge non-u32 felt rather than a small count, which the u32 assertion rejects.
+    # Both divisions are field divisions rather than integer divisions, so a length that is not a
+    # multiple of 8 felts does not truncate: dividing an odd felt by 2 yields (x + p) / 2, which is
+    # around 2^63. Any such length therefore lands far outside the u32 range and is rejected by the
+    # assertion below rather than silently reinterpreted as a smaller count.
     dup u32assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     movdn.2

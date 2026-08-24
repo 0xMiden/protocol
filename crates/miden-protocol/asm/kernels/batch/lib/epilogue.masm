@@ -96,12 +96,20 @@ proc store_hasher_state
     add.HASHER_CAPACITY_OFFSET mem_storew_le dropw
 end
 
-#! Absorbs input note `input_note_idx`'s 8-felt `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuple, read from the
-#! input-note list in memory, into the hasher state stored at `hasher_state_ptr` (overwrite-mode
-#! poseidon2, matching `Hasher::hash_elements`).
+#! Absorbs input note `input_note_idx`'s 8-felt `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuple into the
+#! hasher state at `hasher_state_ptr` (overwrite-mode poseidon2, matching `Hasher::hash_elements`).
 #!
-#! Inputs:  [input_note_idx, hasher_state_ptr]
-#! Outputs: []
+#! Both the tuple and the hasher state are passed in memory rather than on the operand stack.
+#!
+#! Inputs:
+#!   Operand stack: [input_note_idx, hasher_state_ptr]
+#!   Memory:
+#!     input-note list entry `input_note_idx` |-> [NULLIFIER, NOTE_ID_OR_EMPTY]
+#!     hasher_state_ptr                       |-> [RATE0, RATE1, CAPACITY]
+#! Outputs:
+#!   Operand stack: []
+#!   Memory:
+#!     hasher_state_ptr |-> [RATE0', RATE1', CAPACITY'], with the tuple absorbed
 proc absorb_input_entry
     # The entry occupies one double word [entry_ptr, entry_ptr + NOTE_ENTRY_FELT_LEN).
     exec.memory::get_input_note_entry_ptr
@@ -121,8 +129,16 @@ end
 #! it into the batch hasher unless it was erased.
 #!
 #!
-#! Inputs:  [input_note_idx, hasher_state_ptr]
-#! Outputs: [input_note_idx + 1, hasher_state_ptr]
+#! Inputs:
+#!   Operand stack: [input_note_idx, hasher_state_ptr]
+#!   Memory:
+#!     input-note list entry `input_note_idx` |-> [NULLIFIER, NOTE_ID_OR_EMPTY]
+#!     its flag word                          |-> [erasure_state, is_consumed, 0, 0]
+#!     hasher_state_ptr                       |-> [RATE0, RATE1, CAPACITY]
+#! Outputs:
+#!   Operand stack: [input_note_idx + 1, hasher_state_ptr]
+#!   Memory:
+#!     hasher_state_ptr |-> the hasher state, with the entry absorbed unless it was erased
 proc process_input_entry
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx, hasher_state_ptr]
@@ -147,9 +163,21 @@ end
 #! The single pass over the input entries also enforces the epilogue invariant that every entry was
 #! consumed exactly once.
 #!
-#! Inputs:  []
-#! Outputs: [INPUT_NOTES_COMMITMENT]
-@locals(12) # the three words of a poseidon2 hasher state: RATE0, RATE1 and CAPACITY
+#! With no non-erased entries this is the empty word, matching the early return in
+#! `build_input_note_commitment`: `init_no_padding` starts the state at zero and `squeeze_digest`
+#! returns the first rate word without permuting, so an unabsorbed state squeezes to the empty
+#! word rather than to the hash of zero elements.
+#!
+#! The entries are read from memory; only the commitment is returned on the operand stack.
+#!
+#! Inputs:
+#!   Operand stack: []
+#!   Memory:
+#!     the nullifier-sorted input-note list and its parallel flag array
+#! Outputs:
+#!   Operand stack: [INPUT_NOTES_COMMITMENT]
+#!
+@locals(12) # the three words of a poseidon2 hasher state: RATE0, RATE1 and CAPACITY.
 proc compute_input_notes_commitment
     # Initialize the hasher state in this procedure's local memory.
     exec.poseidon2::init_no_padding
