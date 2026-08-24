@@ -72,7 +72,6 @@ fs-err          = { default-features = false, version = "3" }
 primitive-types = { default-features = false, version = "0.14" }
 prost           = { default-features = false, version = "0.14" }
 prost-build     = { default-features = false, version = "0.14" }
-prost-types     = { default-features = false, version = "0.14" }
 protox          = { default-features = false, version = "0.9" }
 rand            = { default-features = false, version = "0.10" }
 rand_chacha     = { default-features = false, version = "0.10" }
