@@ -337,7 +337,7 @@ impl TryFrom<proto::blockchain::BlockAccountUpdate> for BlockAccountUpdate {
         let account_id: AccountId = required!(decoder, update.account_id)?;
         let final_state_commitment = required!(decoder, update.final_state_commitment)?;
         let details: AccountUpdateDetails = required!(decoder, update.details)?;
-        BlockAccountUpdate::try_new(account_id, final_state_commitment, details)
+        BlockAccountUpdate::new(account_id, final_state_commitment, details)
             .map_err(ConversionError::new)
     }
 }

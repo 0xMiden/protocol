@@ -46,7 +46,7 @@ fn block_body_and_transaction_header_roundtrip() {
         InputNotes::default(),
         vec![],
     );
-    let account_update = BlockAccountUpdate::try_new(
+    let account_update = BlockAccountUpdate::new(
         account_id,
         transaction.final_state_commitment(),
         AccountUpdateDetails::Private,
