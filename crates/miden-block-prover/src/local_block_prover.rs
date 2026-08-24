@@ -53,8 +53,10 @@ impl LocalBlockProver {
 
     /// Returns a [`BlockProof`] carrying a dummy execution proof, without running the block kernel.
     ///
-    /// This is exposed for testing purposes.
-    #[cfg(any(feature = "testing", test))]
+    /// This is exposed for testing purposes. It is gated on the `testing` feature alone rather
+    /// than also on `cfg(test)`, because [`BlockProof::new_dummy`] requires `miden-protocol`'s own
+    /// `testing` feature, which only this crate's `testing` feature turns on.
+    #[cfg(feature = "testing")]
     pub fn prove_dummy(&self) -> BlockProof {
         BlockProof::new_dummy()
     }
