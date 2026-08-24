@@ -25,18 +25,42 @@ impl BatchExecutor {
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
     /// passed to [`LocalBatchProver::prove`](crate::LocalBatchProver::prove).
     ///
-    /// The provided advice inputs are merged onto those derived from the proposed batch,
-    /// overriding matching advice-map keys.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the batch contains a feature the kernel does not yet support (an input note authenticated
-    ///   within the batch, or a pre-erasure note union exceeding the kernel's fixed-size regions);
+    /// - the batch contains more transactions than the kernel supports, or a feature the kernel
+    ///   does not yet support (an input note authenticated within the batch, or a pre-erasure note
+    ///   union exceeding the kernel's fixed-size regions);
     /// - the batch kernel program fails to execute;
     /// - the kernel output stack fails to parse;
     /// - the kernel outputs do not match the outputs expected for the proposed batch.
     pub fn execute(
+        &self,
+        proposed_batch: ProposedBatch,
+    ) -> Result<ExecutedBatch, ProvenBatchError> {
+        self.execute_with(proposed_batch, AdviceInputs::default())
+    }
+
+    /// Runs the batch kernel with additional advice inputs merged onto those derived from the
+    /// proposed batch, overriding matching advice-map keys.
+    ///
+    /// This exists so tests can forge the data the kernel unhashes and assert that it aborts.
+    /// Production callers must use [`BatchExecutor::execute`], which derives every advice input
+    /// from the proposed batch itself.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`BatchExecutor::execute`].
+    #[cfg(feature = "testing")]
+    pub fn execute_with_advice(
+        &self,
+        proposed_batch: ProposedBatch,
+        advice_inputs: AdviceInputs,
+    ) -> Result<ExecutedBatch, ProvenBatchError> {
+        self.execute_with(proposed_batch, advice_inputs)
+    }
+
+    fn execute_with(
         &self,
         proposed_batch: ProposedBatch,
         advice_inputs: AdviceInputs,

@@ -4,7 +4,7 @@
 
 ### Features
 
-- [BREAKING] Implemented partial batch kernel verification to check the transaction list against `BATCH_ID` and compute `INPUT_NOTES_COMMITMENT`; `BatchExecutor::execute` now additionally takes caller `AdviceInputs` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
+- [BREAKING] Implemented partial batch kernel verification to check the transaction list against `BATCH_ID` and compute `INPUT_NOTES_COMMITMENT` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
 
 ### Changes
 

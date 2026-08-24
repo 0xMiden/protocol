@@ -29,7 +29,6 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     RawOutputNote,
 };
-use miden_protocol::vm::AdviceInputs;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
@@ -680,7 +679,7 @@ async fn batch_kernel_rejects_in_batch_authenticated_note() -> anyhow::Result<()
     assert_eq!(batch.input_notes().num_notes(), 1);
 
     // `ExecutedBatch` is not `Debug`, so match on the result explicitly.
-    match BatchExecutor::new().execute(batch, AdviceInputs::default()) {
+    match BatchExecutor::new().execute(batch) {
         Err(ProvenBatchError::UnsupportedInBatchAuthenticatedNote(_)) => {},
         Ok(_) => panic!("expected the batch execution to reject the in-batch authenticated note"),
         Err(other) => panic!("expected UnsupportedInBatchAuthenticatedNote, got: {other}"),

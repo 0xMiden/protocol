@@ -117,9 +117,7 @@ fn batch_kernel_emits_input_notes_commitment() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
     let expected_input_notes_commitment = batch.input_notes().commitment();
 
-    let executed = BatchExecutor::new()
-        .execute(batch, AdviceInputs::default())
-        .context("batch execution failed")?;
+    let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
     let output = executed.batch_outputs();
 
     assert_eq!(output.input_notes_commitment(), expected_input_notes_commitment);
@@ -167,9 +165,7 @@ fn batch_kernel_erases_note_created_and_consumed_in_batch() -> anyhow::Result<()
     assert_eq!(batch.input_notes().num_notes(), 0);
     let expected_input_notes_commitment = batch.input_notes().commitment();
 
-    let executed = BatchExecutor::new()
-        .execute(batch, AdviceInputs::default())
-        .context("batch execution failed")?;
+    let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
     assert_eq!(
         executed.batch_outputs().input_notes_commitment(),
         expected_input_notes_commitment,
@@ -185,9 +181,7 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
     let expected_id = batch.id();
 
-    let executed = BatchExecutor::new()
-        .execute(batch, AdviceInputs::default())
-        .context("batch execution failed")?;
+    let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
     let proven = LocalBatchProver::new().prove(executed).context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
@@ -218,7 +212,7 @@ fn batch_kernel_rejects_tampered_advice(
 
     let override_advice = tampered_advice_for(&batch, key(&batch));
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert!(result.is_err(), "kernel must abort on tampered advice");
 
     Ok(())
@@ -235,7 +229,7 @@ fn batch_kernel_rejects_invalid_tx_header_length() -> anyhow::Result<()> {
     let blob = vec![Felt::from(0u32); 2 * FELTS_PER_TX_HEADER];
     let override_advice = AdviceInputs::default().with_map([(tx_id, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_TX_HEADER_INVALID_LENGTH);
 
     Ok(())
@@ -275,7 +269,7 @@ fn batch_executor_rejects_too_many_transactions() -> anyhow::Result<()> {
     )?;
 
     // `ExecutedBatch` is not `Debug`, so match on the result explicitly.
-    match BatchExecutor::new().execute(batch, AdviceInputs::default()) {
+    match BatchExecutor::new().execute(batch) {
         Err(ProvenBatchError::TooManyTransactions(count)) => {
             assert_eq!(count, num_transactions);
         },
@@ -322,7 +316,7 @@ fn batch_kernel_rejects_input_note_missing_from_list() -> anyhow::Result<()> {
     blob.truncate(blob.len() - FELTS_PER_NOTE_ENTRY); // drop the last (highest-nullifier) note
     let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_IN_LIST);
 
     Ok(())
@@ -340,7 +334,7 @@ fn batch_kernel_rejects_duplicated_input_note_list_entry() -> anyhow::Result<()>
     duplicated.extend_from_slice(&blob);
     let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, duplicated)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_NOT_SORTED);
 
     Ok(())
@@ -364,7 +358,7 @@ fn batch_kernel_rejects_descending_input_note_list() -> anyhow::Result<()> {
     swapped.extend_from_slice(&blob[2 * FELTS_PER_NOTE_ENTRY..]);
     let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, swapped)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_NOT_SORTED);
 
     Ok(())
@@ -382,7 +376,7 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
     blob[4] += Felt::from(1u32);
     let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_ID_MISMATCH);
 
     Ok(())
@@ -416,7 +410,7 @@ fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
     blob.truncate(blob.len() - FELTS_PER_NOTE_ENTRY); // drop the last (highest-note-id) output note
     let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST);
 
     Ok(())
@@ -446,7 +440,7 @@ fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
     }
     let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED);
 
     Ok(())
@@ -478,7 +472,7 @@ fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
     }
     let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_CONSUMED);
 
     Ok(())
@@ -507,7 +501,7 @@ fn batch_kernel_rejects_uncreated_output_note() -> anyhow::Result<()> {
     }
     let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_CREATED);
 
     Ok(())
@@ -523,7 +517,7 @@ fn batch_kernel_rejects_oversized_input_note_list() -> anyhow::Result<()> {
     let blob = vec![Felt::from(0u32); (MAX_INPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
     let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);
 
     Ok(())
@@ -538,7 +532,7 @@ fn batch_kernel_rejects_oversized_output_note_list() -> anyhow::Result<()> {
     let blob = vec![Felt::from(0u32); (MAX_OUTPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
     let override_advice = AdviceInputs::default().with_map([(*OUTPUT_NOTE_LIST_KEY, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);
 
     Ok(())
@@ -556,7 +550,7 @@ fn batch_kernel_rejects_too_many_transactions() -> anyhow::Result<()> {
     let blob = vec![Felt::from(0u32); (MAX_TRANSACTIONS_PER_BATCH + 1) * FELTS_PER_TX_TUPLE];
     let override_advice = AdviceInputs::default().with_map([(batch.id().as_word(), blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_TOO_MANY_TRANSACTIONS);
 
     Ok(())
@@ -573,7 +567,7 @@ fn batch_kernel_rejects_too_many_notes_per_transaction() -> anyhow::Result<()> {
     let blob = vec![Felt::from(0u32); (MAX_INPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
     let override_advice = AdviceInputs::default().with_map([(key, blob)]);
 
-    let result = BatchExecutor::new().execute(batch, override_advice);
+    let result = BatchExecutor::new().execute_with_advice(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_TX_TOO_MANY_NOTES);
 
     Ok(())
