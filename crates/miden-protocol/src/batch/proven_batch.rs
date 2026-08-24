@@ -99,6 +99,11 @@ impl ProvenBatch {
                 return Err(ProvenBatchError::DuplicateOutputNote(note.id()));
             }
         }
+        for note_header in input_notes.iter().filter_map(InputNoteCommitment::header) {
+            if output_note_ids.contains(&note_header.id()) {
+                return Err(ProvenBatchError::NoteCreatedAndConsumed(note_header.id()));
+            }
+        }
 
         let id =
             BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
@@ -278,5 +283,126 @@ impl Deserializable for ProvenBatch {
             proof,
         )
         .map_err(|e| DeserializationError::UnknownError(e.to_string()))
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use alloc::collections::BTreeMap;
+    use alloc::vec::Vec;
+
+    use assert_matches::assert_matches;
+
+    use super::ProvenBatch;
+    use crate::Word;
+    use crate::account::AccountId;
+    use crate::batch::BatchId;
+    use crate::block::BlockNumber;
+    use crate::errors::ProvenBatchError;
+    use crate::note::Note;
+    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+    use crate::transaction::{
+        InputNoteCommitment,
+        InputNotes,
+        OrderedTransactionHeaders,
+        OutputNote,
+        RawOutputNote,
+        TransactionHeader,
+    };
+    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+    use crate::vm::ExecutionProof;
+
+    fn transaction_headers() -> OrderedTransactionHeaders {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+        let transaction = TransactionHeader::new(
+            account_id,
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            InputNotes::default(),
+            vec![],
+        );
+
+        OrderedTransactionHeaders::new_unchecked(vec![transaction])
+    }
+
+    fn conflicting_notes() -> (crate::note::NoteId, InputNotes<InputNoteCommitment>, Vec<OutputNote>)
+    {
+        let note = Note::mock_noop(Word::empty());
+        let note_id = note.id();
+        let input_note =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let output_note = RawOutputNote::Full(note).into_output_note().unwrap();
+
+        (note_id, InputNotes::new(vec![input_note]).unwrap(), vec![output_note])
+    }
+
+    #[test]
+    fn rejects_note_created_and_consumed_in_same_batch() {
+        let (note_id, input_notes, output_notes) = conflicting_notes();
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            BTreeMap::new(),
+            input_notes,
+            output_notes,
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(error, ProvenBatchError::NoteCreatedAndConsumed(id) if id == note_id);
+    }
+
+    #[test]
+    fn deserialization_rejects_note_created_and_consumed_in_same_batch() {
+        let (note_id, input_notes, output_notes) = conflicting_notes();
+        let transactions = transaction_headers();
+        let id =
+            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
+        let invalid_batch = ProvenBatch::new_unchecked(
+            id,
+            Word::empty(),
+            BlockNumber::from(1),
+            BTreeMap::new(),
+            input_notes,
+            output_notes,
+            BlockNumber::from(2),
+            transactions,
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap();
+
+        let error = ProvenBatch::read_from_bytes(&invalid_batch.to_bytes()).unwrap_err();
+
+        assert_matches!(
+            error,
+            DeserializationError::UnknownError(message)
+                if message
+                    == format!(
+                        "note with id {note_id} is both created and consumed by the proven batch"
+                    )
+        );
+    }
+
+    #[test]
+    fn accepts_disjoint_input_and_output_notes() {
+        let (_, _, output_notes) = conflicting_notes();
+
+        ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            BTreeMap::new(),
+            InputNotes::default(),
+            output_notes,
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap();
     }
 }

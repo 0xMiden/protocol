@@ -1435,6 +1435,8 @@ pub enum ProvenBatchError {
     TooManyAccountUpdates(usize),
     #[error("output note {0} appears twice in the proven batch")]
     DuplicateOutputNote(NoteId),
+    #[error("note with id {0} is both created and consumed by the proven batch")]
+    NoteCreatedAndConsumed(NoteId),
     #[error(
         "account update stored under account {map_account_id} belongs to account {update_account_id}"
     )]
