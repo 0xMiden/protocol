@@ -471,7 +471,7 @@ mod tests {
         assert_eq!(policy.fee_schedule().get(&root), Some(&AssetAmount::ZERO));
         assert!(
             pricer.price(root).unwrap().as_u64() > 0,
-            "the explicit schedule exemption should not discard the benchmarked standalone cost"
+            "the benchmarked standalone cost should remain nonzero"
         );
     }
 
