@@ -31,14 +31,18 @@ use crate::{Felt, Word};
 ///
 /// **Asset Callbacks**
 ///
-/// The [`AssetCallbackFlag`] determines whether assets issued by the account (if any) trigger
-/// callbacks and is encoded into the resulting [`AccountId`] at creation. It is derived from the
-/// account's storage: it is [`AssetCallbackFlag::Enabled`] if any component installs one of the
-/// protocol-reserved asset callback slots (see [`AccountStorage::has_callbacks`]) and
-/// [`AssetCallbackFlag::Disabled`] otherwise. There is deliberately no way to disable the flag for
-/// an account that does install such a slot, since the tx kernel gates callback invocation on the
-/// flag alone and the flag cannot be changed after the ID is ground, so such a callback could never
-/// be invoked.
+/// The [`AssetCallbackFlag`] determines whether the tx kernel dispatches asset callbacks for assets
+/// issued by the account (if any) and is encoded into the resulting [`AccountId`] at creation. Note
+/// that the flag only enables the dispatch: whether a callback actually runs additionally depends
+/// on the corresponding callback slot being present and holding a non-empty procedure root, so an
+/// enabled flag means callbacks may be invoked, not that the account has any.
+///
+/// The flag is derived from the account's storage: it is [`AssetCallbackFlag::Enabled`] if any
+/// component installs one of the protocol-reserved asset callback slots (see
+/// [`AccountStorage::has_callbacks`]) and [`AssetCallbackFlag::Disabled`] otherwise. There is
+/// deliberately no way to disable the flag for an account that does install such a slot, since the
+/// tx kernel gates callback invocation on the flag alone and the flag cannot be changed after the
+/// ID is ground, so such a callback could never be invoked.
 ///
 /// The converse is allowed: [`AccountBuilder::enable_asset_callbacks`] enables the flag without
 /// installing a callback slot, so that the account retains the ability to add a callback slot via
