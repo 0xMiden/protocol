@@ -32,12 +32,6 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #! explicit parameter, verifies it was issued by the consuming faucet, enforces the active burn
 #! policy, and updates supply / asset status.
 #!
-#! The faucet evaluates its active burn policy and its pause flag at consumption time, not at note
-#! creation time: the note is subject to whichever policy is active when it is consumed. A policy
-#! switch, a pause, or a raised minimum burn amount applied after the note was created makes it
-#! abort here, and since the note carries the asset, that amount stays counted against the faucet's
-#! `max_supply` until the faucet's owner restores a policy that admits the burn.
-#!
 #! Requires that the account exposes:
 #! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
 #! - either `miden::standards::faucets::fungible::receive_and_burn` or

@@ -20,11 +20,6 @@ const ERR_MINT_UNSUPPORTED_FAUCET = "the consuming account exposes neither a fun
 #! This note is intended to be executed against a network faucet account. Both faucet kinds share
 #! the same storage layout, documented on `mint_fungible::mint` and `mint_non_fungible::mint`.
 #!
-#! The faucet evaluates its active mint policy and its pause flag at consumption time, not at note
-#! creation time: the note is subject to whichever policy is active when it is consumed. A policy
-#! switch or a pause applied after the note was created makes it abort here. The note carries no
-#! assets, so a rejected mint strands nothing; the mint simply does not take place.
-#!
 #! Requires that the account exposes:
 #! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
 #! - either `miden::standards::faucets::fungible::mint_and_send` or

@@ -2054,8 +2054,7 @@ async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Resul
     Ok(())
 }
 
-/// Tests that the `BurnNote` builder, given the faucet's live minimum burn amount, refuses to
-/// create the very note the faucet rejects on consumption - and accepts the note it would burn.
+/// Tests that the `BurnNote` builder, given the faucet's live minimum burn amount.
 #[test]
 fn test_burn_note_builder_enforces_faucet_min_burn_amount() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();

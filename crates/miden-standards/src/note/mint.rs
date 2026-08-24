@@ -51,14 +51,6 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// the output note minted on consumption can be private or public depending on the
 /// [`MintNoteStorage`] variant.
 ///
-/// # Policy evaluation happens at consumption time
-///
-/// The faucet evaluates its active mint policy - and its pause flag - when the note is consumed,
-/// not when it is created. An outstanding MINT note is therefore subject to whichever policy is
-/// active at that later moment: a policy switch or a pause can make an already-created note
-/// unconsumable. A MINT note carries no assets, so a rejected mint strands nothing; the mint simply
-/// does not take place.
-///
 /// Construct one with the [builder](MintNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]

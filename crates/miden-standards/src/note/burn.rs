@@ -51,23 +51,6 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// visible on-chain and discoverable by the network; whether consuming one requires a signature
 /// depends on the target faucet's auth component.
 ///
-/// # Policy evaluation happens at consumption time
-///
-/// The faucet evaluates its active burn policy - and its pause flag - when the note is consumed,
-/// not when it is created. An outstanding BURN note is therefore subject to whichever policy is
-/// active at that later moment: a policy switch, a pause, or a raised minimum burn amount can make
-/// an already-created note unconsumable, and because the note carries the asset, that amount stays
-/// counted against the faucet's `max_supply` for as long as the note cannot be burned.
-///
-/// Recovering from that state needs the faucet owner: the policy setters and `unpause` are gated
-/// only by the faucet's authority, so restoring a policy that admits the burn always makes the note
-/// consumable again. What the note itself cannot do is escape the state on its own.
-///
-/// The one case that needs no administrative action is a note created below the faucet's minimum
-/// burn amount, which is unconsumable from the moment it exists. To rule that out, pass the
-/// faucet's currently configured threshold to the builder's `min_burn_amount` input; read it with
-/// [`MinBurnAmount::try_from_storage`](crate::account::policies::MinBurnAmount::try_from_storage).
-///
 /// Construct one with the [builder](BurnNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
@@ -83,15 +66,6 @@ impl BurnNote {
     /// Builds a new [`BurnNote`] that burns `asset` against the faucet that issued it.
     ///
     /// The target faucet is the asset's own issuing faucet.
-    ///
-    /// `min_burn_amount` is the threshold the target faucet currently enforces through its
-    /// [`MinBurnAmount`](crate::account::policies::MinBurnAmount) burn policy, if it installs one.
-    /// When supplied, the asset's amount is checked against it at creation time so a note that the
-    /// policy would reject on consumption - stranding its asset against the faucet's `max_supply` -
-    /// is never produced. Read the current value with
-    /// [`MinBurnAmount::try_from_storage`](crate::account::policies::MinBurnAmount::try_from_storage).
-    /// The check is a client-side guard against a live threshold, not a guarantee: the faucet owner
-    /// can raise the minimum, switch the policy, or pause the faucet after the note exists.
     ///
     /// # Errors
     ///
