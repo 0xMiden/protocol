@@ -487,9 +487,9 @@ pub proc build_metadata
     # => [sender_id_suffix, sender_id_prefix, attachment_num_words_and_tag, note_type]
 
     # The lower 8 bits of the account ID suffix are guaranteed to be zero by construction.
-    # Encode note_type at bit 4 and version at bits 0..=3.
-    # Shifting note_type left by 4 is equivalent to multiplying by 16.
-    movup.3 mul.16 add.NOTE_METADATA_VERSION_1 add
+    # Encode note_type at bit 6 and version at bits 0..=5.
+    # Shifting note_type left by 6 is equivalent to multiplying by 64.
+    movup.3 mul.64 add.NOTE_METADATA_VERSION_1 add
     # => [sender_id_suffix_type_version, sender_id_prefix, tag]
 
     # Build metadata.

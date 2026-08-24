@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 
-use crate::account::{AccountHeader, PartialAccount};
+use crate::account::PartialAccount;
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
@@ -122,10 +122,9 @@ impl TransactionAdviceInputs {
             // for foreign accounts, we need to insert the id to state mapping
             // NOTE: keep this in sync with the account::load_from_advice procedure
             let account_id_key = AccountIdKey::from(foreign_acc.id());
-            let header = AccountHeader::from(foreign_acc.account());
 
-            // ACCOUNT_ID |-> [ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
-            self.add_map_entry(account_id_key.as_word(), header.to_elements());
+            // ACCOUNT_ID |-> [ACCOUNT_METADATA, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+            self.add_map_entry(account_id_key.as_word(), foreign_acc.account().to_elements());
         }
     }
 
@@ -145,7 +144,7 @@ impl TransactionAdviceInputs {
     ///     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
     ///     [0, 0, 0, 0]
     ///     NOTE_ROOT,
-    ///     [account_nonce, 0, account_id_suffix, account_id_prefix],
+    ///     [account_version, account_nonce, account_id_suffix, account_id_prefix],
     ///     ACCOUNT_VAULT_ROOT,
     ///     ACCOUNT_STORAGE_COMMITMENT,
     ///     ACCOUNT_CODE_COMMITMENT,
@@ -181,16 +180,7 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.note_root());
 
         // --- core account items (keep in sync with process_account_data) ----
-        let account = tx_inputs.account();
-        self.extend_stack([
-            account.nonce(),
-            ZERO,
-            account.id().suffix(),
-            account.id().prefix().as_felt(),
-        ]);
-        self.extend_stack(account.vault().root());
-        self.extend_stack(account.storage().commitment());
-        self.extend_stack(account.code().commitment());
+        self.extend_stack(tx_inputs.account().to_elements());
 
         // --- number of notes, script root and args --------------------------
         self.extend_stack([Felt::from(tx_inputs.input_notes().num_notes())]);
