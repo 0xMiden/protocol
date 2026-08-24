@@ -378,6 +378,11 @@ end
 #! installed on an account whose flag is disabled would therefore look correctly configured while
 #! never being invoked, silently and permanently disabling whatever the callback enforces.
 #!
+#! `has_callback_slot` must imply `has_callbacks`, but not vice versa. That is, the callback flag
+#! can be enabled without callback slots present. This is allowed so that an account retains the
+#! ability to add a callback slot via an account upgrade later, which is particularly useful if new
+#! types of callbacks are introduced.
+#!
 #! Inputs:  []
 #! Outputs: []
 #!

@@ -137,12 +137,9 @@ pub enum AccountError {
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
     #[error(
-        "account storage contains the asset callback slot {slot_name} but the asset callback flag of account ID {account_id} is disabled, so the callback would never be invoked"
+        "storage of account {0} contains an asset callback slot but its asset callback flag is disabled, so the callback would never be invoked"
     )]
-    AssetCallbackSlotWithDisabledFlag {
-        account_id: AccountId,
-        slot_name: StorageSlotName,
-    },
+    AssetCallbackSlotWithDisabledFlag(AccountId),
     #[error("failed to update asset vault")]
     AssetVaultUpdateError(#[source] AssetVaultError),
     #[error("account build error: {0}")]

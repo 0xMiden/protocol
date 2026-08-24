@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::account::{AccountStorage, StorageSlot, StorageSlotName};
+use crate::account::{StorageSlot, StorageSlotName};
 use crate::utils::sync::LazyLock;
 
 // CONSTANTS
@@ -79,12 +79,6 @@ impl AssetCallbacks {
             Self::on_before_asset_added_to_account_slot(),
             Self::on_before_asset_added_to_note_slot(),
         ]
-    }
-
-    /// Returns `true` if `storage` contains at least one of the protocol-reserved asset callback
-    /// slots, `false` otherwise.
-    pub fn is_installed(storage: &AccountStorage) -> bool {
-        Self::slot_names().iter().any(|slot_name| storage.get(slot_name).is_some())
     }
 
     /// Returns the procedure root of the `on_before_asset_added_to_account` callback.

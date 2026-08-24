@@ -2,7 +2,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::delta::AssetDeltaOperation;
-use crate::asset::{AssetCallbacks, AssetVault};
+use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
@@ -552,30 +552,15 @@ impl Deserializable for Account {
 
 /// Validates that an account which installs an asset callback slot has callbacks enabled.
 ///
-/// The transaction kernel decides whether to invoke an account's asset callbacks solely from the
-/// [`AssetCallbackFlag`] encoded in its [`AccountId`], and that flag is immutable once the ID is
-/// ground. A callback slot installed on an account whose flag is disabled would therefore look
-/// correctly configured while never being invoked, silently and permanently disabling whatever the
-/// callback enforces. The transaction kernel rejects such accounts when they are created; this
-/// mirrors that rule for accounts that are constructed or deserialized outside of a transaction.
-///
-/// The converse is valid: an account may enable the flag without installing a callback slot, in
-/// which case the kernel skips the callback.
+/// The transaction kernel rejects such accounts when they are created; this mirrors that rule for
+/// accounts that are constructed or deserialized outside of a transaction. See the
+/// [`AccountBuilder`](AccountBuilder#asset-callbacks) docs for details.
 pub(super) fn validate_asset_callbacks(
     id: AccountId,
     storage: &AccountStorage,
 ) -> Result<(), AccountError> {
-    if id.asset_callback_flag().is_enabled() {
-        return Ok(());
-    }
-
-    for slot_name in AssetCallbacks::slot_names() {
-        if storage.get(slot_name).is_some() {
-            return Err(AccountError::AssetCallbackSlotWithDisabledFlag {
-                account_id: id,
-                slot_name: slot_name.clone(),
-            });
-        }
+    if !id.asset_callback_flag().is_enabled() && storage.has_callbacks() {
+        return Err(AccountError::AssetCallbackSlotWithDisabledFlag(id));
     }
 
     Ok(())
@@ -640,7 +625,7 @@ mod tests {
         StorageSlotContent,
         StorageSlotName,
     };
-    use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+    use crate::asset::{Asset, AssetCallbacks, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
     use crate::testing::account_id::{
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -886,6 +871,31 @@ mod tests {
         let storage = AccountStorage::new(slots).unwrap();
 
         Account::new_existing(id, vault, storage, code, nonce)
+    }
+
+    /// Accounts constructed outside of the builder are rejected if they install a callback slot
+    /// without having callbacks enabled.
+    #[test]
+    fn account_new_rejects_callback_slot_with_disabled_flag() -> anyhow::Result<()> {
+        let account = AccountBuilder::new([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Disabled);
+
+        let (id, vault, storage, code, nonce, _seed) = account.into_parts();
+
+        let mut slots = storage.into_slots();
+        slots.push(StorageSlot::with_value(
+            AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+            Word::from([1u32, 2, 3, 4]),
+        ));
+        let storage = AccountStorage::new(slots)?;
+
+        let err = Account::new(id, vault, storage, code, nonce, None).unwrap_err();
+        assert_matches!(err, AccountError::AssetCallbackSlotWithDisabledFlag(_));
+
+        Ok(())
     }
 
     /// Tests all cases of account ID seed validation.

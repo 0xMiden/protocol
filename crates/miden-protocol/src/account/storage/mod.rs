@@ -19,6 +19,7 @@ use crate::account::{
     StorageSlotPatch,
     StorageValuePatch,
 };
+use crate::asset::AssetCallbacks;
 use crate::crypto::SequentialCommit;
 
 pub(crate) mod slot;
@@ -162,6 +163,20 @@ impl AccountStorage {
     /// otherwise.
     pub fn get(&self, slot_name: &StorageSlotName) -> Option<&StorageSlot> {
         self.slots.iter().find(|slot| slot.name().id() == slot_name.id())
+    }
+
+    /// Returns `true` if the storage contains at least one of the protocol-reserved asset callback
+    /// slots, `false` otherwise.
+    ///
+    /// Only the presence of a callback slot is relevant, not its value: a slot's value can be
+    /// rewritten over the account's lifetime, while its presence can only change through an account
+    /// upgrade, so only the presence can be tied to the immutable
+    /// [`AssetCallbackFlag`](crate::account::AssetCallbackFlag) encoded in the account ID. See the
+    /// [`AccountBuilder`](crate::account::AccountBuilder#asset-callbacks) docs for details.
+    pub fn has_callbacks(&self) -> bool {
+        AssetCallbacks::slot_names()
+            .iter()
+            .any(|slot_name| self.get(slot_name).is_some())
     }
 
     /// Returns a mutable reference to the storage slot with the provided name, if it exists, `None`
