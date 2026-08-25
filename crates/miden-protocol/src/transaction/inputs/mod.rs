@@ -234,6 +234,21 @@ impl TransactionInputs {
         self.block_header.block_num()
     }
 
+    /// Returns the commitments of the blocks the transaction authenticates, keyed by block number.
+    ///
+    /// These are the reference block and the blocks tracked by the partial blockchain, i.e.
+    /// exactly the blocks whose commitment the transaction kernel can read.
+    pub fn block_commitments(&self) -> BTreeMap<BlockNumber, Word> {
+        let mut commitments: BTreeMap<BlockNumber, Word> = self
+            .blockchain
+            .block_headers()
+            .map(|header| (header.block_num(), header.commitment()))
+            .collect();
+        commitments.insert(self.ref_block(), self.block_header.commitment());
+
+        commitments
+    }
+
     /// Returns the transaction script to be executed.
     pub fn tx_script(&self) -> Option<&TransactionScript> {
         self.tx_args.tx_script()

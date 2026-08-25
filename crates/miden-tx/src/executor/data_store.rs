@@ -20,6 +20,8 @@ pub trait DataStore: MastForestStore {
     /// Returns all the data required to execute a transaction against the account with the
     /// specified ID and consuming input notes created in blocks in the input `ref_blocks` set.
     ///
+    /// The returned partial blockchain must track every block in `ref_blocks`.
+    ///
     /// The highest block number in `ref_blocks` will be the transaction reference block. In
     /// general, it is recommended that the reference corresponds to the latest block available
     /// in the data store.

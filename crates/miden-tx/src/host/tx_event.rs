@@ -794,16 +794,9 @@ fn extract_tx_summary<'store, STORE>(
         });
     }
 
-    // TODO(#3695): allow binding a block older than the reference block once the multisig
-    // component and the callers can extend the transaction's `ref_blocks`.
-    let expected_block_number = process.get_reference_block_number()?;
-    if metadata.block_number() != expected_block_number {
-        return Err(TransactionKernelError::TransactionSummaryBlockNumberMismatch {
-            expected: expected_block_number,
-            actual: metadata.block_number(),
-        });
-    }
-
+    // The block number itself is validated by `build_tx_summary`, which rejects a summary naming a
+    // block the transaction does not authenticate and cross-checks the bound block commitment
+    // against the one the host knows for that block.
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,
