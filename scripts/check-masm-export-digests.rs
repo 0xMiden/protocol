@@ -109,6 +109,7 @@ mod current {
         TransferAllowAll,
     };
     use miden_standards_current::account::upgrade::UpgradeManager;
+    use miden_standards_current::account::pass_through::PassThrough;
     use miden_standards_current::account::wallets::{BasicWallet, NoteCreator};
 
     use super::*;
@@ -143,6 +144,7 @@ mod current {
         NonFungibleFaucet::code,
         BasicWallet::code,
         NoteCreator::code,
+        PassThrough::code,
         CodeInspection::code,
         AccountSchemaCommitment::code,
         UpgradeManager::code,

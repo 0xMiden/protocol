@@ -100,3 +100,23 @@ impl From<PassThrough> for AccountComponent {
         )
     }
 }
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::PassThrough;
+
+    /// Both procedure roots resolve against the component's code.
+    ///
+    /// Resolving forces the `procedure_root!` lazy lookup, which panics if the library path or a
+    /// procedure name does not match the component's package.
+    #[test]
+    fn pass_through_procedure_roots_resolve() {
+        let roots: alloc::vec::Vec<_> = PassThrough::code().procedure_roots().collect();
+
+        assert!(roots.contains(&PassThrough::sweep_asset_to_note_root()));
+        assert!(roots.contains(&PassThrough::assert_vault_unchanged_root()));
+    }
+}

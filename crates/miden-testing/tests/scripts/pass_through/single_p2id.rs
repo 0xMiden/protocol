@@ -19,7 +19,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use super::pass_through_account;
 
-// HELPER FUNCTIONS
+// CONSTANTS
 // ================================================================================================
 
 /// The serial number of the P2ID note the pass-through script creates.
@@ -263,6 +263,49 @@ async fn tolerates_an_asset_less_input_note() -> anyhow::Result<()> {
 
     assert_eq!(executed.output_notes().num_notes(), 1);
     assert_eq!(executed.output_notes().get_note(0).assets(), &NoteAssets::new(vec![fee_asset])?,);
+    assert_eq!(executed.final_account().to_commitment(), account.to_commitment());
+
+    Ok(())
+}
+
+/// Naming an asset the vault does not hold is a no-op, so a caller may name a fixed set of
+/// supported assets without knowing which of them the input notes actually deposit.
+#[tokio::test]
+async fn tolerates_a_named_asset_the_vault_does_not_hold() -> anyhow::Result<()> {
+    let absent_asset: Asset =
+        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?, 20)?.into();
+
+    let mut builder = MockChain::builder();
+    let account = pass_through_account()?;
+    builder.add_account(account.clone())?;
+    let target = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let deposited_asset = FungibleAsset::mock(10);
+    let fee_note = builder.add_tx_fee_note(ACCOUNT_ID_SENDER.try_into()?, &[deposited_asset])?;
+    let mock_chain = builder.build()?;
+
+    let script = PassThroughSingleP2idTransactionScript::new(
+        target.id(),
+        NoteType::Public,
+        SERIAL_NUMBER,
+        [deposited_asset.id(), absent_asset.id()],
+    )?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(fee_note.id())
+        .pass_through_single_p2id_script(&script)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed.output_notes().num_notes(), 1);
+    assert_eq!(
+        executed.output_notes().get_note(0).assets(),
+        &NoteAssets::new(vec![deposited_asset])?,
+    );
     assert_eq!(executed.final_account().to_commitment(), account.to_commitment());
 
     Ok(())
