@@ -445,11 +445,6 @@ mod tests {
     /// [`DRIFT_TOLERANCE_PERCENT`]. Catches kernel, standards, or agglayer changes that
     /// meaningfully shift a note's consumption cost without the tables having been
     /// regenerated.
-    ///
-    /// Driven by [`PricedNote::all`] rather than a per-note case list, so a note cannot be
-    /// added to the tables without its constant gaining a drift guard. Drift is collected
-    /// across all the notes before it is asserted on, so one run reports every stale constant
-    /// (a scenario that fails to execute still aborts the run immediately).
     #[tokio::test]
     async fn checked_in_cost_matches_benched_cycles() -> Result<()> {
         let mut stale = Vec::new();

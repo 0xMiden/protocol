@@ -40,7 +40,7 @@ Regenerate the tables (and `bench-tx.json`) with:
 make update-note-costs
 ```
 
-Freshness is enforced in CI: the `checked_in_cost_matches_benched_cycles` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant. It walks `PricedNote::all` - the same list the generator renders the tables from - so a newly priced note is covered without touching the test. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
+Freshness is enforced in CI: the `checked_in_cost_matches_benched_cycles` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant. It walks `PricedNote::all` - so all priced notes are covered. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
 
 ### Benchmark Groups
 
