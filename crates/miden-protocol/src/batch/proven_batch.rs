@@ -102,25 +102,8 @@ impl ProvenBatch {
         if input_note_count > MAX_INPUT_NOTES_PER_BATCH {
             return Err(ProvenBatchError::TooManyInputNotes(input_note_count));
         }
-        let mut input_nullifiers = BTreeSet::new();
-        for note in input_notes.iter() {
-            if !input_nullifiers.insert(note.nullifier()) {
-                return Err(ProvenBatchError::DuplicateInputNote(note.nullifier()));
-            }
-        }
         if output_notes.len() > MAX_OUTPUT_NOTES_PER_BATCH {
             return Err(ProvenBatchError::TooManyOutputNotes(output_notes.len()));
-        }
-        let mut output_note_ids = BTreeSet::new();
-        for note in &output_notes {
-            if !output_note_ids.insert(note.id()) {
-                return Err(ProvenBatchError::DuplicateOutputNote(note.id()));
-            }
-        }
-        for note_header in input_notes.iter().filter_map(InputNoteCommitment::header) {
-            if output_note_ids.contains(&note_header.id()) {
-                return Err(ProvenBatchError::NoteCreatedAndConsumed(note_header.id()));
-            }
         }
 
         validate_account_updates(&account_updates_by_id, transactions.as_slice())?;
@@ -509,18 +492,46 @@ mod tests {
         (note_id, InputNotes::new(vec![input_note]).unwrap(), vec![output_note])
     }
 
+    fn transactions_with_conflicting_notes(
+        input_notes: &InputNotes<InputNoteCommitment>,
+        output_notes: &[OutputNote],
+    ) -> (OrderedTransactionHeaders, BatchAccountUpdate) {
+        let states = [
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            Word::from([9_u32, 10, 11, 12]),
+        ];
+        let output_note_headers =
+            output_notes.iter().map(|note| *<&NoteHeader>::from(note)).collect();
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(states[0], states[1], input_notes.clone(), vec![]),
+            transaction_header(states[1], states[2], InputNotes::default(), output_note_headers),
+        ]);
+        let update = BatchAccountUpdate::new(
+            account_id(),
+            states[0],
+            states[2],
+            AccountUpdateDetails::Private,
+        )
+        .unwrap();
+
+        (transactions, update)
+    }
+
     #[test]
     fn rejects_note_created_and_consumed_in_same_batch() {
         let (note_id, input_notes, output_notes) = conflicting_notes();
+        let (transactions, update) =
+            transactions_with_conflicting_notes(&input_notes, &output_notes);
 
         let error = ProvenBatch::new(
             Word::empty(),
             BlockNumber::from(1),
-            vec![private_account_update()],
+            vec![update],
             input_notes,
             output_notes,
             BlockNumber::from(2),
-            transaction_headers(),
+            transactions,
             ExecutionProof::new_dummy(),
         )
         .unwrap_err();
@@ -726,14 +737,15 @@ mod tests {
     #[test]
     fn deserialization_rejects_note_created_and_consumed_in_same_batch() {
         let (note_id, input_notes, output_notes) = conflicting_notes();
-        let transactions = transaction_headers();
+        let (transactions, update) =
+            transactions_with_conflicting_notes(&input_notes, &output_notes);
         let id =
             BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
         let invalid_batch = ProvenBatch::new_unchecked(
             id,
             Word::empty(),
             BlockNumber::from(1),
-            BTreeMap::from([(account_id(), private_account_update())]),
+            BTreeMap::from([(account_id(), update)]),
             input_notes,
             output_notes,
             BlockNumber::from(2),
