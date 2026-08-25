@@ -186,11 +186,12 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
     );
 }
 
+/// Regression test.
 /// The note IDs reported through `TransactionMeasurements` must be the input notes' actual IDs.
 ///
 /// The active note ID is read out of the note's memory segment, where the ID sits at
 /// `INPUT_NOTE_ID_OFFSET`; reading the segment's base word instead yields the note's details
-/// commitment, which is a different value that is indistinguishable from an ID once wrapped.
+/// commitment.
 #[tokio::test]
 async fn active_note_id_is_reported_for_every_executed_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
