@@ -17,19 +17,20 @@ use crate::tx_script::transaction_script;
 
 /// Path to the `single_p2id` pass-through transaction script procedure in the standards library,
 /// assembled from `asm/standards/tx_scripts/pass_through/single_p2id.masm`.
-/// `MAX_ASSET_IDS` as the script defines it, mirrored here so the two bounds cannot drift.
+const PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT_PATH: &str =
+    "::miden::standards::tx_scripts::pass_through::single_p2id::main";
+
+/// `MAX_ASSET_IDS` as the script defines it, hand-copied from the MASM.
 const MASM_MAX_ASSET_IDS: usize = 16;
 
-// The script rejects a longer payload on its own, so a bound above the MASM one would make this
-// type hand out scripts that cannot execute.
+// Catches a change to the Rust bound, which the script would reject at execution time. A change
+// to the MASM bound is caught by the tests instead: raising it fails
+// `rejects_a_malformed_payload_length`, lowering it fails `forwards_the_maximum_number_of_assets`.
 const _: () = assert!(
     PassThroughSingleP2idTransactionScript::MAX_ASSET_IDS == MASM_MAX_ASSET_IDS,
     "MAX_ASSET_IDS must match MAX_ASSET_IDS in \
      asm/standards/tx_scripts/pass_through/single_p2id.masm"
 );
-
-const PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT_PATH: &str =
-    "::miden::standards::tx_scripts::pass_through::single_p2id::main";
 
 // PASS-THROUGH SINGLE P2ID TRANSACTION SCRIPT
 // ================================================================================================

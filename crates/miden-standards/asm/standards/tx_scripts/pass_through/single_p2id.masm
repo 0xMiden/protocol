@@ -28,7 +28,9 @@ const HEADER_NUM_ELEMENTS = 8
 const HEADER_NUM_WORDS = HEADER_NUM_ELEMENTS / WORD_NUM_ELEMENTS
 
 # The maximum number of asset IDs the payload may name. A single note holds at most
-# MAX_ASSETS_PER_NOTE assets, so naming more could never be forwarded into one.
+# MAX_ASSETS_PER_NOTE assets, so naming more could never be forwarded into one. That constant is
+# kernel-internal, so its value is duplicated here and mirrored by the Rust
+# `PassThroughSingleP2idTransactionScript::MAX_ASSET_IDS`.
 const MAX_ASSET_IDS = 16
 const MAX_PAYLOAD_NUM_WORDS = HEADER_NUM_WORDS + MAX_ASSET_IDS
 
@@ -126,6 +128,10 @@ end
 #! 74: number of asset IDs the payload names
 #!
 #! Invocation: exec
+#
+# The frame must hold the largest payload the length check accepts plus the loop state, i.e.
+# NUM_ASSET_IDS_LOC + 1. `@locals` only takes a literal, so keep it in sync with the constants
+# above; too small a frame would let a valid payload be piped past it.
 @locals(75)
 proc forward_assets
     locaddr.PAYLOAD_LOC exec.load_payload loc_store.NUM_ASSET_IDS_LOC
