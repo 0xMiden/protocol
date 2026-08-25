@@ -1513,12 +1513,6 @@ pub enum ProvenBatchError {
     InputNotesMismatch,
     #[error("batch output notes do not match the transaction headers")]
     OutputNotesMismatch,
-    #[error("invalid account update for {account_id}")]
-    InvalidAccountUpdate {
-        account_id: AccountId,
-        #[source]
-        source: BatchAccountUpdateError,
-    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]

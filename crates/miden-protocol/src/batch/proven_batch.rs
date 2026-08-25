@@ -93,10 +93,6 @@ impl ProvenBatch {
         }
         let mut account_updates_by_id = BTreeMap::new();
         for update in account_updates {
-            update.validate().map_err(|source| ProvenBatchError::InvalidAccountUpdate {
-                account_id: update.account_id(),
-                source,
-            })?;
             let account_id = update.account_id();
             if account_updates_by_id.insert(account_id, update).is_some() {
                 return Err(ProvenBatchError::DuplicateAccountUpdate(account_id));
