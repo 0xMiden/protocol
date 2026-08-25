@@ -108,15 +108,20 @@ impl From<PassThrough> for AccountComponent {
 mod tests {
     use super::PassThrough;
 
-    /// Both procedure roots resolve against the component's code.
+    /// The component exports exactly the two procedures, and each accessor resolves to its own.
     ///
     /// Resolving forces the `procedure_root!` lazy lookup, which panics if the library path or a
-    /// procedure name does not match the component's package.
+    /// procedure name does not match the component's package. The inequality catches the two
+    /// accessors naming the same procedure, which membership alone would not.
     #[test]
     fn pass_through_procedure_roots_resolve() {
+        let sweep = PassThrough::sweep_asset_to_note_root();
+        let assert_unchanged = PassThrough::assert_vault_unchanged_root();
         let roots: alloc::vec::Vec<_> = PassThrough::code().procedure_roots().collect();
 
-        assert!(roots.contains(&PassThrough::sweep_asset_to_note_root()));
-        assert!(roots.contains(&PassThrough::assert_vault_unchanged_root()));
+        assert_ne!(sweep, assert_unchanged);
+        assert_eq!(roots.len(), 2);
+        assert!(roots.contains(&sweep));
+        assert!(roots.contains(&assert_unchanged));
     }
 }
