@@ -76,37 +76,27 @@ impl TransactionScript {
 
     /// Returns a new [TransactionScript] instantiated from the provided MAST forest and entrypoint.
     ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        Self(MastForestScript::from_parts(mast, entrypoint))
+    /// # Errors
+    /// Returns an error if the specified entrypoint is not in the provided MAST forest.
+    pub fn from_parts(
+        mast: Arc<MastForest>,
+        entrypoint: MastNodeId,
+    ) -> Result<Self, MastForestScriptError> {
+        MastForestScript::from_parts(mast, entrypoint).map(Self)
     }
 
     /// Creates a [TransactionScript] from a [`Package`].
     ///
-    /// If the package is an executable (i.e., its target type is
-    /// [`TargetType::Executable`](miden_mast_package::TargetType::Executable)), the program's
-    /// entrypoint is used as the script's entrypoint. Otherwise, the package must contain
-    /// exactly one procedure with the `@transaction_script` attribute, which will be used as
-    /// the entrypoint.
+    /// The package must contain exactly one procedure with the `@transaction_script` attribute,
+    /// which will be used as the entrypoint.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - An executable package cannot be converted to a program.
-    /// - A library package does not contain a procedure with the `@transaction_script` attribute.
-    /// - A library package contains multiple procedures with the `@transaction_script` attribute.
+    /// - The package is an executable (i.e., its target type is
+    ///   [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
+    /// - The package does not contain a procedure with the `@transaction_script` attribute.
+    /// - The package contains multiple procedures with the `@transaction_script` attribute.
     pub fn from_package(package: &Package) -> Result<Self, MastForestScriptError> {
-        if package.is_program() {
-            let program =
-                package.try_into_program().map_err(MastForestScriptError::PackageNotProgram)?;
-
-            return Ok(Self(MastForestScript::from_parts_with_package_debug_info(
-                package,
-                program.mast_forest().clone(),
-                program.entrypoint(),
-            )));
-        }
-
         MastForestScript::from_package(package, TRANSACTION_SCRIPT_ATTRIBUTE).map(Self)
     }
 
@@ -199,13 +189,23 @@ mod tests {
 
     use super::TransactionScript;
 
+    /// A minimal transaction script source with a single `@transaction_script` procedure.
+    const TX_SCRIPT_SOURCE: &str = "
+        @transaction_script
+        pub proc main
+            push.1 drop
+        end
+    ";
+
     #[test]
     fn test_transaction_script_preserves_package_debug_info() {
-        use crate::assembly::Assembler;
+        use crate::testing::assembler::assemble_test_package;
 
-        let assembler = Assembler::default();
-        let package =
-            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
+        let package = assemble_test_package(
+            "test-tx-script-debug-info",
+            "test::tx_script_debug_info",
+            TX_SCRIPT_SOURCE,
+        );
         let script = TransactionScript::from_package(&package).unwrap();
 
         assert!(script.loaded_mast_forest().package_debug_info().unwrap().is_some());
@@ -215,11 +215,13 @@ mod tests {
     fn test_transaction_script_with_advice_map() {
         use miden_core::{Felt, Word};
 
-        use crate::assembly::Assembler;
+        use crate::testing::assembler::assemble_test_package;
 
-        let assembler = Assembler::default();
-        let package =
-            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
+        let package = assemble_test_package(
+            "test-tx-script-with-advice-map",
+            "test::tx_script_with_advice_map",
+            TX_SCRIPT_SOURCE,
+        );
         let script = TransactionScript::from_package(&package).unwrap();
         assert!(script.mast().advice_map().is_empty());
 
@@ -249,13 +251,7 @@ mod tests {
         use crate::testing::assembler::assemble_test_package;
         use crate::utils::serde::{Deserializable, Serializable};
 
-        let source = "
-            @transaction_script
-            pub proc main
-                push.1 drop
-            end
-        ";
-        let package = assemble_test_package("test-tx-script", "test::tx_script", source);
+        let package = assemble_test_package("test-tx-script", "test::tx_script", TX_SCRIPT_SOURCE);
 
         let script = TransactionScript::from_package(&package).unwrap();
 
@@ -285,6 +281,24 @@ mod tests {
         assert_matches!(
             TransactionScript::from_package(&multiple),
             Err(MastForestScriptError::MultipleProceduresWithAttribute(_))
+        );
+    }
+
+    #[test]
+    fn test_transaction_script_from_executable_package() {
+        use assert_matches::assert_matches;
+
+        use crate::assembly::Assembler;
+        use crate::script::MastForestScriptError;
+
+        // an executable package is rejected: transaction scripts are identified only by the
+        // @transaction_script attribute
+        let package = Assembler::default()
+            .assemble_program("test-tx-script-executable", "begin nop end")
+            .unwrap();
+        assert_matches!(
+            TransactionScript::from_package(&package),
+            Err(MastForestScriptError::ExecutablePackage)
         );
     }
 

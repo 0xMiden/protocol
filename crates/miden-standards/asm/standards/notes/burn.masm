@@ -52,7 +52,7 @@ pub proc main
     # => [pad(16)]
 
     # Load the asset embedded in storage and require the canonical eight-felt asset layout.
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     eq.NUM_STORAGE_ITEMS assert.err=ERR_BURN_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 

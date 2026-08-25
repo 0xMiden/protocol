@@ -13,7 +13,7 @@ use crate::account::{
     AccountType,
     AssetCallbackFlag,
 };
-use crate::asset::AssetVault;
+use crate::asset::{AssetCallbacks, AssetVault};
 use crate::errors::AccountError;
 use crate::{Felt, Word};
 
@@ -53,10 +53,10 @@ use crate::{Felt, Word};
 ///
 /// **Account Procedure Order**
 ///
-/// Note that the procedure in each components code are merged together in the same order as
-/// `with_component` is called, except for the auth component. The auth procedure is always moved to
-/// the first position, since the tx kernel assume procedure index 0 is the auth procedure within an
-/// [`AccountCode`].
+/// Note that the auth procedure is always moved to the first position, since the tx kernel assumes
+/// procedure index 0 is the auth procedure within an [`AccountCode`]. The procedures of all other
+/// components are merged and sorted, so the order in which `with_component` is called does not
+/// affect the resulting account code commitment.
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
@@ -118,7 +118,8 @@ impl AccountBuilder {
     /// All components will be merged to form the final code and storage of the built account.
     /// Exactly one of the added components must be an authentication component (see
     /// [`AccountComponent::is_auth_component`]); it is identified and moved to the front of the
-    /// procedure list automatically when [`Self::build`] is called.
+    /// procedure list automatically when [`Self::build`] is called, while all other procedures are
+    /// sorted.
     ///
     /// For composite configurations that expand into multiple components (such as
     /// `AccessControl` or `TokenPolicyManager`), use [`Self::with_components`].
@@ -168,7 +169,43 @@ impl AccountBuilder {
             )
         })?;
 
+        self.validate_asset_callbacks(&storage)?;
+
         Ok((vault, code, storage))
+    }
+
+    /// Validates that the configured [`AssetCallbackFlag`] is consistent with the asset callback
+    /// slots installed by the builder's components.
+    ///
+    /// The kernel decides whether to invoke a faucet's asset callbacks solely from the
+    /// [`AssetCallbackFlag`] encoded in its [`AccountId`], and that flag is immutable once the ID
+    /// is ground. A component that installs a callback slot while the flag is
+    /// [`AssetCallbackFlag::Disabled`] therefore looks correctly configured but can never have its
+    /// callbacks invoked, silently and permanently disabling whatever the callbacks enforce. This
+    /// is rejected at build time so the misconfiguration cannot reach a deployed account.
+    ///
+    /// The converse (the flag enabled without callback slots) is valid: the kernel skips the
+    /// callback when the slot is absent or holds the empty word.
+    fn validate_asset_callbacks(&self, storage: &AccountStorage) -> Result<(), AccountError> {
+        if self.asset_callbacks == AssetCallbackFlag::Enabled {
+            return Ok(());
+        }
+
+        for slot_name in [
+            AssetCallbacks::on_before_asset_added_to_account_slot(),
+            AssetCallbacks::on_before_asset_added_to_note_slot(),
+        ] {
+            if storage.get(slot_name).is_some_and(|slot| !slot.value().is_empty()) {
+                return Err(AccountError::BuildError(
+                    format!(
+                        "component installs the asset callback slot `{slot_name}` but the account's asset callback flag is disabled, so the callback would never be invoked"
+                    ),
+                    None,
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Grinds a new [`AccountId`] using the `init_seed` as a starting point.
@@ -208,6 +245,8 @@ impl AccountBuilder {
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::mast::MastForest::merge) fails on the given
     ///   components.
+    /// - A component installs an asset callback slot while the configured [`AssetCallbackFlag`] is
+    ///   [`AssetCallbackFlag::Disabled`], since the kernel would never invoke that callback.
     /// - If duplicate assets were added to the builder (only under the `testing` feature).
     /// - If the vault is not empty on new accounts (only under the `testing` feature).
     pub fn build(mut self) -> Result<Account, AccountError> {
@@ -555,6 +594,47 @@ mod tests {
             .unwrap_err();
 
         assert_matches!(build_error, AccountError::BuildError(msg, _) if msg == "account asset vault must be empty on new accounts")
+    }
+
+    /// A component that installs an asset callback slot must not be built into an account whose
+    /// [`AssetCallbackFlag`] is disabled: the kernel gates callback invocation on that flag alone
+    /// and the flag is immutable once the ID is ground, so whatever the callback enforces would
+    /// be silently and permanently bypassed.
+    #[test]
+    fn account_builder_rejects_callback_slot_with_disabled_flag() {
+        let callback_component = |slots| {
+            AccountComponent::new(
+                CUSTOM_PACKAGE1.clone(),
+                slots,
+                AccountComponentMetadata::new("test::callback_component"),
+            )
+            .expect("component should be valid")
+        };
+
+        for slots in [
+            AssetCallbacks::new()
+                .on_before_asset_added_to_note(Word::from([1u32, 2, 3, 4]))
+                .into_storage_slots(),
+            AssetCallbacks::new()
+                .on_before_asset_added_to_account(Word::from([1u32, 2, 3, 4]))
+                .into_storage_slots(),
+        ] {
+            let build_error = Account::builder([7; 32])
+                .with_component(NoopAuthComponent)
+                .with_component(callback_component(slots.clone()))
+                .build()
+                .unwrap_err();
+
+            assert_matches!(build_error, AccountError::BuildError(msg, _) if msg.contains("asset callback flag is disabled"));
+
+            // The same component is accepted once the flag is enabled.
+            Account::builder([7; 32])
+                .with_asset_callbacks(AssetCallbackFlag::Enabled)
+                .with_component(NoopAuthComponent)
+                .with_component(callback_component(slots))
+                .build()
+                .unwrap();
+        }
     }
 
     // TODO: Test that a BlockHeader with a number which is not a multiple of 2^16 returns an error.

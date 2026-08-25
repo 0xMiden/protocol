@@ -52,8 +52,9 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 /// `[NOTE_SCRIPT_ROOT, FEE_ASSET_ID, FEE_ASSET_VALUE]` (see the [`Note`] conversion below). Because
 /// the storage is fixed at note creation and bound into the note commitment, the authorized party
 /// is the note sender: the consuming account's `set_note_fee` procedure authorizes the sender
-/// through the account-wide [`Authority`](crate::account::access::Authority) component. The fee
-/// asset's ID must match the account's configured fee asset ID.
+/// through the account-wide [`Authority`](crate::account::access::Authority) component, which the
+/// requirements below mandate be owner- or role-controlled. The fee asset's ID must match the
+/// account's configured fee asset ID.
 ///
 /// The note is bound to the target `account` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts the
@@ -74,25 +75,16 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 ///   schedule.
 /// - allowlist this note's own script root ([`Self::script_root`]) so a network transaction is
 ///   allowed to consume it.
-/// - already carry a set-marked fee schedule entry for this note's own script root (typically a 0
-///   fee, so the note is free to consume). A network account prices every consumed note through its
-///   active fee policy, so an unscheduled config-note root would itself be unpriced. This is
-///   typically bootstrapped at account creation, before the first config note is consumed.
+/// - carry a set-marked fee schedule entry for this note's own script root.
 ///
 /// # Operational notes
 ///
-/// - Allowlisting and 0-fee-scheduling this note's script root makes it a free, unauthenticated
-///   entry point into the account's network-transaction queue: anyone can author a public note with
-///   this (publicly known) script root targeting the account. Unauthorized or wrongly targeted ones
-///   abort at the target/authorization checks with no state change and no fee, but because the
-///   transaction aborts, the nullifier is never produced - such notes are never consumable and
-///   remain as permanently-unconsumable entries, which may require operator-side filtering. This is
-///   inherent to any allowlisted network-note root, not specific to this note.
-/// - The scheduled `note_script_root` is unconstrained, so an authorized config note can set the
-///   fee for its *own* script root. Scheduling a non-zero fee there can make subsequent config
-///   notes unpayable, and since the manager is only reachable through a consumed note, that bricks
-///   fee management unless the account also exposes a transaction-script path to `set_note_fee`.
-///   Keep this note's own root scheduled at 0.
+/// - Any party can submit this note to an account that allowlists it; `set_note_fee` authorizes its
+///   sender during consumption.
+/// - `note_script_root` may be this note's own root. Fee collection reads the schedule after note
+///   execution, while sender-side sponsorship uses the pre-transaction estimate.
+/// - Lowering this note's own fee requires funding its previous fee. An unaffordable value freezes
+///   note-based fee administration.
 #[derive(Debug, Clone)]
 pub struct ConstantFeePolicyConfigNote {
     sender: AccountId,
@@ -174,7 +166,7 @@ impl ConstantFeePolicyConfigNote {
 
     /// Returns the account ID of the managed account: the account the note is tagged for and bound
     /// to via its `NetworkAccountTarget` attachment (only this account can consume the note).
-    pub fn account(&self) -> AccountId {
+    pub fn target(&self) -> AccountId {
         self.target
     }
 
@@ -321,7 +313,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(note.sender(), sender);
-        assert_eq!(note.account(), account);
+        assert_eq!(note.target(), account);
 
         let note = Note::from(note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);

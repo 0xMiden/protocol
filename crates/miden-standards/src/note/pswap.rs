@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -267,6 +267,8 @@ impl From<PswapNoteAttachment> for NoteAttachment {
 /// `[0, 0, 0, 0]`, triggering a full fill). To route a PSWAP note to a network account,
 /// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
 /// via the builder.
+///
+/// Fills are priced against the note's initial offered asset.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {
@@ -895,12 +897,13 @@ impl TryFrom<&Note> for PswapNote {
         if note.assets().num_assets() != 1 {
             return Err(NoteError::other("PSWAP note must have exactly one asset"));
         }
-        let offered_asset = match note.assets().iter().next().unwrap() {
-            Asset::Fungible(fa) => *fa,
-            Asset::NonFungible(_) => {
-                return Err(NoteError::other("PSWAP note asset must be fungible"));
-            },
-        };
+        let offered_asset = note
+            .assets()
+            .iter()
+            .next()
+            .expect("number of assets should have been validated")
+            .as_fungible()
+            .ok_or_else(|| NoteError::other("PSWAP note asset must be fungible"))?;
 
         let attachment = match note.attachments().num_attachments() {
             0 => None,
@@ -1235,9 +1238,7 @@ mod tests {
         // Payback note must carry the combined 30 of requested asset.
         assert_eq!(payback.assets().num_assets(), 1);
         let payback_asset = payback.assets().iter().next().unwrap();
-        let Asset::Fungible(fa) = payback_asset else {
-            panic!("expected fungible payback asset");
-        };
+        let fa = payback_asset.unwrap_fungible();
         assert_eq!(fa.faucet_id(), requested_faucet);
         assert_eq!(fa.amount().as_u64(), 30);
 
@@ -1273,9 +1274,7 @@ mod tests {
         // Payback note must carry the full 50 of requested asset.
         assert_eq!(payback.assets().num_assets(), 1);
         let payback_asset = payback.assets().iter().next().unwrap();
-        let Asset::Fungible(fa) = payback_asset else {
-            panic!("expected fungible payback asset");
-        };
+        let fa = payback_asset.unwrap_fungible();
         assert_eq!(fa.faucet_id(), requested_faucet);
         assert_eq!(fa.amount().as_u64(), 50);
 

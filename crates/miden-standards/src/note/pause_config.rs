@@ -45,10 +45,10 @@ static PAUSE_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// [`PausableManager`](crate::account::access::pausable::PausableManager) component that a
 /// [`PauseConfigNote`] triggers on the account that consumes it.
 ///
-/// The action is encoded into the note's storage (see [`NoteStorage`] conversion below). Because
-/// the storage is fixed at note creation and bound into the note commitment, the authorized party
-/// is the note sender: the consuming account's `PausableManager` procedures authorize the sender
-/// through the account-wide `Authority` component.
+/// The action is encoded into the note's storage (see [`NoteStorage`] conversion below) and is
+/// fixed at note creation, bound into the note commitment. The consuming account's
+/// `PausableManager` procedures authorize the action through the account-wide
+/// [`Authority`](crate::account::access::Authority) component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PauseConfig {
     /// Pause the account, blocking pause-gated procedures until a matching unpause.
@@ -91,13 +91,11 @@ impl From<PauseConfig> for NoteStorage {
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the component's
 /// admin procedures (`pause`, `unpause`). Authorization is enforced by those procedures through
-/// the account-wide `Authority` component against the note sender, so the note carries no assets
-/// and its authorization is bound to `sender` at creation time.
+/// the account-wide [`Authority`](crate::account::access::Authority) component, so the note carries
+/// no assets.
 ///
 /// The note is always public (for network execution) and tagged for `account` — the account
-/// carrying the `PausableManager` component whose pause state is being managed. The `sender` is
-/// the account authorized for the action per the account's `Authority` configuration (the owner
-/// under `Authority::OwnerControlled`, or a role member under `Authority::RbacControlled`).
+/// carrying the `PausableManager` component whose pause state is being managed.
 ///
 /// The note is bound to the target `account` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
@@ -176,13 +174,14 @@ impl PauseConfigNote {
         PAUSE_CONFIG_SCRIPT.root()
     }
 
-    /// Returns the account ID of the note's sender (the account authorized for the action).
+    /// Returns the account ID of the note's sender (the authorizing party under an owner- or
+    /// role-controlled `Authority`).
     pub fn sender(&self) -> AccountId {
         self.sender
     }
 
     /// Returns the account ID of the managed account (the account the note is tagged for).
-    pub fn account(&self) -> AccountId {
+    pub fn target(&self) -> AccountId {
         self.target
     }
 
@@ -295,7 +294,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(note.sender(), sender);
-        assert_eq!(note.account(), managed);
+        assert_eq!(note.target(), managed);
 
         let note = Note::from(note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);

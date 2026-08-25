@@ -45,6 +45,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::assert_default_expiration_limit;
 use super::rbac::{build_grant_role_note, role, test_account_id};
 use super::transfer_policy::{add_faucet_with_wallet, assert_minted_note, build_mint_note};
 use crate::consume_note;
@@ -162,7 +163,7 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -171,13 +172,15 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(target_account.id())
         .authenticated_input_note(note.id())
         .foreign_accounts(vec![faucet_inputs])
         .build()?
         .execute()
         .await?;
+
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }
@@ -200,7 +203,7 @@ async fn block_receive_asset_fails_when_account_pre_blocked() -> anyhow::Result<
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -231,7 +234,7 @@ async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -298,8 +301,8 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
         recipient = recipient,
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
-        asset_value = Asset::Fungible(asset).to_value_word(),
-        asset_id = Asset::Fungible(asset).to_id_word(),
+        asset_value = Asset::from(asset).to_value_word(),
+        asset_id = Asset::from(asset).to_id_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(&script_code)?;
@@ -331,7 +334,7 @@ async fn block_then_unblock_then_receive_succeeds() -> anyhow::Result<()> {
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(fungible_asset)],
+        &[Asset::from(fungible_asset)],
         NoteType::Public,
     )?;
 
@@ -414,7 +417,7 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let p2id_note = builder.add_p2id_note(
         faucet.id(),
         other_account.id(),
-        &[Asset::Fungible(fungible_asset)],
+        &[Asset::from(fungible_asset)],
         NoteType::Public,
     )?;
 
@@ -517,7 +520,7 @@ async fn transfer_of_foreign_asset_by_a_faucet_is_not_exempt() -> anyhow::Result
     let p2id_note = builder.add_p2id_note(
         issuer.id(),
         other_faucet.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 
@@ -605,13 +608,13 @@ async fn rbac_blocklister_can_block_and_unblock() -> anyhow::Result<()> {
     let p2id_after_block = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
     let p2id_after_unblock = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(asset)],
+        &[Asset::from(asset)],
         NoteType::Public,
     )?;
 

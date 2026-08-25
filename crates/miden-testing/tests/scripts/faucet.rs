@@ -14,7 +14,7 @@ use miden_protocol::account::{
     AssetCallbackFlag,
 };
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -34,7 +34,7 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step, Pausable};
 use miden_standards::account::auth::SponsorshipPolicy;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnAllowAll,
@@ -52,7 +52,9 @@ use miden_standards::errors::standards::{
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
+    ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
+    ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
@@ -552,6 +554,40 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
     Ok(())
 }
 
+/// Tests that mint fails when the minted amount is zero.
+#[tokio::test]
+async fn faucet_contract_mint_fungible_asset_fails_zero_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        200,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let params = FaucetTestParams {
+        recipient: Word::from([0, 1, 2, 3u32]),
+        tag: NoteTag::default(),
+        note_type: NoteType::Private,
+        amount: Felt::new_unchecked(0),
+    };
+
+    let tx_script =
+        CodeBuilder::default().compile_tx_script(create_mint_script_code(&params, faucet.id()))?;
+    let tx = mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO);
+    Ok(())
+}
+
 // TESTS FOR NEW FAUCET EXECUTION ENVIRONMENT
 // ================================================================================================
 
@@ -694,6 +730,59 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
         .await;
 
     assert_transaction_executor_error!(tx, ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY);
+    Ok(())
+}
+
+/// Tests that a non-fungible asset issued by the faucet account itself cannot be burned through
+/// the fungible faucet's `receive_and_burn`.
+#[tokio::test]
+async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
+    // issue the maximum representable supply so the burn below is not stopped by the
+    // `amount <= token_supply` check.
+    let token_supply = AssetAmount::MAX;
+
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        token_supply.as_u64(),
+        Some(token_supply.as_u64()),
+    )?;
+
+    const SALT: u32 = 2;
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"not a fungible asset",
+        Word::from([SALT, 0, 0, 0]),
+    );
+    let forged_amount = AssetAmount::new(commitment[0].as_canonical_u64())
+        .expect("salt is chosen so that the commitment's first element is a valid amount");
+
+    assert!(forged_amount <= token_supply);
+
+    let asset = Asset::from(NonFungibleAsset::from_parts(faucet.id(), commitment));
+
+    let note = Note::from(
+        BurnNote::builder()
+            .sender(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?)
+            .asset(asset)
+            .serial_number(Word::from([1, 2, 3, 4u32]))
+            .build()?,
+    );
+
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE);
     Ok(())
 }
 
@@ -946,8 +1035,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let recipient = p2id_mint_output_note.recipient().digest();
 
     // Create the MINT note using the helper function
-    let mint_storage =
-        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
+    let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1045,7 +1133,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1230,7 +1318,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
     // Create mint note from NON-OWNER
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
@@ -1360,7 +1448,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let recipient = p2id_note.recipient().digest();
 
     // Sanity Check: Prove that the initial owner can mint assets
-    let mint_inputs = MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -2368,7 +2456,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         NoteType::Private => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
             let recipient = p2id_mint_output_note.recipient().digest();
-            MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag)
+            MintNoteStorage::new_private(recipient, mint_asset, output_note_tag)
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -2377,7 +2465,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
                 vec![target_account.id().suffix(), target_account.id().prefix().as_felt()];
             let note_storage = NoteStorage::new(p2id_storage)?;
             let recipient = NoteRecipient::new(serial_num, p2id_script, note_storage);
-            MintNoteStorage::new_fungible_public(recipient, mint_asset, output_note_tag)?
+            MintNoteStorage::new_public(recipient, mint_asset, output_note_tag)?
         },
     };
 
@@ -2664,8 +2752,7 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     );
     let recipient = p2id_mint_output_note.recipient().digest();
 
-    let mint_storage =
-        MintNoteStorage::new_fungible_private(recipient, mint_asset, output_note_tag);
+    let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
