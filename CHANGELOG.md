@@ -7,7 +7,7 @@
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
-- [BREAKING] Added an optional expiry block to `NetworkAccountTarget` and enforced it in the config note scripts, so a config note can no longer be held unconsumed and applied at a moment of the submitter's choosing ([#3560](https://github.com/0xMiden/protocol/issues/3560)).
+- [BREAKING] Added an optional expiry block to `NetworkAccountTarget` and enforced it in the config note scripts ([#3560](https://github.com/0xMiden/protocol/issues/3560), [#3715](https://github.com/0xMiden/protocol/pull/3715)).
 
 ### Changes
 
