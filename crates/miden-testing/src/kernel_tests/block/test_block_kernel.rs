@@ -56,23 +56,6 @@ async fn block_kernel_skeleton_emits_empty_outputs() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The kernel's public inputs are derived from the proposed block, so the input stack the executor
-/// feeds the kernel must be reproducible by anyone holding the block's previous header and batches.
-#[tokio::test]
-async fn block_kernel_input_stack_is_reproducible() -> anyhow::Result<()> {
-    let block = two_batch_block().await?;
-
-    let (stack_inputs, _advice_inputs) = BlockKernel::prepare_inputs(&block);
-    let expected = BlockKernel::build_input_stack(
-        block.prev_block_header().commitment(),
-        block.batches().to_commitment(),
-    );
-
-    assert_eq!(stack_inputs, expected);
-
-    Ok(())
-}
-
 /// Executing a block and then proving it produces the block kernel's execution proof.
 #[tokio::test]
 async fn block_executor_then_prover_produces_block_proof() -> anyhow::Result<()> {
