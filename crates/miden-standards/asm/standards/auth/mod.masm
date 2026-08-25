@@ -29,28 +29,27 @@ const TX_SUMMARY_NUM_ELEMENTS = 24
 # Layout version of the transaction summary preimage.
 const TX_SUMMARY_VERSION = 1
 
-# Multipliers placing the block number and the expiration delta in the metadata felt, i.e. shifts by
-# 8 and 40 bits.
-const TX_SUMMARY_BLOCK_NUMBER_MULTIPLIER = 0x100
-const TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER = 0x10000000000
+# Multiplier placing the expiration delta above the block number in the metadata felt, i.e. a shift
+# by 32 bits.
+const TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER = 0x100000000
 
 #! Creates the transaction summary and returns it in the order in which it will be hashed.
 #!
 #! Inputs:  [block_number, user_param0, user_param1, user_param2, user_param3, user_param4,
-#!           user_param5, user_param6]
+#!           user_param5]
 #! Outputs: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
 #!           OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 #!
 #! Where:
 #! - block_number is the number of the block the summary binds. It must not exceed the transaction
 #!   reference block number.
-#! - user_param0 through user_param6 are arbitrary, user-defined inputs which are bound by the
+#! - user_param0 through user_param5 are arbitrary, user-defined inputs which are bound by the
 #!   transaction summary. They are opaque: binding them enforces no meaning, so any semantics (e.g.
 #!   replay protection or a maximum fee) must be implemented by the calling component.
-#! - PARAMS_HEAD is the word [metadata, user_param0, user_param1, user_param2].
-#! - PARAMS_TAIL is the word [user_param3, user_param4, user_param5, user_param6].
-#! - metadata packs the summary layout version, block_number and the transaction's expiration block
-#!   delta into a single felt.
+#! - PARAMS_HEAD is the word [version, metadata, user_param0, user_param1].
+#! - PARAMS_TAIL is the word [user_param2, user_param3, user_param4, user_param5].
+#! - version is the layout version of the summary preimage.
+#! - metadata packs block_number and the transaction's expiration block delta into a single felt.
 #! - BLOCK_COMMITMENT is the commitment to the block identified by block_number.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
@@ -60,19 +59,19 @@ const TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER = 0x10000000000
 #! - block_number is not a u32 or exceeds the transaction reference block number.
 #!
 #! Invocation: exec
-pub proc create_tx_summary(block_number: BlockNumber, user_params: [felt; 7])
+pub proc create_tx_summary(block_number: BlockNumber, user_params: [felt; 6])
     -> (word, word, word, word, word, word)
     # the expiration delta is bounded to a u16 by the kernel and the block number to a u32 by
-    # tx::get_block_commitment below, so the packed felt stays below 2^56
+    # tx::get_block_commitment below, so the packed felt stays below 2^48
     exec.tx::get_expiration_block_delta mul.TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER
-    # => [expiration_delta_bits, block_number, user_params(7)]
+    # => [expiration_delta_bits, block_number, user_params(6)]
 
-    dup.1 mul.TX_SUMMARY_BLOCK_NUMBER_MULTIPLIER add add.TX_SUMMARY_VERSION
-    # => [metadata, block_number, user_params(7)]
+    dup.1 add
+    # => [metadata, block_number, user_params(6)]
 
-    # the seven user params below already form the tail of PARAMS_HEAD and all of PARAMS_TAIL, so
-    # swapping the metadata into their place completes both words
-    swap
+    # the six user params below already form the tail of PARAMS_HEAD and all of PARAMS_TAIL, so
+    # putting the version and the metadata in front of them completes both words
+    push.TX_SUMMARY_VERSION movup.2
     # => [block_number, PARAMS_HEAD, PARAMS_TAIL]
 
     exec.tx::get_block_commitment
@@ -99,8 +98,7 @@ end
 #!
 #! This is the common case; see `create_tx_summary` for binding an earlier block instead.
 #!
-#! Inputs:  [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
-#!           user_param6]
+#! Inputs:  [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5]
 #! Outputs: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
 #!           OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 #!
@@ -108,10 +106,10 @@ end
 #! - all inputs and outputs are as described in `create_tx_summary`.
 #!
 #! Invocation: exec
-pub proc create_tx_summary_with_ref_block(user_params: [felt; 7])
+pub proc create_tx_summary_with_ref_block(user_params: [felt; 6])
     -> (word, word, word, word, word, word)
     exec.tx::get_reference_block_number
-    # => [reference_block_number, user_params(7)]
+    # => [reference_block_number, user_params(6)]
 
     exec.create_tx_summary
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
@@ -135,9 +133,9 @@ end
 #!   }
 #!
 #! Where:
-#! - PARAMS_HEAD is the word [metadata, user_param0, user_param1, user_param2] and PARAMS_TAIL the
-#!   word [user_param3, user_param4, user_param5, user_param6], together binding the summary
-#!   metadata and the seven user-defined parameters. See `create_tx_summary` for the metadata felt.
+#! - PARAMS_HEAD is the word [version, metadata, user_param0, user_param1] and PARAMS_TAIL the word
+#!   [user_param2, user_param3, user_param4, user_param5], together binding the summary metadata and
+#!   the six user-defined parameters. See `create_tx_summary` for the metadata felt.
 #! - BLOCK_COMMITMENT is the commitment to the block bound by the summary.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.

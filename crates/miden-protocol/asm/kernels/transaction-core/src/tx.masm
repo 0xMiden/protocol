@@ -49,6 +49,13 @@ const ERR_TX_BLOCK_NUMBER_NOT_U32 = "the block number must be a u32"
 const ERR_TX_BLOCK_NUMBER_EXCEEDS_REFERENCE_BLOCK_NUMBER =
     "the block number must not exceed the transaction reference block number"
 
+# EVENTS
+# =================================================================================================
+
+# Event emitted before the commitment of a block other than the reference block is read from the
+# partial blockchain, so that the host can provide the block's authentication witness.
+const TX_BEFORE_BLOCK_WITNESS_LOAD_EVENT = event("miden::protocol::tx::before_block_witness_load")
+
 # PROCEDURES
 # =================================================================================================
 
@@ -103,10 +110,14 @@ pub proc get_block_commitment
 
     if.true
         # the reference block commitment is already in memory, so skip the MMR traversal.
-        drop exec.memory::get_block_commitment
+        drop exec.memory::get_ref_block_commitment
         # => [BLOCK_COMMITMENT]
     else
         push.PARTIAL_BLOCKCHAIN_PTR swap
+        # => [block_number, partial_blockchain_ptr]
+
+        # let the host provide the authentication witness of the requested block
+        emit.TX_BEFORE_BLOCK_WITNESS_LOAD_EVENT
         # => [block_number, partial_blockchain_ptr]
 
         exec.mmr::get

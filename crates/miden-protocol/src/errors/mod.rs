@@ -996,7 +996,7 @@ pub enum TransactionSummaryError {
     #[error(
         "transaction summary layout version is {actual} but only version {expected} is supported"
     )]
-    UnsupportedVersion { actual: u8, expected: u8 },
+    UnsupportedVersion { actual: Felt, expected: u8 },
 }
 
 // TRANSACTION EVENT PARSING ERROR

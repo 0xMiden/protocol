@@ -1,3 +1,4 @@
+use alloc::format;
 use alloc::vec::Vec;
 
 use crate::account::AccountDelta;
@@ -45,13 +46,17 @@ impl TransactionSummary {
     /// [`TransactionSummary::to_elements`].
     pub(crate) const VERSION: u8 = 1;
 
-    /// The index of the packed [`TransactionSummaryMetadata`] element in the commitment preimage.
-    const METADATA_IDX: usize = 0;
+    /// The indices of the version, of the packed [`TransactionSummaryMetadata`] element and of the
+    /// first user parameter in the commitment preimage.
+    const VERSION_IDX: usize = 0;
+    const METADATA_IDX: usize = 1;
+    const USER_PARAMS_IDX: usize = 2;
 
     /// The number of elements in the preimage of a [`TransactionSummary`] commitment, i.e. the
-    /// length of the vector returned by [`TransactionSummary::to_elements`]: the metadata element,
-    /// the user parameters and the four commitment words.
-    pub const NUM_ELEMENTS: usize = 1 + TransactionSummaryUserParams::NUM_ELEMENTS + 4 * WORD_SIZE;
+    /// length of the vector returned by [`TransactionSummary::to_elements`]: the version, the
+    /// metadata element, the user parameters and the four commitment words.
+    pub const NUM_ELEMENTS: usize =
+        Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS + 4 * WORD_SIZE;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -113,7 +118,7 @@ impl TransactionSummary {
         self.expiration_delta
     }
 
-    /// Returns the metadata packed into the first element of the commitment preimage.
+    /// Returns the metadata packed into the commitment preimage.
     pub fn metadata(&self) -> TransactionSummaryMetadata {
         TransactionSummaryMetadata::new(self.block_number, self.expiration_delta)
     }
@@ -130,15 +135,15 @@ impl TransactionSummary {
     ///
     /// ```text
     /// [
-    ///     [metadata, user_param0, user_param1, user_param2],
-    ///     [user_param3, user_param4, user_param5, user_param6],
+    ///     [version, metadata, user_param0, user_param1],
+    ///     [user_param2, user_param3, user_param4, user_param5],
     ///     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
     ///     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT,
     /// ]
     /// ```
     ///
-    /// The metadata element comes first so that a reader encounters the layout version before
-    /// anything that depends on it.
+    /// The version comes first so that a reader encounters the layout version before anything that
+    /// depends on it.
     pub fn to_elements(&self) -> Vec<Felt> {
         <Self as SequentialCommit>::to_elements(self)
     }
@@ -166,6 +171,7 @@ impl TransactionSummary {
     ///
     /// Returns an error if:
     /// - `elements` does not contain exactly [`TransactionSummary::NUM_ELEMENTS`] elements.
+    /// - the encoded version is not supported.
     /// - the metadata element is not a valid [`TransactionSummaryMetadata`].
     pub fn try_params_from_elements(
         elements: &[Felt],
@@ -178,10 +184,18 @@ impl TransactionSummary {
             });
         }
 
-        let metadata = TransactionSummaryMetadata::try_from_felt(elements[Self::METADATA_IDX])?;
+        let version = elements[Self::VERSION_IDX];
+        if version != Felt::from(Self::VERSION) {
+            return Err(TransactionSummaryError::UnsupportedVersion {
+                actual: version,
+                expected: Self::VERSION,
+            });
+        }
 
-        let user_params_end = Self::METADATA_IDX + 1 + TransactionSummaryUserParams::NUM_ELEMENTS;
-        let user_params = elements[Self::METADATA_IDX + 1..user_params_end]
+        let metadata = TransactionSummaryMetadata::try_from_element(elements[Self::METADATA_IDX])?;
+
+        let user_params_end = Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS;
+        let user_params = elements[Self::USER_PARAMS_IDX..user_params_end]
             .try_into()
             .expect("preimage length was validated above");
 
@@ -197,7 +211,8 @@ impl SequentialCommit for TransactionSummary {
 
     fn to_elements(&self) -> Vec<Felt> {
         let mut elements = Vec::with_capacity(Self::NUM_ELEMENTS);
-        elements.push(self.metadata().to_felt());
+        elements.push(Felt::from(Self::VERSION));
+        elements.push(self.metadata().to_element());
         elements.extend_from_slice(self.user_params.as_elements());
         elements.extend_from_slice(self.account_delta.to_commitment().as_elements());
         elements.extend_from_slice(self.input_notes.commitment().as_elements());
@@ -209,6 +224,7 @@ impl SequentialCommit for TransactionSummary {
 
 impl Serializable for TransactionSummary {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        Self::VERSION.write_into(target);
         self.account_delta.write_into(target);
         self.input_notes.write_into(target);
         self.output_notes.write_into(target);
@@ -221,6 +237,14 @@ impl Serializable for TransactionSummary {
 
 impl Deserializable for TransactionSummary {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version: u8 = source.read()?;
+        if version != Self::VERSION {
+            return Err(DeserializationError::InvalidValue(format!(
+                "transaction summary version is {version} but only version {} is supported",
+                Self::VERSION
+            )));
+        }
+
         let account_delta = source.read()?;
         let input_notes = source.read()?;
         let output_notes = source.read()?;
@@ -244,11 +268,13 @@ impl Deserializable for TransactionSummary {
 // TRANSACTION SUMMARY METADATA
 // ================================================================================================
 
-/// The metadata packed into the first element of a [`TransactionSummary`] commitment preimage.
+/// The metadata packed into a single element of a [`TransactionSummary`] commitment preimage.
 ///
-/// It binds the layout version of the preimage, the number of the block whose commitment the
-/// summary contains, and the transaction's expiration block delta. Packing them into one element
-/// keeps the preimage word-aligned without spending a word on three small values.
+/// It binds the number of the block whose commitment the summary contains and the transaction's
+/// expiration block delta.
+///
+/// The metadata encodes to a single element with the following layout:
+/// `[16 zero bits | expiration_delta (16 bits) | block_number (32 bits)]`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransactionSummaryMetadata {
     block_number: BlockNumber,
@@ -259,9 +285,8 @@ impl TransactionSummaryMetadata {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The bit offsets of the packed fields.
-    const BLOCK_NUMBER_SHIFT: u32 = u8::BITS;
-    const EXPIRATION_DELTA_SHIFT: u32 = Self::BLOCK_NUMBER_SHIFT + u32::BITS;
+    /// The bit offset of the expiration delta, i.e. the width of the block number below it.
+    const EXPIRATION_DELTA_SHIFT: u32 = u32::BITS;
 
     /// The number of bits the packed metadata occupies.
     const NUM_BITS: u32 = Self::EXPIRATION_DELTA_SHIFT + u16::BITS;
@@ -269,7 +294,7 @@ impl TransactionSummaryMetadata {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates new metadata for the current version.
+    /// Creates new metadata from the provided parts.
     pub fn new(block_number: BlockNumber, expiration_delta: u16) -> Self {
         Self { block_number, expiration_delta }
     }
@@ -278,25 +303,15 @@ impl TransactionSummaryMetadata {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - `metadata` sets bits above the packed fields.
-    /// - the encoded version is not supported.
-    pub fn try_from_felt(metadata: Felt) -> Result<Self, TransactionSummaryError> {
+    /// Returns an error if `metadata` sets bits above the packed fields.
+    pub fn try_from_element(metadata: Felt) -> Result<Self, TransactionSummaryError> {
         let packed = metadata.as_canonical_u64();
         if packed >> Self::NUM_BITS != 0 {
             return Err(TransactionSummaryError::MetadataOutOfRange(metadata));
         }
 
-        let version = packed as u8;
-        if version != TransactionSummary::VERSION {
-            return Err(TransactionSummaryError::UnsupportedVersion {
-                actual: version,
-                expected: TransactionSummary::VERSION,
-            });
-        }
-
         // The `as` casts truncate to exactly the bits of the respective field.
-        let block_number = BlockNumber::from((packed >> Self::BLOCK_NUMBER_SHIFT) as u32);
+        let block_number = BlockNumber::from(packed as u32);
         let expiration_delta = (packed >> Self::EXPIRATION_DELTA_SHIFT) as u16;
 
         Ok(Self::new(block_number, expiration_delta))
@@ -316,10 +331,9 @@ impl TransactionSummaryMetadata {
     }
 
     /// Returns the packed representation of the metadata.
-    pub fn to_felt(&self) -> Felt {
+    pub fn to_element(&self) -> Felt {
         let packed = (u64::from(self.expiration_delta) << Self::EXPIRATION_DELTA_SHIFT)
-            | (u64::from(self.block_number.as_u32()) << Self::BLOCK_NUMBER_SHIFT)
-            | u64::from(TransactionSummary::VERSION);
+            | u64::from(self.block_number.as_u32());
 
         // The packed value occupies NUM_BITS bits, so it is always a canonical field element.
         Felt::try_from(packed).expect("packed metadata should fit in felt")
@@ -348,7 +362,7 @@ impl TransactionSummaryUserParams {
     // --------------------------------------------------------------------------------------------
 
     /// The number of user-defined elements bound by a [`TransactionSummary`].
-    pub const NUM_ELEMENTS: usize = 7;
+    pub const NUM_ELEMENTS: usize = 6;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -395,7 +409,7 @@ mod tests {
     /// The block number, expiration delta and user parameters used by the tests below.
     const BLOCK_NUMBER: u32 = 123;
     const EXPIRATION_DELTA: u16 = 42;
-    const USER_PARAMS: [u32; TransactionSummaryUserParams::NUM_ELEMENTS] = [1, 2, 3, 4, 5, 6, 7];
+    const USER_PARAMS: [u32; TransactionSummaryUserParams::NUM_ELEMENTS] = [1, 2, 3, 4, 5, 6];
 
     /// Builds a transaction summary over an empty delta and no notes, binding the parameters above.
     fn mock_summary() -> TransactionSummary {
@@ -427,16 +441,16 @@ mod tests {
 
         assert_eq!(elements.len(), TransactionSummary::NUM_ELEMENTS);
         assert_eq!(
-            &elements[..TransactionSummary::METADATA_IDX + 1 + USER_PARAMS.len()],
+            &elements[..TransactionSummary::USER_PARAMS_IDX + USER_PARAMS.len()],
             [
-                summary.metadata().to_felt(),
+                Felt::from(TransactionSummary::VERSION),
+                summary.metadata().to_element(),
                 Felt::from(USER_PARAMS[0]),
                 Felt::from(USER_PARAMS[1]),
                 Felt::from(USER_PARAMS[2]),
                 Felt::from(USER_PARAMS[3]),
                 Felt::from(USER_PARAMS[4]),
                 Felt::from(USER_PARAMS[5]),
-                Felt::from(USER_PARAMS[6]),
             ]
         );
 
@@ -468,7 +482,7 @@ mod tests {
         let metadata =
             TransactionSummaryMetadata::new(BlockNumber::from(block_number), expiration_delta);
 
-        let decoded = TransactionSummaryMetadata::try_from_felt(metadata.to_felt())?;
+        let decoded = TransactionSummaryMetadata::try_from_element(metadata.to_element())?;
         assert_eq!(decoded, metadata);
         assert_eq!(decoded.block_number().as_u32(), block_number);
         assert_eq!(decoded.expiration_delta(), expiration_delta);
@@ -477,28 +491,24 @@ mod tests {
     }
 
     #[test]
-    fn tx_summary_metadata_rejects_unsupported_version() {
-        let metadata = mock_summary().metadata().to_felt().as_canonical_u64();
-        let unsupported_version = u64::from(TransactionSummary::VERSION) + 1;
+    fn tx_summary_params_reject_unsupported_version() {
+        let unsupported_version = Felt::from(TransactionSummary::VERSION + 1);
+        let mut elements = mock_summary().to_elements();
+        elements[TransactionSummary::VERSION_IDX] = unsupported_version;
 
         assert_matches!(
-            TransactionSummaryMetadata::try_from_felt(Felt::new_unchecked(
-                metadata - u64::from(TransactionSummary::VERSION) + unsupported_version
-            )),
+            TransactionSummary::try_params_from_elements(&elements),
             Err(TransactionSummaryError::UnsupportedVersion { actual, expected })
-                if u64::from(actual) == unsupported_version
-                    && expected == TransactionSummary::VERSION
+                if actual == unsupported_version && expected == TransactionSummary::VERSION
         );
     }
 
     #[test]
     fn tx_summary_metadata_rejects_bits_above_packed_fields() {
-        let out_of_range = 1u64 << TransactionSummaryMetadata::NUM_BITS;
+        let out_of_range = Felt::new_unchecked(1u64 << TransactionSummaryMetadata::NUM_BITS);
 
         assert_matches!(
-            TransactionSummaryMetadata::try_from_felt(Felt::new_unchecked(
-                out_of_range | u64::from(TransactionSummary::VERSION)
-            )),
+            TransactionSummaryMetadata::try_from_element(out_of_range),
             Err(TransactionSummaryError::MetadataOutOfRange(_))
         );
     }

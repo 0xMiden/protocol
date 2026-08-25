@@ -488,6 +488,11 @@ impl TransactionEvent {
                 Some(TransactionEvent::InputNoteIndexLookup { note_id })
             },
 
+            // TODO(block_witness_lazy_loading): provide the authentication witness of the requested
+            // block so that a block which the transaction inputs do not already authenticate can be
+            // read.
+            TransactionEventId::TxBeforeBlockWitnessLoad => None,
+
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
@@ -749,8 +754,8 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         [metadata, user_param0, user_param1, user_param2],
-///         [user_param3, user_param4, user_param5, user_param6],
+///         [version, metadata, user_param0, user_param1],
+///         [user_param2, user_param3, user_param4, user_param5],
 ///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
 ///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
 ///     ]

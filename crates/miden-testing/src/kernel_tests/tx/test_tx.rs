@@ -561,8 +561,8 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           # => [final_nonce, pad(16)]
 
           # pass the final nonce as the last user param and zero the remaining ones
-          push.0.0.0.0.0.0
-          # => [user_params(7), pad(16)]
+          push.0.0.0.0.0
+          # => [user_params(6), pad(16)]
 
           exec.auth::create_tx_summary_with_ref_block
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
@@ -623,7 +623,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         assert_eq!(tx_summary.expiration_delta(), 0);
         assert_eq!(
             tx_summary.user_params(),
-            TransactionSummaryUserParams::new([0, 0, 0, 0, 0, 0, final_nonce].map(Felt::from))
+            TransactionSummaryUserParams::new([0, 0, 0, 0, 0, final_nonce].map(Felt::from))
         );
     });
 
@@ -656,8 +656,8 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           # => [final_nonce, pad(16)]
 
           # pass [7, 8, 9] as the leading user params and the final nonce as the last one
-          push.0.0.0.9.8.7
-          # => [user_params(7), pad(16)]
+          push.0.0.9.8.7
+          # => [user_params(6), pad(16)]
 
           exec.auth::create_tx_summary_with_ref_block
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
@@ -697,7 +697,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
         assert_eq!(tx_summary.expiration_delta(), 42);
         assert_eq!(
             tx_summary.user_params(),
-            TransactionSummaryUserParams::new([7, 8, 9, 0, 0, 0, final_nonce].map(Felt::from))
+            TransactionSummaryUserParams::new([7, 8, 9, 0, 0, final_nonce].map(Felt::from))
         );
         assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
     });
@@ -733,12 +733,13 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
           exec.::miden::protocol::native_account::compute_delta_commitment
           # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
 
-          # the seven user params are all zero here
-          padw push.0.0.0
-          # => [user_params(7), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
+          # the six user params are all zero here
+          padw push.0.0
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
 
-          # metadata for version 1, the reference block number and an unset expiration delta
-          exec.tx::get_reference_block_number mul.0x100 add.1
+          # metadata binding the reference block number and an unset expiration delta, preceded by
+          # the layout version
+          exec.tx::get_reference_block_number push.1
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -810,12 +811,11 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
           exec.::miden::protocol::native_account::compute_delta_commitment
           # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
-          # the seven user params are all zero here
-          padw push.0.0.0
-          # => [user_params(7), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+          # the six user params are all zero here
+          padw push.0.0
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
-          push.777 mul.0x10000000000
-          exec.tx::get_reference_block_number mul.0x100 add add.1
+          push.777 mul.0x100000000 exec.tx::get_reference_block_number add push.1
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -905,7 +905,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         ref_block_commitment,
         0,
         TransactionSummaryUserParams::new(
-            [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0, 0].map(Felt::from),
+            [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0].map(Felt::from),
         ),
     );
 
