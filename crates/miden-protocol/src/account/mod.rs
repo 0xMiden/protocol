@@ -1,4 +1,4 @@
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::delta::AssetDeltaOperation;
@@ -40,12 +40,7 @@ pub use code::AccountCode;
 pub use code::procedure::AccountProcedureRoot;
 
 pub mod component;
-pub use component::{
-    AccountComponent,
-    AccountComponentCode,
-    AccountComponentMetadata,
-    ComponentDependency,
-};
+pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
 
 pub mod interface;
 pub use interface::{AccountCodeInterface, AccountComponentName};
@@ -188,40 +183,11 @@ impl Account {
     ///   authentication procedure.
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all packages.
-    /// - A component declares a [`ComponentDependency`] that no component on the account satisfies.
     pub(super) fn initialize_from_components(
         components: Vec<AccountComponent>,
     ) -> Result<(AccountCode, AccountStorage), AccountError> {
         let code = AccountCode::from_components_unchecked(&components)?;
-
-        // Collect the declared dependencies before the components are consumed, so they can be
-        // checked against the merged storage below.
-        let dependencies: Vec<(String, ComponentDependency)> = components
-            .iter()
-            .flat_map(|component| {
-                let component_name = component.metadata().name();
-                component
-                    .metadata()
-                    .dependencies()
-                    .iter()
-                    .map(move |dependency| (component_name.to_string(), dependency.clone()))
-            })
-            .collect();
-
         let storage = AccountStorage::from_components(components)?;
-
-        for (component_name, dependency) in dependencies {
-            match dependency {
-                ComponentDependency::StorageSlot(slot_name) => {
-                    if storage.get(&slot_name).is_none() {
-                        return Err(AccountError::UnsatisfiedComponentDependency {
-                            component_name,
-                            slot_name,
-                        });
-                    }
-                },
-            }
-        }
 
         Ok((code, storage))
     }

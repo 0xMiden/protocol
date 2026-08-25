@@ -209,21 +209,6 @@ mod tests {
     use crate::testing::assembler::assemble_test_package;
     use crate::utils::serde::Serializable;
 
-    /// Declared dependencies survive the binary round trip used to carry metadata in packages.
-    #[test]
-    fn metadata_dependencies_round_trip_through_bytes() {
-        use crate::account::StorageSlotName;
-        use crate::utils::serde::Deserializable;
-
-        let slot_name = StorageSlotName::new("test::owner_config").unwrap();
-        let metadata = AccountComponentMetadata::new("test_component")
-            .with_dependency(ComponentDependency::StorageSlot(slot_name));
-
-        let deserialized = AccountComponentMetadata::read_from_bytes(&metadata.to_bytes()).unwrap();
-
-        assert_eq!(deserialized, metadata);
-    }
-
     #[test]
     fn test_extract_metadata_from_package() {
         // Create a simple package for testing

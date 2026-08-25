@@ -13,7 +13,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
     AccountStorage,
-    ComponentDependency,
     RoleSymbol,
     StorageMap,
     StorageMapKey,
@@ -26,7 +25,6 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::access::Ownable2Step;
 use crate::account::account_component_code;
 use crate::procedure_root;
 
@@ -104,9 +102,10 @@ const RBAC_CONTROLLED: u8 = 2;
 /// unfrozen.
 ///
 /// The flag is toggled via `freeze` / `unfreeze`. Under [`Authority::OwnerControlled`] these are
-/// gated on the [`Ownable2Step`] owner; under [`Authority::RbacControlled`] they resolve their
-/// role from the role map (e.g. `FREEZER` / `UNFREEZER`), defaulting to the `ADMIN` role. Both
-/// bypass the frozen flag itself so the switch can always be toggled.
+/// gated on the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; under
+/// [`Authority::RbacControlled`] they resolve their role from the role map (e.g. `FREEZER` /
+/// `UNFREEZER`), defaulting to the `ADMIN` role. Both bypass the frozen flag itself so the switch
+/// can always be toggled.
 ///
 /// This flag has no effect under [`Authority::AuthControlled`], where `freeze` / `unfreeze` panic
 /// (there is no owner and no role graph).
@@ -163,7 +162,7 @@ const RBAC_CONTROLLED: u8 = 2;
 pub enum Authority {
     /// Authority is the account's auth component.
     AuthControlled = AUTH_CONTROLLED,
-    /// Authority is the [`Ownable2Step`] owner.
+    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner.
     OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in an RBAC role, resolved per gated procedure.
     ///
@@ -282,22 +281,12 @@ impl Authority {
 
         let storage_schema = StorageSchema::new(slots).expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(Self::NAME)
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Account-wide authority shared by procedures that gate state-mutating \
                  operations behind auth-only, owner-based, or RBAC role-based checks",
             )
-            .with_storage_schema(storage_schema);
-
-        // Under `OwnerControlled`, `assert_authorized` resolves the caller against the owner
-        // recorded by `Ownable2Step`, whose storage slot this component does not install itself.
-        if matches!(self, Authority::OwnerControlled) {
-            metadata.with_dependency(ComponentDependency::StorageSlot(
-                Ownable2Step::slot_name().clone(),
-            ))
-        } else {
-            metadata
-        }
+            .with_storage_schema(storage_schema)
     }
 
     // PRIVATE HELPERS

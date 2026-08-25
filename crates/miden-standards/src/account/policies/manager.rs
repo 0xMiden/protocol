@@ -275,26 +275,46 @@ impl TokenPolicyManager {
 
         let mut policies: BTreeMap<AccountProcedureRoot, PolicyConfig> = BTreeMap::new();
 
-        insert_policy(&mut policies, active_mint_policy_root, active_mint_policy, PolicyKind::Mint);
-        insert_policy(&mut policies, active_burn_policy_root, active_burn_policy, PolicyKind::Burn);
+        insert_policy(
+            &mut policies,
+            active_mint_policy_root,
+            active_mint_policy.into_iter().collect(),
+            PolicyKind::Mint,
+        );
+        insert_policy(
+            &mut policies,
+            active_burn_policy_root,
+            active_burn_policy.into_iter().collect(),
+            PolicyKind::Burn,
+        );
         if let Some(policy) = active_send_policy {
-            insert_policy(&mut policies, active_send_policy_root, policy, PolicyKind::Send);
+            insert_policy(
+                &mut policies,
+                active_send_policy_root,
+                policy.into_iter().collect(),
+                PolicyKind::Send,
+            );
         }
         if let Some(policy) = active_receive_policy {
-            insert_policy(&mut policies, active_receive_policy_root, policy, PolicyKind::Receive);
+            insert_policy(
+                &mut policies,
+                active_receive_policy_root,
+                policy.into_iter().collect(),
+                PolicyKind::Receive,
+            );
         }
 
         for (root, policy) in allowed_mint_policies {
-            insert_policy(&mut policies, root, policy, PolicyKind::Mint);
+            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Mint);
         }
         for (root, policy) in allowed_burn_policies {
-            insert_policy(&mut policies, root, policy, PolicyKind::Burn);
+            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Burn);
         }
         for (root, policy) in allowed_send_policies {
-            insert_policy(&mut policies, root, policy, PolicyKind::Send);
+            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Send);
         }
         for (root, policy) in allowed_receive_policies {
-            insert_policy(&mut policies, root, policy, PolicyKind::Receive);
+            insert_policy(&mut policies, root, policy.into_iter().collect(), PolicyKind::Receive);
         }
 
         Self {
@@ -656,10 +676,10 @@ impl TokenPolicyManager {
 /// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
 /// entry's kind set. The first call wins for the companion components, which guarantees a
 /// given root's companion components are not duplicated across kinds.
-fn insert_policy<P: IntoIterator<Item = AccountComponent>>(
+fn insert_policy(
     policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
     root: AccountProcedureRoot,
-    policy: P,
+    components: Vec<AccountComponent>,
     kind: PolicyKind,
 ) {
     policies
@@ -670,10 +690,7 @@ fn insert_policy<P: IntoIterator<Item = AccountComponent>>(
         .or_insert_with(|| {
             let mut kinds = BTreeSet::new();
             kinds.insert(kind);
-            PolicyConfig {
-                components: policy.into_iter().collect(),
-                kinds,
-            }
+            PolicyConfig { components, kinds }
         });
 }
 

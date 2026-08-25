@@ -180,13 +180,6 @@ pub enum AccountError {
     DuplicateStorageSlotName(StorageSlotName),
     #[error("storage does not contain a slot with name {slot_name}")]
     StorageSlotNameNotFound { slot_name: StorageSlotName },
-    #[error(
-        "component {component_name} depends on storage slot {slot_name}, which no component installed on the account provides"
-    )]
-    UnsatisfiedComponentDependency {
-        component_name: String,
-        slot_name: StorageSlotName,
-    },
     #[error("storage does not contain a slot with ID {slot_id}")]
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]

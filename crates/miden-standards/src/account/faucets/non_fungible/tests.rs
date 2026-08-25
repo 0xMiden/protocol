@@ -2,7 +2,6 @@ use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountId, AccountType, AssetCallbackFlag};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
-use miden_protocol::errors::AccountError;
 use miden_protocol::{Felt, Word};
 
 use super::{
@@ -10,15 +9,16 @@ use super::{
     create_network_non_fungible_faucet,
     create_user_non_fungible_faucet,
 };
-use crate::account::access::{AccessControl, Ownable2Step};
+use crate::account::access::AccessControl;
 use crate::account::auth::{Approver, AuthSingleSig};
 use crate::account::faucets::test_utils::{
     allow_all_policy_manager,
     mint_burn_only_policy_manager,
+    owner_only_mint_policy_manager,
 };
 use crate::account::faucets::{NonFungibleFaucetError, TokenName};
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
+use crate::account::policies::TokenPolicyManager;
 
 /// Building a faucet exposes the configured fields.
 #[test]
@@ -96,8 +96,8 @@ fn compute_asset_commitment_is_salt_sensitive() {
     assert_ne!(c_a, c_b);
 }
 
-/// A user faucet installs no `Ownable2Step` component, so an owner-only mint policy has no owner
-/// slot to read and every mint would abort. The factory must reject that configuration.
+/// A user faucet installs no `Ownable2Step` component, so an owner-gated mint policy would have no
+/// owner slot to read and every mint would abort. The factory must reject that configuration.
 #[test]
 fn user_non_fungible_faucet_rejects_owner_only_mint_policy() {
     let auth_component = AuthSingleSig::new(Approver::new(
@@ -105,23 +105,14 @@ fn user_non_fungible_faucet_rejects_owner_only_mint_policy() {
         AuthScheme::Falcon512Poseidon2,
     ));
 
-    let token_policy_manager = TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::owner_only())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .build();
-
     let err = create_user_non_fungible_faucet(
         [21u8; 32],
         sample_faucet(),
         auth_component,
-        token_policy_manager,
+        owner_only_mint_policy_manager(),
         AccountType::Private,
     )
     .expect_err("owner-only mint policy without Ownable2Step should be rejected");
 
-    assert_matches!(err, NonFungibleFaucetError::AccountCreationFailed(AccountError::BuildError(_, Some(source))) => {
-        assert_matches!(*source, AccountError::UnsatisfiedComponentDependency { slot_name, .. } => {
-            assert_eq!(&slot_name, Ownable2Step::slot_name());
-        });
-    });
+    assert_matches!(err, NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
 }

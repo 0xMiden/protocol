@@ -1,12 +1,6 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{
-    AccountComponent,
-    AccountComponentName,
-    AccountProcedureRoot,
-    ComponentDependency,
-};
+use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::access::Ownable2Step;
 use crate::account::account_component_code;
 use crate::procedure_root;
 
@@ -40,9 +34,8 @@ procedure_root!(
 /// the `Ownable2Step` component) may trigger burn operations.
 ///
 /// Companion components required:
-/// - [`Ownable2Step`] — provides the owner storage slot the auth check reads. The component
-///   declares that slot as a [`ComponentDependency`], so building an account that installs this
-///   policy without it fails instead of producing a faucet whose every burn reverts.
+/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
+///   reads. Without it, the faucet builds successfully but every burn reverts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BurnOwnerOnly;
 
@@ -71,11 +64,9 @@ impl BurnOwnerOnly {
 
 impl From<BurnOwnerOnly> for AccountComponent {
     fn from(_: BurnOwnerOnly) -> Self {
-        let metadata = AccountComponentMetadata::new(BurnOwnerOnly::NAME)
-            .with_description(
-                "`owner_only` burn policy (owner-controlled family) for fungible faucets",
-            )
-            .with_dependency(ComponentDependency::StorageSlot(Ownable2Step::slot_name().clone()));
+        let metadata = AccountComponentMetadata::new(BurnOwnerOnly::NAME).with_description(
+            "`owner_only` burn policy (owner-controlled family) for fungible faucets",
+        );
 
         AccountComponent::new(BurnOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` burn policy component should satisfy the requirements of a valid account component",
