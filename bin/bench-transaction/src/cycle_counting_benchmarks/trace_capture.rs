@@ -15,8 +15,11 @@ use miden_tx::{
     TransactionProverHost,
 };
 
+use crate::note_labels::NoteLabels;
+
 /// Executes the transaction, then replays its inputs through the trace-build path to capture a
-/// `TraceLenSummary`.
+/// `TraceLenSummary`. Also resolves the stable labels of the transaction's input notes, which the
+/// measurements are reported under.
 ///
 /// Two passes: `TransactionExecutor` first so the authenticator resolves any required signatures
 /// into the `ExecutedTransaction`'s inputs, then `LocalTransactionProver::prove`'s trace-build
@@ -24,16 +27,18 @@ use miden_tx::{
 /// per-iteration.
 pub async fn capture_measurements_and_trace_summary(
     mock_tx: MockTransaction,
-) -> Result<(TransactionMeasurements, TraceLenSummary)> {
+) -> Result<(TransactionMeasurements, TraceLenSummary, NoteLabels)> {
     let executed = mock_tx
         .execute()
         .await
         .context("pre-execution (to resolve signatures) failed")?;
     let (tx_inputs, _tx_outputs, _account_patch, measurements) = executed.into_parts();
 
+    // resolved before `tx_inputs` is consumed by the trace-build pass
+    let note_labels = NoteLabels::from_inputs(&tx_inputs)?;
     let trace_summary = build_trace_summary(tx_inputs).await?;
 
-    Ok((measurements, trace_summary))
+    Ok((measurements, trace_summary, note_labels))
 }
 
 // TODO(#2841): integrate `TraceLenSummary` into `TransactionMeasurements` so we can drop this
