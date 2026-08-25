@@ -72,7 +72,7 @@ async fn block_kernel_input_stack_is_reproducible() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Executing a block and then proving it produces a [`BlockProof`] carrying the kernel's proof.
+/// Executing a block and then proving it produces the block kernel's execution proof.
 #[tokio::test]
 async fn block_executor_then_prover_produces_block_proof() -> anyhow::Result<()> {
     let block = two_batch_block().await?;

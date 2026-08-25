@@ -1,4 +1,4 @@
-use miden_protocol::block::BlockProof;
+use miden_protocol::vm::ExecutionProof;
 use miden_prover::{ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
 
 use crate::{BlockProverError, ExecutedBlock};
@@ -8,8 +8,8 @@ use crate::{BlockProverError, ExecutedBlock};
 
 /// A local prover for blocks in the chain.
 ///
-/// Proves an [`ExecutedBlock`] produced by [`BlockExecutor`](crate::BlockExecutor) into a
-/// [`BlockProof`] over the block's public commitments.
+/// Proves an [`ExecutedBlock`] produced by [`BlockExecutor`](crate::BlockExecutor) into an
+/// [`ExecutionProof`] over the block's public commitments.
 ///
 /// # Warning
 ///
@@ -32,14 +32,14 @@ impl LocalBlockProver {
         Self::default()
     }
 
-    /// Proves the [`ExecutedBlock`] into a [`BlockProof`].
+    /// Proves the [`ExecutedBlock`] into an [`ExecutionProof`].
     ///
     /// Builds the execution trace from the executed block and generates the proof.
     ///
     /// # Errors
     ///
     /// Returns an error if proof generation fails.
-    pub fn prove(&self, executed_block: ExecutedBlock) -> Result<BlockProof, BlockProverError> {
+    pub fn prove(&self, executed_block: ExecutedBlock) -> Result<ExecutionProof, BlockProverError> {
         let trace_inputs = executed_block.into_trace_inputs();
 
         let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
@@ -48,16 +48,16 @@ impl LocalBlockProver {
         ))
         .map_err(BlockProverError::BlockKernelExecutionFailed)?;
 
-        Ok(BlockProof::new(proof))
+        Ok(proof)
     }
 
-    /// Returns a [`BlockProof`] carrying a dummy execution proof, without running the block kernel.
+    /// Returns a dummy [`ExecutionProof`], without running the block kernel.
     ///
     /// This is exposed for testing purposes. It is gated on the `testing` feature alone rather
-    /// than also on `cfg(test)`, because [`BlockProof::new_dummy`] requires `miden-protocol`'s own
+    /// than also on `cfg(test)`, because [`ExecutionProof::new_dummy`] requires `miden-core`'s own
     /// `testing` feature, which only this crate's `testing` feature turns on.
     #[cfg(feature = "testing")]
-    pub fn prove_dummy(&self) -> BlockProof {
-        BlockProof::new_dummy()
+    pub fn prove_dummy(&self) -> ExecutionProof {
+        ExecutionProof::new_dummy()
     }
 }
