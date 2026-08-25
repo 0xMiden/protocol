@@ -1,1 +1,13 @@
 CHANGELOG.md merge=union
+
+# Generated files, collapsed in GitHub diffs and excluded from language stats. Only files whose
+# contents are guarded by CI belong here - collapsing a diff removes a reviewer's eyes from it, so
+# something else has to be watching:
+#   - bench-tx.json: `committed_bench_tx_matches_producer_contract` parses the committed file.
+#   - Cargo.lock: `cargo deny` runs on every PR with `unknown-registry`/`unknown-git` denied.
+# Deliberately absent: the two note cost tables (`miden-standards`/`miden-agglayer` costs/table.rs),
+# whose constants reach `NetworkNotePricer`, and the agglayer Solidity test vectors, which are the
+# expected-value side of the bridge conformance tests and are regenerated only by a manual
+# `make generate-solidity-test-vectors`. Both should be read, not collapsed.
+bin/bench-transaction/bench-tx.json linguist-generated=true
+Cargo.lock linguist-generated=true
