@@ -1463,13 +1463,8 @@ pub enum ProvenBatchError {
     DuplicateOutputNote(NoteId),
     #[error("note with id {0} is both created and consumed by the proven batch")]
     NoteCreatedAndConsumed(NoteId),
-    #[error(
-        "account update stored under account {map_account_id} belongs to account {update_account_id}"
-    )]
-    AccountUpdateKeyMismatch {
-        map_account_id: AccountId,
-        update_account_id: AccountId,
-    },
+    #[error("account {0} is updated more than once in the proven batch")]
+    DuplicateAccountUpdate(AccountId),
     #[error("invalid account update for {account_id}")]
     InvalidAccountUpdate {
         account_id: AccountId,

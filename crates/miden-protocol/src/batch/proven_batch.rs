@@ -49,7 +49,7 @@ impl ProvenBatch {
     pub fn new(
         reference_block_commitment: Word,
         reference_block_num: BlockNumber,
-        account_updates: BTreeMap<AccountId, BatchAccountUpdate>,
+        account_updates: impl IntoIterator<Item = BatchAccountUpdate>,
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
@@ -65,20 +65,20 @@ impl ProvenBatch {
                 return Err(ProvenBatchError::DuplicateTransaction(transaction.id()));
             }
         }
+        let account_updates = account_updates.into_iter().collect::<Vec<_>>();
         if account_updates.len() > MAX_ACCOUNTS_PER_BATCH {
             return Err(ProvenBatchError::TooManyAccountUpdates(account_updates.len()));
         }
-        for (map_account_id, update) in &account_updates {
-            if *map_account_id != update.account_id() {
-                return Err(ProvenBatchError::AccountUpdateKeyMismatch {
-                    map_account_id: *map_account_id,
-                    update_account_id: update.account_id(),
-                });
-            }
+        let mut account_updates_by_id = BTreeMap::new();
+        for update in account_updates {
             update.validate().map_err(|source| ProvenBatchError::InvalidAccountUpdate {
                 account_id: update.account_id(),
                 source,
             })?;
+            let account_id = update.account_id();
+            if account_updates_by_id.insert(account_id, update).is_some() {
+                return Err(ProvenBatchError::DuplicateAccountUpdate(account_id));
+            }
         }
         let input_note_count = usize::from(input_notes.num_notes());
         if input_note_count > MAX_INPUT_NOTES_PER_BATCH {
@@ -111,7 +111,7 @@ impl ProvenBatch {
             id,
             reference_block_commitment,
             reference_block_num,
-            account_updates,
+            account_updates_by_id,
             input_notes,
             output_notes,
             batch_expiration_block_num,
@@ -266,7 +266,7 @@ impl Deserializable for ProvenBatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let reference_block_commitment = Word::read_from(source)?;
         let reference_block_num = BlockNumber::read_from(source)?;
-        let account_updates = BTreeMap::read_from(source)?;
+        let account_updates = BTreeMap::<AccountId, BatchAccountUpdate>::read_from(source)?;
         let input_notes = InputNotes::<InputNoteCommitment>::read_from(source)?;
         let output_notes = Vec::<OutputNote>::read_from(source)?;
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
@@ -276,7 +276,7 @@ impl Deserializable for ProvenBatch {
         Self::new(
             reference_block_commitment,
             reference_block_num,
-            account_updates,
+            account_updates.into_values(),
             input_notes,
             output_notes,
             batch_expiration_block_num,
@@ -299,8 +299,8 @@ mod tests {
 
     use super::ProvenBatch;
     use crate::Word;
-    use crate::account::AccountId;
-    use crate::batch::BatchId;
+    use crate::account::{AccountId, AccountUpdateDetails};
+    use crate::batch::{BatchAccountUpdate, BatchId};
     use crate::block::BlockNumber;
     use crate::errors::ProvenBatchError;
     use crate::note::Note;
@@ -329,6 +329,16 @@ mod tests {
         OrderedTransactionHeaders::new_unchecked(vec![transaction])
     }
 
+    fn private_account_update() -> BatchAccountUpdate {
+        BatchAccountUpdate::new(
+            AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(),
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            AccountUpdateDetails::Private,
+        )
+        .unwrap()
+    }
+
     fn conflicting_notes() -> (crate::note::NoteId, InputNotes<InputNoteCommitment>, Vec<OutputNote>)
     {
         let note = Note::mock_noop(Word::empty());
@@ -347,7 +357,7 @@ mod tests {
         let error = ProvenBatch::new(
             Word::empty(),
             BlockNumber::from(1),
-            BTreeMap::new(),
+            Vec::new(),
             input_notes,
             output_notes,
             BlockNumber::from(2),
@@ -357,6 +367,46 @@ mod tests {
         .unwrap_err();
 
         assert_matches!(error, ProvenBatchError::NoteCreatedAndConsumed(id) if id == note_id);
+    }
+
+    #[test]
+    fn derives_account_update_keys_from_updates() {
+        let update = private_account_update();
+        let account_id = update.account_id();
+
+        let batch = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![update],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap();
+
+        assert_eq!(batch.account_updates().keys().copied().collect::<Vec<_>>(), vec![account_id]);
+    }
+
+    #[test]
+    fn rejects_duplicate_account_updates() {
+        let update = private_account_update();
+        let account_id = update.account_id();
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![update.clone(), update],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(error, ProvenBatchError::DuplicateAccountUpdate(id) if id == account_id);
     }
 
     #[test]
@@ -397,7 +447,7 @@ mod tests {
         ProvenBatch::new(
             Word::empty(),
             BlockNumber::from(1),
-            BTreeMap::new(),
+            Vec::new(),
             InputNotes::default(),
             output_notes,
             BlockNumber::from(2),

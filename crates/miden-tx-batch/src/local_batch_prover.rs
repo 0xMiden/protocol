@@ -75,7 +75,7 @@ impl LocalBatchProver {
         ProvenBatch::new(
             block_header.commitment(),
             block_header.block_num(),
-            updated_accounts,
+            updated_accounts.into_values(),
             input_notes,
             output_notes,
             batch_expiration_block_num,
