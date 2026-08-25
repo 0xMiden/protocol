@@ -785,6 +785,87 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
     Ok(())
 }
 
+/// Tests that the host rejects a transaction summary that binds a block the transaction does not
+/// authenticate, so that a signer is never shown a summary the host cannot verify.
+#[tokio::test]
+async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      use miden::protocol::tx
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce drop
+          # => [pad(16)]
+
+          # The bound block is not tracked by the transaction, so its commitment cannot be read
+          # from the partial blockchain and any word will do here.
+          push.1.2.3.4
+          # => [BLOCK_COMMITMENT, pad(16)]
+
+          exec.tx::get_output_notes_commitment
+          exec.tx::get_input_notes_commitment
+          exec.::miden::protocol::native_account::compute_delta_commitment
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          # the six user params are all zero here
+          padw push.0.0
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          # metadata binding the block before the reference block, which the transaction does not
+          # track, and an unset expiration delta, preceded by the layout version
+          exec.tx::get_reference_block_number sub.1 push.1
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([45; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mut mock_chain = MockChain::builder().build()?;
+    // Advance the chain so that a block before the reference block exists.
+    mock_chain.prove_next_block()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryUnknownBlockNumber(_))
+        )
+    );
+
+    Ok(())
+}
+
 /// Tests that the host rejects a transaction summary whose expiration delta does not match the
 /// kernel state of the transaction.
 #[tokio::test]
