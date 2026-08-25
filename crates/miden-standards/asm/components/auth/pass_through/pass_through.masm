@@ -22,9 +22,9 @@ const ERR_AUTH_PASS_THROUGH_ACCOUNT_STATE_CHANGED = "a pass-through account's st
 #! vault through the input notes and leave it again through the output notes within the same
 #! transaction, and anything left behind fails here.
 #!
-#! No transaction fee is paid: an account that cannot change its state cannot fund a TX_FEE note
-#! out of its vault. There is no other way to pay one, so such a transaction is only includable
-#! by a batch builder that accepts fee-less transactions.
+#! No transaction fee is paid: this procedure creates no TX_FEE note, and an account that cannot
+#! change its state cannot fund one out of its vault. Such a transaction is only includable by a
+#! batch builder that accepts fee-less transactions.
 #!
 #! Since the nonce is never incremented, an account with this component cannot be created by a
 #! transaction, and any asset it holds is permanently unspendable.
