@@ -59,7 +59,7 @@ impl BlockAccountUpdate {
     }
 
     /// Validates that this account update's details are compatible with its account ID.
-    pub fn validate(&self) -> Result<(), BlockAccountUpdateError> {
+    pub(crate) fn validate(&self) -> Result<(), BlockAccountUpdateError> {
         let Some(patch) = self.details.validate_for_account(self.account_id)? else {
             return Ok(());
         };

@@ -75,7 +75,7 @@ impl BatchAccountUpdate {
     }
 
     /// Validates this account update's size and account-detail invariants.
-    pub fn validate(&self) -> Result<(), BatchAccountUpdateError> {
+    pub(crate) fn validate(&self) -> Result<(), BatchAccountUpdateError> {
         self.details.validate_size(self.account_id)?;
 
         let Some(patch) = self.details.validate_for_account(self.account_id)? else {
