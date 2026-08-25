@@ -21,13 +21,6 @@ use crate::note::{NoteExecutionHint, StandardNoteAttachment};
 /// - 2nd felt: [24 zero bits | exec_hint_payload (32 bits) | exec_hint_tag (8 bits)]
 /// - 3rd felt: [32 zero bits | expiry_block (32 bits)]
 /// ```
-///
-/// The expiry block is the last block at which the note may be included into the chain;
-/// [`BlockNumber::GENESIS`] encodes "never expires" and is the value a target without an expiry is
-/// serialized with. Enforcement lives in the note script, which is expected to call
-/// `miden::standards::attachments::network_account_target::assert_not_expired`; that procedure also
-/// caps the transaction expiration block delta, without which the expiry would not bind, since the
-/// reference block a script reads is chosen by the executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NetworkAccountTarget {
     target_id: AccountId,
@@ -68,12 +61,6 @@ impl NetworkAccountTarget {
 
     /// Sets the block after which the note carrying this target can no longer take effect.
     ///
-    /// The note remains consumable in the sense that a transaction can be built for it, but a note
-    /// script honouring the attachment aborts rather than applying the note's effect. Choose the
-    /// expiry from how long the note's effect should stay pre-authorized, not from how long it may
-    /// take to be included: the enforcing procedure separately caps the transaction expiration
-    /// block delta, so the expiry block is the last block at which the note can take effect.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -106,8 +93,6 @@ impl NetworkAccountTarget {
     /// - no such attachment is present and `target_id` is not
     ///   [`AccountType::Public`](miden_protocol::account::AccountType::Public), since a network
     ///   account must be public.
-    /// - no such attachment is present and `expiry` is [`BlockNumber::GENESIS`], which encodes
-    ///   "never expires" and so cannot express an expiry.
     pub(crate) fn ensure_presence(
         attachments: &mut Vec<NoteAttachment>,
         target_id: AccountId,
@@ -174,8 +159,6 @@ impl From<NetworkAccountTarget> for NoteAttachment {
         word[0] = network_attachment.target_id.suffix();
         word[1] = network_attachment.target_id.prefix().as_felt();
         word[2] = network_attachment.exec_hint.into();
-        // `None` and `BlockNumber::GENESIS` share the zero encoding; `with_expiry` rejects the
-        // latter so the two can never be confused.
         word[3] = network_attachment.expiry.map_or(Felt::from(0u32), Felt::from);
 
         NoteAttachment::with_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word)
@@ -379,8 +362,6 @@ mod tests {
         Ok(())
     }
 
-    /// An expiry survives the round trip through the attachment encoding, so the block the script
-    /// reads is the block the builder was given.
     #[test]
     fn expiry_round_trips_through_the_attachment() -> anyhow::Result<()> {
         let target = NetworkAccountTarget::new(public_account_id(), NoteExecutionHint::Always)?
@@ -394,8 +375,6 @@ mod tests {
         Ok(())
     }
 
-    /// A target built without an expiry decodes back as one, rather than as an expiry at the
-    /// genesis block, which shares its zero encoding.
     #[test]
     fn absent_expiry_round_trips_as_absent() -> anyhow::Result<()> {
         let target = NetworkAccountTarget::new(public_account_id(), NoteExecutionHint::Always)?;
@@ -407,8 +386,6 @@ mod tests {
         Ok(())
     }
 
-    /// The genesis block is the "never expires" encoding, so it is rejected as an expiry rather
-    /// than silently producing a note that never expires.
     #[test]
     fn with_expiry_rejects_the_genesis_block() -> anyhow::Result<()> {
         let target = NetworkAccountTarget::new(public_account_id(), NoteExecutionHint::Always)?;
@@ -420,8 +397,6 @@ mod tests {
         Ok(())
     }
 
-    /// A hand-crafted attachment whose expiry felt exceeds a u32 is rejected on decoding, matching
-    /// the `u32assert` the note script applies before comparing it against the block number.
     #[test]
     fn decoding_rejects_an_expiry_that_is_not_a_u32() -> anyhow::Result<()> {
         let target_id = public_account_id();
@@ -439,8 +414,7 @@ mod tests {
         Ok(())
     }
 
-    /// A caller-supplied target whose expiry differs from the requested one is rejected, so a
-    /// builder cannot be told one expiry and emit a note carrying another.
+    /// A caller-supplied target whose expiry differs from the requested one is rejected.
     #[test]
     fn ensure_presence_rejects_mismatched_expiry() -> anyhow::Result<()> {
         let target_id = public_account_id();
