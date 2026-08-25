@@ -99,7 +99,7 @@ end
 #! Outputs: []
 proc build_output_vault
     # copy final account vault root to output account vault root
-    exec.memory::get_account_vault_root exec.memory::set_output_vault_root dropw
+    exec.memory::get_native_account_vault_root exec.memory::set_output_vault_root dropw
     # => []
 
     # get the number of output notes from memory

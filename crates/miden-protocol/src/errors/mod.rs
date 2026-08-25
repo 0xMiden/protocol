@@ -14,16 +14,19 @@ use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetComposition, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{Asset, AssetComposition, AssetId, FungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
+use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
+    AccountHeader,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
+    AccountVaultDelta,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -122,7 +125,11 @@ pub enum AccountError {
     #[error("account code contains {0} procedures but it may contain at most {max} procedures", max = AccountCode::MAX_NUM_PROCEDURES)]
     AccountCodeTooManyProcedures(usize),
     #[error("account code contains a duplicate procedure with root {0}")]
-    AccountCodeDuplicateProcedureRoot(Word),
+    AccountCodeDuplicateProcedureRoot(AccountProcedureRoot),
+    #[error(
+        "account code procedures following the authentication procedure are not sorted in ascending order"
+    )]
+    AccountCodeProceduresUnsorted,
     #[error("failed to assemble account component:\n{}", PrintDiagnostic::new(.0))]
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
@@ -135,8 +142,12 @@ pub enum AccountError {
     BuildError(String, #[source] Option<Box<AccountError>>),
     #[error("failed to parse account ID from final account header")]
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
-    #[error("account header data has length {actual} but it must be of length {expected}")]
-    HeaderDataIncorrectLength { actual: usize, expected: usize },
+    #[error("account header data has length {actual} but it must be of length {expected}",
+        expected = AccountHeader::NUM_ELEMENTS
+    )]
+    UnexpectedHeaderLength { actual: usize },
+    #[error("account has an unsupported version {0}")]
+    UnsupportedAccountVersion(u64),
     #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(
@@ -180,6 +191,8 @@ pub enum AccountError {
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]
     UnsortedStorageSlots,
+    #[error("reserved element of a storage slot must be zero but was {0}")]
+    StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
@@ -425,15 +438,15 @@ pub enum NetworkIdError {
 pub enum AccountDeltaError {
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
-    #[error("non fungible vault can neither be added nor removed twice")]
-    DuplicateNonFungibleVaultUpdate(NonFungibleAsset),
+    #[error("asset {0} is changed by more than one asset delta")]
+    DuplicateAssetDelta(AssetId),
     #[error(
-        "fungible asset issued by faucet {faucet_id} has delta {delta} which overflows when added to current value {current}"
+        "number of {delta_op} operations in account vault delta is {num_ops} but max is {max}",
+        max = AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP
     )]
-    FungibleAssetDeltaOverflow {
-        faucet_id: AccountId,
-        current: i64,
-        delta: i64,
+    TooManyVaultAssetDeltas {
+        delta_op: AssetDeltaOperation,
+        num_ops: usize,
     },
     #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
@@ -449,10 +462,6 @@ pub enum AccountDeltaError {
     },
     #[error("non-empty account storage or vault delta with zero nonce delta is not allowed")]
     NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
-    #[error(
-        "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
-    )]
-    NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
     #[error("a full state delta must only contain storage create operations")]
@@ -606,6 +615,8 @@ pub enum AssetError {
     },
     #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
     ReservedAssetMetadata(u8),
+    #[error("unknown asset ID version: {0}")]
+    UnknownAssetIdVersion(u8),
 }
 
 // TOKEN SYMBOL ERROR
@@ -698,11 +709,11 @@ pub enum AssetVaultError {
     #[error("provided assets contain duplicates")]
     DuplicateAsset(#[source] MerkleError),
     #[error("non fungible asset {0} already exists in the vault")]
-    DuplicateNonFungibleAsset(NonFungibleAsset),
+    DuplicateNonFungibleAsset(Asset),
     #[error("fungible asset {0} does not exist in the vault")]
     FungibleAssetNotFound(FungibleAsset),
     #[error("non fungible asset {0} does not exist in the vault")]
-    NonFungibleAssetNotFound(NonFungibleAsset),
+    NonFungibleAssetNotFound(Asset),
     #[error("subtracting fungible asset amounts would underflow")]
     SubtractFungibleAssetBalanceError(#[source] AssetError),
     #[error("maximum number of asset vault leaves exceeded")]
@@ -739,7 +750,7 @@ pub enum NoteError {
     #[error("duplicate fungible asset from issuer {0} in note")]
     DuplicateFungibleAsset(AccountId),
     #[error("duplicate non fungible asset {0} in note")]
-    DuplicateNonFungibleAsset(NonFungibleAsset),
+    DuplicateNonFungibleAsset(Asset),
     #[error("note type {0} is inconsistent with note tag {1}")]
     InconsistentNoteTag(NoteType, u64),
     #[error("adding fungible asset amounts would exceed maximum allowed amount")]
@@ -964,6 +975,10 @@ pub enum TransactionOutputError {
 /// [`PrivateOutputNote`](crate::transaction::PrivateOutputNote).
 #[derive(Debug, Error)]
 pub enum OutputNoteError {
+    #[error("attachment headers do not match attachments for private note with id {0}")]
+    AttachmentHeadersMismatch(NoteId),
+    #[error("attachments commitment does not match attachments for private note with id {0}")]
+    AttachmentsCommitmentMismatch(NoteId),
     #[error("note with id {0} is private but expected a public note")]
     NoteIsPrivate(NoteId),
     #[error("note with id {0} is public but expected a private note")]

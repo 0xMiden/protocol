@@ -7,6 +7,8 @@ use crate::utils::FixedWidthStringError;
 
 mod fungible;
 mod non_fungible;
+#[cfg(test)]
+mod test_utils;
 mod token_metadata;
 
 pub use fungible::{
@@ -14,6 +16,7 @@ pub use fungible::{
     FungibleFaucetBuilder,
     create_guarded_user_fungible_faucet,
     create_multisig_user_fungible_faucet,
+    create_native_fungible_faucet_for_genesis,
     create_network_fungible_faucet,
     create_singlesig_user_fungible_faucet,
 };

@@ -78,7 +78,8 @@ pub proc main
         # => [pad(16)]
 
         # Store note storage -> mem[8..14]
-        push.B2AGG_NOTE_STORAGE_PTR exec.active_note::get_storage
+        push.B2AGG_NOTE_NUM_STORAGE_ITEMS push.B2AGG_NOTE_STORAGE_PTR
+        exec.active_note::get_bounded_storage
         # => [num_storage_items, pad(16)]
 
         # Validate the number of storage items

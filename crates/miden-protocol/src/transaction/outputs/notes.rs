@@ -580,9 +580,19 @@ impl PrivateOutputNote {
     /// # Errors
     /// Returns an error if:
     /// - The provided header is for a public note.
+    /// - The attachment headers in the provided header do not match the provided attachments.
+    /// - The attachments commitment in the provided header does not match the provided attachments.
     pub fn new(header: NoteHeader, attachments: NoteAttachments) -> Result<Self, OutputNoteError> {
         if header.metadata().is_public() {
             return Err(OutputNoteError::NoteIsPublic(header.id()));
+        }
+
+        if header.metadata().attachment_headers() != &attachments.to_headers() {
+            return Err(OutputNoteError::AttachmentHeadersMismatch(header.id()));
+        }
+
+        if header.metadata().attachments_commitment() != attachments.to_commitment() {
+            return Err(OutputNoteError::AttachmentsCommitmentMismatch(header.id()));
         }
 
         Ok(Self { header, attachments })

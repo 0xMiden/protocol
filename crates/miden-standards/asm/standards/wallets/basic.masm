@@ -72,7 +72,13 @@ end
 # PUBLIC HELPERS
 # =================================================================================================
 
-#! Moves all assets from the active note to the native account's vault.
+#! Moves all assets remaining in the active note to the native account's vault.
+#!
+#! The moved assets are those remaining in the note at the time of the call; they are not compared
+#! against the note's initial assets info. Some assets may already have been removed earlier in the
+#! transaction, by the note's own script or by a native-account procedure via indexed removal
+#! Logic that prices or validates a note based on its assets must use the note's initial
+#! assets rather than its remaining ones.
 #!
 #! Inputs:  []
 #! Outputs: []

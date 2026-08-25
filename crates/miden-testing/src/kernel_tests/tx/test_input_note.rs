@@ -10,6 +10,8 @@ use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::protocol::ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_IS_NOT_NATIVE,
+    ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
+    ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY,
     ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS,
     ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND,
     ERR_INPUT_NOTE_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
@@ -967,8 +969,8 @@ async fn test_get_asset_from_active_and_input_note() -> anyhow::Result<()> {
 
     let faucet_id_0 = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let faucet_id_1 = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?;
-    let asset_0 = Asset::Fungible(FungibleAsset::new(faucet_id_0, 100)?);
-    let asset_1 = Asset::Fungible(FungibleAsset::new(faucet_id_1, 50)?);
+    let asset_0 = Asset::from(FungibleAsset::new(faucet_id_0, 100)?);
+    let asset_1 = Asset::from(FungibleAsset::new(faucet_id_1, 50)?);
 
     // derive the asset order the note will store them in, so the expected asset per index is known
     let ordered_assets: Vec<Asset> =
@@ -1049,6 +1051,7 @@ async fn test_remove_asset_fails(
     #[values(
         "fungible_asset_not_found",
         "fungible_amount_exceeded",
+        "fungible_non_canonical_value",
         "non_fungible_wrong_value"
     )]
     scenario: &str,
@@ -1058,16 +1061,17 @@ async fn test_remove_asset_fails(
     let fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let non_fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1.try_into()?;
 
-    let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
-    ));
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
+    let non_fungible_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        non_fungible_faucet_id,
+        vec![1, 2, 3],
+    )));
 
     let (asset_id, asset_value, expected_err) = match scenario {
         "fungible_asset_not_found" => {
             // an asset from a faucet whose assets are not in the note
             let other_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?;
-            let other_asset = Asset::Fungible(FungibleAsset::new(other_faucet_id, 10)?);
+            let other_asset = Asset::from(FungibleAsset::new(other_faucet_id, 10)?);
             (
                 other_asset.to_id_word(),
                 other_asset.to_value_word(),
@@ -1076,11 +1080,20 @@ async fn test_remove_asset_fails(
         },
         "fungible_amount_exceeded" => {
             let over_asset =
-                Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT + 1)?);
+                Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT + 1)?);
             (
                 over_asset.to_id_word(),
                 over_asset.to_value_word(),
                 ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
+            )
+        },
+        "fungible_non_canonical_value" => {
+            // regression for audit finding L-03 (#3591): the amount limb matches the note's full
+            // amount, but a non-zero upper limb makes the value non-canonical.
+            (
+                fungible_asset.to_id_word(),
+                Word::new([Felt::new(FUNGIBLE_AMOUNT)?, Felt::ONE, Felt::ZERO, Felt::ZERO]),
+                ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
             )
         },
         "non_fungible_wrong_value" => (
@@ -1120,6 +1133,51 @@ async fn test_remove_asset_fails(
 
     let result = mock_tx.execute_code(&code).await;
     assert_execution_error!(result, expected_err);
+
+    Ok(())
+}
+
+/// Check that `active_note::remove_asset` rejects the empty asset ID, even when the note has a
+/// slot that was already cleared by a prior full removal. Without this guard, the empty ID
+/// wrongly matches a cleared (EMPTY_WORD, EMPTY_WORD) slot and the removal call, which should
+/// panic, would instead succeed (OpenZeppelin audit finding L-04).
+#[tokio::test]
+async fn test_remove_asset_rejects_empty_asset_id() -> anyhow::Result<()> {
+    let fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, 100)?);
+
+    let mock_tx = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+        let input_note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset]);
+        TestTransactionBuilder::new(account).input_note(input_note).build()?
+    };
+
+    let code = format!(
+        r#"
+            use miden::tx_kernel_core::prologue
+            use miden::tx_kernel_core::note as note_internal
+            use miden::protocol::active_note
+
+            begin
+                exec.prologue::prepare_transaction
+                exec.note_internal::prepare_note
+                dropw dropw dropw dropw
+
+                # fully remove the asset, clearing its slot to (EMPTY_WORD, EMPTY_WORD)
+                push.{asset_value} push.{asset_id} exec.active_note::remove_asset
+                dropw
+
+                # the empty asset ID must not match the now-cleared slot
+                padw padw exec.active_note::remove_asset
+            end
+            "#,
+        asset_id = fungible_asset.to_id_word(),
+        asset_value = fungible_asset.to_value_word(),
+    );
+
+    let result = mock_tx.execute_code(&code).await;
+    assert_execution_error!(result, ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY);
 
     Ok(())
 }
@@ -1175,14 +1233,15 @@ async fn test_remove_asset() -> anyhow::Result<()> {
     let fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
     let non_fungible_faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1.try_into()?;
 
-    let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
-    ));
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT)?);
+    let non_fungible_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        non_fungible_faucet_id,
+        vec![1, 2, 3],
+    )));
 
-    let partial_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, PARTIAL_AMOUNT)?);
+    let partial_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, PARTIAL_AMOUNT)?);
     let remaining_asset =
-        Asset::Fungible(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT - PARTIAL_AMOUNT)?);
+        Asset::from(FungibleAsset::new(fungible_faucet_id, FUNGIBLE_AMOUNT - PARTIAL_AMOUNT)?);
 
     let mock_tx = {
         let account =
@@ -1199,11 +1258,11 @@ async fn test_remove_asset() -> anyhow::Result<()> {
     let note_assets: Vec<Asset> = note.assets().iter().copied().collect();
     let fungible_index = note_assets
         .iter()
-        .position(|asset| matches!(asset, Asset::Fungible(_)))
+        .position(|asset| asset.is_fungible())
         .context("note should contain a fungible asset")?;
     let non_fungible_index = note_assets
         .iter()
-        .position(|asset| matches!(asset, Asset::NonFungible(_)))
+        .position(|asset| asset.is_non_fungible())
         .context("note should contain a non-fungible asset")?;
 
     let code = format!(

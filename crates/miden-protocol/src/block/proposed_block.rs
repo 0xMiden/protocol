@@ -541,12 +541,8 @@ impl ProposedBlock {
         // updated based on the demand in the currently proposed block.
         let fee_parameters = prev_block_header.fee_parameters().clone();
 
-        // Currently undefined and reserved for future use.
-        // See https://github.com/0xMiden/protocol/issues/1155.
-        let version = 0;
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let header = BlockHeader::new(
-            version,
             prev_block_commitment,
             block_num,
             new_chain_commitment,

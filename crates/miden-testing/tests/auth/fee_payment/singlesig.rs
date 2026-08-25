@@ -103,9 +103,7 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
     let assets = output_note.assets();
     assert_eq!(assets.num_assets(), 1);
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(fee_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let fee_asset = asset.unwrap_fungible();
     assert_eq!(fee_asset.faucet_id(), ACCOUNT_ID_FEE_FAUCET.try_into()?);
 
     // the paid amount covers the fee required for the actual cycle count, and the overshoot is
@@ -176,9 +174,7 @@ async fn converted_fee_payment() -> anyhow::Result<()> {
 
     let assets = output_note.assets();
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(paid_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid_asset = asset.unwrap_fungible();
 
     // the fee is paid in the conversion asset at twice the native fee amount
     assert_eq!(paid_asset.faucet_id(), payment_faucet_id);
@@ -212,11 +208,11 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
     let (native_tx, _) =
         execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2, &[payment_asset], None).await?;
     let native_assets = native_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(native_paid) =
-        native_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
+    let native_paid = native_assets
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible();
     let native_amount = native_paid.amount().as_u64();
 
     // the rate must produce a non-zero remainder for this test to exercise the round-up branch
@@ -234,11 +230,11 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
 
     assert_eq!(converted_tx.output_notes().num_notes(), 1);
     let converted_assets = converted_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(converted_paid) =
-        converted_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
+    let converted_paid = converted_assets
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible();
 
     assert_eq!(converted_paid.faucet_id(), payment_faucet_id);
     assert_eq!(converted_paid.amount().as_u64(), native_amount.div_ceil(3));
@@ -349,11 +345,11 @@ async fn large_conversion_rate_converts_exactly() -> anyhow::Result<()> {
     let (native_tx, _) =
         execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2, &[payment_asset], None).await?;
     let native_assets = native_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(native_paid) =
-        native_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
+    let native_paid = native_assets
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible();
     let native_amount = native_paid.amount().as_u64();
 
     // the intermediate product must exceed a u64 for this test to exercise the 128-bit math
@@ -374,11 +370,11 @@ async fn large_conversion_rate_converts_exactly() -> anyhow::Result<()> {
 
     assert_eq!(converted_tx.output_notes().num_notes(), 1);
     let converted_assets = converted_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(converted_paid) =
-        converted_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
+    let converted_paid = converted_assets
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible();
 
     // 10^4 divides 10^16, so the conversion is exact: native_amount * 10^12
     assert_eq!(converted_paid.faucet_id(), payment_faucet_id);

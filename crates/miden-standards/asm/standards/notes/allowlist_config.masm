@@ -5,7 +5,7 @@ use miden::standards::faucets::policies::transfer::allowlist::manager
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the AllowlistConfig note storage. Both actions carry the same arguments: the
@@ -23,6 +23,9 @@ const SELECTOR_DISALLOW_ACCOUNT = 1
 const NUM_ITEMS_ALLOW_ACCOUNT = 3
 const NUM_ITEMS_DISALLOW_ACCOUNT = 3
 
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_ALLOW_ACCOUNT
+
 # ERRORS
 # =================================================================================================
 
@@ -38,14 +41,14 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 #! AllowlistConfig script: triggers an `AllowlistManager` admin action against the consuming
 #! account, dispatched on a selector stored in the first note storage item.
 #!
-#! The selected action and its arguments are read from the note storage (fixed at note creation,
-#! so authorization is bound to the note sender):
+#! The selected action and its arguments are read from the note storage and are fixed at note
+#! creation:
 #! - `0` AllowAccount:    `[0, account_suffix, account_prefix]`.
 #! - `1` DisallowAccount: `[1, account_suffix, account_prefix]`.
 #!
 #! Authorization is enforced by the called `AllowlistManager` procedures via the account-wide
-#! `Authority` component (`assert_authorized`), which resolves the note sender against the
-#! configured owner or role; this script only loads the arguments and calls them.
+#! `Authority` component (`assert_authorized`); this script only loads the arguments and calls
+#! them.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::transfer::allowlist::manager::{allow_account,
@@ -57,9 +60,10 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the note sender is not authorized for the selected action (per the `Authority` component).
+#! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
 pub proc main
     dropw
@@ -72,7 +76,7 @@ pub proc main
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR
@@ -106,7 +110,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_ALLOW_ACCOUNT.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_allow_account
@@ -135,7 +139,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_DISALLOW_ACCOUNT.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_disallow_account

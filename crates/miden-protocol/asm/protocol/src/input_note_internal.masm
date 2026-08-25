@@ -144,8 +144,10 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
-#! - the invocation does not originate from the native account's account context.
+#! - is_active_note is false and the active account is not the native account.
+#! - is_active_note is false and the invocation does not originate from the account context.
 #! - the note index is greater or equal to the total number of input notes.
+#! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.
@@ -192,7 +194,8 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
-#! - the invocation does not originate from the native account's account context.
+#! - is_active_note is false and the active account is not the native account.
+#! - is_active_note is false and the invocation does not originate from the account context.
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec

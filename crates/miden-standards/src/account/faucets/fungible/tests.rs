@@ -1,6 +1,12 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountId, AccountType, StorageMapKey};
+use miden_protocol::account::{
+    AccountBuilder,
+    AccountId,
+    AccountType,
+    AssetCallbackFlag,
+    StorageMapKey,
+};
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::AccountError;
 use miden_protocol::{Felt, Word};
@@ -21,22 +27,16 @@ use crate::account::auth::{
     AuthSingleSig,
     GuardianConfig,
 };
+use crate::account::faucets::test_utils::{
+    allow_all_policy_manager,
+    mint_burn_only_policy_manager,
+};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::fees::FeePolicyManager;
-use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
+use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use crate::account::wallets::BasicWallet;
 use crate::testing::faucet::{user_faucet_guarded, user_faucet_multisig};
 use crate::tx_script::ExpirationTransactionScript;
-
-/// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
-fn allow_all_policy_manager() -> TokenPolicyManager {
-    TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::allow_all())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
-        .build()
-}
 
 /// Builds a sample `FungibleFaucet` shared by construction tests.
 fn sample_faucet() -> FungibleFaucet {
@@ -274,6 +274,64 @@ fn faucet_create_from_account() {
     let err = FungibleFaucet::try_from(invalid_faucet_account)
         .expect_err("fungible faucet creation should fail");
     assert_matches!(err, FungibleFaucetError::MissingFungibleFaucetInterface);
+}
+
+/// Every fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID when
+/// the policy manager registers a transfer policy, and `Disabled` when it does not.
+#[rstest::rstest]
+#[case::with_transfer_policy(allow_all_policy_manager(), AssetCallbackFlag::Enabled)]
+#[case::without_transfer_policy(mint_burn_only_policy_manager(), AssetCallbackFlag::Disabled)]
+fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
+    #[case] token_policy_manager: TokenPolicyManager,
+    #[case] expected_flag: AssetCallbackFlag,
+) {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let approver = Approver::new(
+        PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
+        AuthScheme::Falcon512Poseidon2,
+    );
+
+    let singlesig = create_singlesig_user_fungible_faucet(
+        [21u8; 32],
+        sample_faucet(),
+        AuthSingleSig::new(approver),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+    assert_eq!(singlesig.id().asset_callback_flag(), expected_flag);
+
+    let multisig = create_multisig_user_fungible_faucet(
+        [22u8; 32],
+        sample_faucet(),
+        user_faucet_multisig(sample_approvers(3), 2).unwrap(),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+    assert_eq!(multisig.id().asset_callback_flag(), expected_flag);
+
+    let guarded = create_guarded_user_fungible_faucet(
+        [23u8; 32],
+        sample_faucet(),
+        user_faucet_guarded(sample_approvers(3), 2, GuardianConfig::new(approver)).unwrap(),
+        token_policy_manager.clone(),
+        AccountType::Private,
+    )
+    .unwrap();
+    assert_eq!(guarded.id().asset_callback_flag(), expected_flag);
+
+    let owner = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let network = create_network_fungible_faucet(
+        [24u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner },
+        token_policy_manager,
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+    )
+    .unwrap();
+    assert_eq!(network.id().asset_callback_flag(), expected_flag);
 }
 
 /// Check that the obtaining of the fungible faucet procedure roots does not panic.

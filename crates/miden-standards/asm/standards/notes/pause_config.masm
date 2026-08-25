@@ -5,7 +5,7 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory address of the PauseConfig note storage selector.
@@ -19,6 +19,9 @@ const SELECTOR_UNPAUSE = 1
 # Expected note storage item count per action.
 const NUM_ITEMS_PAUSE = 1
 const NUM_ITEMS_UNPAUSE = 1
+
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_PAUSE
 
 # ERRORS
 # =================================================================================================
@@ -35,14 +38,12 @@ const ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause config note s
 #! PauseConfig script: triggers a `PausableManager` admin action against the consuming account,
 #! dispatched on a selector stored in the first note storage item.
 #!
-#! The selected action is read from the note storage (fixed at note creation, so authorization is
-#! bound to the note sender):
+#! The selected action is read from the note storage and is fixed at note creation:
 #! - `0` Pause:   `[0]`.
 #! - `1` Unpause: `[1]`.
 #!
 #! Authorization is enforced by the called `PausableManager` procedures via the account-wide
-#! `Authority` component (`assert_authorized`), which resolves the note sender against the
-#! configured owner or role; this script only dispatches to them.
+#! `Authority` component (`assert_authorized`); this script only dispatches to them.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::access::pausable::manager::{pause, unpause}` (the `PausableManager`
@@ -53,9 +54,10 @@ const ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "pause config note s
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the note sender is not authorized for the selected action (per the `Authority` component).
+#! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
 pub proc main
     dropw
@@ -68,7 +70,7 @@ pub proc main
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR
@@ -102,7 +104,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_PAUSE.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_pause
@@ -129,7 +131,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_UNPAUSE.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_unpause

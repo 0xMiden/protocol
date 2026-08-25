@@ -1,7 +1,8 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::asset::{Asset, AssetVault};
+use crate::account::delta::AssetDeltaOperation;
+use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
@@ -63,13 +64,7 @@ pub use patch::{
 };
 
 pub mod delta;
-pub use delta::{
-    AccountDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-};
+pub use delta::{AccountDelta, AccountVaultDelta, AssetDelta};
 
 pub mod storage;
 pub use storage::{
@@ -189,9 +184,8 @@ impl Account {
     /// Returns an error if:
     /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more packages export a procedure with the same MAST root.
-    /// - The first component doesn't contain exactly one authentication procedure.
-    /// - Other components contain authentication procedures.
+    /// - The components don't contain exactly one authentication component with exactly one
+    ///   authentication procedure.
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all packages.
     /// - A component declares a [`ComponentDependency`] that no component on the account satisfies.
@@ -242,6 +236,11 @@ impl Account {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the [`AccountHeader`] of this account.
+    pub fn to_header(&self) -> AccountHeader {
+        AccountHeader::from(self)
+    }
 
     /// Returns the commitment of this account.
     ///
@@ -451,24 +450,11 @@ impl TryFrom<Account> for AccountDelta {
         let storage_patch = AccountStoragePatch::from_raw(slot_deltas)
             .expect("number of slot patches is bounded by the account's storage slots");
 
-        let mut fungible_delta = FungibleAssetDelta::default();
-        let mut non_fungible_delta = NonFungibleAssetDelta::default();
-        for asset in vault.assets() {
-            // SAFETY: All assets in the account vault should be representable in the delta.
-            match asset {
-                Asset::Fungible(fungible_asset) => {
-                    fungible_delta
-                        .add(fungible_asset)
-                        .expect("delta should allow representing valid fungible assets");
-                },
-                Asset::NonFungible(non_fungible_asset) => {
-                    non_fungible_delta
-                        .add(non_fungible_asset)
-                        .expect("delta should allow representing valid non-fungible assets");
-                },
-            }
-        }
-        let vault_delta = AccountVaultDelta::new(fungible_delta, non_fungible_delta);
+        // SAFETY: The assets in the account vault are unique, so no asset is changed twice.
+        let vault_delta = AccountVaultDelta::new(
+            vault.assets().map(|asset| AssetDelta::new(AssetDeltaOperation::Add, asset)),
+        )
+        .expect("assets in the account vault should be unique");
 
         // The nonce of the account is the nonce delta since adding the nonce_delta to 0 would
         // result in the nonce.
@@ -548,6 +534,7 @@ impl Serializable for Account {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let Account { id, vault, storage, code, nonce, seed } = self;
 
+        AccountHeader::VERSION_1.write_into(target);
         id.write_into(target);
         vault.write_into(target);
         storage.write_into(target);
@@ -557,7 +544,8 @@ impl Serializable for Account {
     }
 
     fn get_size_hint(&self) -> usize {
-        self.id.get_size_hint()
+        AccountHeader::VERSION_1.get_size_hint()
+            + self.id.get_size_hint()
             + self.vault.get_size_hint()
             + self.storage.get_size_hint()
             + self.code.get_size_hint()
@@ -568,6 +556,16 @@ impl Serializable for Account {
 
 impl Deserializable for Account {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version = u8::read_from(source)?;
+
+        if version != AccountHeader::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "account version is {} but only version {} is supported",
+                version,
+                AccountHeader::VERSION_1,
+            )));
+        }
+
         let id = AccountId::read_from(source)?;
         let vault = AssetVault::read_from(source)?;
         let storage = AccountStorage::read_from(source)?;
@@ -622,7 +620,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_crypto::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, DeserializationError, Serializable};
     use miden_crypto::{Felt, Word};
 
     use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
@@ -971,5 +969,14 @@ mod tests {
         let _partial_account = PartialAccount::from(&account);
 
         Ok(())
+    }
+
+    #[test]
+    fn account_deserialization_rejects_unsupported_version() {
+        let error = Account::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("account version is 0"));
+        });
     }
 }

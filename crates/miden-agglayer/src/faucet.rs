@@ -1,18 +1,28 @@
 extern crate alloc;
 
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountComponent, AccountId, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountProcedureRoot,
+    RoleSymbol,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::access::{Authority, Ownable2Step};
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, FungibleFaucetError, TokenName};
+use miden_standards::account::fees::ConstantFeeManager;
 use miden_standards::account::policies::TokenPolicyManager;
 pub use miden_standards::interop::eth::{
     EthAddress,
@@ -20,7 +30,8 @@ pub use miden_standards::interop::eth::{
     EthAmountError,
     EthEmbeddedAccountId,
 };
-use miden_standards::note::{BurnNote, MintNote};
+use miden_standards::note::{BurnNote, ConstantFeePolicyConfigNote, MintNote, RbacConfigNote};
+use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
 use super::agglayer_faucet_component_package;
@@ -43,6 +54,12 @@ pub use crate::{
 // ================================================================================================
 // Include the generated agglayer constants
 include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
+
+// FAUCET RBAC ROLES
+// ================================================================================================
+
+static FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
+    LazyLock::new(|| RoleSymbol::new("FEE_MNGR").expect("FEE_MNGR role symbol should be valid"));
 
 // AGGLAYER FAUCET STRUCT
 // ================================================================================================
@@ -133,6 +150,20 @@ impl AggLayerFaucet {
         Ok(self)
     }
 
+    // RBAC ROLES
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the `FEE_MNGR` role symbol. Holders may update the faucet's note fee schedule.
+    pub fn fee_manager_role() -> RoleSymbol {
+        FEE_MANAGER_ROLE.clone()
+    }
+
+    /// Returns the fixed procedure-to-role map used to configure the faucet's `Authority`
+    /// (`RbacControlled`) component.
+    pub fn procedure_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
+        BTreeMap::from([(ConstantFeeManager::set_note_fee_root(), Self::fee_manager_role())])
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -151,14 +182,19 @@ impl AggLayerFaucet {
     // ALLOWED NOTES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the set of input-note script roots that AggLayer faucet accounts accept.
+    /// Returns the input-note script roots allowlisted on a newly deployed AggLayer faucet.
     ///
-    /// The faucet's [`AuthNetworkAccount`] component is initialized with this allowlist so only
-    /// MINT and BURN notes can drive the faucet.
-    ///
-    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    /// A live account's allowlist is available through
+    /// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
     pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
-        BTreeSet::from([MintNote::script_root(), BurnNote::script_root()])
+        let mut notes = BTreeSet::from([
+            MintNote::script_root(),
+            BurnNote::script_root(),
+            ConstantFeePolicyConfigNote::script_root(),
+            RbacConfigNote::script_root(),
+        ]);
+        notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
+        notes
     }
 
     /// Extracts the underlying [`FungibleFaucet`] component (which holds the token metadata)
