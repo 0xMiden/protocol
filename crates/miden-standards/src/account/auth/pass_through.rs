@@ -17,9 +17,10 @@ account_component_code!(AUTH_PASS_THROUGH_CODE, "miden-standards-auth-pass-throu
 /// It exports the procedure `auth_pass_through`, which:
 /// - Asserts the account's commitment is the one it had at the start of the transaction
 /// - Never increments the nonce
-/// - Pays no transaction fee: it creates no TX_FEE note, and an account that cannot change its
-///   state cannot fund one out of its vault. Such a transaction is only includable by a batch
-///   builder that accepts fee-less transactions
+/// - Creates no TX_FEE note, so a transaction using a pass-through script pays no fee and is only
+///   includable by a batch builder that accepts fee-less transactions. This bounds the procedure,
+///   not the transaction: the assert allows a zero net vault delta, not the absence of withdrawals,
+///   so another script could still route assets an input note deposited into a fee note of its own
 /// - Provides no cryptographic authentication
 ///
 /// Since the nonce is never incremented, an account with this component cannot be created by a
