@@ -23,7 +23,12 @@ use super::pass_through_account;
 // ================================================================================================
 
 /// The serial number of the P2ID note the pass-through script creates.
-const SERIAL_NUMBER: Word = Word::new([Felt::new_unchecked(7); 4]);
+const SERIAL_NUMBER: Word = Word::new([
+    Felt::new_unchecked(1),
+    Felt::new_unchecked(2),
+    Felt::new_unchecked(3),
+    Felt::new_unchecked(4),
+]);
 
 // TESTS
 // ================================================================================================

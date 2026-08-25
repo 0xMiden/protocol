@@ -25,6 +25,11 @@ const ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED = "the account's vault is not the o
 #!
 #! Does nothing if the account holds none of the asset.
 #!
+#! Install this only on a pass-through account. Unlike wallets::basic::move_asset_to_note, which
+#! makes the caller name the amount, this procedure reads the balance itself, so on a
+#! general-purpose account it hands every note script the account consumes an unconditional
+#! full-balance drain.
+#!
 #! Inputs:  [ASSET_ID, note_idx, pad(11)]
 #! Outputs: [pad(16)]
 #!

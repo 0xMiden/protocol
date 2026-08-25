@@ -37,12 +37,17 @@ procedure_root!(
 ///   note.
 /// - `assert_vault_unchanged`, which asserts the vault is the one the transaction started with.
 ///
+/// # Security
+///
+/// Install this only on a pass-through account. Unlike
+/// [`BasicWallet`](crate::account::wallets::BasicWallet)'s `move_asset_to_note`, which makes the
+/// caller name the amount, `sweep_asset_to_note` reads the balance itself, so on a general-purpose
+/// account it hands every note script the account consumes an unconditional full-balance drain.
+///
 /// Both require authentication. Thus, this component must be combined with a component providing
 /// authentication, and with one exposing `receive_asset` (e.g.
 /// [`BasicWallet`](crate::account::wallets::BasicWallet)) so that input notes can deposit into the
 /// account in the first place.
-///
-/// [single]: crate::tx_script::PassThroughSingleP2idTransactionScript
 pub struct PassThrough;
 
 impl PassThrough {
