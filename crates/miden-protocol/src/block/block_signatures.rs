@@ -161,14 +161,13 @@ impl Deserializable for BlockSignatures {
 mod tests {
     use super::*;
     use crate::testing::random_secret_key::random_secret_key;
-    use crate::testing::validator_config::{random_validator_set, sign_all};
 
     #[test]
     fn verify_against_accepts_correctly_ordered_signatures() {
-        let (signers, keys) = random_validator_set(5);
+        let (signers, keys) = ValidatorConfig::random_with_signers(5);
         let commitment = Word::empty();
 
-        let signatures = sign_all(&keys, &signers, commitment);
+        let signatures = keys.sign_all(&signers, commitment);
 
         assert_eq!(signatures.len(), 5);
         signatures.verify_against(commitment, &keys).unwrap();
@@ -176,12 +175,12 @@ mod tests {
 
     #[test]
     fn verify_against_rejects_invalid_signature() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let commitment = Word::empty();
         let outsider = random_secret_key();
 
         // Position 1 holds a signature that does not verify against the key committed there.
-        let mut signatures = sign_all(&keys, &signers, commitment).as_signatures().to_vec();
+        let mut signatures = keys.sign_all(&signers, commitment).as_signatures().to_vec();
         signatures[1] = outsider.sign(commitment);
         let signatures = BlockSignatures::new(signatures).unwrap();
 
@@ -193,13 +192,13 @@ mod tests {
 
     #[test]
     fn verify_against_rejects_mismatched_keys() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let commitment = Word::empty();
-        let signatures = sign_all(&keys, &signers, commitment);
+        let signatures = keys.sign_all(&signers, commitment);
 
         // The same, fully valid set does not verify against a different validator set of the same
         // size.
-        let (_, other_keys) = random_validator_set(3);
+        let (_, other_keys) = ValidatorConfig::random_with_signers(3);
         assert!(matches!(
             signatures.verify_against(commitment, &other_keys),
             Err(SignatureVerificationError::InvalidSignatureAtPosition { .. })
@@ -208,12 +207,12 @@ mod tests {
 
     #[test]
     fn verify_against_rejects_count_mismatch() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let commitment = Word::empty();
-        let signatures = sign_all(&keys, &signers, commitment);
+        let signatures = keys.sign_all(&signers, commitment);
 
         // A validator set of a different size cannot align positionally.
-        let (_, other_keys) = random_validator_set(4);
+        let (_, other_keys) = ValidatorConfig::random_with_signers(4);
         assert!(matches!(
             signatures.verify_against(commitment, &other_keys),
             Err(SignatureVerificationError::SignatureCountMismatch { expected: 4, actual: 3 })
@@ -222,9 +221,9 @@ mod tests {
 
     #[test]
     fn serde_round_trip() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let commitment = Word::empty();
-        let signatures = sign_all(&keys, &signers, commitment);
+        let signatures = keys.sign_all(&signers, commitment);
 
         let bytes = signatures.to_bytes();
         let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();

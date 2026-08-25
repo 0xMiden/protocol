@@ -16,7 +16,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::SourceManagerSync;
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::block::{BlockHeader, BlockNumber, ProtocolConfig};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
     AccountInputs,
@@ -184,7 +184,7 @@ impl MockTransaction {
             .flat_map(|note| note.note().assets().iter().map(Asset::id))
             .collect::<BTreeSet<_>>();
 
-        let (account, _block_header, _blockchain) = self
+        let (account, _block_header, _protocol_config, _blockchain) = self
             .get_transaction_inputs(
                 self.tx_inputs.account().id(),
                 BTreeSet::from_iter([self.tx_inputs.block_header().block_num()]),
@@ -267,8 +267,9 @@ impl DataStore for MockTransaction {
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> impl FutureMaybeSend<Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>>
-    {
+    ) -> impl FutureMaybeSend<
+        Result<(PartialAccount, BlockHeader, ProtocolConfig, PartialBlockchain), DataStoreError>,
+    > {
         // Sanity checks
         assert_eq!(account_id, self.account().id());
         assert_eq!(account_id, self.tx_inputs.account().id());
@@ -283,9 +284,10 @@ impl DataStore for MockTransaction {
 
         let account = self.tx_inputs.account().clone();
         let block_header = self.tx_inputs.block_header().clone();
+        let protocol_config = self.tx_inputs.protocol_config().clone();
         let blockchain = self.tx_inputs.blockchain().clone();
 
-        async move { Ok((account, block_header, blockchain)) }
+        async move { Ok((account, block_header, protocol_config, blockchain)) }
     }
 
     fn get_foreign_account_inputs(
