@@ -105,6 +105,11 @@ impl NetworkNotePricer {
     /// price(N) = fee(cycles(N)) + sum(price(M) for M created by consuming N)
     /// ```
     ///
+    /// [`FeeSponsorshipNote`] defaults to zero because standard network-account fee collection
+    /// exempts sponsorship notes from sponsoring themselves. A cost supplied through
+    /// [`NetworkNotePricerBuilder::note_cost`] or [`NetworkNotePricerBuilder::note_costs`] takes
+    /// precedence over this default.
+    ///
     /// Since a script root alone cannot tell whether a created note will be network-targeted,
     /// EVERY created note is priced in, suiting root-keyed fee schedules - though like the
     /// underlying costs, the result is an estimate, not a guaranteed upper bound (see the
@@ -117,27 +122,19 @@ impl NetworkNotePricer {
         AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
-    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied feature-note script root
-    /// from its benchmarked consumption cost.
+    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied note script root through
+    /// [`Self::price`].
     ///
     /// The policy's bare fee amounts are denominated in the fee asset configured by
-    /// [`Self::fee_parameters`]. Each feature-note root is priced through [`Self::price`], so the
-    /// fee includes the default safety margin and the recursively priced notes created by
-    /// consuming it.
-    /// [`FeeSponsorshipNote`] is the exception: it is retained in the schedule with an explicit
-    /// zero fee because fee collection never requires sponsorship notes to sponsor themselves.
+    /// [`Self::fee_parameters`], so each fee includes the default safety margin and the recursively
+    /// priced notes created by consuming it.
     pub fn basic_constant_fee_policy(
         &self,
         note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> Result<BasicConstantFeePolicy, NotePricingError> {
         let mut policy = BasicConstantFeePolicy::new();
         for root in note_script_roots {
-            let fee = if root == FeeSponsorshipNote::script_root() {
-                AssetAmount::ZERO
-            } else {
-                self.price(root)?
-            };
-            policy = policy.with_fee(root, fee);
+            policy = policy.with_fee(root, self.price(root)?);
         }
         Ok(policy)
     }
@@ -165,12 +162,11 @@ impl NetworkNotePricer {
         root: NoteScriptRoot,
         pricing_stack: &mut Vec<NoteScriptRoot>,
     ) -> Result<u64, NotePricingError> {
-        let cost = self
-            .note_costs
-            .get(&root)
-            .cloned()
-            .or_else(|| resolve_note_cost(root))
-            .ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
+        let cost = match self.note_costs.get(&root).cloned() {
+            Some(cost) => cost,
+            None if root == FeeSponsorshipNote::script_root() => return Ok(0),
+            None => resolve_note_cost(root).ok_or(NotePricingError::UnknownNoteScriptRoot(root))?,
+        };
         // Cycle counts enter the fee computation only here, where the looked-up cost is
         // converted into the kernel's fee inputs.
         let fee_inputs = TransactionFee::new(cost.cycles()).map_err(NotePricingError::Fee)?;
@@ -463,16 +459,22 @@ mod tests {
     }
 
     #[test]
-    fn basic_constant_fee_policy_schedules_sponsorship_at_zero() {
-        let pricer = pricer(500, 0);
+    fn sponsorship_defaults_to_zero_but_allows_a_cost_override() {
         let root = FeeSponsorshipNote::script_root();
-        let policy = pricer.basic_constant_fee_policy([root]).unwrap();
 
-        assert_eq!(policy.fee_schedule().get(&root), Some(&AssetAmount::ZERO));
-        assert!(
-            pricer.price(root).unwrap().as_u64() > 0,
-            "the benchmarked standalone cost should remain nonzero"
-        );
+        let default_pricer = pricer(500, 0);
+        let default_policy = default_pricer.basic_constant_fee_policy([root]).unwrap();
+        assert_eq!(default_pricer.price(root).unwrap(), AssetAmount::ZERO);
+        assert_eq!(default_policy.fee_schedule().get(&root), Some(&AssetAmount::ZERO));
+
+        const CUSTOM_SPONSORSHIP_CYCLES: u32 = 65_536;
+        let custom_pricer =
+            custom_pricer([(root, NoteCost::new(CUSTOM_SPONSORSHIP_CYCLES, Vec::new()))]);
+        let custom_price = custom_pricer.fee(fee_inputs(CUSTOM_SPONSORSHIP_CYCLES)).unwrap();
+        let custom_policy = custom_pricer.basic_constant_fee_policy([root]).unwrap();
+
+        assert_eq!(custom_pricer.price(root).unwrap(), custom_price);
+        assert_eq!(custom_policy.fee_schedule().get(&root), Some(&custom_price));
     }
 
     #[test]

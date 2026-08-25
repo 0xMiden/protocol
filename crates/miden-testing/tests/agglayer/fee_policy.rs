@@ -57,11 +57,7 @@ fn assert_priced_account(account: &Account, roots: BTreeSet<NoteScriptRoot>) -> 
             BasicConstantFeePolicy::fee_schedule_slot_name(),
             StorageMapKey::new(root.as_word()),
         )?;
-        let expected_fee = if root == FeeSponsorshipNote::script_root() {
-            0
-        } else {
-            pricer.price(root)?.as_u64()
-        };
+        let expected_fee = pricer.price(root)?.as_u64();
         assert_eq!(entry[0].as_canonical_u64(), expected_fee);
         assert_eq!(entry[3].as_canonical_u64(), 1, "the schedule entry must carry its set marker");
     }
