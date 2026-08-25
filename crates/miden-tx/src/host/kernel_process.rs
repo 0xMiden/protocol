@@ -15,6 +15,7 @@ use miden_protocol::transaction::memory::{
     ACTIVE_INPUT_NOTE_PTR,
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
+    INPUT_NOTE_ID_OFFSET,
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
     TX_EXPIRATION_BLOCK_NUM_PTR,
@@ -213,10 +214,10 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             Ok(None)
         } else {
             Ok(self
-                .get_mem_word(self.ctx(), note_address)
+                .get_mem_word(self.ctx(), note_address + INPUT_NOTE_ID_OFFSET)
                 .map_err(|err| {
                     TransactionKernelError::other_with_source(
-                        "failed to read note address",
+                        "failed to read note ID",
                         ExecutionError::MemoryErrorNoCtx(err),
                     )
                 })?
