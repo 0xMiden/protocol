@@ -17,7 +17,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
-use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_standards::tx_script::{PassThroughTransactionScript, SendNotesTransactionScript};
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
@@ -212,6 +212,16 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// The script's advice map entries are embedded in its MAST forest, so they load with the
     /// script and need not be set here.
     pub fn send_notes_script(self, script: &SendNotesTransactionScript) -> Self {
+        self.tx_script(script.tx_script().clone())
+            .tx_script_args(script.tx_script_args())
+    }
+
+    /// Sets the transaction script and script arguments required to execute the provided
+    /// [`PassThroughTransactionScript`].
+    ///
+    /// The script's payload is embedded in its MAST forest, so it loads with the script and need
+    /// not be set here.
+    pub fn pass_through_script(self, script: &PassThroughTransactionScript) -> Self {
         self.tx_script(script.tx_script().clone())
             .tx_script_args(script.tx_script_args())
     }

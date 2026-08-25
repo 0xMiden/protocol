@@ -1,0 +1,253 @@
+# The canonical `pass_through` transaction script.
+#
+# The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
+# parameters (the payload) from the advice map, so a single script root covers every target
+# account and serial number.
+#
+# The payload is a word-aligned element stream with the following layout:
+#
+#   word 0: [target_id_suffix, target_id_prefix, tag, note_type]
+#   word 1: SERIAL_NUM
+#
+# The first word is laid out in the order `p2id::create_output_note` reads its arguments off the
+# operand stack, so the payload can be pushed field by field without reordering.
+
+use miden::core::mem
+use miden::protocol::asset
+use {ASSET_SIZE} from miden::protocol::asset
+use miden::protocol::input_note
+use miden::protocol::tx
+use miden::standards::notes::p2id
+use miden::standards::wallets::basic as basic_wallet
+
+# CONSTANTS
+# =================================================================================================
+
+# The number of elements in the payload: the P2ID target account ID, the output note's tag and
+# type, and its serial number. Must be kept in sync with the Rust
+# `PassThroughTransactionScript::PAYLOAD_NUM_ELEMENTS` constant.
+const PAYLOAD_NUM_ELEMENTS = 8
+
+# The number of words the payload occupies; `mem::pipe_preimage_to_memory` writes a word at a time.
+const PAYLOAD_NUM_WORDS = PAYLOAD_NUM_ELEMENTS / 4
+
+# `pass_through` locals: the payload, followed by the index of the output note it creates.
+const PAYLOAD_LOC = 0
+const TARGET_ID_SUFFIX_LOC = PAYLOAD_LOC
+const TARGET_ID_PREFIX_LOC = PAYLOAD_LOC + 1
+const TAG_LOC = PAYLOAD_LOC + 2
+const NOTE_TYPE_LOC = PAYLOAD_LOC + 3
+const SERIAL_NUM_LOC = PAYLOAD_LOC + 4
+const OUT_NOTE_IDX_LOC = PAYLOAD_LOC + PAYLOAD_NUM_ELEMENTS
+
+# `forward_note_assets` locals: scratch holding one input note's initial assets.
+const ASSETS_LOC = 0
+
+# ERRORS
+# =================================================================================================
+
+const ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID = "pass through payload does not have the expected number of elements"
+
+# TRANSACTION SCRIPT
+# =================================================================================================
+
+#! Forwards the assets of every input note into a single P2ID output note.
+#!
+#! This is the canonical pass-through transaction script: the account it runs on is a conduit, not
+#! a destination. The input notes' scripts deposit their assets into the account's vault, and this
+#! script moves exactly those assets back out into one P2ID note addressed to the target named in
+#! the payload. The account's vault delta is therefore zero and, with an authentication component
+#! that only bumps the nonce on a state change, its commitment is unchanged. That is what lets a
+#! batch builder append such a transaction to every batch it builds concurrently, sweeping the
+#! batch's TX_FEE notes into a single note it collects out of band.
+#!
+#! The assets are read from each input note's initial assets rather than its remaining ones,
+#! because the note scripts have already emptied the notes by the time a transaction script runs.
+#! A note that does not deposit all of its initial assets into the account therefore fails the
+#! transaction instead of silently leaving assets behind.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::note::note_creator::create_note procedure.
+#! - miden::standards::wallets::basic::move_asset_to_note procedure.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - PAYLOAD_COMMITMENT is the sequential hash of the payload elements.
+#! - payload is the element stream described in the file header.
+#!
+#! Panics if:
+#! - the advice map holds no payload for PAYLOAD_COMMITMENT.
+#! - the payload does not consist of exactly PAYLOAD_NUM_ELEMENTS elements.
+#! - the payload does not hash to PAYLOAD_COMMITMENT.
+#! - the account does not expose the required procedures.
+#! - an input note's initial assets are not in the account's vault, i.e. the note did not deposit
+#!   them into it.
+#! - the forwarded assets do not fit into a single output note.
+#!
+#! Invocation: call
+@transaction_script
+pub proc main
+    exec.pass_through
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Creates the P2ID output note described by the advice-provided payload and moves the initial
+#! assets of every input note into it.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Panics under the conditions listed on `main`, which this procedure implements.
+#!
+#! Locals:
+#! 0..8: the payload
+#! 8: index of the created output note
+#!
+#! Invocation: exec
+@locals(9)
+proc pass_through
+    # write the payload to memory, checking it against its commitment
+    # ---------------------------------------------------------------------------------------------
+    locaddr.PAYLOAD_LOC movdn.4
+    # OS => [PAYLOAD_COMMITMENT, payload_ptr, pad(12)]
+
+    adv.push_mapvaln
+    # OS => [PAYLOAD_COMMITMENT, payload_ptr, pad(12)]
+    # AS => [num_elements, [payload]]
+
+    # SAFETY: an incorrect num_elements would fail the commitment check in
+    # pipe_preimage_to_memory; pinning it to the expected length only rejects a malformed advice
+    # input earlier and with a clearer error.
+    adv_push eq.PAYLOAD_NUM_ELEMENTS assert.err=ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID
+    # OS => [PAYLOAD_COMMITMENT, payload_ptr, pad(12)]
+    # AS => [[payload]]
+
+    movup.4 push.PAYLOAD_NUM_WORDS
+    # => [num_words, payload_ptr, PAYLOAD_COMMITMENT, pad(12)]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => [pad(16)]
+
+    # create the P2ID note the collected assets are forwarded into
+    # ---------------------------------------------------------------------------------------------
+    padw loc_loadw_le.SERIAL_NUM_LOC
+    # => [SERIAL_NUM, pad(16)]
+
+    loc_load.NOTE_TYPE_LOC loc_load.TAG_LOC
+    # => [tag, note_type, SERIAL_NUM, pad(16)]
+
+    loc_load.TARGET_ID_PREFIX_LOC loc_load.TARGET_ID_SUFFIX_LOC
+    # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM, pad(16)]
+
+    exec.p2id::create_output_note
+    # => [out_note_idx, pad(16)]
+
+    loc_store.OUT_NOTE_IDX_LOC
+    # => [pad(16)]
+
+    # forward the assets of every input note into it
+    # ---------------------------------------------------------------------------------------------
+    exec.tx::get_num_input_notes push.0
+    # => [note_index, num_notes, pad(16)]
+
+    dup.1 neq.0
+    while.true
+        # => [note_index, num_notes, pad(16)]
+
+        dup loc_load.OUT_NOTE_IDX_LOC swap
+        # => [note_index, out_note_idx, note_index, num_notes, pad(16)]
+
+        exec.forward_note_assets
+        # => [note_index, num_notes, pad(16)]
+
+        add.1
+        # => [note_index, num_notes, pad(16)]
+
+        dup dup.2 neq
+        # => [note_index != num_notes, note_index, num_notes, pad(16)]
+    end
+    drop drop
+    # => [pad(16)]
+end
+
+#! Moves the initial assets of the input note at `note_index` into the output note at
+#! `out_note_idx`.
+#!
+#! The forwarded assets are the ones the note was created with: a transaction script runs after
+#! every note script, so the assets remaining in the note are empty by then and only the initial
+#! assets say what the note deposited into the account.
+#!
+#! Inputs:  [note_index, out_note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - note_index is the index of the input note whose assets are forwarded.
+#! - out_note_idx is the index of the output note the assets are moved into.
+#!
+#! Panics if:
+#! - the account does not expose the miden::standards::wallets::basic::move_asset_to_note
+#!   procedure.
+#! - the account's vault does not hold one of the note's initial assets, i.e. the note did not
+#!   deposit it into the vault.
+#!
+#! Locals:
+#! 0..128: the note's initial assets, ASSET_SIZE elements each; ASSET_SIZE * MAX_ASSETS_PER_NOTE
+#!   locals are allocated so the assets of any note fit
+#!
+#! Invocation: exec
+@locals(128)
+proc forward_note_assets
+    # => [note_index, out_note_idx]
+
+    locaddr.ASSETS_LOC exec.input_note::get_initial_assets
+    # => [num_assets, out_note_idx]
+
+    locaddr.ASSETS_LOC swap
+    # => [assets_left, asset_ptr, out_note_idx]
+
+    dup neq.0
+    while.true
+        # => [assets_left, asset_ptr, out_note_idx]
+
+        # pad so the call inputs fill the top 16 elements and the loop state moves into the
+        # overflow
+        push.0.0.0.0 push.0.0.0
+        # => [pad(7), assets_left, asset_ptr, out_note_idx]
+
+        dup.9
+        # => [out_note_idx, pad(7), assets_left, asset_ptr, out_note_idx]
+
+        dup.9 exec.asset::load
+        # => [ASSET_ID, ASSET_VALUE, out_note_idx, pad(7), assets_left, asset_ptr, out_note_idx]
+
+        call.basic_wallet::move_asset_to_note
+        # => [pad(16), assets_left, asset_ptr, out_note_idx]
+
+        dropw dropw dropw dropw
+        # => [assets_left, asset_ptr, out_note_idx]
+
+        # advance to the next asset
+        swap add.ASSET_SIZE swap
+        # => [assets_left, asset_ptr, out_note_idx]
+
+        sub.1 dup neq.0
+        # => [assets_left != 0, assets_left, asset_ptr, out_note_idx]
+    end
+    drop drop drop
+    # => []
+end
