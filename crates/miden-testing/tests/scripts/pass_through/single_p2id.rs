@@ -1,21 +1,23 @@
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::NoAuth;
-use miden_standards::account::pass_through::PassThrough;
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
     ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED,
     ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID,
     ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED,
 };
 use miden_standards::testing::note::NoteBuilder;
-use miden_standards::tx_script::{PassThroughTransactionScript, PassThroughTransactionScriptError};
+use miden_standards::tx_script::{
+    PassThroughSingleP2idTransactionScript,
+    PassThroughTransactionScriptError,
+};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+
+use super::pass_through_account;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -23,25 +25,13 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 /// The serial number of the P2ID note the pass-through script creates.
 const SERIAL_NUMBER: Word = Word::new([Felt::new_unchecked(7); 4]);
 
-/// Builds the stateless account a pass-through transaction runs on: `NoAuth` so the nonce is only
-/// bumped when the account state actually changes, `BasicWallet` so input notes can deposit into
-/// it, and `PassThrough` for the account procedures the script calls.
-fn pass_through_account() -> anyhow::Result<Account> {
-    Ok(AccountBuilder::new([42; 32])
-        .with_component(NoAuth)
-        .with_component(BasicWallet)
-        .with_component(PassThrough)
-        .account_type(AccountType::Public)
-        .build_existing()?)
-}
-
 // TESTS
 // ================================================================================================
 
 /// The pass-through script forwards the account's balance of the named asset into one P2ID note
 /// addressed to the payload's target, leaving the account it runs on untouched.
 #[tokio::test]
-async fn pass_through_forwards_fee_notes_into_a_single_p2id_note() -> anyhow::Result<()> {
+async fn forwards_fee_notes_into_a_single_p2id_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = pass_through_account()?;
     builder.add_account(account.clone())?;
@@ -58,7 +48,7 @@ async fn pass_through_forwards_fee_notes_into_a_single_p2id_note() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     let fee_asset_id = FungibleAsset::mock(1).id();
-    let script = PassThroughTransactionScript::new(
+    let script = PassThroughSingleP2idTransactionScript::new(
         target.id(),
         NoteType::Public,
         SERIAL_NUMBER,
@@ -69,7 +59,7 @@ async fn pass_through_forwards_fee_notes_into_a_single_p2id_note() -> anyhow::Re
     for note in &fee_notes {
         tx_builder = tx_builder.authenticated_input_note(note.id());
     }
-    let executed = tx_builder.pass_through_script(&script).build()?.execute().await?;
+    let executed = tx_builder.pass_through_single_p2id_script(&script).build()?.execute().await?;
 
     // the only output note is the P2ID note the script created
     assert_eq!(executed.output_notes().num_notes(), 1);
@@ -107,7 +97,7 @@ async fn pass_through_forwards_fee_notes_into_a_single_p2id_note() -> anyhow::Re
 
 /// Assets of different faucets and compositions are all forwarded into the same output note.
 #[tokio::test]
-async fn pass_through_forwards_assets_of_every_faucet_and_composition() -> anyhow::Result<()> {
+async fn forwards_assets_of_every_faucet_and_composition() -> anyhow::Result<()> {
     let other_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
     let mock_asset: Asset = FungibleAsset::mock(25);
     let other_asset: Asset = FungibleAsset::new(other_faucet_id, 40)?.into();
@@ -126,7 +116,7 @@ async fn pass_through_forwards_assets_of_every_faucet_and_composition() -> anyho
     let single_asset_note = builder.add_tx_fee_note(sender, &[other_asset])?;
     let mock_chain = builder.build()?;
 
-    let script = PassThroughTransactionScript::new(
+    let script = PassThroughSingleP2idTransactionScript::new(
         target.id(),
         NoteType::Public,
         SERIAL_NUMBER,
@@ -137,7 +127,7 @@ async fn pass_through_forwards_assets_of_every_faucet_and_composition() -> anyho
         .build_transaction(account.id())
         .authenticated_input_note(multi_asset_note.id())
         .authenticated_input_note(single_asset_note.id())
-        .pass_through_script(&script)
+        .pass_through_single_p2id_script(&script)
         .build()?
         .execute()
         .await?;
@@ -154,7 +144,7 @@ async fn pass_through_forwards_assets_of_every_faucet_and_composition() -> anyho
 
 /// The P2ID note the script creates is claimable by its target.
 #[tokio::test]
-async fn pass_through_output_note_is_consumable_by_the_target() -> anyhow::Result<()> {
+async fn output_note_is_consumable_by_the_target() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = pass_through_account()?;
     builder.add_account(account.clone())?;
@@ -166,7 +156,7 @@ async fn pass_through_output_note_is_consumable_by_the_target() -> anyhow::Resul
     let fee_note = builder.add_tx_fee_note(ACCOUNT_ID_SENDER.try_into()?, &[fee_asset])?;
     let mut mock_chain = builder.build()?;
 
-    let script = PassThroughTransactionScript::new(
+    let script = PassThroughSingleP2idTransactionScript::new(
         target.id(),
         NoteType::Public,
         SERIAL_NUMBER,
@@ -176,7 +166,7 @@ async fn pass_through_output_note_is_consumable_by_the_target() -> anyhow::Resul
     let executed = mock_chain
         .build_transaction(account.id())
         .authenticated_input_note(fee_note.id())
-        .pass_through_script(&script)
+        .pass_through_single_p2id_script(&script)
         .build()?
         .execute()
         .await?;
@@ -200,7 +190,7 @@ async fn pass_through_output_note_is_consumable_by_the_target() -> anyhow::Resul
 
 /// An input note carrying no assets contributes nothing and does not break the sweep.
 #[tokio::test]
-async fn pass_through_tolerates_an_asset_less_input_note() -> anyhow::Result<()> {
+async fn tolerates_an_asset_less_input_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = pass_through_account()?;
     builder.add_account(account.clone())?;
@@ -215,7 +205,7 @@ async fn pass_through_tolerates_an_asset_less_input_note() -> anyhow::Result<()>
     builder.add_output_note(RawOutputNote::Full(asset_less_note.clone()));
     let mock_chain = builder.build()?;
 
-    let script = PassThroughTransactionScript::new(
+    let script = PassThroughSingleP2idTransactionScript::new(
         target.id(),
         NoteType::Public,
         SERIAL_NUMBER,
@@ -226,7 +216,7 @@ async fn pass_through_tolerates_an_asset_less_input_note() -> anyhow::Result<()>
         .build_transaction(account.id())
         .authenticated_input_note(asset_less_note.id())
         .authenticated_input_note(fee_note.id())
-        .pass_through_script(&script)
+        .pass_through_single_p2id_script(&script)
         .build()?
         .execute()
         .await?;
@@ -241,8 +231,7 @@ async fn pass_through_tolerates_an_asset_less_input_note() -> anyhow::Result<()>
 /// An asset the payload fails to name is left in the vault, which `assert_vault_unchanged` turns
 /// into a failed transaction rather than a silently changed account.
 #[tokio::test]
-async fn pass_through_fails_when_the_payload_does_not_name_a_deposited_asset() -> anyhow::Result<()>
-{
+async fn fails_when_the_payload_does_not_name_a_deposited_asset() -> anyhow::Result<()> {
     let other_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
     let named_asset: Asset = FungibleAsset::mock(10);
     let unnamed_asset: Asset = FungibleAsset::new(other_faucet_id, 20)?.into();
@@ -258,7 +247,7 @@ async fn pass_through_fails_when_the_payload_does_not_name_a_deposited_asset() -
         builder.add_tx_fee_note(ACCOUNT_ID_SENDER.try_into()?, &[named_asset, unnamed_asset])?;
     let mock_chain = builder.build()?;
 
-    let script = PassThroughTransactionScript::new(
+    let script = PassThroughSingleP2idTransactionScript::new(
         target.id(),
         NoteType::Public,
         SERIAL_NUMBER,
@@ -268,7 +257,7 @@ async fn pass_through_fails_when_the_payload_does_not_name_a_deposited_asset() -
     let result = mock_chain
         .build_transaction(account.id())
         .authenticated_input_note(fee_note.id())
-        .pass_through_script(&script)
+        .pass_through_single_p2id_script(&script)
         .build()?
         .execute()
         .await;
@@ -281,17 +270,18 @@ async fn pass_through_fails_when_the_payload_does_not_name_a_deposited_asset() -
 /// The payload lives in the advice map, so the script root is the same for every target, serial
 /// number and asset set, and can be allowlisted once.
 #[test]
-fn pass_through_script_root_is_independent_of_payload() -> anyhow::Result<()> {
+fn script_root_is_independent_of_payload() -> anyhow::Result<()> {
     let target = ACCOUNT_ID_SENDER.try_into()?;
-    let script = PassThroughTransactionScript::new(
+    let script = PassThroughSingleP2idTransactionScript::new(
         target,
         NoteType::Public,
         SERIAL_NUMBER,
         [FungibleAsset::mock(1).id()],
     )?;
-    let other = PassThroughTransactionScript::new(target, NoteType::Private, Word::empty(), [])?;
+    let other =
+        PassThroughSingleP2idTransactionScript::new(target, NoteType::Private, Word::empty(), [])?;
 
-    assert_eq!(script.tx_script().root(), PassThroughTransactionScript::script_root());
+    assert_eq!(script.tx_script().root(), PassThroughSingleP2idTransactionScript::script_root());
     assert_eq!(
         script.tx_script().root(),
         other.tx_script().root(),
@@ -308,8 +298,8 @@ fn pass_through_script_root_is_independent_of_payload() -> anyhow::Result<()> {
 
 /// More asset IDs than fit into a single note are rejected at construction.
 #[test]
-fn pass_through_rejects_more_asset_ids_than_fit_into_a_note() -> anyhow::Result<()> {
-    let asset_ids: Vec<AssetId> = (0..=PassThroughTransactionScript::MAX_ASSET_IDS)
+fn rejects_more_asset_ids_than_fit_into_a_note() -> anyhow::Result<()> {
+    let asset_ids: Vec<AssetId> = (0..=PassThroughSingleP2idTransactionScript::MAX_ASSET_IDS)
         .map(|i| {
             let faucet_id = AccountId::builder()
                 .account_type(AccountType::Public)
@@ -318,7 +308,7 @@ fn pass_through_rejects_more_asset_ids_than_fit_into_a_note() -> anyhow::Result<
         })
         .collect();
 
-    let err = PassThroughTransactionScript::new(
+    let err = PassThroughSingleP2idTransactionScript::new(
         ACCOUNT_ID_SENDER.try_into()?,
         NoteType::Public,
         SERIAL_NUMBER,
@@ -336,20 +326,20 @@ fn pass_through_rejects_more_asset_ids_than_fit_into_a_note() -> anyhow::Result<
 
 /// A payload whose length the script does not accept is rejected before it is written to memory.
 #[tokio::test]
-async fn pass_through_rejects_a_malformed_payload_length() -> anyhow::Result<()> {
+async fn rejects_a_malformed_payload_length() -> anyhow::Result<()> {
     // (payload length in elements, expected error)
     let cases = [
         (
-            PassThroughTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS + 2,
+            PassThroughSingleP2idTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS + 2,
             ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED,
         ),
         (
-            PassThroughTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS - 4,
+            PassThroughSingleP2idTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS - 4,
             ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID,
         ),
         (
-            PassThroughTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
-                + (PassThroughTransactionScript::MAX_ASSET_IDS + 1) * 4,
+            PassThroughSingleP2idTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS
+                + (PassThroughSingleP2idTransactionScript::MAX_ASSET_IDS + 1) * 4,
             ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID,
         ),
     ];
@@ -365,7 +355,7 @@ async fn pass_through_rejects_a_malformed_payload_length() -> anyhow::Result<()>
         let payload = vec![Felt::new_unchecked(1); num_elements];
         let tx_script_args = Hasher::hash_elements(&payload);
 
-        let script = PassThroughTransactionScript::new(
+        let script = PassThroughSingleP2idTransactionScript::new(
             ACCOUNT_ID_SENDER.try_into()?,
             NoteType::Public,
             SERIAL_NUMBER,

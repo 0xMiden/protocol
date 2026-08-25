@@ -1,0 +1,8 @@
+# The canonical pass-through transaction scripts, one per shape of output the assets are
+# forwarded into.
+#
+# A pass-through transaction uses its account as a conduit: input notes deposit their assets into
+# the account's vault and the transaction script moves them straight back out, leaving the vault
+# as it was. What the assets are moved into is what distinguishes the scripts below.
+
+pub mod single_p2id

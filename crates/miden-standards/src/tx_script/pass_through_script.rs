@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::AssetId;
-use miden_protocol::note::{NoteRecipient, NoteTag, NoteType};
+use miden_protocol::note::{NoteAssets, NoteRecipient, NoteTag, NoteType};
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::vm::AdviceMap;
@@ -15,15 +15,16 @@ use crate::tx_script::transaction_script;
 // CONSTANTS
 // ================================================================================================
 
-/// Path to the pass-through transaction script procedure in the standards library, assembled from
-/// `asm/standards/tx_scripts/pass_through.masm`.
-const PASS_THROUGH_TX_SCRIPT_PATH: &str = "::miden::standards::tx_scripts::pass_through::main";
+/// Path to the `single_p2id` pass-through transaction script procedure in the standards library,
+/// assembled from `asm/standards/tx_scripts/pass_through/single_p2id.masm`.
+const PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT_PATH: &str =
+    "::miden::standards::tx_scripts::pass_through::single_p2id::main";
 
-// PASS-THROUGH TRANSACTION SCRIPT
+// PASS-THROUGH SINGLE P2ID TRANSACTION SCRIPT
 // ================================================================================================
 
-static PASS_THROUGH_TX_SCRIPT: LazyLock<TransactionScript> =
-    LazyLock::new(|| transaction_script(PASS_THROUGH_TX_SCRIPT_PATH));
+static PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT: LazyLock<TransactionScript> =
+    LazyLock::new(|| transaction_script(PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT_PATH));
 
 /// The canonical transaction script that forwards the account's balance of the named assets into a
 /// single P2ID output note.
@@ -44,11 +45,11 @@ static PASS_THROUGH_TX_SCRIPT: LazyLock<TransactionScript> =
 /// `create_note` and `receive_asset`, e.g. [`BasicWallet`].
 ///
 /// The payload is embedded into the script's MAST forest and committed to by `TX_SCRIPT_ARGS`, so
-/// a single [`PassThroughTransactionScript::script_root`] covers every target, serial number and
-/// asset set, and callers only have to set the script and its arguments:
+/// a single [`PassThroughSingleP2idTransactionScript::script_root`] covers every target, serial
+/// number and asset set, and callers only have to set the script and its arguments:
 ///
 /// ```ignore
-/// let script = PassThroughTransactionScript::new(target, NoteType::Public, serial_number, ids)?;
+/// let script = PassThroughSingleP2idTransactionScript::new(target, NoteType::Public, serial_number, ids)?;
 /// let tx_args = TransactionArgs::new(AdviceMap::default())
 ///     .with_tx_script_and_args(script.tx_script().clone(), script.tx_script_args());
 /// ```
@@ -58,7 +59,7 @@ static PASS_THROUGH_TX_SCRIPT: LazyLock<TransactionScript> =
 /// [`PassThrough::assert_vault_unchanged_root`]: crate::account::pass_through::PassThrough::assert_vault_unchanged_root
 /// [`BasicWallet`]: crate::account::wallets::BasicWallet
 #[derive(Debug, Clone)]
-pub struct PassThroughTransactionScript {
+pub struct PassThroughSingleP2idTransactionScript {
     script: TransactionScript,
     tx_script_args: Word,
     output_note_recipient: NoteRecipient,
@@ -66,7 +67,7 @@ pub struct PassThroughTransactionScript {
     output_note_type: NoteType,
 }
 
-impl PassThroughTransactionScript {
+impl PassThroughSingleP2idTransactionScript {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
@@ -77,13 +78,9 @@ impl PassThroughTransactionScript {
     /// Element offset of the output note's serial number within the payload header.
     pub const SERIAL_NUM_OFFSET: usize = 4;
 
-    /// Maximum number of asset IDs the payload may name.
-    ///
-    /// A single note holds at most [`NoteAssets::MAX_NUM_ASSETS`][max], so naming more assets than
-    /// that could never be forwarded into one.
-    ///
-    /// [max]: miden_protocol::note::NoteAssets::MAX_NUM_ASSETS
-    pub const MAX_ASSET_IDS: usize = 16;
+    /// Maximum number of asset IDs the payload may name: naming more assets than fit into a
+    /// single note could never be forwarded into one.
+    pub const MAX_ASSET_IDS: usize = NoteAssets::MAX_NUM_ASSETS;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -131,7 +128,7 @@ impl PassThroughTransactionScript {
         advice_map.insert(tx_script_args, payload);
 
         Ok(Self {
-            script: PASS_THROUGH_TX_SCRIPT.clone().with_advice_map(advice_map),
+            script: PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT.clone().with_advice_map(advice_map),
             tx_script_args,
             output_note_recipient,
             output_note_tag,
@@ -170,12 +167,12 @@ impl PassThroughTransactionScript {
 
     /// The [`TransactionScriptRoot`] of the canonical script, which is independent of the payload.
     pub fn script_root() -> TransactionScriptRoot {
-        PASS_THROUGH_TX_SCRIPT.root()
+        PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT.root()
     }
 }
 
-impl From<PassThroughTransactionScript> for TransactionScript {
-    fn from(script: PassThroughTransactionScript) -> Self {
+impl From<PassThroughSingleP2idTransactionScript> for TransactionScript {
+    fn from(script: PassThroughSingleP2idTransactionScript) -> Self {
         script.script
     }
 }
@@ -183,7 +180,7 @@ impl From<PassThroughTransactionScript> for TransactionScript {
 // PASS-THROUGH TRANSACTION SCRIPT ERROR
 // ================================================================================================
 
-/// Errors that can occur while building a [`PassThroughTransactionScript`].
+/// Errors that can occur while building a [`PassThroughSingleP2idTransactionScript`].
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum PassThroughTransactionScriptError {
@@ -216,14 +213,14 @@ fn encode_payload(
     ];
     debug_assert_eq!(
         payload.len(),
-        PassThroughTransactionScript::SERIAL_NUM_OFFSET,
+        PassThroughSingleP2idTransactionScript::SERIAL_NUM_OFFSET,
         "the serial number should start at the advertised offset"
     );
 
     payload.extend(serial_number.iter());
     debug_assert_eq!(
         payload.len(),
-        PassThroughTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS,
+        PassThroughSingleP2idTransactionScript::PAYLOAD_HEADER_NUM_ELEMENTS,
         "the header size should match the advertised constant"
     );
 

@@ -17,7 +17,10 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
-use miden_standards::tx_script::{PassThroughTransactionScript, SendNotesTransactionScript};
+use miden_standards::tx_script::{
+    PassThroughSingleP2idTransactionScript,
+    SendNotesTransactionScript,
+};
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
@@ -217,11 +220,14 @@ impl<'chain> MockTransactionBuilder<'chain> {
     }
 
     /// Sets the transaction script and script arguments required to execute the provided
-    /// [`PassThroughTransactionScript`].
+    /// [`PassThroughSingleP2idTransactionScript`].
     ///
     /// The script's payload is embedded in its MAST forest, so it loads with the script and need
     /// not be set here.
-    pub fn pass_through_script(self, script: &PassThroughTransactionScript) -> Self {
+    pub fn pass_through_single_p2id_script(
+        self,
+        script: &PassThroughSingleP2idTransactionScript,
+    ) -> Self {
         self.tx_script(script.tx_script().clone())
             .tx_script_args(script.tx_script_args())
     }
