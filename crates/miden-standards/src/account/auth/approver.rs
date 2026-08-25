@@ -78,17 +78,6 @@ pub struct ApproverSet {
 
 impl ApproverSet {
     /// The maximum number of approvers a set may contain.
-    ///
-    /// Authentication cost is linear in the size of the approver set - `verify_signatures` iterates
-    /// over every approver regardless of how many signatures the transaction actually requires -
-    /// and `update_signers_and_threshold` is quadratic in it because it re-checks key uniqueness.
-    /// Every transaction on the account pays that cost, so without a bound an approver set can be
-    /// configured whose first `auth_tx` exceeds provable cycle limits, permanently locking the
-    /// account's assets.
-    ///
-    /// Must be kept in sync with `MAX_NUM_APPROVERS` in
-    /// `asm/standards/auth/multisig.masm`, which enforces the same bound on the on-chain
-    /// `update_signers_and_threshold` path.
     pub const MAX_APPROVERS: u32 = 64;
 
     /// Creates a new [`ApproverSet`] from the given approvers and default threshold.

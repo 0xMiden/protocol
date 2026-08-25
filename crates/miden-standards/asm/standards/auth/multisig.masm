@@ -71,15 +71,6 @@ const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::proced
 const IS_EXECUTED_FLAG = ONE_WORD
 
 # The maximum number of approvers the signer set may contain.
-#
-# Authentication cost is linear in the number of approvers - `verify_signatures` iterates over every
-# approver regardless of how many signatures the transaction requires - and
-# `assert_unique_approver_public_keys` is quadratic in it. Every transaction on the account pays that
-# cost, so without this bound a configuration could push `auth_tx` past provable cycle limits and
-# permanently lock the account's assets.
-#
-# Must be kept in sync with `ApproverSet::MAX_APPROVERS` on the Rust side, which enforces the same
-# bound at account creation.
 const MAX_NUM_APPROVERS = 64
 
 # ERRORS
@@ -189,7 +180,6 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     dup.1
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
-    # make sure the signer set stays small enough for `auth_tx` to remain provable
     exec.assert_num_approvers_within_bound
     # => [MULTISIG_CONFIG, pad(12)]
 

@@ -1051,10 +1051,6 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
 }
 
 /// Tests that `update_signers_and_threshold` rejects a signer set containing duplicate public keys.
-///
-/// Without this check a duplicated key lets a single signature satisfy multiple approver slots
-/// (signatures are looked up in the advice map by public key, not by signer index, and are not
-/// consumed on lookup), which would defeat the distinct-approvers policy.
 #[tokio::test]
 async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
@@ -1119,10 +1115,6 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
 }
 
 /// Tests that `update_signers_and_threshold` rejects a signer set larger than `MAX_NUM_APPROVERS`.
-///
-/// Authentication cost is linear in the number of approvers and the uniqueness check is quadratic
-/// in it, so an unbounded signer set would let a quorum configure an account whose next `auth_tx`
-/// exceeds provable cycle limits, permanently locking its assets.
 #[tokio::test]
 async fn test_multisig_update_signers_rejects_too_many_approvers() -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
