@@ -45,28 +45,24 @@ impl BlockOutputs {
     ///
     /// # Errors
     ///
-    /// Returns [`BlockOutputError::OutputStackInvalid`] if:
-    /// - a required output word is missing from the stack;
-    /// - the cells following the nullifier commitment (positions 8..16) are not all zero.
+    /// Returns [`BlockOutputError::PaddingNotZero`] if the cells following the nullifier
+    /// commitment (positions 8..16) are not all zero.
     pub fn parse(stack: &StackOutputs) -> Result<Self, BlockOutputError> {
-        let block_commitment =
-            stack.get_word(Self::BLOCK_COMMITMENT_WORD_IDX).ok_or_else(|| {
-                BlockOutputError::OutputStackInvalid(
-                    "block commitment word missing from output stack".into(),
-                )
-            })?;
-        let nullifier_commitment =
-            stack.get_word(Self::NULLIFIER_COMMITMENT_WORD_IDX).ok_or_else(|| {
-                BlockOutputError::OutputStackInvalid(
-                    "nullifier commitment word missing from output stack".into(),
-                )
-            })?;
+        let block_commitment = stack
+            .get_word(Self::BLOCK_COMMITMENT_WORD_IDX)
+            .expect("block commitment word should be within the output stack");
+
+        let nullifier_commitment = stack
+            .get_word(Self::NULLIFIER_COMMITMENT_WORD_IDX)
+            .expect("nullifier commitment word should be within the output stack");
 
         // Every cell after the nullifier commitment must be zero padding.
-        if stack[Self::NUM_OUTPUT_ELEMENTS..].iter().any(|&felt| felt != Felt::ZERO) {
-            return Err(BlockOutputError::OutputStackInvalid(
-                "nullifier commitment must be followed by zero padding".into(),
-            ));
+        if let Some(index) = stack[Self::NUM_OUTPUT_ELEMENTS..]
+            .iter()
+            .position(|&felt| felt != Felt::ZERO)
+            .map(|offset| offset + Self::NUM_OUTPUT_ELEMENTS)
+        {
+            return Err(BlockOutputError::PaddingNotZero { index });
         }
 
         Ok(Self::new(block_commitment, nullifier_commitment))
@@ -109,6 +105,8 @@ impl BlockOutputs {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
 
     #[test]
@@ -126,24 +124,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_non_zero_padding() {
-        // A valid 8-element output followed by a non-zero felt in the padding region (>= idx 8).
-        let elements = [
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::from(1u32),
-        ];
+    fn parse_reports_the_index_of_the_first_non_zero_padding_cell() {
+        // Leave the first padding cell zero so the reported index is not simply the first one.
+        let mut elements = [Felt::ZERO; 12];
+        elements[11] = Felt::from(1u32);
         let stack = StackOutputs::new(&elements).unwrap();
 
-        assert!(matches!(
+        assert_matches!(
             BlockOutputs::parse(&stack),
-            Err(BlockOutputError::OutputStackInvalid(_))
-        ));
+            Err(BlockOutputError::PaddingNotZero { index: 11 })
+        );
     }
 }

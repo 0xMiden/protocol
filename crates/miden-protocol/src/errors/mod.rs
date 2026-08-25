@@ -1221,8 +1221,10 @@ pub enum BatchOutputError {
 
 #[derive(Debug, Error)]
 pub enum BlockOutputError {
-    #[error("block kernel output stack is invalid: {0}")]
-    OutputStackInvalid(String),
+    #[error(
+        "block kernel output stack has a non-zero element at index {index}, but everything past the nullifier commitment must be zero padding"
+    )]
+    PaddingNotZero { index: usize },
 }
 
 // PROPOSED BLOCK ERROR
