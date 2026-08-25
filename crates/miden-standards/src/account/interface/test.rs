@@ -102,6 +102,14 @@ fn test_account_interface_identifies_pass_through_auth() {
 
     assert!(matches!(interface.auth_component(), AccountComponentInterface::AuthPassThrough));
     assert!(interface.components().contains(&AccountComponentInterface::PassThroughSweep));
+
+    // resolving the root forces the `procedure_root!` lazy lookup, which panics if the library
+    // path or the procedure name does not match the component's package
+    assert!(
+        PassThroughSweep::code()
+            .procedure_roots()
+            .any(|root| root == PassThroughSweep::sweep_asset_to_note_root()),
+    );
 }
 
 #[test]
