@@ -182,9 +182,9 @@ impl BlockBody {
     ///
     /// # Warning
     ///
-    /// Callers must ensure that the block body satisfies the structural constraints checked by
+    /// Callers must ensure that the block body satisfies all invariants checked by
     /// [`BlockBody::new`].
-    pub(crate) fn new_unchecked(
+    pub fn new_unchecked(
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
         created_nullifiers: Vec<Nullifier>,
