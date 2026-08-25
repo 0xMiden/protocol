@@ -7,7 +7,7 @@
 //! among the same-kind notes changes.
 //!
 //! Labels are keyed by the note's details commitment, which is what a measurement entry carries
-//! today; see [`measured_note_key`].
+//! today; see `measured_note_key`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,7 +38,7 @@ impl NoteLabels {
     ///
     /// # Errors
     /// Returns an error if two input notes share a details commitment, which would make the join
-    /// in [`NoteLabels::label`] ambiguous. See [`measured_note_key`].
+    /// in [`NoteLabels::label`] ambiguous. See `measured_note_key`.
     pub fn from_inputs(inputs: &TransactionInputs) -> Result<Self> {
         Self::from_script_roots(inputs.input_notes().iter().map(|input_note| {
             (input_note.note().details_commitment(), input_note.note().script().root())
@@ -48,7 +48,7 @@ impl NoteLabels {
     /// Returns the label of the given note, or `None` if it is not one of the labelled input
     /// notes.
     ///
-    /// A miss is distinct from [`UNKNOWN_NOTE_LABEL`], which is itself a legitimate label: callers
+    /// A miss is distinct from `UNKNOWN_NOTE_LABEL`, which is itself a legitimate label: callers
     /// join the kernel-reported measurement key against these labels, and a key that fails to
     /// resolve is a defect in that join rather than an unrecognised note kind.
     pub fn label(&self, note: NoteDetailsCommitment) -> Option<&str> {
