@@ -106,9 +106,8 @@ impl NetworkNotePricer {
     /// ```
     ///
     /// [`FeeSponsorshipNote`] defaults to zero because standard network-account fee collection
-    /// exempts sponsorship notes from sponsoring themselves. A cost supplied through
-    /// [`NetworkNotePricerBuilder::note_cost`] or [`NetworkNotePricerBuilder::note_costs`] takes
-    /// precedence over this default.
+    /// exempts sponsorship notes from sponsoring themselves. A cost supplied through the builder's
+    /// `note_cost` or `note_costs` methods takes precedence over this default.
     ///
     /// Since a script root alone cannot tell whether a created note will be network-targeted,
     /// EVERY created note is priced in, suiting root-keyed fee schedules - though like the
