@@ -12,7 +12,7 @@
 
 use miden::core::mem
 use miden::standards::notes::p2id
-use miden::standards::pass_through
+use miden::standards::pass_through::sweep
 
 # CONSTANTS
 # =================================================================================================
@@ -68,16 +68,14 @@ const ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED = "pass through payload length i
 #! This is a pass-through transaction script: the state of the account it executes against does
 #! not change. The input notes' scripts deposit their assets into the account's vault, and this tx
 #! script moves the whole balance of each named asset back out into one P2ID note addressed to a
-#! target, so the account's vault delta is zero. Its commitment is unchanged as long as the auth
-#! procedure neither bumps the nonce nor funds a fee note from the vault, e.g. the no_auth
-#! component on a chain with a zero verification base fee.
+#! target, so the account's vault delta is zero.
 #!
 #! Moving whole balances is what makes the script's cost independent of how many notes the
 #! transaction consumes: the payload names the assets, not the notes. The account must not hold a
 #! named asset of its own, which `sweep_asset_to_note` asserts. If the tx moved more assets out of
 #! the vault than were deposited, or left an asset the payload failed to name behind, the vault
-#! would differ from how it started and the tx fails, rather than the account being silently
-#! changed.
+#! would differ from how it started and the pass-through auth procedure fails the transaction,
+#! rather than the account being silently changed.
 #!
 #! A successful transaction does not imply the named assets reached the target. A note script the
 #! transaction consumes can sweep them first (see pass_through::sweep_asset_to_note), after which
@@ -85,8 +83,8 @@ const ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED = "pass through payload length i
 #!
 #! Requires that the account exposes:
 #! - miden::standards::note::note_creator::create_note procedure.
-#! - miden::standards::pass_through::sweep_asset_to_note procedure.
-#! - miden::standards::pass_through::assert_vault_unchanged procedure.
+#! - miden::standards::pass_through::sweep::sweep_asset_to_note procedure.
+#! and authenticates with miden::standards::auth::pass_through.
 #!
 #! Inputs:
 #!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
@@ -106,7 +104,6 @@ const ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED = "pass through payload length i
 #!   assets, or is shorter than the header.
 #! - the payload does not hash to PAYLOAD_COMMITMENT.
 #! - the account does not expose the required procedures.
-#! - the account's vault is not the one the transaction started with.
 #!
 #! Invocation: call
 @transaction_script
@@ -185,7 +182,7 @@ proc forward_assets
         padw loc_load.ASSET_ID_PTR_LOC mem_loadw_le
         # => [ASSET_ID, note_idx, pad(11), assets_left, pad(16)]
 
-        call.pass_through::sweep_asset_to_note
+        call.sweep::sweep_asset_to_note
         # => [pad(16), assets_left, pad(16)]
 
         dropw dropw dropw dropw
@@ -198,10 +195,6 @@ proc forward_assets
         # => [assets_left != 0, assets_left, pad(16)]
     end
     drop
-    # => [pad(16)]
-
-    # an asset the payload failed to name would be left in the vault, changing the account
-    call.pass_through::assert_vault_unchanged
     # => [pad(16)]
 end
 

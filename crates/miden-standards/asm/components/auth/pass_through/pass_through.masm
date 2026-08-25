@@ -1,0 +1,62 @@
+# The MASM code of the Pass Through Authentication Account Component.
+#
+# See the `AuthPassThrough` Rust type's documentation for more details.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# ERRORS
+# =================================================================================================
+
+const ERR_AUTH_PASS_THROUGH_ACCOUNT_STATE_CHANGED = "a pass-through account's state must be the one it had at the start of the transaction"
+
+# AUTH PROCEDURE
+# =================================================================================================
+
+#! Asserts that the account's state is the one it had at the start of the transaction.
+#!
+#! This authentication procedure provides no authentication. It makes an account stateless: any
+#! transaction that would change its commitment fails, and the nonce is never incremented. Nothing
+#! can therefore alter the account, so transactions against it never conflict with one another and
+#! can be built concurrently. That is what a pass-through transaction runs on: assets enter the
+#! vault through the input notes and leave it again through the output notes within the same
+#! transaction, and anything left behind fails here.
+#!
+#! This procedure creates no TX_FEE note, so a transaction using a pass-through script pays no
+#! fee and is only includable by a batch builder that accepts fee-less transactions. Note that
+#! this bounds the procedure, not the transaction: the assert below requires a zero net vault delta,
+#! not the absence of withdrawals, so another script could still route assets an input note
+#! deposited into a fee note of its own.
+#!
+#! Since the nonce is never incremented, an account with this component cannot be created by a
+#! transaction, and any asset it holds is permanently unspendable.
+#!
+#! The account authenticates nothing, so anyone can execute a transaction against it and choose
+#! where the assets passing through it go. Assets are only safe in transit if the input note's own
+#! script constrains its destination; a note that lets its consumer pick the output note, such as
+#! P2ID or TX_FEE, can be redirected by whoever gets there first.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - AUTH_ARGS are the authentication arguments, which this procedure ignores.
+#!
+#! Panics if:
+#! - the account's commitment differs from the one it had at the start of the transaction.
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_pass_through
+    dropw
+    # => [pad(16)]
+
+    exec.native_account::get_initial_commitment
+    # => [INITIAL_COMMITMENT, pad(16)]
+
+    exec.active_account::compute_commitment
+    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
+
+    assert_eqw.err=ERR_AUTH_PASS_THROUGH_ACCOUNT_STATE_CHANGED
+    # => [pad(16)]
+end

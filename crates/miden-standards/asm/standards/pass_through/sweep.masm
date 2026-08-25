@@ -1,6 +1,6 @@
-# The account procedures a pass-through transaction needs.
+# Moving whole account balances into an output note.
 #
-# See the `PassThrough` Rust type's documentation for more details.
+# See the `PassThroughSweep` Rust type's documentation for more details.
 
 use miden::core::word
 use miden::protocol::active_account
@@ -12,8 +12,6 @@ use {AssetId} from miden::protocol::types
 # =================================================================================================
 
 const ERR_PASS_THROUGH_ACCOUNT_ALREADY_HELD_ASSET = "a pass-through account must not hold the swept asset before the transaction"
-
-const ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED = "the account's vault is not the one it had at the start of the pass-through transaction"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -85,28 +83,4 @@ pub proc sweep_asset_to_note(asset_id: AssetId, note_idx: u16)
         exec.output_note::add_asset
         # => [pad(16)]
     end
-end
-
-#! Asserts that the account's vault is the one it had at the start of the transaction.
-#!
-#! A pass-through transaction script calls this once it has moved everything out, so that an asset
-#! it failed to name fails the transaction rather than silently changing the account.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the account's vault root differs from its initial one.
-#!
-#! Invocation: call
-@account_procedure
-pub proc assert_vault_unchanged
-    exec.native_account::get_initial_vault_root
-    # => [INITIAL_VAULT_ROOT, pad(16)]
-
-    exec.active_account::get_vault_root
-    # => [VAULT_ROOT, INITIAL_VAULT_ROOT, pad(16)]
-
-    assert_eqw.err=ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED
-    # => [pad(16)]
 end

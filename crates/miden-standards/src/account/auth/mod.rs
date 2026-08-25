@@ -7,6 +7,9 @@ pub use fee::{FeeConversionInfo, commit_fee_conversion_info};
 mod no_auth;
 pub use no_auth::NoAuth;
 
+mod pass_through;
+pub use pass_through::AuthPassThrough;
+
 mod singlesig;
 pub use singlesig::AuthSingleSig;
 

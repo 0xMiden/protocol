@@ -10,6 +10,7 @@ members = [
   "auth/multisig_smart",
   "auth/network_account",
   "auth/no_auth",
+  "auth/pass_through",
   "auth/singlesig",
   "faucets/fungible_faucet",
   "faucets/non_fungible_faucet",
@@ -29,7 +30,7 @@ members = [
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",
-  "pass_through",
+  "pass_through/sweep",
   "upgrade/manager",
   "wallets/basic_wallet",
 ]

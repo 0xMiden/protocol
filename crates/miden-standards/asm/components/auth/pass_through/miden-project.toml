@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-auth-pass-through"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::pass_through"
+path      = "pass_through.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

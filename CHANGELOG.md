@@ -7,7 +7,8 @@
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
-- Added the `pass_through::single_p2id` transaction script with its `PassThroughSingleP2idTransactionScript` type and the `PassThrough` account component, forwarding the account's balance of the named assets into a single P2ID note and asserting the vault is left as the transaction found it ([#3709](https://github.com/0xMiden/protocol/issues/3709)).
+- Added the `pass_through::single_p2id` transaction script with its `PassThroughSingleP2idTransactionScript` type and the `PassThroughSweep` account component, forwarding the account's balance of the named assets into a single P2ID note ([#3709](https://github.com/0xMiden/protocol/issues/3709)).
+- Added the `AuthPassThrough` account component, which rejects any change to the account's state, never increments the nonce and creates no `TX_FEE` note; it authenticates nothing, so anyone can execute a transaction against such an account ([#3709](https://github.com/0xMiden/protocol/issues/3709)).
 
 ### Changes
 

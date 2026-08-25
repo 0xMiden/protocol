@@ -54,6 +54,15 @@ pub enum AccountComponentInterface {
     /// that executed a tx script or consumed input notes outside of a fixed allowlist of note
     /// script roots.
     AuthNetworkAccount,
+    /// Exposes procedures from the
+    /// [`AuthPassThrough`][crate::account::auth::AuthPassThrough] module.
+    ///
+    /// This authentication scheme provides no cryptographic authentication and rejects any
+    /// transaction that changes the account's state.
+    AuthPassThrough,
+    /// Exposes the `sweep_asset_to_note` procedure from the
+    /// [`PassThroughSweep`][crate::account::pass_through::PassThroughSweep] component.
+    PassThroughSweep,
     /// A non-standard, custom interface which exposes the contained procedures.
     ///
     /// Custom interface holds all procedures which are not part of some standard interface which is
@@ -84,6 +93,8 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
+            AccountComponentInterface::AuthPassThrough => "Pass Through Auth".to_string(),
+            AccountComponentInterface::PassThroughSweep => "Pass Through Sweep".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
                     .iter()
@@ -107,6 +118,7 @@ impl AccountComponentInterface {
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
                 | AccountComponentInterface::AuthNetworkAccount
+                | AccountComponentInterface::AuthPassThrough
         )
     }
 }

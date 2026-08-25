@@ -2,20 +2,20 @@
 //! assets are forwarded into.
 
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_standards::account::auth::NoAuth;
-use miden_standards::account::pass_through::PassThrough;
+use miden_standards::account::auth::AuthPassThrough;
+use miden_standards::account::pass_through::PassThroughSweep;
 use miden_standards::account::wallets::BasicWallet;
 
 mod single_p2id;
 
-/// Builds the stateless account a pass-through transaction runs on: `NoAuth` so the nonce is only
-/// bumped when the account state actually changes, `BasicWallet` so input notes can deposit into
-/// it, and `PassThrough` for the account procedures the scripts call.
-fn pass_through_account() -> anyhow::Result<Account> {
+/// Builds the stateless account a pass-through transaction runs on: `AuthPassThrough` so any
+/// change to the account fails the transaction, `BasicWallet` so input notes can deposit into it,
+/// and `PassThroughSweep` for the account procedure the scripts call.
+pub(crate) fn pass_through_account() -> anyhow::Result<Account> {
     Ok(AccountBuilder::new([42; 32])
-        .with_component(NoAuth)
+        .with_component(AuthPassThrough)
         .with_component(BasicWallet)
-        .with_component(PassThrough)
+        .with_component(PassThroughSweep)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
