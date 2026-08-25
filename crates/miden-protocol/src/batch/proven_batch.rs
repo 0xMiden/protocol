@@ -131,7 +131,7 @@ impl ProvenBatch {
     /// Returns an error if the batch expiration block number is not greater than the reference
     /// block number.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_unchecked(
+    pub fn new_unchecked(
         id: BatchId,
         reference_block_commitment: Word,
         reference_block_num: BlockNumber,

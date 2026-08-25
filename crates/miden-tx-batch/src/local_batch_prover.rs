@@ -65,17 +65,18 @@ impl LocalBatchProver {
             block_header,
             _block_chain,
             _authenticatable_unauthenticated_notes,
-            _id,
+            id,
             updated_accounts,
             input_notes,
             output_notes,
             batch_expiration_block_num,
         ) = proposed_batch.into_parts();
 
-        ProvenBatch::new(
+        ProvenBatch::new_unchecked(
+            id,
             block_header.commitment(),
             block_header.block_num(),
-            updated_accounts.into_values(),
+            updated_accounts,
             input_notes,
             output_notes,
             batch_expiration_block_num,
