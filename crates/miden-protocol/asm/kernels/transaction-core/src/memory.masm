@@ -1,6 +1,7 @@
 use miden::core::mem
 use {ACCOUNT_PROCEDURE_DATA_LENGTH, MAX_ASSETS_PER_NOTE, NOTE_MEM_SIZE, WORD_NUM_ELEMENTS}
     from miden::tx_kernel_core::constants
+use miden::protocol_utils::asset
 use {AccountId} from miden::protocol_utils::types
 
 # ERRORS
@@ -137,44 +138,72 @@ const AUTH_ARGS_PTR = 1636
 # The memory address at which the block data section begins
 pub const BLOCK_DATA_SECTION_OFFSET = 2000
 
+# The memory address at which the block metadata is stored [version, block_number, timestamp, 0]
+const BLOCK_METADATA_PTR = 2000
+
+# The memory address at which the block header version is stored
+const BLOCK_METADATA_VERSION_PTR = BLOCK_METADATA_PTR
+
+# The memory address at which the block number is stored
+const BLOCK_METADATA_NUMBER_PTR = BLOCK_METADATA_PTR + 1
+
+# The memory address at which the block timestamp is stored
+const BLOCK_METADATA_TIMESTAMP_PTR = BLOCK_METADATA_PTR + 2
+
 # The memory address at which the previous block commitment is stored
-const PREV_BLOCK_COMMITMENT_PTR = 2000
+const PREV_BLOCK_COMMITMENT_PTR = 2004
 
 # The memory address at which the chain commitment is stored
-const CHAIN_COMMITMENT_PTR = 2004
+const CHAIN_COMMITMENT_PTR = 2008
 
 # The memory address at which the account root is stored
-const ACCT_DB_ROOT_PTR = 2008
+const ACCT_DB_ROOT_PTR = 2012
 
 # The memory address at which the nullifier root is stored
-const NULLIFIER_ROOT_PTR = 2012
+const NULLIFIER_ROOT_PTR = 2016
 
 # The memory address at which the tx commitment is stored
-const TX_COMMITMENT_PTR = 2016
+const TX_COMMITMENT_PTR = 2020
 
-# The memory address at which the kernel commitment is stored
-const TX_KERNEL_COMMITMENT_PTR = 2020
+# The memory address at which the protocol config commitment is stored
+const PROTOCOL_CONFIG_COMMITMENT_PTR = 2024
 
-# The memory address at which the proof commitment is stored
-const VALIDATOR_KEY_COMMITMENT_PTR = 2024
+# The memory address at which the validator config commitment is stored
+const VALIDATOR_CONFIG_COMMITMENT_PTR = 2028
 
-# The memory address at which the block metadata is stored [block_number, version, timestamp, 0]
-const BLOCK_METADATA_PTR = 2028
+# The memory address at which the next protocol config commitment is stored
+const NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR = 2032
 
-# The memory address at which the fee parameters are stored. These occupy a double word.
-# [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
-# [0, 0, 0, 0]
-const FEE_PARAMETERS_PTR = 2032
+# The memory address at which the fee parameters are stored.
+# [verification_base_fee, 0, 0, 0]
+const FEE_PARAMETERS_PTR = 2036
 
 # The memory address at which the verification base fee is stored.
-const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
-
-# The memory address at which the fee faucet ID is stored.
-const FEE_FAUCET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
-const FEE_FAUCET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
+const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR = 2040
+
+# PROTOCOL CONFIG
+# -------------------------------------------------------------------------------------------------
+
+# The memory address at which the protocol config section begins
+pub const PROTOCOL_CONFIG_SECTION_OFFSET = 2200
+
+# The memory address at which the fee asset ID is stored
+const FEE_ASSET_ID_PTR = 2200
+
+# The memory address at which the transaction kernel config commitment is stored
+const TX_KERNEL_CONFIG_COMMITMENT_PTR = 2204
+
+# The memory address at which the batch kernel config commitment is stored
+const BATCH_KERNEL_CONFIG_COMMITMENT_PTR = 2208
+
+# The memory address at which the block kernel config commitment is stored
+const BLOCK_KERNEL_CONFIG_COMMITMENT_PTR = 2212
+
+# The memory address at which the proof verification config commitment is stored
+const PROOF_VERIFICATION_COMMITMENT_PTR = 2216
 
 # PARTIAL BLOCKCHAIN
 # -------------------------------------------------------------------------------------------------
@@ -730,17 +759,16 @@ end
 #! Where:
 #! - blk_num is the block number of the transaction reference block.
 pub proc get_blk_num
-    mem_load.BLOCK_METADATA_PTR
+    mem_load.BLOCK_METADATA_NUMBER_PTR
 end
 
-#! Returns the protocol version of the transaction reference block.
+#! Returns the format version of the transaction reference block's header.
 #!
 #! Inputs:  []
 #! Outputs: [version]
 #!
 #! Where:
-#! - version is the protocol version of the transaction reference block.
-const BLOCK_METADATA_VERSION_PTR = BLOCK_METADATA_PTR + 1
+#! - version is the format version of the transaction reference block's header.
 pub proc get_blk_version
     mem_load.BLOCK_METADATA_VERSION_PTR
 end
@@ -752,7 +780,6 @@ end
 #!
 #! Where:
 #! - timestamp is the timestamp of the reference block for this transaction.
-const BLOCK_METADATA_TIMESTAMP_PTR = BLOCK_METADATA_PTR + 2
 pub proc get_blk_timestamp
     mem_load.BLOCK_METADATA_TIMESTAMP_PTR
 end
@@ -769,7 +796,9 @@ pub proc get_verification_base_fee
     mem_load.VERIFICATION_BASE_FEE_PTR
 end
 
-#! Returns the fee faucet ID from the transaction's reference block.
+#! Returns the fee faucet ID from the chain's protocol config.
+#!
+#! TODO(fee_asset_id): Return the fee asset ID instead.
 #!
 #! Inputs:  []
 #! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
@@ -778,7 +807,22 @@ end
 #! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
 #!   the native fee asset.
 pub proc get_fee_faucet_id
-    mem_load.FEE_FAUCET_ID_PREFIX_PTR mem_load.FEE_FAUCET_ID_SUFFIX_PTR
+    padw mem_loadw_le.FEE_ASSET_ID_PTR
+    # => [FEE_ASSET_ID]
+
+    exec.asset::id_into_faucet_id
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
+end
+
+#! Returns the fee asset ID from the chain's protocol config.
+#!
+#! Inputs:  []
+#! Outputs: [FEE_ASSET_ID]
+#!
+#! Where:
+#! - FEE_ASSET_ID is the ID of the asset that fees are paid in.
+pub proc get_fee_asset_id
+    padw mem_loadw_le.FEE_ASSET_ID_PTR
 end
 
 #! Returns the chain commitment of the transaction reference block.
@@ -825,26 +869,27 @@ pub proc get_tx_commitment
     padw mem_loadw_le.TX_COMMITMENT_PTR
 end
 
-#! Returns the transaction kernel commitment of the transaction reference block.
+#! Returns the protocol config commitment of the transaction reference block.
 #!
 #! Inputs:  []
-#! Outputs: [TX_KERNEL_COMMITMENT]
+#! Outputs: [PROTOCOL_CONFIG_COMMITMENT]
 #!
 #! Where:
-#! - TX_KERNEL_COMMITMENT is the sequential hash of the kernel procedures.
-pub proc get_tx_kernel_commitment
-    padw mem_loadw_le.TX_KERNEL_COMMITMENT_PTR
+#! - PROTOCOL_CONFIG_COMMITMENT is the commitment to the chain's protocol config.
+pub proc get_protocol_config_commitment
+    padw mem_loadw_le.PROTOCOL_CONFIG_COMMITMENT_PTR
 end
 
-#! Returns the validator key commitment of the transaction reference block.
+#! Returns the transaction kernel config commitment from the chain's protocol config.
 #!
 #! Inputs:  []
-#! Outputs: [VALIDATOR_KEY_COMMITMENT]
+#! Outputs: [TX_KERNEL_CONFIG_COMMITMENT]
 #!
 #! Where:
-#! - VALIDATOR_KEY_COMMITMENT is the public key commitment of the transaction reference block.
-pub proc get_validator_key_commitment
-    padw mem_loadw_le.VALIDATOR_KEY_COMMITMENT_PTR
+#! - TX_KERNEL_CONFIG_COMMITMENT is the commitment to the transaction kernel's main procedure root
+#!   and its exposed procedure roots.
+pub proc get_tx_kernel_config_commitment
+    padw mem_loadw_le.TX_KERNEL_CONFIG_COMMITMENT_PTR
 end
 
 #! Returns the note root of the transaction reference block.

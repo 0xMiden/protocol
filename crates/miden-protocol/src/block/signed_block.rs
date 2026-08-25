@@ -238,8 +238,8 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::block::ValidatorKeys;
-    use crate::testing::validator_keys::{random_validator_set as validator_set, sign_all};
+    use crate::block::ValidatorConfig;
+    use crate::testing::validator_config::{random_validator_set as validator_set, sign_all};
     use crate::transaction::OrderedTransactionHeaders;
 
     fn empty_body() -> BlockBody {
@@ -253,7 +253,7 @@ mod tests {
 
     fn block_one(
         parent: &BlockHeader,
-        parent_keys: &ValidatorKeys,
+        parent_keys: &ValidatorConfig,
         signers: &[SigningKey],
     ) -> SignedBlock {
         let next_keys = validator_set(3).1;

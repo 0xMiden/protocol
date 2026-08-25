@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::Word;
-use crate::block::ValidatorKeys;
+use crate::block::ValidatorConfig;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -37,7 +37,7 @@ pub enum SignatureVerificationError {
 pub enum BlockSignaturesError {
     #[error(
         "block signature set contains {count} signatures but must contain at most {max}",
-        max = ValidatorKeys::MAX,
+        max = ValidatorConfig::MAX_VALIDATORS,
     )]
     TooManySignatures { count: usize },
 }
@@ -48,9 +48,13 @@ pub enum BlockSignaturesError {
 /// The set of validator signatures over a block header ordered by validator key.
 ///
 /// The signatures are expected to be ordered with respect to a validator set (see
-/// [`ValidatorKeys`]): the signature in slot `i` is produced by, and verified against, the
-/// validator key at index `i`. Every validator in the set must sign; there is no partial-signing or
-/// threshold support.
+/// [`ValidatorConfig`]): the signature in slot `i` is produced by, and verified against, the
+/// validator key at index `i`. Every validator in the set must sign; there is no partial-signing
+/// support.
+///
+/// TODO(validator_quorum): [`ValidatorConfig::quorum`] is committed to by the block header but not
+/// enforced here yet. Enforcing it requires signatures that identify the validator they belong to,
+/// so that a partial set can still be matched against the validator keys.
 ///
 /// This is a plain, unchecked container: neither [`BlockSignatures::new`] nor deserialization
 /// verify anything about the signatures they hold. The only way to establish that a
@@ -68,11 +72,11 @@ impl BlockSignatures {
     /// Returns a new [`BlockSignatures`] from the provided signatures, ordered positionally.
     ///
     /// This performs no validation beyond checking that the number of signatures does not exceed
-    /// [`ValidatorKeys::MAX`]: the caller is responsible for ordering `signatures` to align
+    /// [`ValidatorConfig::MAX_VALIDATORS`]: the caller is responsible for ordering `signatures` to align
     /// with the validator set it is meant to be checked against. Call
     /// [`BlockSignatures::verify_against`] to establish that the signatures are valid.
     pub fn new(signatures: Vec<Signature>) -> Result<Self, BlockSignaturesError> {
-        if signatures.len() > ValidatorKeys::MAX {
+        if signatures.len() > ValidatorConfig::MAX_VALIDATORS {
             return Err(BlockSignaturesError::TooManySignatures { count: signatures.len() });
         }
         Ok(Self { signatures })
@@ -99,7 +103,7 @@ impl BlockSignatures {
     // VERIFICATION
     // --------------------------------------------------------------------------------------------
 
-    /// Verifies the signatures positionally against `validator_keys` over `block_commitment`.
+    /// Verifies the signatures positionally against `validator_config` over `block_commitment`.
     ///
     /// This is the canonical verification of an ordered signature set, and the only place that
     /// establishes a [`BlockSignatures`] value is valid: the number of signatures must match the
@@ -113,17 +117,17 @@ impl BlockSignatures {
     pub fn verify_against(
         &self,
         block_commitment: Word,
-        validator_keys: &ValidatorKeys,
+        validator_config: &ValidatorConfig,
     ) -> Result<(), SignatureVerificationError> {
-        if self.signatures.len() != validator_keys.len() {
+        if self.signatures.len() != validator_config.len() {
             return Err(SignatureVerificationError::SignatureCountMismatch {
-                expected: validator_keys.len(),
+                expected: validator_config.len(),
                 actual: self.signatures.len(),
             });
         }
 
         for (position, (signature, validator_key)) in
-            self.signatures.iter().zip(validator_keys.as_keys()).enumerate()
+            self.signatures.iter().zip(validator_config.as_keys()).enumerate()
         {
             if !signature.verify(block_commitment, validator_key) {
                 return Err(SignatureVerificationError::InvalidSignatureAtPosition { position });
@@ -157,7 +161,7 @@ impl Deserializable for BlockSignatures {
 mod tests {
     use super::*;
     use crate::testing::random_secret_key::random_secret_key;
-    use crate::testing::validator_keys::{random_validator_set, sign_all};
+    use crate::testing::validator_config::{random_validator_set, sign_all};
 
     #[test]
     fn verify_against_accepts_correctly_ordered_signatures() {

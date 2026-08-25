@@ -13,8 +13,17 @@ pub use block_proof::BlockProof;
 mod proposed_block;
 pub use proposed_block::ProposedBlock;
 
-mod validator_keys;
-pub use validator_keys::{ValidatorKeys, ValidatorKeysError};
+mod protocol_config;
+pub use protocol_config::{
+    KernelConfig,
+    NextProtocolConfig,
+    ProofSecurityPolicy,
+    ProofVerificationConfig,
+    ProtocolConfig,
+};
+
+mod validator_config;
+pub use validator_config::ValidatorConfig;
 
 mod block_signatures;
 pub use block_signatures::{BlockSignatures, SignatureVerificationError};

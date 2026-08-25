@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::{FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
 use miden_protocol::asset::{AssetId, AssetWitness};
-use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::block::{BlockHeader, BlockNumber, ProtocolConfig};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain};
 
@@ -23,6 +23,9 @@ pub trait DataStore: MastForestStore {
     /// general, it is recommended that the reference corresponds to the latest block available
     /// in the data store.
     ///
+    /// The returned [`ProtocolConfig`] must be the one the returned block header commits to, since
+    /// the header only carries its commitment.
+    ///
     /// # Errors
     /// Returns an error if:
     /// - The account with the specified ID could not be found in the data store.
@@ -33,7 +36,9 @@ pub trait DataStore: MastForestStore {
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> impl FutureMaybeSend<Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>>;
+    ) -> impl FutureMaybeSend<
+        Result<(PartialAccount, BlockHeader, ProtocolConfig, PartialBlockchain), DataStoreError>,
+    >;
 
     /// Returns a partial foreign account state together with a witness, proving its validity in the
     /// specified transaction reference block.

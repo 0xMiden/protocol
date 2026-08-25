@@ -5,8 +5,7 @@ use miden_crypto::rand::test_utils::rand_value;
 use crate::Word;
 use crate::account::Account;
 use crate::block::account_tree::{AccountIdKey, AccountTree};
-use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorKeys};
-use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use crate::block::{BlockHeader, BlockNumber, FeeParameters, ProtocolConfig, ValidatorConfig};
 use crate::testing::random_secret_key::random_secret_key;
 
 impl BlockHeader {
@@ -21,7 +20,6 @@ impl BlockHeader {
         chain_commitment: Option<Word>,
         note_root: Option<Word>,
         accounts: &[Account],
-        tx_kernel_commitment: Word,
     ) -> Self {
         let smt = Smt::with_entries(
             accounts
@@ -31,9 +29,8 @@ impl BlockHeader {
         .expect("failed to create account db");
         let acct_db = AccountTree::new(smt).expect("failed to create account tree");
         let account_root = acct_db.root();
-        let fee_parameters =
-            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
-        let validator_keys = ValidatorKeys::new(alloc::vec![random_secret_key().public_key()])
+        let fee_parameters = FeeParameters::new(500);
+        let validator_config = ValidatorConfig::new(vec![random_secret_key().public_key()], 1)
             .expect("randomly generated validator keys should be distinct");
 
         #[cfg(not(target_family = "wasm"))]
@@ -50,7 +47,7 @@ impl BlockHeader {
             let nullifier_root = rand_value::<Word>();
             let note_root = note_root.unwrap_or(rand_value::<Word>());
             let tx_commitment = rand_value::<Word>();
-            let timestamp = rand_value();
+            let timestamp = rand_value::<u32>();
 
             (
                 prev_block_commitment,
@@ -89,9 +86,10 @@ impl BlockHeader {
             nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            validator_keys,
+            validator_config,
             fee_parameters,
+            ProtocolConfig::mock().to_commitment(),
+            None,
             timestamp,
         )
     }

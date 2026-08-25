@@ -99,13 +99,9 @@ impl TransactionFee {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::account::AccountId;
-    use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     fn fee_parameters(verification_base_fee: u32) -> FeeParameters {
-        let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
-            .expect("testing faucet ID should be valid");
-        FeeParameters::new(fee_faucet_id, verification_base_fee)
+        FeeParameters::new(verification_base_fee)
     }
 
     #[test]
