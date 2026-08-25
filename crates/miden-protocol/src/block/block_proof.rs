@@ -9,7 +9,7 @@ use crate::utils::serde::{
 /// Represents a proof of a block in the chain.
 ///
 /// NOTE: Block proving is not yet implemented. This is a placeholder struct.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockProof {}
 
 impl BlockProof {
