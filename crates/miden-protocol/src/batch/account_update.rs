@@ -232,12 +232,10 @@ mod tests {
         Account,
         AccountId,
         AccountPatch,
-        AccountStoragePatch,
         AccountType,
         AccountUpdateDetails,
         AccountVaultPatch,
         StorageMapKey,
-        StorageMapPatch,
         StorageSlotName,
     };
     use crate::block::BlockNumber;
@@ -245,6 +243,7 @@ mod tests {
     use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
+    use crate::testing::storage::AccountStoragePatchBuilder;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
     use crate::utils::serde::Serializable;
     use crate::vm::ExecutionProof;
@@ -257,11 +256,9 @@ mod tests {
     ) -> AccountPatch {
         let entries =
             key_range.map(|key| (StorageMapKey::from_index(key), Word::from([key + 1, 1, 2, 3])));
-        let storage = AccountStoragePatch::from_iters(
-            [],
-            [],
-            [(StorageSlotName::mock(4), StorageMapPatch::from_iters([], entries))],
-        );
+        let storage = AccountStoragePatchBuilder::new()
+            .update_map(StorageSlotName::mock(4), entries)
+            .build();
 
         AccountPatch::new(
             account_id,
