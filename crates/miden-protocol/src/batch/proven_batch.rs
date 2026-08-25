@@ -7,14 +7,14 @@ use crate::account::AccountId;
 use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::BlockNumber;
 use crate::errors::ProvenBatchError;
-use crate::note::{NoteHeader, NoteId, Nullifier};
+use crate::note::Nullifier;
 use crate::transaction::{
     InputNoteCommitment,
     InputNotes,
     OrderedTransactionHeaders,
     OutputNote,
     TransactionHeader,
-    TransactionId,
+    TransactionHeaderNoteAggregationError,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -124,7 +124,7 @@ impl ProvenBatch {
         }
 
         validate_account_updates(&account_updates_by_id, transactions.as_slice())?;
-        validate_aggregate_notes(&input_notes, &output_notes, transactions.as_slice())?;
+        validate_aggregate_notes(&input_notes, &output_notes, &transactions)?;
 
         let id =
             BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
@@ -333,63 +333,40 @@ fn validate_account_updates(
 fn validate_aggregate_notes(
     input_notes: &InputNotes<InputNoteCommitment>,
     output_notes: &[OutputNote],
-    transactions: &[TransactionHeader],
+    transactions: &OrderedTransactionHeaders,
 ) -> Result<(), ProvenBatchError> {
-    let mut input_nullifiers = BTreeSet::new();
-    let mut output_note_ids = BTreeSet::new();
-    let mut expected_inputs = BTreeMap::<Nullifier, InputNoteCommitment>::new();
-    let mut expected_outputs = BTreeMap::<NoteId, (TransactionId, NoteHeader)>::new();
+    let expected_notes = transactions.aggregate_notes().map_err(|error| match error {
+        TransactionHeaderNoteAggregationError::DuplicateInputNote(nullifier) => {
+            ProvenBatchError::DuplicateInputNote(nullifier)
+        },
+        TransactionHeaderNoteAggregationError::DuplicateOutputNote(note_id) => {
+            ProvenBatchError::DuplicateOutputNote(note_id)
+        },
+        TransactionHeaderNoteAggregationError::NoteCreatedAndConsumed(note_id) => {
+            ProvenBatchError::NoteCreatedAndConsumed(note_id)
+        },
+    })?;
 
-    for transaction in transactions {
-        for output_note in transaction.output_notes() {
-            if !output_note_ids.insert(output_note.id()) {
-                return Err(ProvenBatchError::DuplicateOutputNote(output_note.id()));
-            }
-            expected_outputs.insert(output_note.id(), (transaction.id(), *output_note));
-        }
-
-        for input_note in transaction.input_notes() {
-            if !input_nullifiers.insert(input_note.nullifier()) {
-                return Err(ProvenBatchError::DuplicateInputNote(input_note.nullifier()));
-            }
-
-            if let Some(input_header) = input_note.header()
-                && let Some((created_by, _)) = expected_outputs.remove(&input_header.id())
-            {
-                if created_by == transaction.id() {
-                    return Err(ProvenBatchError::NoteCreatedAndConsumed(input_header.id()));
-                }
-                continue;
-            }
-
-            expected_inputs.insert(input_note.nullifier(), input_note.clone());
-        }
-    }
-
-    for input_note in expected_inputs.values().filter_map(InputNoteCommitment::header) {
-        if expected_outputs.contains_key(&input_note.id()) {
-            return Err(ProvenBatchError::NoteCreatedAndConsumed(input_note.id()));
-        }
-    }
-
-    let inputs_match = usize::from(input_notes.num_notes()) == expected_inputs.len()
-        && input_notes.iter().zip(expected_inputs.values()).all(|(actual, expected)| {
-            actual.nullifier() == expected.nullifier()
-                && match (actual.header(), expected.header()) {
-                    (None, Some(_)) | (None, None) => true,
-                    (Some(actual), Some(expected)) => actual == expected,
-                    (Some(_), None) => false,
-                }
-        });
+    let inputs_match = usize::from(input_notes.num_notes()) == expected_notes.input_notes().len()
+        && input_notes.iter().zip(expected_notes.input_notes().values()).all(
+            |(actual, expected)| {
+                actual.nullifier() == expected.nullifier()
+                    && match (actual.header(), expected.header()) {
+                        (None, Some(_)) | (None, None) => true,
+                        (Some(actual), Some(expected)) => actual == expected,
+                        (Some(_), None) => false,
+                    }
+            },
+        );
     if !inputs_match {
         return Err(ProvenBatchError::InputNotesMismatch);
     }
 
-    let outputs_match = output_notes.len() == expected_outputs.len()
+    let outputs_match = output_notes.len() == expected_notes.output_notes().len()
         && output_notes
             .iter()
-            .zip(expected_outputs.values())
-            .all(|(actual, (_, expected))| <&NoteHeader>::from(actual) == expected);
+            .zip(expected_notes.output_notes().values())
+            .all(|(actual, expected)| <&crate::note::NoteHeader>::from(actual) == expected);
     if !outputs_match {
         return Err(ProvenBatchError::OutputNotesMismatch);
     }

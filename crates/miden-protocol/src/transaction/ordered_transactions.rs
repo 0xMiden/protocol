@@ -1,7 +1,9 @@
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::transaction::{TransactionHeader, TransactionId};
+use crate::note::{NoteHeader, NoteId, Nullifier};
+use crate::transaction::{InputNoteCommitment, TransactionHeader, TransactionId};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -30,6 +32,30 @@ use crate::{Felt, Hasher, Word};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderedTransactionHeaders(Vec<TransactionHeader>);
 
+/// The external input and output notes derived from an ordered sequence of
+/// [`TransactionHeader`]s.
+pub(crate) struct AggregatedTransactionNotes {
+    input_notes: BTreeMap<Nullifier, InputNoteCommitment>,
+    output_notes: BTreeMap<NoteId, NoteHeader>,
+}
+
+impl AggregatedTransactionNotes {
+    pub(crate) fn input_notes(&self) -> &BTreeMap<Nullifier, InputNoteCommitment> {
+        &self.input_notes
+    }
+
+    pub(crate) fn output_notes(&self) -> &BTreeMap<NoteId, NoteHeader> {
+        &self.output_notes
+    }
+}
+
+/// An error found while aggregating notes from an ordered sequence of [`TransactionHeader`]s.
+pub(crate) enum TransactionHeaderNoteAggregationError {
+    DuplicateInputNote(Nullifier),
+    DuplicateOutputNote(NoteId),
+    NoteCreatedAndConsumed(NoteId),
+}
+
 impl OrderedTransactionHeaders {
     /// Creates a new set of ordered transaction headers from the provided vector.
     ///
@@ -55,6 +81,65 @@ impl OrderedTransactionHeaders {
     /// Consumes self and returns the underlying vector of transaction headers.
     pub fn into_vec(self) -> Vec<TransactionHeader> {
         self.0
+    }
+
+    /// Derives the external input and output notes after erasing notes created and consumed within
+    /// this ordered sequence of [`TransactionHeader`]s.
+    pub(crate) fn aggregate_notes(
+        &self,
+    ) -> Result<AggregatedTransactionNotes, TransactionHeaderNoteAggregationError> {
+        let mut input_nullifiers = BTreeSet::new();
+        let mut output_note_ids = BTreeSet::new();
+        let mut input_notes = BTreeMap::<Nullifier, InputNoteCommitment>::new();
+        let mut output_notes = BTreeMap::<NoteId, (TransactionId, NoteHeader)>::new();
+
+        for transaction in &self.0 {
+            for output_note in transaction.output_notes() {
+                if !output_note_ids.insert(output_note.id()) {
+                    return Err(TransactionHeaderNoteAggregationError::DuplicateOutputNote(
+                        output_note.id(),
+                    ));
+                }
+                output_notes.insert(output_note.id(), (transaction.id(), *output_note));
+            }
+
+            for input_note in transaction.input_notes() {
+                if !input_nullifiers.insert(input_note.nullifier()) {
+                    return Err(TransactionHeaderNoteAggregationError::DuplicateInputNote(
+                        input_note.nullifier(),
+                    ));
+                }
+
+                if let Some(input_header) = input_note.header()
+                    && let Some((created_by, _)) = output_notes.remove(&input_header.id())
+                {
+                    if created_by == transaction.id() {
+                        return Err(TransactionHeaderNoteAggregationError::NoteCreatedAndConsumed(
+                            input_header.id(),
+                        ));
+                    }
+                    continue;
+                }
+
+                input_notes.insert(input_note.nullifier(), input_note.clone());
+            }
+        }
+
+        for input_note in input_notes.values().filter_map(InputNoteCommitment::header) {
+            if output_notes.contains_key(&input_note.id()) {
+                return Err(TransactionHeaderNoteAggregationError::NoteCreatedAndConsumed(
+                    input_note.id(),
+                ));
+            }
+        }
+
+        Ok(AggregatedTransactionNotes {
+            input_notes,
+            output_notes: output_notes
+                .into_iter()
+                .map(|(note_id, (_, note_header))| (note_id, note_header))
+                .collect(),
+        })
     }
 
     // PUBLIC HELPERS

@@ -1,4 +1,4 @@
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -12,8 +12,12 @@ use crate::block::{
     ProposedBlock,
 };
 use crate::errors::BlockBodyError;
-use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote};
+use crate::note::{NoteHeader, Nullifier};
+use crate::transaction::{
+    OrderedTransactionHeaders,
+    OutputNote,
+    TransactionHeaderNoteAggregationError,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -52,7 +56,26 @@ impl BlockBody {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`BlockBody`] and validates its structural constraints.
+    /// Creates a new [`BlockBody`] and validates its structural and cross-field consistency.
+    ///
+    /// The created nullifiers and flattened output note headers must match the external input and
+    /// output notes derived from the ordered transaction headers after in-block note erasure.
+    ///
+    /// Because [`OrderedTransactionHeaders`] does not retain batch boundaries, this constructor
+    /// cannot validate which batch produced an output note, the number or placement of empty
+    /// batches, or whether an output note's batch-relative index is its original index. It only
+    /// validates that each index is in range and unique within its claimed output note batch.
+    ///
+    /// This constructor also does not authenticate input notes, verify note inclusion proofs, or
+    /// verify that the account updates represent the transactions' state transitions. Those checks
+    /// require data which is not present in a block body and must be performed while constructing
+    /// the proposed block or by a block verifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a size or uniqueness constraint is violated, transaction notes contain
+    /// an invalid dependency, or the created nullifiers or output notes do not match the
+    /// transaction headers.
     pub fn new(
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
@@ -80,7 +103,7 @@ impl BlockBody {
             }
         }
 
-        let mut output_note_ids = BTreeSet::new();
+        let mut output_note_headers = BTreeMap::new();
         for (batch_index, batch) in output_note_batches.iter().enumerate() {
             if batch.len() > MAX_OUTPUT_NOTES_PER_BATCH {
                 return Err(BlockBodyError::TooManyOutputNotes {
@@ -102,7 +125,7 @@ impl BlockBody {
                         note_index: *note_index,
                     });
                 }
-                if !output_note_ids.insert(note.id()) {
+                if output_note_headers.insert(note.id(), *<&NoteHeader>::from(note)).is_some() {
                     return Err(BlockBodyError::DuplicateOutputNote(note.id()));
                 }
             }
@@ -120,6 +143,31 @@ impl BlockBody {
             if !transaction_ids.insert(transaction.id()) {
                 return Err(BlockBodyError::DuplicateTransaction(transaction.id()));
             }
+        }
+
+        let expected_notes = transactions.aggregate_notes().map_err(|error| match error {
+            TransactionHeaderNoteAggregationError::DuplicateInputNote(nullifier) => {
+                BlockBodyError::DuplicateNullifier(nullifier)
+            },
+            TransactionHeaderNoteAggregationError::DuplicateOutputNote(note_id) => {
+                BlockBodyError::DuplicateOutputNote(note_id)
+            },
+            TransactionHeaderNoteAggregationError::NoteCreatedAndConsumed(note_id) => {
+                BlockBodyError::NoteCreatedAndConsumed(note_id)
+            },
+        })?;
+
+        let nullifiers_match = nullifiers.len() == expected_notes.input_notes().len()
+            && expected_notes
+                .input_notes()
+                .keys()
+                .all(|nullifier| nullifiers.contains(nullifier));
+        if !nullifiers_match {
+            return Err(BlockBodyError::CreatedNullifiersMismatch);
+        }
+
+        if &output_note_headers != expected_notes.output_notes() {
+            return Err(BlockBodyError::OutputNotesMismatch);
         }
 
         Ok(Self::new_unchecked(
@@ -285,5 +333,293 @@ impl Deserializable for BlockBody {
             OrderedTransactionHeaders::read_from(source)?,
         )
         .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    use super::BlockBody;
+    use crate::Word;
+    use crate::account::AccountId;
+    use crate::errors::{BlockBodyError, TransactionHeaderError};
+    use crate::note::{Note, NoteHeader};
+    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+    use crate::transaction::{
+        InputNoteCommitment,
+        InputNotes,
+        OrderedTransactionHeaders,
+        OutputNote,
+        RawOutputNote,
+        TransactionHeader,
+    };
+    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+
+    fn account_id() -> AccountId {
+        AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
+    }
+
+    fn transaction_header(
+        initial_state_commitment: Word,
+        final_state_commitment: Word,
+        input_notes: InputNotes<InputNoteCommitment>,
+        output_notes: Vec<NoteHeader>,
+    ) -> Result<TransactionHeader, TransactionHeaderError> {
+        TransactionHeader::new(
+            account_id(),
+            initial_state_commitment,
+            final_state_commitment,
+            input_notes,
+            output_notes,
+        )
+    }
+
+    fn into_output_note(note: Note) -> OutputNote {
+        RawOutputNote::Full(note).into_output_note().unwrap()
+    }
+
+    #[rstest]
+    #[case::missing_from_body(true)]
+    #[case::unexpected_in_body(false)]
+    fn rejects_created_nullifiers_mismatch(#[case] transaction_has_input: bool) {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let input_notes = if transaction_has_input {
+            InputNotes::new(vec![input]).unwrap()
+        } else {
+            InputNotes::default()
+        };
+        let created_nullifiers = if transaction_has_input {
+            vec![]
+        } else {
+            vec![note.nullifier()]
+        };
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(
+                Word::from([1_u32, 2, 3, 4]),
+                Word::from([5_u32, 6, 7, 8]),
+                input_notes,
+                vec![],
+            )
+            .unwrap(),
+        ]);
+
+        let result = BlockBody::new(vec![], vec![], created_nullifiers, transactions);
+
+        assert_matches!(result, Err(BlockBodyError::CreatedNullifiersMismatch));
+    }
+
+    #[rstest]
+    #[case::missing_from_body(true)]
+    #[case::unexpected_in_body(false)]
+    fn rejects_output_notes_mismatch(#[case] transaction_has_output: bool) {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let output_notes = if transaction_has_output {
+            vec![]
+        } else {
+            vec![vec![(0, into_output_note(note.clone()))]]
+        };
+        let transaction_output_notes = if transaction_has_output {
+            vec![*note.header()]
+        } else {
+            vec![]
+        };
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(
+                Word::from([1_u32, 2, 3, 4]),
+                Word::from([5_u32, 6, 7, 8]),
+                InputNotes::default(),
+                transaction_output_notes,
+            )
+            .unwrap(),
+        ]);
+
+        let result = BlockBody::new(vec![], output_notes, vec![], transactions);
+
+        assert_matches!(result, Err(BlockBodyError::OutputNotesMismatch));
+    }
+
+    #[test]
+    fn accepts_matching_transaction_notes() {
+        let input_note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let output_note = Note::mock_noop(Word::from([5_u32, 6, 7, 8]));
+        let input = InputNoteCommitment::from_parts_unchecked(
+            input_note.nullifier(),
+            Some(*input_note.header()),
+        );
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(
+                Word::from([1_u32, 2, 3, 4]),
+                Word::from([5_u32, 6, 7, 8]),
+                InputNotes::new(vec![input]).unwrap(),
+                vec![*output_note.header()],
+            )
+            .unwrap(),
+        ]);
+
+        BlockBody::new(
+            vec![],
+            vec![vec![(0, into_output_note(output_note))]],
+            vec![input_note.nullifier()],
+            transactions,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn accepts_in_order_note_erasure() {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(
+                Word::from([1_u32, 2, 3, 4]),
+                Word::from([5_u32, 6, 7, 8]),
+                InputNotes::default(),
+                vec![*note.header()],
+            )
+            .unwrap(),
+            transaction_header(
+                Word::from([5_u32, 6, 7, 8]),
+                Word::from([9_u32, 10, 11, 12]),
+                InputNotes::new(vec![input]).unwrap(),
+                vec![],
+            )
+            .unwrap(),
+        ]);
+
+        BlockBody::new(vec![], vec![vec![]], vec![], transactions).unwrap();
+    }
+
+    #[test]
+    fn rejects_duplicate_input_note_after_erasure() {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let states = [
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            Word::from([9_u32, 10, 11, 12]),
+            Word::from([13_u32, 14, 15, 16]),
+        ];
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(states[0], states[1], InputNotes::default(), vec![*note.header()])
+                .unwrap(),
+            transaction_header(
+                states[1],
+                states[2],
+                InputNotes::new(vec![input.clone()]).unwrap(),
+                vec![],
+            )
+            .unwrap(),
+            transaction_header(states[2], states[3], InputNotes::new(vec![input]).unwrap(), vec![])
+                .unwrap(),
+        ]);
+
+        let result = BlockBody::new(vec![], vec![], vec![note.nullifier()], transactions);
+
+        assert_matches!(
+            result,
+            Err(BlockBodyError::DuplicateNullifier(nullifier)) if nullifier == note.nullifier()
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_output_note_after_erasure() {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let states = [
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            Word::from([9_u32, 10, 11, 12]),
+            Word::from([13_u32, 14, 15, 16]),
+        ];
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(states[0], states[1], InputNotes::default(), vec![*note.header()])
+                .unwrap(),
+            transaction_header(states[1], states[2], InputNotes::new(vec![input]).unwrap(), vec![])
+                .unwrap(),
+            transaction_header(states[2], states[3], InputNotes::default(), vec![*note.header()])
+                .unwrap(),
+        ]);
+
+        let result = BlockBody::new(
+            vec![],
+            vec![vec![(0, into_output_note(note.clone()))]],
+            vec![],
+            transactions,
+        );
+
+        assert_matches!(
+            result,
+            Err(BlockBodyError::DuplicateOutputNote(note_id)) if note_id == note.id()
+        );
+    }
+
+    #[test]
+    fn rejects_note_consumed_before_created() {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(
+                Word::from([1_u32, 2, 3, 4]),
+                Word::from([5_u32, 6, 7, 8]),
+                InputNotes::new(vec![input]).unwrap(),
+                vec![],
+            )
+            .unwrap(),
+            transaction_header(
+                Word::from([5_u32, 6, 7, 8]),
+                Word::from([9_u32, 10, 11, 12]),
+                InputNotes::default(),
+                vec![*note.header()],
+            )
+            .unwrap(),
+        ]);
+
+        let result = BlockBody::new(
+            vec![],
+            vec![vec![(0, into_output_note(note.clone()))]],
+            vec![note.nullifier()],
+            transactions,
+        );
+
+        assert_matches!(
+            result,
+            Err(BlockBodyError::NoteCreatedAndConsumed(note_id)) if note_id == note.id()
+        );
+    }
+
+    #[test]
+    fn deserialization_rejects_output_notes_mismatch() {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(
+                Word::from([1_u32, 2, 3, 4]),
+                Word::from([5_u32, 6, 7, 8]),
+                InputNotes::default(),
+                vec![*note.header()],
+            )
+            .unwrap(),
+        ]);
+        let invalid_body = BlockBody::new_unchecked(vec![], vec![], vec![], transactions);
+
+        let error = BlockBody::read_from_bytes(&invalid_body.to_bytes()).unwrap_err();
+
+        assert_matches!(
+            error,
+            DeserializationError::InvalidValue(message)
+                if message == "block output notes do not match the transaction headers"
+        );
     }
 }

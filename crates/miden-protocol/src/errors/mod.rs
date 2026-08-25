@@ -684,6 +684,12 @@ pub enum BlockBodyError {
     DuplicateNullifier(Nullifier),
     #[error("transaction {0} appears twice in the block body")]
     DuplicateTransaction(TransactionId),
+    #[error("block created nullifiers do not match the transaction headers")]
+    CreatedNullifiersMismatch,
+    #[error("block output notes do not match the transaction headers")]
+    OutputNotesMismatch,
+    #[error("note with id {0} is both created and consumed by the block")]
+    NoteCreatedAndConsumed(NoteId),
 }
 
 // ASSET ERROR
