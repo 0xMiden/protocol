@@ -3,6 +3,8 @@
 
 const ERR_VAULT_ASSET_METADATA_NOT_U32 = "asset metadata is not a u32"
 
+const ERR_VAULT_ASSET_METADATA_UNKNOWN_VERSION = "unknown asset ID version"
+
 const ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS = "reserved asset metadata bits are non-zero"
 
 const ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION = "unknown asset metadata composition value"
@@ -21,8 +23,17 @@ pub const ASSET_SIZE = 8
 # The offset of the asset value in an asset stored in memory.
 pub const ASSET_VALUE_MEMORY_OFFSET = 4
 
+# Version 1 of the asset ID encoding.
+const ASSET_VERSION_1 = 1
+
+# The mask for the version bits in the asset metadata.
+const VERSION_MASK = 0x0f # 0b1111
+
+# The number of bits by which the composition is shifted in the asset metadata.
+const COMPOSITION_SHIFT = 4
+
 #! The mask for the composition bits in the asset metadata.
-const COMPOSITION_MASK = 3 # 0b11
+const COMPOSITION_MASK = 0x30 # 0b0011_0000
 
 # The flag representing the AssetComposition::None composition.
 pub const COMPOSITION_NONE = 0
@@ -37,7 +48,7 @@ pub const COMPOSITION_CUSTOM = 2
 const COMPOSITION_INVALID = 3
 
 #! The u32 mask for the reserved bits in the asset metadata.
-const METADATA_RESERVED_MASK = 0xfffffffc # lower 8 bits: 0b1111_1100
+const METADATA_RESERVED_MASK = 0xffffffc0 # lower 8 bits: 0b1100_0000
 
 # PROCEDURES
 # =================================================================================================
@@ -182,12 +193,16 @@ end
 
 #! Validates that asset metadata is well formed and consumes it.
 #!
+#! WARNING: This procedure should not be exposed to or called from user code (e.g. miden::protocol
+#! or miden::standards) as this would make the calling code only accept asset version 1.
+#!
 #! Inputs:  [asset_metadata]
 #! Outputs: []
 #!
 #! Panics if:
 #! - asset_metadata is not a valid u32
-#! - has reserved bits 3-7 set.
+#! - encodes an unknown asset ID version.
+#! - has reserved bits 6 or 7 set.
 #! - encodes an unknown asset composition.
 pub proc validate_metadata
     # assert that the metadata fits in a u8
@@ -196,7 +211,12 @@ pub proc validate_metadata
     eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NOT_U32
     # => [asset_metadata]
 
-    # assert the reserved bits are all zero (bits 3..32)
+    # the version defines how the rest of the metadata is decoded, so assert it first
+    dup u32and.VERSION_MASK
+    eq.ASSET_VERSION_1 assert.err=ERR_VAULT_ASSET_METADATA_UNKNOWN_VERSION
+    # => [asset_metadata]
+
+    # assert the reserved bits are all zero (bits 6..32)
     dup u32and.METADATA_RESERVED_MASK
     eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS
     # => [asset_metadata]
@@ -208,23 +228,6 @@ pub proc validate_metadata
     # ones
     neq.COMPOSITION_INVALID assert.err=ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION
     # => []
-end
-
-#! Creates asset metadata from the provided composition.
-#!
-#! Inputs:  [asset_composition]
-#! Outputs: [asset_metadata]
-#!
-#! Where:
-#! - asset_composition is the composition value (see COMPOSITION_* constants).
-#! - asset_metadata is the asset metadata.
-#!
-#! Panics if:
-#! - the resulting metadata byte has invalid reserved bits set.
-proc create_metadata
-    # the asset metadata is currently just the composition
-    dup exec.validate_metadata
-    # => [asset_metadata]
 end
 
 #! Extracts the asset composition from asset metadata.
@@ -239,7 +242,7 @@ end
 #! - asset_composition is the composition value (see COMPOSITION_* constants).
 proc metadata_into_composition
     # extract composition bits from the metadata
-    u32and.COMPOSITION_MASK
+    u32and.COMPOSITION_MASK u32shr.COMPOSITION_SHIFT
     # => [asset_composition]
 end
 

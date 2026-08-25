@@ -5,7 +5,7 @@ use miden::tx_kernel_core::memory
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use {ASSET_SIZE, COMPOSITION_NONE} from miden::tx_kernel_core::asset
-use {STORAGE_SLOT_TYPE_VALUE} from miden::tx_kernel_core::constants
+use {STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE} from miden::tx_kernel_core::constants
 use {ACCOUNT_UPDATE_ASSET_PTR} from miden::tx_kernel_core::memory
 
 # ERRORS
@@ -23,6 +23,9 @@ const ERR_ACCOUNT_DELTA_TOO_MANY_ADDED_ASSETS =
 const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS =
     "number of removed assets in the transaction exceeds the maximum limit of 1024"
 
+const ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID =
+    "account storage slot has an unsupported type"
+
 # EVENTS
 # =================================================================================================
 
@@ -39,16 +42,22 @@ const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT =
 # CONSTANTS
 # =================================================================================================
 
-# The domain of the delta commitment header.
-const DOMAIN_DELTA = 1
-# The domain of the patch commitment header.
-const DOMAIN_PATCH = 2
-# The domain of an asset in the delta commitment.
-const DOMAIN_ASSET = 3
-# The domain of a value storage slot in the delta commitment.
-const DOMAIN_VALUE = 5
-# The domain of a map storage slot in the delta commitment.
-const DOMAIN_MAP = 6
+# The domains of the delta and patch commitments. They are absorbed via the hasher capacity word.
+const DOMAIN_DELTA = 0x020001
+const DOMAIN_PATCH = 0x020000
+
+#! The domain of an asset in a delta or patch commitment.
+const DOMAIN_ASSET = 1
+#! The domain of a value storage slot in a delta or patch commitment.
+const DOMAIN_VALUE = 2
+#! The domain of a map storage slot in a delta or patch commitment.
+const DOMAIN_MAP = 3
+
+#! The version of the delta commitment layout.
+const DELTA_VERSION_1 = 1
+
+#! The version of the patch commitment layout.
+const PATCH_VERSION_1 = 1
 
 #! The default delta operation indicating no change.
 const DELTA_OP_NONE = 0
@@ -117,8 +126,15 @@ const MAX_ASSETS_PER_DELTA_OP = 1024
 #! Panics if:
 #! - the vault patch or storage patch is not empty but the nonce increment is zero.
 pub proc compute_patch_commitment
-    # pad capacity and RATE1 of the hasher with empty words
-    padw padw
+    # domain-separate the patch commitment through the hasher capacity
+    push.0.0.DOMAIN_PATCH.0
+    # => [CAPACITY]
+
+    exec.poseidon2::init_with_capacity
+    # => [RATE0 = EMPTY_WORD, RATE1 = EMPTY_WORD, CAPACITY]
+
+    # drop the zeroed RATE0 to make room for the commitment header
+    dropw
     # => [EMPTY_WORD, CAPACITY]
 
     exec.memory::get_native_account_id
@@ -127,33 +143,32 @@ pub proc compute_patch_commitment
     # get the nonce of the account and assume it is the final nonce
     # we later assert that the nonce was incremented (unless the patch is empty)
     exec.memory::get_native_account_nonce
-    push.DOMAIN_PATCH
-    # => [domain_patch, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
-    # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
+    push.PATCH_VERSION_1
+    # => [patch_version, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
+    # => [METADATA, EMPTY_WORD, CAPACITY]
 
     exec.poseidon2::permute
     # => [RATE0, RATE1, CAPACITY]
 
-    # save the ID and nonce digest (RATE0 word) for a later check
+    # save the metadata digest (RATE0 word) for a later check
     exec.poseidon2::copy_digest movdnw.3
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
     exec.commit_asset_patch
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
     exec.commit_storage_patch
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
     exec.poseidon2::squeeze_digest
-    # => [PATCH_COMMITMENT, ID_AND_NONCE_DIGEST]
+    # => [PATCH_COMMITMENT, METADATA_DIGEST]
 
     exec.was_nonce_incremented not
-    # => [!was_nonce_incremented, PATCH_COMMITMENT, ID_AND_NONCE_DIGEST]
+    # => [!was_nonce_incremented, PATCH_COMMITMENT, METADATA_DIGEST]
 
     if.true
         # if the nonce wasn't incremented, then the vault and storage patch is required to be empty
-        # storage and vault patch were empty if the patch commitment is equal to
-        # ID_AND_NONCE_DIGEST
+        # storage and vault patch were empty if the patch commitment is equal to METADATA_DIGEST
         assert_eqw.err=ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
         # => []
 
@@ -161,7 +176,7 @@ pub proc compute_patch_commitment
         padw
         # => [EMPTY_WORD]
     else
-        # drop the ID and nonce digest
+        # drop the metadata digest
         swapw dropw
         # => [PATCH_COMMITMENT]
     end
@@ -180,41 +195,47 @@ end
 #! Panics if:
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment
-    # pad capacity and RATE1 of the hasher with empty words
-    padw padw
+    # domain-separate the delta commitment through the hasher capacity
+    push.0.0.DOMAIN_DELTA.0
+    # => [CAPACITY]
+
+    exec.poseidon2::init_with_capacity
+    # => [RATE0 = EMPTY_WORD, RATE1= EMPTY_WORD, CAPACITY]
+
+    # drop the zeroed RATE0 to make room for the commitment header
+    dropw
     # => [EMPTY_WORD, CAPACITY]
 
     exec.memory::get_native_account_id
     # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
 
     # the delta of the nonce is equal to was_nonce_incremented
-    exec.was_nonce_incremented push.DOMAIN_DELTA
-    # => [domain_delta, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
-    # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
+    exec.was_nonce_incremented push.DELTA_VERSION_1
+    # => [delta_version, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
+    # => [METADATA, EMPTY_WORD, CAPACITY]
 
     exec.poseidon2::permute
     # => [RATE0, RATE1, CAPACITY]
 
-    # save the ID and nonce digest (RATE0 word) for a later check
+    # save the metadata digest (RATE0 word) for a later check
     exec.poseidon2::copy_digest movdnw.3
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
     exec.commit_asset_delta
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
     exec.commit_storage_patch
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
     exec.poseidon2::squeeze_digest
-    # => [DELTA_COMMITMENT, ID_AND_NONCE_DIGEST]
+    # => [DELTA_COMMITMENT, METADATA_DIGEST]
 
     exec.was_nonce_incremented not
-    # => [!was_nonce_incremented, DELTA_COMMITMENT, ID_AND_NONCE_DIGEST]
+    # => [!was_nonce_incremented, DELTA_COMMITMENT, METADATA_DIGEST]
 
     if.true
         # if the nonce wasn't incremented, then the vault and storage delta is required to be empty
-        # storage and vault delta were empty if the delta commitment is equal to
-        # ID_AND_NONCE_DIGEST
+        # storage and vault delta were empty if the delta commitment is equal to METADATA_DIGEST
         assert_eqw.err=ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
         # => []
 
@@ -222,7 +243,7 @@ pub proc compute_delta_commitment
         padw
         # => [EMPTY_WORD]
     else
-        # drop the ID and nonce digest
+        # drop the metadata digest
         swapw dropw
         # => [DELTA_COMMITMENT]
     end
@@ -278,12 +299,19 @@ proc commit_slot_patch
     # => [storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
     # check if slot is of type value
-    push.STORAGE_SLOT_TYPE_VALUE eq
-    # => [is_value_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
+    dup push.STORAGE_SLOT_TYPE_VALUE eq
+    # => [is_value_slot_type, storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
     if.true
+        drop
+        # => [slot_idx, RATE0, RATE1, CAPACITY]
+
         exec.commit_value_slot_patch
     else
+        # reject any type that is neither value nor map instead of defaulting to map
+        push.STORAGE_SLOT_TYPE_MAP eq assert.err=ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID
+        # => [slot_idx, RATE0, RATE1, CAPACITY]
+
         exec.commit_map_slot_patch
     end
     # => [RATE0, RATE1, CAPACITY]

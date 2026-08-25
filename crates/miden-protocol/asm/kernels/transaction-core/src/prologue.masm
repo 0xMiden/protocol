@@ -9,6 +9,7 @@ use miden::protocol_utils::mem as mem_utils
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::asset
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
+use {ACCOUNT_VERSION_1} from miden::tx_kernel_core::account
 use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
@@ -62,6 +63,9 @@ const ERR_PROLOGUE_INPUT_NOTES_COMMITMENT_MISMATCH =
     "note commitment computed from the input note data does not match given note commitment"
 
 const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO = "new account must have a zero nonce"
+
+const ERR_PROLOGUE_NEW_ACCOUNT_UNSUPPORTED_VERSION =
+    "new account metadata has an unsupported version"
 
 const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT =
     "number of note storage items exceeded the maximum limit of 1024"
@@ -294,11 +298,11 @@ end
 #! the case when it is created, or when slots are added or removed (currently unimplemented).
 #! So, it should be sufficient to do this here instead of in save_account_storage_data.
 #!
-#! Validates that the account the transaction is being executed against satisfies the criteria
-#! for a new account.
+#! Validates that the native account satisfies the criteria for a new account.
 #!
 #! Applies the following validation to the new account:
 #! - assert that the account ID uses the supported version and is otherwise valid.
+#! - assert that the account uses a supported version.
 #! - assert that the account vault is empty.
 #! - assert that the account nonce is set to 0.
 #! - read the account seed from the advice provider and assert it satisfies seed requirements.
@@ -312,17 +316,24 @@ end
 #! Outputs: []
 proc validate_new_account
     # Assert the account ID of the account is valid
-    exec.memory::get_account_id exec.account_id::validate
+    exec.memory::get_native_account_id exec.account_id::validate
+    # => []
+
+    # Assert the account uses a supported version (8 bits).
+    # Assert equality against the full felt to assert the non-version bits are zeros.
+    exec.memory::get_native_account_version eq.ACCOUNT_VERSION_1
+    assert.err=ERR_PROLOGUE_NEW_ACCOUNT_UNSUPPORTED_VERSION
     # => []
 
     # Assert the account nonce is 0
-    exec.memory::get_account_nonce eq.0 assert.err=ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO
+    exec.memory::get_native_account_nonce eq.0
+    assert.err=ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO
     # => []
 
     # Assert the initial vault is empty
     # ---------------------------------------------------------------------------------------------
     # get the account vault root
-    exec.memory::get_account_vault_root
+    exec.memory::get_native_account_vault_root
     # => [ACCT_VAULT_ROOT]
 
     # push empty vault root onto stack
@@ -361,7 +372,7 @@ end
 #! Inputs:
 #!   Operand stack: []
 #!   Advice stack: [
-#!     account_nonce, 0, account_id_suffix, account_id_prefix
+#!     account_version, account_nonce, account_id_suffix, account_id_prefix
 #!     ACCOUNT_VAULT_ROOT,
 #!     ACCOUNT_STORAGE_COMMITMENT,
 #!     ACCOUNT_CODE_COMMITMENT
@@ -373,6 +384,7 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the account that the
 #!   transaction is being executed against.
+#! - account_version is the version of the account's metadata encoding.
 #! - account_nonce is the account's nonce.
 #! - ACCOUNT_VAULT_ROOT is the account's vault root.
 #! - ACCOUNT_STORAGE_COMMITMENT is the account's storage commitment.
@@ -1177,7 +1189,7 @@ end
 #!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 #!     [0, 0, 0, 0]
 #!     NOTE_ROOT,
-#!     [account_nonce, 0, account_id_suffix, account_id_prefix]
+#!     [account_version, account_nonce, account_id_suffix, account_id_prefix]
 #!     ACCOUNT_VAULT_ROOT,
 #!     ACCOUNT_STORAGE_COMMITMENT,
 #!     ACCOUNT_CODE_COMMITMENT,

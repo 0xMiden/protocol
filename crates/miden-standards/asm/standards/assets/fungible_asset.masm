@@ -22,6 +22,12 @@ const ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE = "fungible asset ID's 
 
 const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO = "fungible asset ID asset class prefix and suffix must be zero"
 
+# CONSTANTS
+# ================================================================================================
+
+#! Encodes the asset metadata with composition fungible and asset version 1.
+const ASSET_METADATA_FUNGIBLE = 0x11
+
 # PROCEDURES
 # ================================================================================================
 
@@ -36,13 +42,8 @@ const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO = "fungible asset ID asset 
 #!
 #! Invocation: exec
 pub proc create_id
-    # push the fungible composition for create_metadata
-    # this is equivalent to the asset metadata
-    push.COMPOSITION_FUNGIBLE
-    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
-
-    # merge the asset metadata into the lower 8 bits of the suffix
-    add
+    # merge the fungible asset metadata into the lower 8 bits of the suffix
+    add.ASSET_METADATA_FUNGIBLE
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
 
     push.0.0
