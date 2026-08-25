@@ -50,10 +50,9 @@ static PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT: LazyLock<TransactionScript> =
 ///
 /// The account must therefore authenticate with [`AuthPassThrough`] and expose the
 /// [`PassThroughSweep`] component alongside one providing `create_note` and `receive_asset`, e.g.
-/// [`BasicWallet`]. The script cannot check the account's auth procedure, so the guarantees above
-/// hold only for accounts composed that way; on any other account an unnamed asset is left in the
-/// vault instead of failing the transaction, and a pre-existing balance of a named asset is swept
-/// out along with the deposits.
+/// [`BasicWallet`]. The script cannot check the account's auth procedure, so the guarantee above
+/// holds only for accounts composed that way; on any other account an unnamed asset is left in the
+/// vault instead of failing the transaction.
 ///
 /// See [`AuthPassThrough`] for who can decide where the assets go.
 ///

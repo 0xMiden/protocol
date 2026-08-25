@@ -21,6 +21,7 @@ use miden_standards::account::auth::{
     AuthMultisigSmart,
     AuthMultisigSmartConfig,
     AuthNetworkAccount,
+    AuthPassThrough,
     AuthSingleSig,
     GuardianConfig,
     SponsorshipPolicy,
@@ -65,6 +66,10 @@ pub enum Auth {
 
     /// Creates a mock authentication mechanism for the account that does nothing.
     Noop,
+
+    /// Pass-through authentication: rejects any transaction that changes the account's state and
+    /// never increments the nonce.
+    PassThrough,
 
     /// Creates a mock authentication mechanism for the account that conditionally succeeds and
     /// conditionally increments the nonce based on the authentication arguments.
@@ -170,6 +175,7 @@ impl Auth {
             },
             Auth::IncrNonce => (vec![IncrNonceAuthComponent.into()], None),
             Auth::Noop => (vec![NoopAuthComponent.into()], None),
+            Auth::PassThrough => (vec![AuthPassThrough.into()], None),
             Auth::Conditional => (vec![ConditionalAuthComponent.into()], None),
             Auth::NetworkAccount {
                 allowed_script_roots,

@@ -1,11 +1,17 @@
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{AccountBuilder, AccountType};
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::errors::tx_kernel::ERR_EPILOGUE_NONCE_CANNOT_BE_0;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::pass_through::PassThroughSweep;
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::ERR_AUTH_PASS_THROUGH_ACCOUNT_STATE_CHANGED;
+use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::PassThroughSingleP2idTransactionScript;
-use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 
 use crate::scripts::pass_through::pass_through_account;
 
@@ -90,6 +96,39 @@ async fn pass_through_auth_creates_no_fee_note_on_a_fee_charging_chain() -> anyh
         script.output_note_recipient().digest(),
     );
     assert_eq!(executed.final_account().to_commitment(), account.to_commitment());
+
+    Ok(())
+}
+
+/// The nonce is never incremented, so a transaction cannot create such an account: the kernel
+/// rejects one that leaves the nonce at zero. A pass-through account has to be provisioned
+/// out of band.
+#[tokio::test]
+async fn pass_through_auth_cannot_create_an_account() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_account_from_builder(
+        Auth::PassThrough,
+        AccountBuilder::new([45; 32])
+            .account_type(AccountType::Public)
+            .with_component(BasicWallet)
+            .with_component(PassThroughSweep),
+        AccountState::New,
+    )?;
+    // an asset-less note, so the transaction gets past the state-change assert and reaches the
+    // kernel's nonce check
+    let note = NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rand::rng()).build()?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+
+    // a new account is passed by value, since the chain does not yet know it
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_EPILOGUE_NONCE_CANNOT_BE_0);
 
     Ok(())
 }
