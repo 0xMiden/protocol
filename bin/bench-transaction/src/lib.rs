@@ -6,3 +6,5 @@ pub mod context_setups;
 pub mod cycle_counting_benchmarks;
 #[cfg(feature = "concurrent")]
 pub mod note_costs;
+#[cfg(feature = "concurrent")]
+pub mod note_labels;
