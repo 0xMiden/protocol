@@ -1192,6 +1192,21 @@ pub enum ProvenTransactionError {
     NoteCreatedAndConsumed(NoteId),
 }
 
+// TRANSACTION HEADER ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid transaction header.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum TransactionHeaderError {
+    #[error("input note with nullifier {0} appears twice in the transaction header")]
+    DuplicateInputNote(Nullifier),
+    #[error("output note {0} appears twice in the transaction header")]
+    DuplicateOutputNote(NoteId),
+    #[error("note with id {0} is both created and consumed by the transaction header")]
+    NoteCreatedAndConsumed(NoteId),
+}
+
 impl From<AccountUpdateDetailsValidationError> for ProvenTransactionError {
     fn from(error: AccountUpdateDetailsValidationError) -> Self {
         match error {
