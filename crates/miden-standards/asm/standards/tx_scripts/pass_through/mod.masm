@@ -1,0 +1,6 @@
+# The canonical pass-through transaction scripts.
+#
+# What happens to the assets moved out depends on the exact script used (e.g. move all notes'
+# assets into a single P2ID, move each note's assets into its own P2ID, etc.).
+
+pub mod single_p2id

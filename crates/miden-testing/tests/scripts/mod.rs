@@ -17,6 +17,7 @@ mod non_fungible_faucet;
 mod ownable2step;
 mod p2id;
 mod p2ide;
+mod pass_through;
 mod pausable;
 mod pswap;
 pub(crate) mod rbac;

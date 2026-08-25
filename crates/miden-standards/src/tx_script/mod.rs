@@ -6,6 +6,12 @@ use crate::StandardsLib;
 mod expiration_script;
 pub use expiration_script::ExpirationTransactionScript;
 
+mod pass_through_script;
+pub use pass_through_script::{
+    PassThroughSingleP2idTransactionScript,
+    PassThroughTransactionScriptError,
+};
+
 mod send_notes_script;
 pub use send_notes_script::{
     SendFungibleFaucetNotesTransactionScript,

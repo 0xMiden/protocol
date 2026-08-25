@@ -1,0 +1,266 @@
+# The `pass_through::single_p2id` transaction script, forwarding everything into one P2ID note.
+#
+# The script receives a commitment to its parameters as `TX_SCRIPT_ARGS` and loads the actual
+# parameters (the payload) from the advice map, so a single script root covers every target
+# account, serial number and asset.
+#
+# The payload has the following layout:
+#
+#   word 0:  [target_id_suffix, target_id_prefix, tag, note_type]
+#   word 1:  SERIAL_NUM
+#   word 2+: one ASSET_ID per asset to forward
+
+use miden::core::mem
+use miden::standards::notes::p2id
+use miden::standards::pass_through
+
+# CONSTANTS
+# =================================================================================================
+
+# The number of field elements in a word. Replace with
+# `miden::protocol::constants::WORD_NUM_ELEMENTS`, once
+# https://github.com/0xMiden/miden-vm/issues/3429 is fixed.
+const WORD_NUM_ELEMENTS = 4
+
+# The number of elements in the payload header: the P2ID target account ID, the output note's tag
+# and type, and its serial number.
+const HEADER_NUM_ELEMENTS = 8
+const HEADER_NUM_WORDS = HEADER_NUM_ELEMENTS / WORD_NUM_ELEMENTS
+
+# The size of `forward_assets`'s local frame, which the payload is piped into. `@locals` only
+# takes a literal, so the bounds below are derived from it rather than the other way round: that
+# way the payload the length check accepts can never outgrow the frame reserved for it.
+const NUM_LOCALS = 75
+
+# The three loop-state locals that follow the payload.
+const NUM_LOOP_STATE_LOCALS = 3
+
+# The largest payload that fits in the frame, and the asset IDs left once the header is taken out.
+# A note holds at most MAX_ASSETS_PER_NOTE assets, so the frame is sized to make the two match.
+const MAX_PAYLOAD_NUM_WORDS = (NUM_LOCALS - NUM_LOOP_STATE_LOCALS) / WORD_NUM_ELEMENTS
+const MAX_ASSET_IDS = MAX_PAYLOAD_NUM_WORDS - HEADER_NUM_WORDS
+
+# `forward_assets` locals: the payload, followed by the loop state.
+const PAYLOAD_LOC = 0
+const TARGET_ID_SUFFIX_LOC = PAYLOAD_LOC
+const TARGET_ID_PREFIX_LOC = PAYLOAD_LOC + 1
+const TAG_LOC = PAYLOAD_LOC + 2
+const NOTE_TYPE_LOC = PAYLOAD_LOC + 3
+const SERIAL_NUM_LOC = PAYLOAD_LOC + 4
+const ASSET_IDS_LOC = PAYLOAD_LOC + HEADER_NUM_ELEMENTS
+const OUT_NOTE_IDX_LOC = ASSET_IDS_LOC + MAX_ASSET_IDS * WORD_NUM_ELEMENTS
+const ASSET_ID_PTR_LOC = OUT_NOTE_IDX_LOC + 1
+const NUM_ASSET_IDS_LOC = OUT_NOTE_IDX_LOC + 2
+
+# ERRORS
+# =================================================================================================
+
+const ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID = "pass through payload length is outside the expected range"
+
+const ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED = "pass through payload length is not a multiple of the word size"
+
+# TRANSACTION SCRIPT
+# =================================================================================================
+
+#! Forwards the account's balance of every asset named by the payload into a single P2ID output
+#! note.
+#!
+#! This is a pass-through transaction script: the state of the account it executes against does
+#! not change. The input notes' scripts deposit their assets into the account's vault, and this tx
+#! script moves the whole balance of each named asset back out into one P2ID note addressed to a
+#! target, so the account's vault delta is zero. Its commitment is unchanged as long as the auth
+#! procedure neither bumps the nonce nor funds a fee note from the vault, e.g. the no_auth
+#! component on a chain with a zero verification base fee.
+#!
+#! Moving whole balances is what makes the script's cost independent of how many notes the
+#! transaction consumes: the payload names the assets, not the notes. The account must not hold a
+#! named asset of its own, which `sweep_asset_to_note` asserts. If the tx moved more assets out of
+#! the vault than were deposited, or left an asset the payload failed to name behind, the vault
+#! would differ from how it started and the tx fails, rather than the account being silently
+#! changed.
+#!
+#! A successful transaction does not imply the named assets reached the target. A note script the
+#! transaction consumes can sweep them first (see pass_through::sweep_asset_to_note), after which
+#! this script's own sweep is a no-op and the vault ends as it started either way.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::note::note_creator::create_note procedure.
+#! - miden::standards::pass_through::sweep_asset_to_note procedure.
+#! - miden::standards::pass_through::assert_vault_unchanged procedure.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - PAYLOAD_COMMITMENT is the sequential hash of the payload elements.
+#! - payload is the element stream described in the file header.
+#!
+#! Panics if:
+#! - the advice map holds no payload for PAYLOAD_COMMITMENT.
+#! - the payload length is not a multiple of the word size, or names more than MAX_ASSET_IDS
+#!   assets, or is shorter than the header.
+#! - the payload does not hash to PAYLOAD_COMMITMENT.
+#! - the account does not expose the required procedures.
+#! - the account's vault is not the one the transaction started with.
+#!
+#! Invocation: call
+@transaction_script
+pub proc main
+    exec.forward_assets
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Creates the P2ID output note described by the advice-provided payload and moves the account's
+#! balance of every asset the payload names into it.
+#!
+#! Inputs:
+#!   Operand stack: [PAYLOAD_COMMITMENT, pad(12)]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]]
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
+#!
+#! Panics under the conditions listed on `main`.
+#!
+#! Locals:
+#! 0..8: the payload header
+#! 8..72: the asset IDs the payload names
+#! 72: index of the created output note
+#! 73: pointer to the asset ID being forwarded
+#! 74: number of asset IDs the payload names
+#!
+#! Invocation: exec
+#
+# Keep in sync with NUM_LOCALS, which the payload bounds derive from.
+@locals(75)
+proc forward_assets
+    locaddr.PAYLOAD_LOC exec.load_payload loc_store.NUM_ASSET_IDS_LOC
+    # => [pad(16)]
+
+    # create the P2ID note the collected assets are forwarded into
+    # ---------------------------------------------------------------------------------------------
+    padw loc_loadw_le.SERIAL_NUM_LOC
+    # => [SERIAL_NUM, pad(16)]
+
+    loc_load.NOTE_TYPE_LOC loc_load.TAG_LOC
+    # => [tag, note_type, SERIAL_NUM, pad(16)]
+
+    loc_load.TARGET_ID_PREFIX_LOC loc_load.TARGET_ID_SUFFIX_LOC
+    # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM, pad(16)]
+
+    exec.p2id::create_output_note
+    # => [out_note_idx, pad(16)]
+
+    loc_store.OUT_NOTE_IDX_LOC
+    # => [pad(16)]
+
+    # move the account's balance of every named asset into it
+    # ---------------------------------------------------------------------------------------------
+    locaddr.ASSET_IDS_LOC loc_store.ASSET_ID_PTR_LOC
+
+    loc_load.NUM_ASSET_IDS_LOC
+    # => [assets_left, pad(16)]
+
+    dup neq.0
+    while.true
+        # => [assets_left, pad(16)]
+
+        # pad so the call inputs fill the top 16 elements and the loop state moves into the
+        # overflow
+        padw padw push.0.0.0
+        # => [pad(11), assets_left, pad(16)]
+
+        loc_load.OUT_NOTE_IDX_LOC
+        # => [note_idx, pad(11), assets_left, pad(16)]
+
+        padw loc_load.ASSET_ID_PTR_LOC mem_loadw_le
+        # => [ASSET_ID, note_idx, pad(11), assets_left, pad(16)]
+
+        call.pass_through::sweep_asset_to_note
+        # => [pad(16), assets_left, pad(16)]
+
+        dropw dropw dropw dropw
+        # => [assets_left, pad(16)]
+
+        # advance to the next asset ID
+        loc_load.ASSET_ID_PTR_LOC add.WORD_NUM_ELEMENTS loc_store.ASSET_ID_PTR_LOC
+
+        sub.1 dup neq.0
+        # => [assets_left != 0, assets_left, pad(16)]
+    end
+    drop
+    # => [pad(16)]
+
+    # an asset the payload failed to name would be left in the vault, changing the account
+    call.pass_through::assert_vault_unchanged
+    # => [pad(16)]
+end
+
+#! Writes the payload committed to by the transaction script argument from the advice map to
+#! memory at `payload_addr`, and returns the number of asset IDs it names.
+#!
+#! Inputs:
+#!   Operand stack: [payload_addr, PAYLOAD_COMMITMENT]
+#!   Advice map: {
+#!     PAYLOAD_COMMITMENT: [[payload]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_asset_ids]
+#!
+#! Where:
+#! - payload_addr is the memory address at which to write the payload.
+#! - PAYLOAD_COMMITMENT is the sequential hash of the payload elements.
+#! - num_asset_ids is the number of asset IDs the payload names, i.e. the number of words it
+#!   carries past the header.
+#!
+#! Panics if:
+#! - the advice map holds no payload for PAYLOAD_COMMITMENT.
+#! - the payload length is not a multiple of the word size, or names more than MAX_ASSET_IDS
+#!   assets, or is shorter than the header.
+#! - the payload does not hash to PAYLOAD_COMMITMENT.
+#!
+#! Invocation: exec
+proc load_payload
+    movdn.4
+    # OS => [PAYLOAD_COMMITMENT, payload_addr]
+
+    adv.push_mapvaln
+    # OS => [PAYLOAD_COMMITMENT, payload_addr]
+    # AS => [num_elements, [payload]]
+
+    # SAFETY: an incorrect num_elements would fail the commitment check in
+    # pipe_preimage_to_memory, so the checks below only reject a malformed advice input earlier
+    # and keep the payload within the locals reserved for it.
+    adv_push u32assert.err=ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID
+    # OS => [num_elements, PAYLOAD_COMMITMENT, payload_addr]
+    # AS => [[payload]]
+
+    u32divmod.WORD_NUM_ELEMENTS
+    # => [remainder, num_words, PAYLOAD_COMMITMENT, payload_addr]
+
+    eq.0 assert.err=ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED
+    # => [num_words, PAYLOAD_COMMITMENT, payload_addr]
+
+    dup u32gte.HEADER_NUM_WORDS assert.err=ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID
+    dup u32lte.MAX_PAYLOAD_NUM_WORDS assert.err=ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID
+    # => [num_words, PAYLOAD_COMMITMENT, payload_addr]
+
+    # every word past the header is an asset ID
+    dup sub.HEADER_NUM_WORDS movdn.6
+    # => [num_words, PAYLOAD_COMMITMENT, payload_addr, num_asset_ids]
+
+    movup.5 swap
+    # => [num_words, payload_addr, PAYLOAD_COMMITMENT, num_asset_ids]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => [num_asset_ids]
+end
