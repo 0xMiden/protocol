@@ -89,13 +89,14 @@ mod current {
         AuthMultisig,
         AuthMultisigSmart,
         AuthNetworkAccount,
+        AuthPassThrough,
         AuthSingleSig,
         NoAuth,
     };
     use miden_standards_current::account::faucets::{FungibleFaucet, NonFungibleFaucet};
     use miden_standards_current::account::fees::{BasicConstantFeePolicy, ConstantFeeManager};
     use miden_standards_current::account::inspection::{AccountSchemaCommitment, CodeInspection};
-    use miden_standards_current::account::pass_through::PassThrough;
+    use miden_standards_current::account::pass_through::PassThroughSweep;
     use miden_standards_current::account::policies::{
         AllowlistManager,
         BasicAllowlist,
@@ -127,6 +128,7 @@ mod current {
         AuthMultisigSmart::code,
         AuthGuardedMultisig::code,
         AuthNetworkAccount::code,
+        AuthPassThrough::code,
         BurnAllowAll::code,
         BurnOwnerOnly::code,
         MinBurnAmount::code,
@@ -144,7 +146,7 @@ mod current {
         NonFungibleFaucet::code,
         BasicWallet::code,
         NoteCreator::code,
-        PassThrough::code,
+        PassThroughSweep::code,
         CodeInspection::code,
         AccountSchemaCommitment::code,
         UpgradeManager::code,
