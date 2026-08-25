@@ -87,12 +87,13 @@ impl ProvenBatch {
                 return Err(ProvenBatchError::DuplicateTransaction(transaction.id()));
             }
         }
-        let account_updates = account_updates.into_iter().collect::<Vec<_>>();
-        if account_updates.len() > MAX_ACCOUNTS_PER_BATCH {
-            return Err(ProvenBatchError::TooManyAccountUpdates(account_updates.len()));
-        }
         let mut account_updates_by_id = BTreeMap::new();
-        for update in account_updates {
+        for (index, update) in account_updates.into_iter().enumerate() {
+            let account_update_count = index + 1;
+            if account_update_count > MAX_ACCOUNTS_PER_BATCH {
+                return Err(ProvenBatchError::TooManyAccountUpdates(account_update_count));
+            }
+
             let account_id = update.account_id();
             if account_updates_by_id.insert(account_id, update).is_some() {
                 return Err(ProvenBatchError::DuplicateAccountUpdate(account_id));
@@ -410,8 +411,7 @@ mod tests {
     use rstest::rstest;
 
     use super::ProvenBatch;
-    use crate::Word;
-    use crate::account::{AccountId, AccountUpdateDetails};
+    use crate::account::{AccountId, AccountType, AccountUpdateDetails};
     use crate::batch::{BatchAccountUpdate, BatchId};
     use crate::block::BlockNumber;
     use crate::errors::ProvenBatchError;
@@ -419,6 +419,7 @@ mod tests {
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        AccountIdBuilder,
     };
     use crate::transaction::{
         InputNoteCommitment,
@@ -430,6 +431,7 @@ mod tests {
     };
     use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
     use crate::vm::ExecutionProof;
+    use crate::{MAX_ACCOUNTS_PER_BATCH, Word};
 
     fn account_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
@@ -577,6 +579,39 @@ mod tests {
         .unwrap_err();
 
         assert_matches!(error, ProvenBatchError::DuplicateAccountUpdate(id) if id == account_id);
+    }
+
+    #[test]
+    fn rejects_too_many_account_updates_without_consuming_the_tail() {
+        let mut next_index = 0_u64;
+        let account_updates = core::iter::from_fn(move || {
+            assert!(
+                next_index <= MAX_ACCOUNTS_PER_BATCH as u64,
+                "account update iterator was consumed past the batch limit"
+            );
+
+            let mut seed = [0_u8; 32];
+            seed[..8].copy_from_slice(&next_index.to_le_bytes());
+            next_index += 1;
+
+            let account_id =
+                AccountIdBuilder::new().account_type(AccountType::Private).build_with_seed(seed);
+            Some(private_account_update_for(account_id))
+        });
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            account_updates,
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(error, ProvenBatchError::TooManyAccountUpdates(_));
     }
 
     #[test]
