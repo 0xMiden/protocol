@@ -1,3 +1,4 @@
+use alloc::collections::btree_map::Entry;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -6,8 +7,15 @@ use crate::account::AccountId;
 use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::BlockNumber;
 use crate::errors::ProvenBatchError;
-use crate::note::Nullifier;
-use crate::transaction::{InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote};
+use crate::note::{NoteHeader, NoteId, Nullifier};
+use crate::transaction::{
+    InputNoteCommitment,
+    InputNotes,
+    OrderedTransactionHeaders,
+    OutputNote,
+    TransactionHeader,
+    TransactionId,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -44,7 +52,21 @@ impl ProvenBatch {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`ProvenBatch`] from the provided parts and validates its structural
-    /// constraints.
+    /// consistency.
+    ///
+    /// This verifies that the account updates form the state transitions described by the
+    /// [`TransactionHeader`]s and that the input and output notes are their correctly aggregated
+    /// note sets, including in-batch note erasure.
+    ///
+    /// This does not verify the execution proof, per-transaction reference blocks or expiration
+    /// block numbers, or note inclusion proofs. Those checks require data which is not present in
+    /// a [`TransactionHeader`] and must be performed before constructing the proven batch or by a
+    /// batch verifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any structural limit or invariant is violated, or if the aggregate
+    /// account updates and notes do not match the transaction headers.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         reference_block_commitment: Word,
@@ -104,6 +126,9 @@ impl ProvenBatch {
                 return Err(ProvenBatchError::NoteCreatedAndConsumed(note_header.id()));
             }
         }
+
+        validate_account_updates(&account_updates_by_id, transactions.as_slice())?;
+        validate_aggregate_notes(&input_notes, &output_notes, transactions.as_slice())?;
 
         let id =
             BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
@@ -246,6 +271,136 @@ impl ProvenBatch {
     }
 }
 
+// VALIDATION HELPERS
+// ================================================================================================
+
+fn validate_account_updates(
+    account_updates: &BTreeMap<AccountId, BatchAccountUpdate>,
+    transactions: &[TransactionHeader],
+) -> Result<(), ProvenBatchError> {
+    let mut expected_updates = BTreeMap::<AccountId, (Word, Word)>::new();
+
+    for transaction in transactions {
+        match expected_updates.entry(transaction.account_id()) {
+            Entry::Vacant(entry) => {
+                entry.insert((
+                    transaction.initial_state_commitment(),
+                    transaction.final_state_commitment(),
+                ));
+            },
+            Entry::Occupied(mut entry) => {
+                let (_, previous_final_state_commitment) = entry.get_mut();
+                if *previous_final_state_commitment != transaction.initial_state_commitment() {
+                    return Err(ProvenBatchError::TransactionAccountStateMismatch {
+                        account_id: transaction.account_id(),
+                        transaction_id: transaction.id(),
+                        expected_initial_state_commitment: *previous_final_state_commitment,
+                        actual_initial_state_commitment: transaction.initial_state_commitment(),
+                    });
+                }
+                *previous_final_state_commitment = transaction.final_state_commitment();
+            },
+        }
+    }
+
+    for (account_id, (expected_initial, expected_final)) in &expected_updates {
+        let update = account_updates
+            .get(account_id)
+            .ok_or(ProvenBatchError::MissingAccountUpdate(*account_id))?;
+
+        if update.initial_state_commitment() != *expected_initial {
+            return Err(ProvenBatchError::AccountUpdateInitialStateMismatch {
+                account_id: *account_id,
+                expected: *expected_initial,
+                actual: update.initial_state_commitment(),
+            });
+        }
+        if update.final_state_commitment() != *expected_final {
+            return Err(ProvenBatchError::AccountUpdateFinalStateMismatch {
+                account_id: *account_id,
+                expected: *expected_final,
+                actual: update.final_state_commitment(),
+            });
+        }
+    }
+
+    if let Some(account_id) = account_updates
+        .keys()
+        .find(|account_id| !expected_updates.contains_key(account_id))
+    {
+        return Err(ProvenBatchError::UnexpectedAccountUpdate(*account_id));
+    }
+
+    Ok(())
+}
+
+fn validate_aggregate_notes(
+    input_notes: &InputNotes<InputNoteCommitment>,
+    output_notes: &[OutputNote],
+    transactions: &[TransactionHeader],
+) -> Result<(), ProvenBatchError> {
+    let mut input_nullifiers = BTreeSet::new();
+    let mut output_note_ids = BTreeSet::new();
+    let mut expected_inputs = BTreeMap::<Nullifier, InputNoteCommitment>::new();
+    let mut expected_outputs = BTreeMap::<NoteId, (TransactionId, NoteHeader)>::new();
+
+    for transaction in transactions {
+        for output_note in transaction.output_notes() {
+            if !output_note_ids.insert(output_note.id()) {
+                return Err(ProvenBatchError::DuplicateOutputNote(output_note.id()));
+            }
+            expected_outputs.insert(output_note.id(), (transaction.id(), *output_note));
+        }
+
+        for input_note in transaction.input_notes() {
+            if !input_nullifiers.insert(input_note.nullifier()) {
+                return Err(ProvenBatchError::DuplicateInputNote(input_note.nullifier()));
+            }
+
+            if let Some(input_header) = input_note.header()
+                && let Some((created_by, _)) = expected_outputs.remove(&input_header.id())
+            {
+                if created_by == transaction.id() {
+                    return Err(ProvenBatchError::NoteCreatedAndConsumed(input_header.id()));
+                }
+                continue;
+            }
+
+            expected_inputs.insert(input_note.nullifier(), input_note.clone());
+        }
+    }
+
+    for input_note in expected_inputs.values().filter_map(InputNoteCommitment::header) {
+        if expected_outputs.contains_key(&input_note.id()) {
+            return Err(ProvenBatchError::NoteCreatedAndConsumed(input_note.id()));
+        }
+    }
+
+    let inputs_match = usize::from(input_notes.num_notes()) == expected_inputs.len()
+        && input_notes.iter().zip(expected_inputs.values()).all(|(actual, expected)| {
+            actual.nullifier() == expected.nullifier()
+                && match (actual.header(), expected.header()) {
+                    (None, Some(_)) | (None, None) => true,
+                    (Some(actual), Some(expected)) => actual == expected,
+                    (Some(_), None) => false,
+                }
+        });
+    if !inputs_match {
+        return Err(ProvenBatchError::InputNotesMismatch);
+    }
+
+    let outputs_match = output_notes.len() == expected_outputs.len()
+        && output_notes
+            .iter()
+            .zip(expected_outputs.values())
+            .all(|(actual, (_, expected))| <&NoteHeader>::from(actual) == expected);
+    if !outputs_match {
+        return Err(ProvenBatchError::OutputNotesMismatch);
+    }
+
+    Ok(())
+}
+
 // SERIALIZATION
 // ================================================================================================
 
@@ -296,6 +451,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
+    use rstest::rstest;
 
     use super::ProvenBatch;
     use crate::Word;
@@ -304,7 +460,10 @@ mod tests {
     use crate::block::BlockNumber;
     use crate::errors::ProvenBatchError;
     use crate::note::Note;
-    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+    use crate::testing::account_id::{
+        ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    };
     use crate::transaction::{
         InputNoteCommitment,
         InputNotes,
@@ -316,10 +475,28 @@ mod tests {
     use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
     use crate::vm::ExecutionProof;
 
+    fn account_id() -> AccountId {
+        AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
+    }
+
+    fn transaction_header(
+        initial_state_commitment: Word,
+        final_state_commitment: Word,
+        input_notes: InputNotes<InputNoteCommitment>,
+        output_notes: Vec<crate::note::NoteHeader>,
+    ) -> TransactionHeader {
+        TransactionHeader::new(
+            account_id(),
+            initial_state_commitment,
+            final_state_commitment,
+            input_notes,
+            output_notes,
+        )
+        .unwrap()
+    }
+
     fn transaction_headers() -> OrderedTransactionHeaders {
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let transaction = TransactionHeader::new(
-            account_id,
+        let transaction = transaction_header(
             Word::from([1_u32, 2, 3, 4]),
             Word::from([5_u32, 6, 7, 8]),
             InputNotes::default(),
@@ -331,7 +508,17 @@ mod tests {
 
     fn private_account_update() -> BatchAccountUpdate {
         BatchAccountUpdate::new(
-            AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(),
+            account_id(),
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            AccountUpdateDetails::Private,
+        )
+        .unwrap()
+    }
+
+    fn private_account_update_for(account_id: AccountId) -> BatchAccountUpdate {
+        BatchAccountUpdate::new(
+            account_id,
             Word::from([1_u32, 2, 3, 4]),
             Word::from([5_u32, 6, 7, 8]),
             AccountUpdateDetails::Private,
@@ -357,7 +544,7 @@ mod tests {
         let error = ProvenBatch::new(
             Word::empty(),
             BlockNumber::from(1),
-            Vec::new(),
+            vec![private_account_update()],
             input_notes,
             output_notes,
             BlockNumber::from(2),
@@ -410,6 +597,161 @@ mod tests {
     }
 
     #[test]
+    fn rejects_missing_account_update() {
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            Vec::new(),
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(error, ProvenBatchError::MissingAccountUpdate(id) if id == account_id());
+    }
+
+    #[test]
+    fn rejects_unexpected_account_update() {
+        let unexpected_account_id =
+            AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![private_account_update(), private_account_update_for(unexpected_account_id)],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            error,
+            ProvenBatchError::UnexpectedAccountUpdate(id) if id == unexpected_account_id
+        );
+    }
+
+    #[rstest]
+    #[case::initial(true)]
+    #[case::final_state(false)]
+    fn rejects_account_update_commitment_mismatch(#[case] mismatch_initial: bool) {
+        let expected_initial = Word::from([1_u32, 2, 3, 4]);
+        let expected_final = Word::from([5_u32, 6, 7, 8]);
+        let actual_initial = if mismatch_initial {
+            Word::from([9_u32, 2, 3, 4])
+        } else {
+            expected_initial
+        };
+        let actual_final = if mismatch_initial {
+            expected_final
+        } else {
+            Word::from([9_u32, 6, 7, 8])
+        };
+        let update = BatchAccountUpdate::new(
+            account_id(),
+            actual_initial,
+            actual_final,
+            AccountUpdateDetails::Private,
+        )
+        .unwrap();
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![update],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        if mismatch_initial {
+            assert_matches!(
+                error,
+                ProvenBatchError::AccountUpdateInitialStateMismatch { account_id: id, .. }
+                    if id == account_id()
+            );
+        } else {
+            assert_matches!(
+                error,
+                ProvenBatchError::AccountUpdateFinalStateMismatch { account_id: id, .. }
+                    if id == account_id()
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_non_chained_transaction_headers() {
+        let initial = Word::from([1_u32, 2, 3, 4]);
+        let intermediate = Word::from([5_u32, 6, 7, 8]);
+        let unexpected = Word::from([9_u32, 10, 11, 12]);
+        let final_state = Word::from([13_u32, 14, 15, 16]);
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(initial, intermediate, InputNotes::default(), vec![]),
+            transaction_header(unexpected, final_state, InputNotes::default(), vec![]),
+        ]);
+        let update = BatchAccountUpdate::new(
+            account_id(),
+            initial,
+            final_state,
+            AccountUpdateDetails::Private,
+        )
+        .unwrap();
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![update],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transactions,
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            error,
+            ProvenBatchError::TransactionAccountStateMismatch { account_id: id, .. }
+                if id == account_id()
+        );
+    }
+
+    #[test]
+    fn rejects_input_notes_missing_from_batch() {
+        let note = Note::mock_noop(Word::empty());
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![transaction_header(
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            InputNotes::new(vec![input]).unwrap(),
+            vec![],
+        )]);
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![private_account_update()],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transactions,
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(error, ProvenBatchError::InputNotesMismatch);
+    }
+
+    #[test]
     fn deserialization_rejects_note_created_and_consumed_in_same_batch() {
         let (note_id, input_notes, output_notes) = conflicting_notes();
         let transactions = transaction_headers();
@@ -419,7 +761,7 @@ mod tests {
             id,
             Word::empty(),
             BlockNumber::from(1),
-            BTreeMap::new(),
+            BTreeMap::from([(account_id(), private_account_update())]),
             input_notes,
             output_notes,
             BlockNumber::from(2),
@@ -441,17 +783,198 @@ mod tests {
     }
 
     #[test]
-    fn accepts_disjoint_input_and_output_notes() {
+    fn rejects_unexpected_batch_output_note() {
         let (_, _, output_notes) = conflicting_notes();
 
-        ProvenBatch::new(
+        let error = ProvenBatch::new(
             Word::empty(),
             BlockNumber::from(1),
-            Vec::new(),
+            vec![private_account_update()],
             InputNotes::default(),
             output_notes,
             BlockNumber::from(2),
             transaction_headers(),
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(error, ProvenBatchError::OutputNotesMismatch);
+    }
+
+    #[test]
+    fn rejects_output_note_missing_from_batch() {
+        let note = Note::mock_noop(Word::empty());
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![transaction_header(
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            InputNotes::default(),
+            vec![*note.header()],
+        )]);
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![private_account_update()],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transactions,
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(error, ProvenBatchError::OutputNotesMismatch);
+    }
+
+    #[test]
+    fn rejects_duplicate_input_note_after_erasure() {
+        let note = Note::mock_noop(Word::empty());
+        let states = [
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            Word::from([9_u32, 10, 11, 12]),
+            Word::from([13_u32, 14, 15, 16]),
+        ];
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(states[0], states[1], InputNotes::default(), vec![*note.header()]),
+            transaction_header(
+                states[1],
+                states[2],
+                InputNotes::new(vec![input.clone()]).unwrap(),
+                vec![],
+            ),
+            transaction_header(states[2], states[3], InputNotes::new(vec![input]).unwrap(), vec![]),
+        ]);
+        let update = BatchAccountUpdate::new(
+            account_id(),
+            states[0],
+            states[3],
+            AccountUpdateDetails::Private,
+        )
+        .unwrap();
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![update],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transactions,
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            error,
+            ProvenBatchError::DuplicateInputNote(nullifier) if nullifier == note.nullifier()
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_output_note_after_erasure() {
+        let note = Note::mock_noop(Word::empty());
+        let states = [
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            Word::from([9_u32, 10, 11, 12]),
+            Word::from([13_u32, 14, 15, 16]),
+        ];
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(states[0], states[1], InputNotes::default(), vec![*note.header()]),
+            transaction_header(states[1], states[2], InputNotes::new(vec![input]).unwrap(), vec![]),
+            transaction_header(states[2], states[3], InputNotes::default(), vec![*note.header()]),
+        ]);
+        let update = BatchAccountUpdate::new(
+            account_id(),
+            states[0],
+            states[3],
+            AccountUpdateDetails::Private,
+        )
+        .unwrap();
+
+        let error = ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![update],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transactions,
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            error,
+            ProvenBatchError::DuplicateOutputNote(note_id) if note_id == note.id()
+        );
+    }
+
+    #[test]
+    fn accepts_in_order_note_erasure() {
+        let note = Note::mock_noop(Word::empty());
+        let initial = Word::from([1_u32, 2, 3, 4]);
+        let intermediate = Word::from([5_u32, 6, 7, 8]);
+        let final_state = Word::from([9_u32, 10, 11, 12]);
+        let input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![
+            transaction_header(initial, intermediate, InputNotes::default(), vec![*note.header()]),
+            transaction_header(
+                intermediate,
+                final_state,
+                InputNotes::new(vec![input]).unwrap(),
+                vec![],
+            ),
+        ]);
+        let update = BatchAccountUpdate::new(
+            account_id(),
+            initial,
+            final_state,
+            AccountUpdateDetails::Private,
+        )
+        .unwrap();
+
+        ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![update],
+            InputNotes::default(),
+            Vec::new(),
+            BlockNumber::from(2),
+            transactions,
+            ExecutionProof::new_dummy(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn accepts_authenticated_aggregate_input_note() {
+        let note = Note::mock_noop(Word::empty());
+        let header_input =
+            InputNoteCommitment::from_parts_unchecked(note.nullifier(), Some(*note.header()));
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![transaction_header(
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            InputNotes::new(vec![header_input]).unwrap(),
+            vec![],
+        )]);
+        let batch_inputs =
+            InputNotes::new(vec![InputNoteCommitment::from(note.nullifier())]).unwrap();
+
+        ProvenBatch::new(
+            Word::empty(),
+            BlockNumber::from(1),
+            vec![private_account_update()],
+            batch_inputs,
+            Vec::new(),
+            BlockNumber::from(2),
+            transactions,
             ExecutionProof::new_dummy(),
         )
         .unwrap();

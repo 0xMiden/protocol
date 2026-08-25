@@ -1480,6 +1480,39 @@ pub enum ProvenBatchError {
     NoteCreatedAndConsumed(NoteId),
     #[error("account {0} is updated more than once in the proven batch")]
     DuplicateAccountUpdate(AccountId),
+    #[error("account update for {0} is missing from the proven batch")]
+    MissingAccountUpdate(AccountId),
+    #[error("account update for {0} has no corresponding transaction in the proven batch")]
+    UnexpectedAccountUpdate(AccountId),
+    #[error(
+        "transaction {transaction_id} for account {account_id} starts from state {actual_initial_state_commitment}, but the previous transaction ends at state {expected_initial_state_commitment}"
+    )]
+    TransactionAccountStateMismatch {
+        account_id: AccountId,
+        transaction_id: TransactionId,
+        expected_initial_state_commitment: Word,
+        actual_initial_state_commitment: Word,
+    },
+    #[error(
+        "account update for {account_id} starts from state {actual}, but its first transaction starts from state {expected}"
+    )]
+    AccountUpdateInitialStateMismatch {
+        account_id: AccountId,
+        expected: Word,
+        actual: Word,
+    },
+    #[error(
+        "account update for {account_id} ends at state {actual}, but its last transaction ends at state {expected}"
+    )]
+    AccountUpdateFinalStateMismatch {
+        account_id: AccountId,
+        expected: Word,
+        actual: Word,
+    },
+    #[error("batch input notes do not match the transaction headers")]
+    InputNotesMismatch,
+    #[error("batch output notes do not match the transaction headers")]
+    OutputNotesMismatch,
     #[error("invalid account update for {account_id}")]
     InvalidAccountUpdate {
         account_id: AccountId,
