@@ -39,12 +39,17 @@ procedure_root!(
 ///
 /// # Security
 ///
-/// Install this only on a pass-through account. `sweep_asset_to_note` reads the balance itself,
-/// unlike [`BasicWallet`](crate::account::wallets::BasicWallet)'s `move_asset_to_note`, which
-/// makes the caller name the amount, so it needs no prior knowledge of what the vault holds. It
-/// asserts the account did not hold the asset when the transaction started, which bounds it to
-/// what the transaction deposited but not to who moves that: any note script the account consumes
-/// can call it and redirect what the transaction's other notes deposited into a note of its own.
+/// `sweep_asset_to_note` reads the balance itself, unlike
+/// [`BasicWallet`](crate::account::wallets::BasicWallet)'s `move_asset_to_note`, which makes the
+/// caller name the amount, so it needs no prior knowledge of what the vault holds. It asserts the
+/// account did not hold the asset when the transaction started, which bounds it to what the
+/// transaction deposited, but nothing bounds who moves that: any note script the account consumes
+/// can call it and redirect what earlier notes deposited, and on an account whose auth procedure
+/// authenticates nobody - which is what keeps a pass-through account's commitment unchanged - any
+/// third party can execute a transaction as the account and name themselves as the destination.
+///
+/// Assets passing through are therefore only safe if the input note's own script constrains where
+/// they go.
 ///
 /// Both require authentication. Thus, this component must be combined with a component providing
 /// authentication, and with one exposing `receive_asset` (e.g.

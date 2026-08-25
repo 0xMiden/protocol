@@ -65,10 +65,15 @@ const ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED = "pass through payload length i
 #! component on a chain with a zero verification base fee.
 #!
 #! Moving whole balances is what makes the script's cost independent of how many notes the
-#! transaction consumes: the payload names the assets, not the notes. The account must not hold
-#! a named asset of its own, which `sweep_asset_to_note` asserts. If the tx moved more assets out of the
-#! vault than were deposited, or left an asset the payload failed to name behind, the vault would
-#! differ from how it started and the tx fails, rather than the account being silently changed.
+#! transaction consumes: the payload names the assets, not the notes. The account must not hold a
+#! named asset of its own, which `sweep_asset_to_note` asserts. If the tx moved more assets out of
+#! the vault than were deposited, or left an asset the payload failed to name behind, the vault
+#! would differ from how it started and the tx fails, rather than the account being silently
+#! changed.
+#!
+#! A successful transaction does not imply the named assets reached the target. A note script the
+#! transaction consumes can sweep them first (see pass_through::sweep), after which this script's
+#! own sweep is a no-op and the vault ends empty either way.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::note::note_creator::create_note procedure.

@@ -53,6 +53,10 @@ static PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT: LazyLock<TransactionScript> =
 /// The account must expose the [`PassThrough`] component alongside a component providing
 /// `create_note` and `receive_asset`, e.g. [`BasicWallet`].
 ///
+/// A successful transaction does not imply the named assets reached `target`. A note script the
+/// transaction consumes can sweep them first (see [`PassThrough`]), after which this script's own
+/// sweep is a no-op and the vault ends empty either way.
+///
 /// The payload is embedded into the script's MAST forest and committed to by `TX_SCRIPT_ARGS`, so
 /// a single [`PassThroughSingleP2idTransactionScript::script_root`] covers every target, serial
 /// number and asset set, and callers only have to set the script and its arguments:
