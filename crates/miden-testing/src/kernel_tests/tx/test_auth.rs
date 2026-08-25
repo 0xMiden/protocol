@@ -246,7 +246,7 @@ async fn test_auth_request_production_outside_auth_procedure_is_rejected() -> an
         pub proc emit_auth_request
             # Prepend seven zero user params so the summary layout matches the auth procedure's.
             push.0.0.0.0.0.0.0
-            exec.auth::create_tx_summary_with_ref_block
+            exec.auth::create_tx_summary
             exec.auth::hash_and_insert_tx_summary
             # => [MESSAGE, PK_COMM, scheme_id]
 

@@ -564,7 +564,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           push.0.0.0.0.0
           # => [user_params(6), pad(16)]
 
-          exec.auth::create_tx_summary_with_ref_block
+          exec.auth::create_tx_summary
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -631,7 +631,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 }
 
 /// Tests that the transaction summary binds the expiration block delta set during the transaction
-/// and the user-defined parameters passed to `create_tx_summary_with_ref_block`.
+/// and the user-defined parameters passed to `create_tx_summary`.
 ///
 /// The host verifies that the reconstructed summary commits to the message hashed in the kernel,
 /// so the assertions on the extracted summary prove that these values are part of the signed
@@ -659,7 +659,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           push.0.0.9.8.7
           # => [user_params(6), pad(16)]
 
-          exec.auth::create_tx_summary_with_ref_block
+          exec.auth::create_tx_summary
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary

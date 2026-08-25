@@ -33,7 +33,10 @@ const TX_SUMMARY_VERSION = 1
 # by 32 bits.
 const TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER = 0x100000000
 
-#! Creates the transaction summary and returns it in the order in which it will be hashed.
+#! Creates the transaction summary bound to the provided block and returns it in the order in which
+#! it will be hashed.
+#!
+#! See `create_tx_summary` to bind the transaction's reference block, which is the common case.
 #!
 #! Inputs:  [block_number, user_param0, user_param1, user_param2, user_param3, user_param4,
 #!           user_param5]
@@ -59,7 +62,7 @@ const TX_SUMMARY_EXPIRATION_DELTA_MULTIPLIER = 0x100000000
 #! - block_number is not a u32 or exceeds the transaction reference block number.
 #!
 #! Invocation: exec
-pub proc create_tx_summary(block_number: BlockNumber, user_params: [felt; 6])
+pub proc create_tx_summary_with_block(block_number: BlockNumber, user_params: [felt; 6])
     -> (word, word, word, word, word, word)
     # the expiration delta is bounded to a u16 by the kernel and the block number to a u32 by
     # tx::get_block_commitment below, so the packed felt stays below 2^48
@@ -96,22 +99,22 @@ end
 #! Creates the transaction summary bound to the transaction's reference block and returns it in the
 #! order in which it will be hashed.
 #!
-#! This is the common case; see `create_tx_summary` for binding an earlier block instead.
+#! This is the common case; see `create_tx_summary_with_block` for binding an earlier block instead.
 #!
 #! Inputs:  [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5]
 #! Outputs: [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
 #!           OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 #!
 #! Where:
-#! - all inputs and outputs are as described in `create_tx_summary`.
+#! - all inputs and outputs are as described in `create_tx_summary_with_block`.
 #!
 #! Invocation: exec
-pub proc create_tx_summary_with_ref_block(user_params: [felt; 6])
+pub proc create_tx_summary(user_params: [felt; 6])
     -> (word, word, word, word, word, word)
     exec.tx::get_reference_block_number
     # => [reference_block_number, user_params(6)]
 
-    exec.create_tx_summary
+    exec.create_tx_summary_with_block
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
     #     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 end
@@ -135,7 +138,7 @@ end
 #! Where:
 #! - PARAMS_HEAD is the word [version, metadata, user_param0, user_param1] and PARAMS_TAIL the word
 #!   [user_param2, user_param3, user_param4, user_param5], together binding the summary metadata and
-#!   the six user-defined parameters. See `create_tx_summary` for the metadata felt.
+#!   the six user-defined parameters. See `create_tx_summary_with_block` for the metadata felt.
 #! - BLOCK_COMMITMENT is the commitment to the block bound by the summary.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the transaction's output notes.
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.

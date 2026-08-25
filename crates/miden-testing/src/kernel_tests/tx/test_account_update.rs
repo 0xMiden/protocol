@@ -1043,7 +1043,7 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
         dropw padw push.0.0
         # => [user_params(6), pad(12)]
 
-        exec.::miden::standards::auth::create_tx_summary_with_ref_block
+        exec.::miden::standards::auth::create_tx_summary
         # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(12)]
 
         exec.::miden::standards::auth::hash_and_insert_tx_summary
@@ -1194,7 +1194,7 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
             dropw padw push.0.0
             # => [user_params(6), pad(12)]
 
-            exec.::miden::standards::auth::create_tx_summary_with_ref_block
+            exec.::miden::standards::auth::create_tx_summary
             # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(12)]
 
             exec.::miden::standards::auth::hash_and_insert_tx_summary
