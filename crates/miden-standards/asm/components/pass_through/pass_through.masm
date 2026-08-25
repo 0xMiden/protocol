@@ -1,6 +1,0 @@
-# The MASM code of the Pass Through Account Component.
-#
-# See the `PassThrough` Rust type's documentation for more details.
-
-pub use {sweep_asset_to_note} from miden::standards::pass_through
-pub use {assert_vault_unchanged} from miden::standards::pass_through

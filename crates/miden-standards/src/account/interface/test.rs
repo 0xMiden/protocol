@@ -13,10 +13,12 @@ use crate::account::auth::{
     ApproverSet,
     AuthMultisig,
     AuthMultisigConfig,
+    AuthPassThrough,
     AuthSingleSig,
     NoAuth,
 };
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
+use crate::account::pass_through::PassThroughSweep;
 use crate::account::wallets::BasicWallet;
 use crate::note::SwapNote;
 use crate::testing::account_interface::get_public_keys_from_account;
@@ -84,6 +86,22 @@ fn test_account_interface_identifies_no_auth() {
         no_auth_account_interface.auth_component(),
         AccountComponentInterface::AuthNoAuth
     ));
+}
+
+#[test]
+fn test_account_interface_identifies_pass_through_auth() {
+    let mock_seed = Word::from([4, 5, 6, 7u32]).as_bytes();
+    let pass_through_account = AccountBuilder::new(mock_seed)
+        .with_component(AuthPassThrough)
+        .with_component(BasicWallet)
+        .with_component(PassThroughSweep)
+        .build_existing()
+        .expect("failed to create pass-through account");
+
+    let interface = AccountInterface::from_account(&pass_through_account);
+
+    assert!(matches!(interface.auth_component(), AccountComponentInterface::AuthPassThrough));
+    assert!(interface.components().contains(&AccountComponentInterface::PassThroughSweep));
 }
 
 #[test]

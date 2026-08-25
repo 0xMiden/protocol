@@ -5,12 +5,12 @@ use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::NoAuth;
-use miden_standards::account::pass_through::PassThrough;
+use miden_standards::account::auth::AuthPassThrough;
+use miden_standards::account::pass_through::PassThroughSweep;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
+    ERR_AUTH_PASS_THROUGH_ACCOUNT_STATE_CHANGED,
     ERR_PASS_THROUGH_ACCOUNT_ALREADY_HELD_ASSET,
-    ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED,
     ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID,
     ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED,
 };
@@ -328,9 +328,9 @@ async fn fails_when_the_account_already_held_the_asset() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder();
     let account = AccountBuilder::new([44; 32])
-        .with_component(NoAuth)
+        .with_component(AuthPassThrough)
         .with_component(BasicWallet)
-        .with_component(PassThrough)
+        .with_component(PassThroughSweep)
         .with_assets([asset])
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -362,8 +362,8 @@ async fn fails_when_the_account_already_held_the_asset() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// An asset the payload fails to name is left in the vault, which `assert_vault_unchanged` turns
-/// into a failed transaction rather than a silently changed account.
+/// An asset the payload fails to name is left in the vault, which the pass-through auth procedure
+/// turns into a failed transaction rather than a silently changed account.
 #[tokio::test]
 async fn fails_when_the_payload_does_not_name_a_deposited_asset() -> anyhow::Result<()> {
     let other_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
@@ -396,7 +396,7 @@ async fn fails_when_the_payload_does_not_name_a_deposited_asset() -> anyhow::Res
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED);
+    assert_transaction_executor_error!(result, ERR_AUTH_PASS_THROUGH_ACCOUNT_STATE_CHANGED);
 
     Ok(())
 }

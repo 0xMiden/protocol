@@ -40,18 +40,22 @@ static PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT: LazyLock<TransactionScript> =
 /// The state of the account it executes against does not change: the input notes' scripts deposit
 /// their assets into the account's vault, and the script moves the whole balance of each named
 /// asset back out into one P2ID note addressed to `target`, so the account's vault delta is zero.
-/// Its commitment is unchanged as long as the auth procedure neither bumps the nonce nor funds a
-/// fee note from the vault, e.g. [`NoAuth`] on a chain with a zero verification base fee.
 ///
 /// Naming assets rather than notes is what makes the script's cost independent of how many notes
 /// the transaction consumes. The account must not hold a named asset of its own, which
 /// `sweep_asset_to_note` asserts. If the transaction moved more assets out of the vault than were
 /// deposited, or left an asset the payload failed to name behind, the vault would differ from how
-/// it started and the transaction fails, rather than the account being silently changed - the
-/// script calls [`PassThrough::assert_vault_unchanged_root`] once it is done.
+/// it started and [`AuthPassThrough`] fails the transaction, rather than the account being
+/// silently changed.
 ///
-/// The account must expose the [`PassThrough`] component alongside a component providing
-/// `create_note` and `receive_asset`, e.g. [`BasicWallet`].
+/// The account must therefore authenticate with [`AuthPassThrough`] and expose the
+/// [`PassThroughSweep`] component alongside one providing `create_note` and `receive_asset`, e.g.
+/// [`BasicWallet`]. The script cannot check the account's auth procedure, so the guarantees above
+/// hold only for accounts composed that way; on any other account an unnamed asset is left in the
+/// vault instead of failing the transaction, and a pre-existing balance of a named asset is swept
+/// out along with the deposits.
+///
+/// See [`AuthPassThrough`] for who can decide where the assets go.
 ///
 /// A successful transaction does not imply the named assets reached `target`. A note script the
 /// transaction consumes can sweep them first (see [`PassThrough`]), after which this script's own
@@ -67,9 +71,8 @@ static PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT: LazyLock<TransactionScript> =
 ///     .with_tx_script_and_args(script.tx_script().clone(), script.tx_script_args());
 /// ```
 ///
-/// [`NoAuth`]: crate::account::auth::NoAuth
-/// [`PassThrough`]: crate::account::pass_through::PassThrough
-/// [`PassThrough::assert_vault_unchanged_root`]: crate::account::pass_through::PassThrough::assert_vault_unchanged_root
+/// [`AuthPassThrough`]: crate::account::auth::AuthPassThrough
+/// [`PassThroughSweep`]: crate::account::pass_through::PassThroughSweep
 /// [`BasicWallet`]: crate::account::wallets::BasicWallet
 #[derive(Debug, Clone)]
 pub struct PassThroughSingleP2idTransactionScript {

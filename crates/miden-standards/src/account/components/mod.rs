@@ -9,6 +9,7 @@ use crate::account::auth::{
     AuthMultisig,
     AuthMultisigSmart,
     AuthNetworkAccount,
+    AuthPassThrough,
     AuthSingleSig,
     NoAuth,
 };
@@ -16,6 +17,7 @@ use crate::account::faucets::FungibleFaucet;
 use crate::account::inspection::CodeInspection;
 use crate::account::interface::AccountComponentInterface;
 use crate::account::note_creator::NoteCreator;
+use crate::account::pass_through::PassThroughSweep;
 use crate::account::wallets::BasicWallet;
 
 // STANDARD ACCOUNT COMPONENTS
@@ -37,6 +39,8 @@ pub enum StandardAccountComponent {
     AuthGuardedMultisig,
     AuthNoAuth,
     AuthNetworkAccount,
+    AuthPassThrough,
+    PassThroughSweep,
 }
 
 impl StandardAccountComponent {
@@ -57,6 +61,8 @@ impl StandardAccountComponent {
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
             Self::AuthNoAuth => NoAuth::code(),
             Self::AuthNetworkAccount => AuthNetworkAccount::code(),
+            Self::AuthPassThrough => AuthPassThrough::code(),
+            Self::PassThroughSweep => PassThroughSweep::code(),
         };
 
         code.procedure_roots()
@@ -118,6 +124,12 @@ impl StandardAccountComponent {
                 Self::AuthNetworkAccount => {
                     component_interface_vec.push(AccountComponentInterface::AuthNetworkAccount)
                 },
+                Self::AuthPassThrough => {
+                    component_interface_vec.push(AccountComponentInterface::AuthPassThrough)
+                },
+                Self::PassThroughSweep => {
+                    component_interface_vec.push(AccountComponentInterface::PassThroughSweep)
+                },
             }
         }
     }
@@ -143,5 +155,7 @@ impl StandardAccountComponent {
         Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
         Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
+        Self::AuthPassThrough.extract_component(procedures_set, component_interface_vec);
+        Self::PassThroughSweep.extract_component(procedures_set, component_interface_vec);
     }
 }
