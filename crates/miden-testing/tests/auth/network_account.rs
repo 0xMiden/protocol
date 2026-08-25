@@ -2,7 +2,14 @@ use core::num::NonZeroU16;
 use std::collections::BTreeSet;
 
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
@@ -16,11 +23,13 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY,
+    ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
 use miden_standards::note::{NetworkAccountConfig, NetworkAccountConfigNote};
+use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -115,8 +124,118 @@ fn expiration_tx_script(delta: u16) -> TransactionScript {
         .expect("expiration tx script should compile")
 }
 
+/// Compiles a transaction script that changes account storage through the test-only mock account
+/// component without consuming an input note.
+fn storage_update_tx_script(slot_name: &StorageSlotName) -> TransactionScript {
+    let code = format!(
+        r#"
+        use mock::account
+
+        const ACTION_SLOT = word("{slot_name}")
+
+        @transaction_script
+        pub proc main
+            push.1.0.0.0
+            push.ACTION_SLOT[0..2]
+            call.account::set_item
+            dropw dropw
+        end
+        "#,
+    );
+
+    CodeBuilder::with_mock_packages()
+        .compile_tx_script(code)
+        .expect("storage update tx script should compile")
+}
+
 // TESTS
 // ================================================================================================
+
+/// A network account transaction must consume an input note or change account state before the auth
+/// procedure pays its fee. Otherwise, permissionless callers could repeatedly submit transactions
+/// that only withdraw the transaction fee from the account's vault.
+#[tokio::test]
+async fn test_auth_network_account_rejects_transaction_without_action() -> anyhow::Result<()> {
+    let account = build_allowlist_account(vec![placeholder_script_root()])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION);
+
+    Ok(())
+}
+
+/// An allowlisted transaction script that only changes transaction metadata does not justify
+/// charging the network account. In particular, attaching the default expiration script must not
+/// let a zero-input transaction bypass the no-action check.
+#[tokio::test]
+async fn test_auth_network_account_rejects_metadata_only_tx_script_without_input_notes()
+-> anyhow::Result<()> {
+    let tx_script = expiration_tx_script(10);
+    let account =
+        build_account_with_allowlists(vec![placeholder_script_root()], vec![tx_script.root()])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION);
+
+    Ok(())
+}
+
+/// A root-allowlisted transaction script may execute without input notes when it changes the
+/// account state before authentication pays the fee. This preserves the script-only network-account
+/// use case while preventing fee payment itself from satisfying the action requirement.
+#[tokio::test]
+async fn test_auth_network_account_accepts_state_changing_tx_script_without_input_notes()
+-> anyhow::Result<()> {
+    let action_slot = StorageSlotName::new("test::network_account::script_only_action")?;
+    let tx_script = storage_update_tx_script(&action_slot);
+
+    let note_roots = BTreeSet::from([NoteScriptRoot::from_raw(placeholder_script_root())]);
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?
+        .with_allowed_tx_scripts([tx_script.root()]);
+
+    let account = AccountBuilder::new([0; 32])
+        .with_components(auth_component)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_empty_value(
+            action_slot.clone(),
+        )]))
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let mut final_account = account;
+    final_account.apply_patch(executed.account_patch())?;
+    let stored_action = final_account.storage().get_item(&action_slot)?;
+    assert_eq!(stored_action, Word::from([0u32, 0, 0, 1]));
+
+    Ok(())
+}
 
 /// A transaction that executes a tx script whose root is not in the tx-script allowlist must be
 /// rejected by `AuthNetworkAccount`. An empty tx-script allowlist rejects every tx script.
@@ -901,16 +1020,23 @@ async fn test_auth_network_account_rejects_unauthorized_upgrade_note() -> anyhow
 async fn test_auth_network_account_rejects_invalid_sponsorship_policy(
     #[case] policy: Word,
 ) -> anyhow::Result<()> {
-    let mut account = build_allowlist_account(vec![placeholder_script_root()])?;
+    let note = build_input_note()?;
+    let mut account = build_allowlist_account(vec![note.script().root().into()])?;
     account
         .storage_mut()
         .set_item(AuthNetworkAccount::sponsorship_policy_slot(), policy)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
-    let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
 
     assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY);
 

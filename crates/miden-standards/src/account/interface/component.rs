@@ -51,8 +51,8 @@ pub enum AccountComponentInterface {
     /// [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] module.
     ///
     /// This authentication scheme is intended for network-owned accounts. It rejects transactions
-    /// that executed a tx script or consumed input notes outside of a fixed allowlist of note
-    /// script roots.
+    /// that executed a tx script or consumed input notes outside of fixed allowlists, as well as
+    /// transactions that neither consume an input note nor change the account before fee payment.
     AuthNetworkAccount,
     /// A non-standard, custom interface which exposes the contained procedures.
     ///
