@@ -10,8 +10,8 @@ pub use block_number::BlockNumber;
 mod kernel;
 pub use kernel::BlockKernel;
 
-mod output;
-pub use output::BlockOutputs;
+mod block_outputs;
+pub use block_outputs::BlockOutputs;
 
 mod proposed_block;
 pub use proposed_block::ProposedBlock;
