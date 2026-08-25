@@ -49,10 +49,15 @@ procedure_root!(
 /// third party can execute a transaction as the account and name themselves as the destination.
 ///
 /// Assets passing through are therefore only safe if the input note's own script constrains where
-/// they go.
+/// they go, or if they were already unrestricted before they arrived.
+/// [`TxFeeNote`](crate::note::TxFeeNote)s are the latter: any account may consume one, so routing
+/// them through a pass-through account takes nothing away. Routing a destination-restricted note
+/// such as [`P2idNote`](crate::note::P2idNote) through one instead destroys that restriction,
+/// since the assets become claimable by whoever executes the next transaction as the account.
 ///
-/// Both require authentication. Thus, this component must be combined with a component providing
-/// authentication, and with one exposing `receive_asset` (e.g.
+/// Both are account procedures, so the component must be combined with an authentication
+/// component - for a pass-through account, one that leaves the commitment unchanged - and with one
+/// exposing `receive_asset` (e.g.
 /// [`BasicWallet`](crate::account::wallets::BasicWallet)) so that input notes can deposit into the
 /// account in the first place.
 pub struct PassThrough;

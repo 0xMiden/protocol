@@ -35,7 +35,10 @@ const ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED = "the account's vault is not the o
 #! a transaction as the account and name themselves as the destination.
 #!
 #! Assets passing through are therefore only safe if the input note's own script constrains where
-#! they go.
+#! they go, or if they were already unrestricted before they arrived. TX_FEE notes are the latter:
+#! any account may consume one, so routing them through a pass-through account takes nothing away.
+#! Routing a destination-restricted note through one instead destroys that restriction, since the
+#! assets become claimable by whoever executes the next transaction as the account.
 #!
 #! Inputs:  [ASSET_ID, note_idx, pad(11)]
 #! Outputs: [pad(16)]
