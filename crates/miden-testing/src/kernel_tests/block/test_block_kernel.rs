@@ -2,6 +2,7 @@ use anyhow::Context;
 use miden_block_prover::{BlockExecutor, LocalBlockProver};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockKernel, ProposedBlock};
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::note::NoteType;
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 
@@ -64,7 +65,7 @@ async fn block_kernel_input_stack_is_reproducible() -> anyhow::Result<()> {
     let (stack_inputs, _advice_inputs) = BlockKernel::prepare_inputs(&block);
     let expected = BlockKernel::build_input_stack(
         block.prev_block_header().commitment(),
-        block.batches().commitment(),
+        block.batches().to_commitment(),
     );
 
     assert_eq!(stack_inputs, expected);

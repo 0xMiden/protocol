@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_core::program::KernelDescriptor;
 
 use crate::block::ProposedBlock;
+use crate::crypto::SequentialCommit;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
@@ -55,10 +56,12 @@ impl BlockKernel {
     /// the block kernel.
     pub fn prepare_inputs(proposed_block: &ProposedBlock) -> (StackInputs, AdviceInputs) {
         let prev_block_commitment = proposed_block.prev_block_header().commitment();
-        let batches_commitment = proposed_block.batches().commitment();
+        let batches_commitment = proposed_block.batches().to_commitment();
 
         let stack_inputs = Self::build_input_stack(prev_block_commitment, batches_commitment);
-        let advice_inputs = Self::build_advice_inputs(proposed_block);
+
+        // TODO: Create a dedicated `BlockAdviceInputs` struct mirroring `TransactionAdviceInputs`
+        let advice_inputs = AdviceInputs::default();
 
         (stack_inputs, advice_inputs)
     }
@@ -81,15 +84,5 @@ impl BlockKernel {
         inputs.extend_from_slice(batches_commitment.as_elements());
 
         StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
-    }
-
-    // ADVICE BUILDER
-    // --------------------------------------------------------------------------------------------
-
-    /// Builds the advice inputs (map + stack) consumed by the block kernel.
-    ///
-    /// The skeleton kernel ignores its advice inputs, so this returns the default empty value.
-    fn build_advice_inputs(_proposed_block: &ProposedBlock) -> AdviceInputs {
-        AdviceInputs::default()
     }
 }

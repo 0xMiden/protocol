@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::batch::ProvenBatch;
+use crate::crypto::SequentialCommit;
 use crate::transaction::OrderedTransactionHeaders;
 use crate::utils::serde::{
     ByteReader,
@@ -9,7 +10,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Hasher, Word};
+use crate::{Felt, Word};
 
 // ORDERED BATCHES
 // ================================================================================================
@@ -31,19 +32,6 @@ impl OrderedBatches {
     /// Returns a reference to the underlying proven batches.
     pub fn as_slice(&self) -> &[ProvenBatch] {
         &self.0
-    }
-
-    /// Computes a commitment to the batches in this block.
-    ///
-    /// This is a sequential hash over the [`BatchId`](crate::batch::BatchId) of each batch, in
-    /// order.
-    pub fn commitment(&self) -> Word {
-        let mut elements = Vec::with_capacity(self.0.len() * Word::NUM_ELEMENTS);
-        for batch in self.0.iter() {
-            elements.extend_from_slice(batch.id().as_word().as_elements());
-        }
-
-        Hasher::hash_elements(&elements)
     }
 
     /// Converts the transactions in batches into ordered transaction headers.
@@ -75,6 +63,20 @@ impl OrderedBatches {
     /// Consumes self and returns the underlying vector of batches.
     pub fn into_vec(self) -> Vec<ProvenBatch> {
         self.0
+    }
+}
+
+impl SequentialCommit for OrderedBatches {
+    type Commitment = Word;
+
+    /// Returns batch IDs represented as a vector of field elements, in order.
+    fn to_elements(&self) -> Vec<Felt> {
+        let mut elements = Vec::with_capacity(self.0.len() * Word::NUM_ELEMENTS);
+        for batch in self.0.iter() {
+            elements.extend_from_slice(batch.id().as_word().as_elements());
+        }
+
+        elements
     }
 }
 
