@@ -23,6 +23,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
     ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
+    ERR_TOO_MANY_APPROVERS,
     ERR_TX_ALREADY_EXECUTED,
 };
 use miden_standards::note::P2idNote;
@@ -1113,6 +1114,66 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
         .await;
 
     assert_transaction_executor_error!(result, ERR_DUPLICATE_APPROVER_PUBLIC_KEY);
+
+    Ok(())
+}
+
+/// Tests that `update_signers_and_threshold` rejects a signer set larger than `MAX_NUM_APPROVERS`.
+///
+/// Authentication cost is linear in the number of approvers and the uniqueness check is quadratic
+/// in it, so an unbounded signer set would let a quorum configure an account whose next `auth_tx`
+/// exceeds provable cycle limits, permanently locking its assets.
+#[tokio::test]
+async fn test_multisig_update_signers_rejects_too_many_approvers() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let num_of_approvers = u64::from(ApproverSet::MAX_APPROVERS) + 1;
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(num_of_approvers as usize, 1, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .take(2)
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let config_and_pubkeys_vector =
+        build_update_signers_config_vector(2, num_of_approvers, &public_keys, auth_scheme);
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(AuthMultisig::code())?
+        .compile_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
+    let salt = Word::from([Felt::new_unchecked(9); 4]);
+
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(tx_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_TOO_MANY_APPROVERS);
 
     Ok(())
 }

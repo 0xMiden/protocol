@@ -253,6 +253,13 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     loc_load.NEW_NUM_OF_APPROVERS_LOC
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
+    # make sure the signer set stays small enough for `auth_tx` to remain provable
+    exec.multisig::assert_num_approvers_within_bound
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
+    # => [num_approvers, MULTISIG_CONFIG, pad(12)]
+
     exec.assert_proc_policies_lte_num_approvers
     # => [MULTISIG_CONFIG, pad(12)]
 
