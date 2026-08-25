@@ -47,10 +47,11 @@ procedure_root!(
 /// such as [`P2idNote`](crate::note::P2idNote) through one instead destroys that restriction,
 /// since the assets become claimable by whoever executes the next transaction as the account.
 ///
-/// It is an account procedure, so the component must be combined with an authentication component
-/// - for a pass-through account [`AuthPassThrough`](crate::account::auth::AuthPassThrough), which
-/// asserts the account's state is unchanged and so catches an asset the script fails to move out -
-/// and with one exposing `receive_asset` (e.g.
+/// It is an account procedure, so the component must be combined with an authentication
+/// component. For a pass-through account that is
+/// [`AuthPassThrough`](crate::account::auth::AuthPassThrough), which asserts the account's state
+/// is unchanged and so catches an asset the script fails to move out. It must also be combined
+/// with a component exposing `receive_asset` (e.g.
 /// [`BasicWallet`](crate::account::wallets::BasicWallet)) so that input notes can deposit into the
 /// account in the first place.
 ///
