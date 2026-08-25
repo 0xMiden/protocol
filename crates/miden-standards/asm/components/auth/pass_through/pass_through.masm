@@ -24,7 +24,7 @@ const ERR_AUTH_PASS_THROUGH_ACCOUNT_STATE_CHANGED = "a pass-through account's st
 #!
 #! This procedure creates no TX_FEE note, so a transaction using a pass-through script pays no
 #! fee and is only includable by a batch builder that accepts fee-less transactions. Note that
-#! this bounds the procedure, not the transaction: the assert below allows a zero net vault delta,
+#! this bounds the procedure, not the transaction: the assert below requires a zero net vault delta,
 #! not the absence of withdrawals, so another script could still route assets an input note
 #! deposited into a fee note of its own.
 #!

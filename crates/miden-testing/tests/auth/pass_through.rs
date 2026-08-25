@@ -49,11 +49,9 @@ async fn pass_through_auth_rejects_a_state_change() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// On a fee-charging chain the pass-through auth procedure creates no TX_FEE note: an account that
-/// cannot change its state cannot fund one out of its vault.
-///
-/// The transaction's only output is the P2ID note the script created, and the account is left as
-/// the transaction found it.
+/// On a fee-charging chain the pass-through auth procedure creates no TX_FEE note, so the
+/// transaction's only output is the P2ID note the script created and the account is left as the
+/// transaction found it.
 #[tokio::test]
 async fn pass_through_auth_creates_no_fee_note_on_a_fee_charging_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
