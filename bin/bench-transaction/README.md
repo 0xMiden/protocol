@@ -34,13 +34,33 @@ The network-account auth procedure collects sponsored fees and answers sponsorsh
 
 The network-account scenarios feed two checked-in, generated cost tables: `crates/miden-standards/src/note/costs/table.rs` and `crates/miden-agglayer/src/costs/table.rs`. Each table entry is the note's consumption cost in VM cycles - the total cycle count of the canonical network-account transaction consuming it, taken as the maximum across the note's benchmarked execution paths. The values are estimates, not guaranteed worst cases - see the caveats in `miden_standards::note::costs` (e.g. asset counts are benchmarked at the planned, not current, protocol maximum).
 
-Regenerate the tables (and `bench-tx.json`) with:
+### Regenerating the Generated Artifacts
+
+There are two of them - the cost tables above and `bench-tx.json` - and they are regenerated
+together, only when the drift guard asks for it:
 
 ```bash
-make update-note-costs
+make update-generated
 ```
 
-Freshness is enforced in CI: the `checked_in_note_costs_match_executed_scenarios` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant, or when a note's declared `created_notes` do not match what its scenarios actually create. It walks `PricedNote::all` - so all priced notes are covered. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
+The guard is the `checked_in_note_costs_match_executed_scenarios` test in `src/note_costs.rs`. It
+re-executes every priced scenario during the regular test run and fails when a measured cost drifts
+more than 5% from its checked-in constant, or when a note's declared `created_notes` do not match
+what its scenarios actually create. It walks `PricedNote::all` - so all priced notes are covered.
+
+Until that test fails, a PR regenerates nothing, including a PR that changes cycle counts.
+Sub-threshold drift is deliberately absorbed. Fee-wise that is safe: the fee is logarithmic in
+cycles and the pricing safety margin dwarfs the tolerated drift. It is also the cheaper trade for
+review - regenerating on every cost-affecting change buries a couple of hundred lines of real diff
+under a thousand lines of generated churn, which is what the tables and the snapshot produce
+between them.
+
+When the guard does fail, run `make update-generated` and commit both artifacts in the same change.
+Keeping them in lockstep is why there is one target rather than two.
+
+`bench-tx.json` is refreshed only as part of that regeneration, so between refreshes it is not
+expected to match the current tree, and nothing enforces that it does. It is an observational
+snapshot.
 
 ### Benchmark Groups
 
