@@ -25,7 +25,7 @@ type        = { key = "u32", value = "miden::standards::auth::pub_key" }
 [[package.metadata.account-component.storage.slots]]
 description = "Executed transactions"
 name        = "miden::standards::auth::multisig::executed_transactions"
-type        = { key = "word", value = "word" }
+type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Approver public keys"

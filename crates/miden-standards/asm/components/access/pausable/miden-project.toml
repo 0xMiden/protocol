@@ -18,7 +18,7 @@ name        = "miden::standards::access::pausable"
 version     = "1.0.0"
 
 [[package.metadata.account-component.storage.slots]]
-default-value = "0x0000000000000000000000000000000000000000000000000000000000000000"
+default-value = "false"
 description   = "Whether the account is paused"
 name          = "miden::standards::access::pausable::is_paused"
-type          = "word"
+type          = "bool"

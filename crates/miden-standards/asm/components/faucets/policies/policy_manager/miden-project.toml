@@ -40,19 +40,19 @@ type        = "word"
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed send policy procedure roots"
 name        = "miden::standards::faucets::policies::policy_manager::allowed_send_policy_proc_roots"
-type        = { key = "word", value = "word" }
+type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed burn policy procedure roots"
 name        = "miden::standards::faucets::policies::policy_manager::allowed_burn_policy_proc_roots"
-type        = { key = "word", value = "word" }
+type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed receive policy procedure roots"
 name        = "miden::standards::faucets::policies::policy_manager::allowed_receive_policy_proc_roots"
-type        = { key = "word", value = "word" }
+type        = { key = "word", value = "bool" }
 
 [[package.metadata.account-component.storage.slots]]
 description = "Allowed mint policy procedure roots"
 name        = "miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots"
-type        = { key = "word", value = "word" }
+type        = { key = "word", value = "bool" }

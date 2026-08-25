@@ -25,4 +25,4 @@ type        = { key = "miden::standards::access::role_symbol", value = "word" }
 [[package.metadata.account-component.storage.slots]]
 description = "Role membership flag indexed by role symbol and account ID"
 name        = "miden::standards::access::rbac::role_membership"
-type        = { key = "word", value = "word" }
+type        = { key = "word", value = "bool" }
