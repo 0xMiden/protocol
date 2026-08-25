@@ -14,6 +14,7 @@ pub struct BlockProof {}
 
 impl BlockProof {
     /// Creates the empty placeholder proof used until block proving is implemented.
+    #[allow(clippy::new_without_default)]
     pub const fn new() -> Self {
         Self {}
     }
