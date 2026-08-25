@@ -193,6 +193,9 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
     /// Returns the ID of the active note, or None if the note execution hasn't started yet or has
     /// already ended.
     ///
+    /// The ID is the word the prologue caches at `INPUT_NOTE_ID_OFFSET`; the note segment's base
+    /// word holds the details commitment, which is a different value of the same shape.
+    ///
     /// # Errors
     /// Returns an error if the address of the active note is invalid (e.g., greater than
     /// `u32::MAX`).
