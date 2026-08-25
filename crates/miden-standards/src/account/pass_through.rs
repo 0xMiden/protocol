@@ -35,8 +35,8 @@ procedure_root!(
 /// An [`AccountComponent`] providing the account procedures a pass-through transaction needs.
 ///
 /// A transaction script has no account context, so it cannot read the account's vault. This
-/// component exposes the two steps that need it, for the
-/// [`PassThroughTransactionScript`](crate::tx_script::PassThroughTransactionScript) to `call`:
+/// component exposes the two steps that need it, for the pass-through transaction scripts (e.g.
+/// [`PassThroughSingleP2idTransactionScript`][single]) to `call`:
 /// - `sweep_asset_to_note`, which moves the account's entire balance of an asset into an output
 ///   note.
 /// - `assert_vault_unchanged`, which asserts the vault is the one the transaction started with.
@@ -45,6 +45,8 @@ procedure_root!(
 /// authentication, and with one exposing `receive_asset` (e.g.
 /// [`BasicWallet`](crate::account::wallets::BasicWallet)) so that input notes can deposit into the
 /// account in the first place.
+///
+/// [single]: crate::tx_script::PassThroughSingleP2idTransactionScript
 pub struct PassThrough;
 
 impl PassThrough {

@@ -17,6 +17,17 @@ use crate::tx_script::transaction_script;
 
 /// Path to the `single_p2id` pass-through transaction script procedure in the standards library,
 /// assembled from `asm/standards/tx_scripts/pass_through/single_p2id.masm`.
+/// `MAX_ASSET_IDS` as the script defines it, mirrored here so the two bounds cannot drift.
+const MASM_MAX_ASSET_IDS: usize = 16;
+
+// The script rejects a longer payload on its own, so a bound above the MASM one would make this
+// type hand out scripts that cannot execute.
+const _: () = assert!(
+    PassThroughSingleP2idTransactionScript::MAX_ASSET_IDS == MASM_MAX_ASSET_IDS,
+    "MAX_ASSET_IDS must match MAX_ASSET_IDS in \
+     asm/standards/tx_scripts/pass_through/single_p2id.masm"
+);
+
 const PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT_PATH: &str =
     "::miden::standards::tx_scripts::pass_through::single_p2id::main";
 
@@ -36,10 +47,11 @@ static PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT: LazyLock<TransactionScript> =
 /// fee note from the vault, e.g. [`NoAuth`] on a chain with a zero verification base fee.
 ///
 /// Naming assets rather than notes is what makes the script's cost independent of how many notes
-/// the transaction consumes. The account must hold no assets of its own, since its own balance is
-/// indistinguishable from what was deposited and would be moved out too. Both that and an asset
-/// left unnamed leave the vault different from how it started, which the script turns into a
-/// failed transaction by calling [`PassThrough::assert_vault_unchanged_root`] once it is done.
+/// the transaction consumes. The account must hold no assets of its own, since its full balance is
+/// moved out. If the transaction moved more assets out of the vault than were deposited, or left
+/// an asset the payload failed to name behind, the vault would differ from how it started and the
+/// transaction fails, rather than the account being silently changed - the script calls
+/// [`PassThrough::assert_vault_unchanged_root`] once it is done.
 ///
 /// The account must expose the [`PassThrough`] component alongside a component providing
 /// `create_note` and `receive_asset`, e.g. [`BasicWallet`].

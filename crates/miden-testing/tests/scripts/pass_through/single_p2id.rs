@@ -142,6 +142,46 @@ async fn forwards_assets_of_every_faucet_and_composition() -> anyhow::Result<()>
     Ok(())
 }
 
+/// A payload naming the maximum number of assets executes, pinning the script's own bound against
+/// the Rust one.
+#[tokio::test]
+async fn forwards_the_maximum_number_of_assets() -> anyhow::Result<()> {
+    let assets: Vec<Asset> = (0..PassThroughSingleP2idTransactionScript::MAX_ASSET_IDS)
+        .map(|i| NonFungibleAsset::mock(&[u8::try_from(i).unwrap()]))
+        .collect();
+
+    let mut builder = MockChain::builder();
+    let account = pass_through_account()?;
+    builder.add_account(account.clone())?;
+    let target = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let fee_note = builder.add_tx_fee_note(ACCOUNT_ID_SENDER.try_into()?, &assets)?;
+    let mock_chain = builder.build()?;
+
+    let script = PassThroughSingleP2idTransactionScript::new(
+        target.id(),
+        NoteType::Public,
+        SERIAL_NUMBER,
+        assets.iter().map(Asset::id),
+    )?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(fee_note.id())
+        .pass_through_single_p2id_script(&script)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed.output_notes().num_notes(), 1);
+    assert_eq!(executed.output_notes().get_note(0).assets(), &NoteAssets::new(assets)?,);
+    assert_eq!(executed.final_account().to_commitment(), account.to_commitment());
+
+    Ok(())
+}
+
 /// The P2ID note the script creates is claimable by its target.
 #[tokio::test]
 async fn output_note_is_consumable_by_the_target() -> anyhow::Result<()> {

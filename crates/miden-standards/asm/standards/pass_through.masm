@@ -1,8 +1,8 @@
 # The account procedures a pass-through transaction needs.
 #
 # A pass-through transaction uses its account as a conduit: input notes deposit their assets into
-# the account's vault and the transaction script moves them straight back out into a single output
-# note, leaving the vault as it was.
+# the account's vault and the transaction script moves them straight back out, leaving the vault
+# as it was.
 #
 # See the `PassThrough` Rust type's documentation for more details.
 
