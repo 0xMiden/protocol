@@ -151,9 +151,9 @@ fn storage_update_tx_script(slot_name: &StorageSlotName) -> TransactionScript {
 // TESTS
 // ================================================================================================
 
-/// A network account transaction must consume an input note or change account state before the auth
-/// procedure pays its fee. Otherwise, permissionless callers could repeatedly submit transactions
-/// that only withdraw the transaction fee from the account's vault.
+/// A network account transaction must consume an input note, create an output note, or change
+/// account state before the auth procedure pays its fee. Otherwise, permissionless callers could
+/// repeatedly submit transactions that only withdraw the transaction fee from the account's vault.
 #[tokio::test]
 async fn test_auth_network_account_rejects_transaction_without_action() -> anyhow::Result<()> {
     let account = build_allowlist_account(vec![placeholder_script_root()])?;
@@ -173,8 +173,7 @@ async fn test_auth_network_account_rejects_transaction_without_action() -> anyho
 /// charging the network account. In particular, attaching the default expiration script must not
 /// let a zero-input transaction bypass the no-action check.
 #[tokio::test]
-async fn test_auth_network_account_rejects_metadata_only_tx_script_without_input_notes()
--> anyhow::Result<()> {
+async fn test_auth_network_account_rejects_metadata_only_tx_script() -> anyhow::Result<()> {
     let tx_script = expiration_tx_script(10);
     let account =
         build_account_with_allowlists(vec![placeholder_script_root()], vec![tx_script.root()])?;
@@ -195,12 +194,12 @@ async fn test_auth_network_account_rejects_metadata_only_tx_script_without_input
     Ok(())
 }
 
-/// A root-allowlisted transaction script may execute without input notes when it changes the
-/// account state before authentication pays the fee. This preserves the script-only network-account
-/// use case while preventing fee payment itself from satisfying the action requirement.
+/// A root-allowlisted transaction script may execute without input notes or output notes when it
+/// changes the account state before authentication pays the fee. This preserves the script-only
+/// network-account use case while preventing fee payment itself from satisfying the action
+/// requirement.
 #[tokio::test]
-async fn test_auth_network_account_accepts_state_changing_tx_script_without_input_notes()
--> anyhow::Result<()> {
+async fn test_auth_network_account_accepts_state_changing_tx_script() -> anyhow::Result<()> {
     let action_slot = StorageSlotName::new("test::network_account::script_only_action")?;
     let tx_script = storage_update_tx_script(&action_slot);
 

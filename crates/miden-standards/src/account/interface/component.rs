@@ -52,7 +52,8 @@ pub enum AccountComponentInterface {
     ///
     /// This authentication scheme is intended for network-owned accounts. It rejects transactions
     /// that executed a tx script or consumed input notes outside of fixed allowlists, as well as
-    /// transactions that neither consume an input note nor change the account before fee payment.
+    /// transactions that do not consume an input note, create an output note, or change the
+    /// account before fee payment.
     AuthNetworkAccount,
     /// A non-standard, custom interface which exposes the contained procedures.
     ///

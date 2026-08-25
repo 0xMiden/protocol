@@ -254,11 +254,10 @@ async fn network_account_fee_payment_fails_without_funds() -> anyhow::Result<()>
     Ok(())
 }
 
-/// A fee-charging network account rejects a transaction with no input notes or account changes
-/// before the account can fund a TX_FEE note from its vault.
+/// A fee-charging network account rejects a transaction with no input notes, output notes, or
+/// account changes before the account can fund a TX_FEE note from its vault.
 #[tokio::test]
-async fn network_account_rejects_transaction_without_action_before_fee_payment()
--> anyhow::Result<()> {
+async fn network_account_rejects_empty_fee_only_transaction() -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
 
