@@ -459,7 +459,7 @@ mod tests {
     use crate::batch::{BatchAccountUpdate, BatchId};
     use crate::block::BlockNumber;
     use crate::errors::ProvenBatchError;
-    use crate::note::Note;
+    use crate::note::{Note, NoteHeader, NoteId};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
@@ -483,7 +483,7 @@ mod tests {
         initial_state_commitment: Word,
         final_state_commitment: Word,
         input_notes: InputNotes<InputNoteCommitment>,
-        output_notes: Vec<crate::note::NoteHeader>,
+        output_notes: Vec<NoteHeader>,
     ) -> TransactionHeader {
         TransactionHeader::new(
             account_id(),
@@ -526,8 +526,7 @@ mod tests {
         .unwrap()
     }
 
-    fn conflicting_notes() -> (crate::note::NoteId, InputNotes<InputNoteCommitment>, Vec<OutputNote>)
-    {
+    fn conflicting_notes() -> (NoteId, InputNotes<InputNoteCommitment>, Vec<OutputNote>) {
         let note = Note::mock_noop(Word::empty());
         let note_id = note.id();
         let input_note =
