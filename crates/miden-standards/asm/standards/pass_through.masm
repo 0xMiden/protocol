@@ -11,6 +11,8 @@ use {AssetId} from miden::protocol::types
 # ERRORS
 # =================================================================================================
 
+const ERR_PASS_THROUGH_ACCOUNT_ALREADY_HELD_ASSET = "a pass-through account must not hold the swept asset before the transaction"
+
 const ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED = "the account's vault is not the one it had at the start of the pass-through transaction"
 
 # PUBLIC INTERFACE
@@ -25,10 +27,10 @@ const ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED = "the account's vault is not the o
 #!
 #! Does nothing if the account holds none of the asset.
 #!
-#! Install this only on a pass-through account. Unlike wallets::basic::move_asset_to_note, which
-#! makes the caller name the amount, this procedure reads the balance itself, so on a
-#! general-purpose account it hands every note script the account consumes an unconditional
-#! full-balance drain.
+#! The account must not have held the asset when the transaction started, so that the balance this
+#! moves is exactly what the transaction deposited. Unlike wallets::basic::move_asset_to_note,
+#! which makes the caller name the amount, this procedure reads the balance itself; without that
+#! check it would hand every note script the account consumes an unconditional full-balance drain.
 #!
 #! Inputs:  [ASSET_ID, note_idx, pad(11)]
 #! Outputs: [pad(16)]
@@ -38,11 +40,18 @@ const ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED = "the account's vault is not the o
 #! - note_idx is the index of the output note to move the balance into.
 #!
 #! Panics if:
+#! - the account held the asset when the transaction started.
 #! - the maximum number of assets per note is exceeded.
 #!
 #! Invocation: call
 @account_procedure
 pub proc sweep_asset_to_note(asset_id: AssetId, note_idx: u16)
+    # only what this transaction deposited may be moved out, so the account must have started
+    # without the asset
+    dupw exec.native_account::get_initial_asset exec.word::eqz
+    assert.err=ERR_PASS_THROUGH_ACCOUNT_ALREADY_HELD_ASSET
+    # => [ASSET_ID, note_idx, pad(11)]
+
     dupw exec.active_account::get_asset
     # => [ASSET_VALUE, ASSET_ID, note_idx, pad(11)]
 

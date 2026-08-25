@@ -39,10 +39,11 @@ procedure_root!(
 ///
 /// # Security
 ///
-/// Install this only on a pass-through account. Unlike
+/// `sweep_asset_to_note` reads the balance itself, unlike
 /// [`BasicWallet`](crate::account::wallets::BasicWallet)'s `move_asset_to_note`, which makes the
-/// caller name the amount, `sweep_asset_to_note` reads the balance itself, so on a general-purpose
-/// account it hands every note script the account consumes an unconditional full-balance drain.
+/// caller name the amount. It therefore asserts the account did not hold the asset when the
+/// transaction started, so it can only ever move out what that transaction deposited rather than
+/// giving every note script the account consumes a full-balance drain.
 ///
 /// Both require authentication. Thus, this component must be combined with a component providing
 /// authentication, and with one exposing `receive_asset` (e.g.

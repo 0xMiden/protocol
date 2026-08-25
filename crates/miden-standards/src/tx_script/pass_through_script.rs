@@ -44,11 +44,11 @@ static PASS_THROUGH_SINGLE_P2ID_TX_SCRIPT: LazyLock<TransactionScript> =
 /// fee note from the vault, e.g. [`NoAuth`] on a chain with a zero verification base fee.
 ///
 /// Naming assets rather than notes is what makes the script's cost independent of how many notes
-/// the transaction consumes. The account must hold no assets of its own, since its full balance is
-/// moved out. If the transaction moved more assets out of the vault than were deposited, or left
-/// an asset the payload failed to name behind, the vault would differ from how it started and the
-/// transaction fails, rather than the account being silently changed - the script calls
-/// [`PassThrough::assert_vault_unchanged_root`] once it is done.
+/// the transaction consumes. The account must not hold a named asset of its own, which
+/// `sweep_asset_to_note` asserts. If the transaction moved more assets out of the vault than were
+/// deposited, or left an asset the payload failed to name behind, the vault would differ from how
+/// it started and the transaction fails, rather than the account being silently changed - the
+/// script calls [`PassThrough::assert_vault_unchanged_root`] once it is done.
 ///
 /// The account must expose the [`PassThrough`] component alongside a component providing
 /// `create_note` and `receive_asset`, e.g. [`BasicWallet`].

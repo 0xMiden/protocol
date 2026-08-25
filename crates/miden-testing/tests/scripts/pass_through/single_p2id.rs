@@ -1,11 +1,15 @@
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountType};
+use miden_protocol::account::{AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::auth::NoAuth;
+use miden_standards::account::pass_through::PassThrough;
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::{
+    ERR_PASS_THROUGH_ACCOUNT_ALREADY_HELD_ASSET,
     ERR_PASS_THROUGH_ACCOUNT_VAULT_CHANGED,
     ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID,
     ERR_PASS_THROUGH_PAYLOAD_NOT_WORD_ALIGNED,
@@ -312,6 +316,48 @@ async fn tolerates_a_named_asset_the_vault_does_not_hold() -> anyhow::Result<()>
         &NoteAssets::new(vec![deposited_asset])?,
     );
     assert_eq!(executed.final_account().to_commitment(), account.to_commitment());
+
+    Ok(())
+}
+
+/// An account holding the asset before the transaction is rejected, so the sweep can only ever
+/// move what the transaction itself deposited.
+#[tokio::test]
+async fn fails_when_the_account_already_held_the_asset() -> anyhow::Result<()> {
+    let asset = FungibleAsset::mock(10);
+
+    let mut builder = MockChain::builder();
+    let account = AccountBuilder::new([44; 32])
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_component(PassThrough)
+        .with_assets([asset])
+        .account_type(AccountType::Public)
+        .build_existing()?;
+    builder.add_account(account.clone())?;
+    let target = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let fee_note = builder.add_tx_fee_note(ACCOUNT_ID_SENDER.try_into()?, &[asset])?;
+    let mock_chain = builder.build()?;
+
+    let script = PassThroughSingleP2idTransactionScript::new(
+        target.id(),
+        NoteType::Public,
+        SERIAL_NUMBER,
+        [asset.id()],
+    )?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(fee_note.id())
+        .pass_through_single_p2id_script(&script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PASS_THROUGH_ACCOUNT_ALREADY_HELD_ASSET);
 
     Ok(())
 }
