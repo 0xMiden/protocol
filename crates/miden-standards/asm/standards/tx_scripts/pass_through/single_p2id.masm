@@ -27,10 +27,18 @@ const WORD_NUM_ELEMENTS = 4
 const HEADER_NUM_ELEMENTS = 8
 const HEADER_NUM_WORDS = HEADER_NUM_ELEMENTS / WORD_NUM_ELEMENTS
 
-# The maximum number of asset IDs the payload may name. A single note holds at most
-# MAX_ASSETS_PER_NOTE assets, so naming more could never be forwarded into one.
-const MAX_ASSET_IDS = 16
-const MAX_PAYLOAD_NUM_WORDS = HEADER_NUM_WORDS + MAX_ASSET_IDS
+# The size of `forward_assets`'s local frame, which the payload is piped into. `@locals` only
+# takes a literal, so the bounds below are derived from it rather than the other way round: that
+# way the payload the length check accepts can never outgrow the frame reserved for it.
+const NUM_LOCALS = 75
+
+# The three loop-state locals that follow the payload.
+const NUM_LOOP_STATE_LOCALS = 3
+
+# The largest payload that fits in the frame, and the asset IDs left once the header is taken out.
+# A note holds at most MAX_ASSETS_PER_NOTE assets, so the frame is sized to make the two match.
+const MAX_PAYLOAD_NUM_WORDS = (NUM_LOCALS - NUM_LOOP_STATE_LOCALS) / WORD_NUM_ELEMENTS
+const MAX_ASSET_IDS = MAX_PAYLOAD_NUM_WORDS - HEADER_NUM_WORDS
 
 # `forward_assets` locals: the payload, followed by the loop state.
 const PAYLOAD_LOC = 0
@@ -132,7 +140,7 @@ end
 #!
 #! Invocation: exec
 #
-# `@locals` only takes a literal; keep it at NUM_ASSET_IDS_LOC + 1.
+# Keep in sync with NUM_LOCALS, which the payload bounds derive from.
 @locals(75)
 proc forward_assets
     locaddr.PAYLOAD_LOC exec.load_payload loc_store.NUM_ASSET_IDS_LOC
