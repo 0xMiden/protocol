@@ -60,6 +60,7 @@ const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet poli
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the note is consumed past the expiry block of its target attachment.
 #! - the number of storage items exceeds NUM_ITEMS_SET_POLICY.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
@@ -74,6 +75,10 @@ pub proc main
     # target account
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # reject a note held past the expiry block of its target attachment
+    exec.network_account_target::assert_not_expired
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR

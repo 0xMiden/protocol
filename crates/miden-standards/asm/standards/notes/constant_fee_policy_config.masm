@@ -55,6 +55,7 @@ const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy con
 #! Panics if:
 #! - the note is missing its `NetworkAccountTarget` attachment or carries a malformed one (e.g. a
 #!   hand-crafted note reusing this script), or the consuming account is not the target account.
+#! - the note is consumed past the expiry block of its target attachment.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
 #! - the caller is not authorized per the installed `Authority` component, or the fee asset ID does
 #!   not match (per `set_note_fee`).
@@ -68,6 +69,10 @@ pub proc main
     # and by an unrelated account (the note's `set_note_fee` call only checks the sender)
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # reject a note held past the expiry block of its target attachment
+    exec.network_account_target::assert_not_expired
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
