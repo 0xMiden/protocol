@@ -14,8 +14,6 @@ use miden_protocol::note::NoteScriptRoot;
 use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
 
-#[cfg(test)]
-use crate::context_setups::build_benchmark_context;
 use crate::cycle_counting_benchmarks::ExecutionBenchmark;
 
 /// Header line of the generated table files.
@@ -238,37 +236,6 @@ fn path_label(bench: ExecutionBenchmark) -> &'static str {
     }
 }
 
-/// Executes the note's benchmark scenarios and returns each scenario's total cycle count.
-#[cfg(test)]
-async fn benched_path_cycles(note: PricedNote) -> Result<Vec<(ExecutionBenchmark, u32)>> {
-    let mut path_cycles = Vec::new();
-    for &bench in note.scenarios() {
-        let mock_tx = build_benchmark_context(bench)
-            .await
-            .with_context(|| format!("failed to build mock transaction for `{bench}`"))?;
-        let executed = mock_tx
-            .execute()
-            .await
-            .with_context(|| format!("failed to execute transaction for `{bench}`"))?;
-        let cycles = u32::try_from(executed.measurements().total_cycles())
-            .context("total cycle count does not fit into u32")?;
-        path_cycles.push((bench, cycles));
-    }
-    Ok(path_cycles)
-}
-
-/// Executes the note's benchmark scenarios and returns the maximum total cycle count.
-#[cfg(test)]
-async fn benched_cycles(note: PricedNote) -> Result<u32> {
-    let max_cycles = benched_path_cycles(note)
-        .await?
-        .into_iter()
-        .map(|(_, cycles)| cycles)
-        .max()
-        .expect("every priced note has at least one scenario");
-    Ok(max_cycles)
-}
-
 /// Rewrites the two generated cost table files from the given per-scenario cycle counts
 /// (typically the measurements the benchmark run just collected, so nothing is executed
 /// twice).
@@ -359,6 +326,8 @@ mod tests {
     use miden_tx::NetworkNotePricer;
 
     use super::*;
+    use crate::context_setups::build_benchmark_context;
+    use crate::note_labels::{NoteLabels, measured_note_key};
 
     /// Relative drift (in percent) tolerated between a measured cost and its checked-in
     /// constant before the snapshot check fails.
@@ -405,72 +374,126 @@ mod tests {
         assert_eq!(subjects["P2ID"], "a P2ID");
     }
 
-    /// Ties the hand-maintained created-notes metadata backing recursive pricing to actual
-    /// execution: every priced scenario is executed, and the script roots of the full output
-    /// notes other than the TX_FEE note must be exactly the consumed note's declared
-    /// `created_notes`, so both under- and over-declaration are caught.
-    #[tokio::test]
-    async fn created_notes_cover_executed_output_notes() -> Result<()> {
-        for &note in PricedNote::all() {
-            let declared: BTreeSet<NoteScriptRoot> =
-                note.note_cost().created_notes().iter().copied().collect();
-
-            let mut observed = BTreeSet::new();
-            for &bench in note.scenarios() {
-                let executed = build_benchmark_context(bench).await?.execute().await?;
-                for output_note in executed.output_notes().iter() {
-                    let RawOutputNote::Full(created) = output_note else {
-                        continue;
-                    };
-                    let root = created.script().root();
-                    if root == TxFeeNote::script_root() {
-                        continue;
-                    }
-                    assert!(
-                        declared.contains(&root),
-                        "scenario `{bench}` created a note with undeclared script root {root}",
-                    );
-                    observed.insert(root);
-                }
-            }
-
-            assert_eq!(observed, declared, "declared created notes were not observed for {note:?}");
-        }
-        Ok(())
+    /// What executing one priced note's benchmark scenarios established.
+    struct ExecutedScenarios {
+        /// Maximum total cycle count across the note's benchmarked paths - the figure its cost
+        /// table constant holds.
+        max_cycles: u32,
+        /// Script roots of the full output notes the scenarios created, other than the TX_FEE
+        /// note, tagged with the scenario that created each.
+        created: Vec<(ExecutionBenchmark, NoteScriptRoot)>,
     }
 
-    /// Snapshot check enforcing freshness of the checked-in cost tables: re-executes the
-    /// benchmark scenarios of every note in [`PricedNote::all`] and compares each measured
-    /// maximum against the compiled-in constant, failing when they diverge by more than
-    /// [`DRIFT_TOLERANCE_PERCENT`]. Catches kernel, standards, or agglayer changes that
-    /// meaningfully shift a note's consumption cost without the tables having been
-    /// regenerated.
-    #[tokio::test]
-    async fn checked_in_cost_matches_benched_cycles() -> Result<()> {
-        let mut stale = Vec::new();
-        for &note in PricedNote::all() {
-            let measured = benched_cycles(note).await?;
-            let committed = note.committed_cycles();
+    /// Executes each of the note's benchmark scenarios exactly once, collecting everything the
+    /// checked-in [`NoteCost`] is asserted against.
+    ///
+    /// Also validates the label join that `bench-tx.json`'s generator depends on. Only a real
+    /// execution exercises it - see the TODO on [`measured_note_key`] - and these are the only
+    /// real executions in the test suite, so the check rides along here instead of paying for its
+    /// own. A broken join is an infrastructure failure, so it aborts rather than accumulating.
+    async fn execute_scenarios(note: PricedNote) -> Result<ExecutedScenarios> {
+        let mut max_cycles = 0;
+        let mut created = Vec::new();
 
-            let (measured_scaled, committed) = (u64::from(measured) * 100, u64::from(committed));
+        for &bench in note.scenarios() {
+            let executed = build_benchmark_context(bench)
+                .await
+                .with_context(|| format!("failed to build mock transaction for `{bench}`"))?
+                .execute()
+                .await
+                .with_context(|| format!("failed to execute transaction for `{bench}`"))?;
+
+            let labels = NoteLabels::from_inputs(executed.tx_inputs())
+                .with_context(|| format!("failed to label the input notes of `{bench}`"))?;
+            for (measured, _) in &executed.measurements().note_execution {
+                anyhow::ensure!(
+                    labels.label(measured_note_key(*measured)).is_some(),
+                    "scenario `{bench}` measured note key {measured}, which matches none of its \
+                     input notes",
+                );
+            }
+
+            let cycles = u32::try_from(executed.measurements().total_cycles())
+                .context("total cycle count does not fit into u32")?;
+            max_cycles = max_cycles.max(cycles);
+
+            for output_note in executed.output_notes().iter() {
+                let RawOutputNote::Full(output_note) = output_note else {
+                    continue;
+                };
+                let root = output_note.script().root();
+                if root != TxFeeNote::script_root() {
+                    created.push((bench, root));
+                }
+            }
+        }
+
+        Ok(ExecutedScenarios { max_cycles, created })
+    }
+
+    /// Snapshot check tying the checked-in [`NoteCost`] of every note in [`PricedNote::all`] to a
+    /// real execution of its benchmark scenarios. Two properties are asserted off the same run:
+    ///
+    /// 1. the measured maximum cycle count is within [`DRIFT_TOLERANCE_PERCENT`] of the compiled-in
+    ///    constant, catching kernel, standards, or agglayer changes that meaningfully shift a
+    ///    note's consumption cost without the tables having been regenerated;
+    /// 2. the script roots of the full output notes other than the TX_FEE note are exactly the
+    ///    note's declared `created_notes`, the hand-maintained metadata backing recursive pricing,
+    ///    so both under- and over-declaration are caught.
+    #[tokio::test]
+    async fn checked_in_note_costs_match_executed_scenarios() -> Result<()> {
+        let mut stale_costs = Vec::new();
+        let mut misdeclared_created_notes = Vec::new();
+
+        for &note in PricedNote::all() {
+            let executed = execute_scenarios(note).await?;
+
+            let measured = executed.max_cycles;
+            let (measured_scaled, committed) =
+                (u64::from(measured) * 100, u64::from(note.committed_cycles()));
             let within_tolerance = measured_scaled <= committed * (100 + DRIFT_TOLERANCE_PERCENT)
                 && measured_scaled >= committed * (100 - DRIFT_TOLERANCE_PERCENT);
             if !within_tolerance {
-                stale.push(format!(
+                stale_costs.push(format!(
                     "{}: measured {measured} cycles vs checked-in {committed}",
                     note.name(),
                 ));
             }
+
+            let declared: BTreeSet<NoteScriptRoot> =
+                note.note_cost().created_notes().iter().copied().collect();
+            let observed: BTreeSet<NoteScriptRoot> =
+                executed.created.iter().map(|(_, root)| *root).collect();
+            for (bench, root) in executed.created.iter().filter(|(_, r)| !declared.contains(r)) {
+                misdeclared_created_notes
+                    .push(format!("{}: `{bench}` created undeclared {root}", note.name()));
+            }
+            for root in declared.difference(&observed) {
+                misdeclared_created_notes
+                    .push(format!("{}: declared {root} is never created", note.name()));
+            }
         }
 
-        assert!(
-            stale.is_empty(),
-            "cost table stale for {} note(s), each more than {DRIFT_TOLERANCE_PERCENT}% from \
-             its checked-in constant: {}. Run `make update-note-costs` and commit the updated \
-             tables",
-            stale.len(),
-            stale.join("; "),
-        );
+        let mut failures = Vec::new();
+        if !stale_costs.is_empty() {
+            failures.push(format!(
+                "cost table stale for {} note(s), each more than {DRIFT_TOLERANCE_PERCENT}% from \
+                 its checked-in constant: {}. Run `make update-note-costs` and commit the updated \
+                 tables",
+                stale_costs.len(),
+                stale_costs.join("; "),
+            ));
+        }
+        if !misdeclared_created_notes.is_empty() {
+            failures.push(format!(
+                "`created_notes` misdeclared for {} note(s): {}. Fix the declaration in the \
+                 note's `NoteCost`; regenerating the tables does not touch it",
+                misdeclared_created_notes.len(),
+                misdeclared_created_notes.join("; "),
+            ));
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+
         Ok(())
     }
 

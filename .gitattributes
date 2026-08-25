@@ -1,1 +1,3 @@
 CHANGELOG.md merge=union
+bin/bench-transaction/bench-tx.json linguist-generated=true
+Cargo.lock linguist-generated=true

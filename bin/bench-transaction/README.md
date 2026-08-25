@@ -40,7 +40,7 @@ Regenerate the tables (and `bench-tx.json`) with:
 make update-note-costs
 ```
 
-Freshness is enforced in CI: the `checked_in_cost_matches_benched_cycles` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant. It walks `PricedNote::all` - so all priced notes are covered. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
+Freshness is enforced in CI: the `checked_in_note_costs_match_executed_scenarios` snapshot test in `src/note_costs.rs` re-executes every priced scenario during the regular test run and fails when a measured cost drifts more than 5% from its checked-in constant, or when a note's declared `created_notes` do not match what its scenarios actually create. It walks `PricedNote::all` - so all priced notes are covered. Drift within the tolerance (from unrelated changes landing on the base branch) is absorbed without regeneration - fee-wise this is safe, since the fee is logarithmic in cycles and the pricing safety margin dwarfs it. A PR that meaningfully changes cycle counts must run `make update-note-costs` and commit the updated tables - which doubles as review signal, since cost regressions show up as table diffs.
 
 ### Benchmark Groups
 
@@ -49,8 +49,12 @@ Each of the above transactions is measured in two groups:
 
   For each transaction, data is collected on the number of cycles required to complete:
   - Prologue
+  - `total_cycles`: the sum of the prologue, notes-processing, tx-script and epilogue intervals,
+    and the figure the cost tables above are derived from
   - All notes processing
-  - Each note execution
+  - Each note execution, in consumption order and labelled by note kind (`P2ID`, or `P2ID#0` /
+    `P2ID#1` when a scenario consumes several notes of one kind). Notes whose script is neither a
+    standard nor an agglayer one are labelled `UNKNOWN`.
   - Transaction script processing
   - Epilogue:
     - Total number of cycles
