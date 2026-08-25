@@ -29,6 +29,7 @@ members = [
   "inspection/code_inspection",
   "inspection/schema_commitment",
   "note/note_creator",
+  "pass_through",
   "upgrade/manager",
   "wallets/basic_wallet",
 ]

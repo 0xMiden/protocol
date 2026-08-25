@@ -12,6 +12,7 @@ pub mod inspection
 pub mod interop
 pub mod note
 pub mod notes
+pub mod pass_through
 pub mod tx_scripts
 pub mod utils
 pub mod wallets
