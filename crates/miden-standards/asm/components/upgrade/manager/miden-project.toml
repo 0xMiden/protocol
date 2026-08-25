@@ -13,6 +13,6 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Code and storage upgrades for accounts."
+description = "Exposes the `upgrade` procedure for recording commitments to new account code and storage"
 name        = "miden::standards::upgrade::manager"
 version     = "1.0.0"

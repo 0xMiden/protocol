@@ -252,9 +252,8 @@ impl Authority {
 
     /// Returns the [`AccountComponentMetadata`] for this configuration.
     ///
-    /// The manifest declares the component's full storage surface, which only
-    /// [`Authority::RbacControlled`] installs in its entirety: the other authorities have no role
-    /// graph and therefore no `procedure_roles` slot, so their schema drops it.
+    /// The manifest declares the full storage schema, but only [`Authority::RbacControlled`]
+    /// installs the `procedure_roles` slot; the other authorities drop it from the schema.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
         let metadata = package_metadata(Self::code());
         if matches!(self, Authority::RbacControlled { .. }) {

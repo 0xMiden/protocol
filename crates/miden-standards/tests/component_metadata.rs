@@ -1,5 +1,4 @@
-//! Checks the account component metadata that the components declare in their `miden-project.toml`
-//! manifests and that the build script embeds into their packages.
+//! Tests for the account component metadata embedded in the standard component packages.
 
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_standards::account::access::{
@@ -37,8 +36,7 @@ use miden_standards::account::policies::{
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 
-/// Returns every standard component's declared name paired with the metadata read back from its
-/// package.
+/// Returns each standard component's `NAME` paired with the metadata read from its package.
 fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
     vec![
         (Authority::NAME, Authority::AuthControlled.component_metadata()),
@@ -75,8 +73,7 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
     ]
 }
 
-/// The name a component declares in its manifest is what the rest of the crate refers to it by, so
-/// the two must not drift apart.
+/// The name declared in a component's manifest must match its `NAME` constant.
 #[test]
 fn manifest_name_matches_component_name() {
     for (name, metadata) in components() {
@@ -84,8 +81,7 @@ fn manifest_name_matches_component_name() {
     }
 }
 
-/// Every component must describe itself, otherwise the metadata carried by its package tells a
-/// consumer nothing about what it does.
+/// Every component must declare a non-empty description.
 #[test]
 fn every_component_is_described() {
     for (name, metadata) in components() {

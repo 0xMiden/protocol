@@ -13,7 +13,7 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Role-based access control component"
+description = "Role-based access control"
 name        = "miden::standards::access::rbac"
 version     = "1.0.0"
 

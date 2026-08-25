@@ -13,7 +13,7 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Account-wide authority shared by procedures that gate state-mutating operations behind auth-only, owner-based, or RBAC role-based checks"
+description = "Account-wide authority gating state-mutating operations behind auth-only, owner-based, or RBAC checks"
 name        = "miden::standards::access::authority"
 version     = "1.0.0"
 
@@ -26,6 +26,7 @@ type        = { key = "word", value = "miden::standards::access::role_symbol" }
 description = "Authority configuration"
 name        = "miden::standards::access::authority::authority_config"
 
+# Word layout: [authority, is_frozen, 0, 0]
 [[package.metadata.account-component.storage.slots.type]]
 name = "authority"
 type = "u8"

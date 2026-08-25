@@ -13,12 +13,12 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Pausable: installs the `is_paused` storage slot and exposes `is_paused` view."
+description = "Pause switch for blocking the account's state-mutating operations"
 name        = "miden::standards::access::pausable"
 version     = "1.0.0"
 
 [[package.metadata.account-component.storage.slots]]
 default-value = "0x0000000000000000000000000000000000000000000000000000000000000000"
-description   = "Pause flag word; zero is unpaused, canonical paused encoding is [1,0,0,0]"
+description   = "Whether the account is paused"
 name          = "miden::standards::access::pausable::is_paused"
 type          = "word"

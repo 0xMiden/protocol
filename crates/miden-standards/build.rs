@@ -74,9 +74,9 @@ fn main() -> Result<()> {
     )?;
     registry.cache_package(package).into_diagnostic()?;
 
-    // compile account components (each member of the components workspace becomes its own package),
-    // embedding the metadata each component manifest declares into its package. Parsing the
-    // metadata here means a malformed schema fails the build rather than the first instantiation.
+    // compile account components (each member of the components workspace becomes its own package)
+    // and embed each component's manifest metadata into its package. Parsing the metadata here
+    // makes a malformed schema fail the build instead of the first instantiation.
     assemble_workspace(
         source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,

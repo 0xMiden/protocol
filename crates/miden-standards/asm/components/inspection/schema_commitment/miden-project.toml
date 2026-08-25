@@ -13,7 +13,7 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Component exposing the account storage schema commitment"
+description = "Exposes a commitment to the account's storage schema"
 name        = "miden::standards::inspection::storage_schema"
 version     = "1.0.0"
 

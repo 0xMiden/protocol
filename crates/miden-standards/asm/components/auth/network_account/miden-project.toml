@@ -13,7 +13,7 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Authentication component that restricts input notes and transaction scripts to fixed allowlists of script roots"
+description = "Authentication restricting input notes and transaction scripts to allowlisted script roots"
 name        = "miden::standards::auth::network_account"
 version     = "1.0.0"
 

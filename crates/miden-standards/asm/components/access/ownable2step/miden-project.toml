@@ -13,7 +13,7 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Two-step ownership management component"
+description = "Two-step ownership management"
 name        = "miden::standards::access::ownable2step"
 version     = "1.0.0"
 
@@ -21,6 +21,7 @@ version     = "1.0.0"
 description = "Ownership data (owner and nominated owner)"
 name        = "miden::standards::access::ownable2step::owner_config"
 
+# Word layout: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
 [[package.metadata.account-component.storage.slots.type]]
 name = "owner_suffix"
 

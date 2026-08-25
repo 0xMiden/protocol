@@ -13,6 +13,6 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Authority-gated allowlist admin: wraps `allowlist::allow_account` / `disallow_account` with the account-wide Authority component."
+description = "Authority-gated admin wrapping `allowlist::allow_account` / `disallow_account`"
 name        = "miden::standards::faucets::policies::transfer::allowlist::manager"
 version     = "1.0.0"

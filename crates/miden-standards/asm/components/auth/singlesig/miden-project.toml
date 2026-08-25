@@ -13,7 +13,7 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme"
+description = "Single-signature authentication using the ECDSA K256 Keccak or Falcon512 Poseidon2 scheme"
 name        = "miden::standards::auth::singlesig"
 version     = "1.0.0"
 

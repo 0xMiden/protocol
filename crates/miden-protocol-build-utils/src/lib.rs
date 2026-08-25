@@ -62,19 +62,15 @@ pub fn assemble_project(
 /// and returns the assembled packages. Members without a library target are skipped. Dependencies
 /// are resolved against `registry`.
 ///
-/// A member that declares a `[package.metadata.account-component]` manifest table has it handed to
-/// `encode_metadata` as a TOML document, and the bytes it returns become the package's
-/// [`SectionId::ACCOUNT_COMPONENT_METADATA`] section, so the component's storage schema travels
-/// with the `.masp` file. Whether a given target ought to declare that table is left to the
-/// caller: this function embeds what is there and does not require it of any target kind.
-///
-/// `encode_metadata` is a parameter because the metadata format is defined by `miden-protocol`,
-/// which build-depends on this crate - depending on it from here is a cycle cargo rejects.
+/// If a member declares a `[package.metadata.account-component]` manifest table, the table is
+/// passed to `encode_account_component_metadata` as a TOML document and the returned bytes are
+/// embedded in the package as its [`SectionId::ACCOUNT_COMPONENT_METADATA`] section. Members
+/// without the table are assembled as-is.
 pub fn assemble_workspace(
     manifest_path: impl AsRef<Path>,
     registry: &mut InMemoryPackageRegistry,
     target_dir: &Path,
-    encode_metadata: fn(&str) -> Result<Vec<u8>>,
+    encode_account_component_metadata: fn(&str) -> Result<Vec<u8>>,
 ) -> Result<Vec<Arc<Package>>> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
     let manifest = source_manager.load_file(manifest_path.as_ref()).into_diagnostic()?;
@@ -96,8 +92,10 @@ pub fn assemble_workspace(
             .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
         if let Some(metadata) = component_metadata_toml(member)? {
-            let section =
-                Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, encode_metadata(&metadata)?);
+            let section = Section::new(
+                SectionId::ACCOUNT_COMPONENT_METADATA,
+                encode_account_component_metadata(&metadata)?,
+            );
             Arc::make_mut(&mut package).sections.push(section);
         }
 

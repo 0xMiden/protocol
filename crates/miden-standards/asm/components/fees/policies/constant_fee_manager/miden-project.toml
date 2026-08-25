@@ -13,7 +13,7 @@ miden-protocol.workspace  = true
 miden-standards.workspace = true
 
 [package.metadata.account-component]
-description = "Authority-gated constant-fee schedule admin: exposes `set_note_fee` to update the fee schedule slot recorded in its storage, gated by the account-wide Authority component."
+description = "Authority-gated `set_note_fee` admin for updating a constant-fee schedule"
 name        = "miden::standards::fees::policies::constant_fee_manager"
 version     = "1.0.0"
 
