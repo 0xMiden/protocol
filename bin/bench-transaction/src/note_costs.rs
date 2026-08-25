@@ -440,14 +440,6 @@ mod tests {
     /// 2. the script roots of the full output notes other than the TX_FEE note are exactly the
     ///    note's declared `created_notes`, the hand-maintained metadata backing recursive pricing,
     ///    so both under- and over-declaration are caught.
-    ///
-    /// The two share one execution pass because executing a scenario is by far the expensive part
-    /// and both properties read the same result.
-    ///
-    /// Driven by [`PricedNote::all`] rather than a per-note case list, so a note cannot be added
-    /// to the tables without gaining both guards. Failures are collected across all the notes
-    /// before they are asserted on, so one run reports every stale constant and every misdeclared
-    /// `created_notes` list (a scenario that fails to execute still aborts the run immediately).
     #[tokio::test]
     async fn checked_in_note_costs_match_executed_scenarios() -> Result<()> {
         let mut stale_costs = Vec::new();

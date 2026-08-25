@@ -26,9 +26,6 @@ use miden_standards::note::StandardNote;
 const UNKNOWN_NOTE_LABEL: &str = "UNKNOWN";
 
 /// Labels of a transaction's input notes, in consumption order.
-///
-/// Held as a flat slice rather than a map: a transaction consumes a handful of notes, so the
-/// linear lookup is cheaper than the ordering machinery a map would require.
 #[derive(Debug)]
 pub struct NoteLabels(Vec<(NoteDetailsCommitment, String)>);
 

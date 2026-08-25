@@ -20,9 +20,6 @@ pub struct MeasurementsPrinter {
     prologue: usize,
     total_cycles: usize,
     notes_processing: usize,
-    /// A sequence rather than a map keyed by note: the entries stay in the order the kernel
-    /// measured the notes, so a note whose cycle count moves shows up as a one-line diff instead
-    /// of re-sorting the whole section.
     note_execution: Vec<NoteExecution>,
     tx_script_processing: usize,
     epilogue: EpilogueMeasurements,
