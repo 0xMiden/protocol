@@ -7,7 +7,7 @@
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
-- Added the canonical `pass_through` transaction script and its `PassThroughTransactionScript` type, forwarding the assets of every input note into a single P2ID note without changing the executing account ([#3709](https://github.com/0xMiden/protocol/issues/3709)).
+- Added the canonical `pass_through` transaction script and its `PassThroughTransactionScript` type, forwarding the assets of every input note into a single P2ID note, leaving the vault of the asset-less account it executes against unchanged ([#3709](https://github.com/0xMiden/protocol/issues/3709)).
 
 ### Changes
 

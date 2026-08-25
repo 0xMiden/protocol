@@ -34,9 +34,6 @@ fn pass_through_account() -> anyhow::Result<Account> {
 
 /// The pass-through script forwards the assets of every input note into one P2ID note addressed to
 /// the payload's target, leaving the account it runs on untouched.
-///
-/// This is the batch-fee flow: the batch builder sweeps a batch's TX_FEE notes into a single note
-/// it collects out of band, without changing the state of the account it uses to do so.
 #[tokio::test]
 async fn pass_through_forwards_fee_notes_into_a_single_p2id_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -138,8 +135,7 @@ async fn pass_through_forwards_assets_of_every_faucet_and_composition() -> anyho
     Ok(())
 }
 
-/// The P2ID note the script creates is claimable by its target, closing the loop of the batch-fee
-/// flow: the batch builder consumes the accumulated notes out of band.
+/// The P2ID note the script creates is claimable by its target.
 #[tokio::test]
 async fn pass_through_output_note_is_consumable_by_the_target() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -180,8 +176,7 @@ async fn pass_through_output_note_is_consumable_by_the_target() -> anyhow::Resul
     Ok(())
 }
 
-/// An input note carrying no assets contributes nothing and does not break the sweep, so a batch
-/// may mix asset-less notes in with its fee notes.
+/// An input note carrying no assets contributes nothing and does not break the sweep.
 #[tokio::test]
 async fn pass_through_tolerates_an_asset_less_input_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();

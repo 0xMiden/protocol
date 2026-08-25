@@ -4,13 +4,10 @@
 # parameters (the payload) from the advice map, so a single script root covers every target
 # account and serial number.
 #
-# The payload is a word-aligned element stream with the following layout:
+# The payload has the following layout:
 #
 #   word 0: [target_id_suffix, target_id_prefix, tag, note_type]
 #   word 1: SERIAL_NUM
-#
-# The first word is laid out in the order `p2id::create_output_note` reads its arguments off the
-# operand stack, so the payload can be pushed field by field without reordering.
 
 use miden::core::mem
 use miden::protocol::asset
@@ -24,11 +21,10 @@ use miden::standards::wallets::basic as basic_wallet
 # =================================================================================================
 
 # The number of elements in the payload: the P2ID target account ID, the output note's tag and
-# type, and its serial number. Must be kept in sync with the Rust
-# `PassThroughTransactionScript::PAYLOAD_NUM_ELEMENTS` constant.
+# type, and its serial number.
 const PAYLOAD_NUM_ELEMENTS = 8
 
-# The number of words the payload occupies; `mem::pipe_preimage_to_memory` writes a word at a time.
+# The number of words the payload occupies.
 const PAYLOAD_NUM_WORDS = PAYLOAD_NUM_ELEMENTS / 4
 
 # `pass_through` locals: the payload, followed by the index of the output note it creates.
@@ -53,18 +49,16 @@ const ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID = "pass through payload does not h
 
 #! Forwards the assets of every input note into a single P2ID output note.
 #!
-#! This is the canonical pass-through transaction script: the account it runs on is a conduit, not
-#! a destination. The input notes' scripts deposit their assets into the account's vault, and this
-#! script moves exactly those assets back out into one P2ID note addressed to the target named in
-#! the payload. The account's vault delta is therefore zero and, with an authentication component
-#! that only bumps the nonce on a state change, its commitment is unchanged. That is what lets a
-#! batch builder append such a transaction to every batch it builds concurrently, sweeping the
-#! batch's TX_FEE notes into a single note it collects out of band.
+#! This is the canonical pass-through transaction script: the state of the account it executes
+#! against does not change. The input notes' scripts deposit their assets into the account's
+#! vault, and this tx script moves each note's initial assets back out into one P2ID note
+#! addressed to a target, so the account's vault delta is zero. Its commitment is unchanged as
+#! long as the auth procedure neither bumps the nonce nor funds a fee note from the vault, e.g.
+#! the no_auth component on a chain with a zero verification base fee.
 #!
-#! The assets are read from each input note's initial assets rather than its remaining ones,
-#! because the note scripts have already emptied the notes by the time a transaction script runs.
-#! A note that does not deposit all of its initial assets into the account therefore fails the
-#! transaction instead of silently leaving assets behind.
+#! The account must hold no assets of its own. Assets are withdrawn from its pooled vault
+#! balance, which cannot say which note deposited what, so against a funded account an input note
+#! that keeps its assets withdraws the account's own funds instead of failing the transaction.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::note::note_creator::create_note procedure.
@@ -87,8 +81,7 @@ const ERR_PASS_THROUGH_PAYLOAD_LENGTH_INVALID = "pass through payload does not h
 #! - the payload does not consist of exactly PAYLOAD_NUM_ELEMENTS elements.
 #! - the payload does not hash to PAYLOAD_COMMITMENT.
 #! - the account does not expose the required procedures.
-#! - an input note's initial assets are not in the account's vault, i.e. the note did not deposit
-#!   them into it.
+#! - the account's vault holds less than an input note's initial assets.
 #! - the forwarded assets do not fit into a single output note.
 #!
 #! Invocation: call
@@ -112,7 +105,7 @@ end
 #! Outputs:
 #!   Operand stack: [pad(16)]
 #!
-#! Panics under the conditions listed on `main`, which this procedure implements.
+#! Panics under the conditions listed on `main`.
 #!
 #! Locals:
 #! 0..8: the payload
@@ -202,8 +195,7 @@ end
 #! Panics if:
 #! - the account does not expose the miden::standards::wallets::basic::move_asset_to_note
 #!   procedure.
-#! - the account's vault does not hold one of the note's initial assets, i.e. the note did not
-#!   deposit it into the vault.
+#! - the account's vault holds less than one of the note's initial assets.
 #!
 #! Locals:
 #! 0..128: the note's initial assets, ASSET_SIZE elements each; ASSET_SIZE * MAX_ASSETS_PER_NOTE

@@ -26,26 +26,19 @@ static PASS_THROUGH_TX_SCRIPT: LazyLock<TransactionScript> =
 /// The canonical transaction script that forwards the assets of every input note into a single
 /// P2ID output note.
 ///
-/// The account the script runs on is a conduit, not a destination: the input notes' scripts
-/// deposit their assets into its vault and the script moves exactly those assets back out into
-/// one P2ID note addressed to `target`. The account's vault delta is therefore zero and, with an
-/// authentication component that only bumps the nonce on a state change (e.g. [`NoAuth`]), its
-/// commitment is unchanged.
+/// The state of the account it executes against does not change: the input notes' scripts deposit
+/// their assets into the account's vault, and the script moves each note's *initial* assets back
+/// out into one P2ID note addressed to `target`, so the account's vault delta is zero. Its
+/// commitment is unchanged as long as the auth procedure neither bumps the nonce nor funds a fee
+/// note from the vault, e.g. [`NoAuth`] on a chain with a zero verification base fee.
 ///
-/// That property is what the script exists for: a batch builder can append such a transaction to
-/// every batch it builds concurrently, sweeping the batch's [`TxFeeNote`]s into a single note it
-/// collects out of band. Consuming the fees into the batch builder's own account instead would
-/// change that account's state and force batches to be built serially.
+/// The account must hold no assets of its own. Assets are withdrawn from its pooled vault
+/// balance, which cannot say which note deposited what, so against a funded account an input note
+/// that keeps its assets withdraws the account's own funds instead of failing the transaction.
 ///
-/// The forwarded assets are read from each input note's *initial* assets, since a transaction
-/// script runs after every note script and the notes are empty by then. An input note that does
-/// not deposit all of its initial assets into the account fails the transaction rather than
-/// silently leaving assets behind.
-///
-/// The script takes a commitment to its parameters as `TX_SCRIPT_ARGS` and reads the payload from
-/// the advice map, so a single [`PassThroughTransactionScript::script_root`] covers every target
-/// and serial number. The payload is embedded into the script's MAST forest, so callers only have
-/// to set the script and its arguments:
+/// The payload is embedded into the script's MAST forest and committed to by `TX_SCRIPT_ARGS`, so
+/// a single [`PassThroughTransactionScript::script_root`] covers every target and serial number
+/// and callers only have to set the script and its arguments:
 ///
 /// ```ignore
 /// let script = PassThroughTransactionScript::new(target, NoteType::Public, serial_number);
@@ -54,7 +47,6 @@ static PASS_THROUGH_TX_SCRIPT: LazyLock<TransactionScript> =
 /// ```
 ///
 /// [`NoAuth`]: crate::account::auth::NoAuth
-/// [`TxFeeNote`]: crate::note::TxFeeNote
 #[derive(Debug, Clone)]
 pub struct PassThroughTransactionScript {
     script: TransactionScript,
@@ -70,10 +62,6 @@ impl PassThroughTransactionScript {
 
     /// Number of elements in the payload: `[target_id_suffix, target_id_prefix, tag, note_type]`
     /// followed by `SERIAL_NUM`.
-    ///
-    /// Must be kept in sync with `PAYLOAD_NUM_ELEMENTS` in
-    /// `asm/standards/tx_scripts/pass_through.masm`, which the script asserts the payload against.
-    /// See `encode_payload` for the full payload layout.
     pub const PAYLOAD_NUM_ELEMENTS: usize = 8;
 
     /// Element offset of the P2ID target account ID's suffix within the payload.
@@ -91,12 +79,12 @@ impl PassThroughTransactionScript {
     /// Builds a pass-through script forwarding the input notes' assets into a P2ID note of type
     /// `note_type` addressed to `target`, carrying `serial_number`.
     ///
-    /// `serial_number` must be unique per transaction: the pass-through account's state never
-    /// changes, so nothing else distinguishes two of its transactions and two notes sharing a
-    /// serial number would collide.
+    /// `serial_number` must be unique per transaction: the account's state never changes, so
+    /// nothing else distinguishes two of its transactions and two notes sharing a serial number
+    /// would collide.
     ///
-    /// The note's tag is derived as [`NoteTag::with_account_target`] so the target can discover
-    /// the note, matching the tag a Rust-built [`P2idNote`](crate::note::P2idNote) carries.
+    /// The note's tag is derived as [`NoteTag::with_account_target`], matching the tag a
+    /// Rust-built [`P2idNote`](crate::note::P2idNote) carries.
     pub fn new(target: AccountId, note_type: NoteType, serial_number: Word) -> Self {
         let output_note_tag = NoteTag::with_account_target(target);
         let output_note_recipient = P2idNoteStorage::new(target).into_recipient(serial_number);
@@ -132,10 +120,8 @@ impl PassThroughTransactionScript {
         self.tx_script_args
     }
 
-    /// The recipient of the P2ID note the script creates.
-    ///
-    /// Callers that cannot reconstruct the recipient themselves (e.g. a client building the
-    /// transaction) register it as an expected output recipient.
+    /// The recipient of the P2ID note the script creates, for callers that have to register it as
+    /// an expected output recipient.
     pub fn output_note_recipient(&self) -> &NoteRecipient {
         &self.output_note_recipient
     }
@@ -173,9 +159,6 @@ impl From<PassThroughTransactionScript> for TransactionScript {
 /// word 0: [target_id_suffix, target_id_prefix, tag, note_type]
 /// word 1: SERIAL_NUM
 /// ```
-///
-/// The first word is laid out in the order `p2id::create_output_note` reads its arguments off the
-/// operand stack, so the script can push the payload field by field without reordering.
 fn encode_payload(
     target: AccountId,
     tag: NoteTag,
