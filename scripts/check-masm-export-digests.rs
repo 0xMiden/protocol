@@ -114,9 +114,7 @@ mod current {
 
     use super::*;
 
-    // Every installable account component of the previous release. A component added to
-    // `current::COMPONENT_CODE` must be mirrored here once a release contains it, otherwise its
-    // `CODE_COMMITMENT` is compared against nothing and an added export goes unnoticed.
+    // Every installable account component.
     const COMPONENT_CODE: &[fn() -> &'static AccountComponentCode] = &[
         Authority::code,
         Ownable2Step::code,
@@ -280,7 +278,9 @@ mod previous {
 
     use super::*;
 
-    // Every installable account component.
+    // Every installable account component of the previous release. A component added to
+    // `current::COMPONENT_CODE` must be mirrored here once a release contains it, otherwise its
+    // `CODE_COMMITMENT` is compared against nothing and an added export goes unnoticed.
     const COMPONENT_CODE: &[fn() -> &'static AccountComponentCode] = &[
         Authority::code,
         Ownable2Step::code,

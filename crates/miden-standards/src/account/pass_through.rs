@@ -114,7 +114,7 @@ mod tests {
     /// procedure name does not match the component's package. The inequality catches the two
     /// accessors naming the same procedure, which membership alone would not.
     #[test]
-    fn pass_through_procedure_roots_resolve() {
+    fn pass_through_exports_exactly_the_two_procedures() {
         let sweep = PassThrough::sweep_asset_to_note_root();
         let assert_unchanged = PassThrough::assert_vault_unchanged_root();
         let roots: alloc::vec::Vec<_> = PassThrough::code().procedure_roots().collect();
