@@ -13,7 +13,7 @@ use crate::{ConversionError, ConversionResultExt, proto};
 
 impl From<&MerklePath> for proto::primitives::MerklePath {
     fn from(value: &MerklePath) -> Self {
-        let siblings = value.nodes().iter().map(proto::primitives::Digest::from).collect();
+        let siblings = value.nodes().iter().map(Into::into).collect();
         proto::primitives::MerklePath { siblings }
     }
 }
@@ -48,7 +48,7 @@ impl From<SparseMerklePath> for proto::primitives::SparseMerklePath {
         let (empty_nodes_mask, siblings) = value.into_parts();
         proto::primitives::SparseMerklePath {
             empty_nodes_mask,
-            siblings: siblings.into_iter().map(proto::primitives::Digest::from).collect(),
+            siblings: siblings.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -74,10 +74,10 @@ impl TryFrom<proto::primitives::SparseMerklePath> for SparseMerklePath {
 
 impl From<MmrDelta> for proto::primitives::MmrDelta {
     fn from(value: MmrDelta) -> Self {
-        let data = value.data.into_iter().map(proto::primitives::Digest::from).collect();
+        let update_data = value.data.into_iter().map(Into::into).collect();
         proto::primitives::MmrDelta {
             forest: value.forest.num_leaves() as u64,
-            data,
+            update_data,
         }
     }
 }
@@ -87,11 +87,11 @@ impl TryFrom<proto::primitives::MmrDelta> for MmrDelta {
 
     fn try_from(value: proto::primitives::MmrDelta) -> Result<Self, Self::Error> {
         let data: Vec<_> = value
-            .data
+            .update_data
             .into_iter()
             .map(Word::try_from)
             .collect::<Result<_, _>>()
-            .context("data")?;
+            .context("update_data")?;
 
         let forest_size: usize =
             value.forest.try_into().context("forest size does not fit in usize")?;

@@ -12,7 +12,7 @@ message AccountStorageHeader {
   message StorageSlot {
     string slot_name = 1;
     uint32 slot_type = 2;
-    primitives.Digest commitment = 3;
+    primitives.Word commitment = 3;
   }
 
   repeated StorageSlot slots = 1;
@@ -20,16 +20,16 @@ message AccountStorageHeader {
 
 message AccountHeader {
   AccountId account_id = 1;
-  primitives.Digest vault_root = 2;
-  primitives.Digest storage_commitment = 3;
-  primitives.Digest code_commitment = 4;
+  primitives.Word vault_root = 2;
+  primitives.Word storage_commitment = 3;
+  primitives.Word code_commitment = 4;
   uint64 nonce = 5;
 }
 
 message AccountWitness {
   AccountId account_id = 1;
   AccountId witness_id = 2;
-  primitives.Digest commitment = 3;
+  primitives.Word commitment = 3;
   primitives.SparseMerklePath path = 4;
 }
 

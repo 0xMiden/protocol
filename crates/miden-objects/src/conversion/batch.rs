@@ -115,11 +115,11 @@ impl From<&ProvenBatch> for proto::transaction::ProvenBatch {
     fn from(value: &ProvenBatch) -> Self {
         Self {
             reference_block_commitment: Some(value.reference_block_commitment().into()),
-            reference_block_num: value.reference_block_num().as_u32(),
+            reference_block_num: Some(value.reference_block_num().into()),
             account_updates: value.account_updates().values().map(Into::into).collect(),
             input_notes: value.input_notes().iter().map(Into::into).collect(),
             output_notes: value.output_notes().iter().map(Into::into).collect(),
-            expiration_block_num: value.batch_expiration_block_num().as_u32(),
+            expiration_block_num: Some(value.batch_expiration_block_num().into()),
             transactions: value.transactions().as_slice().iter().map(Into::into).collect(),
             proof: Some(value.proof().into()),
         }
@@ -147,6 +147,10 @@ impl DecodedProvenBatch {
     fn decode(value: proto::transaction::ProvenBatch) -> Result<Self, ConversionError> {
         let decoder = value.decoder();
         let reference_block_commitment = required!(decoder, value.reference_block_commitment)?;
+        let reference_block_num =
+            required!(decoder, value.reference_block_num).context("reference_block_num")?;
+        let expiration_block_num =
+            required!(decoder, value.expiration_block_num).context("expiration_block_num")?;
 
         let mut account_updates = BTreeMap::new();
         let mut previous_account_id = None;
@@ -194,11 +198,11 @@ impl DecodedProvenBatch {
 
         Ok(Self {
             reference_block_commitment,
-            reference_block_num: value.reference_block_num.into(),
+            reference_block_num,
             account_updates,
             input_notes,
             output_notes,
-            expiration_block_num: value.expiration_block_num.into(),
+            expiration_block_num,
             transactions,
             proof,
         })

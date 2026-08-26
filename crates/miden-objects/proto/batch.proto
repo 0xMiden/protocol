@@ -3,6 +3,7 @@ package transaction;
 
 import "account.proto";
 import "block.proto";
+import "block_number.proto";
 import "note.proto";
 import "partial_blockchain.proto";
 import "primitives.proto";
@@ -12,7 +13,7 @@ message ProposedBatch {
   repeated ProvenTransactionData transactions = 1;
   blockchain.BlockHeader reference_block_header = 2;
   blockchain.PartialBlockchain partial_blockchain = 3;
-  repeated note.NoteInclusionInBlockProof unauthenticated_note_proofs = 4;
+  repeated note.NoteInclusionProof unauthenticated_note_proofs = 4;
 }
 
 message BatchAccountUpdate {
@@ -24,11 +25,11 @@ message BatchAccountUpdate {
 
 message ProvenBatch {
   primitives.Word reference_block_commitment = 1;
-  fixed32 reference_block_num = 2;
+  blockchain.BlockNumber reference_block_num = 2;
   repeated BatchAccountUpdate account_updates = 3;
   repeated InputNoteCommitment input_notes = 4;
   repeated OutputNote output_notes = 5;
-  fixed32 expiration_block_num = 6;
+  blockchain.BlockNumber expiration_block_num = 6;
   repeated TransactionHeader transactions = 7;
   primitives.ExecutionProof proof = 8;
 }

@@ -2,6 +2,7 @@ syntax = "proto3";
 package blockchain;
 
 import "account.proto";
+import "block_number.proto";
 import "primitives.proto";
 import "transaction.proto";
 
@@ -12,21 +13,17 @@ message FeeParameters {
 
 message BlockHeader {
   uint32 version = 1;
-  primitives.Digest prev_block_commitment = 2;
-  fixed32 block_num = 3;
-  primitives.Digest chain_commitment = 4;
-  primitives.Digest account_root = 5;
-  primitives.Digest nullifier_root = 6;
-  primitives.Digest note_root = 7;
-  primitives.Digest tx_commitment = 8;
+  primitives.Word prev_block_commitment = 2;
+  blockchain.BlockNumber block_num = 3;
+  primitives.Word chain_commitment = 4;
+  primitives.Word account_root = 5;
+  primitives.Word nullifier_root = 6;
+  primitives.Word note_root = 7;
+  primitives.Word tx_commitment = 8;
   repeated primitives.PublicKey validator_keys = 9;
-  primitives.Digest tx_kernel_commitment = 10;
+  primitives.Word tx_kernel_commitment = 10;
   FeeParameters fee_parameters = 11;
   fixed32 timestamp = 12;
-}
-
-message BlockNumber {
-  fixed32 block_num = 1;
 }
 
 message BlockAccountUpdate {

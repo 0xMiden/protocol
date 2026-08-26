@@ -2,6 +2,7 @@ syntax = "proto3";
 package note;
 
 import "account.proto";
+import "block_number.proto";
 import "primitives.proto";
 
 enum NoteType {
@@ -11,7 +12,7 @@ enum NoteType {
 }
 
 message NoteId {
-  primitives.Digest id = 1;
+  primitives.Word id = 1;
 }
 
 message NoteMetadata {
@@ -19,7 +20,7 @@ message NoteMetadata {
   NoteType note_type = 2;
   fixed32 tag = 3;
   repeated fixed32 attachment_schemes = 4;
-  primitives.Digest attachments_commitment = 5;
+  primitives.Word attachments_commitment = 5;
 }
 
 message NoteAttachment {
@@ -52,15 +53,15 @@ message Note {
   NoteAttachments note_attachments = 3;
 }
 
-message NoteInclusionInBlockProof {
+message NoteInclusionProof {
   NoteId note_id = 1;
-  fixed32 block_num = 2;
+  blockchain.BlockNumber block_num = 2;
   uint32 note_index_in_block = 3;
   primitives.SparseMerklePath inclusion_path = 4;
 }
 
 message NoteHeader {
-  primitives.Digest details_commitment = 1;
+  primitives.Word details_commitment = 1;
   NoteMetadata metadata = 2;
 }
 

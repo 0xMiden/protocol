@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_dir = manifest_dir.join("proto");
     let files = [
         "primitives.proto",
+        "block_number.proto",
         "account.proto",
         "note.proto",
         "transaction.proto",

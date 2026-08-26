@@ -10,7 +10,7 @@ use miden_protocol::account::{
     AssetCallbackFlag,
 };
 use miden_protocol::batch::BatchAccountUpdate;
-use miden_protocol::block::{BlockAccountUpdate, BlockBody};
+use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
 use miden_protocol::errors::TransactionHeaderError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders, TransactionHeader};
@@ -68,6 +68,17 @@ fn block_body_and_transaction_header_roundtrip() {
     let encoded = proto::blockchain::BlockBody::from(&body).encode_to_vec();
     let message = proto::blockchain::BlockBody::decode(encoded.as_slice()).unwrap();
     assert_eq!(BlockBody::try_from(message).unwrap(), body);
+}
+
+#[test]
+fn block_header_rejects_missing_block_number() {
+    let header = BlockHeader::mock(1, None, None, &[], Word::empty());
+    let mut message = proto::blockchain::BlockHeader::from(header);
+    message.block_num = Default::default();
+
+    let error = BlockHeader::try_from(message).unwrap_err();
+    assert!(error.to_string().starts_with("block_num: field "));
+    assert!(error.to_string().ends_with("::block_num is missing"));
 }
 
 #[test]

@@ -2,7 +2,6 @@ use alloc::format;
 
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
-use miden_protocol::note::NoteId;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{Felt, MastForest, Word};
@@ -207,61 +206,6 @@ impl TryFrom<&proto::primitives::Signature> for Signature {
     }
 }
 
-impl From<Word> for proto::primitives::Digest {
-    fn from(value: Word) -> Self {
-        Self {
-            d0: value[0].as_canonical_u64(),
-            d1: value[1].as_canonical_u64(),
-            d2: value[2].as_canonical_u64(),
-            d3: value[3].as_canonical_u64(),
-        }
-    }
-}
-
-impl From<&Word> for proto::primitives::Digest {
-    fn from(value: &Word) -> Self {
-        (*value).into()
-    }
-}
-
-impl From<[Felt; 4]> for proto::primitives::Digest {
-    fn from(value: [Felt; 4]) -> Self {
-        Word::new(value).into()
-    }
-}
-
-impl TryFrom<proto::primitives::Digest> for Word {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
-        let values = [value.d0, value.d1, value.d2, value.d3];
-        if values.iter().any(|value| *value >= Felt::ORDER) {
-            return Err(ConversionError::message("value is not in the range 0..MODULUS"));
-        }
-        Ok(Word::new(values.map(Felt::new_unchecked)))
-    }
-}
-
-impl TryFrom<&proto::primitives::Digest> for Word {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::primitives::Digest) -> Result<Self, Self::Error> {
-        (*value).try_into()
-    }
-}
-
-impl From<&NoteId> for proto::primitives::Digest {
-    fn from(value: &NoteId) -> Self {
-        value.as_word().into()
-    }
-}
-
-impl From<NoteId> for proto::primitives::Digest {
-    fn from(value: NoteId) -> Self {
-        (&value).into()
-    }
-}
-
 impl From<&Asset> for proto::primitives::Asset {
     fn from(value: &Asset) -> Self {
         Self {
@@ -312,12 +256,6 @@ mod tests {
 
         let error = Felt::try_from(proto::primitives::Felt { encoded: vec![0; 7] }).unwrap_err();
         assert_eq!(error.to_string(), "felt.encoded: expected exactly 8 bytes, got 7");
-    }
-
-    #[test]
-    fn digest_rejects_non_canonical_limbs() {
-        let digest = proto::primitives::Digest { d0: Felt::ORDER, d1: 0, d2: 0, d3: 0 };
-        assert!(Word::try_from(digest).is_err());
     }
 
     #[test]

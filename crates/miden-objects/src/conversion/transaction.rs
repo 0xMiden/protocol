@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, AccountUpdateDetails};
-use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteHeader, Nullifier};
 use miden_protocol::transaction::{
     InputNoteCommitment,
@@ -62,9 +61,9 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransactionData {
             account_update: Some(value.account_update().into()),
             input_notes: value.input_notes().iter().map(Into::into).collect(),
             output_notes: value.output_notes().iter().map(Into::into).collect(),
-            reference_block_num: value.ref_block_num().as_u32(),
+            reference_block_num: Some(value.ref_block_num().into()),
             reference_block_commitment: Some(value.ref_block_commitment().into()),
-            expiration_block_num: value.expiration_block_num().as_u32(),
+            expiration_block_num: Some(value.expiration_block_num().into()),
             proof: Some(value.proof().into()),
         }
     }
@@ -99,15 +98,19 @@ impl TryFrom<proto::transaction::ProvenTransactionData> for ProvenTransaction {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let reference_block_commitment = required!(decoder, value.reference_block_commitment)?;
+        let reference_block_num =
+            required!(decoder, value.reference_block_num).context("reference_block_num")?;
+        let expiration_block_num =
+            required!(decoder, value.expiration_block_num).context("expiration_block_num")?;
         let proof = required!(decoder, value.proof)?;
 
         Self::new(
             account_update,
             input_notes,
             output_notes,
-            BlockNumber::from(value.reference_block_num),
+            reference_block_num,
             reference_block_commitment,
-            BlockNumber::from(value.expiration_block_num),
+            expiration_block_num,
             proof,
         )
         .map_err(ConversionError::new)
@@ -117,21 +120,9 @@ impl TryFrom<proto::transaction::ProvenTransactionData> for ProvenTransaction {
 // FROM TRANSACTION ID
 // ================================================================================================
 
-impl From<&TransactionId> for proto::primitives::Digest {
-    fn from(value: &TransactionId) -> Self {
-        value.as_word().into()
-    }
-}
-
-impl From<TransactionId> for proto::primitives::Digest {
-    fn from(value: TransactionId) -> Self {
-        value.as_word().into()
-    }
-}
-
 impl From<&TransactionId> for proto::transaction::TransactionId {
     fn from(value: &TransactionId) -> Self {
-        proto::transaction::TransactionId { id: Some(value.into()) }
+        proto::transaction::TransactionId { id: Some(value.as_word().into()) }
     }
 }
 
@@ -144,47 +135,18 @@ impl From<TransactionId> for proto::transaction::TransactionId {
 // INTO TRANSACTION ID
 // ================================================================================================
 
-impl TryFrom<proto::primitives::Digest> for TransactionId {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
-        let digest: Word = value.try_into()?;
-        Ok(TransactionId::from_raw(digest))
-    }
-}
-
 impl TryFrom<proto::transaction::TransactionId> for TransactionId {
     type Error = ConversionError;
 
     fn try_from(value: proto::transaction::TransactionId) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        required!(decoder, value.id)
+        let id: Word = required!(decoder, value.id)?;
+        Ok(TransactionId::from_raw(id))
     }
 }
 
 // NULLIFIER
 // ================================================================================================
-
-impl From<&Nullifier> for proto::primitives::Digest {
-    fn from(value: &Nullifier) -> Self {
-        value.as_word().into()
-    }
-}
-
-impl From<Nullifier> for proto::primitives::Digest {
-    fn from(value: Nullifier) -> Self {
-        (&value).into()
-    }
-}
-
-impl TryFrom<proto::primitives::Digest> for Nullifier {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
-        let word: Word = value.try_into()?;
-        Ok(Nullifier::from_raw(word))
-    }
-}
 
 // INPUT NOTE COMMITMENT
 // ================================================================================================
@@ -198,7 +160,7 @@ impl From<InputNoteCommitment> for proto::transaction::InputNoteCommitment {
 impl From<&InputNoteCommitment> for proto::transaction::InputNoteCommitment {
     fn from(value: &InputNoteCommitment) -> Self {
         Self {
-            nullifier: Some(value.nullifier().into()),
+            nullifier: Some(value.nullifier().as_word().into()),
             header: value.header().copied().map(Into::into),
         }
     }
@@ -209,7 +171,7 @@ impl TryFrom<proto::transaction::InputNoteCommitment> for InputNoteCommitment {
 
     fn try_from(value: proto::transaction::InputNoteCommitment) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let nullifier: Nullifier = required!(decoder, value.nullifier)?;
+        let nullifier = Nullifier::from_raw(required!(decoder, value.nullifier)?);
 
         let header: Option<miden_protocol::note::NoteHeader> =
             value.header.map(TryInto::try_into).transpose().context("header")?;

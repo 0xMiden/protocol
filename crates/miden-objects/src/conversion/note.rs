@@ -319,36 +319,39 @@ impl TryFrom<proto::note::NoteId> for Word {
 
 impl From<&NoteId> for proto::note::NoteId {
     fn from(note_id: &NoteId) -> Self {
-        Self { id: Some(note_id.into()) }
+        Self { id: Some(note_id.as_word().into()) }
     }
 }
 
-impl From<(&NoteId, &NoteInclusionProof)> for proto::note::NoteInclusionInBlockProof {
+impl From<(&NoteId, &NoteInclusionProof)> for proto::note::NoteInclusionProof {
     fn from((note_id, proof): (&NoteId, &NoteInclusionProof)) -> Self {
         Self {
             note_id: Some(note_id.into()),
-            block_num: proof.location().block_num().as_u32(),
+            block_num: Some(proof.location().block_num().into()),
             note_index_in_block: proof.location().block_note_tree_index().into(),
             inclusion_path: Some(proof.note_path().clone().into()),
         }
     }
 }
 
-impl TryFrom<&proto::note::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof) {
+impl TryFrom<&proto::note::NoteInclusionProof> for (NoteId, NoteInclusionProof) {
     type Error = ConversionError;
 
     fn try_from(
-        proof: &proto::note::NoteInclusionInBlockProof,
+        proof: &proto::note::NoteInclusionProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
         let decoder = proof.decoder();
         let inclusion_path: SparseMerklePath =
             decoder.decode_field("inclusion_path", proof.inclusion_path.clone())?;
-        let note_id: Word = required!(decoder, proof.note_id)?;
+        let note_id: Word = decoder.decode_field("note_id", proof.note_id.clone())?;
+        let block_num = decoder
+            .decode_field("block_num", proof.block_num.clone())
+            .context("block_num")?;
 
         Ok((
             NoteId::from_raw(note_id),
             NoteInclusionProof::new(
-                proof.block_num.into(),
+                block_num,
                 proof.note_index_in_block.try_into().context("note_index_in_block")?,
                 inclusion_path,
             )?,

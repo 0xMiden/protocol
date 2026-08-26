@@ -153,7 +153,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
         Self {
             version: u32::from(header.version()),
             prev_block_commitment: Some(header.prev_block_commitment().into()),
-            block_num: header.block_num().as_u32(),
+            block_num: Some(header.block_num().into()),
             chain_commitment: Some(header.chain_commitment().into()),
             account_root: Some(header.account_root().into()),
             nullifier_root: Some(header.nullifier_root().into()),
@@ -187,6 +187,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
     fn try_from(value: proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
         let version = value.version;
+        let block_num: BlockNumber = required!(decoder, value.block_num).context("block_num")?;
         let prev_block_commitment = required!(decoder, value.prev_block_commitment)?;
         let chain_commitment = required!(decoder, value.chain_commitment)?;
         let account_root = required!(decoder, value.account_root)?;
@@ -207,7 +208,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
 
         let header = BlockHeader::new(
             prev_block_commitment,
-            value.block_num.into(),
+            block_num,
             chain_commitment,
             account_root,
             nullifier_root,
