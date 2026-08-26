@@ -51,9 +51,10 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// visible on-chain and discoverable by the network; whether consuming one requires a signature
 /// depends on the target faucet's auth component.
 ///
-/// A note whose faucet is public is routed to it by a
-/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment derived from the asset. A
-/// private faucet can never be a network account, so such a note carries no target.
+/// A BURN note for a public faucet carries a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment naming that faucet,
+/// derived from the asset the note burns, so the network can route the note to it. A private faucet
+/// can never be a network account, so a note for one carries no such attachment.
 ///
 /// Construct one with the [builder](BurnNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
@@ -84,8 +85,7 @@ impl BurnNote {
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The network routes the note on this attachment; the asset it carries is what binds the
-        // script to the same faucet on consumption. That bind is a plain value comparison and so
-        // works for a private faucet too, which has no network target to derive.
+        // script to the same faucet on consumption for both private and network faucets.
         NetworkAccountTarget::ensure_presence_if_public(&mut attachments, asset.faucet_id())
             .map_err(|err| {
                 NoteError::other_with_source("failed to target the BURN note at its faucet", err)

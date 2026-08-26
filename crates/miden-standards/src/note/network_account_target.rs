@@ -101,10 +101,8 @@ impl NetworkAccountTarget {
             return Self::ensure_presence(attachments, target_id);
         }
 
-        // No target is derived, but a caller-supplied attachment of the scheme must still be
-        // validated, so the note cannot claim a network target it does not have. The returned flag
-        // is discarded because it is always false here: an attachment naming a non-public account
-        // never decodes into a `NetworkAccountTarget`, so a present target can only be an error.
+        // Reject any attachment the caller added under the target scheme: naming another account
+        // is a mismatch, and naming this private one does not decode as a `NetworkAccountTarget`.
         Self::contains_target(attachments, target_id).map(|_| ())
     }
 

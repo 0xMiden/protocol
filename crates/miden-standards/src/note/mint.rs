@@ -51,10 +51,11 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// the output note minted on consumption can be private or public depending on the
 /// [`MintNoteStorage`] variant.
 ///
-/// A note whose faucet is public is routed to it by a
-/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment derived from the asset in
-/// its storage, which is also what the note is tagged for. A private faucet can never be a network
-/// account, so such a note carries no target and is only tagged.
+/// A MINT note for a public faucet is tagged for that faucet and carries a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment naming it, both derived
+/// from the asset in the note's storage, so the network can route the note to it. A private faucet
+/// can never be a network account, so a note for one is only tagged and carries no such
+/// attachment.
 ///
 /// Construct one with the [builder](MintNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
