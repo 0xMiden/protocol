@@ -48,13 +48,19 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
             .map(|slot| {
                 let decoder = slot.decoder();
                 let name = StorageSlotName::new(slot.slot_name)?;
-                let slot_type = match slot.slot_type {
-                    0 => StorageSlotType::Value,
-                    1 => StorageSlotType::Map,
-                    _ => {
-                        return Err(ConversionError::message(
-                            "storage slot type discriminant out of range",
-                        ));
+                let slot_type = match proto::account::StorageSlotType::try_from(slot.slot_type) {
+                    Ok(proto::account::StorageSlotType::Value) => StorageSlotType::Value,
+                    Ok(proto::account::StorageSlotType::Map) => StorageSlotType::Map,
+                    Ok(proto::account::StorageSlotType::Unspecified) => {
+                        return Err(ConversionError::message("storage slot type is unspecified")
+                            .context("slot_type"));
+                    },
+                    Err(_) => {
+                        return Err(ConversionError::message(format!(
+                            "unknown storage slot type {}",
+                            slot.slot_type
+                        ))
+                        .context("slot_type"));
                     },
                 };
                 let value = required!(decoder, slot.commitment)?;
@@ -74,8 +80,8 @@ impl From<&AccountStorageHeader> for proto::account::AccountStorageHeader {
                 .map(|slot| proto::account::account_storage_header::StorageSlot {
                     slot_name: slot.name().to_string(),
                     slot_type: match slot.slot_type() {
-                        StorageSlotType::Value => 0,
-                        StorageSlotType::Map => 1,
+                        StorageSlotType::Value => proto::account::StorageSlotType::Value as i32,
+                        StorageSlotType::Map => proto::account::StorageSlotType::Map as i32,
                     },
                     commitment: Some(slot.value().into()),
                 })

@@ -42,10 +42,6 @@ message OutputNoteBatch {
 }
 
 message BlockBody {
-  BlockBodyContents contents = 1;
-}
-
-message BlockBodyContents {
   repeated BlockAccountUpdate updated_accounts = 1;
   repeated OutputNoteBatch output_note_batches = 2;
   repeated primitives.Word created_nullifiers = 3;

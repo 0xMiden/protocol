@@ -11,11 +11,17 @@ message AccountId {
 message AccountStorageHeader {
   message StorageSlot {
     string slot_name = 1;
-    uint32 slot_type = 2;
+    StorageSlotType slot_type = 2;
     primitives.Word commitment = 3;
   }
 
   repeated StorageSlot slots = 1;
+}
+
+enum StorageSlotType {
+  STORAGE_SLOT_TYPE_UNSPECIFIED = 0;
+  STORAGE_SLOT_TYPE_VALUE = 1;
+  STORAGE_SLOT_TYPE_MAP = 2;
 }
 
 message AccountHeader {

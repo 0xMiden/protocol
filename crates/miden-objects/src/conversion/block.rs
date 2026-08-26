@@ -238,16 +238,14 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
 impl From<&BlockBody> for proto::blockchain::BlockBody {
     fn from(body: &BlockBody) -> Self {
         Self {
-            contents: Some(proto::blockchain::BlockBodyContents {
-                updated_accounts: body.updated_accounts().iter().map(Into::into).collect(),
-                output_note_batches: body.output_note_batches().iter().map(Into::into).collect(),
-                created_nullifiers: body
-                    .created_nullifiers()
-                    .iter()
-                    .map(|nullifier| nullifier.as_word().into())
-                    .collect(),
-                transactions: body.transactions().as_slice().iter().map(Into::into).collect(),
-            }),
+            updated_accounts: body.updated_accounts().iter().map(Into::into).collect(),
+            output_note_batches: body.output_note_batches().iter().map(Into::into).collect(),
+            created_nullifiers: body
+                .created_nullifiers()
+                .iter()
+                .map(|nullifier| nullifier.as_word().into())
+                .collect(),
+            transactions: body.transactions().as_slice().iter().map(Into::into).collect(),
         }
     }
 }
@@ -262,9 +260,7 @@ impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
     type Error = ConversionError;
 
     fn try_from(value: proto::blockchain::BlockBody) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let contents: proto::blockchain::BlockBodyContents = required!(decoder, value.contents)?;
-        let updated_accounts = contents
+        let updated_accounts = value
             .updated_accounts
             .into_iter()
             .enumerate()
@@ -272,7 +268,7 @@ impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
                 BlockAccountUpdate::try_from(update).context(format!("updated_accounts[{index}]"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let output_note_batches = contents
+        let output_note_batches = value
             .output_note_batches
             .into_iter()
             .enumerate()
@@ -280,7 +276,7 @@ impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
                 OutputNoteBatch::try_from(batch).context(format!("output_note_batches[{index}]"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let created_nullifiers = contents
+        let created_nullifiers = value
             .created_nullifiers
             .into_iter()
             .enumerate()
@@ -290,7 +286,7 @@ impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
                     .context(format!("created_nullifiers[{index}]"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let transactions = contents
+        let transactions = value
             .transactions
             .into_iter()
             .enumerate()

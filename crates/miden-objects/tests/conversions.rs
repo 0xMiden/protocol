@@ -6,9 +6,13 @@ use miden_protocol::Word;
 use miden_protocol::account::{
     AccountId,
     AccountIdVersion,
+    AccountStorageHeader,
     AccountType,
     AccountUpdateDetails,
     AssetCallbackFlag,
+    StorageSlotHeader,
+    StorageSlotName,
+    StorageSlotType,
 };
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
@@ -116,6 +120,53 @@ fn block_body_and_transaction_header_roundtrip() {
     let encoded = proto::blockchain::BlockBody::from(&body).encode_to_vec();
     let message = proto::blockchain::BlockBody::decode(encoded.as_slice()).unwrap();
     assert_eq!(BlockBody::try_from(message).unwrap(), body);
+}
+
+#[test]
+fn account_storage_header_rejects_invalid_slot_types() {
+    for (slot_type, expected_message) in [
+        (Default::default(), "storage slot type is unspecified"),
+        (i32::MAX, "unknown storage slot type 2147483647"),
+    ] {
+        let message = proto::account::AccountStorageHeader {
+            slots: vec![proto::account::account_storage_header::StorageSlot {
+                slot_name: "miden::test::storage".into(),
+                slot_type,
+                commitment: Some(Word::empty().into()),
+            }],
+        };
+
+        let error = AccountStorageHeader::try_from(message).unwrap_err();
+        assert_eq!(error.to_string(), format!("slots.slot_type: {expected_message}"));
+    }
+}
+
+#[test]
+fn account_storage_header_uses_generated_slot_type_values() {
+    for (slot_type, expected_slot_type) in [
+        (StorageSlotType::Value, proto::account::StorageSlotType::Value),
+        (StorageSlotType::Map, proto::account::StorageSlotType::Map),
+    ] {
+        let header = AccountStorageHeader::new(vec![StorageSlotHeader::new(
+            StorageSlotName::new("miden::test::storage").unwrap(),
+            slot_type,
+            Word::empty(),
+        )])
+        .unwrap();
+
+        let message = proto::account::AccountStorageHeader::from(&header);
+        assert_eq!(message.slots[0].slot_type, expected_slot_type as i32);
+        assert_eq!(AccountStorageHeader::try_from(message).unwrap(), header);
+    }
+}
+
+#[test]
+fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
+    let expected =
+        BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))
+            .unwrap();
+
+    assert_eq!(BlockBody::try_from(proto::blockchain::BlockBody::default()).unwrap(), expected);
 }
 
 #[test]
