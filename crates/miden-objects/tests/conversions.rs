@@ -1,6 +1,7 @@
 use core::error::Error;
 
-use miden_objects::proto;
+use miden_objects::conversion::decode_standalone_proven_batch;
+use miden_objects::{ConversionError, proto};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountId,
@@ -12,8 +13,15 @@ use miden_protocol::account::{
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
 use miden_protocol::errors::TransactionHeaderError;
-use miden_protocol::note::Note;
-use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders, TransactionHeader};
+use miden_protocol::note::{Note, NoteId, NoteInclusionProof};
+use miden_protocol::transaction::{
+    InputNotes,
+    OrderedTransactionHeaders,
+    ProvenTransaction,
+    TransactionHeader,
+    TxAccountUpdate,
+};
+use miden_protocol::vm::ExecutionProof;
 use prost::Message;
 
 fn private_account_id() -> AccountId {
@@ -23,6 +31,46 @@ fn private_account_id() -> AccountId {
         AccountType::Private,
         AssetCallbackFlag::Disabled,
     )
+}
+
+fn assert_missing_block_number(error: ConversionError, field: &str) {
+    let error = error.to_string();
+    assert!(error.starts_with(&format!("{field}: field ")));
+    assert!(error.ends_with(&format!("::{field} is missing")));
+}
+
+fn proven_transaction_data() -> proto::transaction::ProvenTransactionData {
+    let account_update = TxAccountUpdate::new(
+        private_account_id(),
+        Word::empty(),
+        Word::from([1_u32, 0, 0, 0]),
+        Word::empty(),
+        AccountUpdateDetails::Private,
+    )
+    .unwrap();
+
+    proto::transaction::ProvenTransactionData {
+        account_update: Some((&account_update).into()),
+        input_notes: vec![],
+        output_notes: vec![],
+        reference_block_num: Some(proto::blockchain::BlockNumber { block_num: 1 }),
+        reference_block_commitment: Some(Word::empty().into()),
+        expiration_block_num: Some(proto::blockchain::BlockNumber { block_num: 2 }),
+        proof: Some(ExecutionProof::new_dummy().into()),
+    }
+}
+
+fn proven_batch_data() -> proto::transaction::ProvenBatch {
+    proto::transaction::ProvenBatch {
+        reference_block_commitment: Some(Word::empty().into()),
+        reference_block_num: Some(proto::blockchain::BlockNumber { block_num: 1 }),
+        account_updates: vec![],
+        input_notes: vec![],
+        output_notes: vec![],
+        expiration_block_num: Some(proto::blockchain::BlockNumber { block_num: 2 }),
+        transactions: vec![],
+        proof: Some(ExecutionProof::new_dummy().into()),
+    }
 }
 
 #[test]
@@ -79,6 +127,48 @@ fn block_header_rejects_missing_block_number() {
     let error = BlockHeader::try_from(message).unwrap_err();
     assert!(error.to_string().starts_with("block_num: field "));
     assert!(error.to_string().ends_with("::block_num is missing"));
+}
+
+#[test]
+fn note_inclusion_proof_rejects_missing_block_number() {
+    let message = proto::note::NoteInclusionProof {
+        note_id: Some(Word::empty().into()),
+        block_num: None,
+        note_index_in_block: 0,
+        inclusion_path: Some(proto::primitives::SparseMerklePath {
+            empty_nodes_mask: 0,
+            siblings: vec![],
+        }),
+    };
+
+    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    assert_missing_block_number(error, "block_num");
+}
+
+#[test]
+fn proven_transaction_rejects_missing_block_numbers() {
+    let mut message = proven_transaction_data();
+    message.reference_block_num = None;
+    let error = ProvenTransaction::try_from(message).unwrap_err();
+    assert_missing_block_number(error, "reference_block_num");
+
+    let mut message = proven_transaction_data();
+    message.expiration_block_num = None;
+    let error = ProvenTransaction::try_from(message).unwrap_err();
+    assert_missing_block_number(error, "expiration_block_num");
+}
+
+#[test]
+fn proven_batch_rejects_missing_block_numbers() {
+    let mut message = proven_batch_data();
+    message.reference_block_num = None;
+    let error = decode_standalone_proven_batch(message).unwrap_err();
+    assert_missing_block_number(error, "reference_block_num");
+
+    let mut message = proven_batch_data();
+    message.expiration_block_num = None;
+    let error = decode_standalone_proven_batch(message).unwrap_err();
+    assert_missing_block_number(error, "expiration_block_num");
 }
 
 #[test]
