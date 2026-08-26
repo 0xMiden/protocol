@@ -67,9 +67,9 @@ impl From<&PublicKey> for Approver {
 /// A set of [`Approver`]s together with the threshold of signatures required to approve a
 /// transaction by default.
 ///
-/// The set is guaranteed to be valid by construction: the threshold is non-zero and at most the
-/// number of approvers, the number of approvers is at most [`ApproverSet::MAX_APPROVERS`], and no
-/// public key commitment appears more than once.
+/// The set is guaranteed to be valid by construction: the threshold is non-zero, the number of
+/// approvers is at most [`ApproverSet::MAX_APPROVERS`], and no public key commitment appears more
+/// than once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApproverSet {
     approvers: Vec<Approver>,
@@ -78,7 +78,7 @@ pub struct ApproverSet {
 
 impl ApproverSet {
     /// The maximum number of approvers a set may contain.
-    pub const MAX_APPROVERS: u32 = 64;
+    pub const MAX_APPROVERS: u8 = 64;
 
     /// Creates a new [`ApproverSet`] from the given approvers and default threshold.
     ///
@@ -155,16 +155,17 @@ mod tests {
 
     #[test]
     fn rejects_approver_count_above_max() {
-        let approvers: Vec<_> = (0..=ApproverSet::MAX_APPROVERS).map(approver).collect();
+        let approvers: Vec<_> = (0..=u32::from(ApproverSet::MAX_APPROVERS)).map(approver).collect();
         let err = ApproverSet::new(approvers, 1).unwrap_err();
         assert!(err.to_string().contains("number of approvers cannot be greater than 64"));
     }
 
     #[test]
     fn accepts_approver_count_at_max() {
-        let approvers: Vec<_> = (0..ApproverSet::MAX_APPROVERS).map(approver).collect();
-        let set = ApproverSet::new(approvers, ApproverSet::MAX_APPROVERS).unwrap();
-        assert_eq!(set.approvers().len(), ApproverSet::MAX_APPROVERS as usize);
+        let max_approvers = u32::from(ApproverSet::MAX_APPROVERS);
+        let approvers: Vec<_> = (0..max_approvers).map(approver).collect();
+        let set = ApproverSet::new(approvers, max_approvers).unwrap();
+        assert_eq!(set.approvers().len(), max_approvers as usize);
     }
 
     #[test]

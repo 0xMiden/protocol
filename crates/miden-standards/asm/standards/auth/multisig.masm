@@ -180,10 +180,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     dup.1
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
-    exec.assert_num_approvers_within_bound
-    # => [MULTISIG_CONFIG, pad(12)]
-
-    dup.1
+    dup exec.assert_num_approvers_in_bounds
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
     # make sure that all existing procedure threshold overrides remain reachable
@@ -582,12 +579,12 @@ end
 #! - num_approvers > MAX_NUM_APPROVERS.
 #!
 #! Invocation: exec
-pub proc assert_num_approvers_within_bound(num_approvers: u32)
+pub proc assert_num_approvers_in_bounds(num_approvers: u32)
     push.MAX_NUM_APPROVERS
-    # => [MAX_NUM_APPROVERS, num_approvers]
+    # => [max_num_approvers, num_approvers]
 
     u32assert2.err=ERR_TOO_MANY_APPROVERS
-    u32gt assertz.err=ERR_TOO_MANY_APPROVERS
+    u32lte assert.err=ERR_TOO_MANY_APPROVERS
     # => []
 end
 
