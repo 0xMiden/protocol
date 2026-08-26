@@ -74,7 +74,7 @@ impl NetworkAccountTarget {
         attachments: &mut Vec<NoteAttachment>,
         target_id: AccountId,
     ) -> Result<(), NetworkAccountTargetError> {
-        if !Self::contains_target(attachments, target_id)? {
+        if !Self::validate_target(attachments, target_id)? {
             let target = Self::new(target_id, NoteExecutionHint::Always)?;
             attachments.push(NoteAttachment::from(target));
         }
@@ -101,21 +101,20 @@ impl NetworkAccountTarget {
             return Self::ensure_presence(attachments, target_id);
         }
 
-        // Reject any attachment the caller added under the target scheme: naming another account
-        // is a mismatch, and naming this private one does not decode as a `NetworkAccountTarget`.
-        Self::contains_target(attachments, target_id).map(|_| ())
+        // No target is derived, but any attachment the caller supplied under the scheme is still
+        // validated against `target_id`.
+        Self::validate_target(attachments, target_id).map(|_| ())
     }
 
-    /// Returns whether `attachments` carries a [`NetworkAccountTarget`] for `target_id`.
-    ///
-    /// Every attachment of the scheme is validated, so no attachment can claim a target other than
-    /// `target_id`.
+    /// Validates every attachment carrying the [`NetworkAccountTarget::ATTACHMENT_SCHEME`]
+    /// against `target_id`, returning whether one of them is present.
     ///
     /// # Errors
     ///
-    /// Returns an error if an attachment with the [`NetworkAccountTarget::ATTACHMENT_SCHEME`] does
-    /// not decode as a [`NetworkAccountTarget`] or targets an account other than `target_id`.
-    fn contains_target(
+    /// Returns an error if such an attachment does not decode as a [`NetworkAccountTarget`], which
+    /// is the case for one naming a non-public account, or targets an account other than
+    /// `target_id`.
+    fn validate_target(
         attachments: &[NoteAttachment],
         target_id: AccountId,
     ) -> Result<bool, NetworkAccountTargetError> {
