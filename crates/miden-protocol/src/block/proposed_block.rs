@@ -15,12 +15,12 @@ use crate::block::{
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
-    NextProtocolConfig,
     OutputNoteBatch,
     ValidatorConfig,
 };
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
+use crate::protocol_config::NextProtocolConfig;
 use crate::transaction::{InputNoteCommitment, OutputNote, PartialBlockchain, TransactionHeader};
 use crate::utils::serde::{
     ByteReader,

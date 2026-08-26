@@ -3,10 +3,10 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 
 use crate::account::PartialAccount;
-use crate::block::ProtocolConfig;
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
+use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{AccountInputs, InputNote, PartialBlockchain, TransactionInputs};
 use crate::vm::AdviceInputs;
 use crate::{EMPTY_WORD, Felt, Word, ZERO};

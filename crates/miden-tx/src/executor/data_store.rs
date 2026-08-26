@@ -4,8 +4,9 @@ use alloc::vec::Vec;
 use miden_processor::{FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
 use miden_protocol::asset::{AssetId, AssetWitness};
-use miden_protocol::block::{BlockHeader, BlockNumber, ProtocolConfig};
+use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain};
 
 use crate::DataStoreError;

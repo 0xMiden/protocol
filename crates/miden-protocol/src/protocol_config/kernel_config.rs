@@ -22,6 +22,10 @@ use crate::{Felt, Hasher, Word};
 /// procedures it exposes through its API. Both are needed by other kernels: the batch kernel
 /// verifies transaction proofs against the transaction kernel's `main_proc`, while the exposed
 /// procedure roots are what users may invoke.
+///
+/// `kernel_procs` is the set of kernel procedures exposed via index-based invocation, which is
+/// different from [`KernelDescriptor::proc_hashes`], which is the set of statically invocable
+/// kernel procedures (e.g. `exec_kernel_proc`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KernelConfig {
     /// The root of the executable kernel procedure.

@@ -52,9 +52,10 @@ pub enum BlockSignaturesError {
 /// validator key at index `i`. Every validator in the set must sign; there is no partial-signing
 /// support.
 ///
-/// TODO(validator_quorum): [`ValidatorConfig::quorum`] is committed to by the block header but not
-/// enforced here yet. Enforcing it requires signatures that identify the validator they belong to,
-/// so that a partial set can still be matched against the validator keys.
+/// TODO(validator_quorum): [`ValidatorConfig`] requires the quorum to be equal to the validator
+/// count, which is why every validator must sign. A smaller quorum needs signatures that identify
+/// the validator they belong to, so that a partial set can still be matched against the validator
+/// keys.
 ///
 /// This is a plain, unchecked container: neither [`BlockSignatures::new`] nor deserialization
 /// verify anything about the signatures they hold. The only way to establish that a
@@ -127,7 +128,7 @@ impl BlockSignatures {
         }
 
         for (position, (signature, validator_key)) in
-            self.signatures.iter().zip(validator_config.as_keys()).enumerate()
+            self.signatures.iter().zip(validator_config.keys()).enumerate()
         {
             if !signature.verify(block_commitment, validator_key) {
                 return Err(SignatureVerificationError::InvalidSignatureAtPosition { position });

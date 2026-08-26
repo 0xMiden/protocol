@@ -16,8 +16,9 @@ use miden_protocol::account::{
 use miden_protocol::assembly::SourceManagerSync;
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::block::{BlockHeader, BlockNumber, ProtocolConfig};
+use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,

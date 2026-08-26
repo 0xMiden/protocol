@@ -1,6 +1,6 @@
 use crate::account::AccountId;
 use crate::asset::AssetId;
-use crate::block::ProtocolConfig;
+use crate::protocol_config::ProtocolConfig;
 use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
 impl ProtocolConfig {

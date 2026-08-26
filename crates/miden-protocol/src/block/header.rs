@@ -1,12 +1,7 @@
 use alloc::vec::Vec;
 
-use crate::block::{
-    BlockNumber,
-    BlockSignatures,
-    NextProtocolConfig,
-    SignatureVerificationError,
-    ValidatorConfig,
-};
+use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorConfig};
+use crate::protocol_config::NextProtocolConfig;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -24,10 +19,13 @@ use crate::{Felt, Hasher, Word, ZERO};
 ///
 /// A block header includes the following fields:
 ///
-/// - `version` specifies the version of the block header's format. It changes only when fields are
-///   added to or removed from the header, not when the value of an existing field changes.
-/// - `prev_block_commitment` is the hash of the previous block header.
+/// - `version` specifies the version of the block header itself. It changes when fields are added
+///   to or removed from the header, and when the scheme behind one of the header's commitments
+///   changes, for example the structure of the SMTs or of the MMR.
+/// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. The u32 is
+///   sufficient to represent timestamps up to year 2106.
 /// - `block_num` is a unique sequential number of the current block.
+/// - `prev_block_commitment` is the hash of the previous block header.
 /// - `chain_commitment` is a commitment to an MMR of the entire chain where each block is a leaf.
 /// - `account_root` is a commitment to account database.
 /// - `nullifier_root` is a commitment to the nullifier database.
@@ -39,18 +37,17 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `fee_parameters` are the parameters defining the base fees, see [`FeeParameters`] for more
 ///   details.
 /// - `protocol_config` is the commitment to the chain's
-///   [`ProtocolConfig`](crate::block::ProtocolConfig).
+///   [`ProtocolConfig`](crate::protocol_config::ProtocolConfig).
 /// - `next_protocol_config` is the scheduled protocol upgrade, if any, see [`NextProtocolConfig`]
 ///   for more details.
-/// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. Current
-///   representation is sufficient to represent time up to year 2106.
 /// - `sub_commitment` is a sequential hash of all fields except the note_root.
 /// - `commitment` is a 2-to-1 hash of the sub_commitment and the note_root.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct BlockHeader {
     version: u8,
-    prev_block_commitment: Word,
+    timestamp: u32,
     block_num: BlockNumber,
+    prev_block_commitment: Word,
     chain_commitment: Word,
     account_root: Word,
     nullifier_root: Word,
@@ -60,7 +57,6 @@ pub struct BlockHeader {
     fee_parameters: FeeParameters,
     protocol_config: Word,
     next_protocol_config: Option<NextProtocolConfig>,
-    timestamp: u32,
     sub_commitment: Word,
     commitment: Word,
 }
@@ -122,8 +118,9 @@ impl BlockHeader {
 
         Self {
             version,
-            prev_block_commitment,
+            timestamp,
             block_num,
+            prev_block_commitment,
             chain_commitment,
             account_root,
             nullifier_root,
@@ -133,7 +130,6 @@ impl BlockHeader {
             fee_parameters,
             protocol_config,
             next_protocol_config,
-            timestamp,
             sub_commitment,
             commitment,
         }
@@ -221,7 +217,8 @@ impl BlockHeader {
         &self.fee_parameters
     }
 
-    /// Returns the commitment to the chain's [`ProtocolConfig`](crate::block::ProtocolConfig).
+    /// Returns the commitment to the chain's
+    /// [`ProtocolConfig`](crate::protocol_config::ProtocolConfig).
     pub fn protocol_config(&self) -> Word {
         self.protocol_config
     }
@@ -532,7 +529,7 @@ impl Deserializable for BlockHeader {
 /// The fee-related parameters of a block.
 ///
 /// This defines how to compute the fees of a transaction. Which asset fees are paid in is defined
-/// by [`ProtocolConfig::fee_asset_id`](crate::block::ProtocolConfig::fee_asset_id).
+/// by [`ProtocolConfig::fee_asset_id`](crate::protocol_config::ProtocolConfig::fee_asset_id).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeeParameters {
     /// The base fee (in base units) capturing the cost for the verification of a transaction.

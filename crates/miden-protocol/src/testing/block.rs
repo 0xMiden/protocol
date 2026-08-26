@@ -5,7 +5,8 @@ use miden_crypto::rand::test_utils::rand_value;
 use crate::Word;
 use crate::account::Account;
 use crate::block::account_tree::{AccountIdKey, AccountTree};
-use crate::block::{BlockHeader, BlockNumber, FeeParameters, ProtocolConfig, ValidatorConfig};
+use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorConfig};
+use crate::protocol_config::ProtocolConfig;
 use crate::testing::random_secret_key::random_secret_key;
 
 impl BlockHeader {

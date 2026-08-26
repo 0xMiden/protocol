@@ -16,12 +16,12 @@ use miden_protocol::block::{
     BlockSignatures,
     Blockchain,
     ProposedBlock,
-    ProtocolConfig,
     ProvenBlock,
     ValidatorConfig,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
@@ -433,7 +433,7 @@ impl MockChain {
     fn sign_block(&self, commitment: Word) -> BlockSignatures {
         let signatures = self
             .validator_config()
-            .as_keys()
+            .keys()
             .iter()
             .map(|key| {
                 let signer = self

@@ -44,7 +44,6 @@ use miden_protocol::block::{
     Blockchain,
     FeeParameters,
     OutputNoteBatch,
-    ProtocolConfig,
     ProvenBlock,
     ValidatorConfig,
 };
@@ -52,6 +51,7 @@ use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
@@ -291,7 +291,7 @@ impl MockChainBuilder {
         // as the signer of block 1.
         let signatures = BlockSignatures::new(
             validator_config
-                .as_keys()
+                .keys()
                 .iter()
                 .map(|key| {
                     let signer = validator_secret_keys

@@ -135,11 +135,9 @@ const AUTH_ARGS_PTR = 1636
 # GLOBAL BLOCK DATA
 # -------------------------------------------------------------------------------------------------
 
-# The memory address at which the block data section begins
-pub const BLOCK_DATA_SECTION_OFFSET = 2000
-
-# The memory address at which the block metadata is stored [version, block_number, timestamp, 0]
-const BLOCK_METADATA_PTR = 2000
+# The memory address at which the block data section begins, holding the block metadata
+# [version, block_number, timestamp, 0]
+pub const BLOCK_METADATA_PTR = 2000
 
 # The memory address at which the block header version is stored
 const BLOCK_METADATA_VERSION_PTR = BLOCK_METADATA_PTR
@@ -798,7 +796,7 @@ end
 
 #! Returns the fee faucet ID from the chain's protocol config.
 #!
-#! TODO(fee_asset_id): Return the fee asset ID instead.
+#! TODO(fee_asset_id): Remove this procedure in favor of `get_fee_asset_id`.
 #!
 #! Inputs:  []
 #! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]

@@ -180,13 +180,10 @@ pub const AUTH_ARGS_PTR: MemoryAddress = 1636;
 // BLOCK DATA
 // ------------------------------------------------------------------------------------------------
 
-/// The memory address at which the block data section begins.
+/// The memory address at which the block data section begins, holding the block metadata.
 ///
 /// The section holds the reference block header, see
 /// [`BlockHeader::to_elements`](crate::block::BlockHeader::to_elements) for its layout.
-pub const BLOCK_DATA_SECTION_OFFSET: MemoryOffset = 2000;
-
-/// The memory address at which the block metadata is stored.
 pub const BLOCK_METADATA_PTR: MemoryAddress = 2000;
 
 /// The index of the block header version within the block metadata.

@@ -30,7 +30,7 @@ impl ValidatorConfig {
     /// Panics if `signers` does not contain a matching signer for every key in this config.
     pub fn sign_all(&self, signers: &[SigningKey], commitment: Word) -> BlockSignatures {
         let signatures = self
-            .as_keys()
+            .keys()
             .iter()
             .map(|key| {
                 let signer = signers

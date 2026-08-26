@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::block::KernelConfig;
+use crate::protocol_config::KernelConfig;
 
 impl KernelConfig {
     /// Creates a placeholder [`KernelConfig`] for a kernel

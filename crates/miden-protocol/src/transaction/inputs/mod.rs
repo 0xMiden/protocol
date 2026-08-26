@@ -21,10 +21,11 @@ use crate::account::{
 };
 use crate::asset::{Asset, AssetId, AssetWitness, PartialVault};
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
-use crate::block::{BlockHeader, BlockNumber, ProtocolConfig};
+use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
+use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
 use crate::utils::serde::{
     ByteReader,

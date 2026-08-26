@@ -14,7 +14,7 @@ use {ACCOUNT_VERSION_1} from miden::tx_kernel_core::account
 use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
-use {BLOCK_DATA_SECTION_OFFSET, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR,
+use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR,
      PROTOCOL_CONFIG_SECTION_OFFSET}
     from miden::tx_kernel_core::memory
 
@@ -292,7 +292,7 @@ end
 #!   transaction.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
 proc process_block_data
-    push.BLOCK_DATA_SECTION_OFFSET
+    push.BLOCK_METADATA_PTR
     # => [block_data_ptr, block_num]
 
     # read the block header and compute its sub commitment

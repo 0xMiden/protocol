@@ -34,7 +34,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
-use crate::block::{BlockNumber, KernelConfig, ValidatorConfig};
+use crate::block::{BlockNumber, ValidatorConfig};
 use crate::note::{
     NoteAssets,
     NoteAttachment,
@@ -44,6 +44,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
+use crate::protocol_config::KernelConfig;
 use crate::script::MastForestScriptError;
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
@@ -1422,10 +1423,8 @@ pub enum ValidatorConfigError {
     TooManyKeys { count: usize },
     #[error("validator set contains duplicate public keys")]
     DuplicateKey,
-    #[error("quorum must be at least one")]
-    QuorumTooSmall,
-    #[error("quorum is {quorum} but the validator set only contains {count} keys")]
-    QuorumExceedsValidatorCount { quorum: u16, count: usize },
+    #[error("quorum is {quorum} but must equal the validator count of {count}")]
+    QuorumMustEqualValidatorCount { quorum: u16, count: usize },
 }
 
 // NULLIFIER TREE ERROR

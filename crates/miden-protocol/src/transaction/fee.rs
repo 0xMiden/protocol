@@ -100,10 +100,6 @@ impl TransactionFee {
 mod tests {
     use super::*;
 
-    fn fee_parameters(verification_base_fee: u32) -> FeeParameters {
-        FeeParameters::new(verification_base_fee)
-    }
-
     #[test]
     fn log_verification_cycles_formula() {
         let log_verification_cycles = |total_cycles: u32| {
@@ -136,7 +132,7 @@ mod tests {
     fn compute_fee_does_not_wrap_at_the_maximal_base_fee() {
         let fee = TransactionFee::new(MAX_TX_EXECUTION_CYCLES)
             .unwrap()
-            .compute_fee(&fee_parameters(u32::MAX))
+            .compute_fee(&FeeParameters::new(u32::MAX))
             .unwrap();
         assert_eq!(fee.as_u64(), u64::from(u32::MAX) * 30);
     }
@@ -147,7 +143,7 @@ mod tests {
         let fee = TransactionFee::new(1 << 16)
             .unwrap()
             .with_safety_margin(3)
-            .compute_fee(&fee_parameters(500))
+            .compute_fee(&FeeParameters::new(500))
             .unwrap();
         assert_eq!(fee.as_u64(), 500 * (17 + 3));
     }
@@ -159,7 +155,7 @@ mod tests {
         let result = TransactionFee::new(1)
             .unwrap()
             .with_safety_margin(u32::MAX - 1)
-            .compute_fee(&fee_parameters(u32::MAX));
+            .compute_fee(&FeeParameters::new(u32::MAX));
         assert!(matches!(result, Err(TransactionFeeError::FeeExceedsMaxAssetAmount(_))));
     }
 }

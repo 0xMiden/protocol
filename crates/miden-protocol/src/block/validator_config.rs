@@ -19,6 +19,10 @@ use crate::{Felt, WORD_SIZE, Word, ZERO};
 /// The ordered set of validator public keys authorized to sign a block, and how many of them must
 /// sign.
 ///
+/// The protocol does not support partial signing yet, so the quorum must be equal to the number of
+/// keys. The quorum stays a separate field because the block header commits to it. Thus a smaller
+/// quorum can be added later without a change to the shape of the commitment.
+///
 /// A block header commits to the [`ValidatorConfig`] authorized to sign the *next* block. A block's
 /// signatures are verified positionally against the validator set committed to by its parent: the
 /// signature in slot `i` is checked against the key at index `i` in this set.
@@ -58,7 +62,7 @@ impl ValidatorConfig {
     /// - `keys` is empty;
     /// - `keys` contains more than [`ValidatorConfig::MAX_VALIDATORS`] keys;
     /// - the set contains duplicate keys;
-    /// - `quorum` is zero or exceeds the number of keys.
+    /// - `quorum` does not equal the number of keys.
     pub fn new(mut keys: Vec<PublicKey>, quorum: u16) -> Result<Self, ValidatorConfigError> {
         if keys.is_empty() {
             return Err(ValidatorConfigError::EmptySet);
@@ -66,11 +70,8 @@ impl ValidatorConfig {
         if keys.len() > Self::MAX_VALIDATORS {
             return Err(ValidatorConfigError::TooManyKeys { count: keys.len() });
         }
-        if quorum == 0 {
-            return Err(ValidatorConfigError::QuorumTooSmall);
-        }
-        if usize::from(quorum) > keys.len() {
-            return Err(ValidatorConfigError::QuorumExceedsValidatorCount {
+        if usize::from(quorum) != keys.len() {
+            return Err(ValidatorConfigError::QuorumMustEqualValidatorCount {
                 quorum,
                 count: keys.len(),
             });
@@ -91,7 +92,7 @@ impl ValidatorConfig {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the validator public keys in canonical order.
-    pub fn as_keys(&self) -> &[PublicKey] {
+    pub fn keys(&self) -> &[PublicKey] {
         &self.keys
     }
 
@@ -120,6 +121,12 @@ impl ValidatorConfig {
     }
 
     /// Returns the preimage of [`ValidatorConfig::to_commitment`] as a sequence of field elements.
+    ///
+    /// The element layout is:
+    ///
+    /// ```text
+    /// [[quorum, 0, 0, 0], KEY_COMMITMENT_0, KEY_COMMITMENT_1, ..., KEY_COMMITMENT_N]
+    /// ```
     pub fn to_elements(&self) -> Vec<Felt> {
         <Self as SequentialCommit>::to_elements(self)
     }
@@ -198,8 +205,9 @@ mod tests {
 
     #[test]
     fn new_accepts_max_validators() -> anyhow::Result<()> {
-        let config = ValidatorConfig::new(random_keys(ValidatorConfig::MAX_VALIDATORS), 3)?;
-        assert_eq!(config.len(), ValidatorConfig::MAX_VALIDATORS);
+        let max_validators = ValidatorConfig::MAX_VALIDATORS;
+        let config = ValidatorConfig::new(random_keys(max_validators), max_validators as u16)?;
+        assert_eq!(config.len(), max_validators);
         Ok(())
     }
 
@@ -216,53 +224,49 @@ mod tests {
     fn new_rejects_duplicate_keys() {
         let mut keys = random_keys(3);
         keys[1] = keys[0].clone();
-        let result = ValidatorConfig::new(keys, 2);
+        let result = ValidatorConfig::new(keys, 3);
         assert_matches!(result, Err(ValidatorConfigError::DuplicateKey));
     }
 
-    #[test]
-    fn new_rejects_zero_quorum() {
-        let result = ValidatorConfig::new(random_keys(3), 0);
-        assert_matches!(result, Err(ValidatorConfigError::QuorumTooSmall));
-    }
-
-    #[test]
-    fn new_rejects_quorum_above_validator_count() {
-        let result = ValidatorConfig::new(random_keys(3), 4);
+    #[rstest::rstest]
+    #[case::zero_quorum(0)]
+    #[case::quorum_below_validator_count(2)]
+    #[case::quorum_above_validator_count(4)]
+    fn new_rejects_quorum_other_than_validator_count(#[case] quorum: u16) {
+        let result = ValidatorConfig::new(random_keys(3), quorum);
         assert_matches!(
             result,
-            Err(ValidatorConfigError::QuorumExceedsValidatorCount { quorum: 4, count: 3 })
+            Err(ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: actual, count: 3 })
+                if actual == quorum
         );
     }
 
     #[test]
     fn new_sorts_into_canonical_order() -> anyhow::Result<()> {
         let keys = random_keys(5);
-        let forward = ValidatorConfig::new(keys.clone(), 3)?;
+        let forward = ValidatorConfig::new(keys.clone(), 5)?;
 
         let mut reversed = keys;
         reversed.reverse();
-        let backward = ValidatorConfig::new(reversed, 3)?;
+        let backward = ValidatorConfig::new(reversed, 5)?;
 
         // The canonical order makes the set and its commitment independent of input order.
-        assert_eq!(forward.as_keys(), backward.as_keys());
+        assert_eq!(forward.keys(), backward.keys());
         assert_eq!(forward.to_commitment(), backward.to_commitment());
         Ok(())
     }
 
     #[test]
     fn commitment_binds_the_quorum() -> anyhow::Result<()> {
-        let keys = random_keys(3);
-        let two_of_three = ValidatorConfig::new(keys.clone(), 2)?;
-        let three_of_three = ValidatorConfig::new(keys, 3)?;
+        let config = ValidatorConfig::new(random_keys(3), 3)?;
 
-        assert_ne!(two_of_three.to_commitment(), three_of_three.to_commitment());
+        assert_eq!(config.to_elements()[0], Felt::from(config.quorum()));
         Ok(())
     }
 
     #[test]
     fn serde_round_trip() -> anyhow::Result<()> {
-        let config = ValidatorConfig::new(random_keys(4), 3)?;
+        let config = ValidatorConfig::new(random_keys(4), 4)?;
         let deserialized = ValidatorConfig::read_from_bytes(&config.to_bytes())?;
         assert_eq!(config, deserialized);
 

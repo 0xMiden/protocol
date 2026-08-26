@@ -16,9 +16,10 @@ use crate::account::{
     StorageSlotType,
 };
 use crate::asset::PartialVault;
+use crate::block::BlockHeader;
 use crate::block::account_tree::AccountIdKey;
-use crate::block::{BlockHeader, ProtocolConfig};
 use crate::errors::TransactionInputsExtractionError;
+use crate::protocol_config::ProtocolConfig;
 use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
