@@ -784,17 +784,15 @@ end
 
 #! Rebases the transaction's expiration to the block bound by the transaction summary.
 #!
-#! The kernel measures the expiration delta from the transaction reference block, so approvers
-#! signing at block `proposal_ref_block` with some `expiration_delta` authorize inclusion until
-#! `ref_block + expiration_delta` for _any_ arbitrary `ref_block`. Rebasing the deadline onto the
-#! bound block makes the approval cover inclusion until the intended
-#! `proposal_ref_block + expiration_delta`, no matter when the transaction is executed.
+#! The kernel computes the expiration block based on the transaction's reference block. Since
+#! multisigs allow execution and proposal reference blocks to differ, the signatures never expire
+#! since execution could always pick the chain tip.
 #!
-#! This must run after the summary was created. Rebasing the expiration before that would bind a
-#! reference-block-dependent delta and so change the summary with every new reference block,
-#! invalidating the collected signatures.
+#! Rebasing the expiration onto the `proposal_ref_block`, the reference block at which the tx was
+#! proposed, makes the approval cover inclusion until the intended
+#! `proposal_ref_block + expiration_delta`, no matter when the transaction is _executed_.
 #!
-#! Does nothing if the transaction set no expiration delta.
+#! This procedure is a no-op if the transaction set no expiration delta.
 #!
 #! Inputs:  [bound_block]
 #! Outputs: []
@@ -897,6 +895,8 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     exec.auth::hash_and_insert_tx_summary
     # => [TX_SUMMARY_COMMITMENT, block_number]
 
+    # this must run after the summary was created since rebasing the expiration before would bind a
+    # reference-block-dependent delta and so change the summary with every new reference block.
     movup.4 exec.rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 

@@ -434,6 +434,8 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     exec.auth::hash_and_insert_tx_summary
     # => [TX_SUMMARY_COMMITMENT, block_number]
 
+    # this must run after the summary was created since rebasing the expiration before would bind a
+    # reference-block-dependent delta and so change the summary with every new reference block.
     movup.4 exec.multisig::rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 
