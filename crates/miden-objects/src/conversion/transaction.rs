@@ -275,7 +275,8 @@ impl TryFrom<proto::transaction::TransactionHeader> for TransactionHeader {
             final_state_commitment,
             input_notes,
             output_notes,
-        );
+        )
+        .map_err(ConversionError::new)?;
         if header.id() != transmitted_id {
             return Err(ConversionError::message(format!(
                 "transaction ID mismatch: transmitted {transmitted_id}, recomputed {}",

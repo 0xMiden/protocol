@@ -208,7 +208,7 @@ impl DecodedProvenBatch {
         ProvenBatch::new(
             self.reference_block_commitment,
             self.reference_block_num,
-            self.account_updates,
+            self.account_updates.into_values(),
             self.input_notes,
             self.output_notes,
             self.expiration_block_num,
