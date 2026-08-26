@@ -22,6 +22,7 @@
 - [BREAKING] `NoteScript::from_parts` and `TransactionScript::from_parts` now return a `Result` instead of panicking when the specified entrypoint is not in the provided MAST forest ([#3548](https://github.com/0xMiden/protocol/pull/3548)).
 - [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#2961](https://github.com/0xMiden/protocol/pull/3565)).
 - The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
+- The transaction kernel now validates the version and reserved bit of every input note's metadata ([#3743](https://github.com/0xMiden/protocol/pull/3743)).
 - [BREAKING] Renamed the fungible asset amount extraction procedures so the unsuffixed name is the validating one ([#3576](https://github.com/0xMiden/protocol/pull/3576)):
   - `miden::protocol::asset::fungible_value_into_amount` -> `fungible_value_into_amount_unchecked`.
   - `miden::standards::assets::fungible_asset::value_into_amount` to `value_into_amount_unchecked`.

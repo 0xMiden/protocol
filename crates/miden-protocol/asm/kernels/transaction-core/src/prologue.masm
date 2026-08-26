@@ -17,6 +17,7 @@ use miden::tx_kernel_core::memory
 use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR,
      PROTOCOL_CONFIG_SECTION_OFFSET}
     from miden::tx_kernel_core::memory
+use miden::tx_kernel_core::note
 
 # CONSTS
 # =================================================================================================
@@ -715,7 +716,8 @@ proc process_note_args
     # => [note_ptr]
 end
 
-#! Computes the note metadata commitment from metadata word and attachments commitment.
+#! Validates the note metadata and computes its commitment from the metadata word and the
+#! attachments commitment.
 #!
 #! Inputs:  [note_ptr]
 #! Outputs: [NOTE_METADATA_COMMITMENT]
@@ -724,13 +726,21 @@ end
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_METADATA_COMMITMENT is the commitment to the note metadata computed as
 #!   `hash(NOTE_METADATA || NOTE_ATTACHMENTS_COMMITMENT)`.
-proc compute_note_metadata_commitment
+#!
+#! Panics if:
+#! - the metadata encodes an unknown version.
+#! - the metadata has its reserved bit set.
+proc process_note_metadata
     # load the attachments commitment onto the stack
     dup exec.memory::get_input_note_attachments_commitment
     # => [NOTE_ATTACHMENTS_COMMITMENT, note_ptr]
 
     # load the metadata onto the stack
     movup.4 exec.memory::get_input_note_metadata
+    # => [NOTE_METADATA, NOTE_ATTACHMENTS_COMMITMENT]
+
+    # the version defines how the metadata is decoded, so assert it before anything reads it
+    dupw exec.note::validate_metadata
     # => [NOTE_METADATA, NOTE_ATTACHMENTS_COMMITMENT]
 
     exec.poseidon2::merge
@@ -1027,11 +1037,11 @@ proc process_input_note
     dup exec.add_input_note_assets_to_vault
     # => [note_ptr, NULLIFIER, CAPACITY]
 
-    # note metadata commitment
+    # note metadata
     # ---------------------------------------------------------------------------------------------
 
-    # compute NOTE_METADATA_COMMITMENT
-    dup exec.compute_note_metadata_commitment
+    # validate the metadata and compute NOTE_METADATA_COMMITMENT
+    dup exec.process_note_metadata
     # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
     # note details commitment
