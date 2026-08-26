@@ -85,7 +85,7 @@ async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Resul
     let (mock_chain, account) = mock_chain_with_fee()?;
     let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let fee_faucet_id = mock_tx.tx_inputs().block_header().fee_parameters().fee_faucet_id();
+    let fee_faucet_id = mock_tx.tx_inputs().protocol_config().fee_asset_id().faucet_id();
 
     let code = "
         use miden::tx_kernel_core::prologue
@@ -117,7 +117,7 @@ async fn native_conversion_info_returns_native_fee_faucet_at_rate_one() -> anyho
     let (mock_chain, account) = mock_chain_with_fee()?;
     let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let fee_faucet_id = mock_tx.tx_inputs().block_header().fee_parameters().fee_faucet_id();
+    let fee_faucet_id = mock_tx.tx_inputs().protocol_config().fee_asset_id().faucet_id();
 
     let code = "
         use miden::tx_kernel_core::prologue

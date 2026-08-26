@@ -39,6 +39,8 @@
 - [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 - [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
+- [BREAKING] Introduced `ProtocolConfig` that commits to all kernel's procedures, the fee asset ID and the security policy for recursive verification ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
+- [BREAKING] Renamed `ValidatorKeys` to `ValidatorConfig` and added a quorum to it ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
 
 ### Fixes
 
