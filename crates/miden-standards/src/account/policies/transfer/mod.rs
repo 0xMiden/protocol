@@ -62,10 +62,6 @@ pub enum TransferPolicyError {
 /// an ordinary send. The bundled blocklist and allowlist policies therefore exempt the issuer by
 /// comparing the asset's faucet ID against the native account ID.
 ///
-/// The dispatcher already limits the transaction's expiration to the standards default delta
-/// before invoking the policy, so a policy only needs to set a delta of its own when its state is
-/// more time-sensitive than that; the transaction keeps the shortest delta set during execution.
-///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.
 #[derive(Debug, Clone)]

@@ -6,8 +6,7 @@
 #! Transfer policy that accepts every transfer.
 #!
 #! Invoked as the active send or receive policy via `TokenPolicyManager`, which limits the
-#! transaction's expiration and applies the account-wide pause check. This policy reads no state
-#! of its own, so it sets no additional limit.
+#! transaction's expiration and applies the account-wide pause check.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]

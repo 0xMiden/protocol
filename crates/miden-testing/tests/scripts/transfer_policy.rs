@@ -62,9 +62,6 @@ pub(crate) fn add_faucet_with_wallet(builder: &mut MockChainBuilder) -> anyhow::
 
 /// Builds a fungible faucet with asset callbacks enabled and [`TransferPolicy::allow_all`] active
 /// on both send and receive.
-///
-/// `allow_all` reads no state and sets no expiration limit of its own, so any limit observed on a
-/// transfer of this faucet's asset comes from the policy manager's dispatcher.
 fn add_faucet_with_allow_all_transfer(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("ALL")?)
@@ -193,8 +190,6 @@ async fn receive_callback_applies_default_expiration_limit() -> anyhow::Result<(
     Ok(())
 }
 
-/// Same for the send callback, reached here through a mint: the faucet adds the minted asset to an
-/// output note, which the kernel routes through `on_before_asset_added_to_note`.
 #[tokio::test]
 async fn send_callback_applies_default_expiration_limit() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();

@@ -215,8 +215,7 @@ end
 #!
 #! Binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`],
 #! which limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`]
-#! blocks after the reference block, applies the pause check and invokes the active receive policy
-#! (skipping all three when no receive policy is configured).
+#! blocks after the reference block, applies the pause check and invokes the active receive policy.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
@@ -537,14 +536,6 @@ end
 #! reference block, the account-wide pause flag is asserted (a no-op when the [`Pausable`]
 #! component is not installed) and the policy is invoked via `dyncall`.
 #!
-#! The limit is applied here rather than left to the invoked policy because both the pause flag
-#! and the policy's own state are read through FPI, which reflects the transaction's reference
-#! block: the executor picks that block, so without a limit a transfer can be checked against a
-#! policy or pause state the faucet has since replaced. Applying it in the dispatcher covers the
-#! pause flag and every policy, including ones that set no limit of their own. A policy needing a
-#! stricter bound can still set a smaller delta, since the transaction keeps the shortest limit
-#! set during its execution.
-#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
 #! Outputs: []
 #!
@@ -570,7 +561,6 @@ proc invoke_transfer_policy
         dropw dropw dropw drop
         # => []
     else
-        # bound how stale the FPI-read pause flag and policy state may be
         exec.expiration::apply_default
         # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 

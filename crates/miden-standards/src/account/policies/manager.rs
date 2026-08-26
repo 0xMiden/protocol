@@ -9,11 +9,6 @@
 //! (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and `..._to_note`); the
 //! kernel `dyncall`s the wrapper, which limits the transaction's expiration, applies the
 //! account-wide pause check and then dispatches to the active policy root.
-//!
-//! The expiration limit matters because the wrapper runs against the issuing faucet through FPI:
-//! both the pause flag and the policy's own state reflect the transaction's reference block, which
-//! the executor chooses. Bounding the expiration in the dispatcher caps how stale that state can
-//! be for every transfer, including ones whose policy sets no limit of its own.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
