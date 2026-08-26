@@ -423,12 +423,18 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     push.0.0 movup.2
     # => [block_number, 0, 0, SALT]
 
+    dup movdn.7
+    # => [block_number, 0, 0, SALT, block_number]
+
     exec.auth::create_tx_summary_with_block
-    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, block_number]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted
     # into the advice map for extraction by the host
     exec.auth::hash_and_insert_tx_summary
+    # => [TX_SUMMARY_COMMITMENT, block_number]
+
+    movup.4 exec.multisig::rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Reading threshold config (default + num_approvers) ------

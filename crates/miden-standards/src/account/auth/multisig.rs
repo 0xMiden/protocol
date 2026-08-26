@@ -161,11 +161,15 @@ impl AuthMultisigConfig {
 /// payment). On chains with a zero verification base fee no note is created. The fee note is
 /// created before the transaction summary, so it is covered by the approver signatures.
 ///
-/// # Security: signatures do not expire with the block they bind
+/// # Expiration
 ///
-/// TODO(multisig_expiration): The expiration delta in multisigs is relative to the reference block,
-/// so a signature stays usable indefinitely, even if the expiration delta added to the ref block
-/// using during proposal would be behind the chain tip.
+/// The approvers authorize inclusion up to the bound block plus the transaction's expiration delta,
+/// so the deadline they see when signing is the deadline that is enforced, no matter how far the
+/// chain advanced when the transaction is executed. Executing after that deadline aborts.
+///
+/// A transaction that sets no expiration delta carries no deadline, and its signatures stay usable
+/// indefinitely. A proposer who wants one must set it, for example with
+/// [`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript).
 ///
 /// # Privacy
 ///
@@ -481,6 +485,9 @@ impl MultisigAuthArgs {
     /// advanced since. The block must be at or before the transaction's reference block and must
     /// be tracked by the transaction's partial blockchain, since that is the only way the kernel
     /// can read its commitment.
+    ///
+    /// The bound block is also the base of the expiration deadline: a transaction that sets an
+    /// expiration delta can be included up to `bound_block + expiration_delta`.
     ///
     /// `salt` is bound by the transaction summary and is what makes otherwise identical
     /// transactions distinguishable, which is what the replay protection of the multisig
