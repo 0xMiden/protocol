@@ -1844,18 +1844,24 @@ pub proc tx_get_fee_faucet_id
     # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
 end
 
-#! Returns the block commitment of the reference block.
+#! Returns the commitment of the block with the provided block number.
 #!
-#! Inputs:  [pad(16)]
+#! Inputs:  [block_number, pad(15)]
 #! Outputs: [BLOCK_COMMITMENT, pad(12)]
 #!
 #! Where:
-#! - BLOCK_COMMITMENT is the commitment of the transaction reference block.
+#! - block_number is the number of the block whose commitment should be returned. It must not
+#!   exceed the transaction reference block number.
+#! - BLOCK_COMMITMENT is the commitment of that block.
+#!
+#! Panics if:
+#! - block_number is not a u32.
+#! - block_number exceeds the transaction reference block number.
 #!
 #! Invocation: dynexec
 pub proc tx_get_block_commitment
     exec.tx::get_block_commitment
-    # => [BLOCK_COMMITMENT, pad(16)]
+    # => [BLOCK_COMMITMENT, pad(15)]
 
     # truncate the stack
     swapw dropw
@@ -1871,9 +1877,9 @@ end
 #! - num is the transaction reference block number.
 #!
 #! Invocation: dynexec
-pub proc tx_get_block_number
+pub proc tx_get_reference_block_number
     # get the block number
-    exec.tx::get_block_number
+    exec.tx::get_reference_block_number
     # => [num, pad(16)]
 
     # truncate the stack

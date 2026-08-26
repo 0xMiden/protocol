@@ -50,6 +50,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     InputNote,
@@ -460,6 +461,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        block_number: BlockNumber,
         block_commitment: Word,
         expiration_delta: u16,
         user_params: TransactionSummaryUserParams,
@@ -516,6 +518,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             account_delta,
             input_notes,
             output_notes,
+            block_number,
             block_commitment,
             expiration_delta,
             user_params,

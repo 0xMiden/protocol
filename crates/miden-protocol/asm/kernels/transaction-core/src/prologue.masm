@@ -245,7 +245,7 @@ proc process_block_data
     # => [BLOCK_COMMITMENT, block_data_ptr', block_num]
 
     # assert that the block commitment matches the commitment in global inputs
-    exec.memory::get_block_commitment
+    exec.memory::get_ref_block_commitment
     assert_eqw.err=ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT
     # => [block_data_ptr', block_num]
 
@@ -291,7 +291,7 @@ proc process_chain_data
     # => [partial_blockchain_ptr]
 
     # add the current block's commitment to the MMR, enabling authentication of notes created in it
-    exec.memory::get_block_commitment
+    exec.memory::get_ref_block_commitment
     exec.mmr::add
     # => []
 end

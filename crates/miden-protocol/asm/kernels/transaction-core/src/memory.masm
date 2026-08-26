@@ -484,7 +484,7 @@ end
 #!
 #! Where:
 #! - BLOCK_COMMITMENT is the commitment of the transaction reference block.
-pub proc get_block_commitment
+pub proc get_ref_block_commitment
     padw mem_loadw_le.BLOCK_COMMITMENT_PTR
 end
 

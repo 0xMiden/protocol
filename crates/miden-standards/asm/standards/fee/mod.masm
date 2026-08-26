@@ -280,7 +280,7 @@ pub proc create_and_fund_fee_note(asset: Asset)
     exec.active_account::get_nonce
     # => [initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
 
-    exec.tx::get_block_number
+    exec.tx::get_reference_block_number
     # => [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
 
     # domain-separate the serial number by hashing the tuple with the FEE domain tag

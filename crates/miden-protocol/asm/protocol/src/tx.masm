@@ -1,4 +1,4 @@
-use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_FAUCET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
+use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_FAUCET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use {AccountId, AccountProcedureRoot, BlockNumber, TransactionScriptRoot}
     from miden::protocol::types
@@ -12,12 +12,12 @@ use {AccountId, AccountProcedureRoot, BlockNumber, TransactionScriptRoot}
 #! - num is the transaction reference block number.
 #!
 #! Invocation: exec
-pub proc get_block_number() -> BlockNumber
+pub proc get_reference_block_number() -> BlockNumber
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    push.TX_GET_BLOCK_NUMBER_OFFSET
+    push.TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -26,6 +26,37 @@ pub proc get_block_number() -> BlockNumber
     # clean the stack
     swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [num]
+end
+
+#! Returns the commitment of the block with the provided block number.
+#!
+#! Any block up to and including the transaction reference block can be read.
+#!
+#! Inputs:  [block_number]
+#! Outputs: [BLOCK_COMMITMENT]
+#!
+#! Where:
+#! - block_number is the number of the block whose commitment should be returned.
+#! - BLOCK_COMMITMENT is the commitment of that block.
+#!
+#! Panics if:
+#! - block_number is not a u32.
+#! - block_number exceeds the transaction reference block number.
+#!
+#! Invocation: exec
+pub proc get_block_commitment(block_number: BlockNumber) -> word
+    padw padw padw push.0.0 movup.14
+    # => [block_number, pad(14)]
+
+    push.TX_GET_BLOCK_COMMITMENT_OFFSET
+    # => [offset, block_number, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [BLOCK_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [BLOCK_COMMITMENT]
 end
 
 #! Returns the block commitment of the transaction reference block.
@@ -37,19 +68,11 @@ end
 #! - BLOCK_COMMITMENT is the commitment to the reference block of the transaction.
 #!
 #! Invocation: exec
-pub proc get_block_commitment() -> word
-    # pad the stack
-    padw padw padw push.0.0.0
-    # => [pad(15)]
+pub proc get_reference_block_commitment() -> word
+    exec.get_reference_block_number
+    # => [reference_block_number]
 
-    push.TX_GET_BLOCK_COMMITMENT_OFFSET
-    # => [offset, pad(15)]
-
-    syscall.exec_kernel_proc
-    # => [BLOCK_COMMITMENT, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
+    exec.get_block_commitment
     # => [BLOCK_COMMITMENT]
 end
 
