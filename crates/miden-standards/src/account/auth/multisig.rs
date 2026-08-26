@@ -163,13 +163,9 @@ impl AuthMultisigConfig {
 ///
 /// # Security: signatures do not expire with the block they bind
 ///
-/// The block a summary binds is a lower bound, not a deadline: the transaction executes against
-/// the current reference block, so a signature stays usable however far the chain has advanced.
-/// What invalidates a stale approval is the account moving on: the summary commits to the account
-/// delta, which covers the nonce, so any transaction the account executes in the meantime makes
-/// the previously signed summary unreachable. Approvers who want an approval to lapse on a
-/// schedule must arrange that themselves; the transaction's expiration delta does not do it, since
-/// it is measured from the reference block rather than from the bound one.
+/// TODO(multisig_expiration): The expiration delta in multisigs is relative to the reference block,
+/// so a signature stays usable indefinitely, even if the expiration delta added to the ref block
+/// using during proposal would be behind the chain tip.
 ///
 /// # Privacy
 ///
