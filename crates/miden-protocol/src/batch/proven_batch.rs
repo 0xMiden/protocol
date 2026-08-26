@@ -81,12 +81,14 @@ impl ProvenBatch {
         if transactions.as_slice().is_empty() {
             return Err(ProvenBatchError::EmptyTransactionBatch);
         }
+
         let mut transaction_ids = BTreeSet::new();
         for transaction in transactions.as_slice() {
             if !transaction_ids.insert(transaction.id()) {
                 return Err(ProvenBatchError::DuplicateTransaction(transaction.id()));
             }
         }
+
         let mut account_updates_by_id = BTreeMap::new();
         for (index, update) in account_updates.into_iter().enumerate() {
             let account_update_count = index + 1;
@@ -99,10 +101,12 @@ impl ProvenBatch {
                 return Err(ProvenBatchError::DuplicateAccountUpdate(account_id));
             }
         }
+
         let input_note_count = usize::from(input_notes.num_notes());
         if input_note_count > MAX_INPUT_NOTES_PER_BATCH {
             return Err(ProvenBatchError::TooManyInputNotes(input_note_count));
         }
+
         if output_notes.len() > MAX_OUTPUT_NOTES_PER_BATCH {
             return Err(ProvenBatchError::TooManyOutputNotes(output_notes.len()));
         }
