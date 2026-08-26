@@ -559,7 +559,7 @@ pub(super) fn validate_asset_callbacks(
     id: AccountId,
     storage: &AccountStorage,
 ) -> Result<(), AccountError> {
-    if !id.asset_callback_flag().is_enabled() && storage.has_callbacks() {
+    if !id.asset_callback_flag().is_enabled() && storage.has_callback_slots() {
         return Err(AccountError::AssetCallbackSlotWithDisabledFlag(id));
     }
 

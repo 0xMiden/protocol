@@ -173,7 +173,7 @@ impl AccountStorage {
     /// upgrade, so only the presence can be tied to the immutable
     /// [`AssetCallbackFlag`](crate::account::AssetCallbackFlag) encoded in the account ID. See the
     /// [`AccountBuilder`](crate::account::AccountBuilder#asset-callbacks) docs for details.
-    pub fn has_callbacks(&self) -> bool {
+    pub fn has_callback_slots(&self) -> bool {
         AssetCallbacks::slot_names()
             .iter()
             .any(|slot_name| self.get(slot_name).is_some())

@@ -39,7 +39,7 @@ use crate::{Felt, Word};
 ///
 /// The flag is derived from the account's storage: it is [`AssetCallbackFlag::Enabled`] if any
 /// component installs one of the protocol-reserved asset callback slots (see
-/// [`AccountStorage::has_callbacks`]) and [`AssetCallbackFlag::Disabled`] otherwise. There is
+/// [`AccountStorage::has_callback_slots`]) and [`AssetCallbackFlag::Disabled`] otherwise. There is
 /// deliberately no way to disable the flag for an account that does install such a slot, since the
 /// tx kernel gates callback invocation on the flag alone and the flag cannot be changed after the
 /// ID is ground, so such a callback could never be invoked.
@@ -194,7 +194,7 @@ impl AccountBuilder {
     ///
     /// See the [type-level docs](AccountBuilder#asset-callbacks) for details.
     fn derive_asset_callbacks(&self, storage: &AccountStorage) -> AssetCallbackFlag {
-        AssetCallbackFlag::from(self.asset_callbacks.is_enabled() || storage.has_callbacks())
+        AssetCallbackFlag::from(self.asset_callbacks.is_enabled() || storage.has_callback_slots())
     }
 
     /// Grinds a new [`AccountId`] using the `init_seed` as a starting point.
