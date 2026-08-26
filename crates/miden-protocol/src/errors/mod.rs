@@ -1473,7 +1473,7 @@ pub enum ProvenBatchError {
     )]
     TooManyOutputNotes(usize),
     #[error(
-        "transaction batch has {0} account updates but at most {MAX_ACCOUNTS_PER_BATCH} are allowed"
+        "transaction batch has at least {0} account updates but at most {MAX_ACCOUNTS_PER_BATCH} are allowed"
     )]
     TooManyAccountUpdates(usize),
     #[error("output note {0} appears twice in the proven batch")]

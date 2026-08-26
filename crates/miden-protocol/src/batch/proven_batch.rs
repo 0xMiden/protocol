@@ -408,6 +408,7 @@ impl Deserializable for ProvenBatch {
 #[cfg(test)]
 mod tests {
     use alloc::collections::BTreeMap;
+    use alloc::string::ToString;
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
@@ -613,7 +614,18 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_matches!(error, ProvenBatchError::TooManyAccountUpdates(_));
+        assert_matches!(
+            &error,
+            ProvenBatchError::TooManyAccountUpdates(count)
+                if *count == MAX_ACCOUNTS_PER_BATCH + 1
+        );
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "transaction batch has at least {} account updates but at most {MAX_ACCOUNTS_PER_BATCH} are allowed",
+                MAX_ACCOUNTS_PER_BATCH + 1
+            )
+        );
     }
 
     #[test]
