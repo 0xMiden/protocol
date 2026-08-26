@@ -144,7 +144,7 @@ fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
         bridge_admin,
         roles,
         MIDEN_NETWORK_ID,
-        pricer.fee_parameters().fee_faucet_id(),
+        pricer.fee_asset_id().faucet_id(),
         fee_policy,
     ))
 }
@@ -166,7 +166,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             account_admin,
             fee_manager_id(),
             bridge.id(),
-            pricer.fee_parameters().fee_faucet_id(),
+            pricer.fee_asset_id().faucet_id(),
             pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?,
         )
         .build_existing()?,

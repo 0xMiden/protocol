@@ -26,7 +26,7 @@ use miden_processor::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId};
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteScriptRoot};
@@ -98,7 +98,8 @@ pub fn fee_faucet_id() -> AccountId {
 
 pub fn network_note_pricer(verification_base_fee: u32) -> NetworkNotePricer {
     NetworkNotePricer::builder()
-        .fee_parameters(FeeParameters::new(fee_faucet_id(), verification_base_fee))
+        .fee_parameters(FeeParameters::new(verification_base_fee))
+        .fee_asset_id(AssetId::new_fungible(fee_faucet_id()))
         .build()
 }
 
@@ -164,7 +165,7 @@ pub fn create_existing_priced_bridge(
         bridge_admin,
         roles,
         MIDEN_NETWORK_ID,
-        pricer.fee_parameters().fee_faucet_id(),
+        pricer.fee_asset_id().faucet_id(),
         fee_policy,
     )
     .build_existing()?)
@@ -193,7 +194,7 @@ pub fn priced_faucet_builder(
         faucet_admin,
         faucet_admin,
         bridge_account_id,
-        pricer.fee_parameters().fee_faucet_id(),
+        pricer.fee_asset_id().faucet_id(),
         fee_policy,
     ))
 }
