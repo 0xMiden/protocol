@@ -62,6 +62,7 @@
 - Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
+- [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
 
 ## v0.16.0 (2026-08-17)
 
