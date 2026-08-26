@@ -136,47 +136,31 @@ impl From<AccountHeader> for proto::account::AccountHeader {
     }
 }
 
-/// Decodes an account witness along with the account ID for which it was requested.
-pub fn decode_account_witness(
-    message: proto::account::AccountWitness,
-) -> Result<(AccountId, AccountWitness), ConversionError> {
-    let decoder = message.decoder();
-    let requested_account_id = required!(decoder, message.requested_account_id)?;
-    let witness_id = required!(decoder, message.witness_id)?;
-    let commitment = required!(decoder, message.commitment)?;
-    let path = required!(decoder, message.path)?;
+impl TryFrom<proto::account::AccountWitness> for AccountWitness {
+    type Error = ConversionError;
 
-    validate_witness_prefix(requested_account_id, witness_id)?;
-    let witness =
-        AccountWitness::new(witness_id, commitment, path).map_err(ConversionError::new)?;
+    fn try_from(message: proto::account::AccountWitness) -> Result<Self, Self::Error> {
+        let decoder = message.decoder();
+        let witness_id = required!(decoder, message.witness_id)?;
+        let commitment = required!(decoder, message.commitment)?;
+        let path = required!(decoder, message.path)?;
 
-    Ok((requested_account_id, witness))
-}
-
-/// Encodes an account witness along with the account ID for which it was requested.
-pub fn encode_account_witness(
-    requested_account_id: AccountId,
-    witness: &AccountWitness,
-) -> Result<proto::account::AccountWitness, ConversionError> {
-    validate_witness_prefix(requested_account_id, witness.id())?;
-
-    Ok(proto::account::AccountWitness {
-        requested_account_id: Some(requested_account_id.into()),
-        witness_id: Some(witness.id().into()),
-        commitment: Some(witness.state_commitment().into()),
-        path: Some(witness.path().clone().into()),
-    })
-}
-
-fn validate_witness_prefix(
-    requested_account_id: AccountId,
-    witness_id: AccountId,
-) -> Result<(), ConversionError> {
-    if requested_account_id.prefix() != witness_id.prefix() {
-        return Err(ConversionError::message(
-            "requested account ID prefix does not match witness ID prefix",
-        ));
+        AccountWitness::new(witness_id, commitment, path).map_err(ConversionError::new)
     }
+}
 
-    Ok(())
+impl From<&AccountWitness> for proto::account::AccountWitness {
+    fn from(witness: &AccountWitness) -> Self {
+        Self {
+            witness_id: Some(witness.id().into()),
+            commitment: Some(witness.state_commitment().into()),
+            path: Some(witness.path().clone().into()),
+        }
+    }
+}
+
+impl From<AccountWitness> for proto::account::AccountWitness {
+    fn from(witness: AccountWitness) -> Self {
+        (&witness).into()
+    }
 }

@@ -1,10 +1,6 @@
 use core::error::Error;
 
-use miden_objects::conversion::{
-    decode_account_witness,
-    decode_standalone_proven_batch,
-    encode_account_witness,
-};
+use miden_objects::conversion::decode_standalone_proven_batch;
 use miden_objects::{ConversionError, proto};
 use miden_protocol::account::{
     AccountHeader,
@@ -76,88 +72,41 @@ fn account_witness(account_id: AccountId) -> AccountWitness {
 }
 
 #[test]
-fn account_witness_conversion_preserves_requested_and_colliding_witness_ids() {
-    let requested_account_id = private_account_id();
-    let witness_id = AccountId::dummy(
-        [7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8],
-        AccountIdVersion::Version1,
-        AccountType::Private,
-        AssetCallbackFlag::Disabled,
-    );
-    let witness = account_witness(witness_id);
+fn account_witness_protobuf_round_trip() {
+    let witness = account_witness(private_account_id());
 
-    assert_eq!(requested_account_id.prefix(), witness_id.prefix());
-    assert_ne!(requested_account_id, witness_id);
+    let message: proto::account::AccountWitness = (&witness).into();
+    let decoded = AccountWitness::try_from(message).unwrap();
 
-    let message = encode_account_witness(requested_account_id, &witness).unwrap();
-    let (decoded_requested_account_id, decoded_witness) = decode_account_witness(message).unwrap();
-
-    assert_eq!(decoded_requested_account_id, requested_account_id);
-    assert_eq!(decoded_witness, witness);
+    assert_eq!(decoded, witness);
 }
 
 #[test]
-fn account_witness_conversion_rejects_prefix_mismatch() {
-    let requested_account_id = private_account_id();
-    let witness_id = AccountId::dummy(
-        [8; 15],
-        AccountIdVersion::Version1,
-        AccountType::Private,
-        AssetCallbackFlag::Disabled,
-    );
-    let witness = account_witness(witness_id);
-
-    let error = encode_account_witness(requested_account_id, &witness).unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        "requested account ID prefix does not match witness ID prefix"
-    );
-
-    let error = decode_account_witness(proto::account::AccountWitness {
-        requested_account_id: Some(requested_account_id.into()),
-        witness_id: Some(witness_id.into()),
+fn account_witness_protobuf_requires_witness_id() {
+    let error = AccountWitness::try_from(proto::account::AccountWitness {
         commitment: Some(Word::empty().into()),
         path: Some(proto::primitives::SparseMerklePath {
             empty_nodes_mask: u64::MAX,
             siblings: vec![],
         }),
+        ..Default::default()
     })
     .unwrap_err();
 
     assert_eq!(
         error.to_string(),
-        "requested account ID prefix does not match witness ID prefix"
-    );
-}
-
-#[test]
-fn account_witness_conversion_rejects_missing_requested_account_id() {
-    let error = decode_account_witness(proto::account::AccountWitness {
-        requested_account_id: None,
-        witness_id: Some(private_account_id().into()),
-        commitment: Some(Word::empty().into()),
-        path: Some(proto::primitives::SparseMerklePath {
-            empty_nodes_mask: u64::MAX,
-            siblings: vec![],
-        }),
-    })
-    .unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        "field miden_objects::proto::account::AccountWitness::requested_account_id is missing"
+        "field miden_objects::proto::account::AccountWitness::witness_id is missing"
     );
 }
 
 #[test]
 fn account_witness_conversion_preserves_account_tree_error_source() {
     let account_id = private_account_id();
-    let error = decode_account_witness(proto::account::AccountWitness {
-        requested_account_id: Some(account_id.into()),
+    let error = AccountWitness::try_from(proto::account::AccountWitness {
         witness_id: Some(account_id.into()),
         commitment: Some(Word::empty().into()),
         path: Some(proto::primitives::SparseMerklePath::default()),
+        ..Default::default()
     })
     .unwrap_err();
 
