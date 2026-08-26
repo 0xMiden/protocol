@@ -34,13 +34,6 @@ pub enum NotePricingError {
     UnknownNoteScriptRoot(NoteScriptRoot),
 }
 
-/// Resolves a note script root to its benchmarked consumption cost, consulting the standard
-/// and agglayer cost tables (their script-root domains are disjoint, so the order is
-/// irrelevant).
-fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
-    StandardNote::note_cost(root).or_else(|| AgglayerNote::note_cost(root))
-}
-
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
@@ -54,6 +47,10 @@ fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
 /// through the builder's `note_costs` take precedence over the tables, letting an account
 /// price note families the tables do not know — or a table-known script root whose
 /// consumption on that account runs extra code and so measures a different cost.
+///
+/// [`FeeSponsorshipNote`] defaults to zero because standard network-account fee collection exempts
+/// sponsorship notes from sponsoring themselves. A cost supplied through the builder's `note_cost`
+/// or `note_costs` methods takes precedence over this default.
 ///
 /// The computed fees are denominated in the chain's fee asset - the asset issued by the fee
 /// faucet of the given [`FeeParameters`]. A fee schedule stores bare amounts, so install the
@@ -105,10 +102,6 @@ impl NetworkNotePricer {
     /// price(N) = fee(cycles(N)) + sum(price(M) for M created by consuming N)
     /// ```
     ///
-    /// [`FeeSponsorshipNote`] defaults to zero because standard network-account fee collection
-    /// exempts sponsorship notes from sponsoring themselves. A cost supplied through the builder's
-    /// `note_cost` or `note_costs` methods takes precedence over this default.
-    ///
     /// Since a script root alone cannot tell whether a created note will be network-targeted,
     /// EVERY created note is priced in, suiting root-keyed fee schedules - though like the
     /// underlying costs, the result is an estimate, not a guaranteed upper bound (see the
@@ -154,6 +147,26 @@ impl NetworkNotePricer {
             .build())
     }
 
+    /// Resolves a note script root to its pricing cost. Supplied costs take precedence over the
+    /// defaults, `Ok(None)` indicates a recognized note whose default price is zero, and unknown
+    /// roots return an error.
+    fn resolve_note_cost(
+        &self,
+        root: NoteScriptRoot,
+    ) -> Result<Option<NoteCost>, NotePricingError> {
+        if let Some(cost) = self.note_costs.get(&root) {
+            return Ok(Some(cost.clone()));
+        }
+        if root == FeeSponsorshipNote::script_root() {
+            return Ok(None);
+        }
+
+        StandardNote::note_cost(root)
+            .or_else(|| AgglayerNote::note_cost(root))
+            .map(Some)
+            .ok_or(NotePricingError::UnknownNoteScriptRoot(root))
+    }
+
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently
     /// being priced to cut off self-recursion.
     fn price_recursive(
@@ -161,10 +174,8 @@ impl NetworkNotePricer {
         root: NoteScriptRoot,
         pricing_stack: &mut Vec<NoteScriptRoot>,
     ) -> Result<u64, NotePricingError> {
-        let cost = match self.note_costs.get(&root).cloned() {
-            Some(cost) => cost,
-            None if root == FeeSponsorshipNote::script_root() => return Ok(0),
-            None => resolve_note_cost(root).ok_or(NotePricingError::UnknownNoteScriptRoot(root))?,
+        let Some(cost) = self.resolve_note_cost(root)? else {
+            return Ok(0);
         };
         // Cycle counts enter the fee computation only here, where the looked-up cost is
         // converted into the kernel's fee inputs.
