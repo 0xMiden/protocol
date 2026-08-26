@@ -11,12 +11,16 @@ use miden_protocol::account::{
     AccountId,
     AccountIdVersion,
     AccountStorageHeader,
+    AccountStoragePatch,
     AccountType,
     AccountUpdateDetails,
     AssetCallbackFlag,
+    StorageMapPatch,
     StorageSlotHeader,
     StorageSlotName,
+    StorageSlotPatch,
     StorageSlotType,
+    StorageValuePatch,
 };
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::block::account_tree::AccountWitness;
@@ -355,6 +359,40 @@ fn account_storage_header_uses_generated_slot_type_values() {
         assert_eq!(message.slots[0].slot_type, expected_slot_type as i32);
         assert_eq!(AccountStorageHeader::try_from(message).unwrap(), header);
     }
+}
+
+#[test]
+fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
+    let storage_patch = AccountStoragePatch::from_entries([
+        (StorageSlotName::mock(1), StorageSlotPatch::Value(StorageValuePatch::Remove)),
+        (StorageSlotName::mock(2), StorageSlotPatch::Map(StorageMapPatch::Remove)),
+        (StorageSlotName::mock(3), StorageSlotPatch::Value(StorageValuePatch::Remove)),
+        (StorageSlotName::mock(4), StorageSlotPatch::Map(StorageMapPatch::Remove)),
+    ])
+    .unwrap();
+
+    let expected_slots = storage_patch
+        .slots()
+        .map(|(slot_name, patch)| (slot_name.as_str(), matches!(patch, StorageSlotPatch::Value(_))))
+        .collect::<Vec<_>>();
+    let message = proto::account::AccountStoragePatch::from(&storage_patch);
+
+    assert_eq!(
+        message
+            .slots
+            .iter()
+            .map(|slot| {
+                (
+                    slot.slot_name.as_str(),
+                    matches!(
+                        slot.patch.as_ref(),
+                        Some(proto::account::storage_slot_patch::Patch::Value(_))
+                    ),
+                )
+            })
+            .collect::<Vec<_>>(),
+        expected_slots
+    );
 }
 
 #[test]

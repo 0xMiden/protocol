@@ -185,37 +185,24 @@ impl TryFrom<proto::account::StorageMapPatch> for StorageMapPatch {
     }
 }
 
-enum StorageSlotPatchRef<'a> {
-    Value(&'a StorageValuePatch),
-    Map(&'a StorageMapPatch),
-}
-
-impl From<(&StorageSlotName, StorageSlotPatchRef<'_>)> for proto::account::StorageSlotPatch {
-    fn from((slot_name, patch): (&StorageSlotName, StorageSlotPatchRef<'_>)) -> Self {
-        use proto::account::storage_slot_patch::Patch;
-
-        let patch = match patch {
-            StorageSlotPatchRef::Value(value) => Patch::Value(value.into()),
-            StorageSlotPatchRef::Map(map) => Patch::Map(map.into()),
-        };
-        Self {
-            slot_name: slot_name.as_str().to_owned(),
-            patch: Some(patch),
-        }
-    }
-}
-
 impl From<&AccountStoragePatch> for proto::account::AccountStoragePatch {
     fn from(patch: &AccountStoragePatch) -> Self {
-        let mut slots = patch
-            .values()
-            .map(|(name, patch)| (name, StorageSlotPatchRef::Value(patch)))
-            .chain(patch.maps().map(|(name, patch)| (name, StorageSlotPatchRef::Map(patch))))
-            .collect::<Vec<_>>();
-        slots.sort_by_key(|(name, _)| *name);
-
         Self {
-            slots: slots.into_iter().map(Into::into).collect(),
+            slots: patch
+                .slots()
+                .map(|(slot_name, slot_patch)| {
+                    use proto::account::storage_slot_patch::Patch;
+
+                    let patch = match slot_patch {
+                        StorageSlotPatch::Value(value) => Patch::Value(value.into()),
+                        StorageSlotPatch::Map(map) => Patch::Map(map.into()),
+                    };
+                    proto::account::StorageSlotPatch {
+                        slot_name: slot_name.as_str().to_owned(),
+                        patch: Some(patch),
+                    }
+                })
+                .collect(),
         }
     }
 }
