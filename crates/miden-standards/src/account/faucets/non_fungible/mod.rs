@@ -39,6 +39,7 @@ use super::{
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthSingleSig, NetworkAccount};
+use crate::account::faucets::registers_owner_only_policy;
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
 use crate::note::{BurnNote, MintNote};
@@ -513,6 +514,12 @@ impl TryFrom<&Account> for NonFungibleFaucet {
 /// The caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter
 /// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
 /// signature.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy: this factory installs no
+/// `Ownable2Step` component, so such a policy would abort on every dispatch.
 pub fn create_user_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -520,6 +527,12 @@ pub fn create_user_non_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, NonFungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
     let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
     AccountBuilder::new(init_seed)
         .account_type(account_type)
@@ -543,6 +556,13 @@ pub fn create_user_non_fungible_faucet(
 /// canonical expiration setter
 /// ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
 /// network can bound its own transactions' expiry.
+///
+/// # Errors
+///
+/// Returns [`NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if
+/// `token_policy_manager` registers an owner-gated mint or burn policy while `access_control` is
+/// [`AccessControl::Rbac`], which installs no `Ownable2Step` component for the policy to read the
+/// owner from.
 pub fn create_network_non_fungible_faucet(
     init_seed: [u8; 32],
     faucet: NonFungibleFaucet,
@@ -550,6 +570,14 @@ pub fn create_network_non_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, NonFungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager)
+        && !matches!(access_control, AccessControl::Ownable2Step { .. })
+    {
+        return Err(NonFungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
     let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
 
