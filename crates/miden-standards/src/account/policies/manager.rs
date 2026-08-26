@@ -30,7 +30,7 @@ use miden_protocol::utils::sync::LazyLock;
 use super::burn::BurnPolicy;
 use super::mint::MintPolicy;
 use super::transfer::TransferPolicy;
-use crate::account::{account_component_code, package_metadata};
+use crate::account::{account_component_code, metadata_without_slots, package_metadata};
 use crate::procedure_root;
 
 account_component_code!(
@@ -507,9 +507,24 @@ impl TokenPolicyManager {
         &POLICY_MANAGER_CODE
     }
 
-    /// Returns the [`AccountComponentMetadata`] for this component.
-    pub fn component_metadata() -> AccountComponentMetadata {
-        package_metadata(Self::code())
+    /// Returns the [`AccountComponentMetadata`] for this configuration.
+    ///
+    /// The returned schema might not be the exact schema defined in the component manifest: the
+    /// asset-callback slots are only installed when at least one send or receive policy is
+    /// configured.
+    pub fn component_metadata(&self) -> AccountComponentMetadata {
+        let metadata = package_metadata(Self::code());
+        if self.has_transfer_policy() {
+            return metadata;
+        }
+
+        metadata_without_slots(
+            metadata,
+            &[
+                AssetCallbacks::on_before_asset_added_to_account_slot(),
+                AssetCallbacks::on_before_asset_added_to_note_slot(),
+            ],
+        )
     }
 
     /// Returns `true` if at least one send or receive policy is configured, in which case the
@@ -593,7 +608,7 @@ impl TokenPolicyManager {
         AccountComponent::new(
             Self::code().clone(),
             storage_slots,
-            Self::component_metadata(),
+            self.component_metadata(),
         )
         .expect(
             "token policy manager component should satisfy the requirements of a valid account component",
@@ -660,6 +675,19 @@ mod tests {
         component.storage_slots().iter().find(|slot| slot.name() == slot_name)
     }
 
+    /// Asserts the component's metadata schema declares exactly the slots the component installs.
+    fn assert_schema_matches_storage(component: &AccountComponent) {
+        let schema: BTreeSet<_> = component
+            .metadata()
+            .storage_schema()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+        let storage: BTreeSet<_> =
+            component.storage_slots().iter().map(|slot| slot.name().clone()).collect();
+        assert_eq!(schema, storage);
+    }
+
     /// Checks that a manager configured with a transfer policy for both kinds registers the
     /// protocol-reserved asset-callback slots populated with the fixed `invoke_*_policy` wrapper
     /// roots (the active `TransferAllowAll` root lives in the `active_*_policy` slots instead).
@@ -705,6 +733,8 @@ mod tests {
                 .expect("active receive policy slot must be registered");
         assert_eq!(active_send_slot.value(), allow_all_root);
         assert_eq!(active_receive_slot.value(), allow_all_root);
+
+        assert_schema_matches_storage(&manager_component);
     }
 
     /// Checks that a manager whose send / receive policies are registered only as reserved
@@ -756,6 +786,8 @@ mod tests {
         // The reserved roots are recorded in the allowed-roots maps so they can be promoted later.
         assert!(manager.allowed_send_policies().contains(&TransferPolicy::allow_all().root()));
         assert!(manager.allowed_receive_policies().contains(&TransferPolicy::allow_all().root()));
+
+        assert_schema_matches_storage(&manager_component);
     }
 
     /// A manager configured without send / receive policies must NOT register the
@@ -782,6 +814,8 @@ mod tests {
             "without a send policy, the manager must leave the on_before_asset_added_to_note slot \
              to a separate component",
         );
+
+        assert_schema_matches_storage(&manager_component);
     }
 
     /// Allowed entries registered via the builder land in the `allowed_*_policies` storage map

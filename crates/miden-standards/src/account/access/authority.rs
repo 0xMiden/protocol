@@ -1,11 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
@@ -22,7 +18,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::{account_component_code, package_metadata};
+use crate::account::{account_component_code, metadata_without_slots, package_metadata};
 use crate::procedure_root;
 
 // CONSTANTS
@@ -260,15 +256,7 @@ impl Authority {
             return metadata;
         }
 
-        let slots = metadata
-            .storage_schema()
-            .iter()
-            .filter(|(slot_name, _)| *slot_name != Self::procedure_roles_slot())
-            .map(|(slot_name, schema)| (slot_name.clone(), schema.clone()));
-        let storage_schema =
-            StorageSchema::new(slots).expect("a subset of a valid schema is valid");
-
-        metadata.with_storage_schema(storage_schema)
+        metadata_without_slots(metadata, &[Self::procedure_roles_slot()])
     }
 
     // PRIVATE HELPERS

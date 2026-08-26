@@ -27,9 +27,11 @@ use miden_standards::account::policies::{
     BlocklistManager,
     BurnAllowAll,
     BurnOwnerOnly,
+    BurnPolicy,
     MinBurnAmount,
     MintAllowAll,
     MintOwnerOnly,
+    MintPolicy,
     TokenPolicyManager,
     TransferAllowAll,
 };
@@ -57,7 +59,14 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (BurnOwnerOnly::NAME, BurnOwnerOnly::component_metadata()),
         (MintAllowAll::NAME, MintAllowAll::component_metadata()),
         (MintOwnerOnly::NAME, MintOwnerOnly::component_metadata()),
-        (TokenPolicyManager::NAME, TokenPolicyManager::component_metadata()),
+        (
+            TokenPolicyManager::NAME,
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .build()
+                .component_metadata(),
+        ),
         (TransferAllowAll::NAME, TransferAllowAll::component_metadata()),
         (AllowlistManager::NAME, AllowlistManager::component_metadata()),
         (BasicAllowlist::NAME, BasicAllowlist::component_metadata()),

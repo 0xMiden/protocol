@@ -56,3 +56,15 @@ type        = { key = "word", value = "bool" }
 description = "Allowed mint policy procedure roots"
 name        = "miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots"
 type        = { key = "word", value = "bool" }
+
+# Reserved asset-callback slots. They are installed only when at least one send or receive policy
+# is configured.
+[[package.metadata.account-component.storage.slots]]
+description = "Root of the procedure the kernel invokes to enforce the active receive policy"
+name        = "miden::protocol::faucet::callback::on_before_asset_added_to_account"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Root of the procedure the kernel invokes to enforce the active send policy"
+name        = "miden::protocol::faucet::callback::on_before_asset_added_to_note"
+type        = "word"
