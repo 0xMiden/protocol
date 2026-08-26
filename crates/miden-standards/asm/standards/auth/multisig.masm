@@ -701,8 +701,7 @@ end
 #! 3. Ensuring the minimum threshold of valid signatures is met
 #!
 #! Inputs:
-#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
-#!                   user_param6]
+#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -712,12 +711,12 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - user_param0 through user_param6 are arbitrary, user-defined inputs folded into the signed
+#! - user_param0 through user_param5 are arbitrary, user-defined inputs folded into the signed
 #!   message, and thus into the TX_SUMMARY_COMMITMENT. Binding them enforces no meaning, so any
 #!   semantics must be implemented by the calling component.
 #! - Replay protection relies on the uniqueness of the TX_SUMMARY_COMMITMENT, which is what
 #!   `record_and_assert_new_tx` records and checks. The components calling this procedure pass a
-#!   cryptographically random salt in user_param3 through user_param6 so that otherwise-identical
+#!   cryptographically random salt in user_param2 through user_param5 so that otherwise-identical
 #!   transactions produce distinct commitments and can run concurrently. `auth_tx` itself records
 #!   nothing, so a wrapper must call `record_and_assert_new_tx` for replay protection to hold.
 #! - SIG_i is the signature from the i-th signer.
@@ -728,14 +727,14 @@ end
 #! - insufficient number of valid signatures (below threshold).
 #!
 #! Invocation: exec
-pub proc auth_tx(user_params: [felt; 7])
+pub proc auth_tx(user_params: [felt; 6])
     exec.native_account::incr_nonce drop
-    # => [user_params(7)]
+    # => [user_params(6)]
 
     # ------ Computing transaction summary ------
 
     exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted
     # into the advice map for extraction by the host
