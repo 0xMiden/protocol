@@ -176,12 +176,12 @@ fn account_id_protobuf_requires_exactly_15_bytes() {
     for id in [vec![0; AccountId::SERIALIZED_SIZE - 1], vec![0; AccountId::SERIALIZED_SIZE + 1]] {
         let error = AccountId::try_from(proto::account::AccountId { id }).unwrap_err();
 
-        assert!(matches!(
+        assert!(
             error
                 .source()
-                .and_then(|source| source.downcast_ref::<core::array::TryFromSliceError>()),
-            Some(_)
-        ));
+                .and_then(|source| source.downcast_ref::<core::array::TryFromSliceError>())
+                .is_some()
+        );
     }
 }
 

@@ -344,9 +344,7 @@ impl TryFrom<&proto::note::NoteInclusionProof> for (NoteId, NoteInclusionProof) 
         let inclusion_path: SparseMerklePath =
             decoder.decode_field("inclusion_path", proof.inclusion_path.clone())?;
         let note_id: Word = decoder.decode_field("note_id", proof.note_id.clone())?;
-        let block_num = decoder
-            .decode_field("block_num", proof.block_num.clone())
-            .context("block_num")?;
+        let block_num = decoder.decode_field("block_num", proof.block_num).context("block_num")?;
 
         Ok((
             NoteId::from_raw(note_id),
