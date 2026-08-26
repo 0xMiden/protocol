@@ -12,7 +12,7 @@ use crate::block::{
     ProposedBlock,
 };
 use crate::errors::BlockBodyError;
-use crate::note::{NoteHeader, Nullifier};
+use crate::note::Nullifier;
 use crate::transaction::{
     OrderedTransactionHeaders,
     OutputNote,
@@ -125,7 +125,7 @@ impl BlockBody {
                         note_index: *note_index,
                     });
                 }
-                if output_note_headers.insert(note.id(), *<&NoteHeader>::from(note)).is_some() {
+                if output_note_headers.insert(note.id(), *note.header()).is_some() {
                     return Err(BlockBodyError::DuplicateOutputNote(note.id()));
                 }
             }

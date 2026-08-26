@@ -353,7 +353,7 @@ fn validate_aggregate_notes(
         && output_notes
             .iter()
             .zip(expected_notes.output_notes().values())
-            .all(|(actual, expected)| <&crate::note::NoteHeader>::from(actual) == expected);
+            .all(|(actual, expected)| actual.header() == expected);
     if !outputs_match {
         return Err(ProvenBatchError::OutputNotesMismatch);
     }
@@ -506,8 +506,7 @@ mod tests {
             Word::from([5_u32, 6, 7, 8]),
             Word::from([9_u32, 10, 11, 12]),
         ];
-        let output_note_headers =
-            output_notes.iter().map(|note| *<&NoteHeader>::from(note)).collect();
+        let output_note_headers = output_notes.iter().map(|note| *note.header()).collect();
         let transactions = OrderedTransactionHeaders::new_unchecked(vec![
             transaction_header(states[0], states[1], input_notes.clone(), vec![]),
             transaction_header(states[1], states[2], InputNotes::default(), output_note_headers),

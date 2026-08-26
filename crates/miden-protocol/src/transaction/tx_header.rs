@@ -190,7 +190,7 @@ impl From<&ProvenTransaction> for TransactionHeader {
             tx.account_update().initial_state_commitment(),
             tx.account_update().final_state_commitment(),
             tx.input_notes().clone(),
-            tx.output_notes().iter().map(<&NoteHeader>::from).cloned().collect(),
+            tx.output_notes().iter().map(|note| *note.header()).collect(),
         )
     }
 }
