@@ -1283,8 +1283,12 @@ impl Deserializable for AccountAuthenticator {
 // MOCK TRANSACTION INPUT
 // ================================================================================================
 
-/// Helper type to abstract over the account input to [`MockChain::build_transaction`]. See that
-/// method's docs for details.
+/// Account input accepted by [`MockChain::build_transaction`] and
+/// [`MockChain::get_foreign_account_inputs`].
+///
+/// [`MockTransactionInput::AccountId`] resolves a committed public account from the chain, while
+/// [`MockTransactionInput::Account`] supplies caller-owned account state directly, including the
+/// state of a private account.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum MockTransactionInput {
