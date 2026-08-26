@@ -36,7 +36,7 @@
 - [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 - [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
-- [BREAKING] `FeeSponsorshipNote` now wraps the underlying `Note` and is parsed back from one with `TryFrom<Note>`, replacing its `target_id` accessor with `tag` ([#XXXX](https://github.com/0xMiden/protocol/pull/XXXX)).
+- [BREAKING] `FeeSponsorshipNote` now wraps the underlying `Note` and is parsed back from one with `TryFrom<Note>`, replacing its `target_id` accessor with `tag` ([#3746](https://github.com/0xMiden/protocol/pull/3746)).
 
 ### Fixes
 
