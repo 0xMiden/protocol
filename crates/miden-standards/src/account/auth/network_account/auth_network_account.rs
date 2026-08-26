@@ -123,8 +123,8 @@ procedure_root!(
 /// - the transaction script root, if any, is present in the component's tx-script allowlist, and
 /// - every consumed input note has a script root present in the component's note-script allowlist,
 ///   and
-/// - before fee collection and payment, it has consumed at least one input note or changed the
-///   account state.
+/// - before fee collection and payment, it has consumed at least one input note, created at least
+///   one output note, or changed the account state.
 ///
 /// If these checks pass, the procedure pays the transaction fee by creating a public TX_FEE
 /// note funded from the account's vault in the native fee asset at rate 1/1 (see
