@@ -656,12 +656,6 @@ pub enum BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum BlockBodyError {
-    #[error("invalid account update for {account_id}")]
-    InvalidAccountUpdate {
-        account_id: AccountId,
-        #[source]
-        source: BlockAccountUpdateError,
-    },
     #[error("block has {0} account updates but at most {MAX_ACCOUNTS_PER_BLOCK} are allowed")]
     TooManyAccountUpdates(usize),
     #[error("block has {0} nullifiers but at most {MAX_INPUT_NOTES_PER_BLOCK} are allowed")]
