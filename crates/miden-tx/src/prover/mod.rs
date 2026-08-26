@@ -131,7 +131,7 @@ impl LocalTransactionProver {
             tx_inputs.foreign_account_code().iter().chain([tx_inputs.account().code()]),
         );
 
-        let block_commitments = tx_inputs.block_commitments();
+        let block_commitments = tx_inputs.collect_block_commitments();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(

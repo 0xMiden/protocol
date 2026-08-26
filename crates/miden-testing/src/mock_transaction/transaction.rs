@@ -231,7 +231,7 @@ impl MockTransaction {
         // The host validates the tx summary's block commitment against these values, so they
         // must come from the tx inputs.
         let ref_block = tx_inputs.block_header().block_num();
-        let block_commitments = tx_inputs.block_commitments();
+        let block_commitments = tx_inputs.collect_block_commitments();
 
         let exec_host = TransactionExecutorHost::<'_, '_, _, UnreachableAuth>::new(
             &PartialAccount::from(self.account()),

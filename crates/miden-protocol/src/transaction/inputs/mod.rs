@@ -238,7 +238,7 @@ impl TransactionInputs {
     ///
     /// These are the reference block and the blocks tracked by the partial blockchain, i.e.
     /// exactly the blocks whose commitment the transaction kernel can read.
-    pub fn block_commitments(&self) -> BTreeMap<BlockNumber, Word> {
+    pub fn collect_block_commitments(&self) -> BTreeMap<BlockNumber, Word> {
         let mut commitments: BTreeMap<BlockNumber, Word> = self
             .blockchain
             .block_headers()
