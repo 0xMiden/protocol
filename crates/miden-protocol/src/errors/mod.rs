@@ -678,14 +678,6 @@ pub enum BlockBodyError {
     DuplicateNullifier(Nullifier),
     #[error("transaction {0} appears twice in the block body")]
     DuplicateTransaction(TransactionId),
-    #[error("block created nullifiers do not match the transaction headers")]
-    CreatedNullifiersMismatch,
-    #[error("block output notes do not match the transaction headers")]
-    OutputNotesMismatch,
-    #[error("note with id {0} is both created and consumed by the block")]
-    NoteCreatedAndConsumed(NoteId),
-    #[error("note with id {0} is consumed before it is created in the block")]
-    NoteConsumedBeforeCreated(NoteId),
 }
 
 // ASSET ERROR
@@ -1480,8 +1472,6 @@ pub enum ProvenBatchError {
     DuplicateOutputNote(NoteId),
     #[error("note with id {0} is both created and consumed by the proven batch")]
     NoteCreatedAndConsumed(NoteId),
-    #[error("note with id {0} is consumed before it is created in the proven batch")]
-    NoteConsumedBeforeCreated(NoteId),
     #[error("account {0} is updated more than once in the proven batch")]
     DuplicateAccountUpdate(AccountId),
     #[error("account update for {0} is missing from the proven batch")]
@@ -1513,10 +1503,6 @@ pub enum ProvenBatchError {
         expected: Word,
         actual: Word,
     },
-    #[error("batch input notes do not match the transaction headers")]
-    InputNotesMismatch,
-    #[error("batch output notes do not match the transaction headers")]
-    OutputNotesMismatch,
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]

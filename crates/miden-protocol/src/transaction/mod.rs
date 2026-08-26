@@ -23,7 +23,6 @@ pub use fee::{TransactionFee, TransactionFeeError};
 pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use ordered_transactions::OrderedTransactionHeaders;
-pub(crate) use ordered_transactions::TransactionHeaderNoteAggregationError;
 pub use outputs::{
     OutputNote,
     OutputNoteCollection,
