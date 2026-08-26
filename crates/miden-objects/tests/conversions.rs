@@ -6,8 +6,8 @@ use miden_objects::conversion::{
     encode_account_witness,
 };
 use miden_objects::{ConversionError, proto};
-use miden_protocol::Word;
 use miden_protocol::account::{
+    AccountHeader,
     AccountId,
     AccountIdVersion,
     AccountStorageHeader,
@@ -32,6 +32,7 @@ use miden_protocol::transaction::{
     TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
+use miden_protocol::{Felt, Word};
 use prost::Message;
 
 #[test]
@@ -190,6 +191,26 @@ fn account_id_protobuf_rejects_invalid_metadata() {
     assert!(matches!(
         error.source().and_then(|source| source.downcast_ref::<AccountIdError>()),
         Some(AccountIdError::UnknownAccountIdVersion(0))
+    ));
+}
+
+#[test]
+fn account_header_protobuf_preserves_invalid_nonce_source() {
+    let error = AccountHeader::try_from(proto::account::AccountHeader {
+        account_id: Some(private_account_id().into()),
+        vault_root: Some(Word::empty().into()),
+        storage_commitment: Some(Word::empty().into()),
+        code_commitment: Some(Word::empty().into()),
+        nonce: Felt::ORDER,
+    })
+    .unwrap_err();
+
+    assert!(error.to_string().starts_with("nonce: "));
+    assert!(matches!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<<Felt as TryFrom<u64>>::Error>()),
+        Some(source) if source.as_u64() == Felt::ORDER
     ));
 }
 
