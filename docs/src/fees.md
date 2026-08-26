@@ -29,18 +29,18 @@ The client software is responsible for choosing an asset and rate the intended b
 
 ## Fees for network transactions
 
-A [network transaction](transaction.md#network-transaction) is executed by the operator, but the fee is still paid by the network account itself, out of its own vault. Network accounts always pay in the native fee asset at rate 1/1 and commit no conversion info - the native fee faucet is read from the reference block.
+A [network transaction](transaction.md#network-transaction) is executed by the operator, but the fee is still paid by out of the network account's vault itself.
 
-To recover that cost, a network account charges for the notes it consumes. Its **fee policy** - a swappable account procedure - prices each note, and senders can read a price ahead of time by calling `estimate_note_fee` through foreign procedure invocation. The standard `BasicConstantFeePolicy` maps a note script root to a fixed price.
+To recover that cost, a network account charges for the notes it consumes. Its **fee policy** prices each note, and senders can read a price ahead of time by calling `estimate_note_fee` through FPI.
 
 ## Sponsoring fees
 
-A network account rejects a transaction unless every note it consumes has its price prepaid. The prepayment travels in a separate FEE_SPONSORSHIP note (see the [note documentation](note.md#fee_sponsorship)), so the sponsored note itself stays fee-unaware:
+A network account rejects a transaction unless every note it consumes has its price prepaid. The prepayment travels in a separate FEE_SPONSORSHIP note (see the [note documentation](note.md#fee_sponsorship)):
 
 - It carries the fee as a single asset and names the note it pays for by note ID. Coverage is checked per note, so several sponsorships may top up the same one.
-- Its script releases the assets only in a transaction that also consumes the bound note, so a sponsor need not trust the consumer; the account’s authentication procedure enforces the mirror image and collects the sponsorships into its vault.
-- The only other consumption is a reclaim by the named reclaimer, recovering the assets if the sponsored note is consumed elsewhere. Reclaim is opt-in - without a reclaim block height the note can never be reclaimed.
+- Its script releases the assets only in a transaction that also consumes the bound note, so a sponsor need not trust the consumer; the account’s authentication procedure enforces the note binding and collects the sponsorships into its vault.
+- The only other consumption path is via an opt-in reclaim.
 
-Usually the sponsorship is created for you: creating a note targeted at a network account also creates a matching FEE_SPONSORSHIP note, funded from your vault and priced through the target’s fee policy. It is created inside `pay_fee` before your own fee is computed, so both are covered by the transaction signature, and it has reclaim disabled.
+The sponsorship are created automatically for users via the standard tx creation path: creating a note targeted at a network account also creates a matching FEE_SPONSORSHIP note, funded from the user's vault and priced through the network account's fee policy.
 
-Network accounts sponsor their outgoing notes the same way, chaining fees along a multi-hop flow: what is collected on the way in funds the sponsorships on the way out. Since that spends the account’s own vault, its **sponsorship policy**, fixed at deployment, decides whether it may sponsor more than it collected. The default forbids it, so the account only forwards value it collected.
+Network accounts sponsor their outgoing notes the same way, chaining fees along a multi-hop flow: what is collected on the way in, funds the sponsorships on the way out. Since that spends the account’s own vault, its **sponsorship policy**, fixed at deployment, decides whether it may sponsor more than it collected. The default forbids it, so the account only forwards value it collected.
