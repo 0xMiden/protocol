@@ -70,6 +70,9 @@ const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::proced
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = ONE_WORD
 
+# The maximum number of approvers the signer set may contain.
+const MAX_NUM_APPROVERS = 64
+
 # ERRORS
 # =================================================================================================
 
@@ -94,6 +97,8 @@ const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds ne
 const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's procedures"
 
 const ERR_DUPLICATE_APPROVER_PUBLIC_KEY = "duplicate approver public keys are not allowed"
+
+const ERR_TOO_MANY_APPROVERS = "number of approvers exceeds the maximum supported signer set size"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -173,6 +178,9 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
 
     # MULTISIG_CONFIG is [threshold, num_approvers, 0, 0], so num_approvers is at index 1
     dup.1
+    # => [num_approvers, MULTISIG_CONFIG, pad(12)]
+
+    dup exec.assert_num_approvers_in_bounds
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
     # make sure that all existing procedure threshold overrides remain reachable
@@ -561,6 +569,25 @@ pub proc assert_threshold_is_reachable
     u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
 end
 
+#! Asserts that the number of approvers does not exceed MAX_NUM_APPROVERS.
+#!
+#! Inputs:  [num_approvers]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_approvers is not a u32 value.
+#! - num_approvers > MAX_NUM_APPROVERS.
+#!
+#! Invocation: exec
+pub proc assert_num_approvers_in_bounds(num_approvers: u32)
+    push.MAX_NUM_APPROVERS
+    # => [max_num_approvers, num_approvers]
+
+    u32assert2.err=ERR_TOO_MANY_APPROVERS
+    u32lte assert.err=ERR_TOO_MANY_APPROVERS
+    # => []
+end
+
 #! Asserts that the `num_approvers` public keys currently stored in APPROVER_PUBLIC_KEYS_SLOT are
 #! pairwise distinct, reverting on the first duplicate.
 #!
@@ -701,8 +728,7 @@ end
 #! 3. Ensuring the minimum threshold of valid signatures is met
 #!
 #! Inputs:
-#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
-#!                   user_param6]
+#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -712,12 +738,12 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - user_param0 through user_param6 are arbitrary, user-defined inputs folded into the signed
+#! - user_param0 through user_param5 are arbitrary, user-defined inputs folded into the signed
 #!   message, and thus into the TX_SUMMARY_COMMITMENT. Binding them enforces no meaning, so any
 #!   semantics must be implemented by the calling component.
 #! - Replay protection relies on the uniqueness of the TX_SUMMARY_COMMITMENT, which is what
 #!   `record_and_assert_new_tx` records and checks. The components calling this procedure pass a
-#!   cryptographically random salt in user_param3 through user_param6 so that otherwise-identical
+#!   cryptographically random salt in user_param2 through user_param5 so that otherwise-identical
 #!   transactions produce distinct commitments and can run concurrently. `auth_tx` itself records
 #!   nothing, so a wrapper must call `record_and_assert_new_tx` for replay protection to hold.
 #! - SIG_i is the signature from the i-th signer.
@@ -728,14 +754,14 @@ end
 #! - insufficient number of valid signatures (below threshold).
 #!
 #! Invocation: exec
-pub proc auth_tx(user_params: [felt; 7])
+pub proc auth_tx(user_params: [felt; 6])
     exec.native_account::incr_nonce drop
-    # => [user_params(7)]
+    # => [user_params(6)]
 
     # ------ Computing transaction summary ------
 
     exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted
     # into the advice map for extraction by the host
