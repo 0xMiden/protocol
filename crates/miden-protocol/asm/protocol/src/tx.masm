@@ -1,6 +1,6 @@
-use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_FAUCET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
+use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_ASSET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
     from miden::protocol::kernel_proc_offsets
-use {AccountId, AccountProcedureRoot, BlockNumber, TransactionScriptRoot}
+use {AccountId, AccountProcedureRoot, AssetId, BlockNumber, TransactionScriptRoot}
     from miden::protocol::types
 
 #! Returns the block number of the transaction reference block.
@@ -411,28 +411,27 @@ pub proc compute_fee(num_extra_cycles: u32, exclude_notes_commitment: word) -> f
     # => [fee_amount]
 end
 
-#! Returns the fee faucet ID of the transaction's reference block.
+#! Returns the fee asset ID of the transaction's reference block.
 #!
 #! Inputs:  []
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
+#! Outputs: [FEE_ASSET_ID]
 #!
 #! Where:
-#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
-#!   the native fee asset.
+#! - FEE_ASSET_ID is the ID of the asset that fees are paid in.
 #!
 #! Invocation: exec
-pub proc get_fee_faucet_id() -> AccountId
+pub proc get_fee_asset_id() -> AssetId
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    push.TX_GET_FEE_FAUCET_ID_OFFSET
+    push.TX_GET_FEE_ASSET_ID_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+    # => [FEE_ASSET_ID, pad(12)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 movdn.3 drop drop
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
+    swapdw dropw dropw swapw dropw
+    # => [FEE_ASSET_ID]
 end
