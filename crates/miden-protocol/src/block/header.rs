@@ -36,7 +36,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 ///   together with the quorum, see [`ValidatorConfig`] for more details.
 /// - `fee_parameters` are the parameters defining the base fees, see [`FeeParameters`] for more
 ///   details.
-/// - `protocol_config` is the commitment to the chain's
+/// - `protocol_config_commitment` is the commitment to the chain's
 ///   [`ProtocolConfig`](crate::protocol_config::ProtocolConfig).
 /// - `next_protocol_config` is the scheduled protocol upgrade, if any, see [`NextProtocolConfig`]
 ///   for more details.
@@ -55,7 +55,7 @@ pub struct BlockHeader {
     tx_commitment: Word,
     validator_config: ValidatorConfig,
     fee_parameters: FeeParameters,
-    protocol_config: Word,
+    protocol_config_commitment: Word,
     next_protocol_config: Option<NextProtocolConfig>,
     sub_commitment: Word,
     commitment: Word,
@@ -88,7 +88,7 @@ impl BlockHeader {
         tx_commitment: Word,
         validator_config: ValidatorConfig,
         fee_parameters: FeeParameters,
-        protocol_config: Word,
+        protocol_config_commitment: Word,
         next_protocol_config: Option<NextProtocolConfig>,
         timestamp: u32,
     ) -> Self {
@@ -104,7 +104,7 @@ impl BlockHeader {
             tx_commitment,
             &validator_config,
             &fee_parameters,
-            protocol_config,
+            protocol_config_commitment,
             next_protocol_config.as_ref(),
             timestamp,
         );
@@ -128,7 +128,7 @@ impl BlockHeader {
             tx_commitment,
             validator_config,
             fee_parameters,
-            protocol_config,
+            protocol_config_commitment,
             next_protocol_config,
             sub_commitment,
             commitment,
@@ -219,8 +219,8 @@ impl BlockHeader {
 
     /// Returns the commitment to the chain's
     /// [`ProtocolConfig`](crate::protocol_config::ProtocolConfig).
-    pub fn protocol_config(&self) -> Word {
-        self.protocol_config
+    pub fn protocol_config_commitment(&self) -> Word {
+        self.protocol_config_commitment
     }
 
     /// Returns the protocol upgrade scheduled by this block, if any.
@@ -286,7 +286,7 @@ impl BlockHeader {
             self.tx_commitment,
             &self.validator_config,
             &self.fee_parameters,
-            self.protocol_config,
+            self.protocol_config_commitment,
             self.next_protocol_config.as_ref(),
             self.timestamp,
         );
@@ -371,7 +371,7 @@ impl BlockHeader {
         tx_commitment: Word,
         validator_config: &ValidatorConfig,
         fee_parameters: &FeeParameters,
-        protocol_config: Word,
+        protocol_config_commitment: Word,
         next_protocol_config: Option<&NextProtocolConfig>,
         timestamp: u32,
     ) -> Vec<Felt> {
@@ -382,7 +382,7 @@ impl BlockHeader {
         elements.extend_from_slice(account_root.as_elements());
         elements.extend_from_slice(nullifier_root.as_elements());
         elements.extend_from_slice(tx_commitment.as_elements());
-        elements.extend_from_slice(protocol_config.as_elements());
+        elements.extend_from_slice(protocol_config_commitment.as_elements());
         elements.extend(validator_config.to_commitment());
         elements.extend(Self::compute_next_protocol_config_commitment(next_protocol_config));
         elements.extend([Felt::from(fee_parameters.verification_base_fee()), ZERO, ZERO, ZERO]);
@@ -457,7 +457,7 @@ impl Serializable for BlockHeader {
             tx_commitment,
             validator_config,
             fee_parameters,
-            protocol_config,
+            protocol_config_commitment,
             next_protocol_config,
             timestamp,
             // Don't serialize sub commitment and commitment as they can be derived.
@@ -475,7 +475,7 @@ impl Serializable for BlockHeader {
         tx_commitment.write_into(target);
         validator_config.write_into(target);
         fee_parameters.write_into(target);
-        protocol_config.write_into(target);
+        protocol_config_commitment.write_into(target);
         next_protocol_config.write_into(target);
         timestamp.write_into(target);
     }
@@ -502,7 +502,7 @@ impl Deserializable for BlockHeader {
         let tx_commitment = source.read()?;
         let validator_config = source.read()?;
         let fee_parameters = source.read()?;
-        let protocol_config = source.read()?;
+        let protocol_config_commitment = source.read()?;
         let next_protocol_config = <Option<NextProtocolConfig>>::read_from(source)?;
         let timestamp = source.read()?;
 
@@ -516,7 +516,7 @@ impl Deserializable for BlockHeader {
             tx_commitment,
             validator_config,
             fee_parameters,
-            protocol_config,
+            protocol_config_commitment,
             next_protocol_config,
             timestamp,
         ))
@@ -646,7 +646,7 @@ mod tests {
             header.tx_commitment(),
             header.validator_config().clone(),
             header.fee_parameters().clone(),
-            header.protocol_config(),
+            header.protocol_config_commitment(),
             Some(next_protocol_config),
             header.timestamp(),
         )

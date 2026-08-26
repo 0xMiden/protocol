@@ -87,9 +87,9 @@ impl TransactionInputs {
     ) -> Result<Self, TransactionInputError> {
         // Check that the protocol config is the one the block header commits to.
         let protocol_config_commitment = protocol_config.to_commitment();
-        if protocol_config_commitment != block_header.protocol_config() {
+        if protocol_config_commitment != block_header.protocol_config_commitment() {
             return Err(TransactionInputError::InconsistentProtocolConfig {
-                expected: block_header.protocol_config(),
+                expected: block_header.protocol_config_commitment(),
                 actual: protocol_config_commitment,
             });
         }
