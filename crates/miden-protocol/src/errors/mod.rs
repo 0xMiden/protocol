@@ -690,6 +690,8 @@ pub enum BlockBodyError {
     OutputNotesMismatch,
     #[error("note with id {0} is both created and consumed by the block")]
     NoteCreatedAndConsumed(NoteId),
+    #[error("note with id {0} is consumed before it is created in the block")]
+    NoteConsumedBeforeCreated(NoteId),
 }
 
 // ASSET ERROR
@@ -1484,6 +1486,8 @@ pub enum ProvenBatchError {
     DuplicateOutputNote(NoteId),
     #[error("note with id {0} is both created and consumed by the proven batch")]
     NoteCreatedAndConsumed(NoteId),
+    #[error("note with id {0} is consumed before it is created in the proven batch")]
+    NoteConsumedBeforeCreated(NoteId),
     #[error("account {0} is updated more than once in the proven batch")]
     DuplicateAccountUpdate(AccountId),
     #[error("account update for {0} is missing from the proven batch")]

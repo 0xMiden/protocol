@@ -329,6 +329,9 @@ fn validate_aggregate_notes(
         TransactionHeaderNoteAggregationError::NoteCreatedAndConsumed(note_id) => {
             ProvenBatchError::NoteCreatedAndConsumed(note_id)
         },
+        TransactionHeaderNoteAggregationError::NoteConsumedBeforeCreated(note_id) => {
+            ProvenBatchError::NoteConsumedBeforeCreated(note_id)
+        },
     })?;
 
     let inputs_match = usize::from(input_notes.num_notes()) == expected_notes.input_notes().len()
@@ -521,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_note_created_and_consumed_in_same_batch() {
+    fn rejects_note_consumed_before_created_in_same_batch() {
         let (note_id, input_notes, output_notes) = conflicting_notes();
         let (transactions, update) =
             transactions_with_conflicting_notes(&input_notes, &output_notes);
@@ -538,7 +541,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_matches!(error, ProvenBatchError::NoteCreatedAndConsumed(id) if id == note_id);
+        assert_matches!(error, ProvenBatchError::NoteConsumedBeforeCreated(id) if id == note_id);
     }
 
     #[test]
@@ -770,7 +773,7 @@ mod tests {
     }
 
     #[test]
-    fn deserialization_rejects_note_created_and_consumed_in_same_batch() {
+    fn deserialization_rejects_note_consumed_before_created_in_same_batch() {
         let (note_id, input_notes, output_notes) = conflicting_notes();
         let (transactions, update) =
             transactions_with_conflicting_notes(&input_notes, &output_notes);
@@ -796,7 +799,7 @@ mod tests {
             DeserializationError::UnknownError(message)
                 if message
                     == format!(
-                        "note with id {note_id} is both created and consumed by the proven batch"
+                        "note with id {note_id} is consumed before it is created in the proven batch"
                     )
         );
     }

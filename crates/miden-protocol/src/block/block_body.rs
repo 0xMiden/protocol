@@ -155,6 +155,9 @@ impl BlockBody {
             TransactionHeaderNoteAggregationError::NoteCreatedAndConsumed(note_id) => {
                 BlockBodyError::NoteCreatedAndConsumed(note_id)
             },
+            TransactionHeaderNoteAggregationError::NoteConsumedBeforeCreated(note_id) => {
+                BlockBodyError::NoteConsumedBeforeCreated(note_id)
+            },
         })?;
 
         let nullifiers_match = nullifiers.len() == expected_notes.input_notes().len()
@@ -596,7 +599,7 @@ mod tests {
 
         assert_matches!(
             result,
-            Err(BlockBodyError::NoteCreatedAndConsumed(note_id)) if note_id == note.id()
+            Err(BlockBodyError::NoteConsumedBeforeCreated(note_id)) if note_id == note.id()
         );
     }
 

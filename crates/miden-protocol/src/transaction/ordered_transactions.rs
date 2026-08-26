@@ -54,6 +54,7 @@ pub(crate) enum TransactionHeaderNoteAggregationError {
     DuplicateInputNote(Nullifier),
     DuplicateOutputNote(NoteId),
     NoteCreatedAndConsumed(NoteId),
+    NoteConsumedBeforeCreated(NoteId),
 }
 
 impl OrderedTransactionHeaders {
@@ -127,7 +128,7 @@ impl OrderedTransactionHeaders {
 
         for input_note in input_notes.values().filter_map(InputNoteCommitment::header) {
             if output_notes.contains_key(&input_note.id()) {
-                return Err(TransactionHeaderNoteAggregationError::NoteCreatedAndConsumed(
+                return Err(TransactionHeaderNoteAggregationError::NoteConsumedBeforeCreated(
                     input_note.id(),
                 ));
             }
