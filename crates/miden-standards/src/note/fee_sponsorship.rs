@@ -16,7 +16,6 @@ use miden_protocol::note::{
     NoteStorage,
     NoteTag,
     NoteType,
-    Nullifier,
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
@@ -74,12 +73,18 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// # Representation
 ///
-/// The type wraps the underlying [`Note`] exactly as it appears on chain, so that a note read from
-/// a block round-trips through [`FeeSponsorshipNote::try_from`] unchanged. Storage-derived values
-/// are decoded on access, which construction proves cannot fail.
+/// The note's parts are held in strongly typed form: `From<FeeSponsorshipNote> for Note` builds the
+/// on-chain note and [`FeeSponsorshipNote::try_from`] parses one back, so a note read from a block
+/// round-trips unchanged. The type stores the note's [`NoteTag`] rather than the target account ID,
+/// because a tag only keeps the high bits of the target's account ID prefix and so cannot be
+/// inverted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeeSponsorshipNote {
-    note: Note,
+    sender: AccountId,
+    serial_number: Word,
+    asset: FungibleAsset,
+    tag: NoteTag,
+    storage: FeeSponsorshipNoteStorage,
 }
 
 #[bon::bon]
@@ -113,19 +118,17 @@ impl FeeSponsorshipNote {
             return Err(NoteError::other("fee sponsorship target account must be public"));
         }
 
-        let assets =
-            NoteAssets::new(vec![asset.into()]).expect("a single asset is a valid note asset list");
         // The reclaimer is the account allowed to reclaim the note; it defaults to the sender.
         let reclaimer = reclaimer.unwrap_or(sender);
         let storage = FeeSponsorshipNoteStorage::new(feature_note_id, reclaimer, reclaim_height);
 
-        // Network notes must be public so the network can discover and execute them. The tag routes
-        // the note to the network account the feature note targets.
-        let metadata = PartialNoteMetadata::new(sender, NoteType::Public)
-            .with_tag(NoteTag::with_account_target(target));
-
         Ok(Self {
-            note: Note::new(assets, metadata, storage.into_recipient(serial_number)),
+            sender,
+            serial_number,
+            asset,
+            // The tag routes the note to the network account the feature note targets.
+            tag: NoteTag::with_account_target(target),
+            storage,
         })
     }
 }
@@ -155,24 +158,14 @@ impl FeeSponsorshipNote {
         FEE_SPONSORSHIP_SCRIPT.root()
     }
 
-    /// Returns a reference to the underlying [`Note`].
-    pub fn as_note(&self) -> &Note {
-        &self.note
-    }
-
-    /// Returns the ID of the underlying note.
-    pub fn id(&self) -> NoteId {
-        self.note.id()
-    }
-
-    /// Returns the [`Nullifier`] of the underlying note.
-    pub fn nullifier(&self) -> Nullifier {
-        self.note.nullifier()
-    }
-
     /// Returns the account ID of the sponsor which created the note.
     pub fn sender(&self) -> AccountId {
-        self.note.metadata().sender()
+        self.sender
+    }
+
+    /// Returns the note's serial number.
+    pub fn serial_number(&self) -> Word {
+        self.serial_number
     }
 
     /// Returns the tag of the note, which routes it to the network account the feature note
@@ -181,43 +174,28 @@ impl FeeSponsorshipNote {
     /// The tag is a discovery hint for the network transaction builder; the script itself does not
     /// restrict consumption to the targeted account.
     pub fn tag(&self) -> NoteTag {
-        self.note.metadata().tag()
+        self.tag
     }
 
     /// Returns the single fungible asset the note carries as the fee.
     pub fn asset(&self) -> FungibleAsset {
-        self.note
-            .assets()
-            .iter()
-            .next()
-            .expect("a FEE_SPONSORSHIP note carries exactly one asset")
-            .as_fungible()
-            .expect("a FEE_SPONSORSHIP note carries a fungible asset")
+        self.asset
     }
 
     /// Returns the ID of the bound feature note this note sponsors.
     pub fn feature_note_id(&self) -> NoteId {
-        self.storage().feature_note_id()
+        self.storage.feature_note_id()
     }
 
     /// Returns the account ID allowed to reclaim the note after `reclaim_height`.
     pub fn reclaimer(&self) -> AccountId {
-        self.storage().reclaimer()
+        self.storage.reclaimer()
     }
 
     /// Returns the block height at or after which the reclaimer may reclaim the note, if reclaim is
     /// enabled.
     pub fn reclaim_height(&self) -> Option<BlockNumber> {
-        self.storage().reclaim_height()
-    }
-
-    // HELPER METHODS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns the decoded storage of the underlying note.
-    fn storage(&self) -> FeeSponsorshipNoteStorage {
-        FeeSponsorshipNoteStorage::try_from(self.note.storage().items())
-            .expect("a FEE_SPONSORSHIP note carries valid storage")
+        self.storage.reclaim_height()
     }
 }
 
@@ -242,11 +220,17 @@ where
 
 impl From<FeeSponsorshipNote> for Note {
     fn from(note: FeeSponsorshipNote) -> Self {
-        note.note
+        let assets = NoteAssets::new(vec![note.asset.into()])
+            .expect("a single asset is a valid note asset list");
+
+        // Network notes must be public so the network can discover and execute them.
+        let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public).with_tag(note.tag);
+
+        Note::new(assets, metadata, note.storage.into_recipient(note.serial_number))
     }
 }
 
-impl TryFrom<Note> for FeeSponsorshipNote {
+impl TryFrom<&Note> for FeeSponsorshipNote {
     type Error = NoteError;
 
     /// Attempts to interpret `note` as a FEE_SPONSORSHIP note.
@@ -255,20 +239,30 @@ impl TryFrom<Note> for FeeSponsorshipNote {
     ///
     /// Returns an error if:
     /// - the note's script root is not the FEE_SPONSORSHIP script root.
+    /// - the note is not public, or carries attachments. Neither shape can be built, so accepting
+    ///   one would break the round-trip back into a [`Note`].
     /// - the note storage does not decode as [`FeeSponsorshipNoteStorage`].
     /// - the note does not carry exactly one fungible asset.
     ///
     /// The note script asserts the storage length and the asset count itself, and fee collection
     /// only accepts the collecting account's fungible fee asset, so a note rejected here could
     /// never be consumed as a sponsorship anyway.
-    fn try_from(note: Note) -> Result<Self, Self::Error> {
+    fn try_from(note: &Note) -> Result<Self, Self::Error> {
         if note.script().root() != Self::script_root() {
             return Err(NoteError::other(
                 "note script root does not match the FEE_SPONSORSHIP script root",
             ));
         }
 
-        FeeSponsorshipNoteStorage::try_from(note.storage().items())?;
+        if note.metadata().note_type() != NoteType::Public {
+            return Err(NoteError::other("FEE_SPONSORSHIP note must be public"));
+        }
+
+        if note.attachments().num_attachments() != 0 {
+            return Err(NoteError::other("FEE_SPONSORSHIP note must not carry attachments"));
+        }
+
+        let storage = FeeSponsorshipNoteStorage::try_from(note.storage().items())?;
 
         if note.assets().num_assets() != Self::NUM_ASSETS {
             return Err(NoteError::other("FEE_SPONSORSHIP note must carry exactly one asset"));
@@ -278,12 +272,17 @@ impl TryFrom<Note> for FeeSponsorshipNote {
             .assets()
             .iter()
             .next()
-            .expect("note carries exactly one asset as asserted above");
-        if !asset.is_fungible() {
-            return Err(NoteError::other("FEE_SPONSORSHIP note asset must be fungible"));
-        }
+            .expect("note carries exactly one asset as asserted above")
+            .as_fungible()
+            .ok_or_else(|| NoteError::other("FEE_SPONSORSHIP note asset must be fungible"))?;
 
-        Ok(Self { note })
+        Ok(Self {
+            sender: note.metadata().sender(),
+            serial_number: note.recipient().serial_num(),
+            asset,
+            tag: note.metadata().tag(),
+            storage,
+        })
     }
 }
 
@@ -420,6 +419,7 @@ mod tests {
     use miden_protocol::account::AccountType;
     use miden_protocol::asset::{Asset, NonFungibleAsset};
     use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments};
     use rstest::rstest;
 
     use super::*;
@@ -579,14 +579,13 @@ mod tests {
             .unwrap();
 
         let note = Note::from(sponsorship.clone());
-        let decoded = FeeSponsorshipNote::try_from(note.clone())
+        let decoded = FeeSponsorshipNote::try_from(&note)
             .expect("a built FEE_SPONSORSHIP note must be detected");
 
         assert_eq!(decoded, sponsorship);
         assert_eq!(Note::from(decoded.clone()), note);
-        assert_eq!(decoded.id(), note.id());
-        assert_eq!(decoded.nullifier(), note.nullifier());
         assert_eq!(decoded.sender(), sponsor());
+        assert_eq!(decoded.tag(), NoteTag::with_account_target(network_account()));
         assert_eq!(decoded.asset(), asset);
         assert_eq!(decoded.feature_note_id(), feature_note_id());
         assert_eq!(decoded.reclaimer(), sponsor());
@@ -600,7 +599,7 @@ mod tests {
         let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
         let note = note_with(P2idNote::script(), valid_storage(), vec![asset]);
 
-        let err = FeeSponsorshipNote::try_from(note)
+        let err = FeeSponsorshipNote::try_from(&note)
             .expect_err("a note with another script must be rejected");
 
         assert_matches!(err, NoteError::Other { error_msg, .. } => {
@@ -614,7 +613,7 @@ mod tests {
         let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
         let note = note_with(FeeSponsorshipNote::script(), vec![Felt::ZERO; 3], vec![asset]);
 
-        let err = FeeSponsorshipNote::try_from(note).expect_err("wrong storage length must fail");
+        let err = FeeSponsorshipNote::try_from(&note).expect_err("wrong storage length must fail");
 
         assert_matches!(
             err,
@@ -636,7 +635,7 @@ mod tests {
         let note = note_with(FeeSponsorshipNote::script(), valid_storage(), assets);
 
         let err =
-            FeeSponsorshipNote::try_from(note).expect_err("a wrong asset count must be rejected");
+            FeeSponsorshipNote::try_from(&note).expect_err("a wrong asset count must be rejected");
 
         assert_matches!(err, NoteError::Other { error_msg, .. } => {
             assert!(error_msg.contains("exactly one asset"))
@@ -652,10 +651,55 @@ mod tests {
         let note = note_with(FeeSponsorshipNote::script(), valid_storage(), vec![asset]);
 
         let err =
-            FeeSponsorshipNote::try_from(note).expect_err("a non-fungible asset must be rejected");
+            FeeSponsorshipNote::try_from(&note).expect_err("a non-fungible asset must be rejected");
 
         assert_matches!(err, NoteError::Other { error_msg, .. } => {
             assert!(error_msg.contains("must be fungible"))
+        });
+    }
+
+    /// A sponsorship is always built as a public note, so a private one is not one.
+    #[test]
+    fn try_from_rejects_private_note() {
+        let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
+        let metadata = PartialNoteMetadata::new(sponsor(), NoteType::Private)
+            .with_tag(NoteTag::with_account_target(network_account()));
+        let recipient = NoteRecipient::new(
+            Word::empty(),
+            FeeSponsorshipNote::script(),
+            NoteStorage::new(valid_storage()).unwrap(),
+        );
+        let note = Note::new(NoteAssets::new(vec![asset]).unwrap(), metadata, recipient);
+
+        let err = FeeSponsorshipNote::try_from(&note).expect_err("a private note must be rejected");
+
+        assert_matches!(err, NoteError::Other { error_msg, .. } => {
+            assert!(error_msg.contains("must be public"))
+        });
+    }
+
+    /// A sponsorship carries no attachments, so one carrying them is not one.
+    #[test]
+    fn try_from_rejects_attachments() {
+        let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
+        let note = note_with(FeeSponsorshipNote::script(), valid_storage(), vec![asset]);
+        let note = Note::with_attachments(
+            note.assets().clone(),
+            PartialNoteMetadata::new(note.metadata().sender(), note.metadata().note_type())
+                .with_tag(note.metadata().tag()),
+            note.recipient().clone(),
+            NoteAttachments::new(vec![NoteAttachment::with_word(
+                NoteAttachmentScheme::new(64).unwrap(),
+                Word::empty(),
+            )])
+            .unwrap(),
+        );
+
+        let err = FeeSponsorshipNote::try_from(&note)
+            .expect_err("a note with attachments must be rejected");
+
+        assert_matches!(err, NoteError::Other { error_msg, .. } => {
+            assert!(error_msg.contains("attachments"))
         });
     }
 
