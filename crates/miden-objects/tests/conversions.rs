@@ -103,7 +103,6 @@ fn account_witness_conversion_preserves_account_tree_error_source() {
         witness_id: Some(account_id.into()),
         commitment: Some(Word::empty().into()),
         path: Some(proto::primitives::SparseMerklePath::default()),
-        ..Default::default()
     })
     .unwrap_err();
 
