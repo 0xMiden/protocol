@@ -1,4 +1,5 @@
 use alloc::collections::BTreeSet;
+use alloc::format;
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
@@ -66,8 +67,9 @@ impl From<&PublicKey> for Approver {
 /// A set of [`Approver`]s together with the threshold of signatures required to approve a
 /// transaction by default.
 ///
-/// The set is guaranteed to be valid by construction: the threshold is non-zero and at most the
-/// number of approvers, and no public key commitment appears more than once.
+/// The set is guaranteed to be valid by construction: the threshold is non-zero, the number of
+/// approvers is at most [`ApproverSet::MAX_APPROVERS`], and no public key commitment appears more
+/// than once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApproverSet {
     approvers: Vec<Approver>,
@@ -75,17 +77,28 @@ pub struct ApproverSet {
 }
 
 impl ApproverSet {
+    /// The maximum number of approvers a set may contain.
+    pub const MAX_APPROVERS: u8 = 64;
+
     /// Creates a new [`ApproverSet`] from the given approvers and default threshold.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - `threshold` is zero,
+    /// - the number of approvers exceeds [`Self::MAX_APPROVERS`],
     /// - `threshold` is greater than the number of approvers, or
     /// - two approvers share the same public key commitment.
     pub fn new(approvers: Vec<Approver>, threshold: u32) -> Result<Self, AccountError> {
         let threshold = NonZeroU32::new(threshold)
             .ok_or_else(|| AccountError::other("threshold must be at least 1"))?;
+
+        if approvers.len() as u64 > u64::from(Self::MAX_APPROVERS) {
+            return Err(AccountError::other(format!(
+                "number of approvers cannot be greater than {}",
+                Self::MAX_APPROVERS
+            )));
+        }
 
         if threshold.get() > approvers.len() as u32 {
             return Err(AccountError::other(
@@ -138,6 +151,21 @@ mod tests {
     fn rejects_threshold_above_approver_count() {
         let err = ApproverSet::new(vec![approver(1)], 2).unwrap_err();
         assert!(err.to_string().contains("threshold cannot be greater than number of approvers"));
+    }
+
+    #[test]
+    fn rejects_approver_count_above_max() {
+        let approvers: Vec<_> = (0..=u32::from(ApproverSet::MAX_APPROVERS)).map(approver).collect();
+        let err = ApproverSet::new(approvers, 1).unwrap_err();
+        assert!(err.to_string().contains("number of approvers cannot be greater than 64"));
+    }
+
+    #[test]
+    fn accepts_approver_count_at_max() {
+        let max_approvers = u32::from(ApproverSet::MAX_APPROVERS);
+        let approvers: Vec<_> = (0..max_approvers).map(approver).collect();
+        let set = ApproverSet::new(approvers, max_approvers).unwrap();
+        assert_eq!(set.approvers().len(), max_approvers as usize);
     }
 
     #[test]
