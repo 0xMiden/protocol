@@ -9,6 +9,7 @@ mod transaction;
 
 use core::marker::PhantomData;
 
+pub use account::{decode_account_witness, encode_account_witness};
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
 
 use crate::ConversionError;

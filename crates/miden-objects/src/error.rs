@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::any::type_name;
 use core::fmt;
@@ -33,7 +33,7 @@ impl ConversionError {
     }
 
     pub fn deserialization(entity: &'static str, source: DeserializationError) -> Self {
-        Self::message(format!("failed to deserialize {entity}: {source}"))
+        Self::new(DeserializationConversionError { entity, source })
     }
 
     pub fn message(message: impl Into<String>) -> Self {
@@ -41,6 +41,16 @@ impl ConversionError {
             path: Vec::new(),
             source: Box::new(StringError(message.into())),
         }
+    }
+
+    pub(crate) fn with_source(
+        message: impl Into<String>,
+        source: impl core::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::new(ContextualError {
+            message: message.into(),
+            source: Box::new(source),
+        })
     }
 }
 
@@ -76,6 +86,42 @@ impl fmt::Display for StringError {
 
 impl core::error::Error for StringError {}
 
+#[derive(Debug)]
+struct ContextualError {
+    message: String,
+    source: Box<dyn core::error::Error + Send + Sync>,
+}
+
+impl fmt::Display for ContextualError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl core::error::Error for ContextualError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        Some(&*self.source)
+    }
+}
+
+#[derive(Debug)]
+struct DeserializationConversionError {
+    entity: &'static str,
+    source: DeserializationError,
+}
+
+impl fmt::Display for DeserializationConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to deserialize {}: {}", self.entity, self.source)
+    }
+}
+
+impl core::error::Error for DeserializationConversionError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 pub trait ConversionResultExt<T> {
     fn context(self, field: impl Into<String>) -> Result<T, ConversionError>;
 }
@@ -104,6 +150,7 @@ impl_conversion_error_from!(
     miden_protocol::crypto::merkle::smt::SmtLeafError,
     miden_protocol::crypto::merkle::smt::SmtProofError,
     miden_protocol::errors::AccountError,
+    miden_protocol::errors::AccountTreeError,
     miden_protocol::errors::AssetError,
     miden_protocol::errors::AssetVaultError,
     miden_protocol::errors::NoteError,
@@ -112,6 +159,6 @@ impl_conversion_error_from!(
 
 impl From<prost::UnknownEnumValue> for ConversionError {
     fn from(error: prost::UnknownEnumValue) -> Self {
-        Self::message(error.to_string())
+        Self::new(error)
     }
 }

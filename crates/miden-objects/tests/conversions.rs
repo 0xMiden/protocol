@@ -1,6 +1,10 @@
 use core::error::Error;
 
-use miden_objects::conversion::decode_standalone_proven_batch;
+use miden_objects::conversion::{
+    decode_account_witness,
+    decode_standalone_proven_batch,
+    encode_account_witness,
+};
 use miden_objects::{ConversionError, proto};
 use miden_protocol::Word;
 use miden_protocol::account::{
@@ -15,8 +19,10 @@ use miden_protocol::account::{
     StorageSlotType,
 };
 use miden_protocol::batch::BatchAccountUpdate;
+use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
-use miden_protocol::errors::{BlockBodyError, TransactionHeaderError};
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::errors::{AccountIdError, BlockBodyError, TransactionHeaderError};
 use miden_protocol::note::{Note, NoteId, NoteInclusionProof};
 use miden_protocol::transaction::{
     InputNotes,
@@ -28,6 +34,28 @@ use miden_protocol::transaction::{
 use miden_protocol::vm::ExecutionProof;
 use prost::Message;
 
+#[test]
+fn conversion_error_preserves_deserialization_error_source() {
+    use miden_protocol::utils::serde::DeserializationError;
+
+    let error = ConversionError::deserialization(
+        "AccountId",
+        DeserializationError::InvalidValue("invalid account id".into()),
+    );
+
+    assert_eq!(
+        error.to_string(),
+        "failed to deserialize AccountId: invalid value: invalid account id"
+    );
+    assert!(matches!(
+        error
+            .source()
+            .and_then(Error::source)
+            .and_then(|source| source.downcast_ref::<DeserializationError>()),
+        Some(DeserializationError::InvalidValue(message)) if message == "invalid account id"
+    ));
+}
+
 fn private_account_id() -> AccountId {
     AccountId::dummy(
         [7; 15],
@@ -35,6 +63,134 @@ fn private_account_id() -> AccountId {
         AccountType::Private,
         AssetCallbackFlag::Disabled,
     )
+}
+
+fn account_witness(account_id: AccountId) -> AccountWitness {
+    let path = SparseMerklePath::from_parts(u64::MAX, vec![]).unwrap();
+    AccountWitness::new(account_id, Word::empty(), path).unwrap()
+}
+
+#[test]
+fn account_witness_conversion_preserves_requested_and_colliding_witness_ids() {
+    let requested_account_id = private_account_id();
+    let witness_id = AccountId::dummy(
+        [7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8],
+        AccountIdVersion::Version1,
+        AccountType::Private,
+        AssetCallbackFlag::Disabled,
+    );
+    let witness = account_witness(witness_id);
+
+    assert_eq!(requested_account_id.prefix(), witness_id.prefix());
+    assert_ne!(requested_account_id, witness_id);
+
+    let message = encode_account_witness(requested_account_id, &witness).unwrap();
+    let (decoded_requested_account_id, decoded_witness) = decode_account_witness(message).unwrap();
+
+    assert_eq!(decoded_requested_account_id, requested_account_id);
+    assert_eq!(decoded_witness, witness);
+}
+
+#[test]
+fn account_witness_conversion_rejects_prefix_mismatch() {
+    let requested_account_id = private_account_id();
+    let witness_id = AccountId::dummy(
+        [8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Private,
+        AssetCallbackFlag::Disabled,
+    );
+    let witness = account_witness(witness_id);
+
+    let error = encode_account_witness(requested_account_id, &witness).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "requested account ID prefix does not match witness ID prefix"
+    );
+
+    let error = decode_account_witness(proto::account::AccountWitness {
+        requested_account_id: Some(requested_account_id.into()),
+        witness_id: Some(witness_id.into()),
+        commitment: Some(Word::empty().into()),
+        path: Some(proto::primitives::SparseMerklePath {
+            empty_nodes_mask: u64::MAX,
+            siblings: vec![],
+        }),
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "requested account ID prefix does not match witness ID prefix"
+    );
+}
+
+#[test]
+fn account_witness_conversion_rejects_missing_requested_account_id() {
+    let error = decode_account_witness(proto::account::AccountWitness {
+        requested_account_id: None,
+        witness_id: Some(private_account_id().into()),
+        commitment: Some(Word::empty().into()),
+        path: Some(proto::primitives::SparseMerklePath {
+            empty_nodes_mask: u64::MAX,
+            siblings: vec![],
+        }),
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "field miden_objects::proto::account::AccountWitness::requested_account_id is missing"
+    );
+}
+
+#[test]
+fn account_witness_conversion_preserves_account_tree_error_source() {
+    let account_id = private_account_id();
+    let error = decode_account_witness(proto::account::AccountWitness {
+        requested_account_id: Some(account_id.into()),
+        witness_id: Some(account_id.into()),
+        commitment: Some(Word::empty().into()),
+        path: Some(proto::primitives::SparseMerklePath::default()),
+    })
+    .unwrap_err();
+
+    assert!(matches!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<miden_protocol::errors::AccountTreeError>()),
+        Some(
+            miden_protocol::errors::AccountTreeError::WitnessMerklePathDepthDoesNotMatchAccountTreeDepth(0)
+        )
+    ));
+}
+
+#[test]
+fn account_id_protobuf_requires_exactly_15_bytes() {
+    for id in [vec![0; AccountId::SERIALIZED_SIZE - 1], vec![0; AccountId::SERIALIZED_SIZE + 1]] {
+        let error = AccountId::try_from(proto::account::AccountId { id }).unwrap_err();
+
+        assert!(matches!(
+            error
+                .source()
+                .and_then(|source| source.downcast_ref::<core::array::TryFromSliceError>()),
+            Some(_)
+        ));
+    }
+}
+
+#[test]
+fn account_id_protobuf_rejects_invalid_metadata() {
+    let mut id = <[u8; AccountId::SERIALIZED_SIZE]>::from(private_account_id());
+    id[7] &= 0b1111_0000;
+
+    let error = AccountId::try_from(proto::account::AccountId { id: id.into() }).unwrap_err();
+
+    assert!(matches!(
+        error.source().and_then(|source| source.downcast_ref::<AccountIdError>()),
+        Some(AccountIdError::UnknownAccountIdVersion(0))
+    ));
 }
 
 fn assert_missing_block_number(error: ConversionError, field: &str) {
@@ -139,6 +295,26 @@ fn account_storage_header_rejects_invalid_slot_types() {
         let error = AccountStorageHeader::try_from(message).unwrap_err();
         assert_eq!(error.to_string(), format!("slots.slot_type: {expected_message}"));
     }
+}
+
+#[test]
+fn account_storage_header_preserves_unknown_enum_value_source() {
+    let error = AccountStorageHeader::try_from(proto::account::AccountStorageHeader {
+        slots: vec![proto::account::account_storage_header::StorageSlot {
+            slot_name: "miden::test::storage".into(),
+            slot_type: i32::MAX,
+            commitment: Some(Word::empty().into()),
+        }],
+    })
+    .unwrap_err();
+
+    assert!(matches!(
+        error
+            .source()
+            .and_then(Error::source)
+            .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
+        Some(prost::UnknownEnumValue(value)) if *value == i32::MAX
+    ));
 }
 
 #[test]

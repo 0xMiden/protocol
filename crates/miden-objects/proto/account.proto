@@ -33,7 +33,9 @@ message AccountHeader {
 }
 
 message AccountWitness {
-  AccountId account_id = 1;
+  // The account ID for which this witness was requested. If another account shares this ID's
+  // prefix, witness_id identifies the colliding account already present in the account tree.
+  AccountId requested_account_id = 1;
   AccountId witness_id = 2;
   primitives.Word commitment = 3;
   primitives.SparseMerklePath path = 4;

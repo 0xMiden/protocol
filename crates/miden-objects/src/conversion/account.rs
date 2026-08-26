@@ -12,7 +12,6 @@ use miden_protocol::account::{
     StorageSlotType,
 };
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::utils::serde::{Deserializable, DeserializationError, Serializable};
 
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
@@ -20,29 +19,32 @@ use crate::{ConversionError, ConversionResultExt, proto};
 impl TryFrom<proto::account::AccountId> for AccountId {
     type Error = ConversionError;
 
-    fn try_from(value: proto::account::AccountId) -> Result<Self, Self::Error> {
-        AccountId::read_from_bytes(&value.id)
-            .map_err(|error| ConversionError::deserialization("AccountId", error))
+    fn try_from(message: proto::account::AccountId) -> Result<Self, Self::Error> {
+        let bytes: [u8; AccountId::SERIALIZED_SIZE] =
+            message.id.as_slice().try_into().map_err(ConversionError::new)?;
+
+        AccountId::try_from(bytes).map_err(ConversionError::new)
     }
 }
 
 impl From<&AccountId> for proto::account::AccountId {
-    fn from(value: &AccountId) -> Self {
-        Self { id: value.to_bytes() }
+    fn from(account_id: &AccountId) -> Self {
+        let id: [u8; AccountId::SERIALIZED_SIZE] = (*account_id).into();
+        Self { id: id.into() }
     }
 }
 
 impl From<AccountId> for proto::account::AccountId {
-    fn from(value: AccountId) -> Self {
-        (&value).into()
+    fn from(account_id: AccountId) -> Self {
+        (&account_id).into()
     }
 }
 
 impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     type Error = ConversionError;
 
-    fn try_from(value: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
-        let slots = value
+    fn try_from(message: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
+        let slots = message
             .slots
             .into_iter()
             .map(|slot| {
@@ -55,16 +57,16 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
                         return Err(ConversionError::message("storage slot type is unspecified")
                             .context("slot_type"));
                     },
-                    Err(_) => {
-                        return Err(ConversionError::message(format!(
-                            "unknown storage slot type {}",
-                            slot.slot_type
-                        ))
+                    Err(error) => {
+                        return Err(ConversionError::with_source(
+                            format!("unknown storage slot type {}", slot.slot_type),
+                            error,
+                        )
                         .context("slot_type"));
                     },
                 };
-                let value = required!(decoder, slot.commitment)?;
-                Ok(StorageSlotHeader::new(name, slot_type, value))
+                let commitment = required!(decoder, slot.commitment)?;
+                Ok(StorageSlotHeader::new(name, slot_type, commitment))
             })
             .collect::<Result<Vec<_>, ConversionError>>()
             .context("slots")?;
@@ -73,9 +75,9 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
 }
 
 impl From<&AccountStorageHeader> for proto::account::AccountStorageHeader {
-    fn from(value: &AccountStorageHeader) -> Self {
+    fn from(account_storage_header: &AccountStorageHeader) -> Self {
         Self {
-            slots: value
+            slots: account_storage_header
                 .slots()
                 .map(|slot| proto::account::account_storage_header::StorageSlot {
                     slot_name: slot.name().to_string(),
@@ -91,23 +93,21 @@ impl From<&AccountStorageHeader> for proto::account::AccountStorageHeader {
 }
 
 impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
-    fn from(value: AccountStorageHeader) -> Self {
-        (&value).into()
+    fn from(account_storage_header: AccountStorageHeader) -> Self {
+        (&account_storage_header).into()
     }
 }
 
 impl TryFrom<proto::account::AccountHeader> for AccountHeader {
     type Error = ConversionError;
 
-    fn try_from(value: proto::account::AccountHeader) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let account_id = required!(decoder, value.account_id)?;
-        let vault_root = required!(decoder, value.vault_root)?;
-        let storage_commitment = required!(decoder, value.storage_commitment)?;
-        let code_commitment = required!(decoder, value.code_commitment)?;
-        let nonce = Felt::try_from(value.nonce)
-            .map_err(|error| ConversionError::message(format!("{error}")))
-            .context("nonce")?;
+    fn try_from(message: proto::account::AccountHeader) -> Result<Self, Self::Error> {
+        let decoder = message.decoder();
+        let account_id = required!(decoder, message.account_id)?;
+        let vault_root = required!(decoder, message.vault_root)?;
+        let storage_commitment = required!(decoder, message.storage_commitment)?;
+        let code_commitment = required!(decoder, message.code_commitment)?;
+        let nonce = Felt::try_from(message.nonce).map_err(ConversionError::new).context("nonce")?;
         Ok(AccountHeader::new(
             account_id,
             nonce,
@@ -119,53 +119,64 @@ impl TryFrom<proto::account::AccountHeader> for AccountHeader {
 }
 
 impl From<&AccountHeader> for proto::account::AccountHeader {
-    fn from(value: &AccountHeader) -> Self {
+    fn from(account_header: &AccountHeader) -> Self {
         Self {
-            account_id: Some(value.id().into()),
-            vault_root: Some(value.vault_root().into()),
-            storage_commitment: Some(value.storage_commitment().into()),
-            code_commitment: Some(value.code_commitment().into()),
-            nonce: value.nonce().as_canonical_u64(),
+            account_id: Some(account_header.id().into()),
+            vault_root: Some(account_header.vault_root().into()),
+            storage_commitment: Some(account_header.storage_commitment().into()),
+            code_commitment: Some(account_header.code_commitment().into()),
+            nonce: account_header.nonce().as_canonical_u64(),
         }
     }
 }
 
 impl From<AccountHeader> for proto::account::AccountHeader {
-    fn from(value: AccountHeader) -> Self {
-        (&value).into()
+    fn from(account_header: AccountHeader) -> Self {
+        (&account_header).into()
     }
 }
 
-impl TryFrom<proto::account::AccountWitness> for AccountWitness {
-    type Error = ConversionError;
+/// Decodes an account witness along with the account ID for which it was requested.
+pub fn decode_account_witness(
+    message: proto::account::AccountWitness,
+) -> Result<(AccountId, AccountWitness), ConversionError> {
+    let decoder = message.decoder();
+    let requested_account_id = required!(decoder, message.requested_account_id)?;
+    let witness_id = required!(decoder, message.witness_id)?;
+    let commitment = required!(decoder, message.commitment)?;
+    let path = required!(decoder, message.path)?;
 
-    fn try_from(value: proto::account::AccountWitness) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let witness_id = required!(decoder, value.witness_id)?;
-        let commitment = required!(decoder, value.commitment)?;
-        let path = required!(decoder, value.path)?;
-        AccountWitness::new(witness_id, commitment, path).map_err(|error| {
-            ConversionError::deserialization(
-                "AccountWitness",
-                DeserializationError::InvalidValue(error.to_string()),
-            )
-        })
-    }
+    validate_witness_prefix(requested_account_id, witness_id)?;
+    let witness =
+        AccountWitness::new(witness_id, commitment, path).map_err(ConversionError::new)?;
+
+    Ok((requested_account_id, witness))
 }
 
-impl From<&AccountWitness> for proto::account::AccountWitness {
-    fn from(value: &AccountWitness) -> Self {
-        Self {
-            account_id: Some(value.id().into()),
-            witness_id: Some(value.id().into()),
-            commitment: Some(value.state_commitment().into()),
-            path: Some(value.path().clone().into()),
-        }
-    }
+/// Encodes an account witness along with the account ID for which it was requested.
+pub fn encode_account_witness(
+    requested_account_id: AccountId,
+    witness: &AccountWitness,
+) -> Result<proto::account::AccountWitness, ConversionError> {
+    validate_witness_prefix(requested_account_id, witness.id())?;
+
+    Ok(proto::account::AccountWitness {
+        requested_account_id: Some(requested_account_id.into()),
+        witness_id: Some(witness.id().into()),
+        commitment: Some(witness.state_commitment().into()),
+        path: Some(witness.path().clone().into()),
+    })
 }
 
-impl From<AccountWitness> for proto::account::AccountWitness {
-    fn from(value: AccountWitness) -> Self {
-        (&value).into()
+fn validate_witness_prefix(
+    requested_account_id: AccountId,
+    witness_id: AccountId,
+) -> Result<(), ConversionError> {
+    if requested_account_id.prefix() != witness_id.prefix() {
+        return Err(ConversionError::message(
+            "requested account ID prefix does not match witness ID prefix",
+        ));
     }
+
+    Ok(())
 }
