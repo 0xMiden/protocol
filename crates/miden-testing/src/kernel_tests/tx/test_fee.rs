@@ -81,11 +81,11 @@ fn compute_fee_code(
 }
 
 #[tokio::test]
-async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Result<()> {
+async fn get_fee_asset_id_returns_reference_block_fee_asset() -> anyhow::Result<()> {
     let (mock_chain, account) = mock_chain_with_fee()?;
     let mock_tx = mock_chain.build_transaction(account).build()?;
 
-    let fee_faucet_id = mock_tx.tx_inputs().protocol_config().fee_asset_id().faucet_id();
+    let fee_asset_id = mock_tx.tx_inputs().protocol_config().fee_asset_id();
 
     let code = "
         use miden::tx_kernel_core::prologue
@@ -95,16 +95,15 @@ async fn get_fee_faucet_id_returns_reference_block_fee_faucet() -> anyhow::Resul
         begin
             exec.prologue::prepare_transaction
 
-            exec.tx::get_fee_faucet_id
-            # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
+            exec.tx::get_fee_asset_id
+            # => [FEE_ASSET_ID]
 
             exec.sys::truncate_stack
         end
     ";
     let exec_output = mock_tx.execute_code(code).await?;
 
-    assert_eq!(exec_output.get_stack_element(0), fee_faucet_id.suffix());
-    assert_eq!(exec_output.get_stack_element(1), fee_faucet_id.prefix().as_felt());
+    assert_eq!(exec_output.get_stack_word(0), fee_asset_id.to_word());
 
     Ok(())
 }

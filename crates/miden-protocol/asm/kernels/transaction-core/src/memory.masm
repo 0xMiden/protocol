@@ -1,7 +1,6 @@
 use miden::core::mem
 use {ACCOUNT_PROCEDURE_DATA_LENGTH, MAX_ASSETS_PER_NOTE, NOTE_MEM_SIZE, WORD_NUM_ELEMENTS}
     from miden::tx_kernel_core::constants
-use miden::protocol_utils::asset
 use {AccountId} from miden::protocol_utils::types
 
 # ERRORS
@@ -792,24 +791,6 @@ end
 #!   transaction.
 pub proc get_verification_base_fee
     mem_load.VERIFICATION_BASE_FEE_PTR
-end
-
-#! Returns the fee faucet ID from the chain's protocol config.
-#!
-#! TODO(fee_asset_id): Remove this procedure in favor of `get_fee_asset_id`.
-#!
-#! Inputs:  []
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
-#!
-#! Where:
-#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
-#!   the native fee asset.
-pub proc get_fee_faucet_id
-    padw mem_loadw_le.FEE_ASSET_ID_PTR
-    # => [FEE_ASSET_ID]
-
-    exec.asset::id_into_faucet_id
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
 end
 
 #! Returns the fee asset ID from the chain's protocol config.
