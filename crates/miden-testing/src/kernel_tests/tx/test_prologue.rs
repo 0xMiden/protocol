@@ -355,7 +355,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTran
 
     assert_eq!(
         exec_output.get_kernel_mem_word(PROTOCOL_CONFIG_COMMITMENT_PTR),
-        inputs.tx_inputs().block_header().protocol_config(),
+        inputs.tx_inputs().block_header().protocol_config_commitment(),
         "The protocol config commitment should be stored at the PROTOCOL_CONFIG_COMMITMENT_PTR"
     );
 

@@ -558,7 +558,7 @@ impl ProposedBlock {
         // the genesis block will be passed through. Eventually, the contained base fees will be
         // updated based on the demand in the currently proposed block.
         let fee_parameters = prev_block_header.fee_parameters().clone();
-        let protocol_config = prev_block_header.protocol_config();
+        let protocol_config_commitment = prev_block_header.protocol_config_commitment();
 
         let header = BlockHeader::new(
             prev_block_commitment,
@@ -570,7 +570,7 @@ impl ProposedBlock {
             tx_commitment,
             next_validator_config,
             fee_parameters,
-            protocol_config,
+            protocol_config_commitment,
             next_protocol_config,
             timestamp,
         );
