@@ -16,7 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
-use miden_protocol::errors::TransactionHeaderError;
+use miden_protocol::errors::{BlockBodyError, TransactionHeaderError};
 use miden_protocol::note::{Note, NoteId, NoteInclusionProof};
 use miden_protocol::transaction::{
     InputNotes,
@@ -167,6 +167,18 @@ fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
             .unwrap();
 
     assert_eq!(BlockBody::try_from(proto::blockchain::BlockBody::default()).unwrap(), expected);
+}
+
+#[test]
+fn protobuf_block_body_rejects_created_nullifiers_missing_from_transactions() {
+    let error = BlockBody::try_from(proto::blockchain::BlockBody {
+        created_nullifiers: vec![Word::empty().into()],
+        ..Default::default()
+    })
+    .unwrap_err();
+    let source = error.source().unwrap().downcast_ref::<BlockBodyError>().unwrap();
+
+    assert!(matches!(source, BlockBodyError::CreatedNullifiersMismatch));
 }
 
 #[test]
