@@ -3,6 +3,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::access::pausable
+use miden::standards::expiration
 
 # DEPENDENCY NOTE
 # This manager owns mint, burn, send, and receive policy state in a single component. The
@@ -147,7 +148,8 @@ end
 #! to an output note.
 #!
 #! Binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`], which
-#! applies the pause check and invokes the active send policy.
+#! limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block, applies the pause check and invokes the active send policy.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
@@ -212,8 +214,9 @@ end
 #! asset with the callback flag is added to an account vault.
 #!
 #! Binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to [`invoke_transfer_policy`],
-#! which applies the pause check and invokes the active receive policy (skipping both when no
-#! receive policy is configured).
+#! which limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`]
+#! blocks after the reference block, applies the pause check and invokes the active receive policy
+#! (skipping all three when no receive policy is configured).
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
@@ -523,14 +526,24 @@ proc assert_allowed_receive_policy_root
     # => [RECEIVE_POLICY_ROOT]
 end
 
-#! Reads the active transfer policy root from the provided slot, applies the pause check, and
-#! invokes the policy via `dyncall`. Shared by `invoke_send_policy` / `invoke_receive_policy`,
-#! which differ only in which slot they bind.
+#! Reads the active transfer policy root from the provided slot, limits the transaction's
+#! expiration, applies the pause check, and invokes the policy via `dyncall`. Shared by
+#! `invoke_send_policy` / `invoke_receive_policy`, which differ only in which slot they bind.
 #!
 #! If the active root is the empty word (no policy configured for this kind), the transfer is
-#! accepted and the pause check is skipped — mirroring the kernel's behavior when a callback slot
-#! holds the empty word. Otherwise the account-wide pause flag is asserted (a no-op when the
-#! [`Pausable`] component is not installed) and the policy is invoked via `dyncall`.
+#! accepted and both the expiration limit and the pause check are skipped — mirroring the
+#! kernel's behavior when a callback slot holds the empty word. Otherwise the transaction's
+#! expiration is limited to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
+#! reference block, the account-wide pause flag is asserted (a no-op when the [`Pausable`]
+#! component is not installed) and the policy is invoked via `dyncall`.
+#!
+#! The limit is applied here rather than left to the invoked policy because both the pause flag
+#! and the policy's own state are read through FPI, which reflects the transaction's reference
+#! block: the executor picks that block, so without a limit a transfer can be checked against a
+#! policy or pause state the faucet has since replaced. Applying it in the dispatcher covers the
+#! pause flag and every policy, including ones that set no limit of their own. A policy needing a
+#! stricter bound can still set a smaller delta, since the transaction keeps the shortest limit
+#! set during its execution.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, custom_data]
 #! Outputs: []
@@ -557,6 +570,10 @@ proc invoke_transfer_policy
         dropw dropw dropw drop
         # => []
     else
+        # bound how stale the FPI-read pause flag and policy state may be
+        exec.expiration::apply_default
+        # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
+
         exec.pausable::assert_not_paused
         # => [POLICY_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
