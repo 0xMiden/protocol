@@ -478,28 +478,24 @@ Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`. The initial 
 member and the initial `FAUCET_MNGR` / `GER_INJECTOR` / `GER_REMOVER` / `FEE_MNGR` / `PAUSER` role
 holders are seeded into the access-control components at account creation time.
 
-### 3.2 Faucet Account Component
+### 3.2 Faucet Account
 
-The faucet account carries no AggLayer-specific component. It is the standard `FungibleFaucet`
-component (`miden-standards/asm/components/faucets/fungible_faucet/fungible_faucet.masm`),
-installed on top of `Ownable2Step` + the RBAC access-control stack (`RoleBasedAccessControl` +
-`Authority::RbacControlled`), so the AggLayer faucet is an ordinary network fungible faucet whose
-owner happens to be the bridge.
+The faucet account carries no AggLayer-specific component: it is the standard `FungibleFaucet`
+installed on top of `Ownable2Step` and the RBAC access-control stack (`RoleBasedAccessControl` +
+`Authority::RbacControlled`). Bridge-in and bridge-out run through the standard `mint_and_send`
+and `receive_and_burn`, and the unified MINT/BURN note scripts use `has_procedure` to detect the
+faucet kind reflectively.
 
-The procedures the bridge protocol relies on are:
+What makes it an AggLayer faucet is its deployment configuration:
 
-- `mint_and_send` - bridge-in, gated by the active mint policy (`owner_only`)
-- `receive_and_burn` - bridge-out, gated by the active burn policy
-- `has_procedure` - so the unified MINT/BURN note scripts can reflectively detect the faucet kind
-
-The component additionally exposes the standard token-config and metadata accessors -
-`get_name`, `get_token_symbol`, `get_decimals`, `get_token_supply`, `get_max_supply`,
-`get_token_config`, `is_max_supply_mutable`, `get_mutability_config`, the `is_*_mutable` views,
-and the `set_max_supply` / `set_description` / `set_logo_uri` / `set_external_link` setters. The
-getters are what allow the bridge to recompute `keccak256(abi.encode(name, symbol, decimals))`
-from faucet storage via FPI. The setters are authority-gated (so they fall to `FAUCET_ADMIN`) and,
-with the faucet's note allowlist limited to MINT and BURN, unreachable until the admin explicitly
-allowlists a note that calls them.
+- The bridge is its `Ownable2Step` owner, and its active mint and burn policies are `owner_only`,
+  so only the bridge can mint on a bridge-in claim or burn on a bridge-out.
+- Its note allowlist is limited to MINT, BURN, RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG plus the
+  network-account defaults, which keeps the standard `set_*` metadata setters unreachable until
+  `FAUCET_ADMIN` explicitly allowlists a note that calls them.
+- Its token name holds the foreign token's real name, so the metadata hash preimage
+  `abi.encode(name, symbol, decimals)` is recoverable from its storage (see
+  [Section 7.1](#71-registering-faucets-on-miden)).
 
 #### `fungible::mint_and_send`
 

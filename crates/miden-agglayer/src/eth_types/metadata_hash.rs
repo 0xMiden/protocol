@@ -46,8 +46,7 @@ impl MetadataHash {
 
     /// Computes the metadata hash from a faucet's own token metadata.
     ///
-    /// Preferred over [`Self::from_token_info`] when the faucet exists, since it derives the hash
-    /// registered on the bridge from the very values held in faucet storage: the two cannot drift.
+    /// Preferred over [`Self::from_token_info`] when the faucet exists.
     pub fn from_fungible_faucet(faucet: &FungibleFaucet) -> Self {
         Self::from_token_info(
             faucet.token_name().as_str(),

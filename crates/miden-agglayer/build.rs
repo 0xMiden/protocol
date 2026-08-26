@@ -146,11 +146,6 @@ fn compile_agglayer_package(
 ///
 /// This file contains:
 /// - AggLayer Bridge code commitment.
-///
-/// The AggLayer faucet is the standard [`FungibleFaucet`] and so carries no bespoke commitment;
-/// callers identify it through its interface instead (see `FungibleFaucet::try_from`).
-///
-/// [`FungibleFaucet`]: miden_standards::account::faucets::FungibleFaucet
 fn generate_agglayer_constants(
     target_file: impl AsRef<Path>,
     component_packages: Vec<Arc<Package>>,

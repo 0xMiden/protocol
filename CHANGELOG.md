@@ -36,7 +36,7 @@
 - [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 - [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
-- [BREAKING] Replaced the dedicated AggLayer faucet account component with the standard `FungibleFaucet`, so the faucet stores the real token name instead of a copy of its symbol and the metadata hash preimage `abi.encode(name, symbol, decimals)` is recoverable from its storage. `AggLayerFaucet` is now a stateless namespace, `AgglayerFaucetError` and the `miden-agglayer-faucet` MASM package were removed, `AggLayerFaucet::account_builder` and `create_existing_agglayer_faucet` take a token name, and the faucet code commitment changes ([#2585](https://github.com/0xMiden/protocol/issues/2585)).
+- [BREAKING] Replaced the dedicated AggLayer faucet account component with the standard `FungibleFaucet`. `AggLayerFaucet` is now a stateless namespace, `AgglayerFaucetError` and the `miden-agglayer-faucet` MASM package were removed, `AggLayerFaucet::account_builder` and `create_existing_agglayer_faucet` take a token name ([#3525](https://github.com/0xMiden/protocol/pull/3525)).
 
 ### Fixes
 

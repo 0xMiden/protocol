@@ -18,12 +18,12 @@ static FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
 // AGGLAYER FAUCET
 // ================================================================================================
 
-/// The deployment configuration of an AggLayer faucet.
+/// Helper type holding the deployment configuration of an AggLayer faucet.
 ///
-/// An AggLayer faucet is a standard
-/// [`FungibleFaucet`](miden_standards::account::faucets::FungibleFaucet) owned by the bridge; it
-/// carries no AggLayer-specific account component, so this type holds no state and exists only to
-/// namespace the deployment parameters the bridge and the faucet operator have to agree on: the
+/// This is not an [`AccountComponent`](miden_protocol::account::AccountComponent): an AggLayer
+/// faucet is an ordinary [`FungibleFaucet`](miden_standards::account::faucets::FungibleFaucet)
+/// owned by the bridge, with no AggLayer-specific component of its own. The type carries no state
+/// and only groups what the bridge and the faucet operator have to agree on at deployment: the
 /// note allowlist, the RBAC roles, and the account builder
 /// ([`AggLayerFaucet::account_builder`](crate::AggLayerFaucet::account_builder), defined alongside
 /// the bridge's).
