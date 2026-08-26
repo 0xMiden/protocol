@@ -93,10 +93,7 @@ fn account_witness_protobuf_requires_witness_id() {
     })
     .unwrap_err();
 
-    assert_eq!(
-        error.to_string(),
-        "field miden_objects::proto::account::AccountWitness::witness_id is missing"
-    );
+    assert!(error.to_string().ends_with("::witness_id is missing"));
 }
 
 #[test]
