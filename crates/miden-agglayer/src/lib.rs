@@ -2,19 +2,11 @@
 
 extern crate alloc;
 
-use alloc::collections::{BTreeMap, BTreeSet};
-
 use miden_core::{Felt, Word};
-use miden_protocol::account::{
-    AccountBuilder,
-    AccountId,
-    AccountProcedureRoot,
-    AssetCallbackFlag,
-    RoleSymbol,
-};
+use miden_protocol::account::{AccountBuilder, AccountId, AssetCallbackFlag};
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
-use miden_protocol::note::{NoteScript, NoteScriptRoot};
+use miden_protocol::note::NoteScript;
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{
     Authority,
@@ -24,7 +16,7 @@ use miden_standards::account::access::{
     RoleBasedAccessControl,
     RoleConfig,
 };
-use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
+use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::{
     BasicConstantFeePolicy,
@@ -37,7 +29,6 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::note::{BurnNote, ConstantFeePolicyConfigNote, MintNote, RbacConfigNote};
 use miden_utils_sync::LazyLock;
 
 pub mod agglayer_note;
@@ -49,6 +40,7 @@ pub mod costs;
 pub mod deregister_note;
 pub mod errors;
 pub mod eth_types;
+pub mod faucet;
 mod ger_note;
 pub mod remove_ger_note;
 #[cfg(any(feature = "testing", test))]
@@ -74,6 +66,7 @@ pub use deregister_note::DeregisterAggFaucetNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{GlobalIndex, GlobalIndexError, MetadataHash};
+pub use faucet::AggLayerFaucet;
 pub use remove_ger_note::RemoveGerNote;
 pub use update_ger_note::UpdateGerNote;
 pub use utils::Keccak256Output;
@@ -121,49 +114,16 @@ fn agglayer_bridge_component_package() -> Package {
     BRIDGE_COMPONENT_PACKAGE.clone()
 }
 
-// AGGLAYER FAUCET RBAC ROLES
-// ================================================================================================
-
-static FAUCET_FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
-    LazyLock::new(|| RoleSymbol::new("FEE_MNGR").expect("FEE_MNGR role symbol should be valid"));
-
-/// Returns the AggLayer faucet's `FEE_MNGR` role symbol. Holders may update the faucet's note fee
-/// schedule.
-pub fn agglayer_faucet_fee_manager_role() -> RoleSymbol {
-    FAUCET_FEE_MANAGER_ROLE.clone()
-}
-
-/// Returns the fixed procedure-to-role map used to configure the AggLayer faucet's [`Authority`]
-/// (`RbacControlled`) component.
-pub fn agglayer_faucet_procedure_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
-    BTreeMap::from([(ConstantFeeManager::set_note_fee_root(), agglayer_faucet_fee_manager_role())])
-}
-
 // AGGLAYER ACCOUNT CREATION HELPERS
 // ================================================================================================
 
-/// Returns the input-note script roots allowlisted on a newly deployed AggLayer faucet.
-///
-/// A live account's allowlist is available through
-/// [`NetworkAccount::allowed_notes`](miden_standards::account::auth::NetworkAccount::allowed_notes).
-pub fn agglayer_faucet_allowed_notes() -> BTreeSet<NoteScriptRoot> {
-    let mut notes = BTreeSet::from([
-        MintNote::script_root(),
-        BurnNote::script_root(),
-        ConstantFeePolicyConfigNote::script_root(),
-        RbacConfigNote::script_root(),
-    ]);
-    notes.extend(AuthNetworkAccount::default_allowed_note_scripts());
-    notes
-}
-
-/// Builds the [`FungibleFaucet`] component of an agglayer faucet account.
+/// Builds the [`FungibleFaucet`] component of an agglayer faucet account from its token metadata.
 ///
 /// The faucet holds only token metadata; conversion metadata (origin address, origin network,
 /// scale, metadata hash) lives on the bridge and is populated at registration time.
 ///
-/// The token name is stored alongside the symbol and decimals so that the bridge can recompute
-/// `keccak256(abi.encode(name, symbol, decimals))` from the faucet's own storage.
+/// The token name is stored alongside the symbol and decimals, which makes the metadata hash
+/// preimage `abi.encode(name, symbol, decimals)` recoverable from the faucet's own storage.
 ///
 /// # Parameters
 /// - `token_name`: The display name for the fungible token (e.g., "AggLayer Token")
@@ -175,7 +135,7 @@ pub fn agglayer_faucet_allowed_notes() -> BTreeSet<NoteScriptRoot> {
 /// # Panics
 /// Panics if the token name or symbol is invalid, or if the supplies exceed the maximum amount
 /// representable by a fungible asset.
-fn agglayer_faucet_metadata(
+fn build_fungible_faucet(
     token_name: &str,
     token_symbol: &str,
     decimals: u8,
@@ -238,68 +198,71 @@ impl AggLayerBridge {
     }
 }
 
-/// Returns an [`AccountBuilder`] for an agglayer faucet account with the specified deployment
-/// configuration.
-///
-/// The account is a standard [`FungibleFaucet`] carrying no AggLayer-specific component:
-/// `mint_and_send` and `receive_and_burn` drive bridge-in and bridge-out, and the standard
-/// metadata getters expose the token name, symbol and decimals so the bridge can recompute the
-/// AggLayer metadata hash from faucet storage.
-///
-/// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager` is the
-/// initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`] owner, which
-/// is what the `owner_only` mint and burn policies gate on. `fee_policy` must contain entries for
-/// [`agglayer_faucet_allowed_notes`], denominated in the asset issued by `fee_faucet_id`.
-///
-/// # Panics
-///
-/// Panics if the token metadata is invalid.
-#[allow(clippy::too_many_arguments)]
-pub fn agglayer_faucet_account_builder(
-    seed: Word,
-    token_name: &str,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    initial_supply: Felt,
-    faucet_admin: AccountId,
-    fee_manager: AccountId,
-    bridge_account_id: AccountId,
-    fee_faucet_id: AccountId,
-    fee_policy: BasicConstantFeePolicy,
-) -> AccountBuilder {
-    let fee_policy_manager = FeePolicyManager::builder()
-        .fee_faucet_id(fee_faucet_id)
-        .active_fee_policy(fee_policy.into())
-        .build();
-    let faucet =
-        agglayer_faucet_metadata(token_name, token_symbol, decimals, max_supply, initial_supply);
+impl AggLayerFaucet {
+    /// Returns an [`AccountBuilder`] for a faucet account with the specified deployment
+    /// configuration.
+    ///
+    /// The account is a standard [`FungibleFaucet`] carrying no AggLayer-specific component:
+    /// `mint_and_send` and `receive_and_burn` drive bridge-in and bridge-out, and the standard
+    /// metadata getters expose the token name, symbol and decimals that make up the AggLayer
+    /// metadata hash preimage.
+    ///
+    /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
+    /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]
+    /// owner, which is what the `owner_only` mint and burn policies gate on. `fee_policy` must
+    /// contain entries for [`AggLayerFaucet::allowed_notes`], denominated in the asset issued by
+    /// `fee_faucet_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the token metadata is invalid.
+    #[allow(clippy::too_many_arguments)]
+    pub fn account_builder(
+        seed: Word,
+        token_name: &str,
+        token_symbol: &str,
+        decimals: u8,
+        max_supply: Felt,
+        initial_supply: Felt,
+        faucet_admin: AccountId,
+        fee_manager: AccountId,
+        bridge_account_id: AccountId,
+        fee_faucet_id: AccountId,
+        fee_policy: BasicConstantFeePolicy,
+    ) -> AccountBuilder {
+        let fee_policy_manager = FeePolicyManager::builder()
+            .fee_faucet_id(fee_faucet_id)
+            .active_fee_policy(fee_policy.into())
+            .build();
+        let faucet =
+            build_fungible_faucet(token_name, token_symbol, decimals, max_supply, initial_supply);
 
-    let token_policy_manager = TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::owner_only())
-        .active_burn_policy(BurnPolicy::owner_only())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
-        .build();
+        let token_policy_manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::owner_only())
+            .active_burn_policy(BurnPolicy::owner_only())
+            .active_send_policy(TransferPolicy::allow_all())
+            .active_receive_policy(TransferPolicy::allow_all())
+            .build();
 
-    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
-    let rbac = RoleBasedAccessControl::builder()
-        .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(faucet_admin))
-        .role(RoleConfig::new(agglayer_faucet_fee_manager_role()).with_member(fee_manager))
-        .build()
-        .expect("the faucet seeds non-empty roles administered by ADMIN");
+        let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
+        let rbac = RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(faucet_admin))
+            .role(RoleConfig::new(AggLayerFaucet::fee_manager_role()).with_member(fee_manager))
+            .build()
+            .expect("the faucet seeds non-empty roles administered by ADMIN");
 
-    NetworkAccount::builder(seed.into(), agglayer_faucet_allowed_notes(), fee_policy_manager)
-        .expect("faucet note allowlist is non-empty")
-        .with_asset_callbacks(asset_callbacks)
-        .with_component(faucet)
-        .with_component(Ownable2Step::new(bridge_account_id))
-        .with_component(rbac)
-        .with_component(Authority::RbacControlled {
-            procedure_roles: agglayer_faucet_procedure_roles(),
-        })
-        .with_components(token_policy_manager)
-        .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
+        NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
+            .expect("faucet note allowlist is non-empty")
+            .with_asset_callbacks(asset_callbacks)
+            .with_component(faucet)
+            .with_component(Ownable2Step::new(bridge_account_id))
+            .with_component(rbac)
+            .with_component(Authority::RbacControlled {
+                procedure_roles: AggLayerFaucet::procedure_roles(),
+            })
+            .with_components(token_policy_manager)
+            .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
+    }
 }
 
 // TESTS

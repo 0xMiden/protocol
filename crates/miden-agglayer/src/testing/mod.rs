@@ -23,14 +23,13 @@ use serde::Deserialize;
 use crate::claim_note::{ProofData, SmtNode};
 use crate::{
     AggLayerBridge,
+    AggLayerFaucet,
     BridgeRoles,
     CgiChainHash,
     ExitRoot,
     GlobalIndex,
     LeafData,
     MetadataHash,
-    agglayer_faucet_account_builder,
-    agglayer_faucet_allowed_notes,
 };
 
 // ACCOUNT HELPERS
@@ -107,7 +106,7 @@ pub fn create_existing_agglayer_faucet(
     bridge_account_id: AccountId,
 ) -> Account {
     let faucet_admin = bridge_admin_account_id();
-    agglayer_faucet_account_builder(
+    AggLayerFaucet::account_builder(
         seed,
         token_name,
         token_symbol,
@@ -118,7 +117,7 @@ pub fn create_existing_agglayer_faucet(
         fee_manager,
         bridge_account_id,
         fee_faucet_id(),
-        zero_fee_policy(agglayer_faucet_allowed_notes()),
+        zero_fee_policy(AggLayerFaucet::allowed_notes()),
     )
     .build_existing()
     .expect("agglayer faucet account should be valid")

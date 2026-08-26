@@ -1,14 +1,7 @@
 use alloc::collections::BTreeSet;
 
 use miden_agglayer::testing::bridge_admin_account_id;
-use miden_agglayer::{
-    AggLayerBridge,
-    BridgeRoles,
-    agglayer_faucet_account_builder,
-    agglayer_faucet_allowed_notes,
-    agglayer_faucet_fee_manager_role,
-    agglayer_faucet_procedure_roles,
-};
+use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::note::{Note, NoteScriptRoot};
@@ -80,7 +73,7 @@ fn agglayer_accounts_install_priced_basic_constant_fee_policies() -> anyhow::Res
     )?;
     assert_priced_account(
         &build_managed_account(ManagedAccount::Faucet)?,
-        agglayer_faucet_allowed_notes(),
+        AggLayerFaucet::allowed_notes(),
     )
 }
 
@@ -94,13 +87,13 @@ fn faucet_allowed_notes_pin() {
         NetworkAccountConfigNote::script_root(),
         FeeSponsorshipNote::script_root(),
     ]);
-    assert_eq!(agglayer_faucet_allowed_notes(), expected);
+    assert_eq!(AggLayerFaucet::allowed_notes(), expected);
 }
 
 #[test]
 fn fee_management_procedure_role_mappings() {
     let bridge_roles = AggLayerBridge::procedure_roles();
-    let faucet_roles = agglayer_faucet_procedure_roles();
+    let faucet_roles = AggLayerFaucet::procedure_roles();
 
     assert_eq!(
         bridge_roles.get(&ConstantFeeManager::set_note_fee_root()),
@@ -108,7 +101,7 @@ fn fee_management_procedure_role_mappings() {
     );
     assert_eq!(
         faucet_roles.get(&ConstantFeeManager::set_note_fee_root()),
-        Some(&agglayer_faucet_fee_manager_role()),
+        Some(&AggLayerFaucet::fee_manager_role()),
     );
     assert_eq!(faucet_roles.len(), 1, "only note repricing uses the faucet FEE_MNGR role");
 
@@ -163,7 +156,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
 
     Ok(match managed {
         ManagedAccount::Bridge => bridge,
-        ManagedAccount::Faucet => agglayer_faucet_account_builder(
+        ManagedAccount::Faucet => AggLayerFaucet::account_builder(
             Word::from([1u32, 0, 0, 0]),
             "AggLayer Token",
             "AGG",
@@ -174,7 +167,7 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
             fee_manager_id(),
             bridge.id(),
             pricer.fee_parameters().fee_faucet_id(),
-            pricer.basic_constant_fee_policy(agglayer_faucet_allowed_notes())?,
+            pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?,
         )
         .build_existing()?,
     })

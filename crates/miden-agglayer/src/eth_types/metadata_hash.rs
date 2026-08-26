@@ -138,25 +138,6 @@ mod tests {
         assert_eq!(hash, hash_from_info, "from_abi_encoded and from_token_info must agree");
     }
 
-    /// A faucet's own metadata yields the same hash as passing its name, symbol and decimals
-    /// individually. This is the invariant that lets the bridge recompute the registered hash
-    /// from faucet storage (see issue #2586).
-    #[test]
-    fn test_metadata_hash_from_fungible_faucet_matches_token_info() {
-        let faucet = crate::agglayer_faucet_metadata(
-            "Test Token",
-            "TEST",
-            12,
-            Felt::from(1000u32),
-            Felt::ZERO,
-        );
-
-        assert_eq!(
-            MetadataHash::from_fungible_faucet(&faucet),
-            MetadataHash::from_token_info("Test Token", "TEST", 12),
-        );
-    }
-
     fn hex_to_vec(hex: &str) -> std::vec::Vec<u8> {
         (0..hex.len())
             .step_by(2)

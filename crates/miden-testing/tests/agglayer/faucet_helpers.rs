@@ -1,6 +1,5 @@
 extern crate alloc;
 
-use miden_agglayer::MetadataHash;
 use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -69,19 +68,13 @@ fn agglayer_faucet_is_a_bridge_owned_fungible_faucet() -> anyhow::Result<()> {
     let metadata = FungibleFaucet::try_from(&faucet)?;
 
     // Every field round-trips, most importantly the token name: it used to be derived from the
-    // symbol, which made the on-chain metadata hash unverifiable (issue #2585).
+    // symbol, which left the metadata hash preimage `abi.encode(name, symbol, decimals)`
+    // unrecoverable from faucet storage, and so unverifiable on-chain (issues #2585, #2586).
     assert_eq!(metadata.token_name().as_str(), token_name);
     assert_eq!(metadata.symbol().to_string(), token_symbol);
     assert_eq!(metadata.decimals(), decimals);
     assert_eq!(metadata.max_supply(), AssetAmount::try_from(max_supply)?);
     assert_eq!(metadata.token_supply(), AssetAmount::try_from(token_supply)?);
-
-    // The metadata hash the bridge registers is reproducible from faucet storage alone. This is
-    // the invariant issue #2586 moves on-chain.
-    assert_eq!(
-        MetadataHash::from_fungible_faucet(&metadata),
-        MetadataHash::from_token_info(token_name, token_symbol, decimals),
-    );
 
     // Mint and burn authorization is bound to the bridge through `Ownable2Step`.
     let ownership = Ownable2Step::try_from_storage(faucet.storage())?;

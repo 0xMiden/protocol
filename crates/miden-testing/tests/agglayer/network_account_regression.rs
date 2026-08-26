@@ -5,7 +5,7 @@
 //! 1. The account rejects any transaction that executes a tx script.
 //! 2. The account rejects any input note whose script root is not in its
 //!    [`allowed_notes`](miden_agglayer::AggLayerBridge::allowed_notes) /
-//!    [`agglayer_faucet_allowed_notes`](miden_agglayer::agglayer_faucet_allowed_notes) set.
+//!    [`allowed_notes`](miden_agglayer::AggLayerFaucet::allowed_notes) set.
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
