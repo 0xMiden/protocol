@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::Asset;
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -88,8 +88,10 @@ impl FeeSponsorshipNote {
     ///
     /// Prefer the builder's `generate_serial_number` over supplying a serial number by hand.
     ///
-    /// The fee is exactly one asset; the note script rejects notes carrying any other number of
-    /// assets, which keeps fee collection simple.
+    /// The fee is exactly one fungible asset; the note script rejects notes carrying any other
+    /// number of assets, which keeps fee collection simple. Fees are always denominated in the fee
+    /// asset the collecting account configures, which is fungible, so a sponsorship carrying
+    /// anything else could never be collected.
     ///
     /// The reclaimer, the account allowed to reclaim the note after `reclaim_height`, defaults to
     /// `sender` when left unset.
@@ -103,7 +105,7 @@ impl FeeSponsorshipNote {
         sender: AccountId,
         #[builder(name = target_account)] target: AccountId,
         feature_note_id: NoteId,
-        #[builder(into)] asset: Asset,
+        asset: FungibleAsset,
         serial_number: Word,
         reclaimer: Option<AccountId>,
         reclaim_height: Option<BlockNumber>,
@@ -113,7 +115,7 @@ impl FeeSponsorshipNote {
         }
 
         let assets =
-            NoteAssets::new(vec![asset]).expect("a single asset is a valid note asset list");
+            NoteAssets::new(vec![asset.into()]).expect("a single asset is a valid note asset list");
         // The reclaimer is the account allowed to reclaim the note; it defaults to the sender.
         let reclaimer = reclaimer.unwrap_or(sender);
         let storage = FeeSponsorshipNoteStorage::new(feature_note_id, reclaimer, reclaim_height);
@@ -183,14 +185,15 @@ impl FeeSponsorshipNote {
         self.note.metadata().tag()
     }
 
-    /// Returns the single asset the note carries as the fee.
-    pub fn asset(&self) -> Asset {
-        *self
-            .note
+    /// Returns the single fungible asset the note carries as the fee.
+    pub fn asset(&self) -> FungibleAsset {
+        self.note
             .assets()
             .iter()
             .next()
             .expect("a FEE_SPONSORSHIP note carries exactly one asset")
+            .as_fungible()
+            .expect("a FEE_SPONSORSHIP note carries a fungible asset")
     }
 
     /// Returns the ID of the bound feature note this note sponsors.
@@ -254,10 +257,11 @@ impl TryFrom<Note> for FeeSponsorshipNote {
     /// Returns an error if:
     /// - the note's script root is not the FEE_SPONSORSHIP script root.
     /// - the note storage does not decode as [`FeeSponsorshipNoteStorage`].
-    /// - the note does not carry exactly one asset.
+    /// - the note does not carry exactly one fungible asset.
     ///
-    /// The note script asserts the storage length and the asset count itself, so a note rejected
-    /// here could never be consumed as a sponsorship anyway.
+    /// The note script asserts the storage length and the asset count itself, and fee collection
+    /// only accepts the collecting account's fungible fee asset, so a note rejected here could
+    /// never be consumed as a sponsorship anyway.
     fn try_from(note: Note) -> Result<Self, Self::Error> {
         if note.script().root() != Self::script_root() {
             return Err(NoteError::other(
@@ -269,6 +273,15 @@ impl TryFrom<Note> for FeeSponsorshipNote {
 
         if note.assets().num_assets() != Self::NUM_ASSETS {
             return Err(NoteError::other("FEE_SPONSORSHIP note must carry exactly one asset"));
+        }
+
+        let asset = note
+            .assets()
+            .iter()
+            .next()
+            .expect("note carries exactly one asset as asserted above");
+        if !asset.is_fungible() {
+            return Err(NoteError::other("FEE_SPONSORSHIP note asset must be fungible"));
         }
 
         Ok(Self { note })
@@ -406,7 +419,7 @@ impl NoteConsumptionCost for FeeSponsorshipNote {
 mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::AccountType;
-    use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::asset::{Asset, NonFungibleAsset};
     use miden_protocol::crypto::rand::RandomCoin;
     use rstest::rstest;
 
@@ -575,7 +588,7 @@ mod tests {
         assert_eq!(decoded.id(), note.id());
         assert_eq!(decoded.nullifier(), note.nullifier());
         assert_eq!(decoded.sender(), sponsor());
-        assert_eq!(decoded.asset(), Asset::from(asset));
+        assert_eq!(decoded.asset(), asset);
         assert_eq!(decoded.feature_note_id(), feature_note_id());
         assert_eq!(decoded.reclaimer(), sponsor());
         assert_eq!(decoded.reclaim_height(), Some(BlockNumber::from(42u32)));
@@ -628,6 +641,22 @@ mod tests {
 
         assert_matches!(err, NoteError::Other { error_msg, .. } => {
             assert!(error_msg.contains("exactly one asset"))
+        });
+    }
+
+    /// The fee is denominated in the collecting account's fee asset, which is fungible, so a
+    /// non-fungible asset is not a fee.
+    #[test]
+    fn try_from_rejects_non_fungible_asset() {
+        let asset =
+            Asset::from(NonFungibleAsset::from_parts(faucet(), Word::from([1, 2, 3, 4u32])));
+        let note = note_with(FeeSponsorshipNote::script(), valid_storage(), vec![asset]);
+
+        let err =
+            FeeSponsorshipNote::try_from(note).expect_err("a non-fungible asset must be rejected");
+
+        assert_matches!(err, NoteError::Other { error_msg, .. } => {
+            assert!(error_msg.contains("must be fungible"))
         });
     }
 
