@@ -90,8 +90,7 @@ impl FeeSponsorshipNote {
     ///
     /// The fee is exactly one fungible asset; the note script rejects notes carrying any other
     /// number of assets, which keeps fee collection simple. Fees are always denominated in the fee
-    /// asset the collecting account configures, which is fungible, so a sponsorship carrying
-    /// anything else could never be collected.
+    /// asset the collecting account configures.
     ///
     /// The reclaimer, the account allowed to reclaim the note after `reclaim_height`, defaults to
     /// `sender` when left unset.
