@@ -364,17 +364,19 @@ fn account_storage_header_uses_generated_slot_type_values() {
 #[test]
 fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
     let storage_patch = AccountStoragePatch::from_entries([
-        (StorageSlotName::mock(1), StorageSlotPatch::Value(StorageValuePatch::Remove)),
-        (StorageSlotName::mock(2), StorageSlotPatch::Map(StorageMapPatch::Remove)),
         (StorageSlotName::mock(3), StorageSlotPatch::Value(StorageValuePatch::Remove)),
-        (StorageSlotName::mock(4), StorageSlotPatch::Map(StorageMapPatch::Remove)),
+        (StorageSlotName::mock(1), StorageSlotPatch::Map(StorageMapPatch::Remove)),
+        (StorageSlotName::mock(4), StorageSlotPatch::Value(StorageValuePatch::Remove)),
+        (StorageSlotName::mock(2), StorageSlotPatch::Map(StorageMapPatch::Remove)),
     ])
     .unwrap();
 
-    let expected_slots = storage_patch
-        .slots()
-        .map(|(slot_name, patch)| (slot_name.as_str(), matches!(patch, StorageSlotPatch::Value(_))))
-        .collect::<Vec<_>>();
+    let expected_slots = [
+        ("miden::test::slot::3", true),
+        ("miden::test::slot::1", false),
+        ("miden::test::slot::4", true),
+        ("miden::test::slot::2", false),
+    ];
     let message = proto::account::AccountStoragePatch::from(&storage_patch);
 
     assert_eq!(
