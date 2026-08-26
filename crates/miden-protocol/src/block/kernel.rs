@@ -76,8 +76,7 @@ impl BlockKernel {
     ///
     /// Where:
     /// - `PREV_BLOCK_COMMITMENT` is the commitment of the block header this block builds on top of.
-    /// - `BATCHES_COMMITMENT` is the commitment to the block's batches, see
-    ///   [`OrderedBatches::commitment`](crate::batch::OrderedBatches::commitment).
+    /// - `BATCHES_COMMITMENT` is the sequential commitment to the batch IDs in the block.
     pub fn build_input_stack(prev_block_commitment: Word, batches_commitment: Word) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
         inputs.extend_from_slice(prev_block_commitment.as_elements());

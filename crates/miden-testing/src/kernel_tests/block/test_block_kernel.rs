@@ -1,8 +1,7 @@
 use anyhow::Context;
 use miden_block_prover::{BlockExecutor, LocalBlockProver};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::block::{BlockKernel, ProposedBlock};
-use miden_protocol::crypto::SequentialCommit;
+use miden_protocol::block::ProposedBlock;
 use miden_protocol::note::NoteType;
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 
