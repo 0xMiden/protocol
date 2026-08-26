@@ -682,9 +682,7 @@ impl MockChain {
     /// The returned partial blockchain tracks the blocks the input notes were created in, plus the
     /// blocks in `required_blocks`. The latter are for blocks whose commitment the executed code
     /// reads without an input note requiring them, e.g. the older block a multisig transaction
-    /// summary binds. Blocks at or after the reference block are ignored: the reference block is
-    /// appended to the partial blockchain by the transaction prologue, and later blocks cannot be
-    /// authenticated by the transaction at all.
+    /// summary binds. Blocks at or after the reference block are ignored.
     pub fn get_transaction_inputs_at(
         &self,
         reference_block: BlockNumber,
