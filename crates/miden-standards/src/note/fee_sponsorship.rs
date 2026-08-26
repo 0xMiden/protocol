@@ -441,85 +441,58 @@ mod tests {
         AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32])
     }
 
+    fn other_reclaimer() -> AccountId {
+        AccountId::builder().account_type(AccountType::Public).build_with_seed([5; 32])
+    }
+
     fn feature_note_id() -> NoteId {
         NoteId::from_raw(Word::from([7, 8, 9, 10u32]))
     }
 
+    fn fee_asset() -> FungibleAsset {
+        FungibleAsset::new(faucet(), 100).unwrap()
+    }
+
     /// The builder produces a public note tagged for the target, carrying no attachments and the
-    /// seven storage items.
-    #[test]
-    fn builder_builds_public_sponsorship_note() {
+    /// seven storage items: the bound feature note ID, the reclaimer (defaulting to the sender)
+    /// and the reclaim height (zero when reclaim is disabled, which the script reads as "reclaim
+    /// disabled").
+    #[rstest]
+    #[case::default_reclaimer(None, Some(BlockNumber::from(42u32)), sponsor(), Felt::from(42u32))]
+    #[case::absent_reclaim_height(None, None, sponsor(), Felt::ZERO)]
+    #[case::explicit_reclaimer(Some(other_reclaimer()), None, other_reclaimer(), Felt::ZERO)]
+    fn builder_builds_public_sponsorship_note(
+        #[case] reclaimer: Option<AccountId>,
+        #[case] reclaim_height: Option<BlockNumber>,
+        #[case] expected_reclaimer: AccountId,
+        #[case] expected_reclaim_height: Felt,
+    ) {
         let mut rng = RandomCoin::new(Word::empty());
-        let asset = FungibleAsset::new(faucet(), 100).unwrap();
 
         let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
             .feature_note_id(feature_note_id())
-            .asset(asset)
-            .reclaim_height(BlockNumber::from(42u32))
+            .asset(fee_asset())
+            .maybe_reclaimer(reclaimer)
+            .maybe_reclaim_height(reclaim_height)
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
 
         assert_eq!(sponsorship.tag(), NoteTag::with_account_target(network_account()));
         assert_eq!(sponsorship.feature_note_id(), feature_note_id());
+        assert_eq!(sponsorship.reclaimer(), expected_reclaimer);
 
         let note = Note::from(sponsorship);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(network_account()));
         assert_eq!(note.storage().num_items(), FeeSponsorshipNote::NUM_STORAGE_ITEMS as u16);
-        // The bound feature note ID comes first, then the reclaimer (defaulting to the sender),
-        // then the reclaim height.
         assert_eq!(&note.storage().items()[..4], feature_note_id().as_word().as_elements());
-        assert_eq!(note.storage().items()[4], sponsor().suffix());
-        assert_eq!(note.storage().items()[5], sponsor().prefix().as_felt());
-        assert_eq!(note.storage().items()[6], Felt::from(42u32));
+        assert_eq!(note.storage().items()[4], expected_reclaimer.suffix());
+        assert_eq!(note.storage().items()[5], expected_reclaimer.prefix().as_felt());
+        assert_eq!(note.storage().items()[6], expected_reclaim_height);
         assert_eq!(note.attachments().num_attachments(), 0);
-    }
-
-    /// A reclaim height of `None` encodes as 0, which the script reads as "reclaim disabled".
-    #[test]
-    fn absent_reclaim_height_encodes_as_zero() {
-        let mut rng = RandomCoin::new(Word::empty());
-        let asset = FungibleAsset::new(faucet(), 100).unwrap();
-
-        let sponsorship = FeeSponsorshipNote::builder()
-            .sender(sponsor())
-            .target_account(network_account())
-            .feature_note_id(feature_note_id())
-            .asset(asset)
-            .generate_serial_number(&mut rng)
-            .build()
-            .unwrap();
-
-        let note = Note::from(sponsorship);
-        assert_eq!(note.storage().items()[6], Felt::from(0u32));
-    }
-
-    /// An explicit reclaimer overrides the sender in the note storage.
-    #[test]
-    fn explicit_reclaimer_is_stored() {
-        let mut rng = RandomCoin::new(Word::empty());
-        let asset = FungibleAsset::new(faucet(), 100).unwrap();
-        let reclaimer =
-            AccountId::builder().account_type(AccountType::Public).build_with_seed([5; 32]);
-
-        let sponsorship = FeeSponsorshipNote::builder()
-            .sender(sponsor())
-            .target_account(network_account())
-            .feature_note_id(feature_note_id())
-            .asset(asset)
-            .reclaimer(reclaimer)
-            .generate_serial_number(&mut rng)
-            .build()
-            .unwrap();
-
-        assert_eq!(sponsorship.reclaimer(), reclaimer);
-
-        let note = Note::from(sponsorship);
-        assert_eq!(note.storage().items()[4], reclaimer.suffix());
-        assert_eq!(note.storage().items()[5], reclaimer.prefix().as_felt());
     }
 
     /// The tag of a network note must route to a public account.
@@ -527,13 +500,12 @@ mod tests {
     fn builder_rejects_private_target() {
         let private_target =
             AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
-        let asset = FungibleAsset::new(faucet(), 100).unwrap();
 
         let err = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(private_target)
             .feature_note_id(feature_note_id())
-            .asset(asset)
+            .asset(fee_asset())
             .serial_number(Word::empty())
             .build()
             .expect_err("a private target must be rejected");
@@ -546,15 +518,26 @@ mod tests {
     // CONVERSION TESTS
     // --------------------------------------------------------------------------------------------
 
-    /// Builds a note from the given script, storage items and assets, bypassing the builder so
-    /// that shapes the builder cannot produce can be constructed.
+    /// Builds a public note without attachments from the given script, storage items and assets,
+    /// bypassing the builder so that shapes the builder cannot produce can be constructed.
     fn note_with(script: NoteScript, storage_items: Vec<Felt>, assets: Vec<Asset>) -> Note {
-        let metadata = PartialNoteMetadata::new(sponsor(), NoteType::Public)
+        note_with_shape(script, storage_items, assets, NoteType::Public, NoteAttachments::default())
+    }
+
+    /// Same as [`note_with`], but with the given note type and attachments.
+    fn note_with_shape(
+        script: NoteScript,
+        storage_items: Vec<Felt>,
+        assets: Vec<Asset>,
+        note_type: NoteType,
+        attachments: NoteAttachments,
+    ) -> Note {
+        let metadata = PartialNoteMetadata::new(sponsor(), note_type)
             .with_tag(NoteTag::with_account_target(network_account()));
         let recipient =
             NoteRecipient::new(Word::empty(), script, NoteStorage::new(storage_items).unwrap());
 
-        Note::new(NoteAssets::new(assets).unwrap(), metadata, recipient)
+        Note::with_attachments(NoteAssets::new(assets).unwrap(), metadata, recipient, attachments)
     }
 
     /// Valid FEE_SPONSORSHIP storage items, with the sponsor as the reclaimer.
@@ -562,17 +545,25 @@ mod tests {
         raw_storage(sponsor().suffix(), sponsor().prefix().as_felt(), Felt::from(42u32))
     }
 
+    /// A single attachment, which a FEE_SPONSORSHIP note never carries.
+    fn one_attachment() -> NoteAttachments {
+        NoteAttachments::new(vec![NoteAttachment::with_word(
+            NoteAttachmentScheme::new(64).unwrap(),
+            Word::empty(),
+        )])
+        .unwrap()
+    }
+
     /// A built note round-trips through [`Note`] and back with its fields intact.
     #[test]
     fn try_from_round_trips_built_note() {
         let mut rng = RandomCoin::new(Word::empty());
-        let asset = FungibleAsset::new(faucet(), 100).unwrap();
 
         let sponsorship = FeeSponsorshipNote::builder()
             .sender(sponsor())
             .target_account(network_account())
             .feature_note_id(feature_note_id())
-            .asset(asset)
+            .asset(fee_asset())
             .reclaim_height(BlockNumber::from(42u32))
             .generate_serial_number(&mut rng)
             .build()
@@ -586,7 +577,7 @@ mod tests {
         assert_eq!(Note::from(decoded.clone()), note);
         assert_eq!(decoded.sender(), sponsor());
         assert_eq!(decoded.tag(), NoteTag::with_account_target(network_account()));
-        assert_eq!(decoded.asset(), asset);
+        assert_eq!(decoded.asset(), fee_asset());
         assert_eq!(decoded.feature_note_id(), feature_note_id());
         assert_eq!(decoded.reclaimer(), sponsor());
         assert_eq!(decoded.reclaim_height(), Some(BlockNumber::from(42u32)));
@@ -596,8 +587,7 @@ mod tests {
     /// storage and assets.
     #[test]
     fn try_from_rejects_other_script_root() {
-        let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
-        let note = note_with(P2idNote::script(), valid_storage(), vec![asset]);
+        let note = note_with(P2idNote::script(), valid_storage(), vec![fee_asset().into()]);
 
         let err = FeeSponsorshipNote::try_from(&note)
             .expect_err("a note with another script must be rejected");
@@ -607,99 +597,51 @@ mod tests {
         });
     }
 
-    /// The storage must decode as FEE_SPONSORSHIP storage.
-    #[test]
-    fn try_from_rejects_invalid_storage() {
-        let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
-        let note = note_with(FeeSponsorshipNote::script(), vec![Felt::ZERO; 3], vec![asset]);
-
-        let err = FeeSponsorshipNote::try_from(&note).expect_err("wrong storage length must fail");
-
-        assert_matches!(
-            err,
-            NoteError::InvalidNoteStorageLength {
-                expected: FeeSponsorshipNote::NUM_STORAGE_ITEMS,
-                actual: 3
-            }
-        );
-    }
-
-    /// The fee is exactly one asset, as the note script asserts.
+    /// The fee is exactly one fungible asset: the note script asserts the asset count, and fees
+    /// are denominated in the collecting account's fee asset, which is fungible.
     #[rstest]
-    #[case::no_assets(vec![])]
-    #[case::two_assets(vec![
-        Asset::from(FungibleAsset::new(faucet(), 100).unwrap()),
-        Asset::from(FungibleAsset::new(other_faucet(), 100).unwrap()),
-    ])]
-    fn try_from_rejects_wrong_asset_count(#[case] assets: Vec<Asset>) {
+    #[case::no_assets(vec![], "exactly one asset")]
+    #[case::two_assets(
+        vec![fee_asset().into(), FungibleAsset::new(other_faucet(), 100).unwrap().into()],
+        "exactly one asset"
+    )]
+    #[case::non_fungible_asset(
+        vec![NonFungibleAsset::from_parts(faucet(), Word::from([1, 2, 3, 4u32])).into()],
+        "must be fungible"
+    )]
+    fn try_from_rejects_invalid_assets(#[case] assets: Vec<Asset>, #[case] expected_error: &str) {
         let note = note_with(FeeSponsorshipNote::script(), valid_storage(), assets);
 
-        let err =
-            FeeSponsorshipNote::try_from(&note).expect_err("a wrong asset count must be rejected");
+        let err = FeeSponsorshipNote::try_from(&note).expect_err("invalid assets must be rejected");
 
         assert_matches!(err, NoteError::Other { error_msg, .. } => {
-            assert!(error_msg.contains("exactly one asset"))
+            assert!(error_msg.contains(expected_error))
         });
     }
 
-    /// The fee is denominated in the collecting account's fee asset, which is fungible, so a
-    /// non-fungible asset is not a fee.
-    #[test]
-    fn try_from_rejects_non_fungible_asset() {
-        let asset =
-            Asset::from(NonFungibleAsset::from_parts(faucet(), Word::from([1, 2, 3, 4u32])));
-        let note = note_with(FeeSponsorshipNote::script(), valid_storage(), vec![asset]);
-
-        let err =
-            FeeSponsorshipNote::try_from(&note).expect_err("a non-fungible asset must be rejected");
-
-        assert_matches!(err, NoteError::Other { error_msg, .. } => {
-            assert!(error_msg.contains("must be fungible"))
-        });
-    }
-
-    /// A sponsorship is always built as a public note, so a private one is not one.
-    #[test]
-    fn try_from_rejects_private_note() {
-        let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
-        let metadata = PartialNoteMetadata::new(sponsor(), NoteType::Private)
-            .with_tag(NoteTag::with_account_target(network_account()));
-        let recipient = NoteRecipient::new(
-            Word::empty(),
+    /// A sponsorship is always built as a public note without attachments, so neither shape parses
+    /// back: accepting one would break the round-trip into a [`Note`].
+    #[rstest]
+    #[case::private_note(NoteType::Private, NoteAttachments::default(), "must be public")]
+    #[case::with_attachments(NoteType::Public, one_attachment(), "attachments")]
+    fn try_from_rejects_unbuildable_shapes(
+        #[case] note_type: NoteType,
+        #[case] attachments: NoteAttachments,
+        #[case] expected_error: &str,
+    ) {
+        let note = note_with_shape(
             FeeSponsorshipNote::script(),
-            NoteStorage::new(valid_storage()).unwrap(),
-        );
-        let note = Note::new(NoteAssets::new(vec![asset]).unwrap(), metadata, recipient);
-
-        let err = FeeSponsorshipNote::try_from(&note).expect_err("a private note must be rejected");
-
-        assert_matches!(err, NoteError::Other { error_msg, .. } => {
-            assert!(error_msg.contains("must be public"))
-        });
-    }
-
-    /// A sponsorship carries no attachments, so one carrying them is not one.
-    #[test]
-    fn try_from_rejects_attachments() {
-        let asset = Asset::from(FungibleAsset::new(faucet(), 100).unwrap());
-        let note = note_with(FeeSponsorshipNote::script(), valid_storage(), vec![asset]);
-        let note = Note::with_attachments(
-            note.assets().clone(),
-            PartialNoteMetadata::new(note.metadata().sender(), note.metadata().note_type())
-                .with_tag(note.metadata().tag()),
-            note.recipient().clone(),
-            NoteAttachments::new(vec![NoteAttachment::with_word(
-                NoteAttachmentScheme::new(64).unwrap(),
-                Word::empty(),
-            )])
-            .unwrap(),
+            valid_storage(),
+            vec![fee_asset().into()],
+            note_type,
+            attachments,
         );
 
         let err = FeeSponsorshipNote::try_from(&note)
-            .expect_err("a note with attachments must be rejected");
+            .expect_err("a shape the builder cannot produce must be rejected");
 
         assert_matches!(err, NoteError::Other { error_msg, .. } => {
-            assert!(error_msg.contains("attachments"))
+            assert!(error_msg.contains(expected_error))
         });
     }
 
@@ -721,28 +663,23 @@ mod tests {
         storage
     }
 
-    #[test]
-    fn try_from_valid_storage_succeeds() {
+    /// A zero height decodes as `None`, which the script reads as "reclaim disabled".
+    #[rstest]
+    #[case::with_reclaim_height(Felt::from(42u32), Some(BlockNumber::from(42u32)))]
+    #[case::zero_height_disables_reclaim(Felt::ZERO, None)]
+    fn try_from_decodes_valid_storage(
+        #[case] height: Felt,
+        #[case] expected_reclaim_height: Option<BlockNumber>,
+    ) {
         let reclaimer = network_account();
-        let storage =
-            raw_storage(reclaimer.suffix(), reclaimer.prefix().as_felt(), Felt::from(42u32));
+        let storage = raw_storage(reclaimer.suffix(), reclaimer.prefix().as_felt(), height);
 
         let decoded = FeeSponsorshipNoteStorage::try_from(storage.as_slice())
             .expect("valid FEE_SPONSORSHIP storage should decode");
 
         assert_eq!(decoded.feature_note_id(), feature_note_id());
         assert_eq!(decoded.reclaimer(), reclaimer);
-        assert_eq!(decoded.reclaim_height(), Some(BlockNumber::from(42u32)));
-    }
-
-    #[test]
-    fn try_from_zero_height_maps_to_none() {
-        let reclaimer = network_account();
-        let storage = raw_storage(reclaimer.suffix(), reclaimer.prefix().as_felt(), Felt::ZERO);
-
-        let decoded = FeeSponsorshipNoteStorage::try_from(storage.as_slice()).unwrap();
-
-        assert_eq!(decoded.reclaim_height(), None);
+        assert_eq!(decoded.reclaim_height(), expected_reclaim_height);
     }
 
     #[test]
@@ -752,13 +689,13 @@ mod tests {
         let err = FeeSponsorshipNoteStorage::try_from(storage.as_slice())
             .expect_err("wrong length must fail");
 
-        assert!(matches!(
+        assert_matches!(
             err,
             NoteError::InvalidNoteStorageLength {
                 expected: FeeSponsorshipNoteStorage::NUM_ITEMS,
                 actual: 3
             }
-        ));
+        );
     }
 
     #[test]
