@@ -17,10 +17,11 @@ use miden_protocol::block::{
     Blockchain,
     ProposedBlock,
     ProvenBlock,
-    ValidatorKeys,
+    ValidatorConfig,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
@@ -212,6 +213,9 @@ pub struct MockChain {
 
     /// Validator secret keys used for signing blocks. All of them must sign each block.
     validator_secret_keys: Vec<SigningKey>,
+
+    /// The chain's protocol configuration, which every block header commits to.
+    protocol_config: ProtocolConfig,
 }
 
 impl MockChain {
@@ -244,6 +248,7 @@ impl MockChain {
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_keys: Vec<SigningKey>,
+        protocol_config: ProtocolConfig,
         genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
@@ -257,6 +262,7 @@ impl MockChain {
             committed_accounts: BTreeMap::new(),
             account_authenticators,
             validator_secret_keys: secret_keys,
+            protocol_config,
         };
 
         // We do not have to apply the tree changes, because the account tree is already initialized
@@ -417,18 +423,17 @@ impl MockChain {
         self.blocks[chain_tip.as_usize()].header().clone()
     }
 
-    /// Returns the set of validator public keys that sign the next block produced by this chain.
-    pub fn validator_keys(&self) -> ValidatorKeys {
-        ValidatorKeys::new(self.validator_secret_keys.iter().map(|sk| sk.public_key()).collect())
-            .expect("the mock chain holds distinct validator keys")
+    /// Returns the validator configuration that signs the next block produced by this chain.
+    pub fn validator_config(&self) -> ValidatorConfig {
+        ValidatorConfig::from_signers(&self.validator_secret_keys)
     }
 
     /// Signs `commitment` with every validator secret key, ordering the resulting signatures to
-    /// align positionally with [`Self::validator_keys`].
+    /// align positionally with [`Self::validator_config`].
     fn sign_block(&self, commitment: Word) -> BlockSignatures {
         let signatures = self
-            .validator_keys()
-            .as_keys()
+            .validator_config()
+            .keys()
             .iter()
             .map(|key| {
                 let signer = self
@@ -463,13 +468,15 @@ impl MockChain {
         &self.blocks
     }
 
+    /// Returns the chain's [`ProtocolConfig`], which every block header commits to.
+    pub fn protocol_config(&self) -> &ProtocolConfig {
+        &self.protocol_config
+    }
+
     /// Returns the [`AccountId`] of the faucet whose assets are accepted for fee payments in the
     /// transaction kernel, or in other words, the fee faucet of the blockchain.
-    ///
-    /// This value is taken from the genesis block because it is assumed not to change throughout
-    /// the chain's lifecycle.
     pub fn fee_faucet_id(&self) -> AccountId {
-        self.genesis_block_header().fee_parameters().fee_faucet_id()
+        self.protocol_config.fee_asset_id().faucet_id()
     }
 
     /// Returns a reference to the nullifier tree.
@@ -733,6 +740,7 @@ impl MockChain {
         Ok(TransactionInputs::new(
             account.into(),
             ref_block.clone(),
+            self.protocol_config.clone(),
             partial_blockchain,
             input_notes,
         )?)
@@ -839,20 +847,18 @@ impl MockChain {
     /// Proves the next block in the mock chain, rotating the validator key set.
     ///
     /// The produced block is still signed by the current validator keys (the ones committed to by
-    /// the previous block) but commits the public keys of `new_validator_keys` as the validator
-    /// set authorized to sign the *following* block. After this block is applied, the chain signs
-    /// subsequent blocks with `new_validator_keys`.
+    /// the previous block) but commits the public keys of `new_secret_keys` as the validator set
+    /// authorized to sign the *following* block. After this block is applied, the chain signs
+    /// subsequent blocks with `new_secret_keys`.
     ///
     /// This commits all currently pending transactions into the chain state.
-    pub fn prove_next_block_with_validator_keys_rotation(
+    pub fn prove_next_block_with_validator_config_rotation(
         &mut self,
-        new_validator_keys: Vec<SigningKey>,
+        new_secret_keys: Vec<SigningKey>,
     ) -> anyhow::Result<ProvenBlock> {
-        let next_keys =
-            ValidatorKeys::new(new_validator_keys.iter().map(|sk| sk.public_key()).collect())
-                .context("invalid rotated validator key set")?;
-        let block = self.prove_and_apply_block(None, Some(next_keys))?;
-        self.validator_secret_keys = new_validator_keys;
+        let next_config = ValidatorConfig::from_signers(&new_secret_keys);
+        let block = self.prove_and_apply_block(None, Some(next_config))?;
+        self.validator_secret_keys = new_secret_keys;
         Ok(block)
     }
 
@@ -1066,7 +1072,7 @@ impl MockChain {
     fn prove_and_apply_block(
         &mut self,
         timestamp: Option<u32>,
-        next_validator_keys: Option<ValidatorKeys>,
+        next_validator_config: Option<ValidatorConfig>,
     ) -> anyhow::Result<ProvenBlock> {
         // Create batches from pending transactions.
         // ----------------------------------------------------------------------------------------
@@ -1085,8 +1091,8 @@ impl MockChain {
             .context("failed to create proposed block")?;
 
         // Commit to a rotated validator key set for the next block, if requested.
-        if let Some(next_validator_keys) = next_validator_keys {
-            proposed_block = proposed_block.with_next_validator_keys(next_validator_keys);
+        if let Some(next_validator_config) = next_validator_config {
+            proposed_block = proposed_block.with_next_validator_config(next_validator_config);
         }
 
         let proven_block = self.prove_block(proposed_block.clone())?;
@@ -1133,6 +1139,7 @@ impl Serializable for MockChain {
         self.committed_notes.write_into(target);
         self.account_authenticators.write_into(target);
         self.validator_secret_keys.write_into(target);
+        self.protocol_config.write_into(target);
     }
 }
 
@@ -1148,6 +1155,7 @@ impl Deserializable for MockChain {
         let account_authenticators =
             BTreeMap::<AccountId, AccountAuthenticator>::read_from(source)?;
         let secret_keys = Vec::<SigningKey>::read_from(source)?;
+        let protocol_config = ProtocolConfig::read_from(source)?;
 
         Ok(Self {
             chain,
@@ -1160,6 +1168,7 @@ impl Deserializable for MockChain {
             committed_accounts,
             account_authenticators,
             validator_secret_keys: secret_keys,
+            protocol_config,
         })
     }
 }
@@ -1297,31 +1306,30 @@ mod tests {
     }
 
     #[test]
-    fn validator_keys_rotation_across_blocks() -> anyhow::Result<()> {
+    fn validator_config_rotation_across_blocks() -> anyhow::Result<()> {
         let mut chain = MockChain::new();
-        let original_keys = chain.validator_keys();
+        let original_keys = chain.validator_config();
 
         // Build normal blocks. The parent-linkage and signatures are verified inside `apply_block`,
         // so these calls succeeding proves the chain validates against the previous block's keys.
         chain.prove_next_block()?;
         chain.prove_next_block()?;
-        assert_eq!(chain.validator_keys(), original_keys);
+        assert_eq!(chain.validator_config(), original_keys);
 
         // Rotate to a new, larger validator key set.
         let new_signers: Vec<SigningKey> = (0..4).map(|_| random_secret_key()).collect();
-        let new_keys =
-            ValidatorKeys::new(new_signers.iter().map(|sk| sk.public_key()).collect()).unwrap();
-        let rotation_block = chain.prove_next_block_with_validator_keys_rotation(new_signers)?;
+        let new_keys = ValidatorConfig::from_signers(&new_signers);
+        let rotation_block = chain.prove_next_block_with_validator_config_rotation(new_signers)?;
 
         // The rotation block is still signed by (and validates against) the original keys, but
         // commits the new set as the signer authorized for the next block.
-        assert_eq!(rotation_block.header().validator_keys(), &new_keys);
-        assert_eq!(chain.validator_keys(), new_keys);
+        assert_eq!(rotation_block.header().validator_config(), &new_keys);
+        assert_eq!(chain.validator_config(), new_keys);
 
         // The next block is signed by the rotated keys and must validate against the rotation
         // block's committed set; `apply_block` would error otherwise.
         chain.prove_next_block()?;
-        assert_eq!(chain.validator_keys(), new_keys);
+        assert_eq!(chain.validator_config(), new_keys);
 
         Ok(())
     }
@@ -1330,18 +1338,18 @@ mod tests {
     fn proposed_block_serialization_round_trip() -> anyhow::Result<()> {
         let chain = MockChain::new();
         let timestamp = chain.latest_block_header().timestamp() + 1;
-        let next_keys = ValidatorKeys::new(alloc::vec![random_secret_key().public_key()]).unwrap();
+        let next_keys = ValidatorConfig::from_signers(&[random_secret_key()]);
         let proposed = chain
             .propose_block_at(Vec::<ProvenBatch>::new(), timestamp)?
-            .with_next_validator_keys(next_keys.clone());
+            .with_next_validator_config(next_keys.clone());
 
         let bytes = proposed.to_bytes();
         let deserialized = ProposedBlock::read_from_bytes(&bytes).unwrap();
 
         // `ProposedBlock` does not implement `PartialEq`, so compare via re-serialization and the
-        // round-tripped `next_validator_keys` field added by this change.
+        // round-tripped `next_validator_config` field added by this change.
         assert_eq!(deserialized.to_bytes(), bytes);
-        assert_eq!(deserialized.next_validator_keys(), &next_keys);
+        assert_eq!(deserialized.next_validator_config(), &next_keys);
 
         Ok(())
     }
@@ -1462,10 +1470,10 @@ mod tests {
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
         let genesis_block = chain.latest_block();
-        let genesis_validator_keys = genesis_block.header().validator_keys().clone();
+        let genesis_validator_config = genesis_block.header().validator_config().clone();
         genesis_block
             .signatures()
-            .verify_against(genesis_block.header().commitment(), &genesis_validator_keys)
+            .verify_against(genesis_block.header().commitment(), &genesis_validator_config)
             .unwrap();
 
         // Add another block.
@@ -1476,12 +1484,12 @@ mod tests {
         let next_block = chain.latest_block();
         next_block
             .signatures()
-            .verify_against(next_block.header().commitment(), &genesis_validator_keys)
+            .verify_against(next_block.header().commitment(), &genesis_validator_config)
             .unwrap();
 
         // Without rotation, the validator keys are carried through from the genesis header to the
         // next.
-        assert_eq!(next_block.header().validator_keys(), &genesis_validator_keys);
+        assert_eq!(next_block.header().validator_config(), &genesis_validator_config);
 
         Ok(())
     }
