@@ -25,6 +25,7 @@ use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
+use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
 use crate::utils::serde::{
     ByteReader,
@@ -54,6 +55,8 @@ use crate::vm::AdviceInputs;
 pub struct TransactionInputs {
     account: PartialAccount,
     block_header: BlockHeader,
+    /// The chain's protocol configuration, which `block_header` only commits to.
+    protocol_config: ProtocolConfig,
     blockchain: PartialBlockchain,
     input_notes: InputNotes<InputNote>,
     tx_args: TransactionArgs,
@@ -72,14 +75,24 @@ impl TransactionInputs {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - The protocol config does not match the one committed to by the block header.
     /// - The partial blockchain does not track the block headers required to prove inclusion of any
     ///   authenticated input note.
     pub fn new(
         account: PartialAccount,
         block_header: BlockHeader,
+        protocol_config: ProtocolConfig,
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
     ) -> Result<Self, TransactionInputError> {
+        // Check that the protocol config is the one the block header commits to.
+        let protocol_config_commitment = protocol_config.to_commitment();
+        if protocol_config_commitment != block_header.protocol_config_commitment() {
+            return Err(TransactionInputError::InconsistentProtocolConfig {
+                expected: block_header.protocol_config_commitment(),
+                actual: protocol_config_commitment,
+            });
+        }
         // Check that the partial blockchain and block header are consistent.
         if blockchain.chain_length() != block_header.block_num() {
             return Err(TransactionInputError::InconsistentChainLength {
@@ -111,6 +124,7 @@ impl TransactionInputs {
         Ok(Self {
             account,
             block_header,
+            protocol_config,
             blockchain,
             input_notes,
             tx_args: TransactionArgs::default(),
@@ -197,6 +211,11 @@ impl TransactionInputs {
     /// Returns block header for the block referenced by the transaction.
     pub fn block_header(&self) -> &BlockHeader {
         &self.block_header
+    }
+
+    /// Returns the protocol configuration committed to by the referenced block header.
+    pub fn protocol_config(&self) -> &ProtocolConfig {
+        &self.protocol_config
     }
 
     /// Returns partial blockchain containing authentication paths for all notes consumed by the
@@ -485,6 +504,7 @@ impl Serializable for TransactionInputs {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.account.write_into(target);
         self.block_header.write_into(target);
+        self.protocol_config.write_into(target);
         self.blockchain.write_into(target);
         self.input_notes.write_into(target);
         self.tx_args.write_into(target);
@@ -498,6 +518,7 @@ impl Deserializable for TransactionInputs {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account = PartialAccount::read_from(source)?;
         let block_header = BlockHeader::read_from(source)?;
+        let protocol_config = ProtocolConfig::read_from(source)?;
         let blockchain = PartialBlockchain::read_from(source)?;
         let input_notes = InputNotes::read_from(source)?;
         let tx_args = TransactionArgs::read_from(source)?;
@@ -509,6 +530,7 @@ impl Deserializable for TransactionInputs {
         Ok(TransactionInputs {
             account,
             block_header,
+            protocol_config,
             blockchain,
             input_notes,
             tx_args,

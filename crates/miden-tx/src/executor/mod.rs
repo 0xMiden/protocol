@@ -288,7 +288,7 @@ where
         let (mut asset_ids, mut ref_blocks) = validate_input_notes(&input_notes, block_ref)?;
         ref_blocks.insert(block_ref);
 
-        let (account, block_header, blockchain) = self
+        let (account, block_header, protocol_config, blockchain) = self
             .data_store
             .get_transaction_inputs(account_id, ref_blocks)
             .await
@@ -296,9 +296,10 @@ where
 
         let native_account_vault_root = account.vault().root();
 
-        let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
-            .map_err(TransactionExecutorError::InvalidTransactionInputs)?
-            .with_tx_args(tx_args);
+        let mut tx_inputs =
+            TransactionInputs::new(account, block_header, protocol_config, blockchain, input_notes)
+                .map_err(TransactionExecutorError::InvalidTransactionInputs)?
+                .with_tx_args(tx_args);
 
         // filter out any asset IDs for which we already have witnesses in the advice inputs
         asset_ids.retain(|asset_id| {

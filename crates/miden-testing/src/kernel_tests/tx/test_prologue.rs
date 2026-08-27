@@ -29,12 +29,14 @@ use miden_protocol::transaction::memory::{
     ACCT_DB_ROOT_PTR,
     ASSET_SIZE,
     ASSET_VALUE_OFFSET,
+    BATCH_KERNEL_CONFIG_COMMITMENT_PTR,
     BLOCK_COMMITMENT_PTR,
+    BLOCK_KERNEL_CONFIG_COMMITMENT_PTR,
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
+    BLOCK_VERSION_IDX,
     CHAIN_COMMITMENT_PTR,
-    FEE_FAUCET_ID_PREFIX_IDX,
-    FEE_FAUCET_ID_SUFFIX_IDX,
+    FEE_ASSET_ID_PTR,
     FEE_PARAMETERS_PTR,
     GLOBAL_ACCOUNT_ID_PREFIX_PTR,
     GLOBAL_ACCOUNT_ID_SUFFIX_PTR,
@@ -66,18 +68,20 @@ use miden_protocol::transaction::memory::{
     NATIVE_ACCT_VAULT_ROOT_PTR,
     NATIVE_NUM_ACCT_PROCEDURES_PTR,
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
+    NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR,
     NOTE_ROOT_PTR,
     NULLIFIER_DB_ROOT_PTR,
     NUM_KERNEL_PROCEDURES_PTR,
     PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR,
     PARTIAL_BLOCKCHAIN_PEAKS_PTR,
     PREV_BLOCK_COMMITMENT_PTR,
-    PROTOCOL_VERSION_IDX,
+    PROOF_VERIFICATION_COMMITMENT_PTR,
+    PROTOCOL_CONFIG_COMMITMENT_PTR,
     TIMESTAMP_IDX,
     TX_COMMITMENT_PTR,
-    TX_KERNEL_COMMITMENT_PTR,
+    TX_KERNEL_CONFIG_COMMITMENT_PTR,
     TX_SCRIPT_ROOT_PTR,
-    VALIDATOR_KEY_COMMITMENT_PTR,
+    VALIDATOR_CONFIG_COMMITMENT_PTR,
     VERIFICATION_BASE_FEE_IDX,
 };
 use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
@@ -148,6 +152,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
     global_input_memory_assertions(exec_output, &mock_tx);
     block_data_memory_assertions(exec_output, &mock_tx);
     partial_blockchain_memory_assertions(exec_output, &mock_tx);
+    protocol_config_memory_assertions(exec_output, &mock_tx);
     kernel_data_memory_assertions(exec_output);
     account_data_memory_assertions(exec_output, &mock_tx);
     input_notes_memory_assertions(exec_output, &mock_tx, &note_args_map);
@@ -349,15 +354,27 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTran
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(TX_KERNEL_COMMITMENT_PTR),
-        inputs.tx_inputs().block_header().tx_kernel_commitment(),
-        "The kernel commitment should be stored at the TX_KERNEL_COMMITMENT_PTR"
+        exec_output.get_kernel_mem_word(PROTOCOL_CONFIG_COMMITMENT_PTR),
+        inputs.tx_inputs().block_header().protocol_config_commitment(),
+        "The protocol config commitment should be stored at the PROTOCOL_CONFIG_COMMITMENT_PTR"
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(VALIDATOR_KEY_COMMITMENT_PTR),
-        inputs.tx_inputs().block_header().validator_keys().commitment(),
-        "The public key commitment should be stored at the VALIDATOR_KEY_COMMITMENT_PTR"
+        exec_output.get_kernel_mem_word(VALIDATOR_CONFIG_COMMITMENT_PTR),
+        inputs.tx_inputs().block_header().validator_config().to_commitment(),
+        "The validator config commitment should be stored at the VALIDATOR_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR),
+        inputs.tx_inputs().block_header().next_protocol_config_commitment(),
+        "The next protocol config commitment should be stored at the NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[BLOCK_VERSION_IDX],
+        Felt::from(inputs.tx_inputs().block_header().version()),
+        "The block header version should be stored at BLOCK_METADATA_PTR[BLOCK_VERSION_IDX]"
     );
 
     assert_eq!(
@@ -367,33 +384,9 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTran
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[PROTOCOL_VERSION_IDX],
-        Felt::from(inputs.tx_inputs().block_header().version()),
-        "The protocol version should be stored at BLOCK_METADATA_PTR[PROTOCOL_VERSION_IDX]"
-    );
-
-    assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[TIMESTAMP_IDX],
         Felt::from(inputs.tx_inputs().block_header().timestamp()),
         "The timestamp should be stored at BLOCK_METADATA_PTR[TIMESTAMP_IDX]"
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[FEE_FAUCET_ID_SUFFIX_IDX],
-        inputs.tx_inputs().block_header().fee_parameters().fee_faucet_id().suffix(),
-        "The fee faucet ID suffix should be stored at FEE_PARAMETERS_PTR[FEE_FAUCET_ID_SUFFIX_IDX]"
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[FEE_FAUCET_ID_PREFIX_IDX],
-        inputs
-            .tx_inputs()
-            .block_header()
-            .fee_parameters()
-            .fee_faucet_id()
-            .prefix()
-            .as_felt(),
-        "The fee faucet ID prefix should be stored at FEE_PARAMETERS_PTR[FEE_FAUCET_ID_PREFIX_IDX]"
     );
 
     assert_eq!(
@@ -435,6 +428,40 @@ fn partial_blockchain_memory_assertions(
             *peak
         );
     }
+}
+
+fn protocol_config_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
+    let protocol_config = inputs.tx_inputs().protocol_config();
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(FEE_ASSET_ID_PTR),
+        protocol_config.fee_asset_id().to_word(),
+        "The fee asset ID should be stored at the FEE_ASSET_ID_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(TX_KERNEL_CONFIG_COMMITMENT_PTR),
+        protocol_config.tx_kernel().to_commitment(),
+        "The tx kernel config commitment should be stored at the TX_KERNEL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(BATCH_KERNEL_CONFIG_COMMITMENT_PTR),
+        protocol_config.batch_kernel().to_commitment(),
+        "The batch kernel config commitment should be stored at the BATCH_KERNEL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(BLOCK_KERNEL_CONFIG_COMMITMENT_PTR),
+        protocol_config.block_kernel().to_commitment(),
+        "The block kernel config commitment should be stored at the BLOCK_KERNEL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(PROOF_VERIFICATION_COMMITMENT_PTR),
+        protocol_config.proof_verification().to_commitment(),
+        "The proof verification config commitment should be stored at the PROOF_VERIFICATION_COMMITMENT_PTR"
+    );
 }
 
 fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
