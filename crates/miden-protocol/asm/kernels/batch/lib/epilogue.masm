@@ -1,13 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 
 use miden::batch_kernel::memory
-use {
-    INPUT_NOTE_CONSUMPTION_OFFSET,
-    INPUT_NOTE_ERASED,
-    INPUT_NOTE_ERASURE_EXPECTED,
-    NOTE_ENTRY_FELT_LEN,
-    OUTPUT_NOTE_IS_CREATED_OFFSET,
-} from miden::batch_kernel::memory
+use {ERASED, ERASURE_EXPECTED, NOTE_ENTRY_FELT_LEN} from miden::batch_kernel::memory
 use {ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED} from miden::batch_kernel::errors
 
 # ERRORS
@@ -41,7 +35,7 @@ proc assert_all_output_notes_created
         sub.1
         # => [output_note_idx]
 
-        dup exec.memory::get_output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET mem_load
+        dup exec.memory::get_output_note_is_created
         # => [is_created, output_note_idx]
         assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
 
@@ -83,19 +77,17 @@ end
 #! Outputs: [input_note_idx + 1, absorbed_count, num_input_notes]
 proc process_input_entry
     # Assert this entry was consumed exactly once and is not left expected-to-be-erased.
-    dup exec.memory::get_input_note_flags_ptr
-    # => [flags_ptr, input_note_idx, absorbed_count, num_input_notes]
-    dup add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
-    # => [consumption, flags_ptr, input_note_idx, absorbed_count, num_input_notes]
+    dup exec.memory::get_input_note_is_consumed
+    # => [is_consumed, input_note_idx, absorbed_count, num_input_notes]
     assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
-    # => [flags_ptr, input_note_idx, absorbed_count, num_input_notes]
-    mem_load
-    # => [erasure, input_note_idx, absorbed_count, num_input_notes]
-    dup neq.INPUT_NOTE_ERASURE_EXPECTED assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
-    # => [erasure, input_note_idx, absorbed_count, num_input_notes]
+    # => [input_note_idx, absorbed_count, num_input_notes]
+    dup exec.memory::get_input_note_erasure_state
+    # => [erasure_state, input_note_idx, absorbed_count, num_input_notes]
+    dup neq.ERASURE_EXPECTED assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
+    # => [erasure_state, input_note_idx, absorbed_count, num_input_notes]
 
     # Absorb the entry unless it was erased (created-and-consumed in this batch).
-    neq.INPUT_NOTE_ERASED
+    neq.ERASED
     # => [not_erased, input_note_idx, absorbed_count, num_input_notes]
     if.true
         dup exec.absorb_input_entry

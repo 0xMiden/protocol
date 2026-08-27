@@ -20,12 +20,12 @@
 # |                   |                         | (overwritten each transaction).                                      |
 # | 32788..40980      | INPUT_NOTES_PTR         | nullifier-sorted input-note list: `[NULLIFIER, NOTE_ID_OR_EMPTY]`    |
 # |                   |                         | per note (8 felts each, up to 1024 notes).                           |
-# | 40980..45076      | INPUT_NOTE_FLAGS_PTR    | parallel input-note flags: `[erasure, consumption, 0, 0]` per note   |
-# |                   |                         | (4 felts each).                                                      |
+# | 40980..45076      | INPUT_NOTE_FLAGS_PTR    | parallel input-note flags: `[erasure_state, is_consumed, 0, 0]` per  |
+# |                   |                         | note (4 felts each).                                                 |
 # | 45076..53268      | OUTPUT_NOTES_PTR        | note-id-sorted output-note list: `[NOTE_ID, 0, 0, 0, 0]` per note    |
 # |                   |                         | (8 felts each, up to 1024 notes).                                    |
 # | 53268..57364      | OUTPUT_NOTE_FLAGS_PTR   | parallel output-note flags: `[will_be_erased, is_created,            |
-# |                   |                         | linked_input_index, 0]` per note (4 felts each).                     |
+# |                   |                         | erased_by_input_note_idx, 0]` per note (4 felts each).               |
 # +-------------------+-------------------------+----------------------------------------------------------------------+
 
 # GENERAL CONSTANTS
@@ -110,27 +110,33 @@ pub const NOTE_ENTRY_NUM_WORDS = 2
 # Offset of the VALUE word within a sorted note list entry.
 pub const NOTE_ENTRY_VALUE_OFFSET = 4
 
-# Base of the parallel input-note flags array. Per note, one word `[erasure, consumption, 0, 0]`.
-# `erasure` is 0 (not erased / external), `INPUT_NOTE_ERASURE_EXPECTED` or
-# `INPUT_NOTE_ERASED`. `consumption` is 0 or 1.
-pub const INPUT_NOTE_FLAGS_PTR = 40980
+# Base of the parallel input-note flags array. Per note, one word
+#   `[erasure_state, is_consumed, 0, 0]`
+# where `erasure_state` is an [`InputNoteErasureState`] and `is_consumed` is 0 or 1. Both are
+# reachable only through the accessors below.
+const INPUT_NOTE_FLAGS_PTR = 40980
 
 # Number of felts each note occupies in the flag arrays (one word).
-pub const NOTE_FLAGS_FELT_LEN = 4
+const NOTE_FLAGS_FELT_LEN = 4
 
-# Felt offset of the `erasure` flag within an input-note flag word.
-pub const INPUT_NOTE_ERASURE_OFFSET = 0
+# Felt offset of the `erasure_state` field within an input-note flag word.
+const INPUT_NOTE_ERASURE_STATE_OFFSET = 0
 
-# Felt offset of the `consumption` flag within an input-note flag word.
-pub const INPUT_NOTE_CONSUMPTION_OFFSET = 1
+# Felt offset of the `is_consumed` flag within an input-note flag word.
+const INPUT_NOTE_IS_CONSUMED_OFFSET = 1
 
-# Erasure flag value: the input note is expected to be erased, i.e. its note id matches an output
-# note created by another transaction within this batch (its "creator") which has not been
-# processed yet.
-pub const INPUT_NOTE_ERASURE_EXPECTED = 1
-
-# Erasure flag value: the input note is erased, i.e. its creator output note has been processed.
-pub const INPUT_NOTE_ERASED = 2
+# Erasure state of an input note, i.e. whether it is created and consumed within this batch and so
+# excluded from INPUT_NOTES_COMMITMENT.
+#
+# - `UNERASED`: the note is not created within this batch, so it stays in the commitment.
+# - `ERASURE_EXPECTED`: the note id matches an output note created within this batch (its
+#   "creator"), which has not been processed yet.
+# - `ERASED`: the creator output note has been processed, so the note is erased.
+pub enum InputNoteErasureState : u8 {
+    UNERASED = 0,
+    ERASURE_EXPECTED = 1,
+    ERASED = 2,
+}
 
 # Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
 #   `[NOTE_ID, 0, 0, 0, 0]`
@@ -138,17 +144,19 @@ pub const INPUT_NOTE_ERASED = 2
 pub const OUTPUT_NOTES_PTR = 45076
 
 # Base of the parallel output-note flags array. Per note, one word
-#   `[will_be_erased, is_created, linked_input_index, 0]`.
-pub const OUTPUT_NOTE_FLAGS_PTR = 53268
+#   `[will_be_erased, is_created, erased_by_input_note_idx, 0]`
+# where `erased_by_input_note_idx` is only meaningful when `will_be_erased` is 1, which is why the
+# two are read and written together by [`get_output_note_erasure`] / [`set_output_note_erasure`].
+const OUTPUT_NOTE_FLAGS_PTR = 53268
 
 # Felt offset of the `will_be_erased` flag within an output-note flag word.
-pub const OUTPUT_NOTE_WILL_BE_ERASED_OFFSET = 0
+const OUTPUT_NOTE_WILL_BE_ERASED_OFFSET = 0
 
 # Felt offset of the `is_created` flag within an output-note flag word.
-pub const OUTPUT_NOTE_IS_CREATED_OFFSET = 1
+const OUTPUT_NOTE_IS_CREATED_OFFSET = 1
 
-# Felt offset of the `linked_input_index` field within an output-note flag word.
-pub const OUTPUT_NOTE_LINKED_INPUT_OFFSET = 2
+# Felt offset of the `erased_by_input_note_idx` field within an output-note flag word.
+const OUTPUT_NOTE_ERASED_BY_OFFSET = 2
 
 # CAPACITY LIMITS
 # =================================================================================================
@@ -334,7 +342,7 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: [input_note_flags_ptr]
-pub proc get_input_note_flags_ptr
+proc get_input_note_flags_ptr
     mul.NOTE_FLAGS_FELT_LEN add.INPUT_NOTE_FLAGS_PTR
 end
 
@@ -342,8 +350,113 @@ end
 #!
 #! Inputs:  [output_note_idx]
 #! Outputs: [output_note_flags_ptr]
-pub proc get_output_note_flags_ptr
+proc get_output_note_flags_ptr
     mul.NOTE_FLAGS_FELT_LEN add.OUTPUT_NOTE_FLAGS_PTR
+end
+
+# NOTE FLAG ACCESSORS
+# =================================================================================================
+
+#! Returns the [`InputNoteErasureState`] of input note `input_note_idx`.
+#!
+#! Inputs:  [input_note_idx]
+#! Outputs: [erasure_state]
+pub proc get_input_note_erasure_state
+    exec.get_input_note_flags_ptr add.INPUT_NOTE_ERASURE_STATE_OFFSET
+    # => [erasure_state_ptr]
+
+    mem_load
+end
+
+#! Sets the [`InputNoteErasureState`] of input note `input_note_idx`.
+#!
+#! Inputs:  [input_note_idx, erasure_state]
+#! Outputs: []
+pub proc set_input_note_erasure_state
+    exec.get_input_note_flags_ptr add.INPUT_NOTE_ERASURE_STATE_OFFSET
+    # => [erasure_state_ptr, erasure_state]
+
+    mem_store
+end
+
+#! Returns whether input note `input_note_idx` has been consumed by a transaction.
+#!
+#! Inputs:  [input_note_idx]
+#! Outputs: [is_consumed]
+pub proc get_input_note_is_consumed
+    exec.get_input_note_flags_ptr add.INPUT_NOTE_IS_CONSUMED_OFFSET
+    # => [is_consumed_ptr]
+
+    mem_load
+end
+
+#! Sets whether input note `input_note_idx` has been consumed by a transaction.
+#!
+#! Inputs:  [input_note_idx, is_consumed]
+#! Outputs: []
+pub proc set_input_note_is_consumed
+    exec.get_input_note_flags_ptr add.INPUT_NOTE_IS_CONSUMED_OFFSET
+    # => [is_consumed_ptr, is_consumed]
+
+    mem_store
+end
+
+#! Returns whether output note `output_note_idx` has been created by a transaction.
+#!
+#! Inputs:  [output_note_idx]
+#! Outputs: [is_created]
+pub proc get_output_note_is_created
+    exec.get_output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET
+    # => [is_created_ptr]
+
+    mem_load
+end
+
+#! Sets whether output note `output_note_idx` has been created by a transaction.
+#!
+#! Inputs:  [output_note_idx, is_created]
+#! Outputs: []
+pub proc set_output_note_is_created
+    exec.get_output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET
+    # => [is_created_ptr, is_created]
+
+    mem_store
+end
+
+#! Returns whether output note `output_note_idx` erases an input note, together with the index of
+#! the input note it erases.
+#!
+#! `erased_by_input_note_idx` is only meaningful when `will_be_erased` is 1, which is why the two
+#! are returned together.
+#!
+#! Inputs:  [output_note_idx]
+#! Outputs: [will_be_erased, erased_by_input_note_idx]
+pub proc get_output_note_erasure
+    exec.get_output_note_flags_ptr
+    # => [output_note_flags_ptr]
+
+    dup add.OUTPUT_NOTE_ERASED_BY_OFFSET mem_load
+    # => [erased_by_input_note_idx, output_note_flags_ptr]
+
+    swap add.OUTPUT_NOTE_WILL_BE_ERASED_OFFSET mem_load
+    # => [will_be_erased, erased_by_input_note_idx]
+end
+
+#! Sets whether output note `output_note_idx` erases an input note, and which input note that is.
+#!
+#! Inputs:  [output_note_idx, will_be_erased, erased_by_input_note_idx]
+#! Outputs: []
+pub proc set_output_note_erasure
+    exec.get_output_note_flags_ptr
+    # => [output_note_flags_ptr, will_be_erased, erased_by_input_note_idx]
+
+    dup movdn.2
+    # => [output_note_flags_ptr, will_be_erased, output_note_flags_ptr, erased_by_input_note_idx]
+
+    add.OUTPUT_NOTE_WILL_BE_ERASED_OFFSET mem_store
+    # => [output_note_flags_ptr, erased_by_input_note_idx]
+
+    add.OUTPUT_NOTE_ERASED_BY_OFFSET mem_store
 end
 
 #! Converts a pointer to an input-note entry (as returned by `sorted_array::find_key_value`) into
