@@ -241,7 +241,7 @@ pub proc prepare_batch
         # OS => [num_words, TX_ID, tx_index]
         # AS => [[TX_HEADER]]
 
-        dup.5 exec.memory::tx_header_ptr swap
+        dup.5 exec.memory::get_tx_header_ptr swap
         # => [num_words, tx_header_ptr, TX_ID, tx_index]
 
         # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.

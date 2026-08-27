@@ -184,21 +184,21 @@ end
 # BATCH HASHER STATE
 # =================================================================================================
 
-#! Persists the batch hasher state from the operand stack into memory.
+#! Stores the batch hasher state from the operand stack into memory.
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: []
-pub proc save_batch_hasher_state
+pub proc set_batch_hasher_state
     mem_storew_le.BATCH_HASHER_RATE0_PTR dropw
     mem_storew_le.BATCH_HASHER_RATE1_PTR dropw
     mem_storew_le.BATCH_HASHER_CAP_PTR dropw
 end
 
-#! Loads the batch hasher state from memory onto the operand stack.
+#! Returns the batch hasher state held in memory.
 #!
 #! Inputs:  []
 #! Outputs: [RATE0, RATE1, CAPACITY]
-pub proc load_batch_hasher_state
+pub proc get_batch_hasher_state
     padw mem_loadw_le.BATCH_HASHER_CAP_PTR
     padw mem_loadw_le.BATCH_HASHER_RATE1_PTR
     padw mem_loadw_le.BATCH_HASHER_RATE0_PTR
@@ -211,7 +211,7 @@ end
 #!
 #! Inputs:  [tx_index]
 #! Outputs: [tx_tuple_ptr]
-pub proc tx_tuple_ptr
+pub proc get_tx_tuple_ptr
     mul.TX_TUPLE_FELT_LEN add.TX_TUPLES_PTR
 end
 
@@ -220,7 +220,7 @@ end
 #! Inputs:  [tx_index]
 #! Outputs: [TX_ID]
 pub proc get_tx_id
-    exec.tx_tuple_ptr
+    exec.get_tx_tuple_ptr
     # => [tx_tuple_ptr]
     padw movup.4
     # => [PAD, tx_tuple_ptr]
@@ -232,7 +232,7 @@ end
 #!
 #! Inputs:  [tx_index]
 #! Outputs: [tx_header_ptr]
-pub proc tx_header_ptr
+pub proc get_tx_header_ptr
     mul.TX_HEADER_FELT_LEN add.TX_HEADERS_PTR
 end
 
@@ -241,7 +241,7 @@ end
 #! Inputs:  [tx_index]
 #! Outputs: [INPUT_NOTES_COMMITMENT_idx]
 pub proc get_tx_input_notes_commitment
-    exec.tx_header_ptr add.TX_HEADER_INPUT_NOTES_OFFSET
+    exec.get_tx_header_ptr add.TX_HEADER_INPUT_NOTES_OFFSET
     # => [input_notes_commitment_ptr]
     padw movup.4
     # => [PAD, input_notes_commitment_ptr]
@@ -254,7 +254,7 @@ end
 #! Inputs:  [tx_index]
 #! Outputs: [OUTPUT_NOTES_COMMITMENT_idx]
 pub proc get_tx_output_notes_commitment
-    exec.tx_header_ptr add.TX_HEADER_OUTPUT_NOTES_OFFSET
+    exec.get_tx_header_ptr add.TX_HEADER_OUTPUT_NOTES_OFFSET
     # => [output_notes_commitment_ptr]
     padw movup.4
     # => [PAD, output_notes_commitment_ptr]
@@ -314,51 +314,52 @@ pub proc get_output_notes_end_ptr
     exec.get_num_output_notes mul.NOTE_ENTRY_FELT_LEN add.OUTPUT_NOTES_PTR
 end
 
-#! Returns a pointer to input-note entry `idx` in INPUT_NOTES_PTR.
+#! Returns a pointer to input-note entry index in INPUT_NOTES_PTR.
 #!
-#! Inputs:  [idx]
-#! Outputs: [input_note_entry_ptr]
-pub proc input_note_entry_ptr
+#! Inputs:  [input_note_idx]
+#! Outputs: [input_note_ptr]
+pub proc get_input_note_entry_ptr
     mul.NOTE_ENTRY_FELT_LEN add.INPUT_NOTES_PTR
 end
 
-#! Returns a pointer to output-note entry `idx` in OUTPUT_NOTES_PTR.
+#! Returns a pointer to output-note entry index in OUTPUT_NOTES_PTR.
 #!
-#! Inputs:  [idx]
-#! Outputs: [output_note_entry_ptr]
-pub proc output_note_entry_ptr
+#! Inputs:  [output_note_idx]
+#! Outputs: [output_note_ptr]
+pub proc get_output_note_entry_ptr
     mul.NOTE_ENTRY_FELT_LEN add.OUTPUT_NOTES_PTR
 end
 
-#! Returns a pointer to input-note flag word `idx` in INPUT_NOTE_FLAGS_PTR.
+#! Returns a pointer to input-note flag word index in INPUT_NOTE_FLAGS_PTR.
 #!
-#! Inputs:  [idx]
+#! Inputs:  [input_note_idx]
 #! Outputs: [input_note_flags_ptr]
-pub proc input_note_flags_ptr
+pub proc get_input_note_flags_ptr
     mul.NOTE_FLAGS_FELT_LEN add.INPUT_NOTE_FLAGS_PTR
 end
 
-#! Returns a pointer to output-note flag word `idx` in OUTPUT_NOTE_FLAGS_PTR.
+#! Returns a pointer to output-note flag word index in OUTPUT_NOTE_FLAGS_PTR.
 #!
-#! Inputs:  [idx]
+#! Inputs:  [output_note_idx]
 #! Outputs: [output_note_flags_ptr]
-pub proc output_note_flags_ptr
+pub proc get_output_note_flags_ptr
     mul.NOTE_FLAGS_FELT_LEN add.OUTPUT_NOTE_FLAGS_PTR
 end
 
-#! Converts an input-note `key_ptr` (as returned by `sorted_array::find_key_value`) into its entry
-#! index `(key_ptr - INPUT_NOTES_PTR) / 8`.
+#! Converts a pointer to an input-note entry (as returned by `sorted_array::find_key_value`) into
+#! its index `(input_note_ptr - INPUT_NOTES_PTR) / NOTE_ENTRY_FELT_LEN`.
 #!
-#! Inputs:  [key_ptr]
-#! Outputs: [idx]
-pub proc input_entry_index_from_key_ptr
+#! Inputs:  [input_note_ptr]
+#! Outputs: [input_note_idx]
+pub proc get_input_note_idx_from_ptr
     sub.INPUT_NOTES_PTR div.NOTE_ENTRY_FELT_LEN
 end
 
-#! Converts an output-note `key_ptr` into its entry index `(key_ptr - OUTPUT_NOTES_PTR) / 8`.
+#! Converts a pointer to an output-note entry into its index
+#! `(output_note_ptr - OUTPUT_NOTES_PTR) / NOTE_ENTRY_FELT_LEN`.
 #!
-#! Inputs:  [key_ptr]
-#! Outputs: [idx]
-pub proc output_entry_index_from_key_ptr
+#! Inputs:  [output_note_ptr]
+#! Outputs: [output_note_idx]
+pub proc get_output_note_idx_from_ptr
     sub.OUTPUT_NOTES_PTR div.NOTE_ENTRY_FELT_LEN
 end

@@ -39,14 +39,14 @@ proc assert_all_output_notes_created
     dup neq.0
     while.true
         sub.1
-        # => [idx]
+        # => [output_note_idx]
 
-        dup exec.memory::output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET mem_load
-        # => [is_created, idx]
+        dup exec.memory::get_output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET mem_load
+        # => [is_created, output_note_idx]
         assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
 
         dup neq.0
-        # => [should_loop, idx]
+        # => [should_loop, output_note_idx]
     end
     drop
 end
@@ -54,22 +54,22 @@ end
 # INPUT NOTES COMMITMENT
 # =================================================================================================
 
-#! Absorbs input-note list entry `idx`'s 8-felt `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuple into the batch
+#! Absorbs input note idx's 8-felt `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuple into the batch
 #! hasher state held in memory (overwrite-mode poseidon2, matching `Hasher::hash_elements`).
 #!
-#! Inputs:  [idx]
+#! Inputs:  [input_note_idx]
 #! Outputs: []
 proc absorb_input_entry
     # The entry occupies one double word [entry_ptr, entry_ptr + NOTE_ENTRY_FELT_LEN).
-    exec.memory::input_note_entry_ptr
+    exec.memory::get_input_note_entry_ptr
     # => [entry_ptr]
     dup add.NOTE_ENTRY_FELT_LEN swap
     # => [entry_ptr, end_ptr]
-    exec.memory::load_batch_hasher_state
+    exec.memory::get_batch_hasher_state
     # => [RATE0, RATE1, CAPACITY, entry_ptr, end_ptr]
     exec.poseidon2::absorb_double_words_from_memory
     # => [RATE0', RATE1', CAPACITY', end_ptr, end_ptr]
-    exec.memory::save_batch_hasher_state
+    exec.memory::set_batch_hasher_state
     # => [end_ptr, end_ptr]
     drop drop
 end
@@ -79,28 +79,28 @@ end
 #!
 #! The absorbed_count is only incremented by 1 if the entry was not erased.
 #!
-#! Inputs:  [idx, absorbed_count, num]
-#! Outputs: [idx + 1, absorbed_count, num]
+#! Inputs:  [input_note_idx, absorbed_count, num_input_notes]
+#! Outputs: [input_note_idx + 1, absorbed_count, num_input_notes]
 proc process_input_entry
     # Assert this entry was consumed exactly once and is not left expected-to-be-erased.
-    dup exec.memory::input_note_flags_ptr
-    # => [flags_ptr, idx, absorbed_count, num]
+    dup exec.memory::get_input_note_flags_ptr
+    # => [flags_ptr, input_note_idx, absorbed_count, num_input_notes]
     dup add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
-    # => [consumption, flags_ptr, idx, absorbed_count, num]
+    # => [consumption, flags_ptr, input_note_idx, absorbed_count, num_input_notes]
     assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
-    # => [flags_ptr, idx, absorbed_count, num]
+    # => [flags_ptr, input_note_idx, absorbed_count, num_input_notes]
     mem_load
-    # => [erasure, idx, absorbed_count, num]
+    # => [erasure, input_note_idx, absorbed_count, num_input_notes]
     dup neq.INPUT_NOTE_ERASURE_EXPECTED assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
-    # => [erasure, idx, absorbed_count, num]
+    # => [erasure, input_note_idx, absorbed_count, num_input_notes]
 
     # Absorb the entry unless it was erased (created-and-consumed in this batch).
     neq.INPUT_NOTE_ERASED
-    # => [not_erased, idx, absorbed_count, num]
+    # => [not_erased, input_note_idx, absorbed_count, num_input_notes]
     if.true
         dup exec.absorb_input_entry
         swap add.1 swap
-        # => [idx, absorbed_count+1, num]
+        # => [input_note_idx, absorbed_count+1, num_input_notes]
     end
     add.1
 end
@@ -118,21 +118,21 @@ end
 proc compute_input_notes_commitment
     # Initialize the batch hasher state in memory.
     exec.poseidon2::init_no_padding
-    exec.memory::save_batch_hasher_state
+    exec.memory::set_batch_hasher_state
 
     exec.memory::get_num_input_notes
     push.0 push.0
-    # => [idx, absorbed_count, num]
+    # => [input_note_idx, absorbed_count, num_input_notes]
 
     dup dup.3 neq
-    # => [should_loop, idx, absorbed_count, num]
+    # => [should_loop, input_note_idx, absorbed_count, num_input_notes]
     while.true
         exec.process_input_entry
-        # => [idx+1, absorbed_count, num] (absorbed_count + 1 if entry was not erased)
+        # => [input_note_idx+1, absorbed_count, num_input_notes]
         dup dup.3 neq
-        # => [should_loop, idx+1, absorbed_count, num]
+        # => [should_loop, input_note_idx+1, absorbed_count, num_input_notes]
     end
-    # => [idx, absorbed_count, num]
+    # => [input_note_idx, absorbed_count, num_input_notes]
     drop swap drop
     # => [absorbed_count]
 
@@ -144,7 +144,7 @@ proc compute_input_notes_commitment
         padw
         # => [EMPTY_WORD]
     else
-        exec.memory::load_batch_hasher_state
+        exec.memory::get_batch_hasher_state
         exec.poseidon2::squeeze_digest
         # => [INPUT_NOTES_COMMITMENT]
     end
