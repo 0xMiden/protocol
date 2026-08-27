@@ -15,54 +15,39 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! Authenticate a transaction with multi-signature support, paying the transaction fee in the
 #! process.
 #!
-#! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
-#! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
-#! funding a public TX_FEE note (see miden::standards::fee::pay_fee). The payment asset and
-#! conversion rate are committed to via the AUTH_ARGS (native fee asset at rate 1/1 for plain
-#! native payment). On chains with a zero verification base fee no note is created. Because the
-#! fee is paid before the transaction summary is created, the fee note and the vault withdrawal
-#! funding it are covered by the approver signatures.
-#!
-#! The AUTH_ARGS (= hash(CONVERSION_INFO || SALT)) then continue to serve as the transaction
-#! summary salt. The uniqueness that replay protection relies on originates from the
-#! caller-chosen SALT: distinct salts produce distinct commitments and therefore distinct
-#! summary commitments, which record_and_assert_new_tx records and checks.
+#! It resolves the AUTH_ARGS into the block the summary binds, the summary salt and the fee
+#! conversion info, then pays the transaction fee by creating a public TX_FEE note. On chains with
+#! a zero verification base fee no note is created. Because the fee is paid before the transaction
+#! summary is created, the fee note and the vault withdrawal funding it are covered by the approver
+#! signatures.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
+#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
 #! Outputs:
 #!   Operand stack: []
 #!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_multisig(auth_args: word)
+    exec.multisig::resolve_auth_args
+    # => [CONVERSION_INFO, block_number, SALT]
+
     # Pay the transaction fee before the summary is created so that the TX_FEE note and the
-    # vault withdrawal funding it are covered by the approver signatures. load_conversion_info
-    # consumes the AUTH_ARGS, so keep a copy around to serve as the summary salt afterwards.
+    # vault withdrawal funding it are covered by the approver signatures.
     # ---------------------------------------------------------------------------------------------
 
-    dupw
-    # => [AUTH_ARGS, AUTH_ARGS]
-
-    exec.fee::load_conversion_info
-    # => [CONVERSION_INFO, AUTH_ARGS]
-
     exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, CONVERSION_INFO, AUTH_ARGS]
+    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT]
 
     exec.signature::estimate_multisig_authentication_cycles
-    # => [num_extra_cycles, CONVERSION_INFO, AUTH_ARGS]
+    # => [num_extra_cycles, CONVERSION_INFO, block_number, SALT]
 
     exec.fee::pay_fee drop
-    # => [AUTH_ARGS]
+    # => [block_number, SALT]
 
     # Authenticate the transaction and record it for replay protection.
     # ---------------------------------------------------------------------------------------------
-
-    # zero the leading user params (not exposed through this component's interface); the AUTH_ARGS
-    # occupy the trailing four
-    push.0.0
-    # => [0, 0, AUTH_ARGS]
 
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]

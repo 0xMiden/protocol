@@ -10,6 +10,7 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::{AssetId, FungibleAsset};
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -17,7 +18,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig};
+use miden_standards::account::auth::{Approver, ApproverSet, AuthMultisig, MultisigAuthArgs};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -30,7 +31,12 @@ use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_standards::tx_script::{ExpirationTransactionScript, SendNotesTransactionScript};
 use miden_testing::utils::create_spawn_note;
-use miden_testing::{Auth, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{
+    Auth,
+    MockChainBuilder,
+    MockTransactionBuilder,
+    assert_transaction_executor_error,
+};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
@@ -40,6 +46,21 @@ use rstest::rstest;
 // ================================================================================================
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Sets the auth args of the multisig authentication components on a [`MockTransactionBuilder`].
+pub(super) trait MultisigAuthArgsExt {
+    fn multisig_auth_args(self, multisig_auth_args: MultisigAuthArgs) -> Self;
+}
+
+impl MultisigAuthArgsExt for MockTransactionBuilder<'_> {
+    fn multisig_auth_args(self, multisig_auth_args: MultisigAuthArgs) -> Self {
+        let commitment = multisig_auth_args.to_commitment();
+
+        self.auth_args(commitment)
+            .add_advice_map_entry(commitment, multisig_auth_args.to_elements())
+            .required_block(multisig_auth_args.block_number())
+    }
+}
 
 pub(super) type MultisigTestSetup =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
@@ -193,7 +214,10 @@ async fn test_multisig_2_of_2_with_note_creation(
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures - should fail
     let tx_summary = mock_tx_builder
@@ -288,7 +312,10 @@ async fn test_multisig_2_of_4_all_signer_combinations(
         let salt = Word::from([Felt::new_unchecked(10 + i as u64); 4]);
 
         // Build base mock transaction
-        let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).auth_args(salt);
+        let mock_tx_builder =
+            mock_chain.build_transaction(multisig_account.id()).multisig_auth_args(
+                MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt),
+            );
 
         // Execute transaction without signatures first to get tx summary
         let tx_summary = mock_tx_builder
@@ -365,7 +392,9 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
     let ref_block = mock_chain.latest_block_header().block_num();
 
     // Build base mock transaction
-    let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).auth_args(salt);
+    let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).multisig_auth_args(
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt),
+    );
 
     // Execute transaction without signatures first to get tx summary
     let tx_summary = mock_tx_builder
@@ -409,7 +438,7 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
         .reference_block(ref_block)
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(ref_block, salt))
         .build()?;
 
     // This should fail due to replay protection
@@ -462,7 +491,10 @@ async fn test_multisig_stale_signatures_fail_after_expiration(
         .build_transaction(multisig_account.id())
         .tx_script(expiration_script.into())
         .tx_script_args(expiration_script.tx_script_args())
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute without signatures to obtain the transaction summary to sign.
     let tx_summary = mock_tx_builder
@@ -504,7 +536,10 @@ async fn test_multisig_stale_signatures_fail_after_expiration(
         .build_transaction(multisig_account.id())
         .tx_script(expiration_script.into())
         .tx_script_args(expiration_script.tx_script_args())
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .build()?
@@ -515,6 +550,75 @@ async fn test_multisig_stale_signatures_fail_after_expiration(
 
     assert_ne!(stale_summary.block_commitment(), original_block_commitment);
     assert_ne!(stale_summary.to_commitment(), msg);
+
+    Ok(())
+}
+
+/// Tests that signatures collected against an older block still authorize the transaction after
+/// the chain advanced.
+///
+/// This is what lets approvers sign at their own pace: the transaction executes against the
+/// current chain tip, but the summary they signed keeps binding the block that was the tip when
+/// the summary was created.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+#[tokio::test]
+async fn test_multisig_binds_block_older_than_reference_block() -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::new_unchecked(7); 4]);
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(signed_block, salt);
+
+    // The approvers are shown the summary while `signed_block` is the chain tip.
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_eq!(tx_summary.block_number(), signed_block);
+
+    let msg = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing_inputs)
+        .await?;
+
+    // The chain moves on while the signatures are collected.
+    mock_chain.prove_until_block(signed_block + 5)?;
+
+    let executed_transaction = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await?;
+
+    // The transaction executed against the new chain tip, not against the block it bound.
+    assert_eq!(executed_transaction.block_header().block_num(), signed_block + 5);
 
     Ok(())
 }
@@ -606,7 +710,10 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .tx_script(tx_script)
         .tx_script_args(tx_script_args)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures first to get tx summary
     let tx_summary = mock_tx_builder
@@ -741,7 +848,10 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     let mock_tx_builder_new = new_mock_chain
         .build_transaction(updated_multisig_account.id())
         .authenticated_input_note(input_note_new.id())
-        .auth_args(salt_new);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            new_mock_chain.latest_block_header().block_num(),
+            salt_new,
+        ));
 
     // Execute transaction without signatures first to get tx summary
     let tx_summary_new = mock_tx_builder_new
@@ -853,7 +963,10 @@ async fn test_multisig_update_signers_remove_owner(
         .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute without signatures to get tx summary
     let tx_summary = mock_tx_builder
@@ -1040,7 +1153,10 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
         .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?
         .execute()
         .await;
@@ -1104,7 +1220,10 @@ async fn test_multisig_update_signers_rejects_duplicate_public_keys() -> anyhow:
         .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?
         .execute()
         .await;
@@ -1253,7 +1372,10 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
         .tx_script(tx_script)
         .tx_script_args(tx_script_args)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Execute transaction without signatures first to get tx summary
     let tx_summary = mock_tx_builder
@@ -1350,7 +1472,10 @@ async fn test_multisig_proc_threshold_overrides(
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(note.id())
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // consume without signatures
     let tx_summary = mock_tx_builder
@@ -1407,7 +1532,10 @@ async fn test_multisig_proc_threshold_overrides(
         .build_transaction(multisig_account.id())
         .expected_output_note(RawOutputNote::Full(output_note))
         .send_notes_script(&send_note_transaction_script)
-        .auth_args(salt2);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt2,
+        ));
 
     // Execute transaction without signatures to get tx summary
     let tx_summary2 = mock_tx_builder2
@@ -1520,7 +1648,10 @@ async fn test_multisig_set_procedure_threshold(
     let set_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(set_script)
-        .auth_args(set_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            set_salt,
+        ));
     let set_summary = set_builder
         .clone()
         .build()?
@@ -1554,7 +1685,10 @@ async fn test_multisig_set_procedure_threshold(
     let one_sig_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(one_sig_note.id())
-        .auth_args(one_sig_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            one_sig_salt,
+        ));
     let one_sig_summary = one_sig_builder
         .clone()
         .build()?
@@ -1599,7 +1733,10 @@ async fn test_multisig_set_procedure_threshold(
     let clear_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(clear_script)
-        .auth_args(clear_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            clear_salt,
+        ));
     let clear_summary = clear_builder
         .clone()
         .build()?
@@ -1633,7 +1770,10 @@ async fn test_multisig_set_procedure_threshold(
     let clear_check_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(clear_check_note.id())
-        .auth_args(clear_check_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            clear_check_salt,
+        ));
     let clear_check_summary = clear_check_builder
         .clone()
         .build()?
@@ -1704,7 +1844,10 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
     let mock_tx_init = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(script.clone())
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?;
 
     let result = mock_tx_init.execute().await;
@@ -1784,7 +1927,10 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
         .tx_script(script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?;
 
     let result = mock_tx.execute().await;
@@ -1828,7 +1974,10 @@ where
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(tx_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // First pass without signatures: the getter `call` must return cleanly so the transaction
     // reaches authentication and only fails there for missing signatures.

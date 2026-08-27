@@ -55,11 +55,13 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
         tx_inputs.foreign_account_code().iter().chain([tx_inputs.account().code()]),
     );
 
-    let (partial_account, ref_block, _blockchain, input_notes, _tx_args) = tx_inputs.into_parts();
+    let block_commitments = tx_inputs.collect_block_commitments();
+
+    let (partial_account, _ref_block, _blockchain, input_notes, _tx_args) = tx_inputs.into_parts();
     let mut host = TransactionProverHost::new(
         &partial_account,
         input_notes,
-        ref_block.commitment(),
+        block_commitments,
         mast_store.as_ref(),
         script_mast_store,
         account_procedure_index_map,

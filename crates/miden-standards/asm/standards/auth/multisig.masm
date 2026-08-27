@@ -5,14 +5,22 @@
 use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
+use {BlockNumber} from miden::protocol::types
 use miden::standards::auth
 use miden::standards::auth::signature
+use {ConversionInfo} from miden::standards::fee
+use miden::core::mem
 use miden::core::word
 use {ONE_WORD} from miden::standards::utils
 
 # Local Memory Addresses
 const IS_SIGNER_FOUND_LOC=0
 const CURRENT_SIGNER_INDEX_LOC=1
+
+# resolve_auth_args locals: the three words of the auth args preimage in hashing order.
+const AUTH_ARGS_BLOCK_LOC=0
+const AUTH_ARGS_SALT_LOC=4
+const AUTH_ARGS_CONVERSION_INFO_LOC=8
 
 const NEW_NUM_OF_APPROVERS_LOC=0
 const INIT_NUM_OF_APPROVERS_LOC=1
@@ -73,6 +81,9 @@ const IS_EXECUTED_FLAG = ONE_WORD
 # The maximum number of approvers the signer set may contain.
 const MAX_NUM_APPROVERS = 64
 
+# Number of words in the auth args preimage.
+const AUTH_ARGS_NUM_WORDS = 3
+
 # ERRORS
 # =================================================================================================
 
@@ -99,6 +110,10 @@ const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's
 const ERR_DUPLICATE_APPROVER_PUBLIC_KEY = "duplicate approver public keys are not allowed"
 
 const ERR_TOO_MANY_APPROVERS = "number of approvers exceeds the maximum supported signer set size"
+
+const ERR_AUTH_ARGS_PREIMAGE_MISSING = "the advice map holds no preimage for the multisig auth args"
+
+const ERR_AUTH_ARGS_BLOCK_NUMBER_NOT_U32 = "the block number in the multisig auth args must be a u32"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -715,7 +730,54 @@ pub proc record_and_assert_new_tx(msg: word)
     # => []
 end
 
-#! Authenticate a transaction using the signature scheme specified by scheme_id 
+#! Resolves the transaction's auth args into the inputs of the multisig authentication procedures.
+#!
+#! Inputs:
+#!   Operand stack: [AUTH_ARGS]
+#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
+#! Outputs:
+#!   Operand stack: [CONVERSION_INFO, block_number, SALT]
+#!
+#! Where:
+#! - AUTH_ARGS is the sequential hash of the three preimage words.
+#! - BLOCK_WORD is [block_number, 0, 0, 0].
+#! - block_number is the number of the block the transaction summary binds.
+#! - SALT is a unique nonce bound into the transaction summary for replay protection.
+#! - CONVERSION_INFO tells miden::standards::fee::pay_fee which asset to pay the transaction fee
+#!   in. It is the empty word if the caller committed no conversion info.
+#!
+#! Panics if:
+#! - the advice map holds no preimage for the auth args.
+#! - the preimage does not hash to the auth args.
+#! - block_number is not a u32.
+#!
+#! Invocation: exec
+@locals(12)
+pub proc resolve_auth_args(auth_args: word) -> (ConversionInfo, BlockNumber, word)
+    adv.has_mapkey adv_push assert.err=ERR_AUTH_ARGS_PREIMAGE_MISSING
+    # => [AUTH_ARGS]
+
+    adv.push_mapval
+    # OS => [AUTH_ARGS]
+    # AS => [BLOCK_WORD, SALT, CONVERSION_INFO]
+
+    locaddr.AUTH_ARGS_BLOCK_LOC push.AUTH_ARGS_NUM_WORDS
+    # => [num_words, write_ptr, AUTH_ARGS]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => []
+
+    padw loc_loadw_le.AUTH_ARGS_SALT_LOC
+    # => [SALT]
+
+    loc_load.AUTH_ARGS_BLOCK_LOC u32assert.err=ERR_AUTH_ARGS_BLOCK_NUMBER_NOT_U32
+    # => [block_number, SALT]
+
+    padw loc_loadw_le.AUTH_ARGS_CONVERSION_INFO_LOC
+    # => [CONVERSION_INFO, block_number, SALT]
+end
+
+#! Authenticate a transaction using the signature scheme specified by scheme_id
 #! with multi-signature support
 #!
 #! Supported schemes:
@@ -728,7 +790,7 @@ end
 #! 3. Ensuring the minimum threshold of valid signatures is met
 #!
 #! Inputs:
-#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5]
+#!   Operand stack: [block_number, SALT]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -738,14 +800,8 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - user_param0 through user_param5 are arbitrary, user-defined inputs folded into the signed
-#!   message, and thus into the TX_SUMMARY_COMMITMENT. Binding them enforces no meaning, so any
-#!   semantics must be implemented by the calling component.
-#! - Replay protection relies on the uniqueness of the TX_SUMMARY_COMMITMENT, which is what
-#!   `record_and_assert_new_tx` records and checks. The components calling this procedure pass a
-#!   cryptographically random salt in user_param2 through user_param5 so that otherwise-identical
-#!   transactions produce distinct commitments and can run concurrently. `auth_tx` itself records
-#!   nothing, so a wrapper must call `record_and_assert_new_tx` for replay protection to hold.
+#! - block_number is the number of the block the transaction summary binds.
+#! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
 #! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
@@ -754,13 +810,17 @@ end
 #! - insufficient number of valid signatures (below threshold).
 #!
 #! Invocation: exec
-pub proc auth_tx(user_params: [felt; 6])
+pub proc auth_tx(block_number: BlockNumber, salt: word)
     exec.native_account::incr_nonce drop
-    # => [user_params(6)]
+    # => [block_number, SALT]
 
     # ------ Computing transaction summary ------
 
-    exec.auth::create_tx_summary
+    # the leading user params have no meaning, leave them zeroed
+    push.0.0 movup.2
+    # => [block_number, 0, 0, SALT]
+
+    exec.auth::create_tx_summary_with_block
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted

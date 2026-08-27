@@ -15,6 +15,7 @@ use miden_standards::account::auth::{
     ApproverSet,
     AuthMultisigSmart,
     AuthMultisigSmartConfig,
+    MultisigAuthArgs,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -30,6 +31,7 @@ use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
 use super::multisig::{
+    MultisigAuthArgsExt,
     build_update_signers_config_vector,
     setup_keys_and_authenticators_with_scheme,
 };
@@ -109,7 +111,10 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(note.id())
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -182,7 +187,10 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
     let result = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(note.id())
-        .auth_args(Word::from([Felt::new_unchecked(2); 4]))
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            Word::from([Felt::new_unchecked(2); 4]),
+        ))
         .build()?
         .execute()
         .await;
@@ -260,7 +268,10 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         .build_transaction(multisig_account.id())
         .expected_output_note(RawOutputNote::Full(output_note))
         .send_notes_script(&send_note_script)
-        .auth_args(Word::from([Felt::new_unchecked(2); 4]))
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            Word::from([Felt::new_unchecked(2); 4]),
+        ))
         .build()?
         .execute()
         .await;
@@ -333,7 +344,10 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .tx_script(update_signers_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Dry-run to obtain the tx summary that the current approvers must sign.
     let tx_summary = mock_tx_builder
@@ -428,7 +442,10 @@ async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> a
         .tx_script(update_signers_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?
         .execute()
         .await;
@@ -531,7 +548,10 @@ async fn test_multisig_smart_set_procedure_policy(
     let mock_tx_builder = mock_chain
         .build_transaction(account_id)
         .tx_script(set_policy_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Dry-run to obtain the tx summary that the approvers must sign.
     let tx_summary = mock_tx_builder
@@ -608,7 +628,10 @@ async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root() -> anyh
     let result = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(set_policy_script)
-        .auth_args(salt)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ))
         .build()?
         .execute()
         .await;
@@ -677,7 +700,10 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
         .build_transaction(multisig_account.id())
         .authenticated_input_note(note.id())
         .tx_script(set_policy_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     // Dry-run to capture the tx summary.
     let tx_summary = mock_tx_builder
