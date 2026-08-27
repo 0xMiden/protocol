@@ -1,11 +1,9 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use alloy_sol_types::{SolValue, sol};
 use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_crypto::hash::keccak::Keccak256;
 use miden_protocol::Felt;
-use miden_standards::account::faucets::FungibleFaucet;
 
 // ================================================================================================
 // METADATA HASH
@@ -42,28 +40,6 @@ impl MetadataHash {
     pub fn from_token_info(name: &str, symbol: &str, decimals: u8) -> Self {
         let encoded = encode_token_metadata(name, symbol, decimals);
         Self::from_abi_encoded(&encoded)
-    }
-
-    /// Computes the metadata hash of a Miden-native faucet from its own token metadata.
-    ///
-    /// The preimage is always the *origin* token's `(name, symbol, decimals)`. For a faucet
-    /// registered with `is_native = true` the faucet is that origin token, so its stored metadata
-    /// is the preimage and this cannot disagree with what the bridge registers.
-    ///
-    /// Do not use this for a wrapped faucet. There the origin token is a contract on another
-    /// chain, and the faucet is a separate account whose metadata nothing constrains to match it:
-    /// the origin decimals may exceed
-    /// [`FungibleFaucet::MAX_DECIMALS`](miden_standards::account::faucets::FungibleFaucet::MAX_DECIMALS),
-    /// its name may exceed [`TokenName`](miden_standards::account::faucets::TokenName)'s 32 bytes
-    /// and its symbol may fall outside
-    /// [`TokenSymbol`](miden_protocol::asset::TokenSymbol)'s 1-12 uppercase ASCII characters.
-    /// Pass the origin chain's values to [`Self::from_token_info`] instead.
-    pub fn from_native_faucet(faucet: &FungibleFaucet) -> Self {
-        Self::from_token_info(
-            faucet.token_name().as_str(),
-            &faucet.symbol().to_string(),
-            faucet.decimals(),
-        )
     }
 
     /// Returns the raw 32-byte array.
