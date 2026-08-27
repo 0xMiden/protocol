@@ -66,7 +66,9 @@ pub struct ConversionMetadata {
     /// locks into it); `false` for bridge-owned faucets (bridge-in mints via the faucet,
     /// bridge-out burns via the faucet).
     pub is_native: bool,
-    /// keccak256 hash of the ABI-encoded token metadata (`name`, `symbol`, `decimals`).
+    /// keccak256 hash of the ABI-encoded token metadata (`name`, `symbol`, `decimals`) as it
+    /// exists on the origin chain, which is not necessarily what the faucet stores. See SPEC
+    /// section 7.1.
     pub metadata_hash: MetadataHash,
 }
 

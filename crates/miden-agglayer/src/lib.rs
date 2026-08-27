@@ -163,9 +163,13 @@ impl AggLayerFaucet {
     ///
     /// The account is a standard [`FungibleFaucet`]: `mint_and_send` and `receive_and_burn` drive
     /// bridge-in and bridge-out, and the standard metadata getters expose the token name, symbol
-    /// and decimals that make up the AggLayer metadata hash preimage. Conversion metadata (origin
-    /// address, origin network, scale, metadata hash) lives on the bridge and is written there at
-    /// registration time.
+    /// and decimals. Conversion metadata (origin address, origin network, scale, metadata hash)
+    /// lives on the bridge and is written there at registration time.
+    ///
+    /// The metadata stored here reproduces the AggLayer metadata hash preimage only under the
+    /// conditions listed in SPEC section 7.1; in particular a faucet registered with a non-zero
+    /// `scale` stores `origin_decimals - scale`, not the origin decimals the preimage is built
+    /// from. See [`MetadataHash::from_fungible_faucet`].
     ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
     /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]

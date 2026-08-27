@@ -492,9 +492,9 @@ What makes it an AggLayer faucet is its deployment configuration:
 - Its note allowlist is limited to MINT, BURN, RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG plus the
   network-account defaults, which keeps the standard `set_*` metadata setters unreachable until
   `FAUCET_ADMIN` explicitly allowlists a note that calls them.
-- Its token name holds the foreign token's real name, so the metadata hash preimage
-  `abi.encode(name, symbol, decimals)` is recoverable from its storage (see
-  [Section 7.1](#71-registering-faucets-on-miden)).
+- Its token name holds the foreign token's real name, which is what can make the metadata hash
+  preimage `abi.encode(name, symbol, decimals)` recoverable from its storage - subject to the
+  conditions in [Section 7.1](#71-registering-faucets-on-miden).
 
 #### `fungible::mint_and_send`
 
@@ -1436,9 +1436,20 @@ same flow for both kinds; the `is_native` flag in the `CONFIG_AGG_BRIDGE` note s
 the bridge which dispatch path to take for each future bridge operation against that faucet.
 
 The faucet holds only token metadata — name, symbol, decimals, max supply, and token supply.
-Because the name is stored alongside the symbol and decimals, the full metadata hash preimage
-`abi.encode(name, symbol, decimals)` is recoverable from faucet storage, which is what makes
-registration-time verification possible.
+Storing the name alongside the symbol and decimals is what can make the full metadata hash
+preimage `abi.encode(name, symbol, decimals)` recoverable from faucet storage, and so makes
+registration-time verification possible — but only when the faucet's metadata is identical to the
+origin token's, which requires all three of:
+
+- `scale` is zero, since a scaled faucet stores `origin_decimals - scale` rather than the origin
+  decimals that go into the preimage;
+- the origin name fits `TokenName`'s 32-byte cap;
+- the origin symbol fits `TokenSymbol`'s 1-12 uppercase-ASCII form, which excludes symbols such as
+  `USDC.e`, `wstETH` or `1INCH`.
+
+Outside those conditions the registered hash is the one carried in the origin chain's leaf and
+cannot be reconstructed from the faucet, which
+[#2586](https://github.com/0xMiden/protocol/issues/2586) has to account for.
 Conversion metadata (origin address, origin network, scale, and metadata hash) is
 *not* stored on the faucet; it is carried by the `CONFIG_AGG_BRIDGE` note at registration
 time and written directly into the bridge's `faucet_metadata_map`. The metadata hash is

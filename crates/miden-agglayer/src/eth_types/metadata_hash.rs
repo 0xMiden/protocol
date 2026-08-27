@@ -46,7 +46,13 @@ impl MetadataHash {
 
     /// Computes the metadata hash from a faucet's own token metadata.
     ///
-    /// Preferred over [`Self::from_token_info`] when the faucet exists.
+    /// This reproduces the hash registered on the bridge only for a faucet whose stored metadata
+    /// is identical to the origin token's, which requires all three of: the faucet's `scale` is
+    /// zero (otherwise it stores `origin_decimals - scale`), the origin name fits
+    /// [`TokenName`](miden_standards::account::faucets::TokenName)'s 32 bytes, and the origin
+    /// symbol fits [`TokenSymbol`](miden_protocol::asset::TokenSymbol)'s 1-12 uppercase ASCII
+    /// characters. Otherwise the registered hash is the origin chain's, and its preimage has to
+    /// be passed to [`Self::from_token_info`] directly.
     pub fn from_fungible_faucet(faucet: &FungibleFaucet) -> Self {
         Self::from_token_info(
             faucet.token_name().as_str(),
