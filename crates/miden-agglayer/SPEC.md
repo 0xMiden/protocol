@@ -492,9 +492,10 @@ What makes it an AggLayer faucet is its deployment configuration:
 - Its note allowlist is limited to MINT, BURN, RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG plus the
   network-account defaults, which keeps the standard `set_*` metadata setters unreachable until
   `FAUCET_ADMIN` explicitly allowlists a note that calls them.
-- Its token name holds the foreign token's real name rather than a copy of its symbol, so the
-  faucet carries as much of the metadata hash preimage `abi.encode(name, symbol, decimals)` as
-  Miden's types allow (see [Section 7.1](#71-registering-faucets-on-miden)).
+- Its token name holds a real name rather than a copy of its symbol. For a Miden-native faucet
+  that makes the faucet's `(name, symbol, decimals)` the AggLayer metadata hash preimage; for a
+  wrapped faucet nothing binds them to the origin token's, so the registered hash comes from the
+  origin chain (see [Section 7.1](#71-registering-faucets-on-miden)).
 
 #### `fungible::mint_and_send`
 
@@ -534,7 +535,7 @@ The faucet contributes the full standard `FungibleFaucet` slot set (25 value slo
 | Slot name | Slot type | Value encoding | Purpose |
 |-----------|-----------|----------------|---------|
 | `token_config` | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard fungible faucet token configuration |
-| `token_name_0` .. `token_name_1` | Value | Fixed-width string chunks | Token name, up to 32 UTF-8 bytes. Part of the AggLayer metadata hash preimage |
+| `token_name_0` .. `token_name_1` | Value | Fixed-width string chunks | Token name, up to 32 UTF-8 bytes. The AggLayer metadata hash preimage for a Miden-native faucet; see [Section 7.1](#71-registering-faucets-on-miden) |
 | `mutability_config` | Value | Boolean flags | Whether description / logo URI / external link / max supply may be updated. All `false` for AggLayer faucets |
 | `token_description_0` .. `_6` | Value | Fixed-width string chunks | Optional description; empty for AggLayer faucets |
 | `logo_uri_0` .. `_6` | Value | Fixed-width string chunks | Optional logo URI; empty for AggLayer faucets |
