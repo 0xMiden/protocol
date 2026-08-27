@@ -22,8 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 
 use crate::StandardsLib;
-use crate::note::P2idNote;
 use crate::note::costs::{MINT_CONSUMPTION_CYCLES, NoteConsumptionCost};
+use crate::note::{NetworkAccountTarget, P2idNote};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -51,6 +51,12 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// the output note minted on consumption can be private or public depending on the
 /// [`MintNoteStorage`] variant.
 ///
+/// A MINT note for a public faucet is tagged for that faucet and carries a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment naming it, both derived
+/// from the asset in the note's storage, so the network can route the note to it. A private faucet
+/// can never be a network account, so a note for one is only tagged and carries no such
+/// attachment.
+///
 /// Construct one with the [builder](MintNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
@@ -69,15 +75,23 @@ impl MintNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than the faucet.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         #[builder(name = mint_storage)] storage: MintNoteStorage,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
+        // The network routes the note on this attachment; the stored ASSET_ID is what binds the
+        // script to the same faucet on consumption.
+        NetworkAccountTarget::ensure_presence_if_public(&mut attachments, storage.faucet_id())
+            .map_err(|err| {
+                NoteError::other_with_source("failed to target the MINT note at its faucet", err)
+            })?;
+
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
@@ -317,34 +331,63 @@ mod tests {
     use miden_protocol::crypto::rand::RandomCoin;
 
     use super::*;
+    use crate::note::{NetworkNoteExt, NoteExecutionHint};
 
     fn faucet() -> AccountId {
         AccountId::builder().account_type(AccountType::Public).build_with_seed([1; 32])
+    }
+
+    fn private_faucet() -> AccountId {
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
     }
 
     fn owner() -> AccountId {
         AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32])
     }
 
-    /// The builder produces a public, asset-less note tagged for the faucet.
-    #[test]
-    fn builder_builds_public_mint_note() {
+    fn build_mint_note(faucet_id: AccountId) -> MintNote {
+        let asset = FungibleAsset::new(faucet_id, 50).unwrap();
         let mut rng = RandomCoin::new(Word::empty());
-        let asset = FungibleAsset::new(faucet(), 50).unwrap();
-        let mint_storage = MintNoteStorage::new_private(Word::empty(), asset, NoteTag::default());
-        let mint_note = MintNote::builder()
+        MintNote::builder()
             .sender(owner())
-            .mint_storage(mint_storage)
+            .mint_storage(MintNoteStorage::new_private(Word::empty(), asset, NoteTag::default()))
             .generate_serial_number(&mut rng)
             .build()
-            .unwrap();
+            .unwrap()
+    }
+
+    /// The builder produces a public, asset-less note tagged for the faucet and routed to it by a
+    /// derived network target. How that target treats caller-supplied attachments is covered by the
+    /// `network_account_target` tests.
+    #[test]
+    fn builder_builds_public_mint_note() {
+        let mint_note = build_mint_note(faucet());
 
         assert_eq!(mint_note.faucet_id(), faucet());
         assert_eq!(mint_note.sender(), owner());
+        assert_eq!(mint_note.attachments().num_attachments(), 1);
 
         let note = Note::from(mint_note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(faucet()));
         assert_eq!(note.assets().num_assets(), 0);
+        assert!(note.is_network_note());
+
+        let target = NetworkAccountTarget::try_from(note.attachments()).unwrap();
+        assert_eq!(target.target_id(), faucet());
+        assert_eq!(target.execution_hint(), NoteExecutionHint::Always);
+    }
+
+    /// A private faucet is never a network account, so no target is derived for it. The note is
+    /// still tagged for the faucet and remains consumable by it.
+    #[test]
+    fn builder_omits_network_target_for_private_faucet() {
+        let mint_note = build_mint_note(private_faucet());
+
+        assert_eq!(mint_note.attachments().num_attachments(), 0);
+
+        let note = Note::from(mint_note);
+        assert_eq!(note.metadata().tag(), NoteTag::with_account_target(private_faucet()));
+        assert!(!note.is_network_note());
     }
 }
