@@ -23,6 +23,7 @@ use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
     ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
     ERR_PROC_ROOT_NOT_IN_ACCOUNT,
+    ERR_TOO_MANY_APPROVERS,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
@@ -433,6 +434,51 @@ async fn test_multisig_smart_update_signers_rejects_duplicate_public_keys() -> a
         .await;
 
     assert_transaction_executor_error!(result, ERR_DUPLICATE_APPROVER_PUBLIC_KEY);
+
+    Ok(())
+}
+
+/// Tests that `multisig_smart::update_signers_and_threshold` rejects a signer set larger than
+/// `MAX_NUM_APPROVERS`, mirroring the bound on the plain `multisig` variant.
+#[tokio::test]
+async fn test_multisig_smart_update_signers_rejects_too_many_approvers() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let new_num_approvers = u64::from(ApproverSet::MAX_APPROVERS) + 1;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(new_num_approvers as usize, 1, auth_scheme)?;
+
+    let multisig_account = create_multisig_smart_account(2, &public_keys[..2], 10, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let multisig_config_data =
+        build_update_signers_config_vector(2, new_num_approvers, &public_keys, auth_scheme);
+    let multisig_config_hash = Hasher::hash_elements(&multisig_config_data);
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, multisig_config_data)]);
+
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        @transaction_script
+        pub proc main
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let salt = Word::from([Felt::new_unchecked(3); 4]);
+
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(update_signers_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_TOO_MANY_APPROVERS);
 
     Ok(())
 }

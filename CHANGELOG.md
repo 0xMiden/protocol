@@ -8,9 +8,12 @@
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
 - [BREAKING] Added an optional expiry block to `NetworkAccountTarget` and enforced it in the config note scripts ([#3560](https://github.com/0xMiden/protocol/issues/3560), [#3715](https://github.com/0xMiden/protocol/pull/3715)).
+- Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 
 ### Changes
 
+- [BREAKING] `tx::get_block_commitment` now takes the block number to read. Its direct replacement is `get_reference_block_commitment`. `tx::get_block_number` was renamed to `tx::get_reference_block_number` ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
+- [BREAKING] The transaction summary gained a version and the bound block number, reducing the number of user parameters from seven to six ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
@@ -20,6 +23,7 @@
 - [BREAKING] `NoteScript::from_parts` and `TransactionScript::from_parts` now return a `Result` instead of panicking when the specified entrypoint is not in the provided MAST forest ([#3548](https://github.com/0xMiden/protocol/pull/3548)).
 - [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#2961](https://github.com/0xMiden/protocol/pull/3565)).
 - The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
+- The transaction kernel now validates the version and reserved bit of every input note's metadata ([#3743](https://github.com/0xMiden/protocol/pull/3743)).
 - [BREAKING] Renamed the fungible asset amount extraction procedures so the unsuffixed name is the validating one ([#3576](https://github.com/0xMiden/protocol/pull/3576)):
   - `miden::protocol::asset::fungible_value_into_amount` -> `fungible_value_into_amount_unchecked`.
   - `miden::standards::assets::fungible_asset::value_into_amount` to `value_into_amount_unchecked`.
@@ -37,6 +41,9 @@
 - [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 - [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
+- [BREAKING] Introduced `ProtocolConfig` that commits to all kernel's procedures, the fee asset ID and the security policy for recursive verification ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
+- [BREAKING] Renamed `ValidatorKeys` to `ValidatorConfig` and added a quorum to it ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
+- [BREAKING] Replaced `tx::get_fee_faucet_id` with `tx::get_fee_asset_id` ([#3741](https://github.com/0xMiden/protocol/pull/3741)).
 
 ### Fixes
 
@@ -59,6 +66,7 @@
 - Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
+- [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
 
 ## v0.16.0 (2026-08-17)
 
