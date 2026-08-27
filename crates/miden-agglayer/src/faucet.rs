@@ -22,15 +22,8 @@ static FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
 ///
 /// An AggLayer faucet is a [`FungibleFaucet`](miden_standards::account::faucets::FungibleFaucet)
 /// owned by the bridge. This type is a stateless namespace for the settings the bridge and the
-/// faucet operator agree on when one is deployed: the note allowlist
-/// ([`AggLayerFaucet::allowed_notes`]), the RBAC roles
-/// ([`AggLayerFaucet::procedure_roles`], [`AggLayerFaucet::fee_manager_role`]) and the account
-/// builder ([`AggLayerFaucet::account_builder`](crate::AggLayerFaucet::account_builder), defined
-/// alongside the bridge's).
-///
-/// To inspect a deployed faucet, decode its account with
-/// [`FungibleFaucet::try_from`](miden_standards::account::faucets::FungibleFaucet) for the token
-/// metadata and [`Ownable2Step`](miden_standards::account::access::Ownable2Step) for the owner.
+/// faucet operator agree on when one is deployed: the note allowlist, the RBAC roles, and the
+/// account builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AggLayerFaucet;
 

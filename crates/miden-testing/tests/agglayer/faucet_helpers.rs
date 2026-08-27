@@ -16,10 +16,6 @@ use super::test_utils::{
 };
 
 /// An agglayer faucet is a standard [`FungibleFaucet`] owned by the bridge.
-///
-/// This pins the two properties the bridge depends on: the faucet exposes the standard fungible
-/// faucet interface with its token metadata intact - including the real token *name*, which the
-/// AggLayer metadata hash is computed over - and its `Ownable2Step` owner is the bridge account.
 #[test]
 fn agglayer_faucet_is_a_bridge_owned_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();

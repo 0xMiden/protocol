@@ -719,7 +719,6 @@ pub async fn tx_consume_b2agg_note(
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
-    // The preimage is the origin token's metadata, from the vectors, not the wrapped faucet's.
     let metadata_hash = MetadataHash::from_token_info(
         &vectors.token_name,
         &vectors.token_symbol,

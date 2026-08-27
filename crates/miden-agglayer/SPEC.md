@@ -492,10 +492,9 @@ What makes it an AggLayer faucet is its deployment configuration:
 - Its note allowlist is limited to MINT, BURN, RBAC_CONFIG and CONSTANT_FEE_POLICY_CONFIG plus the
   network-account defaults, which keeps the standard `set_*` metadata setters unreachable until
   `FAUCET_ADMIN` explicitly allowlists a note that calls them.
-- Its token name holds a real name rather than a copy of its symbol. For a Miden-native faucet
-  that makes the faucet's `(name, symbol, decimals)` the AggLayer metadata hash preimage; for a
-  wrapped faucet nothing binds them to the origin token's, so the registered hash comes from the
-  origin chain (see [Section 7.1](#71-registering-faucets-on-miden)).
+- Its token name holds the foreign token's real name rather than a copy of its symbol, so the
+  faucet carries the metadata hash preimage `abi.encode(name, symbol, decimals)` (see
+  [Section 7.1](#71-registering-faucets-on-miden)).
 
 #### `fungible::mint_and_send`
 
@@ -535,7 +534,7 @@ The faucet contributes the full standard `FungibleFaucet` slot set (25 value slo
 | Slot name | Slot type | Value encoding | Purpose |
 |-----------|-----------|----------------|---------|
 | `token_config` | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard fungible faucet token configuration |
-| `token_name_0` .. `token_name_1` | Value | Fixed-width string chunks | Token name, up to 32 UTF-8 bytes. The AggLayer metadata hash preimage for a Miden-native faucet; see [Section 7.1](#71-registering-faucets-on-miden) |
+| `token_name_0` .. `token_name_1` | Value | Fixed-width string chunks | Token name, up to 32 UTF-8 bytes. Part of the AggLayer metadata hash preimage |
 | `mutability_config` | Value | Boolean flags | Whether description / logo URI / external link / max supply may be updated. All `false` for AggLayer faucets |
 | `token_description_0` .. `_6` | Value | Fixed-width string chunks | Optional description; empty for AggLayer faucets |
 | `logo_uri_0` .. `_6` | Value | Fixed-width string chunks | Optional logo URI; empty for AggLayer faucets |
@@ -1437,22 +1436,19 @@ same flow for both kinds; the `is_native` flag in the `CONFIG_AGG_BRIDGE` note s
 the bridge which dispatch path to take for each future bridge operation against that faucet.
 
 The faucet holds only token metadata — name, symbol, decimals, max supply, and token supply.
-The metadata hash preimage is always the *origin* token's `(name, symbol, decimals)`, so how far
-that preimage is recoverable from faucet storage depends on which kind of faucet is registered:
+Because the name is stored alongside the symbol and decimals, the full metadata hash preimage
+`abi.encode(name, symbol, decimals)` is recoverable from faucet storage, which is what makes
+registration-time verification possible.
 
-- Miden-native (`is_native = true`): the faucet **is** the origin token, so its stored name,
-  symbol and decimals are the preimage.
-- Wrapped (`is_native = false`): the origin token is a contract on another chain and the faucet is
-  a separate account. Nothing constrains the two to agree, and Miden's types often make agreement
-  impossible: `FungibleFaucet::MAX_DECIMALS` is 12, so an 18-decimal ERC-20 cannot be mirrored;
-  `TokenName` caps names at 32 bytes; and `TokenSymbol` admits only 1-12 uppercase ASCII
-  characters, which excludes symbols such as `USDC.e`, `wstETH` or `1INCH`. The registered hash is
-  then the one carried in the origin chain's leaf, and the faucet cannot reproduce it.
+The preimage is the *origin* token's `(name, symbol, decimals)`, and Miden's types cannot always
+hold those values: `FungibleFaucet::MAX_DECIMALS` is 12, so an 18-decimal ERC-20 cannot be
+mirrored; `TokenName` caps names at 32 bytes; and `TokenSymbol` admits only 1-12 uppercase ASCII
+characters, which excludes symbols such as `USDC.e`, `wstETH` or `1INCH`. A wrapped faucet
+therefore may not be able to reproduce its registered hash at all, in which case that hash is the
+one carried in the origin chain's leaf
+(TODO Support metadata hash verification for wrapped faucets
+([#2586](https://github.com/0xMiden/protocol/issues/2586))).
 
-The `scale` recorded at registration converts between origin-chain and Miden-side units; it is a
-bridge-side value, is not stored on the faucet, and no bridge procedure reads the faucet's
-`decimals` at all. Registration-time verification of the hash
-([#2586](https://github.com/0xMiden/protocol/issues/2586)) has to account for the wrapped case.
 Conversion metadata (origin address, origin network, scale, and metadata hash) is
 *not* stored on the faucet; it is carried by the `CONFIG_AGG_BRIDGE` note at registration
 time and written directly into the bridge's `faucet_metadata_map`. The metadata hash is

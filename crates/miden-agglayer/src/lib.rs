@@ -166,10 +166,6 @@ impl AggLayerFaucet {
     /// and decimals. Conversion metadata (origin address, origin network, scale, metadata hash)
     /// lives on the bridge and is written there at registration time.
     ///
-    /// The AggLayer metadata hash preimage is the origin token's `(name, symbol, decimals)`.
-    /// A faucet built here reproduces it only when it is itself the origin token, i.e. when it is
-    /// registered as Miden-native; see SPEC section 7.1.
-    ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
     /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]
     /// owner, which is what the `owner_only` mint and burn policies gate on. `fee_policy` must
@@ -178,8 +174,9 @@ impl AggLayerFaucet {
     ///
     /// # Panics
     ///
-    /// Panics if `decimals` exceeds [`FungibleFaucet::MAX_DECIMALS`], or if `initial_supply`
-    /// exceeds `max_supply`.
+    /// Panics if:
+    /// - `decimals` exceeds [`FungibleFaucet::MAX_DECIMALS`];
+    /// - `initial_supply` exceeds `max_supply`.
     #[allow(clippy::too_many_arguments)]
     pub fn account_builder(
         seed: Word,
