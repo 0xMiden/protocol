@@ -12,6 +12,11 @@
 /// When [`Enabled`](Self::Enabled), the kernel dispatches the faucet's callbacks whenever one of
 /// its assets is added to a vault or note. When [`Disabled`](Self::Disabled), callbacks are skipped
 /// entirely and no foreign-account read is performed.
+///
+/// The flag only enables the dispatch. On dispatch, the kernel reads the callback's procedure root
+/// from the faucet's storage and skips the invocation if the callback slot is absent or holds the
+/// empty word, so [`Enabled`](Self::Enabled) means callbacks may be invoked for the faucet's
+/// assets, not that the faucet has any.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AssetCallbackFlag {

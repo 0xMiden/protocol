@@ -137,6 +137,10 @@ pub enum AccountError {
     AccountComponentMastForestMergeError(#[source] MastForestError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
+    #[error(
+        "storage of account {0} contains an asset callback slot but its asset callback flag is disabled, so the callback would never be invoked"
+    )]
+    AssetCallbackSlotWithDisabledFlag(AccountId),
     #[error("failed to update asset vault")]
     AssetVaultUpdateError(#[source] AssetVaultError),
     #[error("account build error: {0}")]

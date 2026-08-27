@@ -16,7 +16,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, AssetCallbacks, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::access::{Authority, Ownable2Step};
@@ -294,7 +294,7 @@ impl AggLayerFaucet {
 
     /// Returns a vector of all [`AggLayerFaucet`] storage slot names.
     fn slot_names() -> Vec<&'static StorageSlotName> {
-        vec![
+        let mut slot_names = vec![
             FungibleFaucet::token_config_slot(),
             Ownable2Step::slot_name(),
             Authority::authority_slot(),
@@ -304,7 +304,15 @@ impl AggLayerFaucet {
             TokenPolicyManager::allowed_burn_policies_slot(),
             TokenPolicyManager::allowed_send_policies_slot(),
             TokenPolicyManager::allowed_receive_policies_slot(),
-        ]
+        ];
+
+        // The faucet registers send and receive transfer policies, so its policy manager installs
+        // the protocol-reserved asset callback slots. Their presence is what makes the account ID
+        // carry an enabled asset callback flag, so requiring them certifies that the faucet's
+        // transfer policies can be invoked at all.
+        slot_names.extend(AssetCallbacks::slot_names());
+
+        slot_names
     }
 }
 
