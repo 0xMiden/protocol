@@ -43,6 +43,7 @@
 - [BREAKING] Introduced `ProtocolConfig` that commits to all kernel's procedures, the fee asset ID and the security policy for recursive verification ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
 - [BREAKING] Renamed `ValidatorKeys` to `ValidatorConfig` and added a quorum to it ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
 - [BREAKING] Replaced `tx::get_fee_faucet_id` with `tx::get_fee_asset_id` ([#3741](https://github.com/0xMiden/protocol/pull/3741)).
+- [BREAKING] Moved the MINT note scripts under a single `miden::standards::notes::mint` module: the two per-faucet-kind paths are now the private `mint::fungible` and `mint::non_fungible` submodules, replacing `miden::standards::notes::mint_fungible` and `mint_non_fungible`. The MINT note script path is unchanged ([#3640](https://github.com/0xMiden/protocol/issues/3640)).
 
 ### Fixes
 
