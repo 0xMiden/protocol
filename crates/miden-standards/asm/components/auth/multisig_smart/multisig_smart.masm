@@ -23,8 +23,8 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig_sma
 pub proc auth_tx_multisig_smart(salt: word)
     # zero the leading user params (not exposed through this component's interface); the SALT
     # occupies the trailing four
-    push.0.0.0
-    # => [0, 0, 0, SALT]
+    push.0.0
+    # => [0, 0, SALT]
 
     exec.multisig_smart::auth_tx
     # => [TX_SUMMARY_COMMITMENT]

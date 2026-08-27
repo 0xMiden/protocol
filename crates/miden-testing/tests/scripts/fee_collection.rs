@@ -75,7 +75,7 @@ fn other_asset(amount: u64) -> anyhow::Result<Asset> {
 }
 
 /// The faucet issuing the chain's native fee asset, which the auth procedure's `pay_fee` funds
-/// network-note sponsorships in (via `tx::get_fee_faucet_id`, not the account's configured asset).
+/// network-note sponsorships in (via `tx::get_fee_asset_id`, not the account's configured asset).
 fn native_fee_faucet_id() -> anyhow::Result<AccountId> {
     Ok(ACCOUNT_ID_FEE_FAUCET.try_into()?)
 }

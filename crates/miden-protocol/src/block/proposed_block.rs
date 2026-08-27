@@ -16,17 +16,12 @@ use crate::block::{
     BlockNoteTree,
     BlockNumber,
     OutputNoteBatch,
-    ValidatorKeys,
+    ValidatorConfig,
 };
 use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
-use crate::transaction::{
-    InputNoteCommitment,
-    OutputNote,
-    PartialBlockchain,
-    TransactionHeader,
-    TransactionKernel,
-};
+use crate::protocol_config::NextProtocolConfig;
+use crate::transaction::{InputNoteCommitment, OutputNote, PartialBlockchain, TransactionHeader};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -76,9 +71,14 @@ pub struct ProposedBlock {
     /// The validator public key set authorized to sign the *next* block, which is committed to in
     /// this block's header.
     ///
-    /// Defaults to the previous block's `validator_keys` (i.e. no rotation). Set a different set
-    /// via [`ProposedBlock::with_next_validator_keys`] to rotate the validator keys.
-    next_validator_keys: ValidatorKeys,
+    /// Defaults to the previous block's `validator_config` (i.e. no rotation). Set a different set
+    /// via [`ProposedBlock::with_next_validator_config`] to rotate the validator keys.
+    next_validator_config: ValidatorConfig,
+    /// The protocol upgrade this block schedules, which is committed to in this block's header.
+    ///
+    /// Defaults to the previous block's `next_protocol_config` (i.e. no change). Set a different
+    /// value via [`ProposedBlock::with_next_protocol_config`] to schedule an upgrade.
+    next_protocol_config: Option<NextProtocolConfig>,
 }
 
 impl ProposedBlock {
@@ -245,7 +245,8 @@ impl ProposedBlock {
         // Build proposed blocks from parts.
         // --------------------------------------------------------------------------------------------
 
-        let next_validator_keys = prev_block_header.validator_keys().clone();
+        let next_validator_config = prev_block_header.validator_config().clone();
+        let next_protocol_config = prev_block_header.next_protocol_config().cloned();
 
         Ok(Self {
             batches: OrderedBatches::new(batches),
@@ -255,7 +256,8 @@ impl ProposedBlock {
             created_nullifiers: nullifier_witnesses,
             partial_blockchain,
             prev_block_header,
-            next_validator_keys,
+            next_validator_config,
+            next_protocol_config,
         })
     }
 
@@ -293,8 +295,18 @@ impl ProposedBlock {
     /// committed to by the previous block); the provided set only takes effect for the following
     /// block.
     #[must_use]
-    pub fn with_next_validator_keys(mut self, next_validator_keys: ValidatorKeys) -> Self {
-        self.next_validator_keys = next_validator_keys;
+    pub fn with_next_validator_config(mut self, next_validator_config: ValidatorConfig) -> Self {
+        self.next_validator_config = next_validator_config;
+        self
+    }
+
+    /// Sets the protocol upgrade that this block schedules.
+    #[must_use]
+    pub fn with_next_protocol_config(
+        mut self,
+        next_protocol_config: Option<NextProtocolConfig>,
+    ) -> Self {
+        self.next_protocol_config = next_protocol_config;
         self
     }
 
@@ -352,8 +364,13 @@ impl ProposedBlock {
     }
 
     /// Returns the validator key set committed to by this block as the signer of the next block.
-    pub fn next_validator_keys(&self) -> &ValidatorKeys {
-        &self.next_validator_keys
+    pub fn next_validator_config(&self) -> &ValidatorConfig {
+        &self.next_validator_config
+    }
+
+    /// Returns the protocol upgrade scheduled by this block, if any.
+    pub fn next_protocol_config(&self) -> Option<&NextProtocolConfig> {
+        self.next_protocol_config.as_ref()
     }
 
     // COMMITMENT COMPUTATIONS
@@ -510,7 +527,8 @@ impl ProposedBlock {
         let block_num = self.block_num();
         let timestamp = self.timestamp();
         let prev_block_header = self.prev_block_header().clone();
-        let next_validator_keys = self.next_validator_keys.clone();
+        let next_validator_config = self.next_validator_config.clone();
+        let next_protocol_config = self.next_protocol_config.clone();
 
         // Insert the state commitments of updated accounts into the account tree to compute its new
         // root.
@@ -540,8 +558,8 @@ impl ProposedBlock {
         // the genesis block will be passed through. Eventually, the contained base fees will be
         // updated based on the demand in the currently proposed block.
         let fee_parameters = prev_block_header.fee_parameters().clone();
+        let protocol_config_commitment = prev_block_header.protocol_config_commitment();
 
-        let tx_kernel_commitment = TransactionKernel.to_commitment();
         let header = BlockHeader::new(
             prev_block_commitment,
             block_num,
@@ -550,9 +568,10 @@ impl ProposedBlock {
             new_nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            next_validator_keys,
+            next_validator_config,
             fee_parameters,
+            protocol_config_commitment,
+            next_protocol_config,
             timestamp,
         );
 
@@ -594,7 +613,8 @@ impl Serializable for ProposedBlock {
         self.created_nullifiers.write_into(target);
         self.partial_blockchain.write_into(target);
         self.prev_block_header.write_into(target);
-        self.next_validator_keys.write_into(target);
+        self.next_validator_config.write_into(target);
+        self.next_protocol_config.write_into(target);
     }
 }
 
@@ -608,7 +628,8 @@ impl Deserializable for ProposedBlock {
             created_nullifiers: <BTreeMap<Nullifier, NullifierWitness>>::read_from(source)?,
             partial_blockchain: PartialBlockchain::read_from(source)?,
             prev_block_header: BlockHeader::read_from(source)?,
-            next_validator_keys: ValidatorKeys::read_from(source)?,
+            next_validator_config: ValidatorConfig::read_from(source)?,
+            next_protocol_config: <Option<NextProtocolConfig>>::read_from(source)?,
         };
 
         Ok(block)
