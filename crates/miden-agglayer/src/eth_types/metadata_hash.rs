@@ -46,13 +46,13 @@ impl MetadataHash {
 
     /// Computes the metadata hash from a faucet's own token metadata.
     ///
-    /// This reproduces the hash registered on the bridge only for a faucet whose stored metadata
-    /// is identical to the origin token's, which requires all three of: the faucet's `scale` is
-    /// zero (otherwise it stores `origin_decimals - scale`), the origin name fits
-    /// [`TokenName`](miden_standards::account::faucets::TokenName)'s 32 bytes, and the origin
-    /// symbol fits [`TokenSymbol`](miden_protocol::asset::TokenSymbol)'s 1-12 uppercase ASCII
-    /// characters. Otherwise the registered hash is the origin chain's, and its preimage has to
-    /// be passed to [`Self::from_token_info`] directly.
+    /// The `decimals` in the AggLayer preimage are the origin token's. A faucet's own `decimals`
+    /// is an independent value that nothing ties to them, so this reproduces the hash registered
+    /// on the bridge only for a faucet the deployer gave metadata identical to the origin token's:
+    /// the same decimals, a name within
+    /// [`TokenName`](miden_standards::account::faucets::TokenName)'s 32 bytes, and a symbol within
+    /// [`TokenSymbol`](miden_protocol::asset::TokenSymbol)'s 1-12 uppercase ASCII characters.
+    /// Otherwise pass the origin token's values to [`Self::from_token_info`] instead.
     pub fn from_fungible_faucet(faucet: &FungibleFaucet) -> Self {
         Self::from_token_info(
             faucet.token_name().as_str(),

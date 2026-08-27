@@ -167,9 +167,9 @@ impl AggLayerFaucet {
     /// lives on the bridge and is written there at registration time.
     ///
     /// The metadata stored here reproduces the AggLayer metadata hash preimage only under the
-    /// conditions listed in SPEC section 7.1; in particular a faucet registered with a non-zero
-    /// `scale` stores `origin_decimals - scale`, not the origin decimals the preimage is built
-    /// from. See [`MetadataHash::from_fungible_faucet`].
+    /// conditions listed in SPEC section 7.1; in particular the preimage is built from the origin
+    /// token's decimals, which nothing requires `decimals` to match. See
+    /// [`MetadataHash::from_fungible_faucet`].
     ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
     /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]

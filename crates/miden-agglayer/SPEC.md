@@ -1438,14 +1438,17 @@ the bridge which dispatch path to take for each future bridge operation against 
 The faucet holds only token metadata — name, symbol, decimals, max supply, and token supply.
 Storing the name alongside the symbol and decimals is what can make the full metadata hash
 preimage `abi.encode(name, symbol, decimals)` recoverable from faucet storage, and so makes
-registration-time verification possible — but only when the faucet's metadata is identical to the
-origin token's, which requires all three of:
+registration-time verification possible — but only for a faucet the operator gave metadata
+identical to the origin token's, which needs all three of:
 
-- `scale` is zero, since a scaled faucet stores `origin_decimals - scale` rather than the origin
-  decimals that go into the preimage;
-- the origin name fits `TokenName`'s 32-byte cap;
-- the origin symbol fits `TokenSymbol`'s 1-12 uppercase-ASCII form, which excludes symbols such as
-  `USDC.e`, `wstETH` or `1INCH`.
+- the same decimals. The `decimals` in the preimage are the origin token's; a faucet's own
+  `decimals` is a separate value that no bridge procedure reads and that nothing relates to the
+  registered `scale`. Because `scale` converts between origin-chain and Miden-side units, a
+  non-zero `scale` is the operator's signal that the two decimal bases deliberately differ, and
+  `FungibleFaucet::MAX_DECIMALS` (12) forces that for an 18-decimal ERC-20;
+- an origin name within `TokenName`'s 32-byte cap;
+- an origin symbol within `TokenSymbol`'s 1-12 uppercase-ASCII form, which excludes symbols such
+  as `USDC.e`, `wstETH` or `1INCH`.
 
 Outside those conditions the registered hash is the one carried in the origin chain's leaf and
 cannot be reconstructed from the faucet, which

@@ -12,7 +12,7 @@ The baseline is the latest release tag and it is compared against the version ab
 
 - Every exported procedure digest of the `ProtocolLib`, transaction kernel, `StandardsLib` and agglayer packages.
 - The kernel commitment and the two kernel programs (they cover the prologue, epilogue and procedure ordering, which the package exports do not).
-- The agglayer bridge code commitment, which no package export covers. There is no faucet equivalent: the agglayer faucet is assembled from standard components, whose own roots and commitments are covered by the per-component entries below, but nothing pins the composition itself.
+- The agglayer bridge code commitment, which no package export covers.
 - Per account component: each procedure root, plus a commitment over its whole procedure set.
 
 A changed or removed root fails. An added procedure is only a warning, but an addition to the kernel or to a component still fails because it changes the corresponding commitment.
