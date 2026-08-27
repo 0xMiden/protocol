@@ -153,23 +153,13 @@ impl NetworkNotePricer {
     }
 
     /// Resolves a note script root to its pricing cost. Supplied costs take precedence over the
-    /// defaults, `Ok(None)` indicates a recognized note whose default price is zero, and unknown
-    /// roots return an error.
-    fn resolve_note_cost(
-        &self,
-        root: NoteScriptRoot,
-    ) -> Result<Option<NoteCost>, NotePricingError> {
-        if let Some(cost) = self.note_costs.get(&root) {
-            return Ok(Some(cost.clone()));
-        }
-        if root == FeeSponsorshipNote::script_root() {
-            return Ok(None);
-        }
-
-        StandardNote::note_cost(root)
+    /// defaults.
+    fn resolve_note_cost(&self, root: NoteScriptRoot) -> Option<NoteCost> {
+        self.note_costs
+            .get(&root)
+            .cloned()
+            .or_else(|| StandardNote::note_cost(root))
             .or_else(|| AgglayerNote::note_cost(root))
-            .map(Some)
-            .ok_or(NotePricingError::UnknownNoteScriptRoot(root))
     }
 
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently
@@ -179,9 +169,13 @@ impl NetworkNotePricer {
         root: NoteScriptRoot,
         pricing_stack: &mut Vec<NoteScriptRoot>,
     ) -> Result<u64, NotePricingError> {
-        let Some(cost) = self.resolve_note_cost(root)? else {
+        if root == FeeSponsorshipNote::script_root() && !self.note_costs.contains_key(&root) {
             return Ok(0);
-        };
+        }
+
+        let cost = self
+            .resolve_note_cost(root)
+            .ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
         // Cycle counts enter the fee computation only here, where the looked-up cost is
         // converted into the kernel's fee inputs.
         let fee_inputs = TransactionFee::new(cost.cycles()).map_err(NotePricingError::Fee)?;
