@@ -25,7 +25,7 @@ use miden_agglayer::{
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -180,7 +180,7 @@ async fn test_bridge_in_claim_to_p2id(
     // --------------------------------------------------------------------------------------------
     let (proof_data, leaf_data, ger, cgi_chain_hash) = data_source.get_data();
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // Use the origin token address and network from the claim data.
     // --------------------------------------------------------------------------------------------
     let token_name = "AggLayer Token";
@@ -203,7 +203,6 @@ async fn test_bridge_in_claim_to_p2id(
         bridge_account.id(),
         verification_base_fee,
     )?
-    .with_asset_callbacks(AssetCallbackFlag::Enabled)
     .build_existing()?;
     builder.add_account(agglayer_faucet.clone())?;
 
@@ -739,7 +738,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     leaf_data.destination_network = MIDEN_NETWORK_ID.saturating_add(1);
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // Use the origin token address and network from the claim data.
     // --------------------------------------------------------------------------------------------
     let token_name = "AggLayer Token";

@@ -20,6 +20,7 @@ use miden_protocol::note::{
     NoteAttachmentHeader,
     NoteAttachmentScheme,
     NoteAttachments,
+    NoteId,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -188,6 +189,57 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
         exec_output.get_kernel_mem_word(ACTIVE_INPUT_NOTE_PTR)[0],
         Felt::from(input_note_data_ptr(0))
     );
+}
+
+/// Regression test.
+/// The note IDs reported through `TransactionMeasurements` must be the input notes' actual IDs.
+///
+/// The active note ID is read out of the note's memory segment, where the ID sits at
+/// `INPUT_NOTE_ID_OFFSET`; reading the segment's base word instead yields the note's details
+/// commitment.
+#[tokio::test]
+async fn active_note_id_is_reported_for_every_executed_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let p2id_note_1 = builder.add_p2id_note(
+        ACCOUNT_ID_SENDER.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(150)],
+        NoteType::Public,
+    )?;
+    let p2id_note_2 = builder.add_p2id_note(
+        ACCOUNT_ID_SENDER.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(300)],
+        NoteType::Public,
+    )?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_notes([p2id_note_1.clone(), p2id_note_2.clone()])
+        .build()?
+        .execute()
+        .await?;
+
+    let note_execution = &executed.measurements().note_execution;
+    assert_eq!(note_execution.len(), 2, "both input notes should have been measured");
+    assert_eq!(
+        note_execution[0].0,
+        p2id_note_1.id(),
+        "reported IDs should be the input notes' IDs, in consumption order",
+    );
+    assert_eq!(note_execution[1].0, p2id_note_2.id());
+    assert_ne!(
+        note_execution[0].0,
+        NoteId::from_raw(p2id_note_1.details_commitment().as_word()),
+        "the details commitment must not be mistaken for the note ID",
+    );
+
+    Ok(())
 }
 
 #[tokio::test]

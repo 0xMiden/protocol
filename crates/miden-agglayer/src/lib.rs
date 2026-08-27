@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use miden_core::Word;
-use miden_protocol::account::{AccountBuilder, AccountId, AssetCallbackFlag};
+use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::NoteScript;
@@ -211,7 +211,6 @@ impl AggLayerFaucet {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
-        let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
         let rbac = RoleBasedAccessControl::builder()
             .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(faucet_admin))
             .role(RoleConfig::new(AggLayerFaucet::fee_manager_role()).with_member(fee_manager))
@@ -220,7 +219,6 @@ impl AggLayerFaucet {
 
         NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
             .expect("faucet note allowlist is non-empty")
-            .with_asset_callbacks(asset_callbacks)
             .with_component(faucet)
             .with_component(Ownable2Step::new(bridge_account_id))
             .with_component(rbac)
@@ -238,6 +236,8 @@ impl AggLayerFaucet {
 #[cfg(test)]
 mod tests {
     use miden_core::Felt;
+    use miden_protocol::account::AssetCallbackFlag;
+    use miden_protocol::asset::AssetCallbacks;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use miden_standards::tx_script::ExpirationTransactionScript;
 
@@ -246,6 +246,33 @@ mod tests {
         create_existing_agglayer_faucet,
         create_existing_bridge_account_with_roles,
     };
+
+    /// The agglayer faucet registers send and receive transfer policies, so its policy manager
+    /// installs the protocol-reserved asset callback slots and its account ID must carry an enabled
+    /// asset callback flag. Without the flag the kernel would never invoke those policies.
+    #[test]
+    fn agglayer_faucet_has_asset_callbacks_enabled() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+        let faucet = create_existing_agglayer_faucet(
+            Word::default(),
+            "AggLayer Token",
+            "AGG",
+            6,
+            Felt::from(1000u32),
+            Felt::ZERO,
+            id,
+            id,
+        );
+
+        for slot_name in AssetCallbacks::slot_names() {
+            assert!(
+                faucet.storage().get(slot_name).is_some(),
+                "faucet should install the {slot_name} callback slot"
+            );
+        }
+        assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
+    }
 
     /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
     /// which the network transaction builder attaches to every network transaction.
