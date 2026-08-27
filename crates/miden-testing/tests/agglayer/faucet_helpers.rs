@@ -67,9 +67,9 @@ fn agglayer_faucet_is_a_bridge_owned_fungible_faucet() -> anyhow::Result<()> {
     // procedure roots before decoding storage) succeeds.
     let metadata = FungibleFaucet::try_from(&faucet)?;
 
-    // Every field round-trips, most importantly the token name: it used to be derived from the
-    // symbol, which left the metadata hash preimage `abi.encode(name, symbol, decimals)`
-    // unrecoverable from faucet storage, and so unverifiable on-chain (issues #2585, #2586).
+    // Every field round-trips, most importantly the token name: it makes the metadata hash
+    // preimage `abi.encode(name, symbol, decimals)` recoverable from faucet storage, which is what
+    // will let the bridge verify the registered hash on-chain (issue #2586).
     assert_eq!(metadata.token_name().as_str(), token_name);
     assert_eq!(metadata.symbol().to_string(), token_symbol);
     assert_eq!(metadata.decimals(), decimals);

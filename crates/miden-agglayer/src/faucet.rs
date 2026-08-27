@@ -18,19 +18,19 @@ static FEE_MANAGER_ROLE: LazyLock<RoleSymbol> =
 // AGGLAYER FAUCET
 // ================================================================================================
 
-/// Helper type holding the deployment configuration of an AggLayer faucet.
+/// The deployment configuration of an AggLayer faucet.
 ///
-/// This is not an [`AccountComponent`](miden_protocol::account::AccountComponent): an AggLayer
-/// faucet is an ordinary [`FungibleFaucet`](miden_standards::account::faucets::FungibleFaucet)
-/// owned by the bridge, with no AggLayer-specific component of its own. The type carries no state
-/// and only groups what the bridge and the faucet operator have to agree on at deployment: the
-/// note allowlist, the RBAC roles, and the account builder
-/// ([`AggLayerFaucet::account_builder`](crate::AggLayerFaucet::account_builder), defined alongside
-/// the bridge's).
+/// An AggLayer faucet is a [`FungibleFaucet`](miden_standards::account::faucets::FungibleFaucet)
+/// owned by the bridge. This type is a stateless namespace for the settings the bridge and the
+/// faucet operator agree on when one is deployed: the note allowlist
+/// ([`AggLayerFaucet::allowed_notes`]), the RBAC roles
+/// ([`AggLayerFaucet::procedure_roles`], [`AggLayerFaucet::fee_manager_role`]) and the account
+/// builder ([`AggLayerFaucet::account_builder`](crate::AggLayerFaucet::account_builder), defined
+/// alongside the bridge's).
 ///
-/// To read the token metadata of a deployed faucet, decode the account with
-/// [`FungibleFaucet::try_from`](miden_standards::account::faucets::FungibleFaucet); to read its
-/// owner, use [`Ownable2Step`](miden_standards::account::access::Ownable2Step).
+/// To inspect a deployed faucet, decode its account with
+/// [`FungibleFaucet::try_from`](miden_standards::account::faucets::FungibleFaucet) for the token
+/// metadata and [`Ownable2Step`](miden_standards::account::access::Ownable2Step) for the owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AggLayerFaucet;
 

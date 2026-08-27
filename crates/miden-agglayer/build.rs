@@ -170,7 +170,7 @@ fn generate_agglayer_constants(
     // code commitment, so it doesn't matter what does this metadata holds.
     let dummy_metadata = AccountComponentMetadata::new("dummy");
 
-    // iterate over the AggLayer component packages (currently only the bridge)
+    // iterate over the AggLayer component packages
     for package in component_packages {
         // Derive the short component name (e.g. "bridge") from the package name
         // (e.g. "miden-agglayer-bridge").

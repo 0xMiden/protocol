@@ -720,7 +720,6 @@ pub async fn tx_consume_b2agg_note(
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
-    // Derive the registered hash from the faucet's own stored metadata so the two cannot drift.
     let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {

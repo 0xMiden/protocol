@@ -153,7 +153,6 @@ async fn bridge_out_consecutive(
         verification_base_fee,
     )?
     .build_existing()?;
-    // Derive the registered hash from the faucet's own stored metadata so the two cannot drift.
     let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
     builder.add_account(faucet.clone())?;
 
@@ -473,7 +472,6 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         bridge_admin_account_id(),
         bridge_account.id(),
     );
-    // Derive the registered hash from the faucet's own stored metadata so the two cannot drift.
     let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
     builder.add_account(faucet.clone())?;
 
@@ -715,7 +713,6 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         bridge_admin_account_id(),
         bridge_account.id(),
     );
-    // Derive the registered hash from the faucet's own stored metadata so the two cannot drift.
     let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
     builder.add_account(faucet.clone())?;
 

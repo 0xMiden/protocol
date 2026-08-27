@@ -480,11 +480,10 @@ holders are seeded into the access-control components at account creation time.
 
 ### 3.2 Faucet Account
 
-The faucet account carries no AggLayer-specific component: it is the standard `FungibleFaucet`
-installed on top of `Ownable2Step` and the RBAC access-control stack (`RoleBasedAccessControl` +
-`Authority::RbacControlled`). Bridge-in and bridge-out run through the standard `mint_and_send`
-and `receive_and_burn`, and the unified MINT/BURN note scripts use `has_procedure` to detect the
-faucet kind reflectively.
+The faucet account is the standard `FungibleFaucet` installed on top of `Ownable2Step` and the
+RBAC access-control stack (`RoleBasedAccessControl` + `Authority::RbacControlled`). Bridge-in and
+bridge-out run through the standard `mint_and_send` and `receive_and_burn`, and the unified
+MINT/BURN note scripts use `has_procedure` to detect the faucet kind reflectively.
 
 What makes it an AggLayer faucet is its deployment configuration:
 

@@ -7,7 +7,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use miden_protocol::account::{Account, AccountId};
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -16,6 +16,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::faucets::TokenName;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::interop::eth::{EthAddress, EthAmount};
 use serde::Deserialize;
@@ -108,11 +109,11 @@ pub fn create_existing_agglayer_faucet(
     let faucet_admin = bridge_admin_account_id();
     AggLayerFaucet::account_builder(
         seed,
-        token_name,
-        token_symbol,
+        TokenName::new(token_name).expect("token name should be valid"),
+        TokenSymbol::new(token_symbol).expect("token symbol should be valid"),
         decimals,
-        max_supply,
-        initial_supply,
+        AssetAmount::try_from(max_supply).expect("max supply should be valid"),
+        AssetAmount::try_from(initial_supply).expect("initial supply should be valid"),
         faucet_admin,
         fee_manager,
         bridge_account_id,

@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-use miden_core::{Felt, Word};
+use miden_core::Word;
 use miden_protocol::account::{AccountBuilder, AccountId, AssetCallbackFlag};
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
@@ -117,47 +117,6 @@ fn agglayer_bridge_component_package() -> Package {
 // AGGLAYER ACCOUNT CREATION HELPERS
 // ================================================================================================
 
-/// Builds the [`FungibleFaucet`] component of an agglayer faucet account from its token metadata.
-///
-/// The faucet holds only token metadata; conversion metadata (origin address, origin network,
-/// scale, metadata hash) lives on the bridge and is populated at registration time.
-///
-/// The token name is stored alongside the symbol and decimals, which makes the metadata hash
-/// preimage `abi.encode(name, symbol, decimals)` recoverable from the faucet's own storage.
-///
-/// # Parameters
-/// - `token_name`: The display name for the fungible token (e.g., "AggLayer Token")
-/// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")
-/// - `decimals`: Number of decimal places for the token
-/// - `max_supply`: Maximum supply of the token
-/// - `initial_supply`: Initial outstanding token supply (0 for new faucets)
-///
-/// # Panics
-/// Panics if the token name or symbol is invalid, or if the supplies exceed the maximum amount
-/// representable by a fungible asset.
-fn build_fungible_faucet(
-    token_name: &str,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    initial_supply: Felt,
-) -> FungibleFaucet {
-    let name = TokenName::new(token_name).expect("token name should be valid");
-    let symbol = TokenSymbol::new(token_symbol).expect("token symbol should be valid");
-    let max_supply = AssetAmount::try_from(max_supply).expect("max supply should be valid");
-    let initial_supply =
-        AssetAmount::try_from(initial_supply).expect("initial supply should be valid");
-
-    FungibleFaucet::builder()
-        .name(name)
-        .symbol(symbol)
-        .decimals(decimals)
-        .max_supply(max_supply)
-        .token_supply(initial_supply)
-        .build()
-        .expect("agglayer faucet metadata should be valid")
-}
-
 impl AggLayerBridge {
     /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration.
     ///
@@ -202,10 +161,11 @@ impl AggLayerFaucet {
     /// Returns an [`AccountBuilder`] for a faucet account with the specified deployment
     /// configuration.
     ///
-    /// The account is a standard [`FungibleFaucet`] carrying no AggLayer-specific component:
-    /// `mint_and_send` and `receive_and_burn` drive bridge-in and bridge-out, and the standard
-    /// metadata getters expose the token name, symbol and decimals that make up the AggLayer
-    /// metadata hash preimage.
+    /// The account is a standard [`FungibleFaucet`]: `mint_and_send` and `receive_and_burn` drive
+    /// bridge-in and bridge-out, and the standard metadata getters expose the token name, symbol
+    /// and decimals that make up the AggLayer metadata hash preimage. Conversion metadata (origin
+    /// address, origin network, scale, metadata hash) lives on the bridge and is written there at
+    /// registration time.
     ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
     /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]
@@ -215,15 +175,16 @@ impl AggLayerFaucet {
     ///
     /// # Panics
     ///
-    /// Panics if the token metadata is invalid.
+    /// Panics if `decimals` exceeds [`FungibleFaucet::MAX_DECIMALS`], or if `initial_supply`
+    /// exceeds `max_supply`.
     #[allow(clippy::too_many_arguments)]
     pub fn account_builder(
         seed: Word,
-        token_name: &str,
-        token_symbol: &str,
+        token_name: TokenName,
+        token_symbol: TokenSymbol,
         decimals: u8,
-        max_supply: Felt,
-        initial_supply: Felt,
+        max_supply: AssetAmount,
+        initial_supply: AssetAmount,
         faucet_admin: AccountId,
         fee_manager: AccountId,
         bridge_account_id: AccountId,
@@ -234,8 +195,14 @@ impl AggLayerFaucet {
             .fee_faucet_id(fee_faucet_id)
             .active_fee_policy(fee_policy.into())
             .build();
-        let faucet =
-            build_fungible_faucet(token_name, token_symbol, decimals, max_supply, initial_supply);
+        let faucet = FungibleFaucet::builder()
+            .name(token_name)
+            .symbol(token_symbol)
+            .decimals(decimals)
+            .max_supply(max_supply)
+            .token_supply(initial_supply)
+            .build()
+            .expect("agglayer faucet decimals and supplies should be within their valid ranges");
 
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
@@ -270,6 +237,7 @@ impl AggLayerFaucet {
 
 #[cfg(test)]
 mod tests {
+    use miden_core::Felt;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use miden_standards::tx_script::ExpirationTransactionScript;
 
