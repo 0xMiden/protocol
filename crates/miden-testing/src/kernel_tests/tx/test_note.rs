@@ -10,6 +10,10 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::{
+    ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT,
+    ERR_NOTE_METADATA_UNSUPPORTED_VERSION,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -45,6 +49,7 @@ use crate::{
     MockChain,
     MockTransaction,
     TestTransactionBuilder,
+    assert_execution_error,
     assert_transaction_executor_error,
 };
 
@@ -689,6 +694,84 @@ async fn test_find_attachment_idx(
     if expected_found {
         let attachment_idx = exec_output.get_stack_element(1);
         assert_eq!(attachment_idx, Felt::from(expected_idx), "attachment_idx mismatch");
+    }
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::private(NoteType::Private)]
+#[case::public(NoteType::Public)]
+#[tokio::test]
+async fn test_metadata_into_version(#[case] note_type: NoteType) -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER)?;
+    let partial_metadata = PartialNoteMetadata::new(sender, note_type);
+    let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
+    let metadata_word = metadata.to_metadata_word();
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::note
+
+        begin
+            push.{metadata_word}
+            exec.note::metadata_into_version
+            # => [version, pad(16)]
+
+            # truncate the stack
+            swap drop
+        end
+        ",
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    // The metadata encoder only ever writes version 1.
+    assert_eq!(exec_output.get_stack_element(0), Felt::from(1u8));
+
+    Ok(())
+}
+
+/// Tests that `validate_metadata` accepts version 1 metadata and rejects metadata with an unknown
+/// version or with its reserved bit set.
+#[rstest::rstest]
+#[case::valid_private(0b0000_0001, None)]
+#[case::valid_public(0b0100_0001, None)]
+#[case::version_zero(0b0000_0000, Some(ERR_NOTE_METADATA_UNSUPPORTED_VERSION))]
+#[case::unknown_version(0b0000_0010, Some(ERR_NOTE_METADATA_UNSUPPORTED_VERSION))]
+#[case::reserved_bit_set(0b1000_0001, Some(ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT))]
+#[tokio::test]
+async fn test_validate_note_metadata(
+    #[case] metadata_byte: u8,
+    #[case] expected_err: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER)?;
+    let partial_metadata = PartialNoteMetadata::new(sender, NoteType::Public);
+    let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
+    let mut metadata_word = metadata.to_metadata_word();
+
+    // The lower byte of the sender ID suffix is zero by construction, so it can be replaced by the
+    // byte holding the version, note type and reserved bit.
+    metadata_word[0] = sender.suffix() + Felt::from(metadata_byte);
+
+    let code = format!(
+        "
+        use miden::tx_kernel_core::note
+
+        begin
+            push.{metadata_word}
+            exec.note::validate_metadata
+        end
+        ",
+    );
+
+    let exec_result = CodeExecutor::with_default_host().run(&code).await;
+
+    match expected_err {
+        Some(err) => assert_execution_error!(exec_result, err),
+        None => {
+            exec_result.context("version 1 metadata should be accepted")?;
+        },
     }
 
     Ok(())

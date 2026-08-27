@@ -540,7 +540,7 @@ mod tests {
         // create partial blockchain with 3 blocks - i.e., 2 peaks
         let mut mmr = Mmr::default();
         for i in 0..3 {
-            let block_header = BlockHeader::mock(i, None, None, &[], Word::empty());
+            let block_header = BlockHeader::mock(i, None, None, &[]);
             mmr.add(block_header.commitment())
                 .expect("mmr leaf count exceeds forest leaf bound");
         }
@@ -549,14 +549,8 @@ mod tests {
 
         let chain_commitment = partial_blockchain.peaks().hash_peaks();
         let note_root = rand_value::<Word>();
-        let tx_kernel_commitment = rand_value::<Word>();
-        let reference_block_header = BlockHeader::mock(
-            3,
-            Some(chain_commitment),
-            Some(note_root),
-            &[],
-            tx_kernel_commitment,
-        );
+        let reference_block_header =
+            BlockHeader::mock(3, Some(chain_commitment), Some(note_root), &[]);
 
         let account_id =
             AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);

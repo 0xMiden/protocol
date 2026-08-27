@@ -352,6 +352,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use miden_protocol::account::AccountId;
+    use miden_protocol::asset::AssetId;
     use miden_protocol::block::FeeParameters;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
     use miden_protocol::transaction::RawOutputNote;
@@ -379,7 +380,8 @@ mod tests {
         let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("testing faucet ID should be valid");
         let pricer = NetworkNotePricer::builder()
-            .fee_parameters(FeeParameters::new(fee_faucet_id, 500))
+            .fee_parameters(FeeParameters::new(500))
+            .fee_asset_id(AssetId::new_fungible(fee_faucet_id))
             .build();
 
         for &note in PricedNote::all() {
