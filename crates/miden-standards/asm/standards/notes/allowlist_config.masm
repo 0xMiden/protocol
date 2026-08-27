@@ -60,7 +60,7 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 #!
 #! Panics if:
 #! - the consuming account is not the note's target account, or the target attachment is missing.
-#! - the note is consumed past the expiry block of its target attachment.
+#! - the note is consumed past the expiration block of its target attachment.
 #! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
@@ -70,13 +70,18 @@ pub proc main
     dropw
     # => [pad(16)]
 
+    # load the note's target attachment once, so both checks below share the single lookup and
+    # hash of the attachment data
+    exec.network_account_target::load_attachment
+    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT, pad(16)]
+
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
+    dupw exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_ALLOWLIST_CONFIG_TARGET_ACCOUNT_MISMATCH
-    # => [pad(16)]
+    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT, pad(16)]
 
-    # reject a note held past the expiry block of its target attachment
+    # reject a note held past the expiration block of its target attachment
     exec.network_account_target::assert_not_expired
     # => [pad(16)]
 

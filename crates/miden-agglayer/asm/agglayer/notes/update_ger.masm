@@ -46,6 +46,7 @@ pub proc main
     # => [pad(16)]
 
     # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::load_attachment
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH
     # => [pad(16)]

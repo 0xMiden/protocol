@@ -18,7 +18,7 @@ pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME = 2
 #! The number of words in the network account target attachment.
 pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS = 1
 
-#! The expiry block value that marks an attachment as never expiring.
+#! The expiration block number that marks an attachment as never expiring.
 pub const NETWORK_ACCOUNT_TARGET_NO_EXPIRATION = 0
 
 # ERRORS
@@ -28,9 +28,9 @@ const ERR_NETWORK_ACCOUNT_TARGET_MISSING = "network account target attachment is
 
 const ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS = "network account target attachment must consist of exactly one word"
 
-const ERR_NETWORK_ACCOUNT_TARGET_EXPIRY_BLOCK_NOT_U32 = "network account target attachment expiry block is not a u32"
+const ERR_NETWORK_ACCOUNT_TARGET_EXPIRATION_BLOCK_NUM_NOT_U32 = "network account target attachment expiration block number is not a u32"
 
-const ERR_NETWORK_ACCOUNT_TARGET_EXPIRED = "network account target attachment expiry block has passed"
+const ERR_NETWORK_ACCOUNT_TARGET_EXPIRED = "network account target attachment expiration block number has passed"
 
 # PROCEDURES
 # ================================================================================================
@@ -50,7 +50,7 @@ end
 #! Returns the account ID encoded in the attachment.
 #!
 #! The attachment is expected to have the following layout:
-#! [account_id_suffix, account_id_prefix, exec_hint_tag, expiry_block]
+#! [account_id_suffix, account_id_prefix, exec_hint_tag, expiration_block_num]
 #!
 #! WARNING: This procedure does not validate the attachment scheme. The caller
 #! should validate it using `is_network_account_target` before calling this procedure.
@@ -67,35 +67,35 @@ end
 #! Invocation: exec
 pub proc into_target_id
     # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-    # => [account_id_suffix, account_id_prefix, exec_hint_tag, expiry_block]
+    # => [account_id_suffix, account_id_prefix, exec_hint_tag, expiration_block_num]
 
     movup.2 drop movup.2 drop
     # => [account_id_suffix, account_id_prefix]
 end
 
-#! Returns the expiry block encoded in the attachment.
+#! Returns the expiration block number encoded in the attachment.
 #!
 #! Inputs:  [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-#! Outputs: [expiry_block]
+#! Outputs: [expiration_block_num]
 #!
 #! Where:
-#! - expiry_block is the last block at which the note may be included into the chain, or
+#! - expiration_block_num is the last block at which the note may be included into the chain, or
 #!   [`NETWORK_ACCOUNT_TARGET_NO_EXPIRATION`] if the note never expires.
 #!
 #! Invocation: exec
-pub proc into_expiry_block
+pub proc into_expiration_block_num
     # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-    # => [account_id_suffix, account_id_prefix, exec_hint_tag, expiry_block]
+    # => [account_id_suffix, account_id_prefix, exec_hint_tag, expiration_block_num]
 
     drop drop drop
-    # => [expiry_block]
+    # => [expiration_block_num]
 end
 
 #! Creates a new attachment of type NetworkAccountTarget with the following layout:
 #! [account_id_suffix, account_id_prefix, exec_hint_tag, NETWORK_ACCOUNT_TARGET_NO_EXPIRATION]
 #!
 #! The created attachment never expires. A note that should expire must build its attachment with
-#! an expiry block in the fourth felt; see [`assert_not_expired`].
+#! an expiration block number in the fourth felt; see [`assert_not_expired`].
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, exec_hint_tag]
 #! Outputs: [attachment_scheme, NOTE_ATTACHMENT]
@@ -109,99 +109,12 @@ end
 pub proc new
     # => [account_id_suffix, account_id_prefix, exec_hint_tag]
     push.NETWORK_ACCOUNT_TARGET_NO_EXPIRATION movdn.3
-    # => [NOTE_ATTACHMENT] = [account_id_suffix, account_id_prefix, exec_hint_tag, expiry_block]
+    # => [NOTE_ATTACHMENT]
+    # => [account_id_suffix, account_id_prefix, exec_hint_tag, expiration_block_num]
 
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
     # => [attachment_scheme, NOTE_ATTACHMENT]
 end
-
-#! Returns a boolean indicating whether the active account matches the target account
-#! encoded in the active note's attachment.
-#!
-#! Inputs:  []
-#! Outputs: [is_equal]
-#!
-#! Where:
-#! - is_equal is a boolean indicating whether the active account matches the target account.
-#!
-#! Panics if:
-#! - the attachment is missing from the active note or the number of words is invalid.
-#!
-#! Invocation: exec
-pub proc active_account_matches_target_account
-    exec.load_attachment
-    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-
-    exec.into_target_id
-    # => [target_id_suffix, target_id_prefix]
-
-    exec.active_account::get_id
-    # => [active_account_id_suffix, active_account_id_prefix, target_id_suffix, target_id_prefix]
-
-    exec.account_id::eq
-    # => [is_equal]
-end
-
-#! Requires that the active note has not passed the expiry block encoded in its attachment.
-#!
-#! An attachment carrying [`NETWORK_ACCOUNT_TARGET_NO_EXPIRATION`] never expires and this procedure
-#! is a no-op for it.
-#!
-#! Otherwise the procedure applies two bounds, and both are required for the expiry to hold:
-#! - it requires the transaction's reference block to lie strictly before the expiry block, and
-#! - it caps the transaction expiration block delta at the number of blocks left until the expiry
-#!   block, or [`DEFAULT_EXPIRATION_BLOCK_DELTA`] if that is smaller.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the attachment is missing from the active note or the number of words is invalid.
-#! - the encoded expiry block is not a u32.
-#! - the reference block is not strictly before the expiry block.
-#!
-#! Invocation: exec
-pub proc assert_not_expired
-    exec.load_attachment
-    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-
-    exec.into_expiry_block
-    # => [expiry_block]
-
-    dup eq.NETWORK_ACCOUNT_TARGET_NO_EXPIRATION
-    # => [never_expires, expiry_block]
-
-    if.true
-        drop
-        # => []
-    else
-        u32assert.err=ERR_NETWORK_ACCOUNT_TARGET_EXPIRY_BLOCK_NOT_U32
-        # => [expiry_block]
-
-        exec.tx::get_block_number
-        # => [reference_block, expiry_block]
-
-        # the reference block must lie strictly before the expiry block, leaving at least one block
-        # of inclusion window for the delta below
-        dup dup.2 u32lt assert.err=ERR_NETWORK_ACCOUNT_TARGET_EXPIRED
-        # => [reference_block, expiry_block]
-
-        u32wrapping_sub
-        # => [blocks_until_expiry]
-
-        # cap the inclusion window at whichever is smaller: the default delta, or the blocks left
-        # until the expiry block
-        push.DEFAULT_EXPIRATION_BLOCK_DELTA u32min
-        # => [expiration_block_delta]
-
-        exec.tx::update_expiration_block_delta
-        # => []
-    end
-    # => []
-end
-
-# HELPER PROCEDURES
-# ================================================================================================
 
 #! Loads the active note's network account target attachment onto the stack.
 #!
@@ -215,7 +128,7 @@ end
 #!
 #! Invocation: exec
 @locals(4)
-proc load_attachment
+pub proc load_attachment
     # find the network account target attachment, if any
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
     exec.active_note::find_attachment
@@ -239,5 +152,90 @@ proc load_attachment
 
     padw loc_loadw_le.0
     # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
-    # => [target_id_suffix, target_id_prefix, exec_hint_tag, expiry_block]
+    # => [target_id_suffix, target_id_prefix, exec_hint_tag, expiration_block_num]
+end
+
+#! Returns a boolean indicating whether the active account matches the target account
+#! encoded in the provided attachment.
+#!
+#! The attachment is loaded with [`load_attachment`]. Callers that also need the expiration check
+#! should load it once and run both checks on a copy of it.
+#!
+#! Inputs:  [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
+#! Outputs: [is_equal]
+#!
+#! Where:
+#! - is_equal is a boolean indicating whether the active account matches the target account.
+#!
+#! Invocation: exec
+pub proc active_account_matches_target_account
+    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
+
+    exec.into_target_id
+    # => [target_id_suffix, target_id_prefix]
+
+    exec.active_account::get_id
+    # => [active_account_id_suffix, active_account_id_prefix, target_id_suffix, target_id_prefix]
+
+    exec.account_id::eq
+    # => [is_equal]
+end
+
+#! Requires that the active note has not passed the expiration block number encoded in the
+#! provided attachment.
+#!
+#! An attachment carrying [`NETWORK_ACCOUNT_TARGET_NO_EXPIRATION`] never expires and this procedure
+#! is a no-op for it.
+#!
+#! Otherwise the procedure applies two bounds, and both are required for the expiration to hold:
+#! - it requires the transaction's reference block to lie strictly before the expiration block, and
+#! - it caps the transaction expiration block delta at the number of blocks left until the
+#!   expiration block, or [`DEFAULT_EXPIRATION_BLOCK_DELTA`] if that is smaller.
+#!
+#! The attachment is loaded with [`load_attachment`].
+#!
+#! Inputs:  [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the encoded expiration block number is not a u32.
+#! - the reference block is not strictly before the expiration block.
+#!
+#! Invocation: exec
+pub proc assert_not_expired
+    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
+
+    exec.into_expiration_block_num
+    # => [expiration_block_num]
+
+    dup eq.NETWORK_ACCOUNT_TARGET_NO_EXPIRATION
+    # => [never_expires, expiration_block_num]
+
+    if.true
+        drop
+        # => []
+    else
+        u32assert.err=ERR_NETWORK_ACCOUNT_TARGET_EXPIRATION_BLOCK_NUM_NOT_U32
+        # => [expiration_block_num]
+
+        exec.tx::get_reference_block_number
+        # => [reference_block, expiration_block_num]
+
+        # the reference block must lie strictly before the expiration block, leaving at least one
+        # block of inclusion window for the delta below
+        dup dup.2 u32lt assert.err=ERR_NETWORK_ACCOUNT_TARGET_EXPIRED
+        # => [reference_block, expiration_block_num]
+
+        sub
+        # => [blocks_until_expiration]
+
+        # cap the inclusion window at whichever is smaller: the default delta, or the blocks left
+        # until the expiration block
+        push.DEFAULT_EXPIRATION_BLOCK_DELTA u32min
+        # => [expiration_block_delta]
+
+        exec.tx::update_expiration_block_delta
+        # => []
+    end
+    # => []
 end
