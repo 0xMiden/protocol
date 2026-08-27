@@ -21,6 +21,11 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! Outputs:
 #!   Operand stack: []
 #!
+#! Panics if:
+#! - insufficient number of valid approver or guardian signatures.
+#! - the approval window ended at or before the transaction reference block, see
+#!   `multisig::auth_tx`.
+#!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_guarded_multisig(auth_args: word)

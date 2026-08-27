@@ -15,6 +15,7 @@ use miden_protocol::account::{
     StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -786,11 +787,21 @@ fn extract_tx_summary<'store, STORE>(
 
     // Validate the metadata against the kernel state so that a summary preimage carrying
     // fabricated values is rejected rather than presented to the signer.
-    let expected_expiration_delta = process.get_expiration_block_delta()?;
-    if metadata.expiration_delta() != expected_expiration_delta {
-        return Err(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
-            expected: expected_expiration_delta,
-            actual: metadata.expiration_delta(),
+    //
+    // The deadlines are compared instead of the raw deltas because the summary measures its delta
+    // from the block it binds while the kernel measures it from the reference block. Both name the
+    // same block for a summary bound to the reference block, and components binding an earlier
+    // block, such as the multisig ones, rebase the kernel's delta onto it.
+    let expected_expiration = expiration_block_num(
+        process.get_reference_block_number()?,
+        process.get_expiration_block_delta()?,
+    );
+    let summary_expiration =
+        expiration_block_num(metadata.block_number(), metadata.expiration_delta());
+    if summary_expiration != expected_expiration {
+        return Err(TransactionKernelError::TransactionSummaryExpirationMismatch {
+            expected: expected_expiration,
+            actual: summary_expiration,
         });
     }
 
@@ -818,6 +829,19 @@ fn extract_tx_summary<'store, STORE>(
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Returns the block by which a transaction expiring `expiration_delta` blocks after `block_number`
+/// must be included, or [`BlockNumber::MAX`] if the delta is unset, which is how the kernel denotes
+/// a transaction that does not expire.
+fn expiration_block_num(block_number: BlockNumber, expiration_delta: u16) -> BlockNumber {
+    if expiration_delta == 0 {
+        return BlockNumber::MAX;
+    }
+
+    // A fabricated block number close to the maximum would overflow, but saturating is safe: the
+    // bound block is validated against the blocks the transaction authenticates further down.
+    BlockNumber::from(block_number.as_u32().saturating_add(u32::from(expiration_delta)))
+}
 
 /// Builds the note metadata from sender, note type and tag if all inputs are valid.
 fn build_note_metadata(

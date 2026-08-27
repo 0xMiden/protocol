@@ -1,3 +1,5 @@
+use core::num::NonZeroU16;
+
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
@@ -11,6 +13,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetId, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -23,6 +26,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DUPLICATE_APPROVER_PUBLIC_KEY,
+    ERR_MULTISIG_APPROVAL_EXPIRED,
     ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
     ERR_TOO_MANY_APPROVERS,
     ERR_TX_ALREADY_EXECUTED,
@@ -483,7 +487,7 @@ async fn test_multisig_stale_signatures_fail_after_expiration(
         .unwrap();
 
     let salt = Word::from([Felt::new_unchecked(5); 4]);
-    let expiration_delta = core::num::NonZeroU16::new(3).unwrap();
+    let expiration_delta = NonZeroU16::new(3).unwrap();
     let expiration_script = ExpirationTransactionScript::new(expiration_delta);
     let ref_block = mock_chain.latest_block_header().block_num();
 
@@ -619,6 +623,163 @@ async fn test_multisig_binds_block_older_than_reference_block() -> anyhow::Resul
 
     // The transaction executed against the new chain tip, not against the block it bound.
     assert_eq!(executed_transaction.block_header().block_num(), signed_block + 5);
+
+    Ok(())
+}
+
+/// Tests that an approver who inspects the transaction after the chain advanced is shown the same
+/// summary the earlier approvers signed, even when an expiration delta is set.
+///
+/// The expiration restriction must not change the kernel state the host validates the summary
+/// against, otherwise re-deriving the summary fails instead of reporting the missing signatures.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+/// - 1 Transaction Script setting the expiration delta
+#[tokio::test]
+async fn test_multisig_tx_summary_is_stable_while_the_chain_advances() -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::from(17u32); 4]);
+    let expiration_delta = NonZeroU16::new(10).unwrap();
+    let expiration_script = ExpirationTransactionScript::new(expiration_delta);
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(signed_block, salt);
+
+    // The first approver is shown the summary while `signed_block` is the chain tip.
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let tx_summary_commitment = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+
+    mock_chain.prove_until_block(signed_block + 2)?;
+
+    // The second approver inspects the same proposal against the new chain tip and must see the
+    // summary the first approver signed.
+    let later_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .add_signature(public_keys[0].to_commitment(), tx_summary_commitment, sig_1)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_eq!(later_summary.to_commitment(), tx_summary_commitment);
+
+    Ok(())
+}
+
+/// Tests that the approval expires relative to the block the summary binds rather than relative to
+/// the transaction reference block.
+///
+/// The cases walk the chain tip through the approval window: the transaction keeps the deadline the
+/// approvers signed for until the chain reaches it, and the block at the deadline is already too
+/// late to build the transaction from.
+///
+/// **Roles:**
+/// - 3 Approvers (2 signers required)
+/// - 1 Multisig Contract
+/// - 1 Transaction Script setting the expiration delta of 3
+#[rstest]
+#[case::first_block_of_the_window(1, None)]
+#[case::last_block_the_tx_can_be_built_from(2, None)]
+#[case::deadline_reached(3, Some(ERR_MULTISIG_APPROVAL_EXPIRED))]
+#[tokio::test]
+async fn test_multisig_approval_expires_relative_to_bound_block(
+    #[case] blocks_advanced: u32,
+    #[case] expected_error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::from(11u32); 4]);
+    let expiration_delta = NonZeroU16::new(3).unwrap();
+    let expiration_script = ExpirationTransactionScript::new(expiration_delta);
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(signed_block, salt);
+    let expiration_block = signed_block + u32::from(expiration_delta.get());
+
+    // The approvers are shown the summary while `signed_block` is the chain tip.
+    let tx_summary = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    assert_eq!(tx_summary.expiration_delta(), expiration_delta.get());
+
+    let tx_summary_commitment = tx_summary.to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing_inputs)
+        .await?;
+
+    mock_chain.prove_until_block(signed_block + blocks_advanced)?;
+
+    let result = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(expiration_script.into())
+        .tx_script_args(expiration_script.tx_script_args())
+        .multisig_auth_args(auth_args)
+        .add_signature(public_keys[0].to_commitment(), tx_summary_commitment, sig_1)
+        .add_signature(public_keys[1].to_commitment(), tx_summary_commitment, sig_2)
+        .build()?
+        .execute()
+        .await;
+
+    match expected_error {
+        // The transaction expires at the block the approvers signed for instead of at the
+        // reference block plus the delta.
+        None => assert_eq!(result?.expiration_block_num(), expiration_block),
+        Some(expected_error) => assert_transaction_executor_error!(result, expected_error),
+    }
 
     Ok(())
 }

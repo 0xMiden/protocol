@@ -19,6 +19,11 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig_sma
 #! Outputs:
 #!   Operand stack: []
 #!
+#! Panics if:
+#! - insufficient number of valid signatures (below threshold).
+#! - the approval window ended at or before the transaction reference block, see
+#!   `multisig_smart::auth_tx`.
+#!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_multisig_smart(auth_args: word)
