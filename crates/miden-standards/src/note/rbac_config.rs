@@ -179,18 +179,19 @@ impl RbacConfigNote {
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
-        expiry: Option<BlockNumber>,
+        expiration_block_num: Option<BlockNumber>,
         config: RbacConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
-        NetworkAccountTarget::ensure_presence(&mut attachments, target, expiry).map_err(|err| {
-            NoteError::other_with_source(
-                "failed to bind the RbacConfig note to its target account",
-                err,
-            )
-        })?;
+        NetworkAccountTarget::ensure_presence(&mut attachments, target, expiration_block_num)
+            .map_err(|err| {
+                NoteError::other_with_source(
+                    "failed to bind the RbacConfig note to its target account",
+                    err,
+                )
+            })?;
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {

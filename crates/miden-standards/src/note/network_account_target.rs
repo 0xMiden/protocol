@@ -19,13 +19,13 @@ use crate::note::{NoteExecutionHint, StandardNoteAttachment};
 /// - 0th felt: [target_id_suffix (56 bits) | 8 zero bits]
 /// - 1st felt: [target_id_prefix (64 bits)]
 /// - 2nd felt: [24 zero bits | exec_hint_payload (32 bits) | exec_hint_tag (8 bits)]
-/// - 3rd felt: [32 zero bits | expiry_block (32 bits)]
+/// - 3rd felt: [32 zero bits | expiration_block_num (32 bits)]
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NetworkAccountTarget {
     target_id: AccountId,
     exec_hint: NoteExecutionHint,
-    expiry: Option<BlockNumber>,
+    expiration_block_num: Option<BlockNumber>,
 }
 
 impl NetworkAccountTarget {
@@ -41,7 +41,8 @@ impl NetworkAccountTarget {
 
     /// Creates a new [`NetworkAccountTarget`] from the provided parts.
     ///
-    /// The returned target never expires; add an expiry with [`NetworkAccountTarget::with_expiry`].
+    /// The returned target never expires; add an expiration block number with
+    /// [`NetworkAccountTarget::with_expiration_block_num`].
     ///
     /// # Errors
     ///
@@ -56,7 +57,11 @@ impl NetworkAccountTarget {
             return Err(NetworkAccountTargetError::TargetNotPublic(target_id));
         }
 
-        Ok(Self { target_id, exec_hint, expiry: None })
+        Ok(Self {
+            target_id,
+            exec_hint,
+            expiration_block_num: None,
+        })
     }
 
     /// Sets the block after which the note carrying this target can no longer take effect.
@@ -64,42 +69,45 @@ impl NetworkAccountTarget {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `expiry` is [`BlockNumber::GENESIS`], which encodes "never expires" and so cannot express
-    ///   an expiry.
-    pub fn with_expiry(mut self, expiry: BlockNumber) -> Result<Self, NetworkAccountTargetError> {
-        if expiry == BlockNumber::GENESIS {
-            return Err(NetworkAccountTargetError::ExpiryIsGenesis);
+    /// - `expiration_block_num` is [`BlockNumber::GENESIS`], which encodes "never expires" and so
+    ///   cannot express an expiration.
+    pub fn with_expiration_block_num(
+        mut self,
+        expiration_block_num: BlockNumber,
+    ) -> Result<Self, NetworkAccountTargetError> {
+        if expiration_block_num == BlockNumber::GENESIS {
+            return Err(NetworkAccountTargetError::ExpirationBlockNumIsGenesis);
         }
 
-        self.expiry = Some(expiry);
+        self.expiration_block_num = Some(expiration_block_num);
         Ok(self)
     }
 
     /// Ensures `attachments` carries a [`NetworkAccountTarget`] for `target_id` expiring at
-    /// `expiry`, appending one with [`NoteExecutionHint::Always`] if none is present.
+    /// `expiration_block_num`, appending one with [`NoteExecutionHint::Always`] if none is present.
     ///
     /// This lets a note that is always targeted at a single network account derive its target from
     /// that account, while leaving the caller free to supply the target themselves, e.g. to pick a
     /// different execution hint, and to add any number of unrelated attachments in their own order.
-    /// A caller-supplied target must agree with `expiry`, so the expiry the note carries is never
-    /// quietly different from the one its builder was given.
+    /// A caller-supplied target must agree with `expiration_block_num`, so the expiration the note
+    /// carries is never quietly different from the one its builder was given.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - an attachment with the [`NetworkAccountTarget::ATTACHMENT_SCHEME`] does not decode as a
     ///   [`NetworkAccountTarget`], targets an account other than `target_id`, or expires at a block
-    ///   other than `expiry`.
+    ///   other than `expiration_block_num`.
     /// - no such attachment is present and `target_id` is not
     ///   [`AccountType::Public`](miden_protocol::account::AccountType::Public), since a network
     ///   account must be public.
     pub(crate) fn ensure_presence(
         attachments: &mut Vec<NoteAttachment>,
         target_id: AccountId,
-        expiry: Option<BlockNumber>,
+        expiration_block_num: Option<BlockNumber>,
     ) -> Result<(), NetworkAccountTargetError> {
         // Every attachment of the scheme is validated, so no attachment can claim a target or an
-        // expiry other than the requested one.
+        // expiration block number other than the requested one.
         let mut is_present = false;
         for attachment in attachments
             .iter()
@@ -112,10 +120,10 @@ impl NetworkAccountTarget {
                     actual: attached.target_id(),
                 });
             }
-            if attached.expiry() != expiry {
-                return Err(NetworkAccountTargetError::ExpiryMismatch {
-                    expected: expiry,
-                    actual: attached.expiry(),
+            if attached.expiration_block_num() != expiration_block_num {
+                return Err(NetworkAccountTargetError::ExpirationBlockNumMismatch {
+                    expected: expiration_block_num,
+                    actual: attached.expiration_block_num(),
                 });
             }
 
@@ -124,8 +132,10 @@ impl NetworkAccountTarget {
 
         if !is_present {
             let target = Self::new(target_id, NoteExecutionHint::Always)?;
-            let target = match expiry {
-                Some(expiry) => target.with_expiry(expiry)?,
+            let target = match expiration_block_num {
+                Some(expiration_block_num) => {
+                    target.with_expiration_block_num(expiration_block_num)?
+                },
                 None => target,
             };
             attachments.push(NoteAttachment::from(target));
@@ -148,8 +158,8 @@ impl NetworkAccountTarget {
     }
 
     /// Returns the last block at which the note may take effect, or `None` if it never expires.
-    pub fn expiry(&self) -> Option<BlockNumber> {
-        self.expiry
+    pub fn expiration_block_num(&self) -> Option<BlockNumber> {
+        self.expiration_block_num
     }
 }
 
@@ -159,7 +169,7 @@ impl From<NetworkAccountTarget> for NoteAttachment {
         word[0] = network_attachment.target_id.suffix();
         word[1] = network_attachment.target_id.prefix().as_felt();
         word[2] = network_attachment.exec_hint.into();
-        word[3] = network_attachment.expiry.map_or(Felt::from(0u32), Felt::from);
+        word[3] = network_attachment.expiration_block_num.map_or(Felt::from(0u32), Felt::from);
 
         NoteAttachment::with_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word)
     }
@@ -199,7 +209,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
         let id_suffix = word[0];
         let id_prefix = word[1];
         let exec_hint = word[2];
-        let expiry = word[3];
+        let expiration_block_num = word[3];
 
         let target_id = AccountId::try_from_elements(id_suffix, id_prefix)
             .map_err(NetworkAccountTargetError::DecodeTargetId)?;
@@ -207,13 +217,19 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
         let exec_hint = NoteExecutionHint::try_from(exec_hint.as_canonical_u64())
             .map_err(NetworkAccountTargetError::DecodeExecutionHint)?;
 
-        let expiry = u32::try_from(expiry.as_canonical_u64())
-            .map_err(|_| NetworkAccountTargetError::DecodeExpiryBlock(expiry.as_canonical_u64()))?;
+        let expiration_block_num =
+            u32::try_from(expiration_block_num.as_canonical_u64()).map_err(|_| {
+                NetworkAccountTargetError::DecodeExpirationBlockNum(
+                    expiration_block_num.as_canonical_u64(),
+                )
+            })?;
 
         let target = NetworkAccountTarget::new(target_id, exec_hint)?;
-        match expiry {
+        match expiration_block_num {
             0 => Ok(target),
-            expiry => target.with_expiry(BlockNumber::from(expiry)),
+            expiration_block_num => {
+                target.with_expiration_block_num(BlockNumber::from(expiration_block_num))
+            },
         }
     }
 }
@@ -230,16 +246,18 @@ pub enum NetworkAccountTargetError {
     #[error("attached network account target {actual} does not match expected target {expected}")]
     TargetMismatch { expected: AccountId, actual: AccountId },
     #[error(
-        "attached network account target expiry {actual:?} does not match expected expiry {expected:?}"
+        "attached network account target expiration block number {actual:?} does not match expected expiration block number {expected:?}"
     )]
-    ExpiryMismatch {
+    ExpirationBlockNumMismatch {
         expected: Option<BlockNumber>,
         actual: Option<BlockNumber>,
     },
-    #[error("network account target expiry must not be the genesis block, which encodes no expiry")]
-    ExpiryIsGenesis,
-    #[error("failed to decode expiry block: {0} does not fit into a u32")]
-    DecodeExpiryBlock(u64),
+    #[error(
+        "network account target expiration block number must not be the genesis block, which encodes no expiration"
+    )]
+    ExpirationBlockNumIsGenesis,
+    #[error("failed to decode expiration block number: {0} does not fit into a u32")]
+    DecodeExpirationBlockNum(u64),
     #[error(
         "attachment scheme {0} did not match expected type {expected}",
         expected = NetworkAccountTarget::ATTACHMENT_SCHEME
@@ -363,42 +381,42 @@ mod tests {
     }
 
     #[test]
-    fn expiry_round_trips_through_the_attachment() -> anyhow::Result<()> {
+    fn expiration_block_num_round_trips_through_the_attachment() -> anyhow::Result<()> {
         let target = NetworkAccountTarget::new(public_account_id(), NoteExecutionHint::Always)?
-            .with_expiry(BlockNumber::from(1234))?;
+            .with_expiration_block_num(BlockNumber::from(1234))?;
 
         let decoded = NetworkAccountTarget::try_from(&NoteAttachment::from(target))?;
 
         assert_eq!(decoded, target);
-        assert_eq!(decoded.expiry(), Some(BlockNumber::from(1234)));
+        assert_eq!(decoded.expiration_block_num(), Some(BlockNumber::from(1234)));
 
         Ok(())
     }
 
     #[test]
-    fn absent_expiry_round_trips_as_absent() -> anyhow::Result<()> {
+    fn absent_expiration_block_num_round_trips_as_absent() -> anyhow::Result<()> {
         let target = NetworkAccountTarget::new(public_account_id(), NoteExecutionHint::Always)?;
 
         let decoded = NetworkAccountTarget::try_from(&NoteAttachment::from(target))?;
 
-        assert_eq!(decoded.expiry(), None);
+        assert_eq!(decoded.expiration_block_num(), None);
 
         Ok(())
     }
 
     #[test]
-    fn with_expiry_rejects_the_genesis_block() -> anyhow::Result<()> {
+    fn with_expiration_block_num_rejects_the_genesis_block() -> anyhow::Result<()> {
         let target = NetworkAccountTarget::new(public_account_id(), NoteExecutionHint::Always)?;
 
-        let err = target.with_expiry(BlockNumber::GENESIS).unwrap_err();
+        let err = target.with_expiration_block_num(BlockNumber::GENESIS).unwrap_err();
 
-        assert_matches!(err, NetworkAccountTargetError::ExpiryIsGenesis);
+        assert_matches!(err, NetworkAccountTargetError::ExpirationBlockNumIsGenesis);
 
         Ok(())
     }
 
     #[test]
-    fn decoding_rejects_an_expiry_that_is_not_a_u32() -> anyhow::Result<()> {
+    fn decoding_rejects_an_expiration_block_num_that_is_not_a_u32() -> anyhow::Result<()> {
         let target_id = public_account_id();
         let mut word = Word::empty();
         word[0] = target_id.suffix();
@@ -409,17 +427,18 @@ mod tests {
 
         let err = NetworkAccountTarget::try_from(&attachment).unwrap_err();
 
-        assert_matches!(err, NetworkAccountTargetError::DecodeExpiryBlock(_));
+        assert_matches!(err, NetworkAccountTargetError::DecodeExpirationBlockNum(_));
 
         Ok(())
     }
 
-    /// A caller-supplied target whose expiry differs from the requested one is rejected.
+    /// A caller-supplied target whose expiration block number differs from the requested one is
+    /// rejected.
     #[test]
-    fn ensure_presence_rejects_mismatched_expiry() -> anyhow::Result<()> {
+    fn ensure_presence_rejects_mismatched_expiration_block_num() -> anyhow::Result<()> {
         let target_id = public_account_id();
         let supplied = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)?
-            .with_expiry(BlockNumber::from(50))?;
+            .with_expiration_block_num(BlockNumber::from(50))?;
         let mut attachments = vec![NoteAttachment::from(supplied)];
 
         let err = NetworkAccountTarget::ensure_presence(
@@ -431,7 +450,7 @@ mod tests {
 
         assert_matches!(
             err,
-            NetworkAccountTargetError::ExpiryMismatch { expected, actual }
+            NetworkAccountTargetError::ExpirationBlockNumMismatch { expected, actual }
                 if expected == Some(BlockNumber::from(70))
                     && actual == Some(BlockNumber::from(50))
         );
@@ -439,9 +458,9 @@ mod tests {
         Ok(())
     }
 
-    /// The appended target carries the requested expiry.
+    /// The appended target carries the requested expiration block number.
     #[test]
-    fn ensure_presence_appends_target_with_expiry() -> anyhow::Result<()> {
+    fn ensure_presence_appends_target_with_expiration_block_num() -> anyhow::Result<()> {
         let target_id = public_account_id();
         let mut attachments = vec![];
 
@@ -453,7 +472,7 @@ mod tests {
 
         assert_eq!(attachments.len(), 1);
         assert_eq!(
-            NetworkAccountTarget::try_from(&attachments[0])?.expiry(),
+            NetworkAccountTarget::try_from(&attachments[0])?.expiration_block_num(),
             Some(BlockNumber::from(99))
         );
 

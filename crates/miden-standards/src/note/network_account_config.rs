@@ -175,14 +175,15 @@ impl NetworkAccountConfigNote {
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
-        expiry: Option<BlockNumber>,
+        expiration_block_num: Option<BlockNumber>,
         config: NetworkAccountConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // Bind consumption to the target account: the note script rejects any other consumer.
-        NetworkAccountTarget::ensure_presence(&mut attachments, target, expiry).map_err(|err| {
-            NoteError::other_with_source("failed to bind the note to its target account", err)
-        })?;
+        NetworkAccountTarget::ensure_presence(&mut attachments, target, expiration_block_num)
+            .map_err(|err| {
+                NoteError::other_with_source("failed to bind the note to its target account", err)
+            })?;
 
         let attachments = NoteAttachments::new(attachments)?;
 

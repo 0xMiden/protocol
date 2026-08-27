@@ -114,16 +114,17 @@ impl ConstantFeePolicyConfigNote {
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
-        expiry: Option<BlockNumber>,
+        expiration_block_num: Option<BlockNumber>,
         note_script_root: NoteScriptRoot,
         fee_asset: FungibleAsset,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // Bind the note to `account`: the note script asserts, before calling `set_note_fee`, that
         // the consuming account matches this `NetworkAccountTarget`.
-        NetworkAccountTarget::ensure_presence(&mut attachments, target, expiry).map_err(|err| {
-            NoteError::other_with_source("failed to bind the note to its target account", err)
-        })?;
+        NetworkAccountTarget::ensure_presence(&mut attachments, target, expiration_block_num)
+            .map_err(|err| {
+                NoteError::other_with_source("failed to bind the note to its target account", err)
+            })?;
 
         let attachments = NoteAttachments::new(attachments)?;
 
