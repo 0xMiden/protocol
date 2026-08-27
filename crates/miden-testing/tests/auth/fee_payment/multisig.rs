@@ -60,7 +60,7 @@ fn multisig_fixture(
 fn assert_auth_args_bound_as_salt(tx_summary: &TransactionSummary, auth_args: Word) {
     assert_eq!(
         tx_summary.user_params().as_elements(),
-        &[ZERO, ZERO, ZERO, auth_args[0], auth_args[1], auth_args[2], auth_args[3]]
+        &[ZERO, ZERO, auth_args[0], auth_args[1], auth_args[2], auth_args[3]]
     );
 }
 

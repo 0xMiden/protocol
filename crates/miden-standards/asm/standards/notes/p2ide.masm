@@ -137,7 +137,7 @@ pub proc main
     # => []
 
     # read the timelock block height and the current block number, then assert note is unlocked
-    mem_load.TIMELOCK_HEIGHT_ITEM exec.tx::get_block_number
+    mem_load.TIMELOCK_HEIGHT_ITEM exec.tx::get_reference_block_number
     # => [current_block_height, timelock_block_height]
 
     exec.assert_unlocked

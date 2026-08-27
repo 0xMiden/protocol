@@ -352,12 +352,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use miden_protocol::account::AccountId;
+    use miden_protocol::asset::AssetId;
     use miden_protocol::block::FeeParameters;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
     use miden_protocol::transaction::RawOutputNote;
     use miden_standards::note::TxFeeNote;
     use miden_tx::NetworkNotePricer;
-    use rstest::rstest;
 
     use super::*;
 
@@ -380,7 +380,8 @@ mod tests {
         let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("testing faucet ID should be valid");
         let pricer = NetworkNotePricer::builder()
-            .fee_parameters(FeeParameters::new(fee_faucet_id, 500))
+            .fee_parameters(FeeParameters::new(500))
+            .fee_asset_id(AssetId::new_fungible(fee_faucet_id))
             .build();
 
         for &note in PricedNote::all() {
@@ -440,47 +441,37 @@ mod tests {
         Ok(())
     }
 
-    /// Snapshot check enforcing freshness of the checked-in cost tables: re-executes each priced
-    /// note's benchmark scenarios and compares the measured maximum against the compiled-in
-    /// constant, failing when they diverge by more than [`DRIFT_TOLERANCE_PERCENT`]. Catches
-    /// kernel, standards, or agglayer changes that meaningfully shift a note's consumption cost
-    /// without the tables having been regenerated.
-    #[rstest]
-    #[case::p2id(PricedNote::Standard(StandardNote::P2ID))]
-    #[case::p2ide(PricedNote::Standard(StandardNote::P2IDE))]
-    #[case::swap(PricedNote::Standard(StandardNote::SWAP))]
-    #[case::pswap(PricedNote::Standard(StandardNote::PSWAP))]
-    #[case::mint(PricedNote::Standard(StandardNote::MINT))]
-    #[case::burn(PricedNote::Standard(StandardNote::BURN))]
-    #[case::faucet_policy_config(PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG))]
-    #[case::faucet_metadata_config(PricedNote::Standard(StandardNote::FAUCET_METADATA_CONFIG))]
-    #[case::min_burn_amount_config(PricedNote::Standard(StandardNote::MIN_BURN_AMOUNT_CONFIG))]
-    #[case::allowlist_config(PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG))]
-    #[case::blocklist_config(PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG))]
-    #[case::pause_config(PricedNote::Standard(StandardNote::PAUSE_CONFIG))]
-    #[case::owner_config(PricedNote::Standard(StandardNote::OWNER_CONFIG))]
-    #[case::rbac_config(PricedNote::Standard(StandardNote::RBAC_CONFIG))]
-    #[case::network_account_config(PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG))]
-    #[case::fee_sponsorship(PricedNote::Standard(StandardNote::FEE_SPONSORSHIP))]
-    #[case::claim(PricedNote::Agglayer(AgglayerNote::CLAIM))]
-    #[case::b2agg(PricedNote::Agglayer(AgglayerNote::B2AGG))]
-    #[case::config_agg_bridge(PricedNote::Agglayer(AgglayerNote::CONFIG_AGG_BRIDGE))]
-    #[case::deregister_agg_faucet(PricedNote::Agglayer(AgglayerNote::DEREGISTER_AGG_FAUCET))]
-    #[case::update_ger(PricedNote::Agglayer(AgglayerNote::UPDATE_GER))]
-    #[case::remove_ger(PricedNote::Agglayer(AgglayerNote::REMOVE_GER))]
+    /// Snapshot check enforcing freshness of the checked-in cost tables: re-executes the
+    /// benchmark scenarios of every note in [`PricedNote::all`] and compares each measured
+    /// maximum against the compiled-in constant, failing when they diverge by more than
+    /// [`DRIFT_TOLERANCE_PERCENT`]. Catches kernel, standards, or agglayer changes that
+    /// meaningfully shift a note's consumption cost without the tables having been
+    /// regenerated.
     #[tokio::test]
-    async fn checked_in_cost_matches_benched_cycles(#[case] note: PricedNote) -> Result<()> {
-        let measured = benched_cycles(note).await?;
-        let committed = note.committed_cycles();
+    async fn checked_in_cost_matches_benched_cycles() -> Result<()> {
+        let mut stale = Vec::new();
+        for &note in PricedNote::all() {
+            let measured = benched_cycles(note).await?;
+            let committed = note.committed_cycles();
 
-        let (measured_scaled, committed) = (u64::from(measured) * 100, u64::from(committed));
-        let within_tolerance = measured_scaled <= committed * (100 + DRIFT_TOLERANCE_PERCENT)
-            && measured_scaled >= committed * (100 - DRIFT_TOLERANCE_PERCENT);
+            let (measured_scaled, committed) = (u64::from(measured) * 100, u64::from(committed));
+            let within_tolerance = measured_scaled <= committed * (100 + DRIFT_TOLERANCE_PERCENT)
+                && measured_scaled >= committed * (100 - DRIFT_TOLERANCE_PERCENT);
+            if !within_tolerance {
+                stale.push(format!(
+                    "{}: measured {measured} cycles vs checked-in {committed}",
+                    note.name(),
+                ));
+            }
+        }
+
         assert!(
-            within_tolerance,
-            "cost table stale for {note:?}: measured {measured} cycles vs checked-in \
-             {committed} (more than {DRIFT_TOLERANCE_PERCENT}% apart): run `make \
-             update-note-costs` and commit the updated tables",
+            stale.is_empty(),
+            "cost table stale for {} note(s), each more than {DRIFT_TOLERANCE_PERCENT}% from \
+             its checked-in constant: {}. Run `make update-note-costs` and commit the updated \
+             tables",
+            stale.len(),
+            stale.join("; "),
         );
         Ok(())
     }
