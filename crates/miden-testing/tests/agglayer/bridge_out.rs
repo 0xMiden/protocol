@@ -153,7 +153,11 @@ async fn bridge_out_consecutive(
         verification_base_fee,
     )?
     .build_existing()?;
-    let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by faucet manager)
@@ -472,7 +476,11 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         bridge_admin_account_id(),
         bridge_account.id(),
     );
-    let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     builder.add_account(faucet.clone())?;
 
     let config_note = ConfigAggBridgeNote::create(
@@ -713,7 +721,11 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         bridge_admin_account_id(),
         bridge_account.id(),
     );
-    let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
@@ -1113,7 +1125,9 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         .expect("valid eth address");
     let origin_network = 7u32; // any stable u32 — Miden's test network id
     let scale = 0u8;
-    let metadata_hash = MetadataHash::from_token_info("Native Token", "NATIVE", 8);
+    // The faucet is the origin token here, so its own metadata is the hash preimage.
+    let metadata_hash =
+        MetadataHash::from_native_faucet(&FungibleFaucet::try_from(&native_faucet)?);
 
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {

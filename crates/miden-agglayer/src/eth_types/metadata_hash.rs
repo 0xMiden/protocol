@@ -44,16 +44,21 @@ impl MetadataHash {
         Self::from_abi_encoded(&encoded)
     }
 
-    /// Computes the metadata hash from a faucet's own token metadata.
+    /// Computes the metadata hash of a Miden-native faucet from its own token metadata.
     ///
-    /// The `decimals` in the AggLayer preimage are the origin token's. A faucet's own `decimals`
-    /// is an independent value that nothing ties to them, so this reproduces the hash registered
-    /// on the bridge only for a faucet the deployer gave metadata identical to the origin token's:
-    /// the same decimals, a name within
-    /// [`TokenName`](miden_standards::account::faucets::TokenName)'s 32 bytes, and a symbol within
+    /// The preimage is always the *origin* token's `(name, symbol, decimals)`. For a faucet
+    /// registered with `is_native = true` the faucet is that origin token, so its stored metadata
+    /// is the preimage and this cannot disagree with what the bridge registers.
+    ///
+    /// Do not use this for a wrapped faucet. There the origin token is a contract on another
+    /// chain, and the faucet is a separate account whose metadata nothing constrains to match it:
+    /// the origin decimals may exceed
+    /// [`FungibleFaucet::MAX_DECIMALS`](miden_standards::account::faucets::FungibleFaucet::MAX_DECIMALS),
+    /// its name may exceed [`TokenName`](miden_standards::account::faucets::TokenName)'s 32 bytes
+    /// and its symbol may fall outside
     /// [`TokenSymbol`](miden_protocol::asset::TokenSymbol)'s 1-12 uppercase ASCII characters.
-    /// Otherwise pass the origin token's values to [`Self::from_token_info`] instead.
-    pub fn from_fungible_faucet(faucet: &FungibleFaucet) -> Self {
+    /// Pass the origin chain's values to [`Self::from_token_info`] instead.
+    pub fn from_native_faucet(faucet: &FungibleFaucet) -> Self {
         Self::from_token_info(
             faucet.token_name().as_str(),
             &faucet.symbol().to_string(),

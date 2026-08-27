@@ -28,7 +28,6 @@ use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SEND
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::SponsorshipPolicy;
-use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
@@ -720,7 +719,7 @@ pub async fn tx_consume_b2agg_note(
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
-    let metadata_hash = MetadataHash::from_fungible_faucet(&FungibleFaucet::try_from(&faucet)?);
+    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet.id(),
