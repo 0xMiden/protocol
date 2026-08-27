@@ -51,6 +51,7 @@
 - [BREAKING] AggLayer faucets now allowlist and price `RBAC_CONFIG` notes so their roles, including `ADMIN`, can be rotated after deployment ([#3570](https://github.com/0xMiden/protocol/issues/3570)).
 - Documented that `authority::assert_authorized` is a no-op under `Authority::AuthControlled` ([#3500](https://github.com/0xMiden/protocol/pull/3500)).
 - Fixed `FungibleFaucet::receive_and_burn` treating a non-fungible asset issued by the same account as a fungible burn, which reduced `token_supply` without burning any fungible supply; the asset is now validated with the new `miden::standards::assets::fungible_asset::validate` procedure ([#3553](https://github.com/0xMiden/protocol/pull/3553)).
+- Fixed `TransactionMeasurements::note_execution` reporting each input note's details commitment instead of its note ID ([#3724](https://github.com/0xMiden/protocol/pull/3724)).
 - The canonical encoding's reserved account-header and storage-slot elements are now asserted to be zero at account creation, in both the transaction kernel and the Rust `try_from_elements` parsers ([#3599](https://github.com/0xMiden/protocol/issues/3599)).
 - Fixed the authentication procedure not ending up at index 0 of an account's code when its MAST root was already exported by another component ([#3566](https://github.com/0xMiden/protocol/pull/3566)).
 - [BREAKING] Foreign procedure invocation now requires the provided procedure root to be part of the foreign account's code, so a caller can no longer execute arbitrary code under a foreign account's identity ([#3575](https://github.com/0xMiden/protocol/pull/3575)).
@@ -59,6 +60,7 @@
 - Fixed `input_note::remove_asset` leaving a dangling asset slot when a non-canonical fungible value produced an empty removal remainder ([#3606](https://github.com/0xMiden/protocol/pull/3606)).
 - Fixed `input_note::remove_asset` succeeding when asked to remove an empty or malformed asset ID instead of reporting the asset as not found ([#3607](https://github.com/0xMiden/protocol/pull/3607)).
 - Storage slot types are now validated against the supported set at account creation, and the delta commitment rejects an unrecognized slot type instead of treating it as a map ([#3608](https://github.com/0xMiden/protocol/pull/3608)).
+- MINT and BURN notes for a public faucet now carry the `NetworkAccountTarget` attachment that identifies them as network notes ([#3664](https://github.com/0xMiden/protocol/pull/3664)).
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
 - [BREAKING] Enforced the limit of 1024 per asset delta op for added and removed account vault deltas inside and outside the tx kernel ([#3623](https://github.com/0xMiden/protocol/pull/3623)).
 - [BREAKING] Priced PSWAP fills against the note's initial offered asset rather than its remaining assets ([#3601](https://github.com/0xMiden/protocol/issues/3601)).
