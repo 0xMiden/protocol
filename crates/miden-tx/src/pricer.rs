@@ -8,8 +8,8 @@ use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
-use miden_standards::note::StandardNote;
 use miden_standards::note::costs::NoteCost;
+use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 
 // NETWORK NOTE PRICER
 // ================================================================================================
@@ -34,13 +34,6 @@ pub enum NotePricingError {
     UnknownNoteScriptRoot(NoteScriptRoot),
 }
 
-/// Resolves a note script root to its benchmarked consumption cost, consulting the standard
-/// and agglayer cost tables (their script-root domains are disjoint, so the order is
-/// irrelevant).
-fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
-    StandardNote::note_cost(root).or_else(|| AgglayerNote::note_cost(root))
-}
-
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
@@ -54,6 +47,10 @@ fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
 /// through the builder's `note_costs` take precedence over the tables, letting an account
 /// price note families the tables do not know — or a table-known script root whose
 /// consumption on that account runs extra code and so measures a different cost.
+///
+/// [`FeeSponsorshipNote`] defaults to zero because standard network-account fee collection exempts
+/// sponsorship notes from sponsoring themselves. A cost supplied through the builder's `note_cost`
+/// or `note_costs` methods takes precedence over this default.
 ///
 /// The computed fees are denominated in the given fee asset. A fee schedule stores bare amounts,
 /// so install the fees only into a policy whose
@@ -122,8 +119,8 @@ impl NetworkNotePricer {
         AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
-    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied note script root from its
-    /// benchmarked consumption cost.
+    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied note script root through
+    /// [`Self::price`].
     ///
     /// The policy's bare fee amounts are denominated in the fee asset configured by
     /// [`Self::fee_asset_id`]. Each root is priced through [`Self::price`], so the fee includes
@@ -139,8 +136,8 @@ impl NetworkNotePricer {
         Ok(policy)
     }
 
-    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] prices every supplied
-    /// note script root from its benchmarked consumption cost.
+    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] is generated from the
+    /// supplied note script roots.
     ///
     /// The manager charges in the fee asset configured by [`Self::fee_asset_id`], keeping the
     /// policy's bare fee amounts and their denomination together.
@@ -155,6 +152,16 @@ impl NetworkNotePricer {
             .build())
     }
 
+    /// Resolves a note script root to its pricing cost. Supplied costs take precedence over the
+    /// defaults.
+    fn resolve_note_cost(&self, root: NoteScriptRoot) -> Option<NoteCost> {
+        self.note_costs
+            .get(&root)
+            .cloned()
+            .or_else(|| StandardNote::note_cost(root))
+            .or_else(|| AgglayerNote::note_cost(root))
+    }
+
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently
     /// being priced to cut off self-recursion.
     fn price_recursive(
@@ -162,11 +169,12 @@ impl NetworkNotePricer {
         root: NoteScriptRoot,
         pricing_stack: &mut Vec<NoteScriptRoot>,
     ) -> Result<u64, NotePricingError> {
+        if root == FeeSponsorshipNote::script_root() && !self.note_costs.contains_key(&root) {
+            return Ok(0);
+        }
+
         let cost = self
-            .note_costs
-            .get(&root)
-            .cloned()
-            .or_else(|| resolve_note_cost(root))
+            .resolve_note_cost(root)
             .ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
         // Cycle counts enter the fee computation only here, where the looked-up cost is
         // converted into the kernel's fee inputs.
@@ -225,7 +233,12 @@ mod tests {
         P2ID_CONSUMPTION_CYCLES,
         SWAP_CONSUMPTION_CYCLES,
     };
-    use miden_standards::note::{ConstantFeePolicyConfigNote, P2idNote, SwapNote};
+    use miden_standards::note::{
+        ConstantFeePolicyConfigNote,
+        FeeSponsorshipNote,
+        P2idNote,
+        SwapNote,
+    };
 
     use super::*;
 
@@ -455,6 +468,25 @@ mod tests {
         let manager = pricer.basic_constant_fee_policy_manager(roots).unwrap();
         assert_eq!(manager.active_fee_policy(), BasicConstantFeePolicy::root());
         assert_eq!(manager.fee_asset_id(), pricer.fee_asset_id());
+    }
+
+    #[test]
+    fn sponsorship_defaults_to_zero_but_allows_a_cost_override() {
+        let root = FeeSponsorshipNote::script_root();
+
+        let default_pricer = pricer(500, 0);
+        let default_policy = default_pricer.basic_constant_fee_policy([root]).unwrap();
+        assert_eq!(default_pricer.price(root).unwrap(), AssetAmount::ZERO);
+        assert_eq!(default_policy.fee_schedule().get(&root), Some(&AssetAmount::ZERO));
+
+        const CUSTOM_SPONSORSHIP_CYCLES: u32 = 65_536;
+        let custom_pricer =
+            custom_pricer([(root, NoteCost::new(CUSTOM_SPONSORSHIP_CYCLES, Vec::new()))]);
+        let custom_price = custom_pricer.fee(fee_inputs(CUSTOM_SPONSORSHIP_CYCLES)).unwrap();
+        let custom_policy = custom_pricer.basic_constant_fee_policy([root]).unwrap();
+
+        assert_eq!(custom_pricer.price(root).unwrap(), custom_price);
+        assert_eq!(custom_policy.fee_schedule().get(&root), Some(&custom_price));
     }
 
     #[test]

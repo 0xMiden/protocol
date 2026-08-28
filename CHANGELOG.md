@@ -7,11 +7,15 @@
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
-- Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
+- Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` that runs it ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
 
 ### Changes
 
+- [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
+- Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([#3485](https://github.com/0xMiden/protocol/pull/3485)).
+- [BREAKING] The multisig authentication components now bind a caller-chosen block instead of the transaction reference block, so approver signatures stay valid while the chain advances ([#3731](https://github.com/0xMiden/protocol/pull/3731)).
+- [BREAKING] Multisig approvals now expire relative to the block the transaction summary binds, so a transaction that is executed against a later reference block keeps the deadline the approvers signed ([#3737](https://github.com/0xMiden/protocol/pull/3737)).
 - [BREAKING] `tx::get_block_commitment` now takes the block number to read. Its direct replacement is `get_reference_block_commitment`. `tx::get_block_number` was renamed to `tx::get_reference_block_number` ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] The transaction summary gained a version and the bound block number, reducing the number of user parameters from seven to six ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
@@ -41,14 +45,17 @@
 - [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3696](https://github.com/0xMiden/protocol/pull/3696)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 - [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
+- [BREAKING] Replaced the dedicated AggLayer faucet account component with the standard `FungibleFaucet`. `AggLayerFaucet` is now a stateless namespace, `AgglayerFaucetError` and the `miden-agglayer-faucet` MASM package were removed, `AggLayerFaucet::account_builder` and `create_existing_agglayer_faucet` take a token name, and `account_builder` now takes `TokenName` / `TokenSymbol` / `AssetAmount` rather than `&str` / `Felt` ([#3525](https://github.com/0xMiden/protocol/pull/3525)).
 - [BREAKING] Introduced `ProtocolConfig` that commits to all kernel's procedures, the fee asset ID and the security policy for recursive verification ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
 - [BREAKING] Renamed `ValidatorKeys` to `ValidatorConfig` and added a quorum to it ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
 - [BREAKING] Replaced `tx::get_fee_faucet_id` with `tx::get_fee_asset_id` ([#3741](https://github.com/0xMiden/protocol/pull/3741)).
 - [BREAKING] Moved the MINT note scripts under a single `miden::standards::notes::mint` module, replacing `notes::mint_fungible` and `notes::mint_non_fungible` with the private `mint::fungible` and `mint::non_fungible` submodules ([#3751](https://github.com/0xMiden/protocol/pull/3751)).
+- [BREAKING] `FeeSponsorshipNote` is now parsed back from a `Note` with `TryFrom<&Note>`, carries a fungible fee asset, and replaces its `target_id` accessor with `tag` ([#3746](https://github.com/0xMiden/protocol/pull/3746)).
 
 ### Fixes
 
 - [BREAKING] AggLayer bridges now allow faucet deregistration while paused, so compromised faucets can be revoked without resuming claims and bridge-outs ([#3750](https://github.com/0xMiden/protocol/issues/3750)).
+- Generated constant fee schedules now assign `FEE_SPONSORSHIP` an explicit zero fee, matching the fee-collection exemption while keeping the note allowlisted ([#3580](https://github.com/0xMiden/protocol/issues/3580)).
 - [BREAKING] Bound the non-fungible MINT note to its faucet the same way the fungible one is bound: the note now stores the full asset and `non_fungible::mint_and_send` asserts the stored `ASSET_ID` against the asset it derives for the active faucet, unifying the two MINT note storage layouts and collapsing `MintNoteStorage` to `Private` / `Public` ([#3482](https://github.com/0xMiden/protocol/pull/3482)).
 - Fixed the multisig, guarded, non-fungible, and AggLayer faucet factories not enabling asset callbacks for faucets configured with a transfer policy ([#3547](https://github.com/0xMiden/protocol/pull/3547)).
 - [BREAKING] AggLayer faucets now allowlist and price `RBAC_CONFIG` notes so their roles, including `ADMIN`, can be rotated after deployment ([#3570](https://github.com/0xMiden/protocol/issues/3570)).
@@ -58,19 +65,22 @@
 - The canonical encoding's reserved account-header and storage-slot elements are now asserted to be zero at account creation, in both the transaction kernel and the Rust `try_from_elements` parsers ([#3599](https://github.com/0xMiden/protocol/issues/3599)).
 - Fixed the authentication procedure not ending up at index 0 of an account's code when its MAST root was already exported by another component ([#3566](https://github.com/0xMiden/protocol/pull/3566)).
 - [BREAKING] Foreign procedure invocation now requires the provided procedure root to be part of the foreign account's code, so a caller can no longer execute arbitrary code under a foreign account's identity ([#3575](https://github.com/0xMiden/protocol/pull/3575)).
+- [BREAKING] Added canonical enforcement for `RoleSymbol` encodings in the `RBAC` entrypoints ([#3524](https://github.com/0xMiden/protocol/pull/3524)).
 - Verified each input note's storage-item count and preimage against its authenticated storage commitment ([#3593](https://github.com/0xMiden/protocol/issues/3593)).
 - Fixed `PrivateOutputNote` construction and deserialization accepting attachment data that is not committed by the note header ([#3579](https://github.com/0xMiden/protocol/pull/3579)).
-- Fixed `input_note::remove_asset` leaving a dangling asset slot when a non-canonical fungible value produced an empty removal remainder ([#3606](https://github.com/0xMiden/protocol/pull/3606)).
+- Fixed `input_note::remove_asset` leaving a dangling asset slot when a non-canonical fungible value produced an empty removal remainder ([#3606](https://github.com/0xMiden/protocol/pull/3606), [#3755](https://github.com/0xMiden/protocol/pull/3755)).
 - Fixed `input_note::remove_asset` succeeding when asked to remove an empty or malformed asset ID instead of reporting the asset as not found ([#3607](https://github.com/0xMiden/protocol/pull/3607)).
 - Storage slot types are now validated against the supported set at account creation, and the delta commitment rejects an unrecognized slot type instead of treating it as a map ([#3608](https://github.com/0xMiden/protocol/pull/3608)).
 - MINT and BURN notes for a public faucet now carry the `NetworkAccountTarget` attachment that identifies them as network notes ([#3664](https://github.com/0xMiden/protocol/pull/3664)).
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
+- `TokenPolicyManager::component_metadata` now declares the two protocol-reserved asset-callback slots ([#3648](https://github.com/0xMiden/protocol/pull/3648)).
 - [BREAKING] Enforced the limit of 1024 per asset delta op for added and removed account vault deltas inside and outside the tx kernel ([#3623](https://github.com/0xMiden/protocol/pull/3623)).
 - [BREAKING] Priced PSWAP fills against the note's initial offered asset rather than its remaining assets ([#3601](https://github.com/0xMiden/protocol/issues/3601)).
 - Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
 - [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
+- The PSWAP note script now rejects a `PswapAttachment` that does not consist of exactly one word, instead of letting the attachment write past the four locals of `get_current_depth` ([#3761](https://github.com/0xMiden/protocol/pull/3761)).
 
 ## v0.16.0 (2026-08-17)
 

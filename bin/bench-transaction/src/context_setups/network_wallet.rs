@@ -283,8 +283,8 @@ const SPONSORED_FEE_AMOUNT: u64 = 500;
 /// reclaim path the note script moves the asset into the sponsor's vault itself, so the
 /// sponsorship note is consumed alone.
 pub fn tx_consume_fee_sponsorship_note_network(reclaim: bool) -> Result<MockTransaction> {
-    let sponsored_asset: Asset =
-        FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, SPONSORED_FEE_AMOUNT)?.into();
+    let sponsored_asset =
+        FungibleAsset::new(ACCOUNT_ID_FEE_FAUCET.try_into()?, SPONSORED_FEE_AMOUNT)?;
 
     let mut builder = super::chain_builder(true);
 
