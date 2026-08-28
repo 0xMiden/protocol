@@ -126,6 +126,11 @@ fn validate_proc_policies(
 }
 
 /// An [`AccountComponent`] implementing a multisig auth component with smart-policy slots.
+///
+/// # Auth args
+///
+/// The transaction's auth args are the commitment to
+/// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,

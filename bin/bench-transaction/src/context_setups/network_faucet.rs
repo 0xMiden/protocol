@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use miden_protocol::Felt;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::crypto::rand::FeltRng;
@@ -98,7 +98,6 @@ fn add_fee_funded_network_non_fungible_faucet(
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner: owner_account_id })
         .with_components(token_policy_manager)

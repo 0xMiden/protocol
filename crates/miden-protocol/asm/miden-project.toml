@@ -1,5 +1,12 @@
 [workspace]
-members = ["kernels/batch", "kernels/transaction", "kernels/transaction-core", "protocol", "protocol_utils"]
+members = [
+  "kernels/batch",
+  "kernels/block",
+  "kernels/transaction",
+  "kernels/transaction-core",
+  "protocol",
+  "protocol_utils",
+]
 
 [workspace.package]
 version = "0.16.0"

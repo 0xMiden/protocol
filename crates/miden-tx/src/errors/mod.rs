@@ -221,9 +221,14 @@ pub enum TransactionKernelError {
     #[error("transaction returned unauthorized event but a commitment did not match: {0}")]
     TransactionSummaryCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-        "transaction summary binds expiration delta {actual} but the transaction's expiration delta is {expected}"
+        "transaction summary expires at block {actual} but the transaction expires at block {expected}"
     )]
-    TransactionSummaryExpirationDeltaMismatch { expected: u16, actual: u16 },
+    TransactionSummaryExpirationMismatch {
+        expected: BlockNumber,
+        actual: BlockNumber,
+    },
+    #[error("transaction summary binds block {0}, which the transaction does not authenticate")]
+    TransactionSummaryUnknownBlockNumber(BlockNumber),
     #[error("failed to construct transaction summary")]
     TransactionSummaryConstructionFailed(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("asset data extracted from the stack by event handler `{handler}` is not well formed")]
