@@ -7,8 +7,17 @@ import "primitives.proto";
 import "transaction.proto";
 
 message FeeParameters {
-  account.AccountId native_asset_id = 1;
-  fixed32 verification_base_fee = 2;
+  fixed32 verification_base_fee = 1;
+}
+
+message ValidatorConfig {
+  repeated primitives.PublicKey keys = 1;
+  uint32 quorum = 2;
+}
+
+message NextProtocolConfig {
+  blockchain.BlockNumber effective_from = 1;
+  primitives.Word protocol_config = 2;
 }
 
 message BlockHeader {
@@ -20,10 +29,11 @@ message BlockHeader {
   primitives.Word nullifier_root = 6;
   primitives.Word note_root = 7;
   primitives.Word tx_commitment = 8;
-  repeated primitives.PublicKey validator_keys = 9;
-  primitives.Word tx_kernel_commitment = 10;
-  FeeParameters fee_parameters = 11;
-  fixed32 timestamp = 12;
+  ValidatorConfig validator_config = 9;
+  FeeParameters fee_parameters = 10;
+  primitives.Word protocol_config_commitment = 11;
+  NextProtocolConfig next_protocol_config = 12;
+  fixed32 timestamp = 13;
 }
 
 message BlockAccountUpdate {
@@ -47,8 +57,6 @@ message BlockBody {
   repeated primitives.Word created_nullifiers = 3;
   repeated transaction.TransactionHeader transactions = 4;
 }
-
-message BlockProof {}
 
 message SignedBlock {
   BlockHeader header = 1;

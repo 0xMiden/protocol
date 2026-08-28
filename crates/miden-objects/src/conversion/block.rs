@@ -8,17 +8,17 @@ use miden_protocol::block::{
     BlockBody,
     BlockHeader,
     BlockNumber,
-    BlockProof,
     BlockSignatures,
     FeeParameters,
     OutputNoteBatch,
     SignedBlock,
-    ValidatorKeys,
+    ValidatorConfig,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::crypto::merkle::MerklePath;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::Nullifier;
+use miden_protocol::protocol_config::NextProtocolConfig;
 use miden_protocol::transaction::{
     OrderedTransactionHeaders,
     OutputNote,
@@ -159,9 +159,10 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             nullifier_root: Some(header.nullifier_root().into()),
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.tx_commitment().into()),
-            validator_keys: header.validator_keys().as_keys().iter().map(Into::into).collect(),
-            tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
+            validator_config: Some(header.validator_config().into()),
             fee_parameters: Some(header.fee_parameters().into()),
+            protocol_config_commitment: Some(header.protocol_config_commitment().into()),
+            next_protocol_config: header.next_protocol_config().map(Into::into),
             timestamp: header.timestamp(),
         }
     }
@@ -194,17 +195,14 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
         let nullifier_root = required!(decoder, value.nullifier_root)?;
         let note_root = required!(decoder, value.note_root)?;
         let tx_commitment = required!(decoder, value.tx_commitment)?;
-        let tx_kernel_commitment = required!(decoder, value.tx_kernel_commitment)?;
-        let validator_keys = value
-            .validator_keys
-            .into_iter()
-            .map(PublicKey::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("validator_keys")?;
-        let validator_keys = ValidatorKeys::new(validator_keys)
-            .map_err(ConversionError::new)
-            .context("validator_keys")?;
+        let validator_config = required!(decoder, value.validator_config)?;
         let fee_parameters = required!(decoder, value.fee_parameters)?;
+        let protocol_config_commitment = required!(decoder, value.protocol_config_commitment)?;
+        let next_protocol_config = value
+            .next_protocol_config
+            .map(TryInto::try_into)
+            .transpose()
+            .context("next_protocol_config")?;
 
         let header = BlockHeader::new(
             prev_block_commitment,
@@ -214,9 +212,10 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
             nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            validator_keys,
+            validator_config,
             fee_parameters,
+            protocol_config_commitment,
+            next_protocol_config,
             value.timestamp,
         );
 
@@ -383,28 +382,8 @@ impl TryFrom<proto::blockchain::OutputNoteBatch> for OutputNoteBatch {
     }
 }
 
-// BLOCK PROOF AND SIGNED BLOCK
+// SIGNED BLOCK
 // ================================================================================================
-
-impl From<&BlockProof> for proto::blockchain::BlockProof {
-    fn from(_proof: &BlockProof) -> Self {
-        Self {}
-    }
-}
-
-impl From<BlockProof> for proto::blockchain::BlockProof {
-    fn from(proof: BlockProof) -> Self {
-        (&proof).into()
-    }
-}
-
-impl TryFrom<proto::blockchain::BlockProof> for BlockProof {
-    type Error = ConversionError;
-
-    fn try_from(_proof: proto::blockchain::BlockProof) -> Result<Self, Self::Error> {
-        Ok(BlockProof::new())
-    }
-}
 
 impl From<&SignedBlock> for proto::blockchain::SignedBlock {
     fn from(block: &SignedBlock) -> Self {
@@ -453,23 +432,76 @@ impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
     }
 }
 
-// KEYS, SIGNATURES, AND FEES
+// VALIDATOR AND PROTOCOL CONFIGURATION
 // ================================================================================================
 
-impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
+impl TryFrom<proto::blockchain::ValidatorConfig> for ValidatorConfig {
     type Error = ConversionError;
 
-    fn try_from(value: proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::blockchain::ValidatorConfig) -> Result<Self, Self::Error> {
+        let keys = value
+            .keys
+            .into_iter()
+            .enumerate()
+            .map(|(index, key)| PublicKey::try_from(key).context(format!("keys[{index}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+        let quorum = u16::try_from(value.quorum).context("quorum")?;
+
+        Self::new(keys, quorum).map_err(ConversionError::new)
+    }
+}
+
+impl From<&ValidatorConfig> for proto::blockchain::ValidatorConfig {
+    fn from(value: &ValidatorConfig) -> Self {
+        Self {
+            keys: value.keys().iter().map(Into::into).collect(),
+            quorum: u32::from(value.quorum()),
+        }
+    }
+}
+
+impl From<ValidatorConfig> for proto::blockchain::ValidatorConfig {
+    fn from(value: ValidatorConfig) -> Self {
+        (&value).into()
+    }
+}
+
+impl TryFrom<proto::blockchain::NextProtocolConfig> for NextProtocolConfig {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::blockchain::NextProtocolConfig) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let native_asset_id = required!(decoder, value.native_asset_id)?;
-        Ok(FeeParameters::new(native_asset_id, value.verification_base_fee))
+        let effective_from = required!(decoder, value.effective_from)?;
+        let protocol_config = required!(decoder, value.protocol_config)?;
+
+        Self::new(effective_from, protocol_config).map_err(ConversionError::new)
+    }
+}
+
+impl From<&NextProtocolConfig> for proto::blockchain::NextProtocolConfig {
+    fn from(value: &NextProtocolConfig) -> Self {
+        Self {
+            effective_from: Some(value.effective_from().into()),
+            protocol_config: Some(value.protocol_config().into()),
+        }
+    }
+}
+
+impl From<NextProtocolConfig> for proto::blockchain::NextProtocolConfig {
+    fn from(value: NextProtocolConfig) -> Self {
+        (&value).into()
+    }
+}
+
+impl From<proto::blockchain::FeeParameters> for FeeParameters {
+    fn from(value: proto::blockchain::FeeParameters) -> Self {
+        Self::new(value.verification_base_fee)
     }
 }
 
 impl From<&FeeParameters> for proto::blockchain::FeeParameters {
     fn from(value: &FeeParameters) -> Self {
         Self {
-            native_asset_id: Some(value.fee_faucet_id().into()),
             verification_base_fee: value.verification_base_fee(),
         }
     }

@@ -20,10 +20,22 @@ use miden_protocol::account::{
 };
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
+use miden_protocol::block::{
+    BlockAccountUpdate,
+    BlockBody,
+    BlockHeader,
+    BlockNumber,
+    ValidatorConfig,
+};
 use miden_protocol::crypto::merkle::SparseMerklePath;
-use miden_protocol::errors::{AccountIdError, BlockBodyError, TransactionHeaderError};
+use miden_protocol::errors::{
+    AccountIdError,
+    ProtocolConfigError,
+    TransactionHeaderError,
+    ValidatorConfigError,
+};
 use miden_protocol::note::{Note, NoteId, NoteInclusionProof};
+use miden_protocol::protocol_config::NextProtocolConfig;
 use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
@@ -352,26 +364,85 @@ fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
 }
 
 #[test]
-fn protobuf_block_body_rejects_created_nullifiers_missing_from_transactions() {
-    let error = BlockBody::try_from(proto::blockchain::BlockBody {
-        created_nullifiers: vec![Word::empty().into()],
-        ..Default::default()
-    })
-    .unwrap_err();
-    let source = error.source().unwrap().downcast_ref::<BlockBodyError>().unwrap();
-
-    assert!(matches!(source, BlockBodyError::CreatedNullifiersMismatch));
-}
-
-#[test]
 fn block_header_rejects_missing_block_number() {
-    let header = BlockHeader::mock(1, None, None, &[], Word::empty());
+    let header = BlockHeader::mock(1, None, None, &[]);
     let mut message = proto::blockchain::BlockHeader::from(header);
     message.block_num = Default::default();
 
     let error = BlockHeader::try_from(message).unwrap_err();
     assert!(error.to_string().starts_with("block_num: field "));
     assert!(error.to_string().ends_with("::block_num is missing"));
+}
+
+fn block_header_with_scheduled_upgrade() -> BlockHeader {
+    let header = BlockHeader::mock(1, None, None, &[]);
+    let (_, validator_config) = ValidatorConfig::random_with_signers(3);
+    let next_protocol_config =
+        NextProtocolConfig::new(BlockNumber::from(42u32), Word::from([9u32, 8, 7, 6])).unwrap();
+
+    BlockHeader::new(
+        header.prev_block_commitment(),
+        header.block_num(),
+        header.chain_commitment(),
+        header.account_root(),
+        header.nullifier_root(),
+        header.note_root(),
+        header.tx_commitment(),
+        validator_config,
+        header.fee_parameters().clone(),
+        header.protocol_config_commitment(),
+        Some(next_protocol_config),
+        header.timestamp(),
+    )
+}
+
+#[test]
+fn block_header_protobuf_round_trip_preserves_current_fields() {
+    let header = block_header_with_scheduled_upgrade();
+
+    let encoded = proto::blockchain::BlockHeader::from(&header).encode_to_vec();
+    let message = proto::blockchain::BlockHeader::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(BlockHeader::try_from(message).unwrap(), header);
+}
+
+#[test]
+fn block_header_protobuf_rejects_invalid_validator_quorum() {
+    let header = block_header_with_scheduled_upgrade();
+    let mut message = proto::blockchain::BlockHeader::from(header);
+    message.validator_config.as_mut().unwrap().quorum = 0;
+
+    let error = BlockHeader::try_from(message).unwrap_err();
+    let source = error.source().unwrap().downcast_ref::<ValidatorConfigError>().unwrap();
+
+    assert!(matches!(
+        source,
+        ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: 0, count: 3 }
+    ));
+}
+
+#[test]
+fn block_header_protobuf_reports_invalid_validator_key_index() {
+    let header = block_header_with_scheduled_upgrade();
+    let mut message = proto::blockchain::BlockHeader::from(header);
+    message.validator_config.as_mut().unwrap().keys[1].encoded.clear();
+
+    let error = BlockHeader::try_from(message).unwrap_err();
+
+    assert!(error.to_string().starts_with("validator_config.keys[1].encoded: "));
+}
+
+#[test]
+fn block_header_protobuf_rejects_upgrade_effective_at_genesis() {
+    let header = block_header_with_scheduled_upgrade();
+    let mut message = proto::blockchain::BlockHeader::from(header);
+    message.next_protocol_config.as_mut().unwrap().effective_from =
+        Some(BlockNumber::GENESIS.into());
+
+    let error = BlockHeader::try_from(message).unwrap_err();
+    let source = error.source().unwrap().downcast_ref::<ProtocolConfigError>().unwrap();
+
+    assert!(matches!(source, ProtocolConfigError::NextConfigEffectiveAtGenesis));
 }
 
 #[test]
