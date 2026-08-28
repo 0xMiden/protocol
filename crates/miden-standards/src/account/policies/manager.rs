@@ -870,7 +870,8 @@ mod tests {
                 .expect("active policy root should be a valid init value");
         }
 
-        let schema_slots = TokenPolicyManager::component_metadata()
+        let schema_slots = manager
+            .component_metadata()
             .storage_schema()
             .build_storage_slots(&init_storage_data)
             .expect("schema should build the manager's storage slots");
