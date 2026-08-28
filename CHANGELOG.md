@@ -7,18 +7,26 @@
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
+- Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` that runs it ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
 
 ### Changes
 
-- [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([3485](https://github.com/0xMiden/protocol/pull/3485)).
+- [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
+- Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
+- [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([#3485](https://github.com/0xMiden/protocol/pull/3485)).
+- [BREAKING] The multisig authentication components now bind a caller-chosen block instead of the transaction reference block, so approver signatures stay valid while the chain advances ([#3731](https://github.com/0xMiden/protocol/pull/3731)).
+- [BREAKING] Multisig approvals now expire relative to the block the transaction summary binds, so a transaction that is executed against a later reference block keeps the deadline the approvers signed ([#3737](https://github.com/0xMiden/protocol/pull/3737)).
+- [BREAKING] `tx::get_block_commitment` now takes the block number to read. Its direct replacement is `get_reference_block_commitment`. `tx::get_block_number` was renamed to `tx::get_reference_block_number` ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
+- [BREAKING] The transaction summary gained a version and the bound block number, reducing the number of user parameters from seven to six ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
 - [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
 - [BREAKING] `NoteScript::from_parts` and `TransactionScript::from_parts` now return a `Result` instead of panicking when the specified entrypoint is not in the provided MAST forest ([#3548](https://github.com/0xMiden/protocol/pull/3548)).
-- [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#2961](https://github.com/0xMiden/protocol/pull/3565)).
+- [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#3565](https://github.com/0xMiden/protocol/pull/3565)).
 - The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
+- The transaction kernel now validates the version and reserved bit of every input note's metadata ([#3743](https://github.com/0xMiden/protocol/pull/3743)).
 - [BREAKING] Renamed the fungible asset amount extraction procedures so the unsuffixed name is the validating one ([#3576](https://github.com/0xMiden/protocol/pull/3576)):
   - `miden::protocol::asset::fungible_value_into_amount` -> `fungible_value_into_amount_unchecked`.
   - `miden::standards::assets::fungible_asset::value_into_amount` to `value_into_amount_unchecked`.
@@ -27,31 +35,39 @@
 - [BREAKING] AggLayer bridge and faucet account builders now take a concrete `BasicConstantFeePolicy` and fee faucet ID, constructing their `FeePolicyManager` internally ([#3583](https://github.com/0xMiden/protocol/pull/3583)).
 - [BREAKING] The transaction kernel no longer requires assets with `AssetComposition::None` to have the non-fungible asset layout ([#3624](https://github.com/0xMiden/protocol/pull/3624)).
 - [BREAKING] Refactored `Asset` into a struct holding `AssetId` and `AssetValue` ([#3625](https://github.com/0xMiden/protocol/pull/3625)).
+- [BREAKING] Refactored the presence of an asset callback slot imply an enabled asset callback flag: the transaction kernel rejects new accounts that violate this and `AccountBuilder` derives the flag from the installed callback slots, replacing `with_asset_callbacks` with `enable_asset_callbacks` ([#3658](https://github.com/0xMiden/protocol/pull/3658)).
 - Moved the transaction kernel API procedures into the kernel's `api` submodule, leaving `exec_kernel_proc` as the only `syscall`-invocable kernel procedure ([#3646](https://github.com/0xMiden/protocol/pull/3646)).
 - Documented that standard note scripts claim only the assets remaining in a note at consumption time ([#3650](https://github.com/0xMiden/protocol/pull/3650)).
 - [BREAKING] Moved the kernel data section of the transaction kernel memory to address `0`, so that `exec_kernel_proc` becomes reusable across multiple kernels ([#3655](https://github.com/0xMiden/protocol/pull/3655)).
-- [BREAKING] The account now carries an 8-bit version ([#3661](https://github.com/0xMiden/protocol/pull/3661)).
+- [BREAKING] The account now carries an 8-bit version ([#3662](https://github.com/0xMiden/protocol/pull/3662)).
 - [BREAKING] Added a 4-bit version to the lowest bits of the asset ID's metadata byte, moving the asset composition to bits 4-5 ([#3670](https://github.com/0xMiden/protocol/pull/3670)).
-- [BREAKING] Widened the note metadata version field from 4 to 6 bits, moving the note type to bit 6 ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
-- [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3695](https://github.com/0xMiden/protocol/pull/3695)).
+- [BREAKING] Widened the note metadata version field from 4 to 6 bits, moving the note type to bit 6 ([#3696](https://github.com/0xMiden/protocol/pull/3696)).
+- [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3696](https://github.com/0xMiden/protocol/pull/3696)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 - [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
+- [BREAKING] Introduced `ProtocolConfig` that commits to all kernel's procedures, the fee asset ID and the security policy for recursive verification ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
+- [BREAKING] Renamed `ValidatorKeys` to `ValidatorConfig` and added a quorum to it ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
+- [BREAKING] Replaced `tx::get_fee_faucet_id` with `tx::get_fee_asset_id` ([#3741](https://github.com/0xMiden/protocol/pull/3741)).
+- [BREAKING] Moved the MINT note scripts under a single `miden::standards::notes::mint` module, replacing `notes::mint_fungible` and `notes::mint_non_fungible` with the private `mint::fungible` and `mint::non_fungible` submodules ([#3751](https://github.com/0xMiden/protocol/pull/3751)).
 
 ### Fixes
 
+- Generated constant fee schedules now assign `FEE_SPONSORSHIP` an explicit zero fee, matching the fee-collection exemption while keeping the note allowlisted ([#3580](https://github.com/0xMiden/protocol/issues/3580)).
 - [BREAKING] Bound the non-fungible MINT note to its faucet the same way the fungible one is bound: the note now stores the full asset and `non_fungible::mint_and_send` asserts the stored `ASSET_ID` against the asset it derives for the active faucet, unifying the two MINT note storage layouts and collapsing `MintNoteStorage` to `Private` / `Public` ([#3482](https://github.com/0xMiden/protocol/pull/3482)).
 - Fixed the multisig, guarded, non-fungible, and AggLayer faucet factories not enabling asset callbacks for faucets configured with a transfer policy ([#3547](https://github.com/0xMiden/protocol/pull/3547)).
 - [BREAKING] AggLayer faucets now allowlist and price `RBAC_CONFIG` notes so their roles, including `ADMIN`, can be rotated after deployment ([#3570](https://github.com/0xMiden/protocol/issues/3570)).
 - Documented that `authority::assert_authorized` is a no-op under `Authority::AuthControlled` ([#3500](https://github.com/0xMiden/protocol/pull/3500)).
 - Fixed `FungibleFaucet::receive_and_burn` treating a non-fungible asset issued by the same account as a fungible burn, which reduced `token_supply` without burning any fungible supply; the asset is now validated with the new `miden::standards::assets::fungible_asset::validate` procedure ([#3553](https://github.com/0xMiden/protocol/pull/3553)).
+- Fixed `TransactionMeasurements::note_execution` reporting each input note's details commitment instead of its note ID ([#3724](https://github.com/0xMiden/protocol/pull/3724)).
 - The canonical encoding's reserved account-header and storage-slot elements are now asserted to be zero at account creation, in both the transaction kernel and the Rust `try_from_elements` parsers ([#3599](https://github.com/0xMiden/protocol/issues/3599)).
 - Fixed the authentication procedure not ending up at index 0 of an account's code when its MAST root was already exported by another component ([#3566](https://github.com/0xMiden/protocol/pull/3566)).
 - [BREAKING] Foreign procedure invocation now requires the provided procedure root to be part of the foreign account's code, so a caller can no longer execute arbitrary code under a foreign account's identity ([#3575](https://github.com/0xMiden/protocol/pull/3575)).
 - Verified each input note's storage-item count and preimage against its authenticated storage commitment ([#3593](https://github.com/0xMiden/protocol/issues/3593)).
-- Fixed `PrivateOutputNote` construction and deserialization accepting attachment data that is not committed by the note header ([#3556](https://github.com/0xMiden/protocol/pull/3579)).
-- Fixed `input_note::remove_asset` leaving a dangling asset slot when a non-canonical fungible value produced an empty removal remainder ([#3591](https://github.com/0xMiden/protocol/pull/3606)).
-- Fixed `input_note::remove_asset` succeeding when asked to remove an empty or malformed asset ID instead of reporting the asset as not found ([#3592](https://github.com/0xMiden/protocol/pull/3607)).
-- Storage slot types are now validated against the supported set at account creation, and the delta commitment rejects an unrecognized slot type instead of treating it as a map ([#3598](https://github.com/0xMiden/protocol/pull/3608)).
+- Fixed `PrivateOutputNote` construction and deserialization accepting attachment data that is not committed by the note header ([#3579](https://github.com/0xMiden/protocol/pull/3579)).
+- Fixed `input_note::remove_asset` leaving a dangling asset slot when a non-canonical fungible value produced an empty removal remainder ([#3606](https://github.com/0xMiden/protocol/pull/3606)).
+- Fixed `input_note::remove_asset` succeeding when asked to remove an empty or malformed asset ID instead of reporting the asset as not found ([#3607](https://github.com/0xMiden/protocol/pull/3607)).
+- Storage slot types are now validated against the supported set at account creation, and the delta commitment rejects an unrecognized slot type instead of treating it as a map ([#3608](https://github.com/0xMiden/protocol/pull/3608)).
+- MINT and BURN notes for a public faucet now carry the `NetworkAccountTarget` attachment that identifies them as network notes ([#3664](https://github.com/0xMiden/protocol/pull/3664)).
 - Faucet asset-callback procedure roots are now verified against the faucet's account code before dispatch, so a misconfigured callback root can no longer make an asset nontransferable ([#3612](https://github.com/0xMiden/protocol/pull/3612)).
 - `TokenPolicyManager::component_metadata` now declares the two protocol-reserved asset-callback slots ([#3648](https://github.com/0xMiden/protocol/pull/3648)).
 - [BREAKING] Enforced the limit of 1024 per asset delta op for added and removed account vault deltas inside and outside the tx kernel ([#3623](https://github.com/0xMiden/protocol/pull/3623)).
@@ -59,6 +75,7 @@
 - Fixed `AccountSchemaCommitment`'s `get_schema_commitment` returning above the 16-element stack depth ([#3645](https://github.com/0xMiden/protocol/pull/3645)).
 - Added a zero mint amount rejection to `fungible::mint_and_send` ([#3666](https://github.com/0xMiden/protocol/pull/3666)).
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
+- [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
 
 ## v0.16.0 (2026-08-17)
 
@@ -95,7 +112,7 @@
 - [BREAKING] Reduced the maximum number of assets a note can carry from 64 to 16 ([#3381](https://github.com/0xMiden/protocol/issues/3381)).
 - Added a new `INPUT_NOTE_INDEX_LOOKUP_EVENT` that lets transaction hosts provide an input-note index hint. Successful lookups authenticate it against the `NoteId` cached by the transaction prologue, while reported misses are validated by a full scan ([#3424](https://github.com/0xMiden/protocol/pull/3424)).
 - [BREAKING] Transaction summaries now bind the reference block, expiration delta, and seven user parameters; the Rust and MASM APIs changed accordingly ([#3210](https://github.com/0xMiden/protocol/issues/3210)).
-- Moved account-patch commitment validation from `AccountUpdateDetails::validate()` into `TxAccountUpdate::new()` and consolidated all `ProvenTransaction` invariant checks in `from_parts()`, fixing a deserialization bypass of the circular-note check ([#3412](https://github.com/0xMiden/protocol/pull/3412)).
+- Moved account-patch commitment validation from `AccountUpdateDetails::validate()` into `TxAccountUpdate::new()` and consolidated all `ProvenTransaction` invariant checks in `from_parts()`, fixing a deserialization bypass of the circular-note check ([#2976](https://github.com/0xMiden/protocol/pull/2976)).
 - [BREAKING] Unified the two account-origin authenticators in the transaction kernel's `api.masm` into a single `authenticate_account_origin` procedure that conditionally tracks the call ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
 - [BREAKING] Renamed `TransactionContext` to `MockTransaction` and `TxContextInput` to `MockTransactionInput` in `miden-testing`, and migrated the transaction tests to `MockChain::build_transaction` ([#3313](https://github.com/0xMiden/protocol/pull/3313)).
 - [BREAKING] Removed `AccountBuilder::with_auth_component`; the authentication component is now passed like any other component via `with_component` or `with_components` ([#3379](https://github.com/0xMiden/protocol/pull/3379)).
@@ -147,7 +164,7 @@
 
 - [BREAKING] Made the AggLayer bridge's network ID a deployment setting: the ID is stored in the `agglayer::bridge::network_id` storage slot (written once at account creation and read at runtime via `bridge_config::load_network_id`) instead of being compiled in as the `MIDEN_NETWORK_ID` MASM constant, so all deployments share one bridge code commitment; `create_bridge_account` now takes a `network_id` argument ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
 - Added the `tx::get_fee_faucet_id` kernel accessor, exposing the fee faucet ID from the transaction's reference block to user code ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
-- Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
+- Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3212](https://github.com/0xMiden/protocol/pull/3212)).
 - Added the `FeeSponsorshipNote` standard note, which carries the fee for the feature note it is bound to by `NoteId`, along with helpers for computing note IDs on-chain ([#3274](https://github.com/0xMiden/protocol/pull/3274)).
 - Added the `UpgradeManager` account component for network account code and storage upgrades ([#3299](https://github.com/0xMiden/protocol/pull/3299)).
 - Added the `miden::standards::assets::non_fungible_asset::validate` MASM procedure, which validates a non-fungible asset's composition and the binding of its value to the asset class, and used it in the `NonFungibleFaucet` burn procedure ([#3308](https://github.com/0xMiden/protocol/pull/3308)).
@@ -238,7 +255,7 @@
 - [BREAKING] Added `@account_procedure` attribute to mark which procedures should be included in the account component interface ([#3171](https://github.com/0xMiden/protocol/pull/3171)).
 - [BREAKING] Added `@transaction_script` attribute to mark the script entrypoint. Migrated transaction scripts assembly to `Library` ([#3173](https://github.com/0xMiden/protocol/pull/3173)).
 - [BREAKING] Updated `BlockHeader` to support multiple validator keys and added `ValidatorKeys` and `BlockSignatures` types ([#3174](https://github.com/0xMiden/protocol/pull/3174)).
-- Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3211](https://github.com/0xMiden/protocol/issues/3211)).
+- Added the `miden::protocol::tx::compute_fee` procedure, which lets account and note code compute the transaction fee during execution ([#3212](https://github.com/0xMiden/protocol/pull/3212)).
 - Added type signatures to the public `miden::protocol` library procedures, using semantic type aliases (e.g. `AccountId`, `AssetId`, `StorageSlotId`, `AccountProcedureRoot`) that mirror the Rust API ([#3234](https://github.com/0xMiden/protocol/pull/3234)).
 - Added the `OwnerActionNote` (`OwnerAction`) for triggering `Ownable2Step` management actions (transfer / accept / renounce ownership) on an account via a note ([#3245](https://github.com/0xMiden/protocol/pull/3245)).
 - Added the `RbacActionNote` (`RbacAction`) for triggering `RoleBasedAccessControl` management actions (grant / revoke role, set role admin, renounce role) on an account via a note. A selector in the note storage dispatches to the matching component procedure, which authorizes against the note sender ([#3248](https://github.com/0xMiden/protocol/pull/3248)).
@@ -282,7 +299,7 @@
 - [BREAKING] Split `create_basic_wallet` into `create_basic_wallet` (single-sig), `create_multisig_wallet`, and `create_guarded_wallet`, and rejected per-procedure thresholds below the default on private multisig wallets to prevent a sub-quorum from advancing and withholding private account state ([#3098](https://github.com/0xMiden/protocol/pull/3098)).
 - [BREAKING] Introduced the `Approver` and `ApproverSet` types to encapsulate the `(PublicKeyCommitment, AuthScheme)` pair and the `(threshold, approvers)` set, and used them across `AuthSingleSig`, `AuthSingleSigAcl`, `GuardianConfig`, the multisig auth configs, and the wallet constructors ([#3098](https://github.com/0xMiden/protocol/pull/3098)).
 - [BREAKING] Refactored the mint policy interface so it is shared across fungible and non-fungible faucets: `policy_manager::execute_mint_policy` (and the mint policy `check_policy` predicates) now operate on the full `ASSET_VALUE` word instead of an `amount` ([#3106](https://github.com/0xMiden/protocol/pull/3106)).
-- [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/issues/3108)).
+- [BREAKING] Removed the automatic fee computation and removal from the transaction kernel ([#3108](https://github.com/0xMiden/protocol/pull/3108)).
 - [BREAKING] Removed `Account::apply_delta` and `AccountDelta::merge` ([#3110](https://github.com/0xMiden/protocol/pull/3110)).
 - [BREAKING] Made the RBAC role guard `rbac::assert_sender_has_role` an `exec` procedure and removed it from the `RoleBasedAccessControl` component re-exports ([#3116](https://github.com/0xMiden/protocol/pull/3116)).
 - Added a validation inside `set_max_supply` rejects a new cap above `FUNGIBLE_ASSET_MAX_AMOUNT`, keeping the stored cap consistent with the bound enforced at mint time ([#3118](https://github.com/0xMiden/protocol/pull/3118)).
@@ -323,8 +340,8 @@
 - [BREAKING] Removed the faucet-relative `create` variants (`protocol::faucet::{create_fungible_asset, create_non_fungible_asset}`); callers now push the faucet ID via `active_account::get_id` and call `{fungible_asset, non_fungible_asset}::create` ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
 - [BREAKING] Renamed and generalized `miden::protocol::active_account::has_non_fungible_asset` to `has_asset`, which now accepts any asset ID instead of only non-fungible assets ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
 - Added `miden::protocol::native_account::has_initial_asset` procedure returning whether the native account's vault contained an asset at the beginning of the transaction ([#3255](https://github.com/0xMiden/protocol/pull/3255)).
-- Added a stub for the `miden::protocol::native_account::upgrade` kernel procedure ([#3256](https://github.com/0xMiden/protocol/issues/3256)).
-- [BREAKING] Made input note assets stateful: assets can now be removed from input notes during transaction execution ([#3272](https://github.com/0xMiden/protocol/issues/3272)).
+- Added a stub for the `miden::protocol::native_account::upgrade` kernel procedure ([#3256](https://github.com/0xMiden/protocol/pull/3256)).
+- [BREAKING] Made input note assets stateful: assets can now be removed from input notes during transaction execution ([#3272](https://github.com/0xMiden/protocol/pull/3272)).
   - Replaced the `active_note::get_assets` / `input_note::get_assets` and `input_note::get_assets_info` procedures with `remove_all_assets`, `get_initial_assets` and `get_initial_assets_info`, and added `get_initial_num_assets`, `get_asset` and `remove_asset`.
 - [BREAKING] Updated `miden-vm` dependencies to v0.25, Miden crypto dependencies to v0.28, and the MSRV to 1.96.1 ([#3278](https://github.com/0xMiden/protocol/pull/3278)).
 - Added the `OwnerActionNote` (`OwnerAction`) for triggering `Ownable2Step` management actions (transfer / accept / renounce ownership) on an account via a note ([#3245](https://github.com/0xMiden/protocol/pull/3245)).
@@ -382,26 +399,26 @@
 ### Changes
 
 - Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
-- [BREAKING] Renamed `procedure_digest!` to `procedure_root!` and return `AccountProcedureRoot` instead of `Word` ([#2621](https://github.com/0xMiden/protocol/issues/2621)).
+- [BREAKING] Renamed `procedure_digest!` to `procedure_root!` and return `AccountProcedureRoot` instead of `Word` ([#2914](https://github.com/0xMiden/protocol/pull/2914)).
 - [BREAKING] Introduced `AssetComposition` and encoded composition in the asset vault key's metadata byte ([#2631](https://github.com/0xMiden/protocol/issues/2631)).
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
-- [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
+- [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/pull/2687)).
 - Added `ShortCapitalString` type and related `TokenSymbol` and `RoleSymbol` types ([#2690](https://github.com/0xMiden/protocol/pull/2690)).
 - [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
 - Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
-- [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
+- [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/pull/2691)).
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2733](https://github.com/0xMiden/protocol/pull/2733)).
 - Added `metadata_into_note_type` procedure to `note.masm` for extracting note type from metadata header ([#2738](https://github.com/0xMiden/protocol/pull/2738)).
-- [BREAKING] Reduced `MAX_ASSETS_PER_NOTE` from 255 to 64 and `NOTE_MEM_SIZE` from 3072 to 1024 ([#2741](https://github.com/0xMiden/protocol/issues/2741)).
+- [BREAKING] Reduced `MAX_ASSETS_PER_NOTE` from 255 to 64 and `NOTE_MEM_SIZE` from 3072 to 1024 ([#2741](https://github.com/0xMiden/protocol/pull/2741)).
 - [BREAKING] Stored `origin_network` in LE-packed format in AggLayer faucet storage ([#2745](https://github.com/0xMiden/protocol/pull/2745)).
 - Optimized `B2AGG` processing with selective load/save of Local Exit Tree frontier entries, halving frontier storage map syscalls ([#2752](https://github.com/0xMiden/protocol/pull/2752)).
 - [BREAKING] Renamed `extract_sender_from_metadata` to `metadata_into_sender` and `extract_attachment_info_from_metadata` to `metadata_into_attachment_info` in `note.masm` ([#2758](https://github.com/0xMiden/protocol/pull/2758)).
 - Updated `SwapNote::build_tag` to use 1-bit `NoteType` encoding, increasing script root bits from 14 to 15 ([#2758](https://github.com/0xMiden/protocol/pull/2758)).
 - Use number of storage slots from native account in account delta commitment computation ([#2770](https://github.com/0xMiden/protocol/pull/2770)).
-- [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
+- [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/pull/2772)).
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
@@ -430,8 +447,8 @@
 - [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
 - [BREAKING] Added `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
 - [BREAKING] Replaced the `FungibleFaucetBuilder` with a `bon` builder on `FungibleFaucet` ([#2916](https://github.com/0xMiden/protocol/pull/2916)).
-- [BREAKING] Removed `StandardNote::is_compatible_with` and `AccountInterfaceExt::is_compatible_with` ([#2920](https://github.com/0xMiden/protocol/issues/2920)).
-- [BREAKING] Introduced `AccountComponentName` string wrapper ([#2621](https://github.com/0xMiden/protocol/pull/2621)).
+- [BREAKING] Removed `StandardNote::is_compatible_with` and `AccountInterfaceExt::is_compatible_with` ([#2920](https://github.com/0xMiden/protocol/pull/2920)).
+- [BREAKING] Introduced `AccountComponentName` string wrapper ([#2923](https://github.com/0xMiden/protocol/pull/2923)).
 - Added `Authority` account component ([#2925](https://github.com/0xMiden/protocol/pull/2925)).
 - [BREAKING] `FungibleAsset::amount()` and `AssetVault::get_balance()` now return `AssetAmount` ([#2928](https://github.com/0xMiden/protocol/pull/2928)).
 - [BREAKING] Upgraded `miden-vm` to v0.23 and `miden-crypto` to v0.25. Notable downstream changes: dropped the immediate form of `adv_push` in kernel and standards MASM, marked cross-module-referenced MASM constants and procedures `pub`, migrated to the split `Host`/`BaseHost` trait surface, renamed `Felt::new` call sites to the preserved-behavior `Felt::new_unchecked`, switched `ecdsa_k256_keccak`/`eddsa_25519_sha512` `SecretKey` references to the new `SigningKey`/`KeyExchangeKey` types, and recomputed the kernel's `EMPTY_SMT_ROOT` constant for the Plonky3-aligned Poseidon2 and domain-separated `SmtLeaf::hash` ([#2931](https://github.com/0xMiden/protocol/pull/2931)).
@@ -485,7 +502,7 @@
 ### Features
 
 - Added single-word `Array` standard ([#2203](https://github.com/0xMiden/miden-base/pull/2203)).
-- Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
+- Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2355)).
 - Enabled `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
 - Implemented verification of AggLayer deposits (claims) against GER ([#2288](https://github.com/0xMiden/miden-base/pull/2288), [#2295](https://github.com/0xMiden/miden-base/pull/2295)).
 - Added `Ownable2Step` account component with two-step ownership transfer (`transfer_ownership`, `accept_ownership`, `renounce_ownership`) and `owner`, `nominated_owner` procedures ([#2292](https://github.com/0xMiden/miden-base/pull/2292)).
@@ -514,7 +531,7 @@
 - Added metadata hash storage to AggLayer faucet and FPI retrieval during bridge-out leaf construction ([#2583](https://github.com/0xMiden/protocol/pull/2583)).
 - Added `BurnPolicyConfig` for flexible burning policy execution ([#2664](https://github.com/0xMiden/protocol/pull/2664))
 
-- Added `SwapNoteStorage` for typed serialization/deserialization of SWAP note storage ([#2585](https://github.com/0xMiden/protocol/pull/2585)).
+- Added `SwapNoteStorage` for typed serialization/deserialization of SWAP note storage ([#2592](https://github.com/0xMiden/protocol/pull/2592)).
 - Added `InputNoteCommitment::from_parts()` for construction of input note commitments from a nullifier and optional note header ([#2588](https://github.com/0xMiden/protocol/pull/2588)).
 - Added `bool` schema type to the type registry and updated ACL auth component to use it for boolean config fields ([#2591](https://github.com/0xMiden/protocol/pull/2591)).
 - Implemented the `on_before_asset_added_to_note` asset callback ([#2595](https://github.com/0xMiden/protocol/pull/2595)).
@@ -527,7 +544,7 @@
 
 ### Changes
 
-- [BREAKING] Renamed `NoteInputs` to `NoteStorage` to better reflect that values are stored data associated with a note rather than inputs ([#1662](https://github.com/0xMiden/miden-base/issues/1662), [#2316](https://github.com/0xMiden/miden-base/issues/2316)).
+- [BREAKING] Renamed `NoteInputs` to `NoteStorage` to better reflect that values are stored data associated with a note rather than inputs ([#1662](https://github.com/0xMiden/miden-base/issues/1662), [#2316](https://github.com/0xMiden/miden-base/pull/2316)).
 - Introduced NOTE_MAX_SIZE (256 KiB) and enforce it on individual output notes ([#2205](https://github.com/0xMiden/miden-base/pull/2205), [#2651](https://github.com/0xMiden/miden-base/pull/2651)).
 - Restructured `miden-agglayer/asm` directory to separate bridge and faucet into per-component libraries, preventing cross-component procedure exposure ([#2294](https://github.com/0xMiden/miden-base/issues/2294)).
 - Skip requests to the `DataStore` for asset vault witnesses which are already in transaction inputs ([#2298](https://github.com/0xMiden/miden-base/pull/2298)).
@@ -636,7 +653,7 @@
 
 ### Changes
 
-- Added proc-macro `WordWrapper` to ease implementation of `Word`-wrapping types ([#2071](https://github.com/0xMiden/miden-base/pull/2108)).
+- Added proc-macro `WordWrapper` to ease implementation of `Word`-wrapping types ([#2108](https://github.com/0xMiden/miden-base/pull/2108)).
 - [BREAKING] Added `BlockBody` and `BlockProof` structs in preparation for validator signatures and deferred block proving ([#2012](https://github.com/0xMiden/miden-base/pull/2012)).
 - [BREAKING] Renamed `TransactionEvent` into `TransactionEventId` and split event handling into data extraction and handling logic ([#2071](https://github.com/0xMiden/miden-base/pull/2071)).
 - Split tx progress events out into a separate enum ([#2103](https://github.com/0xMiden/miden-base/pull/2103)).
@@ -704,7 +721,7 @@
 - Added `prove_dummy` APIs on `LocalBatchProver` and `LocalBlockProver` ([#1811](https://github.com/0xMiden/miden-base/pull/1811)).
 - Added `get_native_id` and `get_native_nonce` procedures to the `miden` library ([#1844](https://github.com/0xMiden/miden-base/pull/1844)).
 - Enabled lazy loading of assets during transaction execution ([#1848](https://github.com/0xMiden/miden-base/pull/1848)).
-- Added lazy loading of the native asset ([#1855](https://github.com/0xMiden/miden-base/pull/1855)).
+- Added lazy loading of the native asset ([#1856](https://github.com/0xMiden/miden-base/pull/1856)).
 - [BREAKING] Enabled lazy loading of storage map entries during transaction execution ([#1857](https://github.com/0xMiden/miden-base/pull/1857)).
 - [BREAKING] Enabled lazy loading of foreign accounts during transaction execution ([#1873](https://github.com/0xMiden/miden-base/pull/1873)).
 - [BREAKING] Move account seed into `PartialAccount` ([#1875](https://github.com/0xMiden/miden-base/pull/1875), [#2003](https://github.com/0xMiden/miden-base/pull/2003)).
@@ -712,12 +729,12 @@
 - Updated `rpo_falcon512::verify_signatures` to use `account::get_map_item_init` ([#1885](https://github.com/0xMiden/miden-base/issues/1885)).
 - [BREAKING] Enabled lazy loading of assets and storage map items for foreign accounts during transaction execution ([#1888](https://github.com/0xMiden/miden-base/pull/1888)).
 - [BREAKING] Represent new accounts as account deltas ([#1896](https://github.com/0xMiden/miden-base/pull/1896)).
-- Implement `SlotName` for named storage slots ([#1932](https://github.com/0xMiden/miden-base/issues/1932))
+- Implement `SlotName` for named storage slots ([#1932](https://github.com/0xMiden/miden-base/pull/1932))
 - [BREAKING] Removed `get_falcon_signature` from `miden-tx` crate ([#1924](https://github.com/0xMiden/miden-base/pull/1924)).
 - Created a `Signature` wrapper to simplify the preparation of "native" signatures for use in the VM ([#1924](https://github.com/0xMiden/miden-base/pull/1924)).
 - Added per-procedure approval thresholds to `AuthRpoFalcon512Multisig` auth component ([#1968](https://github.com/0xMiden/miden-base/pull/1968)).
 - Implemented `input_note::get_sender` and `active_note::get_metadata` procedures in `miden` lib ([#1933](https://github.com/0xMiden/miden-base/pull/1933)).
-- Added `Address` serialization and deserialization ([#1937](https://github.com/0xMiden/miden-base/issues/1937)).
+- Added `Address` serialization and deserialization ([#1937](https://github.com/0xMiden/miden-base/pull/1937)).
 - Added `StorageMap::{num_entries, num_leaves}` to retrieve the number of entries in a storage map ([#1935](https://github.com/0xMiden/miden-base/pull/1935)).
 - Added `AssetVault::{num_assets, num_leaves, inner_nodes}` ([#1939](https://github.com/0xMiden/miden-base/pull/1939)).
 - [BREAKING] Enabled computing the transaction ID from the data in a `TransactionHeader` ([#1973](https://github.com/0xMiden/miden-base/pull/1973)).
@@ -740,7 +757,7 @@
 - [BREAKING] Remove `miden::account::get_native_nonce` procedure ([#2026](https://github.com/0xMiden/miden-base/pull/2026)).
 - [BREAKING] Refactor `Address` to make routing parameters optional ([#2032](https://github.com/0xMiden/miden-base/pull/2032), [#2047](https://github.com/0xMiden/miden-base/pull/2047)).
 - [BREAKING] Refactor `PartialVault`, `PartialStorageMap`, `PartialAccountTree` and `PartialNullifierTree` to allow construction from a root ([#2042](https://github.com/0xMiden/miden-base/pull/2042)).
-- Added duplicate approver validation to `AuthRpoFalcon512MultisigConfig` ([#2046](https://github.com/0xMiden/miden-base/issues/2046)).
+- Added duplicate approver validation to `AuthRpoFalcon512MultisigConfig` ([#2046](https://github.com/0xMiden/miden-base/pull/2046)).
 - Added `encryption_key` to `RoutingParameters` ([#2050](https://github.com/0xMiden/miden-base/pull/2050)).
 - [BREAKING] Added `EcdsaK256Keccak` variant to auth enums ([#2052](https://github.com/0xMiden/miden-base/pull/2052)).
 - Implemented storage map templates, which can be initialized through key/value lists provided via `InitStorageData` TOML ([#2053](https://github.com/0xMiden/miden-base/pull/2053)).
@@ -749,7 +766,7 @@
 
 - [BREAKING] Incremented MSRV to 1.90.
 - [BREAKING] Migrated to `miden-vm` v0.18 and `miden-crypto` v0.17 ([#1832](https://github.com/0xMiden/miden-base/pull/1832)).
-- [BREAKING] Removed `MockChain::add_pending_p2id_note` in favor of using `MockChainBuilder` ([#1842](https://github.com/0xMiden/miden-base/pull/#1842)).
+- [BREAKING] Removed `MockChain::add_pending_p2id_note` in favor of using `MockChainBuilder` ([#1842](https://github.com/0xMiden/miden-base/pull/1842)).
 - [BREAKING] Removed versioning of the transaction kernel, leaving only one latest version ([#1793](https://github.com/0xMiden/miden-base/pull/1793)).
 - [BREAKING] Moved `miden::asset::{create_fungible_asset, create_non_fungible_asset}` procedures to `miden::faucet` ([#1850](https://github.com/0xMiden/miden-base/pull/1850)).
 - [BREAKING] Removed versioning of the transaction kernel, leaving only one latest version ([#1793](https://github.com/0xMiden/miden-base/pull/1793)).
@@ -757,10 +774,10 @@
 - [BREAKING] Removed some of the `note` kernel procedures and use `input_note` procedures instead ([#1834](https://github.com/0xMiden/miden-base/pull/1834)).
 - [BREAKING] Replaced `Account` with `PartialAccount` in `TransactionInputs` ([#1840](https://github.com/0xMiden/miden-base/pull/1840)).
 - [BREAKING] Renamed `Account::init_commitment` to `Account::initial_commitment` ([#1840](https://github.com/0xMiden/miden-base/pull/1840)).
-- [BREAKING] Renamed the `is_onchain` method to `has_public_state` for `AccountId`, `AccountIdPrefix`, `Account`, `AccountInterface` and `AccountStorageMode` ([#1846](https://github.com/0xMiden/miden-base/pull/1846)).
+- [BREAKING] Renamed the `is_onchain` method to `has_public_state` for `AccountId`, `AccountIdPrefix`, `Account`, `AccountInterface` and `AccountStorageMode` ([#1847](https://github.com/0xMiden/miden-base/pull/1847)).
 - [BREAKING] Moved `NetworkId` from account ID to address module ([#1851](https://github.com/0xMiden/miden-base/pull/1851)).
 - Removed `ProvenTransactionExt`([#1867](https://github.com/0xMiden/miden-base/pull/1867)).
-- [BREAKING] Renamed the `is_onchain` method to `has_public_state` for `AccountId`, `AccountIdPrefix`, `Account`, `AccountInterface` and `AccountStorageMode` ([#1846](https://github.com/0xMiden/miden-base/pull/1846)).
+- [BREAKING] Renamed the `is_onchain` method to `has_public_state` for `AccountId`, `AccountIdPrefix`, `Account`, `AccountInterface` and `AccountStorageMode` ([#1847](https://github.com/0xMiden/miden-base/pull/1847)).
 - [BREAKING] Moved `miden::asset::{create_fungible_asset, create_non_fungible_asset}` procedures to `miden::faucet` ([#1850](https://github.com/0xMiden/miden-base/pull/1850)).
 - [BREAKING] Moved `NetworkId` from account ID to address module ([#1851](https://github.com/0xMiden/miden-base/pull/1851)).
 - [BREAKING] Moved `TransactionKernelError` to miden-tx ([#1859](https://github.com/0xMiden/miden-base/pull/1859)).
@@ -801,11 +818,11 @@
 
 ## 0.11.2 (2025-09-08)
 
-- Fixed foreign account inputs not being loaded in `LocalTransactionProver` ([#1866](https://github.com/0xMiden/miden-base/pull/#1866)).
+- Fixed foreign account inputs not being loaded in `LocalTransactionProver` ([#1866](https://github.com/0xMiden/miden-base/pull/1866)).
 
 ## 0.11.1 (2025-08-28)
 
-- Added `AddressInterface::Unspecified` to represent default addresses ([#1801](https://github.com/0xMiden/miden-base/pull/#1801)).
+- Added `AddressInterface::Unspecified` to represent default addresses ([#1801](https://github.com/0xMiden/miden-base/pull/1801)).
 
 ## 0.11.0 (2025-08-26)
 
@@ -813,7 +830,7 @@
 
 - Added arguments to the auth procedure ([#1501](https://github.com/0xMiden/miden-base/pull/1501)).
 - [BREAKING] Refactored `SWAP` note & added option to select the visibility of the associated payback note ([#1539](https://github.com/0xMiden/miden-base/pull/1539)).
-- Added multi-signature authentication component as standard authentication component ([#1599](https://github.com/0xMiden/miden-base/issues/1599)).
+- Added multi-signature authentication component as standard authentication component ([#1599](https://github.com/0xMiden/miden-base/pull/1599)).
 - Added `account_compute_delta_commitment`, `input_note_get_assets_info`, `tx_get_num_input_notes`, and `tx_get_num_output_notes` procedures to the transaction kernel ([#1609](https://github.com/0xMiden/miden-base/pull/1609)).
 - [BREAKING] Refactor `TransactionAuthenticator` to support arbitrary data signing ([#1616](https://github.com/0xMiden/miden-base/pull/1616)).
 - Implemented new `from_unauthenticated_notes` constructor for `InputNotes` ([#1629](https://github.com/0xMiden/miden-base/pull/1629)).
@@ -825,19 +842,19 @@
 - Added `input_note_get_recipient`, `output_note_get_recipient`, `input_note_get_metadata`, `output_note_get_metadata` procedures to the transaction kernel ([#1648](https://github.com/0xMiden/miden-base/pull/1648)).
 - Added `input_notes::get_assets` and `output_notes::get_assets` procedures to `miden` library ([#1648](https://github.com/0xMiden/miden-base/pull/1648)).
 - Added issuance accessor for fungible faucet accounts. ([#1660](https://github.com/0xMiden/miden-base/pull/1660)).
-- Added multi-signature authentication component as standard authentication component ([#1599](https://github.com/0xMiden/miden-base/issues/1599)).
+- Added multi-signature authentication component as standard authentication component ([#1599](https://github.com/0xMiden/miden-base/pull/1599)).
 - Added `FeeParameters` to `BlockHeader` and automatically compute and remove fees from account in the transaction kernel epilogue ([#1652](https://github.com/0xMiden/miden-base/pull/1652), [#1654](https://github.com/0xMiden/miden-base/pull/1654), [#1659](https://github.com/0xMiden/miden-base/pull/1659), [#1664](https://github.com/0xMiden/miden-base/pull/1664), [#1775](https://github.com/0xMiden/miden-base/pull/1775)).
 - Added `Address` type to represent account-id based addresses ([#1713](https://github.com/0xMiden/miden-base/pull/1713), [#1750](https://github.com/0xMiden/miden-base/pull/1750)).
-- [BREAKING] Consolidated to a single async interface and drop `#[maybe_async]` usage ([#1666](https://github.com/0xMiden/miden-base/pull/#1666)).
+- [BREAKING] Consolidated to a single async interface and drop `#[maybe_async]` usage ([#1666](https://github.com/0xMiden/miden-base/pull/1666)).
 - [BREAKING] Made transaction execution and transaction authentication asynchronous ([#1699](https://github.com/0xMiden/miden-base/pull/1699)).
-- [BREAKING] Return dedicated insufficient fee error from transaction host if account balance is too low ([#1744](https://github.com/0xMiden/miden-base/pull/#1744)).
-- Added `asset_vault::peek_balance` ([#1745](https://github.com/0xMiden/miden-base/pull/1745)).
+- [BREAKING] Return dedicated insufficient fee error from transaction host if account balance is too low ([#1744](https://github.com/0xMiden/miden-base/pull/1744)).
+- Added `asset_vault::peek_balance` ([#1746](https://github.com/0xMiden/miden-base/pull/1746)).
 - Added `get_auth_scheme` method to `AccountComponentInterface` and `AccountInterface` for better authentication scheme extraction ([#1759](https://github.com/0xMiden/miden-base/pull/1759)).
-- Added `AddressInterface` type to represent the interface of the account to which an `Address` points ([#1761](https://github.com/0xMiden/miden-base/pull/#1761)).
-- Document `miden` library procedures and the context from which they can be called ([#1799](https://github.com/0xMiden/miden-base/pull/#1799)).
+- Added `AddressInterface` type to represent the interface of the account to which an `Address` points ([#1761](https://github.com/0xMiden/miden-base/pull/1761)).
+- Document `miden` library procedures and the context from which they can be called ([#1799](https://github.com/0xMiden/miden-base/pull/1799)).
 - Add `Address` type to represent account-id based addresses ([#1713](https://github.com/0xMiden/miden-base/pull/1713)).
 - Document `Address` in Miden book ([#1792](https://github.com/0xMiden/miden-base/pull/1792)).
-- Add `asset_vault::peek_balance` ([#1745](https://github.com/0xMiden/miden-base/pull/1745)).
+- Add `asset_vault::peek_balance` ([#1746](https://github.com/0xMiden/miden-base/pull/1746)).
 - Add `get_auth_scheme` method to `AccountComponentInterface` and `AccountInterface` for better authentication scheme extraction ([#1759](https://github.com/0xMiden/miden-base/pull/1759)).
 - Add `CustomNetworkId` in `NetworkID` ([#1787](https://github.com/0xMiden/miden-base/pull/1787)).
 
@@ -860,14 +877,14 @@
 - Added robustness check to `create_swap_note`: error if `requested_asset` != `offered_asset` ([#1604](https://github.com/0xMiden/miden-base/pull/1604)).
 - [BREAKING] Changed `account::incr_nonce` to always increment the nonce by one, disallow incrementing more than once and return the new nonce after incrementing ([#1608](https://github.com/0xMiden/miden-base/pull/1608), [#1633](https://github.com/0xMiden/miden-base/pull/1633)).
 - Added `AccountTree::contains_account_id_prefix()` and `AccountTree::id_prefix_to_smt_key()` ([#1610](https://github.com/0xMiden/miden-base/pull/1610)).
-- Added functions for pruning `PartialBlockchain` (#[1619](https://github.com/0xMiden/miden-base/pull/1619)).
+- Added functions for pruning `PartialBlockchain` ([#1619](https://github.com/0xMiden/miden-base/pull/1619)).
 - [BREAKING] Disallowed calling the auth procedure explicitly (from outside the epilogue) ([#1622](https://github.com/0xMiden/miden-base/pull/1622)).
 - [BREAKING] Included account delta commitment in signing message for the `RpoFalcon512` family of account components ([#1624](https://github.com/0xMiden/miden-base/pull/1624)).
 - [BREAKING] Renamed `TransactionEvent::FalconSigToStack` to `TransactionEvent::AuthRequest` ([#1626](https://github.com/0xMiden/miden-base/pull/1626)).
 - [BREAKING] Made the naming of the transaction script arguments consistent ([#1632](https://github.com/0xMiden/miden-base/pull/1632)).
 - [BREAKING] Moved `TransactionProverHost` and `TransactionExecutorHost` from dynamic dispatch to generics ([#1037](https://github.com/0xMiden/miden-node/issues/1037))
 - [BREAKING] Changed `PartialStorage` and `PartialVault` to use `PartialSmt` instead of separate merkle proofs ([#1590](https://github.com/0xMiden/miden-base/pull/1590)).
-- [BREAKING] Moved transaction inputs insertion out of transaction hosts ([#1639](https://github.com/0xMiden/miden-node/issues/1639))
+- [BREAKING] Moved transaction inputs insertion out of transaction hosts ([#1639](https://github.com/0xMiden/miden-base/pull/1639))
 - Implemented serialization for `MockChain` ([#1642](https://github.com/0xMiden/miden-base/pull/1642)).
 - [BREAKING] Reduced `FungibleAsset::MAX_AMOUNT` by a small fraction which allows using felt-based arithmetic in the fungible asset account delta ([#1681](https://github.com/0xMiden/miden-base/pull/1681)).
 - Avoid modifying an asset vault when adding a fungible asset with amount zero and the asset does not already exist ([#1668](https://github.com/0xMiden/miden-base/pull/1668)).
@@ -924,8 +941,8 @@
 - Removed doc update checks on CI ([#1435](https://github.com/0xMiden/miden-base/pull/1435)).
 - [BREAKING] Introduced `ScriptMastForestStore` and refactor MAST forest provisioning in the `TransactionExecutor` ([#1438](https://github.com/0xMiden/miden-base/pull/1438)).
 - [BREAKING] Allowed list of keys in `AccountFile` ([#1451](https://github.com/0xMiden/miden-base/pull/1451)).
-- [BREAKING] `TransactionHost::new` now expects `&PartialAccount` instead `AccountHeader` ([#1452](https://github.com/0xMiden/miden-base/pull/1452)).
-- Load account and input notes advice maps into the advice provider before executing them ([#1452](https://github.com/0xMiden/miden-base/pull/1452)).
+- [BREAKING] `TransactionHost::new` now expects `&PartialAccount` instead `AccountHeader` ([#1452](https://github.com/0xMiden/miden-base/issues/1452)).
+- Load account and input notes advice maps into the advice provider before executing them ([#1452](https://github.com/0xMiden/miden-base/issues/1452)).
 - Added support for private accounts in `MockChain` ([#1453](https://github.com/0xMiden/miden-base/pull/1453)).
 - Improved error message quality in `CodeExecutor::run` and `TransactionContext::execute_code` ([#1458](https://github.com/0xMiden/miden-base/pull/1458)).
 - Temporarily bumped ACCOUNT_UPDATE_MAX_SIZE to 256 KiB for compiler testing ([#1464](https://github.com/0xMiden/miden-base/pull/1464)).
@@ -945,7 +962,7 @@
 - Made `Account:increment_nonce()` method public ([#1533](https://github.com/0xMiden/miden-base/pull/1533)).
 - Defined the commitment to an empty account delta as `EMPTY_WORD` ([#1528](https://github.com/0xMiden/miden-base/pull/1528)).
 - [BREAKING] Renamed `account_get_current_commitment` to `account_compute_current_commitment` and include the latest storage commitment in the returned commitment ([#1529](https://github.com/0xMiden/miden-base/pull/1529)).
-- [BREAKING] Remove `create_note` from `BasicWallet`, expose it and `add_asset_to_note` in `miden::tx` ([#1525](https://github.com/0xMiden/miden-base/pull/1525)).
+- [BREAKING] Remove `create_note` from `BasicWallet`, expose it and `add_asset_to_note` in `miden::tx` ([#1520](https://github.com/0xMiden/miden-base/pull/1520)).
 - Add a new auth component `RpoFalcon512Acl` ([#1531](https://github.com/0xMiden/miden-base/pull/1531)).
 - [BREAKING] Change `BasicFungibleFaucet` to use `RpoFalcon512Acl` for authentication ([#1531](https://github.com/0xMiden/miden-base/pull/1531)).
 - Introduce `MockChain` methods for executing at an older block (#1541).
@@ -1233,7 +1250,7 @@
 
 - Replaced `cargo-make` with just `make` for running tasks ([#696](https://github.com/0xMiden/miden-base/pull/696)).
 - [BREAKING] Split `Account` struct constructor into `new()` and `from_parts()` ([#699](https://github.com/0xMiden/miden-base/pull/699)).
-- Generalized `build_recipient_hash` procedure to build recipient hash for custom notes ([#706](https://github.com/0xMiden/miden-base/pull/706)).
+- Generalized `build_recipient_hash` procedure to build recipient hash for custom notes ([#706](https://github.com/0xMiden/miden-base/issues/706)).
 - [BREAKING] Changed the encoding of inputs notes in the advice map for consumed notes ([#707](https://github.com/0xMiden/miden-base/pull/707)).
 - Created additional `emit` events for kernel related `.masm` procedures ([#708](https://github.com/0xMiden/miden-base/pull/708)).
 - Implemented `build_recipient_hash` procedure to build recipient hash for custom notes ([#710](https://github.com/0xMiden/miden-base/pull/710)).
@@ -1288,8 +1305,8 @@
 
 ## 0.2.0 (2024-04-11)
 
-- [BREAKING] Implement support for public accounts ([#481](https://github.com/0xMiden/miden-base/pull/481), [#485](https://github.com/0xMiden/miden-base/pull/485), [#538](https://github.com/0xMiden/miden-base/pull/538)).
-- [BREAKING] Implement support for public notes ([#515](https://github.com/0xMiden/miden-base/pull/515), [#540](https://github.com/0xMiden/miden-base/pull/540), [#572](https://github.com/0xMiden/miden-base/pull/572)).
+- [BREAKING] Implement support for public accounts ([#481](https://github.com/0xMiden/miden-base/pull/481), [#485](https://github.com/0xMiden/miden-base/pull/485), [#538](https://github.com/0xMiden/miden-base/issues/538)).
+- [BREAKING] Implement support for public notes ([#515](https://github.com/0xMiden/miden-base/pull/515), [#540](https://github.com/0xMiden/miden-base/issues/540), [#572](https://github.com/0xMiden/miden-base/pull/572)).
 - Improved `ProvenTransaction` validation ([#532](https://github.com/0xMiden/miden-base/pull/532)).
 - [BREAKING] Updated `no-std` setup ([#533](https://github.com/0xMiden/miden-base/pull/533)).
 - Improved `ProvenTransaction` serialization ([#543](https://github.com/0xMiden/miden-base/pull/543)).

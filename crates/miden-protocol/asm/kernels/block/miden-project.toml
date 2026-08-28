@@ -1,0 +1,6 @@
+[package]
+name              = "miden-block-kernel"
+version.workspace = true
+
+[[bin]]
+path = "src/main.masm"
