@@ -16,23 +16,50 @@ pub use {is_signer} from miden::standards::auth::multisig
 
 pub use {update_guardian_public_key} from miden::standards::auth::guardian
 
-#! Authenticate a transaction with multi-signature support and optional guardian verification.
+#! Authenticate a transaction with multi-signature support and guardian verification, paying the
+#! transaction fee in the process.
+#!
+#! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
+#! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
+#! funding a public TX_FEE note (see miden::standards::fee::pay_fee). The payment asset and
+#! conversion rate are committed to via the AUTH_ARGS (native fee asset at rate 1/1 for plain
+#! native payment). On chains with a zero verification base fee no note is created. Because the
+#! fee is paid before the transaction summary is created, the fee note and the vault withdrawal
+#! funding it are covered by the approver and guardian signatures.
+#!
+#! The AUTH_ARGS (= hash(CONVERSION_INFO || SALT)) then continue to serve as the transaction
+#! summary salt. The uniqueness that replay protection relies on originates from the
+#! caller-chosen SALT: distinct salts produce distinct commitments and therefore distinct
+#! summary commitments, which record_and_assert_new_tx records and checks.
+#!
+#! The guardian signature is verified in addition to the approvers' (see
+#! miden::standards::auth::guardian::verify_signature), except on the guardian key rotation path,
+#! which instead requires that the transaction create no notes of its own. The fee note this
+#! procedure creates is not one of the transaction's own notes, so rotation remains possible on a
+#! fee-charging chain — provided the vault funds the fee.
 #!
 #! Inputs:
-#!   Operand stack: [SALT]
+#!   Operand stack: [AUTH_ARGS]
 #! Outputs:
 #!   Operand stack: []
 #!
+#! Panics if:
+#! - fee::load_conversion_info fails to verify.
+#! - fee::pay_fee fails.
+#! - multisig::auth_tx fails to verify.
+#! - guardian::verify_signature fails to verify.
+#! - the same transaction has already been executed.
+#!
 #! Invocation: call
 @auth_script
-pub proc auth_tx_guarded_multisig(salt: word)
+pub proc auth_tx_guarded_multisig(auth_args: word)
     # Pay the transaction fee before the summary is created so that the TX_FEE note and the vault
     # withdrawal funding it are covered by the approver and guardian signatures.
     # load_conversion_info consumes the AUTH_ARGS, so keep a copy to serve as the summary salt.
     # ---------------------------------------------------------------------------------------------
 
-    # Sample the transaction's own output-note count before the fee is paid. pay_fee appends the
-    # TX_FEE note, so the rotation path's assert_no_output_notes must not read the live count.
+    # sample the transaction's own output-note count before the fee is paid, since pay_fee appends
+    # the TX_FEE note and the rotation path's assert_no_output_notes excludes it
     exec.tx::get_num_output_notes movdn.4
     # => [AUTH_ARGS, num_output_notes_before_auth]
 
@@ -40,21 +67,24 @@ pub proc auth_tx_guarded_multisig(salt: word)
     # => [AUTH_ARGS, AUTH_ARGS, num_output_notes_before_auth]
 
     exec.fee::load_conversion_info
-    # => [CONVERSION_INFO, AUTH_ARGS]
+    # => [CONVERSION_INFO, AUTH_ARGS, num_output_notes_before_auth]
 
     exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, CONVERSION_INFO, AUTH_ARGS]
+    # => [num_of_approvers, CONVERSION_INFO, AUTH_ARGS, num_output_notes_before_auth]
 
-    # This component verifies the guardian signature in addition to the approvers', so the flow
-    # performs one more verification than the plain multisig component does.
+    # this component verifies the guardian signature in addition to the approvers', so the flow
+    # performs one more verification than the plain multisig component does. the extra slot must not
+    # be made conditional on that signature: the rotation path verifies no guardian signature but
+    # instead scans every account procedure (see tx_policy::assert_only_one_non_auth_procedure_called),
+    # and the slot covers that scan too
     add.1
-    # => [num_of_signers, CONVERSION_INFO, AUTH_ARGS]
+    # => [num_of_signers, CONVERSION_INFO, AUTH_ARGS, num_output_notes_before_auth]
 
     exec.signature::estimate_multisig_authentication_cycles
-    # => [num_extra_cycles, CONVERSION_INFO, AUTH_ARGS]
+    # => [num_extra_cycles, CONVERSION_INFO, AUTH_ARGS, num_output_notes_before_auth]
 
     exec.fee::pay_fee drop
-    # => [AUTH_ARGS]
+    # => [AUTH_ARGS, num_output_notes_before_auth]
 
     # Authenticate the transaction and record it for replay protection.
     # ---------------------------------------------------------------------------------------------
@@ -62,10 +92,10 @@ pub proc auth_tx_guarded_multisig(salt: word)
     # zero the leading user params (not exposed through this component's interface); the AUTH_ARGS
     # occupy the trailing four
     push.0.0.0
-    # => [0, 0, 0, AUTH_ARGS]
+    # => [0, 0, 0, AUTH_ARGS, num_output_notes_before_auth]
 
     exec.multisig::auth_tx
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, num_output_notes_before_auth]
 
     dupw
     # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, num_output_notes_before_auth]

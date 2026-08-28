@@ -114,11 +114,20 @@ end
 
 #! Conditionally verifies a guardian signature.
 #!
-#! Inputs:  [MSG]
+#! Inputs:  [num_output_notes_before_auth, MSG]
 #! Outputs: []
+#!
+#! Where:
+#! - num_output_notes_before_auth is the number of output notes the transaction had created when
+#!   the authentication procedure began. It must be sampled at the start of the authentication
+#!   procedure, before any fee is paid (see `tx_policy::assert_no_output_notes`), and is only
+#!   consulted on the guardian key rotation path.
+#! - MSG is the message the guardian signs, i.e. the transaction summary commitment.
 #!
 #! Panics if:
 #! - `update_guardian_public_key` is called together with another non-auth account procedure.
+#! - `update_guardian_public_key` was called and the transaction consumes input notes or had
+#!   created output notes of its own.
 #! - `update_guardian_public_key` was not called and a valid guardian signature is missing or
 #!   invalid.
 #!
