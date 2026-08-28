@@ -3,18 +3,13 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, TransactionSummary};
 use miden_protocol::{Word, ZERO};
-use miden_standards::account::auth::{
-    Approver,
-    ApproverSet,
-    FeeConversionInfo,
-    commit_fee_conversion_info,
-};
+use miden_standards::account::auth::{Approver, ApproverSet, FeeConversionInfo, MultisigAuthArgs};
 use miden_testing::{Auth, MockChain};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
-use super::super::multisig::setup_keys_and_authenticators_with_scheme;
+use super::super::multisig::{MultisigAuthArgsExt, setup_keys_and_authenticators_with_scheme};
 use super::{
     FALCON_512_POSEIDON2_AUTH_CYCLES,
     MULTISIG_AUTH_BASE_CYCLES,
@@ -55,18 +50,27 @@ fn multisig_fixture(
     Ok((approver_set, signers))
 }
 
-/// Asserts that `auth_args` is bound by the summary as the trailing word of its user parameters,
-/// which is how the multisig auth component uses the auth args as the summary salt.
-fn assert_auth_args_bound_as_salt(tx_summary: &TransactionSummary, auth_args: Word) {
+/// Asserts that `salt` is bound by the summary as the trailing word of its user parameters, which
+/// is how the multisig auth component makes otherwise identical transactions distinguishable.
+fn assert_salt_bound_as_user_params(tx_summary: &TransactionSummary, salt: Word) {
     assert_eq!(
         tx_summary.user_params().as_elements(),
-        &[ZERO, ZERO, auth_args[0], auth_args[1], auth_args[2], auth_args[3]]
+        &[ZERO, ZERO, salt[0], salt[1], salt[2], salt[3]]
     );
+}
+
+/// Builds the auth args of a fee-paying multisig transaction: the given salt and a one-to-one
+/// conversion of the fee asset, bound to the chain's latest block.
+fn fee_paying_auth_args(mock_chain: &MockChain, salt: Word) -> anyhow::Result<MultisigAuthArgs> {
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+
+    Ok(MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt)
+        .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id)))
 }
 
 /// Executes an empty transaction against a wallet with the multisig auth component on a
 /// fee-charging mock chain: runs once without signatures to obtain the transaction summary,
-/// asserts the auth args are bound as the trailing word of the summary's user params, signs the
+/// asserts the salt is bound as the trailing word of the summary's user params, signs the
 /// summary with all provided signers, and executes the signed transaction.
 async fn execute_fee_paying_multisig_tx(
     auth: Auth,
@@ -79,15 +83,10 @@ async fn execute_fee_paying_multisig_tx(
     let account = builder.add_existing_wallet_with_assets(auth, [fee_asset])?;
     let mock_chain = builder.build()?;
 
-    let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::one_to_one(fee_faucet_id),
-        Word::from([9u32, 10, 11, 12]),
-    );
+    let salt = Word::from([9u32, 10, 11, 12]);
+    let auth_args = fee_paying_auth_args(&mock_chain, salt)?;
 
-    let mock_tx_builder = mock_chain
-        .build_transaction(account.id())
-        .auth_args(args)
-        .add_advice_map_entry(args, advice_value);
+    let mock_tx_builder = mock_chain.build_transaction(account.id()).multisig_auth_args(auth_args);
 
     // execute once without signatures to obtain the transaction summary that must be signed
     let tx_summary = mock_tx_builder
@@ -98,8 +97,7 @@ async fn execute_fee_paying_multisig_tx(
         .unwrap_err()
         .unwrap_unauthorized_err();
 
-    // the auth args (the conversion info commitment) serve as the transaction summary salt
-    assert_auth_args_bound_as_salt(&tx_summary, args);
+    assert_salt_bound_as_user_params(&tx_summary, salt);
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -149,10 +147,10 @@ async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Resu
     Ok(())
 }
 
-/// On a fee-charging chain, replaying a signed multisig transaction (same auth args / salt and
-/// signatures) is rejected: after the first execution the account nonce and the reference block
-/// advance, so the replayed transaction's fee note serial number and thus its summary commitment
-/// differ from the signed one, and the stale signatures fail verification.
+/// On a fee-charging chain, replaying a signed multisig transaction (same auth args and
+/// signatures) is rejected: after the first execution the account nonce advances, so the replayed
+/// transaction's fee note serial number and thus its summary commitment differ from the signed
+/// one, and the stale signatures fail verification.
 #[tokio::test]
 async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()> {
     let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::Falcon512Poseidon2)?;
@@ -167,15 +165,10 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
     )?;
     let mut mock_chain = builder.build()?;
 
-    let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::one_to_one(fee_faucet_id),
-        Word::from([13u32, 14, 15, 16]),
-    );
+    let salt = Word::from([13u32, 14, 15, 16]);
+    let auth_args = fee_paying_auth_args(&mock_chain, salt)?;
 
-    let mock_tx_builder = mock_chain
-        .build_transaction(account.id())
-        .auth_args(args)
-        .add_advice_map_entry(args, advice_value.clone());
+    let mock_tx_builder = mock_chain.build_transaction(account.id()).multisig_auth_args(auth_args);
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -184,7 +177,7 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    assert_auth_args_bound_as_salt(&tx_summary, args);
+    assert_salt_bound_as_user_params(&tx_summary, salt);
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -207,10 +200,8 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
     mock_chain.prove_next_block()?;
 
     // attempt to replay the same transaction with the same auth args and signatures
-    let mut replay_builder = mock_chain
-        .build_transaction(account.id())
-        .auth_args(args)
-        .add_advice_map_entry(args, advice_value);
+    let mut replay_builder =
+        mock_chain.build_transaction(account.id()).multisig_auth_args(auth_args);
     for (pub_key_commitment, signature) in &signatures {
         replay_builder = replay_builder.add_signature(*pub_key_commitment, msg, signature.clone());
     }

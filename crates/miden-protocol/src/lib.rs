@@ -15,6 +15,7 @@ pub mod errors;
 pub mod note;
 pub mod package;
 mod protocol;
+pub mod protocol_config;
 pub(crate) mod script;
 pub mod transaction;
 

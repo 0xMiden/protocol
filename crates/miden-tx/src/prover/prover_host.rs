@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -8,6 +9,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
@@ -42,7 +44,7 @@ where
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
-        ref_block_commitment: Word,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -50,7 +52,7 @@ where
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
-            ref_block_commitment,
+            block_commitments,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,

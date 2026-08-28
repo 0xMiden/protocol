@@ -224,6 +224,11 @@ end
 pub proc account_upgrade
     # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
     # account as validated in account::{validate_storage, validate_procedures}.
+    # The same applies to the asset callback rule validated in
+    # prologue::validate_asset_callbacks: an upgrade must reject adding an asset callback slot to an
+    # account whose asset callback flag is disabled. Such a callback is not invalid, it simply could
+    # never be invoked, since the flag is immutable, which leaves the account looking configured
+    # while nothing is enforced - the state the creation-time check rejects.
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
@@ -1820,23 +1825,22 @@ pub proc tx_compute_fee
     # => [fee_amount, pad(15)]
 end
 
-#! Returns the fee faucet ID of the transaction's reference block.
+#! Returns the fee asset ID of the transaction's reference block.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+#! Outputs: [FEE_ASSET_ID, pad(12)]
 #!
 #! Where:
-#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
-#!   the native fee asset.
+#! - FEE_ASSET_ID is the ID of the asset that fees are paid in.
 #!
 #! Invocation: dynexec
-pub proc tx_get_fee_faucet_id
-    exec.memory::get_fee_faucet_id
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(16)]
+pub proc tx_get_fee_asset_id
+    exec.memory::get_fee_asset_id
+    # => [FEE_ASSET_ID, pad(16)]
 
     # truncate the stack
-    movup.2 drop movup.2 drop
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+    swapw dropw
+    # => [FEE_ASSET_ID, pad(12)]
 end
 
 #! Returns the commitment of the block with the provided block number.

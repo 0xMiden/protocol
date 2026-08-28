@@ -1,7 +1,6 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -19,10 +18,13 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{EMPTY_WORD, Felt, WORD_SIZE, Word, ZERO};
 
-use super::{Approver, ApproverSet};
+use super::{Approver, ApproverSet, FeeConversionInfo};
 use crate::account::account_component_code;
 use crate::procedure_root;
 
@@ -144,22 +146,30 @@ impl AuthMultisigConfig {
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides.
 ///
+/// # Auth args
+///
+/// The transaction's auth args are the commitment to [`MultisigAuthArgs`].
+///
 /// # Fees
 ///
 /// Before authenticating, `auth_tx_multisig` pays the transaction fee via
 /// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
 /// fee-charging chains the account must hold a sufficient balance of the payment asset. The
-/// payment asset and conversion rate are committed to via the transaction's auth args (see
-/// [`FeeConversionInfo`](super::FeeConversionInfo) and
-/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info); native fee asset at rate
-/// 1/1 for plain native payment). On chains with a zero verification base fee no note is
-/// created. The fee note is created before the transaction summary, so it is covered by the
-/// approver signatures. The auth args word (the commitment `hash(CONVERSION_INFO || SALT)`)
-/// continues to serve as the transaction summary salt; the uniqueness that replay protection
-/// relies on originates from the caller-chosen `SALT`: distinct salts produce distinct
-/// commitments and therefore distinct signed summaries, which `record_and_assert_new_tx`
-/// records and checks.
+/// payment asset and conversion rate come from the auth args (see
+/// [`FeeConversionInfo`](super::FeeConversionInfo); native fee asset at rate 1/1 for plain native
+/// payment). On chains with a zero verification base fee no note is created. The fee note is
+/// created before the transaction summary, so it is covered by the approver signatures.
+///
+/// # Expiration
+///
+/// The approvers authorize inclusion up to the bound block plus the transaction's expiration delta,
+/// so the deadline they see when signing is the deadline that is enforced, no matter how far the
+/// chain advanced when the transaction is executed. Executing after that deadline aborts.
+///
+/// A transaction that sets no expiration delta carries no deadline, and its signatures stay usable
+/// indefinitely. A proposer who wants one must set it, for example with
+/// [`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript).
 ///
 /// # Privacy
 ///
@@ -452,6 +462,88 @@ impl From<AuthMultisig> for AccountComponent {
     }
 }
 
+// MULTISIG AUTH ARGS
+// ================================================================================================
+
+/// The inputs the multisig authentication components receive through the transaction's auth args.
+///
+/// ```text
+/// AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO]
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MultisigAuthArgs {
+    block_number: BlockNumber,
+    salt: Word,
+    conversion_info: Option<FeeConversionInfo>,
+}
+
+impl MultisigAuthArgs {
+    /// Creates new multisig auth args binding the summary to the given block.
+    ///
+    /// The signers approve a transaction summary that commits to `block_number`, so the party
+    /// executing the transaction must pass the same block number, no matter how far the chain has
+    /// advanced since. The block must be at or before the transaction's reference block and must
+    /// be tracked by the transaction's partial blockchain, since that is the only way the kernel
+    /// can read its commitment.
+    ///
+    /// The bound block is also the base of the expiration deadline: a transaction that sets an
+    /// expiration delta can be included up to `bound_block + expiration_delta`.
+    ///
+    /// `salt` is bound by the transaction summary and is what makes otherwise identical
+    /// transactions distinguishable, which is what the replay protection of the multisig
+    /// components relies on. It should be chosen at random.
+    pub fn new(block_number: BlockNumber, salt: Word) -> Self {
+        Self {
+            block_number,
+            salt,
+            conversion_info: None,
+        }
+    }
+
+    /// Returns new multisig auth args instructing the component which asset to pay the transaction
+    /// fee in.
+    ///
+    /// Without conversion info the fee payment aborts on chains that charge a non-zero
+    /// verification base fee.
+    #[must_use]
+    pub fn with_conversion_info(mut self, conversion_info: FeeConversionInfo) -> Self {
+        self.conversion_info = Some(conversion_info);
+        self
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the number of the block the transaction summary binds.
+    pub fn block_number(&self) -> BlockNumber {
+        self.block_number
+    }
+
+    /// Returns the salt bound by the transaction summary.
+    pub fn salt(&self) -> Word {
+        self.salt
+    }
+
+    /// Returns the fee conversion info, or `None` if the fee is not paid in a converted asset.
+    pub fn conversion_info(&self) -> Option<FeeConversionInfo> {
+        self.conversion_info
+    }
+}
+
+impl SequentialCommit for MultisigAuthArgs {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        let conversion_info = self.conversion_info.map_or(EMPTY_WORD, |info| info.to_word());
+
+        let mut elements = Vec::with_capacity(3 * WORD_SIZE);
+        elements.extend([Felt::from(self.block_number), ZERO, ZERO, ZERO]);
+        elements.extend(self.salt.iter());
+        elements.extend(conversion_info.iter());
+        elements
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -459,7 +551,6 @@ impl From<AuthMultisig> for AccountComponent {
 mod tests {
     use alloc::string::ToString;
 
-    use miden_protocol::Word;
     use miden_protocol::account::auth::AuthSecretKey;
     use miden_protocol::account::{AccountBuilder, auth};
 
