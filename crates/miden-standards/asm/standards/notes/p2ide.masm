@@ -9,7 +9,7 @@ use miden::standards::wallets::basic as basic_wallet
 
 const NUM_STORAGE_ITEMS=6
 
-# Note storage layout (6 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (6 felts, loaded at STORAGE_PTR by get_bounded_storage):
 # - reclaimer_suffix        [0]  : suffix of the account allowed to reclaim the note
 # - reclaimer_prefix        [1]  : prefix of the account allowed to reclaim the note
 # - target_suffix           [2]  : suffix of the account for which the note is intended
@@ -96,7 +96,7 @@ end
 
 #! Extended Pay-to-ID note script (Reclaimable & Timelockable)
 #!
-#! Adds all assets from the note to the account if all of the following conditions are true:
+#! Adds the note's remaining assets to the account if all of the following conditions are true:
 #! - The transaction's reference block number is greater than or equal to the note's timelock block height.
 #! - Any of the following conditions is true:
 #!   - The account ID against which the transaction is executed matches the note's target account id.
@@ -129,7 +129,7 @@ end
 @note_script
 pub proc main
     # store the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     # make sure the number of storage items is 6
@@ -137,7 +137,7 @@ pub proc main
     # => []
 
     # read the timelock block height and the current block number, then assert note is unlocked
-    mem_load.TIMELOCK_HEIGHT_ITEM exec.tx::get_block_number
+    mem_load.TIMELOCK_HEIGHT_ITEM exec.tx::get_reference_block_number
     # => [current_block_height, timelock_block_height]
 
     exec.assert_unlocked

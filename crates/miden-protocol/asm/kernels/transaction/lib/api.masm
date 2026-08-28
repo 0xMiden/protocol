@@ -8,24 +8,25 @@ use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::output_note
 use miden::tx_kernel_core::tx
 
-use {KERNEL_PROCEDURES_PTR, UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR, UPCOMING_FOREIGN_PROCEDURE_PTR}
-    from miden::tx_kernel_core::memory
+use {
+    UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR,
+    UPCOMING_FOREIGN_PROCEDURE_PTR,
+} from miden::tx_kernel_core::memory
 use {AccountId} from miden::protocol_utils::types
 
-# NOTE
+# PROCEDURE VISIBILITY & INVOCATION
 # =================================================================================================
-# `exec_kernel_proc` procedure is expected to be invoked using a `syscall` instruction. It makes  #
-# no guarantees about the contents of the `pad` elements shown in the inputs and outputs. It is   #
-# the caller's responsibility to make sure these elements do not contain any meaningful data.     #
-# All other procedures must be invoked using a `dynexec` instruction by their hashes stored in    #
-# the memory.                                                                                     #
+# The procedures are exported so that they become part of the assembled package and prevent dead  #
+# code elimination from removing them. The procedures are deliberately in a submodule so that     #
+# they do NOT become part of the kernel interface and cannot be invoked with `syscall`.           #
+#                                                                                                 #
+# All procedures of this module must be invoked by root using the `dynexec` instruction. The      #
+# kernel's only static `syscall` entry point is `exec_kernel_proc`, defined in the root module of #
+# the kernel.                                                                                     #
 # =================================================================================================
 
 # ERRORS
 # =================================================================================================
-
-const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS =
-    "provided kernel procedure offset is out of bounds"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED =
     "failed to access note assets of active note because no note is currently being processed"
@@ -223,7 +224,11 @@ end
 pub proc account_upgrade
     # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
     # account as validated in account::{validate_storage, validate_procedures}.
-
+    # The same applies to the asset callback rule validated in
+    # prologue::validate_asset_callbacks: an upgrade must reject adding an asset callback slot to an
+    # account whose asset callback flag is disabled. Such a callback is not invalid, it simply could
+    # never be invoked, since the flag is immutable, which leaves the account looking configured
+    # while nothing is enforced - the state the creation-time check rejects.
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
@@ -946,10 +951,6 @@ end
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
-#! - For fungible faucets:
-#!   - if the total issuance after minting is greater than the maximum amount allowed.
-#! - For non-fungible faucets:
-#!   - if the non-fungible asset being minted already exists.
 #!
 #! Invocation: dynexec
 pub proc faucet_mint_asset
@@ -1119,6 +1120,7 @@ end
 #! - is_active_note is false and the invocation does not originate from the account context.
 #! - is_active_note is true and no input note is being processed (attempted to access note assets
 #!   from incorrect context).
+#! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.
@@ -1823,37 +1825,42 @@ pub proc tx_compute_fee
     # => [fee_amount, pad(15)]
 end
 
-#! Returns the fee faucet ID of the transaction's reference block.
+#! Returns the fee asset ID of the transaction's reference block.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+#! Outputs: [FEE_ASSET_ID, pad(12)]
 #!
 #! Where:
-#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
-#!   the native fee asset.
+#! - FEE_ASSET_ID is the ID of the asset that fees are paid in.
 #!
 #! Invocation: dynexec
-pub proc tx_get_fee_faucet_id
-    exec.memory::get_fee_faucet_id
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(16)]
+pub proc tx_get_fee_asset_id
+    exec.memory::get_fee_asset_id
+    # => [FEE_ASSET_ID, pad(16)]
 
     # truncate the stack
-    movup.2 drop movup.2 drop
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+    swapw dropw
+    # => [FEE_ASSET_ID, pad(12)]
 end
 
-#! Returns the block commitment of the reference block.
+#! Returns the commitment of the block with the provided block number.
 #!
-#! Inputs:  [pad(16)]
+#! Inputs:  [block_number, pad(15)]
 #! Outputs: [BLOCK_COMMITMENT, pad(12)]
 #!
 #! Where:
-#! - BLOCK_COMMITMENT is the commitment of the transaction reference block.
+#! - block_number is the number of the block whose commitment should be returned. It must not
+#!   exceed the transaction reference block number.
+#! - BLOCK_COMMITMENT is the commitment of that block.
+#!
+#! Panics if:
+#! - block_number is not a u32.
+#! - block_number exceeds the transaction reference block number.
 #!
 #! Invocation: dynexec
 pub proc tx_get_block_commitment
     exec.tx::get_block_commitment
-    # => [BLOCK_COMMITMENT, pad(16)]
+    # => [BLOCK_COMMITMENT, pad(15)]
 
     # truncate the stack
     swapw dropw
@@ -1869,9 +1876,9 @@ end
 #! - num is the transaction reference block number.
 #!
 #! Invocation: dynexec
-pub proc tx_get_block_number
+pub proc tx_get_reference_block_number
     # get the block number
-    exec.tx::get_block_number
+    exec.tx::get_reference_block_number
     # => [num, pad(16)]
 
     # truncate the stack
@@ -1992,7 +1999,7 @@ pub proc tx_exec_foreign_proc
     # part of the foreign account's code. This is NOT the same as the account procedure
     # authentication the kernel already does. Without this, the called procedure could dyncall into
     # a genuine procedure of the account and it would pass.
-    exec.account::assert_procedure_in_account drop
+    exec.account::assert_procedure_in_active_account drop
     # => [foreign_procedure_inputs(16)]
 
     # get the pointer to the foreign procedure root to perform the dyncall
@@ -2047,38 +2054,6 @@ pub proc tx_get_expiration_delta
     # truncate the stack
     swap drop
     # => [block_height_delta, pad(15)]
-end
-
-#! Executes a kernel procedure specified by its offset.
-#!
-#! Inputs:  [procedure_offset, <procedure_inputs>, <pad>]
-#! Outputs: [<procedure_outputs>, <pad>]
-#!
-#! Where:
-#! - procedure_offset is an offset of the kernel procedure, specified in the
-#!   `miden/kernel_proc_offsets.masm` file.
-#! - procedure_inputs are inputs of the procedure to be executed, which is specified by the
-#!   procedure_offset. Note that the length of this inputs cannot exceed 15 elements, since the
-#!   first element on the stack will be occupied by the memory pointer to the procedure root.
-#! - procedure_outputs are the outputs of the procedure to be executed.
-#!
-#! Panics if:
-#! - the provided procedure offset exceeds the number of kernel procedures.
-#!
-#! Invocation: syscall
-pub proc exec_kernel_proc
-    # check that the provided procedure offset is within expected bounds
-    dup exec.memory::get_num_kernel_procedures
-    lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
-    # => [procedure_offset, <procedure_inputs>, <pad>]
-
-    # compute the memory pointer at which desired procedure is stored
-    mul.4 push.KERNEL_PROCEDURES_PTR add
-    # => [procedure_pointer, <procedure_inputs>, <pad>]
-
-    # execute loaded procedure
-    dynexec
-    # => [<procedure_outputs>, <pad>]
 end
 
 # HELPER PROCEDURES

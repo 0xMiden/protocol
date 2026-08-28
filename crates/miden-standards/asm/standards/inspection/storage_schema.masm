@@ -10,12 +10,21 @@ use miden::protocol::active_account
 # The slot in this component's storage layout where the account storage schema commitment is stored
 const SCHEMA_COMMITMENT_SLOT = word("miden::standards::inspection::storage_schema::commitment")
 
-# TODO(call invocation)
+#! Returns the commitment to the storage schema of the active account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [SCHEMA_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - SCHEMA_COMMITMENT is the commitment to the active account's storage schema.
+#!
+#! Invocation: call
 @account_procedure
 pub proc get_schema_commitment
-    dropw
-    # => [pad(16)]
-
     push.SCHEMA_COMMITMENT_SLOT[0..2] exec.active_account::get_item
     # => [SCHEMA_COMMITMENT, pad(16)]
+
+    # drop the excess padding to restore the stack depth for the call boundary
+    swapw dropw
+    # => [SCHEMA_COMMITMENT, pad(12)]
 end

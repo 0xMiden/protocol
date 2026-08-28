@@ -70,9 +70,7 @@ async fn no_auth_pays_fee_note() -> anyhow::Result<()> {
     // the note carries the native fee asset, covering the computed fee
     let assets = output_note.assets();
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(paid_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let paid_asset = asset.unwrap_fungible();
     assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
     assert!(paid_asset.amount() >= executed_transaction.compute_fee());
 

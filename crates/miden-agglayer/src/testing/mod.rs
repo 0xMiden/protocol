@@ -7,7 +7,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use miden_protocol::account::{Account, AccountId};
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -16,6 +16,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::faucets::TokenName;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::interop::eth::{EthAddress, EthAmount};
 use serde::Deserialize;
@@ -61,12 +62,15 @@ pub fn bridge_admin_account_id() -> AccountId {
 }
 
 /// Creates an existing bridge account with one holder per operational role.
+#[allow(clippy::too_many_arguments)]
 pub fn create_existing_bridge_account_with_roles(
     seed: Word,
     bridge_admin: AccountId,
     faucet_manager: AccountId,
     ger_injector: AccountId,
     ger_remover: AccountId,
+    fee_manager: AccountId,
+    pauser: AccountId,
     network_id: u32,
 ) -> Account {
     let fee_policy = zero_fee_policy(AggLayerBridge::allowed_notes());
@@ -74,6 +78,8 @@ pub fn create_existing_bridge_account_with_roles(
         BTreeSet::from([faucet_manager]),
         BTreeSet::from([ger_injector]),
         BTreeSet::from([ger_remover]),
+        BTreeSet::from([fee_manager]),
+        BTreeSet::from([pauser]),
     )
     .expect("single-holder role sets are non-empty");
 
@@ -92,20 +98,24 @@ pub fn create_existing_bridge_account_with_roles(
 /// Creates an existing AggLayer faucet account with a zero-fee policy.
 pub fn create_existing_agglayer_faucet(
     seed: Word,
+    token_name: &str,
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
     initial_supply: Felt,
+    fee_manager: AccountId,
     bridge_account_id: AccountId,
 ) -> Account {
     let faucet_admin = bridge_admin_account_id();
     AggLayerFaucet::account_builder(
         seed,
-        token_symbol,
+        TokenName::new(token_name).expect("token name should be valid"),
+        TokenSymbol::new(token_symbol).expect("token symbol should be valid"),
         decimals,
-        max_supply,
-        initial_supply,
+        AssetAmount::try_from(max_supply).expect("max supply should be valid"),
+        AssetAmount::try_from(initial_supply).expect("initial supply should be valid"),
         faucet_admin,
+        fee_manager,
         bridge_account_id,
         fee_faucet_id(),
         zero_fee_policy(AggLayerFaucet::allowed_notes()),

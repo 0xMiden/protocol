@@ -15,7 +15,7 @@ use {AccountId, BlockNumber, NoteRecipient, NoteId, NoteTag, NoteType} from mide
 #! The memory address at which the note storage is written.
 const STORAGE_PTR = 0
 
-# Note storage layout (7 items, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (7 items, loaded at STORAGE_PTR by get_bounded_storage):
 # - FEATURE_NOTE_ID       [0..3] : ID of the feature note this sponsorship pays for
 # - reclaimer_suffix      [4]    : suffix of the account allowed to reclaim the note
 # - reclaimer_prefix      [5]    : prefix of the account allowed to reclaim the note
@@ -71,7 +71,7 @@ proc reclaim_note
     dup neq.0 assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED
     # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
-    exec.tx::get_block_number
+    exec.tx::get_reference_block_number
     # => [current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
     lte assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED
@@ -138,7 +138,7 @@ pub proc main
     dropw
     # => [pad(16)]
 
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items, pad(16)]
 
     eq.NUM_STORAGE_ITEMS assert.err=ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS

@@ -2,12 +2,12 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_crypto::SequentialCommit;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{ExecutionOutput, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
-    AccountHeader,
     AccountProcedureRoot,
     AccountType,
     StorageSlot,
@@ -17,6 +17,7 @@ use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH,
+    ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH,
     ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::NoteId;
@@ -28,12 +29,14 @@ use miden_protocol::transaction::memory::{
     ACCT_DB_ROOT_PTR,
     ASSET_SIZE,
     ASSET_VALUE_OFFSET,
+    BATCH_KERNEL_CONFIG_COMMITMENT_PTR,
     BLOCK_COMMITMENT_PTR,
+    BLOCK_KERNEL_CONFIG_COMMITMENT_PTR,
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
+    BLOCK_VERSION_IDX,
     CHAIN_COMMITMENT_PTR,
-    FEE_FAUCET_ID_PREFIX_IDX,
-    FEE_FAUCET_ID_SUFFIX_IDX,
+    FEE_ASSET_ID_PTR,
     FEE_PARAMETERS_PTR,
     GLOBAL_ACCOUNT_ID_PREFIX_PTR,
     GLOBAL_ACCOUNT_ID_SUFFIX_PTR,
@@ -58,25 +61,27 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTES_COMMITMENT_PTR,
     KERNEL_PROCEDURES_PTR,
     NATIVE_ACCT_CODE_COMMITMENT_PTR,
-    NATIVE_ACCT_ID_AND_NONCE_PTR,
+    NATIVE_ACCT_METADATA_PTR,
     NATIVE_ACCT_PROCEDURES_SECTION_PTR,
     NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR,
     NATIVE_ACCT_VAULT_ROOT_PTR,
     NATIVE_NUM_ACCT_PROCEDURES_PTR,
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
+    NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR,
     NOTE_ROOT_PTR,
     NULLIFIER_DB_ROOT_PTR,
     NUM_KERNEL_PROCEDURES_PTR,
     PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR,
     PARTIAL_BLOCKCHAIN_PEAKS_PTR,
     PREV_BLOCK_COMMITMENT_PTR,
-    PROTOCOL_VERSION_IDX,
+    PROOF_VERIFICATION_COMMITMENT_PTR,
+    PROTOCOL_CONFIG_COMMITMENT_PTR,
     TIMESTAMP_IDX,
     TX_COMMITMENT_PTR,
-    TX_KERNEL_COMMITMENT_PTR,
+    TX_KERNEL_CONFIG_COMMITMENT_PTR,
     TX_SCRIPT_ROOT_PTR,
-    VALIDATOR_KEY_COMMITMENT_PTR,
+    VALIDATOR_CONFIG_COMMITMENT_PTR,
     VERIFICATION_BASE_FEE_IDX,
 };
 use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
@@ -147,6 +152,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
     global_input_memory_assertions(exec_output, &mock_tx);
     block_data_memory_assertions(exec_output, &mock_tx);
     partial_blockchain_memory_assertions(exec_output, &mock_tx);
+    protocol_config_memory_assertions(exec_output, &mock_tx);
     kernel_data_memory_assertions(exec_output);
     account_data_memory_assertions(exec_output, &mock_tx);
     input_notes_memory_assertions(exec_output, &mock_tx, &note_args_map);
@@ -198,6 +204,59 @@ async fn test_transaction_prologue_rejects_too_many_note_assets() -> anyhow::Res
 
     let result = mock_tx.execute_code(code).await;
     assert_execution_error!(result, ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_transaction_prologue_verifies_note_storage_against_commitment() -> anyhow::Result<()>
+{
+    // The number of storage items sits right after the 7 note-detail words in the note-data blob.
+    const NOTE_DATA_NUM_STORAGE_ITEMS_IDX: usize = 7 * WORD_SIZE;
+
+    let assets = vec![NonFungibleAsset::mock(&0u32.to_le_bytes())];
+    let input_note = create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, assets);
+    let mut mock_tx = TestTransactionBuilder::with_existing_mock_account()
+        .input_note(input_note)
+        .build()?;
+
+    let input_notes_commitment = mock_tx.input_notes().commitment();
+    let (_, advice_inputs) = TransactionKernel::prepare_inputs(mock_tx.tx_inputs());
+    let note_data = advice_inputs
+        .as_advice_inputs()
+        .map
+        .get(&input_notes_commitment)
+        .context("input-note advice should be present")?
+        .as_ref()
+        .to_vec();
+
+    let code = "
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+        end
+        ";
+
+    // The note has empty storage (count == 0): the prologue accepts it because the empty preimage
+    // hashes to the note's storage commitment.
+    assert_eq!(note_data[NOTE_DATA_NUM_STORAGE_ITEMS_IDX], ZERO);
+    mock_tx
+        .execute_code(code)
+        .await
+        .context("valid empty-storage note should be accepted")?;
+
+    // Forge a non-zero storage-item count that the note's storage commitment does not attest to.
+    // The count stays within the limit, so it bypasses the bounds check and must be caught by
+    // the commitment verification instead.
+    let mut note_data = note_data;
+    note_data[NOTE_DATA_NUM_STORAGE_ITEMS_IDX] = Felt::from(1u32);
+    mock_tx.set_tx_args(TransactionArgs::new(
+        BTreeMap::from([(input_notes_commitment, note_data)]).into(),
+    ));
+
+    let result = mock_tx.execute_code(code).await;
+    assert_execution_error!(result, ERR_PROLOGUE_NOTE_STORAGE_ITEMS_COUNT_MISMATCH);
 
     Ok(())
 }
@@ -295,15 +354,27 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTran
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(TX_KERNEL_COMMITMENT_PTR),
-        inputs.tx_inputs().block_header().tx_kernel_commitment(),
-        "The kernel commitment should be stored at the TX_KERNEL_COMMITMENT_PTR"
+        exec_output.get_kernel_mem_word(PROTOCOL_CONFIG_COMMITMENT_PTR),
+        inputs.tx_inputs().block_header().protocol_config_commitment(),
+        "The protocol config commitment should be stored at the PROTOCOL_CONFIG_COMMITMENT_PTR"
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(VALIDATOR_KEY_COMMITMENT_PTR),
-        inputs.tx_inputs().block_header().validator_keys().commitment(),
-        "The public key commitment should be stored at the VALIDATOR_KEY_COMMITMENT_PTR"
+        exec_output.get_kernel_mem_word(VALIDATOR_CONFIG_COMMITMENT_PTR),
+        inputs.tx_inputs().block_header().validator_config().to_commitment(),
+        "The validator config commitment should be stored at the VALIDATOR_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR),
+        inputs.tx_inputs().block_header().next_protocol_config_commitment(),
+        "The next protocol config commitment should be stored at the NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[BLOCK_VERSION_IDX],
+        Felt::from(inputs.tx_inputs().block_header().version()),
+        "The block header version should be stored at BLOCK_METADATA_PTR[BLOCK_VERSION_IDX]"
     );
 
     assert_eq!(
@@ -313,33 +384,9 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTran
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[PROTOCOL_VERSION_IDX],
-        Felt::from(inputs.tx_inputs().block_header().version()),
-        "The protocol version should be stored at BLOCK_METADATA_PTR[PROTOCOL_VERSION_IDX]"
-    );
-
-    assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[TIMESTAMP_IDX],
         Felt::from(inputs.tx_inputs().block_header().timestamp()),
         "The timestamp should be stored at BLOCK_METADATA_PTR[TIMESTAMP_IDX]"
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[FEE_FAUCET_ID_SUFFIX_IDX],
-        inputs.tx_inputs().block_header().fee_parameters().fee_faucet_id().suffix(),
-        "The fee faucet ID suffix should be stored at FEE_PARAMETERS_PTR[FEE_FAUCET_ID_SUFFIX_IDX]"
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[FEE_FAUCET_ID_PREFIX_IDX],
-        inputs
-            .tx_inputs()
-            .block_header()
-            .fee_parameters()
-            .fee_faucet_id()
-            .prefix()
-            .as_felt(),
-        "The fee faucet ID prefix should be stored at FEE_PARAMETERS_PTR[FEE_FAUCET_ID_PREFIX_IDX]"
     );
 
     assert_eq!(
@@ -383,6 +430,40 @@ fn partial_blockchain_memory_assertions(
     }
 }
 
+fn protocol_config_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
+    let protocol_config = inputs.tx_inputs().protocol_config();
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(FEE_ASSET_ID_PTR),
+        protocol_config.fee_asset_id().to_word(),
+        "The fee asset ID should be stored at the FEE_ASSET_ID_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(TX_KERNEL_CONFIG_COMMITMENT_PTR),
+        protocol_config.tx_kernel().to_commitment(),
+        "The tx kernel config commitment should be stored at the TX_KERNEL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(BATCH_KERNEL_CONFIG_COMMITMENT_PTR),
+        protocol_config.batch_kernel().to_commitment(),
+        "The batch kernel config commitment should be stored at the BATCH_KERNEL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(BLOCK_KERNEL_CONFIG_COMMITMENT_PTR),
+        protocol_config.block_kernel().to_commitment(),
+        "The block kernel config commitment should be stored at the BLOCK_KERNEL_CONFIG_COMMITMENT_PTR"
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(PROOF_VERIFICATION_COMMITMENT_PTR),
+        protocol_config.proof_verification().to_commitment(),
+        "The proof verification config commitment should be stored at the PROOF_VERIFICATION_COMMITMENT_PTR"
+    );
+}
+
 fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
     // check that the number of kernel procedures stored in the memory is equal to the number of
     // procedures in the `TransactionKernel::PROCEDURES` array
@@ -404,11 +485,11 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
 }
 
 fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &MockTransaction) {
-    let header = AccountHeader::from(inputs.account());
+    let account_metadata = &inputs.account().to_elements()[0..4];
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
-        &header.to_elements()[0..4],
-        "The account ID and nonce should be stored at NATIVE_ACCT_ID_AND_NONCE_PTR"
+        exec_output.get_kernel_mem_word(NATIVE_ACCT_METADATA_PTR).as_elements(),
+        account_metadata,
+        "The account metadata word should be stored at NATIVE_ACCT_METADATA_PTR"
     );
 
     assert_eq!(

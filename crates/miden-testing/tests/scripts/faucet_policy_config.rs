@@ -12,11 +12,12 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
@@ -76,7 +77,6 @@ fn create_faucet_with_policies(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -245,6 +245,30 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
         result,
         ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     );
+    Ok(())
+}
+
+/// A note carrying more storage items than any action accepts is rejected before its storage is
+/// loaded, so the work an oversized note can impose on whoever attempts to consume it is bounded by
+/// the layout the script accepts rather than by `MAX_NOTE_STORAGE_ITEMS`.
+#[tokio::test]
+async fn oversized_storage_is_rejected_before_the_storage_is_loaded() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let mut builder = MockChain::builder();
+    let faucet = create_faucet_with_policies(&mut builder, owner)?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let storage = vec![Felt::from(0u32); MAX_NOTE_STORAGE_ITEMS];
+    let note = malformed_faucet_policy_config_note(owner, faucet.id(), storage, &mut rng)?;
+    let tx = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(note)
+        .build()?;
+    let result = tx.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_TOO_MANY_STORAGE_ITEMS);
     Ok(())
 }
 

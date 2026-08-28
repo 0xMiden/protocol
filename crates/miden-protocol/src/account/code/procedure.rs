@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::fmt::Display;
 
 use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
@@ -34,9 +35,9 @@ impl AccountProcedureRoot {
     }
 }
 
-impl core::fmt::Display for AccountProcedureRoot {
+impl Display for AccountProcedureRoot {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!("{}", self.as_word()))
+        write!(f, "{}", self.as_word())
     }
 }
 

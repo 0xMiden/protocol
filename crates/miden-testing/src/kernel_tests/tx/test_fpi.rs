@@ -40,7 +40,7 @@ use miden_protocol::transaction::memory::{
     ACCOUNT_DATA_LENGTH,
     ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET,
     ACCT_CODE_COMMITMENT_OFFSET,
-    ACCT_ID_AND_NONCE_OFFSET,
+    ACCT_METADATA_OFFSET,
     ACCT_NUM_PROCEDURES_OFFSET,
     ACCT_NUM_STORAGE_SLOTS_OFFSET,
     ACCT_PROCEDURES_SECTION_OFFSET,
@@ -754,10 +754,11 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let non_fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
 
     // Create two different assets.
-    let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 1)?);
-    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
-    ));
+    let fungible_asset = Asset::from(FungibleAsset::new(fungible_faucet_id, 1)?);
+    let non_fungible_asset = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        non_fungible_faucet_id,
+        vec![1, 2, 3],
+    )));
     let fungible_asset_id = AssetId::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
@@ -2024,11 +2025,11 @@ fn foreign_account_data_memory_assertions(
     // foreign procedure root should be zero word after FPI has ended
     assert_eq!(exec_output.get_kernel_mem_word(UPCOMING_FOREIGN_PROCEDURE_PTR), EMPTY_WORD);
 
-    // Check that account id and nonce match.
+    // Check that the account metadata word matches.
     let header = AccountHeader::from(foreign_account);
     assert_eq!(
         exec_output
-            .get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET)
+            .get_kernel_mem_word(foreign_account_data_ptr + ACCT_METADATA_OFFSET)
             .as_slice(),
         &header.to_elements()[0..4]
     );

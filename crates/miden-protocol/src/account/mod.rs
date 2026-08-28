@@ -132,6 +132,8 @@ impl Account {
     /// - an account seed is not provided but the account's nonce indicates the account is new.
     /// - an account seed is provided but the account ID derived from it is invalid or does not
     ///   match the provided account's ID.
+    /// - the storage contains an asset callback slot while the account ID's [`AssetCallbackFlag`]
+    ///   is [`AssetCallbackFlag::Disabled`].
     pub fn new(
         id: AccountId,
         vault: AssetVault,
@@ -141,6 +143,7 @@ impl Account {
         seed: Option<Word>,
     ) -> Result<Self, AccountError> {
         validate_account_seed(id, code.commitment(), storage.to_commitment(), seed, nonce)?;
+        validate_asset_callbacks(id, &storage)?;
 
         Ok(Self::new_unchecked(id, vault, storage, code, nonce, seed))
     }
@@ -202,6 +205,11 @@ impl Account {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the [`AccountHeader`] of this account.
+    pub fn to_header(&self) -> AccountHeader {
+        AccountHeader::from(self)
+    }
 
     /// Returns the commitment of this account.
     ///
@@ -495,6 +503,7 @@ impl Serializable for Account {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let Account { id, vault, storage, code, nonce, seed } = self;
 
+        AccountHeader::VERSION_1.write_into(target);
         id.write_into(target);
         vault.write_into(target);
         storage.write_into(target);
@@ -504,7 +513,8 @@ impl Serializable for Account {
     }
 
     fn get_size_hint(&self) -> usize {
-        self.id.get_size_hint()
+        AccountHeader::VERSION_1.get_size_hint()
+            + self.id.get_size_hint()
             + self.vault.get_size_hint()
             + self.storage.get_size_hint()
             + self.code.get_size_hint()
@@ -515,6 +525,16 @@ impl Serializable for Account {
 
 impl Deserializable for Account {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let version = u8::read_from(source)?;
+
+        if version != AccountHeader::VERSION_1 {
+            return Err(DeserializationError::InvalidValue(format!(
+                "account version is {} but only version {} is supported",
+                version,
+                AccountHeader::VERSION_1,
+            )));
+        }
+
         let id = AccountId::read_from(source)?;
         let vault = AssetVault::read_from(source)?;
         let storage = AccountStorage::read_from(source)?;
@@ -529,6 +549,22 @@ impl Deserializable for Account {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Validates that an account which installs an asset callback slot has callbacks enabled.
+///
+/// The transaction kernel rejects such accounts when they are created; this mirrors that rule for
+/// accounts that are constructed or deserialized outside of a transaction. See the
+/// [`AccountBuilder`](AccountBuilder#asset-callbacks) docs for details.
+pub(super) fn validate_asset_callbacks(
+    id: AccountId,
+    storage: &AccountStorage,
+) -> Result<(), AccountError> {
+    if !id.asset_callback_flag().is_enabled() && storage.has_callback_slots() {
+        return Err(AccountError::AssetCallbackSlotWithDisabledFlag(id));
+    }
+
+    Ok(())
+}
 
 /// Validates that the provided seed is valid for the provided account components.
 pub(super) fn validate_account_seed(
@@ -569,7 +605,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_crypto::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, DeserializationError, Serializable};
     use miden_crypto::{Felt, Word};
 
     use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
@@ -589,7 +625,7 @@ mod tests {
         StorageSlotContent,
         StorageSlotName,
     };
-    use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+    use crate::asset::{Asset, AssetCallbacks, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
     use crate::testing::account_id::{
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -837,6 +873,31 @@ mod tests {
         Account::new_existing(id, vault, storage, code, nonce)
     }
 
+    /// Accounts constructed outside of the builder are rejected if they install a callback slot
+    /// without having callbacks enabled.
+    #[test]
+    fn account_new_rejects_callback_slot_with_disabled_flag() -> anyhow::Result<()> {
+        let account = AccountBuilder::new([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Disabled);
+
+        let (id, vault, storage, code, nonce, _seed) = account.into_parts();
+
+        let mut slots = storage.into_slots();
+        slots.push(StorageSlot::with_value(
+            AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+            Word::from([1u32, 2, 3, 4]),
+        ));
+        let storage = AccountStorage::new(slots)?;
+
+        let err = Account::new(id, vault, storage, code, nonce, None).unwrap_err();
+        assert_matches!(err, AccountError::AssetCallbackSlotWithDisabledFlag(_));
+
+        Ok(())
+    }
+
     /// Tests all cases of account ID seed validation.
     #[test]
     fn seed_validation() -> anyhow::Result<()> {
@@ -918,5 +979,14 @@ mod tests {
         let _partial_account = PartialAccount::from(&account);
 
         Ok(())
+    }
+
+    #[test]
+    fn account_deserialization_rejects_unsupported_version() {
+        let error = Account::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("account version is 0"));
+        });
     }
 }

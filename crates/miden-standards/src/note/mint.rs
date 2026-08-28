@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -22,8 +22,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 
 use crate::StandardsLib;
-use crate::note::P2idNote;
 use crate::note::costs::{MINT_CONSUMPTION_CYCLES, NoteConsumptionCost};
+use crate::note::{NetworkAccountTarget, P2idNote};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -46,11 +46,16 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 ///
 /// The single MINT script works against both fungible and non-fungible faucets: it detects the
 /// faucet kind by reflection (via the `CodeInspection` component) and calls the matching
-/// `mint_and_send`. The script reads the asset (a fungible asset, or a non-fungible commitment)
-/// directly from the note's storage. For fungible faucets the embedded `ASSET_ID` binds the note
-/// to one faucet, so a MINT note bound to faucet A cannot be redirected to faucet B. MINT notes are
-/// always public (for network execution) and carry no assets; the output note minted on
-/// consumption can be private or public depending on the [`MintNoteStorage`] variant.
+/// `mint_and_send`. The script reads the asset directly from the note's storage, in the same layout
+/// for both faucet kinds. MINT notes are always public (for network execution) and carry no assets;
+/// the output note minted on consumption can be private or public depending on the
+/// [`MintNoteStorage`] variant.
+///
+/// A MINT note for a public faucet is tagged for that faucet and carries a
+/// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment naming it, both derived
+/// from the asset in the note's storage, so the network can route the note to it. A private faucet
+/// can never be a network account, so a note for one is only tagged and carries no such
+/// attachment.
 ///
 /// Construct one with the [builder](MintNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
@@ -66,17 +71,27 @@ pub struct MintNote {
 impl MintNote {
     /// Builds a new [`MintNote`] that mints the asset embedded in `mint_storage`.
     ///
+    /// The faucet the note is bound to comes from [`MintNoteStorage`].
+    ///
     /// # Errors
     ///
-    /// Returns an error if the attachments exceed their protocol limit (see
-    /// [`NoteAttachments::new`]).
+    /// Returns an error if:
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than the faucet.
+    /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]).
     #[builder]
     pub fn new(
-        #[builder(field)] attachments: Vec<NoteAttachment>,
+        #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         #[builder(name = mint_storage)] storage: MintNoteStorage,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
+        // The network routes the note on this attachment; the stored ASSET_ID is what binds the
+        // script to the same faucet on consumption.
+        NetworkAccountTarget::ensure_presence_if_public(&mut attachments, storage.faucet_id())
+            .map_err(|err| {
+                NoteError::other_with_source("failed to target the MINT note at its faucet", err)
+            })?;
+
         let attachments = NoteAttachments::new(attachments)?;
 
         Ok(Self {
@@ -92,28 +107,17 @@ impl MintNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Expected number of storage items of a fungible MINT note (private mode).
+    /// Expected number of storage items of a MINT note (private mode).
     ///
     /// Layout: RECIPIENT(4) + ASSET_ID(4) + ASSET_VALUE(4) + tag(1).
     pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 13;
 
-    /// Minimum number of storage items of a fungible MINT note (public mode).
+    /// Minimum number of storage items of a MINT note (public mode).
     ///
     /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + ASSET_ID(4) + ASSET_VALUE(4) + tag(1) +
     /// padding(3) + variable output-note storage. The variable portion starts at offset 20
     /// (word-aligned) and may contain zero or more items.
     pub const MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 20;
-
-    /// Expected number of storage items of a non-fungible MINT note (private mode).
-    ///
-    /// Layout: RECIPIENT(4) + COMMITMENT(4) + tag(1).
-    pub const NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE: usize = 9;
-
-    /// Minimum number of storage items of a non-fungible MINT note (public mode).
-    ///
-    /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + COMMITMENT(4) + tag(1) + padding(3) + variable
-    /// output-note storage. The variable portion starts at offset 16 (word-aligned).
-    pub const NON_FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 16;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -212,56 +216,44 @@ impl From<MintNote> for Note {
 
 /// Represents the different storage formats for MINT notes.
 ///
-/// The MINT note serves both fungible and non-fungible faucets. The fungible variants embed a
-/// [`FungibleAsset`] (`ASSET_ID` + `ASSET_VALUE`, 8 felts) so the faucet executing the note can be
-/// checked against the asset's faucet ID at mint time. The non-fungible variants embed a
-/// [`NonFungibleAsset`], whose value word (`ASSET_VALUE`, 4 felts) is the asset commitment and
-/// whose faucet ID routes the note.
+/// The MINT note serves both fungible and non-fungible faucets, and both use the same layout: the
+/// note embeds the full [`Asset`] (`ASSET_ID` + `ASSET_VALUE`, 8 felts). The `ASSET_ID` is what
+/// binds the note to one faucet - the faucet's `mint_and_send` derives the asset for the active
+/// account and asserts it equals the stored `ASSET_ID`, so a note created for one faucet cannot be
+/// minted by another. This works for non-fungible assets too, since a non-fungible `ASSET_ID` is
+/// `f(faucet_id, ASSET_VALUE)` and is therefore known when the note is built.
 ///
-/// - Fungible private (13 items): RECIPIENT + ASSET_ID + ASSET_VALUE + tag.
-/// - Fungible public (20+ items): SCRIPT_ROOT + SERIAL_NUM + ASSET_ID + ASSET_VALUE + tag +
-///   padding(3) + variable output-note storage (word-aligned at offset 20).
-/// - Non-fungible private (9 items): RECIPIENT + COMMITMENT + tag.
-/// - Non-fungible public (16+ items): SCRIPT_ROOT + SERIAL_NUM + COMMITMENT + tag + padding(3) +
-///   variable output-note storage (word-aligned at offset 16).
+/// - Private (13 items): RECIPIENT + ASSET_ID + ASSET_VALUE + tag.
+/// - Public (20+ items): SCRIPT_ROOT + SERIAL_NUM + ASSET_ID + ASSET_VALUE + tag + padding(3) +
+///   variable output-note storage (word-aligned at offset 20).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MintNoteStorage {
-    FungiblePrivate {
+    Private {
         recipient_digest: Word,
-        asset: FungibleAsset,
+        asset: Asset,
         tag: NoteTag,
     },
-    FungiblePublic {
+    Public {
         recipient: NoteRecipient,
-        asset: FungibleAsset,
-        tag: NoteTag,
-    },
-    NonFungiblePrivate {
-        recipient_digest: Word,
-        asset: NonFungibleAsset,
-        tag: NoteTag,
-    },
-    NonFungiblePublic {
-        recipient: NoteRecipient,
-        asset: NonFungibleAsset,
+        asset: Asset,
         tag: NoteTag,
     },
 }
 
 impl MintNoteStorage {
-    /// Builds fungible private-mode storage (creates a private output note).
-    pub fn new_fungible_private(
-        recipient_digest: Word,
-        asset: FungibleAsset,
-        tag: NoteTag,
-    ) -> Self {
-        Self::FungiblePrivate { recipient_digest, asset, tag }
+    /// Builds private-mode storage (creates a private output note).
+    pub fn new_private(recipient_digest: Word, asset: impl Into<Asset>, tag: NoteTag) -> Self {
+        Self::Private {
+            recipient_digest,
+            asset: asset.into(),
+            tag,
+        }
     }
 
-    /// Builds fungible public-mode storage (creates a public output note).
-    pub fn new_fungible_public(
+    /// Builds public-mode storage (creates a public output note).
+    pub fn new_public(
         recipient: NoteRecipient,
-        asset: FungibleAsset,
+        asset: impl Into<Asset>,
         tag: NoteTag,
     ) -> Result<Self, NoteError> {
         let total_storage_items =
@@ -271,86 +263,40 @@ impl MintNoteStorage {
             return Err(NoteError::TooManyStorageItems(total_storage_items));
         }
 
-        Ok(Self::FungiblePublic { recipient, asset, tag })
+        Ok(Self::Public { recipient, asset: asset.into(), tag })
     }
 
-    /// Builds non-fungible private-mode storage (creates a private output note).
-    pub fn new_non_fungible_private(
-        recipient_digest: Word,
-        asset: NonFungibleAsset,
-        tag: NoteTag,
-    ) -> Self {
-        Self::NonFungiblePrivate { recipient_digest, asset, tag }
-    }
-
-    /// Builds non-fungible public-mode storage (creates a public output note).
-    pub fn new_non_fungible_public(
-        recipient: NoteRecipient,
-        asset: NonFungibleAsset,
-        tag: NoteTag,
-    ) -> Result<Self, NoteError> {
-        let total_storage_items = MintNote::NON_FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC
-            + recipient.storage().num_items() as usize;
-
-        if total_storage_items > MAX_NOTE_STORAGE_ITEMS {
-            return Err(NoteError::TooManyStorageItems(total_storage_items));
+    /// Returns the asset that will be minted.
+    pub fn asset(&self) -> Asset {
+        match self {
+            Self::Private { asset, .. } | Self::Public { asset, .. } => *asset,
         }
-
-        Ok(Self::NonFungiblePublic { recipient, asset, tag })
     }
 
     /// Returns the account ID of the faucet that will mint the asset.
     pub fn faucet_id(&self) -> AccountId {
-        match self {
-            Self::FungiblePrivate { asset, .. } | Self::FungiblePublic { asset, .. } => {
-                asset.faucet_id()
-            },
-            Self::NonFungiblePrivate { asset, .. } | Self::NonFungiblePublic { asset, .. } => {
-                asset.faucet_id()
-            },
-        }
+        self.asset().faucet_id()
     }
 }
 
 impl From<MintNoteStorage> for NoteStorage {
     fn from(mint_storage: MintNoteStorage) -> Self {
         match mint_storage {
-            MintNoteStorage::FungiblePrivate { recipient_digest, asset, tag } => {
+            MintNoteStorage::Private { recipient_digest, asset, tag } => {
                 let mut storage_values = Vec::with_capacity(MintNote::NUM_STORAGE_ITEMS_PRIVATE);
                 storage_values.extend_from_slice(recipient_digest.as_elements());
-                storage_values.extend_from_slice(&Asset::from(asset).as_elements());
+                storage_values.extend_from_slice(&asset.as_elements());
                 storage_values.push(tag.into());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
-            MintNoteStorage::FungiblePublic { recipient, asset, tag } => {
+            MintNoteStorage::Public { recipient, asset, tag } => {
                 let mut storage_values = Vec::new();
                 storage_values.extend_from_slice(recipient.script().root().as_elements());
                 storage_values.extend_from_slice(recipient.serial_num().as_elements());
-                storage_values.extend_from_slice(&Asset::from(asset).as_elements());
+                storage_values.extend_from_slice(&asset.as_elements());
                 // tag followed by 3 padding felts so the variable storage that follows starts at
                 // a word-aligned offset (20).
-                storage_values.extend_from_slice(&[tag.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
-                storage_values.extend_from_slice(recipient.storage().items());
-                NoteStorage::new(storage_values)
-                    .expect("number of storage items should not exceed max storage items")
-            },
-            MintNoteStorage::NonFungiblePrivate { recipient_digest, asset, tag } => {
-                let mut storage_values =
-                    Vec::with_capacity(MintNote::NON_FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE);
-                storage_values.extend_from_slice(recipient_digest.as_elements());
-                storage_values.extend_from_slice(asset.to_value_word().as_elements());
-                storage_values.push(tag.into());
-                NoteStorage::new(storage_values)
-                    .expect("number of storage items should not exceed max storage items")
-            },
-            MintNoteStorage::NonFungiblePublic { recipient, asset, tag } => {
-                let mut storage_values = Vec::new();
-                storage_values.extend_from_slice(recipient.script().root().as_elements());
-                storage_values.extend_from_slice(recipient.serial_num().as_elements());
-                storage_values.extend_from_slice(asset.to_value_word().as_elements());
-                // tag followed by 3 padding felts so the variable storage that follows starts at
-                // a word-aligned offset (16).
                 storage_values.extend_from_slice(&[tag.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
                 storage_values.extend_from_slice(recipient.storage().items());
                 NoteStorage::new(storage_values)
@@ -381,38 +327,67 @@ impl NoteConsumptionCost for MintNote {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::AccountType;
+    use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::RandomCoin;
 
     use super::*;
+    use crate::note::{NetworkNoteExt, NoteExecutionHint};
 
     fn faucet() -> AccountId {
         AccountId::builder().account_type(AccountType::Public).build_with_seed([1; 32])
+    }
+
+    fn private_faucet() -> AccountId {
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32])
     }
 
     fn owner() -> AccountId {
         AccountId::builder().account_type(AccountType::Private).build_with_seed([2; 32])
     }
 
-    /// The builder produces a public, asset-less note tagged for the faucet.
-    #[test]
-    fn builder_builds_public_mint_note() {
+    fn build_mint_note(faucet_id: AccountId) -> MintNote {
+        let asset = FungibleAsset::new(faucet_id, 50).unwrap();
         let mut rng = RandomCoin::new(Word::empty());
-        let asset = FungibleAsset::new(faucet(), 50).unwrap();
-        let mint_storage =
-            MintNoteStorage::new_fungible_private(Word::empty(), asset, NoteTag::default());
-        let mint_note = MintNote::builder()
+        MintNote::builder()
             .sender(owner())
-            .mint_storage(mint_storage)
+            .mint_storage(MintNoteStorage::new_private(Word::empty(), asset, NoteTag::default()))
             .generate_serial_number(&mut rng)
             .build()
-            .unwrap();
+            .unwrap()
+    }
+
+    /// The builder produces a public, asset-less note tagged for the faucet and routed to it by a
+    /// derived network target. How that target treats caller-supplied attachments is covered by the
+    /// `network_account_target` tests.
+    #[test]
+    fn builder_builds_public_mint_note() {
+        let mint_note = build_mint_note(faucet());
 
         assert_eq!(mint_note.faucet_id(), faucet());
         assert_eq!(mint_note.sender(), owner());
+        assert_eq!(mint_note.attachments().num_attachments(), 1);
 
         let note = Note::from(mint_note);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.metadata().tag(), NoteTag::with_account_target(faucet()));
         assert_eq!(note.assets().num_assets(), 0);
+        assert!(note.is_network_note());
+
+        let target = NetworkAccountTarget::try_from(note.attachments()).unwrap();
+        assert_eq!(target.target_id(), faucet());
+        assert_eq!(target.execution_hint(), NoteExecutionHint::Always);
+    }
+
+    /// A private faucet is never a network account, so no target is derived for it. The note is
+    /// still tagged for the faucet and remains consumable by it.
+    #[test]
+    fn builder_omits_network_target_for_private_faucet() {
+        let mint_note = build_mint_note(private_faucet());
+
+        assert_eq!(mint_note.attachments().num_attachments(), 0);
+
+        let note = Note::from(mint_note);
+        assert_eq!(note.metadata().tag(), NoteTag::with_account_target(private_faucet()));
+        assert!(!note.is_network_note());
     }
 }
