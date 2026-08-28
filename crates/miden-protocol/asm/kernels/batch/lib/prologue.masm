@@ -32,6 +32,17 @@ const ERR_BATCH_NO_TRANSACTIONS = "the batch contains no transactions"
 
 const ERR_BATCH_NOTE_LIST_NOT_SORTED = "a batch note list is not strictly sorted by its key"
 
+const ERR_BATCH_NOTE_LIST_RANGE_NOT_U32 = "a batch note list range pointer is not a u32 value"
+
+const ERR_BATCH_NOTE_LIST_RANGE_INVERTED =
+    "a batch note list start pointer is greater than its end pointer"
+
+const ERR_BATCH_NOTE_LIST_START_NOT_ALIGNED =
+    "a batch note list start pointer is not word-aligned"
+
+const ERR_BATCH_NOTE_LIST_RANGE_NOT_ALIGNED =
+    "a batch note list range is not double-word aligned with its start pointer"
+
 const ERR_BATCH_NOTE_LIST_TOO_LONG =
     "a batch note list contains more entries than the maximum allowed"
 
@@ -66,8 +77,8 @@ proc load_note_list
     dup div.NOTE_ENTRY_NUM_WORDS
     # => [num_notes, num_words, write_ptr]
 
-    # A length that is not a multiple of 8 felts wraps `num_notes` (field `div`) to a non-u32
-    # felt, which the u32 assertion rejects.
+    # Both divisions are field divisions, so a length that is not a multiple of 8 felts yields a
+    # huge non-u32 felt rather than a small count, which the u32 assertion rejects.
     dup u32assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     movdn.2
@@ -80,42 +91,50 @@ proc load_note_list
     # => [num_notes]
 end
 
-#! Asserts a note list (8-felt entries starting at `base_ptr`) is strictly increasing by its KEY
-#! word, which also proves there are no duplicate keys.
+#! Asserts that the KEY words in an array of (key, value) word tuples are strictly increasing.
 #!
-#! Inputs:  [base_ptr, num]
-#! Outputs: []
+#! This establishes the sortedness precondition that `sorted_array::find_key_value` lookups rely on.
+#! It mirrors `sorted_array::assert_sorted_keys`, with the difference that sortedness is asserted
+#! to be strict here.
+#!
+#! Inputs:  [start_ptr, end_ptr]
+#! Outputs: [start_ptr, end_ptr]
+#!
+#! Panics if:
+#! - `start_ptr` or `end_ptr` is not a u32 value.
+#! - `start_ptr` is not word-aligned.
+#! - `end_ptr` is not double-word-aligned with `start_ptr`.
+#! - `start_ptr > end_ptr`.
+#! - any adjacent key pair is not strictly increasing.
+@locals(1)
 proc assert_list_strictly_sorted
-    dup.1 push.2 u32lt
-    # => [num<2, base_ptr, num]
-    if.true
-        drop drop
-    else
-        push.0
-        # => [idx, base_ptr, num]
-        dup add.1 dup.3 u32lt
-        # => [should_loop, idx, base_ptr, num]
-        while.true
-            dup mul.NOTE_ENTRY_FELT_LEN dup.2 add
-            # => [ptr_i, idx, base_ptr, num]
-            dup add.NOTE_ENTRY_FELT_LEN
-            # => [ptr_i1, ptr_i, idx, base_ptr, num]
-            padw movup.4 mem_loadw_le
-            # => [KEY_i1, ptr_i, idx, base_ptr, num]
-            movup.4
-            # => [ptr_i, KEY_i1, idx, base_ptr, num]
-            padw movup.4 mem_loadw_le
-            # => [KEY_i, KEY_i1, idx, base_ptr, num]
-            swapw
-            # => [KEY_i1, KEY_i, idx, base_ptr, num]
-            exec.word::lt
-            # => [is_strictly_increasing, idx, base_ptr, num]
-            assert.err=ERR_BATCH_NOTE_LIST_NOT_SORTED
-            add.1
-            dup add.1 dup.3 u32lt
-            # => [should_loop, idx, base_ptr, num]
-        end
-        drop drop drop
+    # locals:
+    # 0: current_ptr
+    dup add.NOTE_ENTRY_FELT_LEN loc_store.0
+    # => [start_ptr, end_ptr]
+
+    dup.1 dup.1 u32assert2.err=ERR_BATCH_NOTE_LIST_RANGE_NOT_U32
+    u32gte assert.err=ERR_BATCH_NOTE_LIST_RANGE_INVERTED
+    dup u32mod.WORD_NUM_ELEMENTS assertz.err=ERR_BATCH_NOTE_LIST_START_NOT_ALIGNED
+    dup.1 dup.1 sub u32mod.NOTE_ENTRY_FELT_LEN assertz.err=ERR_BATCH_NOTE_LIST_RANGE_NOT_ALIGNED
+    # => [start_ptr, end_ptr]
+
+    loc_load.0 dup.2 u32lt
+    while.true
+        loc_load.0 sub.NOTE_ENTRY_FELT_LEN padw movup.4 mem_loadw_le
+        # => [PREVIOUS_KEY, start_ptr, end_ptr]
+
+        loc_load.0 padw movup.4 mem_loadw_le
+        # => [CURRENT_KEY, PREVIOUS_KEY, start_ptr, end_ptr]
+
+        exec.word::lt
+        assert.err=ERR_BATCH_NOTE_LIST_NOT_SORTED
+        # => [start_ptr, end_ptr]
+
+        loc_load.0 add.NOTE_ENTRY_FELT_LEN loc_store.0
+        # => [start_ptr, end_ptr]
+
+        loc_load.0 dup.2 u32lt
     end
 end
 
@@ -127,11 +146,20 @@ proc prepare_input_note_list
     push.INPUT_NOTES_PTR
     push.INPUT_NOTE_LIST_KEY
     # => [KEY, input_notes_ptr]
+
     exec.load_note_list
+    # => [num_input_notes]
+
     exec.memory::set_num_input_notes
-    exec.memory::get_num_input_notes push.INPUT_NOTES_PTR
-    # => [input_notes_ptr, num_input_notes]
+    # => []
+
+    exec.memory::get_input_notes_end_ptr push.INPUT_NOTES_PTR
+    # => [input_notes_ptr, input_notes_end_ptr]
+
     exec.assert_list_strictly_sorted
+    # => [input_notes_ptr, input_notes_end_ptr]
+
+    drop drop
 end
 
 #! Loads and verifies the note-id-sorted output-note list into [`memory::OUTPUT_NOTES_PTR`].
@@ -142,11 +170,20 @@ proc prepare_output_note_list
     push.OUTPUT_NOTES_PTR
     push.OUTPUT_NOTE_LIST_KEY
     # => [KEY, output_notes_ptr]
+
     exec.load_note_list
+    # => [num_output_notes]
+
     exec.memory::set_num_output_notes
-    exec.memory::get_num_output_notes push.OUTPUT_NOTES_PTR
-    # => [output_notes_ptr, num_output_notes]
+    # => []
+
+    exec.memory::get_output_notes_end_ptr push.OUTPUT_NOTES_PTR
+    # => [output_notes_ptr, output_notes_end_ptr]
+
     exec.assert_list_strictly_sorted
+    # => [output_notes_ptr, output_notes_end_ptr]
+
+    drop drop
 end
 
 # PROLOGUE

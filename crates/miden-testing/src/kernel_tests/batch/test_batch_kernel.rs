@@ -282,6 +282,30 @@ fn batch_kernel_rejects_duplicated_input_note_list_entry() -> anyhow::Result<()>
     Ok(())
 }
 
+/// Two entries in descending nullifier order break the strict-sorted invariant, pinning the
+/// direction the sortedness check asserts.
+#[test]
+fn batch_kernel_rejects_descending_input_note_list() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let blob = input_note_list_blob(&batch);
+    assert!(
+        blob.len() >= 2 * FELTS_PER_NOTE_ENTRY,
+        "the batch should have at least two notes"
+    );
+    // Swap the first two (distinct, ascending) entries so the pair is strictly descending.
+    let mut swapped = blob[FELTS_PER_NOTE_ENTRY..2 * FELTS_PER_NOTE_ENTRY].to_vec();
+    swapped.extend_from_slice(&blob[0..FELTS_PER_NOTE_ENTRY]);
+    swapped.extend_from_slice(&blob[2 * FELTS_PER_NOTE_ENTRY..]);
+    let override_advice = AdviceInputs::default().with_map([(*INPUT_NOTE_LIST_KEY, swapped)]);
+
+    let result = BatchExecutor::new().execute(batch, override_advice);
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_NOT_SORTED);
+
+    Ok(())
+}
+
 /// Altering a list entry's note id (without touching its nullifier) is caught when the kernel binds
 /// the entry to the per-transaction note id.
 #[test]
