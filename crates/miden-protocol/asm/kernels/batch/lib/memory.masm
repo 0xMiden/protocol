@@ -80,7 +80,10 @@ pub const TX_TUPLE_NUM_WORDS = 2
 const TX_HEADERS_PTR = 8212
 
 # Number of felts each transaction occupies in TX_HEADERS_PTR.
-const TX_HEADER_FELT_LEN = 16
+pub const TX_HEADER_FELT_LEN = 16
+
+# Number of words a transaction header occupies in TX_HEADERS_PTR.
+pub const TX_HEADER_NUM_WORDS = TX_HEADER_FELT_LEN / WORD_NUM_ELEMENTS
 
 # Felt offset within a transaction header where INPUT_NOTES_COMMITMENT starts.
 const TX_HEADER_INPUT_NOTES_OFFSET = 8

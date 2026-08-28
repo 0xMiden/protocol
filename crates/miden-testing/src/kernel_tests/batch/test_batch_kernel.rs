@@ -29,6 +29,10 @@ use super::proven_tx_builder::MockProvenTxBuilder;
 /// Felts per global note-list entry: a KEY word plus a VALUE word.
 const FELTS_PER_NOTE_ENTRY: usize = 2 * WORD_SIZE;
 
+/// Felts per transaction header: INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT.
+/// Must match `TX_HEADER_FELT_LEN` in `asm/kernels/batch/lib/memory.masm`.
+const FELTS_PER_TX_HEADER: usize = 4 * WORD_SIZE;
+
 /// Must match `MAX_TRANSACTIONS_PER_BATCH` in `asm/kernels/batch/lib/memory.masm`.
 const MAX_TRANSACTIONS_PER_BATCH: usize = 1024;
 
@@ -218,6 +222,23 @@ fn batch_kernel_rejects_tampered_advice(
 
     let result = BatchExecutor::new().execute(batch, override_advice);
     assert!(result.is_err(), "kernel must abort on tampered advice");
+
+    Ok(())
+}
+
+/// A transaction header of the wrong length is rejected before it is piped into the fixed-size
+/// per-transaction slot, rather than relying on the hash check alone.
+#[test]
+fn batch_kernel_rejects_invalid_tx_header_length() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let tx_id = batch.transactions()[0].id().as_word();
+    let blob = vec![Felt::from(0u32); 2 * FELTS_PER_TX_HEADER];
+    let override_advice = AdviceInputs::default().with_map([(tx_id, blob)]);
+
+    let result = BatchExecutor::new().execute(batch, override_advice);
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_TX_HEADER_INVALID_LENGTH);
 
     Ok(())
 }

@@ -9,6 +9,8 @@ use {
     NOTE_ENTRY_FELT_LEN,
     NOTE_ENTRY_NUM_WORDS,
     OUTPUT_NOTES_PTR,
+    TX_HEADER_FELT_LEN,
+    TX_HEADER_NUM_WORDS,
     TX_TUPLE_NUM_WORDS,
     TX_TUPLES_PTR,
     WORD_NUM_ELEMENTS,
@@ -29,6 +31,9 @@ const ERR_BATCH_TOO_MANY_TRANSACTIONS =
     "the batch contains more transactions than the maximum allowed"
 
 const ERR_BATCH_NO_TRANSACTIONS = "the batch contains no transactions"
+
+const ERR_BATCH_TX_HEADER_INVALID_LENGTH =
+    "a transaction header does not have the expected length"
 
 const ERR_BATCH_NOTE_LIST_NOT_SORTED = "a batch note list is not strictly sorted by its key"
 
@@ -218,6 +223,7 @@ end
 #! Panics if:
 #! - the number of transactions is zero or exceeds the maximum allowed.
 #! - the `(tx_id, account_id)` tuple list piped from the advice map does not hash to `BATCH_ID`.
+#! - a transaction's header is not `TX_HEADER_FELT_LEN` felts long.
 #! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT)`
 #!   data piped from the advice map does not hash to its `tx_id`.
 #!
@@ -274,11 +280,14 @@ pub proc prepare_batch
         # OS => [TX_ID, tx_index]
         # AS => [tx_header_len, [TX_HEADER]]
 
-        adv_push div.WORD_NUM_ELEMENTS
-        # OS => [num_words, TX_ID, tx_index]
+        adv_push
+        # OS => [tx_header_len, TX_ID, tx_index]
         # AS => [[TX_HEADER]]
 
-        dup.5 exec.memory::get_tx_header_ptr swap
+        eq.TX_HEADER_FELT_LEN assert.err=ERR_BATCH_TX_HEADER_INVALID_LENGTH
+        # => [TX_ID, tx_index]
+
+        dup.4 exec.memory::get_tx_header_ptr push.TX_HEADER_NUM_WORDS
         # => [num_words, tx_header_ptr, TX_ID, tx_index]
 
         # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.
