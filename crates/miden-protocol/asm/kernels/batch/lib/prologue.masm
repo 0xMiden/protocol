@@ -53,30 +53,30 @@ proc load_note_list
     # OS => [KEY, write_ptr]
     # AS => [len_felts, [note_list_entries]]
 
+    dropw
+    # OS => [write_ptr]
+
     adv_push
-    # OS => [len_felts, KEY, write_ptr]
+    # OS => [len_felts, write_ptr]
     # AS => [[note_list_entries]]
 
     div.WORD_NUM_ELEMENTS
-    # => [num_words, KEY, write_ptr]
+    # => [num_words, write_ptr]
 
     dup div.NOTE_ENTRY_NUM_WORDS
-    # => [num_notes, num_words, KEY, write_ptr]
+    # => [num_notes, num_words, write_ptr]
 
     # A length that is not a multiple of 8 felts wraps `num_notes` (field `div`) to a non-u32
     # felt, which the u32 assertion rejects.
     dup u32assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
-    movdn.6
-    # => [num_words, KEY, write_ptr, num_notes]
-
-    movup.5 swap
-    # => [num_words, write_ptr, KEY, num_notes]
+    movdn.2
+    # => [num_words, write_ptr, num_notes]
 
     exec.mem::pipe_words_to_memory
-    # => [R0, R1, C, end_ptr, KEY, num_notes]
+    # => [R0, R1, C, end_ptr, num_notes]
 
-    dropw dropw dropw drop dropw
+    dropw dropw dropw drop
     # => [num_notes]
 end
 
