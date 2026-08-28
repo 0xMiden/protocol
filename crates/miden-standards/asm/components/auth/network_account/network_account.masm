@@ -2,6 +2,7 @@
 #
 # See the `AuthNetworkAccount` Rust type's documentation for more details.
 
+use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::word
@@ -68,10 +69,12 @@ proc assert_tx_has_effect
     or
     # => [has_note_effect, pad(16)]
 
-    exec.native_account::has_state_changed or
-    # => [has_effect, pad(16)]
+    if.false
+        exec.native_account::has_state_changed
+        # => [has_account_state_changed, pad(16)]
 
-    assert.err=ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT
+        assert.err=ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT
+    end
     # => [pad(16)]
 end
 
@@ -183,7 +186,9 @@ pub proc auth_network_transaction(auth_args: word)
     exec.native_account::has_state_changed
     # => [has_account_state_changed, pad(16)]
 
-    exec.native_account::get_initial_commitment exec.word::eqz
+    # has_state_changed verifies that the active account is the native account, so reading the
+    # active account nonce here identifies whether that native account is new.
+    exec.active_account::get_nonce eq.0
     # => [is_new_account, has_account_state_changed, pad(16)]
 
     or

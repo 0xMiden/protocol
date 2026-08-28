@@ -1,7 +1,6 @@
 use core::num::NonZeroU16;
 use std::collections::BTreeSet;
 
-use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -14,6 +13,7 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
@@ -232,6 +232,40 @@ async fn test_auth_network_account_accepts_state_changing_tx_script() -> anyhow:
     final_account.apply_patch(executed.account_patch())?;
     let stored_action = final_account.storage().get_item(&action_slot)?;
     assert_eq!(stored_action, Word::from([0u32, 0, 0, 1]));
+
+    Ok(())
+}
+
+/// A new network account must increment its nonce even when it consumes an input note on a
+/// zero-fee chain without otherwise changing its state. The prologue replaces the empty initial
+/// commitment of a new account with its actual commitment, so newness must be detected from its
+/// zero nonce rather than from the initial commitment.
+#[tokio::test]
+async fn test_auth_network_account_increments_nonce_for_new_account() -> anyhow::Result<()> {
+    let input_note = build_input_note()?;
+    let note_roots = BTreeSet::from([input_note.script().root()]);
+    let fee_policy_manager = zero_fee_policy_manager(note_roots.iter().copied())?;
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?;
+
+    let account = AccountBuilder::new([1; 32])
+        .with_components(auth_component)
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .build()?;
+    assert_eq!(account.nonce(), Felt::ZERO);
+
+    let mut builder = MockChain::builder().verification_base_fee(0);
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_note(input_note)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed.final_account().nonce(), Felt::ONE);
 
     Ok(())
 }
