@@ -265,7 +265,7 @@ pub proc mint_and_send
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # Run the active mint policy over the full asset value word. The policy may adjust the asset
-    # value; the output note's tag, type, and recipient are passed for inspection only and the
+    # value. The output note's tag, type, and recipient are passed for inspection only and the
     # manager asserts the policy returned them unchanged.
     exec.policy_manager::execute_mint_policy
     # => [NEW_ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]

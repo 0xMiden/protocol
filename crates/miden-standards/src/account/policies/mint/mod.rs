@@ -46,10 +46,7 @@ pub enum MintPolicyError {
 ///   (which lets a policy cap or scale a mint), while a non-fungible faucet rejects any change to
 ///   it.
 /// - `tag`, `note_type`, and `RECIPIENT` describe the output note the caller asked for and are
-///   passed for inspection only. A policy may reject a mint request based on them - for example,
-///   restricting mints to an allowlisted recipient or requiring a public note - but must return
-///   them unchanged; the manager reverts the transaction otherwise, so a policy cannot silently
-///   re-tag, re-type, or redirect the minted note.
+///   passed for inspection only.
 #[derive(Debug, Clone)]
 pub struct MintPolicy {
     root: AccountProcedureRoot,

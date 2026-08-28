@@ -296,11 +296,6 @@ end
 #! and non-fungible faucets. The policy may adjust the asset value: a fungible faucet mints the
 #! returned amount, while a non-fungible faucet rejects any change to it.
 #!
-#! The output note's `tag`, `note_type`, and `RECIPIENT` are passed to the policy for inspection
-#! only: a policy may reject a mint request based on them, but the values it returns are asserted
-#! to equal the ones the caller supplied. This keeps a policy from silently re-tagging, re-typing,
-#! or redirecting the minted note behind the caller's back.
-#!
 #! The policy is invoked via `dyncall`. The inputs are padded to a full call frame beforehand and
 #! the padding is truncated afterwards, so the policy sees exactly the ten values below and cannot
 #! observe or mutate anything deeper on the caller's stack.
@@ -334,14 +329,14 @@ pub proc execute_mint_policy
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
-    # save the caller-supplied note metadata so the policy's return values can be checked against it
+    # save the note metadata
     push.0.0 dup.7 dup.7
     # => [tag, note_type, 0, 0, ASSET_VALUE, tag, note_type, RECIPIENT]
 
     loc_storew_le.MINT_NOTE_METADATA_PTR dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
-    # save the caller-supplied RECIPIENT, which straddles a word boundary on the stack
+    # save the RECIPIENT
     repeat.4
         dup.9
     end

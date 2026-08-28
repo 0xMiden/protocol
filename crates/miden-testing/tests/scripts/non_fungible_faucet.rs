@@ -271,8 +271,7 @@ async fn nft_mint_policy_modifying_asset_value_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A mint policy that mutates the output note's tag is rejected: the policy may reject a mint
-/// request based on the tag, but must not silently re-tag the minted note.
+/// A mint policy that mutates the output note's tag is rejected.
 #[tokio::test]
 async fn nft_mint_policy_modifying_note_tag_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -295,8 +294,7 @@ async fn nft_mint_policy_modifying_note_tag_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A mint policy that mutates the output note's recipient is rejected: the policy may reject a
-/// mint request based on the recipient, but must not redirect the minted note.
+/// A mint policy that mutates the output note's recipient is rejected.
 #[tokio::test]
 async fn nft_mint_policy_modifying_recipient_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
