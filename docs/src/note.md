@@ -259,6 +259,25 @@ The TX_FEE note script is the canonical way for a transaction to pay its fee to 
 
 **Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts.
 
+### FEE_SPONSORSHIP
+
+The FEE_SPONSORSHIP note script prepays the fee a network account charges for consuming one specific note, so that note stays fee-unaware. See the [fee documentation](fees.md#sponsoring-fees).
+
+**Key characteristics:**
+
+- **Purpose:** Prepaying a network account's fee for a single note
+- **Storage:** Requires exactly 7 storage items:
+  - ID of the sponsored note (4 felts)
+  - Reclaimer account ID (2 felts)
+  - Reclaim block height (0 disables reclaim)
+- **Note type:** Always public
+- **Assets:** Exactly 1 - the fee, in the asset the target account charges in
+- **Tag:** Routes to the target network account
+- **Validation:** If the sponsored note is among the transaction's input notes, the script does nothing, leaving the assets for the consuming account to collect. Otherwise only the reclaimer can consume the note, once the reclaim block height is reached - a zero height disables reclaim entirely
+- **Requirements:** Collection requires an account whose authentication procedure collects sponsored fees; reclaiming requires the `miden::standards::wallets::basic::receive_asset` procedure
+
+**Use case:** Paying a network account up front so it will consume a note that carries no fee of its own.
+
 ### SWAP
 
 The SWAP note script implements atomic asset swapping functionality.

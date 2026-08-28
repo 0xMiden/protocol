@@ -7,8 +7,11 @@ pub use block_body::BlockBody;
 mod block_number;
 pub use block_number::BlockNumber;
 
-mod block_proof;
-pub use block_proof::BlockProof;
+mod kernel;
+pub use kernel::BlockKernel;
+
+mod block_outputs;
+pub use block_outputs::BlockOutputs;
 
 mod proposed_block;
 pub use proposed_block::ProposedBlock;
