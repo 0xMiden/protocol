@@ -69,12 +69,13 @@ proc assert_tx_has_effect
     or
     # => [has_note_effect, pad(16)]
 
-    if.false
-        exec.native_account::has_state_changed
-        # => [has_account_state_changed, pad(16)]
+    exec.native_account::has_state_changed
+    # => [has_account_state_changed, has_note_effect, pad(16)]
 
-        assert.err=ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT
-    end
+    or
+    # => [has_effect, pad(16)]
+
+    assert.err=ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT
     # => [pad(16)]
 end
 
