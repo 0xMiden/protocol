@@ -109,7 +109,7 @@ end
 #! Outputs:
 #!   Operand stack: []
 #!   Memory:
-#!     hasher_state_ptr |-> [RATE0', RATE1', CAPACITY'], with the tuple absorbed
+#!     hasher_state_ptr |-> [RATE0', RATE1', CAPACITY']
 proc absorb_input_entry
     # The entry occupies one double word [entry_ptr, entry_ptr + NOTE_ENTRY_FELT_LEN).
     exec.memory::get_input_note_entry_ptr
@@ -138,7 +138,7 @@ end
 #! Outputs:
 #!   Operand stack: [input_note_idx + 1, hasher_state_ptr]
 #!   Memory:
-#!     hasher_state_ptr |-> the hasher state, with the entry absorbed unless it was erased
+#!     hasher_state_ptr |-> the hasher state
 proc process_input_entry
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx, hasher_state_ptr]
