@@ -14,6 +14,13 @@ use miden_protocol::{Felt, Hasher, Word};
 /// `pay_fee` pays `ceil(fee_amount * rate_num / rate_den)` of the asset issued by `faucet_id`.
 /// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::one_to_one`].
 ///
+/// `pay_fee` enforces two runtime constraints this type cannot check at construction (the native
+/// fee faucet is a property of the reference block, not known here): `faucet_id` must equal the
+/// native fee faucet, and the paid amount must not exceed twice the computed fee. Conversion info
+/// that violates either aborts the transaction in-VM. In practice `faucet_id` is the native fee
+/// faucet and the rate is close to 1/1; paying fees in a non-native asset is not supported until a
+/// fee-rate oracle exists.
+///
 /// For signature-based authentication components the conversion info is typically committed to
 /// via the transaction's auth args (see [`commit_fee_conversion_info`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

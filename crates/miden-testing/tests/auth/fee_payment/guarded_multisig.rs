@@ -63,50 +63,12 @@ fn guarded_multisig_fixture(
     num_approvers: usize,
     verification_base_fee: u32,
 ) -> anyhow::Result<GuardedMultisigFixture> {
-    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
-    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, FEE_ASSET_AMOUNT)?.into();
-
-    let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(
-            num_approvers,
-            num_approvers,
-            AuthScheme::Falcon512Poseidon2,
-        )?;
-
-    let approvers = public_keys
-        .iter()
-        .zip(auth_schemes.iter())
-        .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
-        .collect();
-    let approver_set = ApproverSet::new(approvers, u32::try_from(num_approvers)?)?;
-
-    let guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
-    let guardian_public_key = guardian_secret_key.public_key();
-    let guardian_authenticator =
-        BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
-    let guardian_config = GuardianConfig::new(Approver::new(
-        guardian_public_key.to_commitment(),
-        AuthScheme::Falcon512Poseidon2,
-    ));
-
-    let mut builder = MockChain::builder().verification_base_fee(verification_base_fee);
-    let account = builder.add_existing_wallet_with_assets(
-        Auth::GuardedMultisig {
-            approver_set,
-            guardian_config,
-            proc_threshold_map: vec![],
-        },
-        [fee_asset],
-    )?;
-    let mock_chain = builder.build()?;
-
-    Ok(GuardedMultisigFixture {
-        mock_chain,
-        account,
-        signers: public_keys.into_iter().zip(authenticators).collect(),
-        guardian_public_key,
-        guardian_authenticator,
-    })
+    guarded_multisig_fixture_with_thresholds(
+        num_approvers,
+        u32::try_from(num_approvers)?,
+        verification_base_fee,
+        vec![],
+    )
 }
 
 /// Like [`guarded_multisig_fixture`] but with an explicit default spending threshold (which may be
@@ -715,13 +677,13 @@ async fn guarded_multisig_rotation_rejects_user_output_note_while_paying_the_fee
 ///
 /// This is the guarded-multisig instance of the fee-drain tracked in #3763. The guardian-rotation
 /// path runs without a guardian signature, and a per-procedure threshold override lets it run below
-/// the account's default spending quorum. Before the paid amount was bounded, a single approver
-/// could rotate the guardian while supplying a conversion rate that moved the account's entire
-/// fee-asset balance into the TX_FEE note — theft or griefing authorized by one signer where a
-/// spend needs two. The bound in `pay_fee` now rejects any payment exceeding
-/// `MAX_FEE_PAYMENT_MARGIN` times the computed fee. Because `pay_fee` runs before the transaction
-/// summary is created, the inflated rate aborts the transaction before it reaches signature
-/// verification, so no summary is produced to sign.
+/// the account's default spending quorum. Before the paid amount was bounded, the only limit on the
+/// payment was the account's balance: a single approver could rotate the guardian while supplying a
+/// conversion rate of roughly `FEE_ASSET_AMOUNT / fee_amount`, moving the whole fee-asset balance
+/// into the TX_FEE note — theft or griefing authorized by one signer where a spend needs two. The
+/// bound in `pay_fee` now rejects any payment exceeding `MAX_FEE_PAYMENT_MARGIN` times the computed
+/// fee. Because `pay_fee` runs before the transaction summary is created, the inflated rate aborts
+/// the transaction before it reaches signature verification, so no summary is produced to sign.
 #[tokio::test]
 async fn guarded_multisig_rotation_cannot_drain_the_vault_via_the_fee_rate() -> anyhow::Result<()> {
     let update_guardian_root = AuthGuardedMultisig::code()
@@ -759,8 +721,9 @@ async fn guarded_multisig_rotation_cannot_drain_the_vault_via_the_fee_rate() -> 
             "
         ))?;
 
-    // Pay the fee in the native asset, but at a rate that would move the account's entire fee-asset
-    // balance into the fee note — orders of magnitude above the allowed margin over the fee.
+    // Pay the fee in the native asset, but at a rate orders of magnitude above the allowed margin:
+    // the requested payment exceeds even the funded balance, and the margin bound rejects it before
+    // the vault withdrawal is attempted.
     let salt = Word::from([81u32, 82, 83, 84]);
     let auth_args = MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt)
         .with_conversion_info(FeeConversionInfo::new(fee_faucet_id, FEE_ASSET_AMOUNT, 1)?);

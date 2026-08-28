@@ -257,6 +257,61 @@ async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A rate whose numerator and denominator are both large but proportionate converts exactly, even
+/// though the intermediate product `fee_amount * rate_num` exceeds a u64.
+///
+/// Rate 10^16/10^16 pays exactly the computed fee, so it is well inside the payment margin, while
+/// still driving the intermediate product past a u64. `convert_amount` always runs the widening
+/// multiply and the u128 division, but every other succeeding case leaves their high limbs zero;
+/// since the margin bound rejects the disproportionate rates that used to exercise those limbs,
+/// a proportionate large rate is the only remaining way to cover them.
+#[tokio::test]
+async fn large_proportionate_conversion_rate_converts_exactly() -> anyhow::Result<()> {
+    const RATE: u64 = 10u64.pow(16);
+
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+
+    // reference run in native mode to learn the in-VM computed fee amount
+    let (native_tx, _) = execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2, &[], None).await?;
+    let native_assets = native_tx.output_notes().get_note(0).assets();
+    let native_amount = native_assets
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible()
+        .amount()
+        .as_u64();
+
+    // the intermediate product must exceed a u64 for this test to exercise the 128-bit math
+    assert!(
+        u128::from(native_amount) * u128::from(RATE) > u128::from(u64::MAX),
+        "test setup should overflow the intermediate u64 product"
+    );
+
+    let conversion_info = FeeConversionInfo::new(fee_faucet_id, RATE, RATE)?;
+    let salt = Word::from([5u32, 6, 7, 8]);
+
+    let (converted_tx, _) = execute_fee_paying_tx(
+        AuthScheme::Falcon512Poseidon2,
+        &[],
+        Some(commit_fee_conversion_info(conversion_info, salt)),
+    )
+    .await?;
+
+    assert_eq!(converted_tx.output_notes().num_notes(), 1);
+    let converted_assets = converted_tx.output_notes().get_note(0).assets();
+    let converted_paid = converted_assets
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible();
+
+    assert_eq!(converted_paid.faucet_id(), fee_faucet_id);
+    assert_eq!(converted_paid.amount().as_u64(), native_amount);
+
+    Ok(())
+}
+
 /// Builds a raw advice-map entry committing to the given conversion info word, bypassing the
 /// validation in [`FeeConversionInfo`]. Used to exercise the in-VM validation of malformed rates.
 fn raw_conversion_entry(conversion_word: Word, salt: Word) -> (Word, Vec<Felt>) {
@@ -359,6 +414,38 @@ async fn non_native_fee_faucet_aborts() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Both halves of the payment faucet id are pinned, not just one.
+///
+/// The faucet id occupies two field elements and the pin compares them with two separate
+/// `assert_eq`s. `non_native_fee_faucet_aborts` uses a faucet differing from the native one in both
+/// elements, so it would still pass if either comparison were vacuous. These cases perturb exactly
+/// one element each, so each fails only if that element is genuinely compared. Rate 1/1 keeps the
+/// payment inside the margin, leaving the pin as the only check that can reject the transaction.
+#[rstest]
+#[case::wrong_suffix(1, 0)]
+#[case::wrong_prefix(0, 1)]
+#[tokio::test]
+async fn each_faucet_id_element_is_pinned(
+    #[case] suffix_delta: u32,
+    #[case] prefix_delta: u32,
+) -> anyhow::Result<()> {
+    let fee_faucet_id: miden_protocol::account::AccountId = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+
+    let conversion_word = Word::from([
+        fee_faucet_id.suffix() + Felt::from(suffix_delta),
+        fee_faucet_id.prefix().as_felt() + Felt::from(prefix_delta),
+        Felt::from(1u32),
+        Felt::from(1u32),
+    ]);
+    let entry = raw_conversion_entry(conversion_word, Word::from([5u32, 6, 7, 8]));
+
+    let result = execute_with_conversion_entry(entry).await?;
+
+    assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE);
+
+    Ok(())
+}
+
 /// A conversion rate that would pay more than `MAX_FEE_PAYMENT_MARGIN` (two) times the computed fee
 /// is rejected, so an authorizer cannot drain the vault by inflating the rate. Rate 3/1 pays three
 /// times the fee, one step above the allowed margin, without overflowing the converted amount.
@@ -366,6 +453,32 @@ async fn non_native_fee_faucet_aborts() -> anyhow::Result<()> {
 async fn fee_payment_exceeding_margin_aborts() -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let conversion_info = FeeConversionInfo::new(fee_faucet_id, 3, 1)?;
+    let salt = Word::from([5u32, 6, 7, 8]);
+
+    let entry = commit_fee_conversion_info(conversion_info, salt);
+    let result = execute_with_conversion_entry(entry).await?;
+
+    assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_EXCEEDS_MARGIN);
+
+    Ok(())
+}
+
+/// A payment of exactly one unit above `MAX_FEE_PAYMENT_MARGIN` times the computed fee is rejected,
+/// pinning the inclusive boundary of the bound from the reject side.
+///
+/// Rate `(2 * DEN + 1) / DEN` pays `ceil(fee_amount * (2 * DEN + 1) / DEN)`, which is
+/// `2 * fee_amount + ceil(fee_amount / DEN)`, so any `DEN` at or above the computed fee makes the
+/// payment exactly one unit over the bound without needing to know the fee. Together with
+/// `converted_fee_payment_within_margin`, which pays exactly twice the fee and succeeds, this
+/// distinguishes the `u64::lte` bound from a strict comparison and would catch an off-by-one that
+/// rate 3/1 alone would not.
+#[tokio::test]
+async fn fee_payment_one_unit_above_margin_aborts() -> anyhow::Result<()> {
+    // any denominator at or above the computed fee works; these chains' fee is a few thousand
+    const RATE_DEN: u64 = 1_000_000_000;
+
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let conversion_info = FeeConversionInfo::new(fee_faucet_id, 2 * RATE_DEN + 1, RATE_DEN)?;
     let salt = Word::from([5u32, 6, 7, 8]);
 
     let entry = commit_fee_conversion_info(conversion_info, salt);

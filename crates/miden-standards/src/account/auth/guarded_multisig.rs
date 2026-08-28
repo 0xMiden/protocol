@@ -208,11 +208,13 @@ impl AuthGuardedMultisigConfig {
 /// Before authenticating, `auth_tx_guarded_multisig` pays the transaction fee via
 /// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on fee-charging
-/// chains the account must hold a sufficient balance of the payment asset. The payment asset and
-/// conversion rate come from the auth args (see [`FeeConversionInfo`](super::FeeConversionInfo);
-/// native fee asset at rate 1/1 for plain native payment). On chains with a zero verification base
-/// fee no note is created. The fee note is created before the transaction summary, so it is covered
-/// by the approver signatures, and by the guardian signature on every path that requires one.
+/// chains the account must hold a sufficient balance of the native fee asset. `pay_fee` requires
+/// the payment asset to be the native fee asset and bounds the paid amount to at most
+/// `MAX_FEE_PAYMENT_MARGIN` (2×) the computed fee, so a caller-supplied conversion rate cannot move
+/// more than that out of the vault (see [`FeeConversionInfo`](super::FeeConversionInfo)). On chains
+/// with a zero verification base fee no note is created. The fee note is created before the
+/// transaction summary, so it is covered by the approver signatures, and by the guardian signature
+/// on every path that requires one.
 ///
 /// `pay_fee` also prices every network output note the transaction carries through its target
 /// account's fee policy, creating a FEE_SPONSORSHIP note for each one the target charges for. The
@@ -221,19 +223,13 @@ impl AuthGuardedMultisigConfig {
 /// even where the verification base fee is zero, and matches the components that already paid.
 ///
 /// The fee note does not count against the no-notes requirement of the guardian key rotation path,
-/// so a guarded account can still rotate its guardian key on a fee-charging chain. On that path the
-/// approvers therefore choose a payment asset and rate that no guardian signature covers, and
-/// `pay_fee` bounds the resulting payment only by the account's balance. The resulting
-/// [`TxFeeNote`](crate::note::TxFeeNote) restricts nobody, so the approvers meeting the rotation
-/// threshold can move vault assets out of the account and into a note that anyone, themselves
-/// included, may claim in a later transaction. They gain no exclusive right to it, but the assets
-/// have left the vault. Two consequences
-/// worth setting policy around: a per-procedure threshold on `update_guardian_public_key` below the
-/// default hands that reach to a smaller group, and a threshold *above* the default on an
-/// asset-moving procedure does not hold on this path, because the rotation must be the
-/// transaction's only non-auth call and so is the only threshold that applies. Where either
-/// matters, keep the rotation override at the default and treat the rotation threshold as the
-/// account's true bound on single-transaction vault access.
+/// so a guarded account can still rotate its guardian key on a fee-charging chain. That path
+/// verifies no guardian signature, so the fee it pays is authorized by the approvers alone — but
+/// because `pay_fee` pins the payment asset to the native fee asset and bounds the amount to at
+/// most twice the computed fee, a rotation can at most overpay its own transaction fee, not move
+/// arbitrary value out of the vault. A per-procedure threshold on `update_guardian_public_key`
+/// below the default still lets a smaller group trigger such a bounded-fee rotation; keep it at the
+/// default if a sub-quorum should not be able to authorize transactions on this path at all.
 ///
 /// # Privacy
 ///

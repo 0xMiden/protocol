@@ -22,6 +22,10 @@ pub type ConversionRate = struct { num: felt, den: felt }
 #! Fee conversion info: the fungible faucet of the payment asset and the conversion rate from the
 #! native fee asset, laid out as [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den].
 #! The empty word indicates that no conversion info was committed.
+#!
+#! pay_fee requires the faucet to be the native fee faucet and the converted amount to stay within
+#! MAX_FEE_PAYMENT_MARGIN times the computed fee, so through that procedure the rate only selects
+#! how much of the native fee asset is paid, not which asset pays.
 pub type ConversionInfo = word
 
 # CONSTANTS
@@ -54,8 +58,8 @@ const U32_LIMB_MULTIPLIER = 0x0000000100000000
 # Maximum multiple of the computed fee that a transaction is allowed to pay. The paid amount is
 # bounded by MAX_FEE_PAYMENT_MARGIN * fee_amount so that a caller-supplied conversion rate cannot
 # move more than this multiple of the owed fee out of the vault as a TX_FEE note. The margin leaves
-# headroom for deliberate overpayment (e.g. to tolerate a fee that rises while a multisig collects
-# signatures) without permitting an unbounded drain.
+# headroom for deliberate overpayment (e.g. to tolerate a fee that rises by up to this multiple
+# while a multisig collects signatures) without permitting an unbounded drain.
 const MAX_FEE_PAYMENT_MARGIN = 2
 
 # Domain-separation tag for the fee note's serial number ("fee" in hex): the serial number is
@@ -334,7 +338,7 @@ end
 #! transaction summary is created, so that the TX_FEE note and the vault withdrawal funding
 #! it are covered by a signature where one exists. Signature-based components (e.g. singlesig,
 #! multisig) obtain the conversion info from the auth args via load_conversion_info, so the
-#! signer authorizes the payment asset and rate; network accounts pay in the native fee asset
+#! signer authorizes the paid amount; network accounts pay in the native fee asset
 #! and obtain the conversion info via native_conversion_info, which needs no commitment since
 #! it is read from the reference block.
 #!
@@ -421,7 +425,7 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> fel
         exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
         # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 
-        # Pin the payment faucet to the native fee faucet. The paid amount is bounded against the
+        # pin the payment faucet to the native fee faucet. The paid amount is bounded against the
         # computed fee below, which is only meaningful when both are denominated in the same asset;
         # a non-native payment asset cannot be valued against the native fee without a rate oracle,
         # so paying the fee in any other asset is rejected.
@@ -443,9 +447,10 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> fel
         # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix,
         #     total_sponsored_fee_amount]
 
-        # stash the maximum payable amount (MAX_FEE_PAYMENT_MARGIN * fee_amount) for the bound check
-        # below. fee_amount is the computed native fee, which is small, so the product stays well
-        # within the field.
+        # keep the maximum payable amount (MAX_FEE_PAYMENT_MARGIN * fee_amount) for the bound check
+        # below. compute_fee returns verification_base_fee * (ilog2(num_cycles) + 1), with a u32
+        # base fee and a cycle count bounded by the maximum cycle count, so fee_amount stays below
+        # 2^37 and the product cannot overflow the field.
         dup mul.MAX_FEE_PAYMENT_MARGIN movdn.5
         # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix,
         #     max_payment_amount, total_sponsored_fee_amount]
@@ -454,9 +459,10 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> fel
         # => [payment_amount, faucet_id_suffix, faucet_id_prefix, max_payment_amount,
         #     total_sponsored_fee_amount]
 
-        # bound the paid amount by the margin over the computed fee, rejecting an inflated rate that
-        # would drain the vault. Both amounts are below 2^63 (convert_amount bounds payment_amount,
-        # fee_amount is the small computed fee), so the u32 limbs are valid.
+        # bound the paid amount by the margin over the computed fee, so an inflated rate cannot move
+        # more than that multiple of the owed fee out of the vault. Both values are canonical field
+        # elements, so their u32 limbs represent them exactly and the u64 comparison is an exact
+        # integer comparison.
         dup u32split movup.5 u32split
         # => [max_lo, max_hi, payment_lo, payment_hi, payment_amount, faucet_id_suffix,
         #     faucet_id_prefix, total_sponsored_fee_amount]

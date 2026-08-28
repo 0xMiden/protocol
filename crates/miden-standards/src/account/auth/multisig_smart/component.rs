@@ -137,11 +137,12 @@ fn validate_proc_policies(
 /// Before authenticating, `auth_tx_multisig_smart` pays the transaction fee via
 /// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on fee-charging
-/// chains the account must hold a sufficient balance of the payment asset. The payment asset and
-/// conversion rate come from the auth args (see
-/// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo); native fee asset at rate 1/1 for
-/// plain native payment). On chains with a zero verification base fee no note is created. The fee
-/// note is created before the transaction summary, so it is covered by the approver signatures.
+/// chains the account must hold a sufficient balance of the native fee asset. `pay_fee` requires
+/// the payment asset to be the native fee asset and bounds the paid amount to at most
+/// `MAX_FEE_PAYMENT_MARGIN` (2×) the computed fee (see
+/// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo)). On chains with a zero
+/// verification base fee no note is created. The fee note is created before the transaction
+/// summary, so it is covered by the approver signatures.
 ///
 /// `pay_fee` also prices every network output note the transaction carries through its target
 /// account's fee policy, creating a FEE_SPONSORSHIP note for each one the target charges for. The
@@ -153,11 +154,10 @@ fn validate_proc_policies(
 /// [`ProcedurePolicyNoteRestriction`](super::ProcedurePolicyNoteRestriction), so a policy that
 /// forbids output notes remains satisfiable on a fee-charging chain. It follows that
 /// [`NoOutputNotes`](super::ProcedurePolicyNoteRestriction::NoOutputNotes) no longer implies that
-/// no assets leave the account through a note: the approvers meeting a procedure's policy threshold
-/// also choose the fee payment asset and rate, and `pay_fee` bounds the resulting payment only by
-/// the account's balance. A policy threshold below the default therefore lets a smaller group move
-/// vault assets into the fee note, so set note restrictions and low thresholds on the same
-/// procedure only where that is acceptable.
+/// literally no note leaves the account: the fee note is the one note such a policy still permits.
+/// But `pay_fee` pins that note to the native fee asset and bounds its amount to at most twice the
+/// computed fee, so a procedure authorized below the default threshold can at most overpay the
+/// transaction fee through it, not move arbitrary value out of the account.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,
