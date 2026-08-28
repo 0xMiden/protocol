@@ -21,19 +21,24 @@ message NextProtocolConfig {
 }
 
 message BlockHeader {
-  uint32 version = 1;
-  primitives.Word prev_block_commitment = 2;
-  blockchain.BlockNumber block_num = 3;
-  primitives.Word chain_commitment = 4;
-  primitives.Word account_root = 5;
-  primitives.Word nullifier_root = 6;
-  primitives.Word note_root = 7;
-  primitives.Word tx_commitment = 8;
-  ValidatorConfig validator_config = 9;
-  FeeParameters fee_parameters = 10;
-  primitives.Word protocol_config_commitment = 11;
-  NextProtocolConfig next_protocol_config = 12;
-  fixed32 timestamp = 13;
+  oneof version {
+    BlockHeaderV1 v1 = 1;
+  }
+}
+
+message BlockHeaderV1 {
+  primitives.Word prev_block_commitment = 1;
+  blockchain.BlockNumber block_num = 2;
+  primitives.Word chain_commitment = 3;
+  primitives.Word account_root = 4;
+  primitives.Word nullifier_root = 5;
+  primitives.Word note_root = 6;
+  primitives.Word tx_commitment = 7;
+  ValidatorConfig validator_config = 8;
+  FeeParameters fee_parameters = 9;
+  primitives.Word protocol_config_commitment = 10;
+  NextProtocolConfig next_protocol_config = 11;
+  fixed32 timestamp = 12;
 }
 
 message BlockAccountUpdate {

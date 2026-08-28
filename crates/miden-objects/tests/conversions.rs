@@ -448,11 +448,27 @@ fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
 fn block_header_rejects_missing_block_number() {
     let header = BlockHeader::mock(1, None, None, &[]);
     let mut message = proto::blockchain::BlockHeader::from(header);
-    message.block_num = Default::default();
+    block_header_v1(&mut message).block_num = Default::default();
 
     let error = BlockHeader::try_from(message).unwrap_err();
-    assert!(error.to_string().starts_with("block_num: field "));
+    assert!(error.to_string().starts_with("v1.block_num: field "));
     assert!(error.to_string().ends_with("::block_num is missing"));
+}
+
+#[test]
+fn block_header_protobuf_requires_version() {
+    let error = BlockHeader::try_from(proto::blockchain::BlockHeader::default()).unwrap_err();
+
+    assert!(error.to_string().ends_with("::version is missing"));
+}
+
+fn block_header_v1(
+    message: &mut proto::blockchain::BlockHeader,
+) -> &mut proto::blockchain::BlockHeaderV1 {
+    let Some(proto::blockchain::block_header::Version::V1(v1)) = message.version.as_mut() else {
+        panic!("block header should encode as v1");
+    };
+    v1
 }
 
 fn block_header_with_scheduled_upgrade() -> BlockHeader {
@@ -484,6 +500,7 @@ fn block_header_protobuf_round_trip_preserves_current_fields() {
     let encoded = proto::blockchain::BlockHeader::from(&header).encode_to_vec();
     let message = proto::blockchain::BlockHeader::decode(encoded.as_slice()).unwrap();
 
+    assert!(matches!(message.version, Some(proto::blockchain::block_header::Version::V1(_))));
     assert_eq!(BlockHeader::try_from(message).unwrap(), header);
 }
 
@@ -491,11 +508,12 @@ fn block_header_protobuf_round_trip_preserves_current_fields() {
 fn block_header_protobuf_rejects_invalid_validator_quorum() {
     let header = block_header_with_scheduled_upgrade();
     let mut message = proto::blockchain::BlockHeader::from(header);
-    message.validator_config.as_mut().unwrap().quorum = 0;
+    block_header_v1(&mut message).validator_config.as_mut().unwrap().quorum = 0;
 
     let error = BlockHeader::try_from(message).unwrap_err();
     let source = error.source().unwrap().downcast_ref::<ValidatorConfigError>().unwrap();
 
+    assert!(error.to_string().starts_with("v1.validator_config: "));
     assert!(matches!(
         source,
         ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: 0, count: 3 }
@@ -506,23 +524,29 @@ fn block_header_protobuf_rejects_invalid_validator_quorum() {
 fn block_header_protobuf_reports_invalid_validator_key_index() {
     let header = block_header_with_scheduled_upgrade();
     let mut message = proto::blockchain::BlockHeader::from(header);
-    message.validator_config.as_mut().unwrap().keys[1].encoded.clear();
+    block_header_v1(&mut message).validator_config.as_mut().unwrap().keys[1]
+        .encoded
+        .clear();
 
     let error = BlockHeader::try_from(message).unwrap_err();
 
-    assert!(error.to_string().starts_with("validator_config.keys[1].encoded: "));
+    assert!(error.to_string().starts_with("v1.validator_config.keys[1].encoded: "));
 }
 
 #[test]
 fn block_header_protobuf_rejects_upgrade_effective_at_genesis() {
     let header = block_header_with_scheduled_upgrade();
     let mut message = proto::blockchain::BlockHeader::from(header);
-    message.next_protocol_config.as_mut().unwrap().effective_from =
-        Some(BlockNumber::GENESIS.into());
+    block_header_v1(&mut message)
+        .next_protocol_config
+        .as_mut()
+        .unwrap()
+        .effective_from = Some(BlockNumber::GENESIS.into());
 
     let error = BlockHeader::try_from(message).unwrap_err();
     let source = error.source().unwrap().downcast_ref::<ProtocolConfigError>().unwrap();
 
+    assert!(error.to_string().starts_with("v1.next_protocol_config: "));
     assert!(matches!(source, ProtocolConfigError::NextConfigEffectiveAtGenesis));
 }
 
