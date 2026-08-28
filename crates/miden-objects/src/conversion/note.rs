@@ -57,7 +57,7 @@ impl TryFrom<proto::note::NoteType> for NoteType {
 // NOTE METADATA
 // ================================================================================================
 
-impl From<NoteMetadata> for proto::note::NoteMetadata {
+impl From<NoteMetadata> for proto::note::NoteMetadataV1 {
     fn from(val: NoteMetadata) -> Self {
         let sender = Some(val.sender().into());
         let note_type = proto::note::NoteType::from(val.note_type()) as i32;
@@ -69,7 +69,7 @@ impl From<NoteMetadata> for proto::note::NoteMetadata {
             .collect();
         let attachments_commitment = Some(val.attachments_commitment().into());
 
-        proto::note::NoteMetadata {
+        proto::note::NoteMetadataV1 {
             sender,
             note_type,
             tag,
@@ -79,24 +79,27 @@ impl From<NoteMetadata> for proto::note::NoteMetadata {
     }
 }
 
-impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
+impl TryFrom<proto::note::NoteMetadataV1> for NoteMetadata {
     type Error = ConversionError;
 
-    fn try_from(value: proto::note::NoteMetadata) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let sender = required!(decoder, value.sender)?;
-        let note_type = proto::note::NoteType::try_from(value.note_type)
-            .map_err(|_| ConversionError::message("enum variant discriminant out of range"))?
-            .try_into()
-            .context("note_type")?;
-        let tag = NoteTag::new(value.tag);
-        let attachments_commitment: Word = required!(decoder, value.attachments_commitment)?;
+    fn try_from(value: proto::note::NoteMetadataV1) -> Result<Self, Self::Error> {
+        let proto::note::NoteMetadataV1 {
+            sender,
+            note_type,
+            tag,
+            attachment_schemes,
+            attachments_commitment,
+        } = value;
 
-        if value.attachment_schemes.len() > NoteAttachments::MAX_COUNT {
+        let partial = decode_partial_note_metadata_v1(sender, note_type, tag)?;
+        let decoder = MessageDecoder::<proto::note::NoteMetadataV1>::default();
+        let attachments_commitment: Word = required!(decoder, attachments_commitment)?;
+
+        if attachment_schemes.len() > NoteAttachments::MAX_COUNT {
             return Err(ConversionError::message("too many attachment schemes"));
         }
         let mut attachment_headers = [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT];
-        for (slot, raw) in attachment_headers.iter_mut().zip(value.attachment_schemes) {
+        for (slot, raw) in attachment_headers.iter_mut().zip(attachment_schemes) {
             let raw = u16::try_from(raw)
                 .map_err(|_| ConversionError::message("attachment scheme out of u16 range"))?;
             *slot = if raw == 0 {
@@ -106,8 +109,25 @@ impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
             };
         }
 
-        let partial = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         Ok(NoteMetadata::from_parts(partial, attachment_headers, attachments_commitment))
+    }
+}
+
+impl From<NoteMetadata> for proto::note::NoteMetadata {
+    fn from(metadata: NoteMetadata) -> Self {
+        use proto::note::note_metadata::Version;
+
+        Self {
+            version: Some(Version::V1(metadata.into())),
+        }
+    }
+}
+
+impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
+    type Error = ConversionError;
+
+    fn try_from(metadata: proto::note::NoteMetadata) -> Result<Self, Self::Error> {
+        note_metadata_v1_from_proto(metadata)?.try_into().context("v1")
     }
 }
 
@@ -426,13 +446,35 @@ impl TryFrom<proto::note::NoteScript> for NoteScript {
 fn partial_note_metadata_from_proto(
     value: proto::note::NoteMetadata,
 ) -> Result<PartialNoteMetadata, ConversionError> {
-    let decoder = value.decoder();
-    let sender = required!(decoder, value.sender)?;
-    let note_type = proto::note::NoteType::try_from(value.note_type)
+    let proto::note::NoteMetadataV1 { sender, note_type, tag, .. } =
+        note_metadata_v1_from_proto(value)?;
+
+    decode_partial_note_metadata_v1(sender, note_type, tag).context("v1")
+}
+
+fn note_metadata_v1_from_proto(
+    metadata: proto::note::NoteMetadata,
+) -> Result<proto::note::NoteMetadataV1, ConversionError> {
+    use proto::note::note_metadata::Version;
+
+    match metadata.version {
+        Some(Version::V1(v1)) => Ok(v1),
+        None => Err(ConversionError::missing_field::<proto::note::NoteMetadata>("version")),
+    }
+}
+
+fn decode_partial_note_metadata_v1(
+    sender: Option<proto::account::AccountId>,
+    note_type: i32,
+    tag: u32,
+) -> Result<PartialNoteMetadata, ConversionError> {
+    let decoder = MessageDecoder::<proto::note::NoteMetadataV1>::default();
+    let sender = required!(decoder, sender)?;
+    let note_type = proto::note::NoteType::try_from(note_type)
         .map_err(|_| ConversionError::message("enum variant discriminant out of range"))?
         .try_into()
         .context("note_type")?;
-    let tag = NoteTag::new(value.tag);
+    let tag = NoteTag::new(tag);
     Ok(PartialNoteMetadata::new(sender, note_type).with_tag(tag))
 }
 

@@ -16,6 +16,12 @@ message NoteId {
 }
 
 message NoteMetadata {
+  oneof version {
+    NoteMetadataV1 v1 = 1;
+  }
+}
+
+message NoteMetadataV1 {
   account.AccountId sender = 1;
   NoteType note_type = 2;
   fixed32 tag = 3;

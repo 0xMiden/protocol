@@ -34,7 +34,7 @@ use miden_protocol::errors::{
     TransactionHeaderError,
     ValidatorConfigError,
 };
-use miden_protocol::note::{Note, NoteId, NoteInclusionProof};
+use miden_protocol::note::{Note, NoteId, NoteInclusionProof, NoteMetadata};
 use miden_protocol::protocol_config::NextProtocolConfig;
 use miden_protocol::transaction::{
     InputNotes,
@@ -205,6 +205,55 @@ fn account_header_v1_protobuf_preserves_invalid_nonce_source() {
             .and_then(|source| source.downcast_ref::<<Felt as TryFrom<u64>>::Error>()),
         Some(source) if source.as_u64() == Felt::ORDER
     ));
+}
+
+#[test]
+fn note_metadata_roundtrips_through_v1_protobuf_bytes() {
+    let metadata = *Note::mock_noop(Word::empty()).metadata();
+
+    let encoded = proto::note::NoteMetadata::from(metadata).encode_to_vec();
+    let message = proto::note::NoteMetadata::decode(encoded.as_slice()).unwrap();
+
+    assert!(matches!(message.version, Some(proto::note::note_metadata::Version::V1(_))));
+    assert_eq!(NoteMetadata::try_from(message).unwrap(), metadata);
+}
+
+#[test]
+fn note_protobuf_roundtrips_through_versioned_note_metadata() {
+    let note = Note::mock_noop(Word::empty());
+
+    let encoded = proto::note::Note::from(note.clone()).encode_to_vec();
+    let message = proto::note::Note::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(Note::try_from(message).unwrap(), note);
+}
+
+#[test]
+fn note_metadata_protobuf_requires_version() {
+    let error = NoteMetadata::try_from(proto::note::NoteMetadata::default()).unwrap_err();
+
+    assert!(error.to_string().ends_with("::version is missing"));
+}
+
+#[test]
+fn note_metadata_v1_protobuf_reports_invalid_sender() {
+    let metadata = *Note::mock_noop(Word::empty()).metadata();
+    let mut message = proto::note::NoteMetadata::from(metadata);
+    let Some(proto::note::note_metadata::Version::V1(v1)) = message.version.as_mut() else {
+        panic!("note metadata should encode as v1");
+    };
+    v1.sender.as_mut().unwrap().id.clear();
+
+    let error = NoteMetadata::try_from(message).unwrap_err();
+
+    assert!(error.to_string().starts_with("v1.sender: "));
+    assert!(
+        error
+            .source()
+            .unwrap()
+            .downcast_ref::<core::array::TryFromSliceError>()
+            .is_some()
+    );
 }
 
 fn assert_missing_block_number(error: ConversionError, field: &str) {
