@@ -27,7 +27,6 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
-    AssetCallbackFlag,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
@@ -39,7 +38,6 @@ use miden_protocol::block::{
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
-    BlockProof,
     BlockSignatures,
     Blockchain,
     FeeParameters,
@@ -55,6 +53,7 @@ use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
+use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::SponsorshipPolicy;
@@ -307,7 +306,7 @@ impl MockChainBuilder {
                 .collect(),
         )
         .expect("signature count same as validator key count");
-        let block_proof = BlockProof::new_dummy();
+        let block_proof = ExecutionProof::new_dummy();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
         MockChain::from_genesis_block(
@@ -404,9 +403,6 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
-            .with_asset_callbacks(AssetCallbackFlag::from(
-                token_policy_manager.has_transfer_policy(),
-            ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager)
@@ -462,7 +458,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -496,7 +491,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Enabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused());
 
@@ -647,7 +641,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);

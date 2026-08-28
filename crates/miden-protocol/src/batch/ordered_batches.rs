@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::batch::ProvenBatch;
+use crate::crypto::SequentialCommit;
 use crate::transaction::OrderedTransactionHeaders;
 use crate::utils::serde::{
     ByteReader,
@@ -9,6 +10,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{Felt, Word};
 
 // ORDERED BATCHES
 // ================================================================================================
@@ -61,6 +63,20 @@ impl OrderedBatches {
     /// Consumes self and returns the underlying vector of batches.
     pub fn into_vec(self) -> Vec<ProvenBatch> {
         self.0
+    }
+}
+
+impl SequentialCommit for OrderedBatches {
+    type Commitment = Word;
+
+    /// Returns batch IDs represented as a vector of field elements, in order.
+    fn to_elements(&self) -> Vec<Felt> {
+        let mut elements = Vec::with_capacity(self.0.len() * Word::NUM_ELEMENTS);
+        for batch in self.0.iter() {
+            elements.extend_from_slice(batch.id().as_word().as_elements());
+        }
+
+        elements
     }
 }
 

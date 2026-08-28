@@ -15,7 +15,6 @@ use miden_protocol::block::{
     BlockHeader,
     BlockInputs,
     BlockNumber,
-    BlockProof,
     BlockSignatures,
     Blockchain,
     OutputNoteBatch,
@@ -36,6 +35,7 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionInputs,
 };
+use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
@@ -681,17 +681,36 @@ impl MockChain {
 
     /// Returns a valid [`TransactionInputs`] for the specified entities, executing against
     /// a specific block number.
+    ///
+    /// The returned partial blockchain tracks the blocks the input notes were created in, plus the
+    /// blocks in `required_blocks`. The latter are for blocks whose commitment the executed code
+    /// reads without an input note requiring them, e.g. the older block a multisig transaction
+    /// summary binds. Blocks at or after the reference block are ignored.
     pub fn get_transaction_inputs_at(
         &self,
         reference_block: BlockNumber,
         account: impl Into<PartialAccount>,
         notes: &[NoteId],
         unauthenticated_notes: &[Note],
+        required_blocks: impl IntoIterator<Item = BlockNumber>,
     ) -> anyhow::Result<TransactionInputs> {
         let ref_block = self.block_header(reference_block.as_usize());
 
         let mut input_notes = vec![];
         let mut block_headers_map: BTreeMap<BlockNumber, BlockHeader> = BTreeMap::new();
+
+        for block_num in required_blocks {
+            if block_num < ref_block.block_num() {
+                let block_header = self
+                    .blocks
+                    .get(block_num.as_usize())
+                    .with_context(|| format!("block {block_num} not found in chain"))?
+                    .header()
+                    .clone();
+                block_headers_map.insert(block_num, block_header);
+            }
+        }
+
         for note in notes {
             let input_note: InputNote = self
                 .committed_notes
@@ -757,7 +776,7 @@ impl MockChain {
         unauthenticated_notes: &[Note],
     ) -> anyhow::Result<TransactionInputs> {
         let latest_block_num = self.latest_block_header().block_num();
-        self.get_transaction_inputs_at(latest_block_num, account, notes, unauthenticated_notes)
+        self.get_transaction_inputs_at(latest_block_num, account, notes, unauthenticated_notes, [])
     }
 
     /// Returns inputs for a transaction batch for all the reference blocks of the provided
@@ -1115,13 +1134,8 @@ impl MockChain {
 
     /// Proves proposed block alongside a corresponding list of batches.
     pub fn prove_block(&self, proposed_block: ProposedBlock) -> anyhow::Result<ProvenBlock> {
-        let (header, body) = proposed_block.clone().into_header_and_body()?;
-        let inputs = self.get_block_inputs(proposed_block.batches().as_slice())?;
-        let block_proof = LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL).prove_dummy(
-            proposed_block.batches().clone(),
-            header.clone(),
-            inputs,
-        )?;
+        let (header, body) = proposed_block.into_header_and_body()?;
+        let block_proof = LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL).prove_dummy();
         let signatures = self.sign_block(header.commitment());
         Ok(ProvenBlock::new_unchecked(header, body, signatures, block_proof))
     }
@@ -1171,7 +1185,7 @@ fn read_genesis_block_unchecked<R: ByteReader>(
         OrderedTransactionHeaders::read_from(source)?,
     );
     let signatures = BlockSignatures::read_from(source)?;
-    let proof = BlockProof::read_from(source)?;
+    let proof = ExecutionProof::read_from(source)?;
 
     Ok(ProvenBlock::new_unchecked(header, body, signatures, proof))
 }

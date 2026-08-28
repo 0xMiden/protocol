@@ -143,6 +143,10 @@ pub enum AccountError {
     AccountComponentMastForestMergeError(#[source] MastForestError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
+    #[error(
+        "storage of account {0} contains an asset callback slot but its asset callback flag is disabled, so the callback would never be invoked"
+    )]
+    AssetCallbackSlotWithDisabledFlag(AccountId),
     #[error("failed to update asset vault")]
     AssetVaultUpdateError(#[source] AssetVaultError),
     #[error("account build error: {0}")]
@@ -1534,6 +1538,17 @@ pub enum BatchOutputError {
     OutputStackInvalid(String),
     #[error("batch expiration block number {0} does not fit into a u32")]
     ExpirationBlockNumberTooLarge(Felt),
+}
+
+// BLOCK OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockOutputError {
+    #[error(
+        "block kernel output stack has a non-zero element at index {index}, but everything past the nullifier commitment must be zero padding"
+    )]
+    PaddingNotZero { index: usize },
 }
 
 // PROPOSED BLOCK ERROR

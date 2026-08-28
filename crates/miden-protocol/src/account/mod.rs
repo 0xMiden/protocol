@@ -133,6 +133,8 @@ impl Account {
     /// - an account seed is not provided but the account's nonce indicates the account is new.
     /// - an account seed is provided but the account ID derived from it is invalid or does not
     ///   match the provided account's ID.
+    /// - the storage contains an asset callback slot while the account ID's [`AssetCallbackFlag`]
+    ///   is [`AssetCallbackFlag::Disabled`].
     pub fn new(
         id: AccountId,
         vault: AssetVault,
@@ -142,6 +144,7 @@ impl Account {
         seed: Option<Word>,
     ) -> Result<Self, AccountError> {
         validate_account_seed(id, code.commitment(), storage.to_commitment(), seed, nonce)?;
+        validate_asset_callbacks(id, &storage)?;
 
         Ok(Self::new_unchecked(id, vault, storage, code, nonce, seed))
     }
@@ -548,6 +551,22 @@ impl Deserializable for Account {
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Validates that an account which installs an asset callback slot has callbacks enabled.
+///
+/// The transaction kernel rejects such accounts when they are created; this mirrors that rule for
+/// accounts that are constructed or deserialized outside of a transaction. See the
+/// [`AccountBuilder`](AccountBuilder#asset-callbacks) docs for details.
+pub(super) fn validate_asset_callbacks(
+    id: AccountId,
+    storage: &AccountStorage,
+) -> Result<(), AccountError> {
+    if !id.asset_callback_flag().is_enabled() && storage.has_callback_slots() {
+        return Err(AccountError::AssetCallbackSlotWithDisabledFlag(id));
+    }
+
+    Ok(())
+}
+
 /// Validates that the provided seed is valid for the provided account components.
 pub(super) fn validate_account_seed(
     id: AccountId,
@@ -607,7 +626,7 @@ mod tests {
         StorageSlotContent,
         StorageSlotName,
     };
-    use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+    use crate::asset::{Asset, AssetCallbacks, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
     use crate::testing::account_id::{
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -853,6 +872,31 @@ mod tests {
         let storage = AccountStorage::new(slots).unwrap();
 
         Account::new_existing(id, vault, storage, code, nonce)
+    }
+
+    /// Accounts constructed outside of the builder are rejected if they install a callback slot
+    /// without having callbacks enabled.
+    #[test]
+    fn account_new_rejects_callback_slot_with_disabled_flag() -> anyhow::Result<()> {
+        let account = AccountBuilder::new([5; 32])
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        assert_eq!(account.id().asset_callback_flag(), AssetCallbackFlag::Disabled);
+
+        let (id, vault, storage, code, nonce, _seed) = account.into_parts();
+
+        let mut slots = storage.into_slots();
+        slots.push(StorageSlot::with_value(
+            AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+            Word::from([1u32, 2, 3, 4]),
+        ));
+        let storage = AccountStorage::new(slots)?;
+
+        let err = Account::new(id, vault, storage, code, nonce, None).unwrap_err();
+        assert_matches!(err, AccountError::AssetCallbackSlotWithDisabledFlag(_));
+
+        Ok(())
     }
 
     /// Tests all cases of account ID seed validation.
