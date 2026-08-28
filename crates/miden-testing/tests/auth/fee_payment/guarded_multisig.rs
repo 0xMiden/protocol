@@ -23,7 +23,10 @@ use miden_standards::account::auth::{
     commit_fee_conversion_info,
 };
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES;
+use miden_standards::errors::standards::{
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
+    ERR_FEE_PAYMENT_EXCEEDS_MARGIN,
+};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
@@ -473,6 +476,86 @@ async fn guarded_multisig_rotation_fails_when_the_vault_cannot_fund_the_fee() ->
         result,
         ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
     );
+
+    Ok(())
+}
+
+/// A reduced-quorum authorization path must not be able to drain the vault through an inflated fee
+/// conversion rate.
+///
+/// This is the guarded-multisig instance of the fee-drain tracked in #3763. The guardian-rotation
+/// path runs without a guardian signature, and a per-procedure threshold override lets it run below
+/// the account's default spending quorum. Before the paid amount was bounded, a single approver
+/// could rotate the guardian while supplying a conversion rate that moved the account's entire
+/// fee-asset balance into the TX_FEE note — theft or griefing authorized by one signer where a spend
+/// needs two. The bound in `pay_fee` now rejects any payment exceeding `MAX_FEE_PAYMENT_MARGIN`
+/// times the computed fee. Because `pay_fee` runs before the transaction summary is created, the
+/// inflated rate aborts the transaction before it reaches signature verification.
+#[tokio::test]
+async fn guarded_multisig_rotation_cannot_drain_the_vault_via_the_fee_rate() -> anyhow::Result<()> {
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
+
+    // Three signers, default spending threshold two, but guardian rotation overridden to a single
+    // signature — the reduced-quorum path the drain abuses.
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, AuthScheme::Falcon512Poseidon2)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
+        .collect();
+    let approver_set = ApproverSet::new(approvers, 2)?;
+
+    let guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let guardian_config = GuardianConfig::new(Approver::new(
+        guardian_secret_key.public_key().to_commitment(),
+        AuthScheme::Falcon512Poseidon2,
+    ));
+
+    let update_guardian_root = AuthGuardedMultisig::code()
+        .get_procedure_root_by_path(
+            "miden::standards::components::auth::guarded_multisig::update_guardian_public_key",
+        )
+        .expect("guarded multisig should export update_guardian_public_key");
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::GuardedMultisig {
+            approver_set,
+            guardian_config,
+            proc_threshold_map: vec![(update_guardian_root, 1)],
+        },
+        [fee_asset],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let new_guardian_key_word: Word =
+        AuthSecretKey::new_falcon512_poseidon2().public_key().to_commitment().into();
+    let update_guardian_script = CodeBuilder::new()
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
+        .compile_tx_script(build_update_guardian_script_source(
+            new_guardian_key_word,
+            AuthScheme::Falcon512Poseidon2 as u32,
+            None,
+        ))?;
+
+    // Pay the fee in the native asset, but at a rate that would move the account's entire fee-asset
+    // balance into the fee note — orders of magnitude above the allowed margin over the fee.
+    let salt = Word::from([81u32, 82, 83, 84]);
+    let (args, advice_value) =
+        commit_fee_conversion_info(FeeConversionInfo::new(fee_faucet_id, 1_000_000, 1)?, salt);
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .tx_script(update_guardian_script)
+        .auth_args(args)
+        .add_advice_map_entry(args, advice_value)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_EXCEEDS_MARGIN);
 
     Ok(())
 }
