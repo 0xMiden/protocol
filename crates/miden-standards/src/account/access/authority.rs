@@ -164,6 +164,11 @@ pub enum Authority {
     /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
     /// installed on the account. the MASM helper calls into `rbac::assert_sender_has_role` and will
     /// fail to link otherwise.
+    ///
+    /// No procedure writes this map: it is populated at deployment, and the raw
+    /// [`AccountComponent::new`] route checks only the slot count. The MASM helper therefore holds
+    /// each mapped role to the canonical [`RoleSymbol`] encoding when it reads one, so a value this
+    /// map accepts on-chain is exactly one [`Self::try_from_storage`] can decode off-chain.
     RbacControlled {
         procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     } = RBAC_CONTROLLED,

@@ -18,6 +18,7 @@ use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -184,7 +185,7 @@ impl MockTransaction {
             .flat_map(|note| note.note().assets().iter().map(Asset::id))
             .collect::<BTreeSet<_>>();
 
-        let (account, _block_header, _blockchain) = self
+        let (account, _block_header, _protocol_config, _blockchain) = self
             .get_transaction_inputs(
                 self.tx_inputs.account().id(),
                 BTreeSet::from_iter([self.tx_inputs.block_header().block_num()]),
@@ -228,9 +229,9 @@ impl MockTransaction {
         );
 
         // The host validates the tx summary's block commitment against these values, so they
-        // must come from the tx inputs' reference block header.
+        // must come from the tx inputs.
         let ref_block = tx_inputs.block_header().block_num();
-        let ref_block_commitment = tx_inputs.block_header().commitment();
+        let block_commitments = tx_inputs.collect_block_commitments();
 
         let exec_host = TransactionExecutorHost::<'_, '_, _, UnreachableAuth>::new(
             &PartialAccount::from(self.account()),
@@ -240,7 +241,7 @@ impl MockTransaction {
             account_procedure_idx_map,
             None,
             ref_block,
-            ref_block_commitment,
+            block_commitments,
             self.source_manager(),
         );
 
@@ -267,8 +268,9 @@ impl DataStore for MockTransaction {
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> impl FutureMaybeSend<Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>>
-    {
+    ) -> impl FutureMaybeSend<
+        Result<(PartialAccount, BlockHeader, ProtocolConfig, PartialBlockchain), DataStoreError>,
+    > {
         // Sanity checks
         assert_eq!(account_id, self.account().id());
         assert_eq!(account_id, self.tx_inputs.account().id());
@@ -283,9 +285,10 @@ impl DataStore for MockTransaction {
 
         let account = self.tx_inputs.account().clone();
         let block_header = self.tx_inputs.block_header().clone();
+        let protocol_config = self.tx_inputs.protocol_config().clone();
         let blockchain = self.tx_inputs.blockchain().clone();
 
-        async move { Ok((account, block_header, blockchain)) }
+        async move { Ok((account, block_header, protocol_config, blockchain)) }
     }
 
     fn get_foreign_account_inputs(

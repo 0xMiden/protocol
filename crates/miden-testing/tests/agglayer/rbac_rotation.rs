@@ -93,6 +93,7 @@ async fn faucet_accepts_rbac_config_note() -> anyhow::Result<()> {
     })?;
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "AggLayer Token",
         "AGG",
         6,
         Felt::from(1_000u32),

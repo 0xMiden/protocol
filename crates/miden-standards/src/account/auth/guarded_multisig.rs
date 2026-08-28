@@ -169,6 +169,11 @@ impl AuthGuardedMultisigConfig {
 /// guardian signature. This substantially mitigates low-threshold state-withholding scenarios
 /// since the guardian is expected to forward state updates to other approvers.
 ///
+/// # Auth args
+///
+/// The transaction's auth args are the commitment to
+/// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
+///
 /// # Privacy
 ///
 /// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public

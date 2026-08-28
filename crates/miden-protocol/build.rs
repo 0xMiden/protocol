@@ -31,11 +31,13 @@ const ASM_PROTOCOL_UTILS_DIR: &str = "protocol_utils";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
 const ASM_TX_KERNEL_CORE_DIR: &str = "kernels/transaction-core";
 const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
+const ASM_BLOCK_KERNEL_DIR: &str = "kernels/block";
 
 // Executable target names, as declared in the respective `miden-project.toml` files.
 const TX_KERNEL_MAIN_TARGET: &str = "main";
 const TX_SCRIPT_MAIN_TARGET: &str = "tx-script-main";
 const BATCH_KERNEL_TARGET: &str = "miden-batch-kernel";
+const BLOCK_KERNEL_TARGET: &str = "miden-block-kernel";
 
 /// Module of the kernel package that holds the procedures which `exec_kernel_proc` invokes.
 const KERNEL_API_MODULE_PATH: &str = "$kernel::api";
@@ -72,7 +74,7 @@ const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
 ///
 /// Assembles the Miden projects defined by the `miden-project.toml` files in the `asm` directory
 /// into MAST packages (.masp files): the transaction kernel library and executables, the batch
-/// kernel executable, and the user-facing protocol library.
+/// and block kernel executables, and the user-facing protocol library.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
@@ -103,6 +105,15 @@ fn main() -> Result<()> {
     assemble_project(
         manifest_path,
         ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET),
+        &mut store,
+        &target_dir.join("kernels"),
+    )?;
+
+    // compile block kernel
+    let manifest_path = source_dir.join(ASM_BLOCK_KERNEL_DIR).join(PROJECT_MANIFEST);
+    assemble_project(
+        manifest_path,
+        ProjectTargetSelector::Executable(BLOCK_KERNEL_TARGET),
         &mut store,
         &target_dir.join("kernels"),
     )?;

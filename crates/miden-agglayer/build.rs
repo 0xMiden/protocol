@@ -33,12 +33,6 @@ use miden_standards::account::fees::{
     ConstantFeeManager,
     FeePolicyManager,
 };
-use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
-};
 
 // CONSTANTS
 // ================================================================================================
@@ -154,7 +148,6 @@ fn compile_agglayer_package(
 ///
 /// This file contains:
 /// - AggLayer Bridge code commitment.
-/// - AggLayer Faucet code commitment.
 fn generate_agglayer_constants(
     target_file: impl AsRef<Path>,
     component_packages: Vec<Arc<Package>>,
@@ -179,9 +172,9 @@ fn generate_agglayer_constants(
     // code commitment, so it doesn't matter what does this metadata holds.
     let dummy_metadata = AccountComponentMetadata::new("dummy");
 
-    // iterate over the AggLayer Bridge and AggLayer Faucet packages
+    // iterate over the AggLayer component packages
     for package in component_packages {
-        // Derive the short component name (e.g. "bridge" / "faucet") from the package name
+        // Derive the short component name (e.g. "bridge") from the package name
         // (e.g. "miden-agglayer-bridge").
         let component_name = package
             .name
@@ -217,24 +210,6 @@ fn generate_agglayer_constants(
             });
             components.push(AccountComponent::from(Pausable::unpaused()));
             components.push(AccountComponent::from(PausableManager));
-            components
-                .push(AccountComponent::from(ConstantFeeManager::for_basic_constant_fee_policy()));
-        } else if component_name == "faucet" {
-            components.push(AccountComponent::from(
-                miden_standards::account::access::Ownable2Step::new(dummy_account_id),
-            ));
-            components.extend(AccessControl::Rbac {
-                admin: dummy_account_id,
-                procedure_roles: std::collections::BTreeMap::new(),
-            });
-            let token_policy_manager = TokenPolicyManager::builder()
-                .active_mint_policy(MintPolicy::owner_only())
-                .active_burn_policy(BurnPolicy::owner_only())
-                .active_send_policy(TransferPolicy::allow_all())
-                .active_receive_policy(TransferPolicy::allow_all())
-                .build();
-
-            components.extend(token_policy_manager);
             components
                 .push(AccountComponent::from(ConstantFeeManager::for_basic_constant_fee_policy()));
         }
