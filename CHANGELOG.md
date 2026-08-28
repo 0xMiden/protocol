@@ -8,6 +8,7 @@
 
 ### Changes
 
+- The guarded multisig auth script now asserts that the guardian public key is not one of the approver public keys, so a guardian rotation or an approver-set update can no longer reach the configuration rejected by `AuthGuardedMultisigConfig::new` ([#XXXX](https://github.com/0xMiden/protocol/pull/XXXX)).
 - Moved the transaction kernel API procedures into the kernel's `api` submodule, leaving `exec_kernel_proc` as the only `syscall`-invocable kernel procedure ([#3646](https://github.com/0xMiden/protocol/pull/3646)).
 - [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).

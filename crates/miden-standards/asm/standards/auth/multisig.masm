@@ -95,6 +95,8 @@ const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's
 
 const ERR_DUPLICATE_APPROVER_PUBLIC_KEY = "duplicate approver public keys are not allowed"
 
+const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -636,6 +638,63 @@ pub proc assert_unique_approver_public_keys(num_approvers: u32)
     end
 
     drop
+    # => []
+end
+
+#! Asserts that PUB_KEY is not one of the account's approver public keys.
+#!
+#! Reads the current account state, so the check covers approver-set updates made earlier in the
+#! same transaction.
+#!
+#! Inputs:  [PUB_KEY]
+#! Outputs: []
+#!
+#! Panics if:
+#! - PUB_KEY equals one of the approver public keys.
+#!
+#! Invocation: exec
+pub proc assert_not_approver_public_key(pub_key: word)
+    exec.get_current_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, PUB_KEY]
+
+    drop
+    # => [i = num_approvers, PUB_KEY]
+
+    dup neq.0
+    # => [should_loop, i, PUB_KEY]
+
+    while.true
+        sub.1
+        # => [i, PUB_KEY]
+
+        # keep the loop index below PUB_KEY while the map key is built from its copy
+        dup movdn.5
+        # => [i, PUB_KEY, i]
+
+        exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, PUB_KEY, i]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_keys_slot_suffix, pub_keys_slot_prefix, APPROVER_MAP_KEY, PUB_KEY, i]
+
+        exec.active_account::get_map_item
+        # => [APPROVER_PUBLIC_KEY, PUB_KEY, i]
+
+        dupw.1 exec.word::eq
+        # => [is_match, PUB_KEY, i]
+
+        assertz.err=ERR_PUBLIC_KEY_IS_APPROVER
+        # => [PUB_KEY, i]
+
+        movup.4
+        # => [i, PUB_KEY]
+
+        dup neq.0
+        # => [should_loop, i, PUB_KEY]
+    end
+    # => [0, PUB_KEY]
+
+    drop dropw
     # => []
 end
 
