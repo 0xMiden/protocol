@@ -1125,8 +1125,6 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         .expect("valid eth address");
     let origin_network = 7u32; // any stable u32 — Miden's test network id
     let scale = 0u8;
-    // This faucet is registered as Miden-native, so it *is* the origin token and its own stored
-    // metadata is the hash preimage. Read it back rather than repeating the builder's defaults.
     let native_metadata = FungibleFaucet::try_from(&native_faucet)?;
     let metadata_hash = MetadataHash::from_token_info(
         native_metadata.token_name().as_str(),
