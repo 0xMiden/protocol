@@ -230,14 +230,20 @@ fn build_update_guardian_script_source(
 /// not depend on the estimate's value, so it cannot detect an estimate that is too low. The
 /// `paid >= required` assertion inside `assert_single_fee_note` is the one that can, and whether it
 /// does depends entirely on the case. The fee is the verification base fee times
-/// `ilog2(cycles) + 1`, so one Falcon slot — 80k cycles against a bucket 256k wide at this scale —
-/// usually falls inside the same bucket and changes nothing. The `single_falcon_approver` case is
-/// chosen because it does not: there, dropping the guardian's slot moves the total across a power
-/// of two and under-pays. It is the only configuration in this matrix that fails if the component
-/// stops counting the guardian, which is why it is here despite being redundant on every other
-/// axis. It also sits exactly on the boundary, paying precisely the required fee, so it doubles as
-/// a tripwire on the estimate's remaining headroom: if a future change makes guarded
-/// authentication more expensive without widening the estimate, this case is the first to fail.
+/// `ilog2(cycles) + 1`, so one Falcon slot of 80k cycles is usually swallowed by the enclosing
+/// power-of-two bucket, which is 128Ki cycles wide at this scale, and changes nothing. The
+/// `single_falcon_approver` case is chosen because it is the one configuration in this matrix where
+/// the slot straddles the bucket edge: dropping it there under-pays, at 8500 against a required
+/// 9000. That is the only reason the case exists, since it is redundant on every other axis.
+///
+/// It pays precisely the required fee, but that is a bucket coincidence rather than a knife edge,
+/// so the case is not fragile. Cycle counts are a deterministic function of the transaction inputs,
+/// and the fresh keys minted per run do not perturb them: Falcon and ECDSA verification are
+/// constant-cycle here. The estimate alone already exceeds the bucket's lower edge, so the paid
+/// side cannot fall into the bucket below, and the required side does not rise until measured
+/// cycles grow by about two thirds. Should authentication ever get that much more expensive without
+/// the estimate widening to match, this case fails first — which is the point, because the account
+/// would by then genuinely be under-paying.
 #[rstest]
 #[case::ecdsa_guardian(AuthScheme::EcdsaK256Keccak, 2)]
 #[case::falcon_guardian(AuthScheme::Falcon512Poseidon2, 2)]
