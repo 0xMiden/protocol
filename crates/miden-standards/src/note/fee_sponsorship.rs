@@ -70,14 +70,6 @@ static FEE_SPONSORSHIP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// `reclaimer` once `reclaim_height` is reached. If the bound feature note is consumed by some
 /// other transaction, reclaim is the only way to recover the assets. A reclaim cannot happen in a
 /// transaction that also collects fees, which rejects a sponsorship whose feature note is absent.
-///
-/// # Representation
-///
-/// The note's parts are held in strongly typed form: `From<FeeSponsorshipNote> for Note` builds the
-/// on-chain note and [`FeeSponsorshipNote::try_from`] parses one back, so a note read from a block
-/// round-trips unchanged. The type stores the note's [`NoteTag`] rather than the target account ID,
-/// because a tag only keeps the high bits of the target's account ID prefix and so cannot be
-/// inverted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeeSponsorshipNote {
     sender: AccountId,
