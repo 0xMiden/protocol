@@ -224,6 +224,11 @@ end
 pub proc account_upgrade
     # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
     # account as validated in account::{validate_storage, validate_procedures}.
+    # The same applies to the asset callback rule validated in
+    # prologue::validate_asset_callbacks: an upgrade must reject adding an asset callback slot to an
+    # account whose asset callback flag is disabled. Such a callback is not invalid, it simply could
+    # never be invoked, since the flag is immutable, which leaves the account looking configured
+    # while nothing is enforced - the state the creation-time check rejects.
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]

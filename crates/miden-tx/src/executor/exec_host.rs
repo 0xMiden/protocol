@@ -131,13 +131,13 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         authenticator: Option<&'auth AUTH>,
         ref_block: BlockNumber,
-        ref_block_commitment: Word,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
-            ref_block_commitment,
+            block_commitments,
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,

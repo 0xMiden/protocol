@@ -79,7 +79,6 @@ fn build_nft_faucet_with_type(
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(account_type)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
@@ -387,6 +386,68 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A private faucet can consume a BURN note, mirroring the MINT path: the note's consume-side bind
+/// is the asset it carries, which `receive_and_burn` validates against the active faucet, so it
+/// carries no requirement on the faucet's account type. Such a note derives no network target,
+/// since a private account can never be a network account.
+#[tokio::test]
+async fn nft_burn_succeeds_for_a_private_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([16; 32]);
+    let faucet = build_nft_faucet_with_type(
+        &mut builder,
+        "EC",
+        owner,
+        MintPolicy::allow_all(),
+        AccountType::Private,
+    )?;
+    let mut mock_chain = builder.build()?;
+    assert!(faucet.id().is_private());
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"token burned by a private faucet",
+        Word::from([1, 3, 5, 7u32]),
+    );
+    let recipient = Word::from([8, 8, 8, 8u32]);
+
+    // mint first, so the commitment is ISSUED and the burn below can transition it to BURNED
+    let minted = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
+    let mut faucet = faucet;
+    faucet.apply_patch(minted.account_patch())?;
+
+    let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
+    let sender = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([17; 32]);
+    let mut rng = RandomCoin::new([Felt::from(12u32); 4].into());
+    let burn_note: Note = BurnNote::builder()
+        .sender(sender)
+        .asset(asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+
+    // a private faucet is no network account, so the note carries no routing target
+    assert_eq!(burn_note.attachments().num_attachments(), 0);
+
+    let burned = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(burn_note)
+        .build()?
+        .execute()
+        .await?;
+
+    faucet.apply_patch(burned.account_patch())?;
+    assert_eq!(
+        NonFungibleFaucet::get_asset_status(faucet.storage(), commitment)?,
+        AssetStatus::Burned,
+    );
+
+    Ok(())
+}
+
 /// Minting via the production MINT note (private mode) succeeds: the note's storage carries the
 /// recipient, commitment and tag, and the `mint` script calls `mint_and_send`, producing one
 /// output note. This exercises the MINT note script end-to-end.
@@ -606,7 +667,6 @@ fn build_nft_faucet_with_blocklist(
 
     let account_builder = AccountBuilder::new([55u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
