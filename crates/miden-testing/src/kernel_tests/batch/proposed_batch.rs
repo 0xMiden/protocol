@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::slice;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
@@ -7,7 +8,7 @@ use miden_crypto::rand::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::NonFungibleAsset;
-use miden_protocol::batch::ProposedBatch;
+use miden_protocol::batch::{BatchNoteTree, ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError, ProvenBatchError};
@@ -29,6 +30,7 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     RawOutputNote,
 };
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::AdviceInputs;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -232,6 +234,150 @@ fn note_created_and_consumed_in_same_batch() -> anyhow::Result<()> {
 
     assert_eq!(batch.input_notes().num_notes(), 0);
     assert_eq!(batch.output_notes().len(), 0);
+
+    Ok(())
+}
+
+/// Tests that the batch note tree is built over the batch's final output notes: its root matches a
+/// tree built independently from `output_notes()` and it has one leaf per output note.
+#[test]
+fn batch_note_tree_built_over_output_notes() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let output_notes = (40..43).map(mock_output_note).collect::<alloc::vec::Vec<_>>();
+    let tx =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(&block1)
+            .output_notes(output_notes.clone())
+            .build()?;
+
+    let batch = ProposedBatch::new_unverified(
+        [tx].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    assert_eq!(batch.output_notes().len(), output_notes.len());
+
+    let expected_tree =
+        BatchNoteTree::with_contiguous_leaves(batch.output_notes().iter().map(Into::into))?;
+    assert_eq!(batch.batch_note_tree().root(), expected_tree.root());
+    assert_eq!(batch.batch_note_tree().num_leaves(), output_notes.len());
+    assert_ne!(
+        batch.batch_note_tree().root(),
+        BatchNoteTree::with_contiguous_leaves([])?.root()
+    );
+
+    Ok(())
+}
+
+/// Tests that notes erased within a batch (created and consumed in the same batch) are excluded
+/// from the batch note tree, so its root matches a tree built from the post-erasure output notes.
+#[test]
+fn batch_note_tree_excludes_erased_notes() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, account2, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    // tx1 creates an erased note (consumed by tx2) and a kept note.
+    let erased_note = mock_note(40);
+    let kept_note = mock_output_note(41);
+    let tx1 =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(&block1)
+            .output_notes(vec![
+                RawOutputNote::Full(erased_note.clone()).into_output_note().unwrap(),
+                kept_note.clone(),
+            ])
+            .build()?;
+    let tx2 =
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
+            .reference_block(&block1)
+            .unauthenticated_notes(vec![erased_note.clone()])
+            .build()?;
+
+    let batch = ProposedBatch::new_unverified(
+        [tx1, tx2].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    // Only the kept note survives erasure.
+    assert_eq!(batch.output_notes(), slice::from_ref(&kept_note));
+    assert_eq!(batch.batch_note_tree().num_leaves(), 1);
+
+    let expected_tree =
+        BatchNoteTree::with_contiguous_leaves(slice::from_ref(&kept_note).iter().map(Into::into))?;
+    assert_eq!(batch.batch_note_tree().root(), expected_tree.root());
+
+    Ok(())
+}
+
+/// Tests that a batch without output notes has an empty batch note tree, and that the root carried
+/// on the proven batch matches the proposed batch's tree root.
+#[test]
+fn batch_note_tree_empty_when_no_output_notes() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let tx =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(&block1)
+            .build()?;
+
+    let proposed_batch = ProposedBatch::new_unverified(
+        [tx].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    assert_eq!(proposed_batch.output_notes().len(), 0);
+    assert_eq!(proposed_batch.batch_note_tree().num_leaves(), 0);
+    assert_eq!(
+        proposed_batch.batch_note_tree().root(),
+        BatchNoteTree::with_contiguous_leaves([])?.root(),
+    );
+
+    // The proven batch carries the same note tree root.
+    let proven_batch = chain.prove_transaction_batch(proposed_batch.clone())?;
+    assert_eq!(proven_batch.note_tree_root(), proposed_batch.batch_note_tree().root());
+
+    Ok(())
+}
+
+/// Tests that a proven batch's note tree root survives a serialization round-trip.
+#[test]
+fn proven_batch_serialization_preserves_note_tree_root() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let output_notes = (40..43).map(mock_output_note).collect::<alloc::vec::Vec<_>>();
+    let tx =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(&block1)
+            .output_notes(output_notes)
+            .build()?;
+
+    let proposed_batch = ProposedBatch::new_unverified(
+        [tx].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+    let expected_root = proposed_batch.batch_note_tree().root();
+    let proven_batch = chain.prove_transaction_batch(proposed_batch)?;
+    assert_eq!(proven_batch.note_tree_root(), expected_root);
+
+    let deserialized = ProvenBatch::read_from_bytes(&proven_batch.to_bytes()).unwrap();
+    assert_eq!(deserialized, proven_batch);
+    assert_eq!(deserialized.note_tree_root(), expected_root);
 
     Ok(())
 }

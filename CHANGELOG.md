@@ -5,6 +5,7 @@
 ### Features
 
 - [BREAKING] Implemented partial batch kernel verification to check the transaction list against `BATCH_ID` and compute `INPUT_NOTES_COMMITMENT`; `BatchExecutor::execute` now additionally takes caller `AdviceInputs` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
+- [BREAKING] Constructed a `BatchNoteTree` over the batch's output notes during batch building: `ProposedBatch` exposes it via `batch_note_tree()` and includes it in `into_parts`, and `ProvenBatch` carries its root via `note_tree_root()` (changes the `ProvenBatch` serialization format and `new_unchecked` signature) ([#3022](https://github.com/0xMiden/protocol/pull/3022)).
 
 ### Changes
 
