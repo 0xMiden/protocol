@@ -1,6 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::Account;
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
@@ -25,7 +25,7 @@ const FEE_AMOUNT: u64 = 500;
 /// On the sponsorship path the note script leaves the sponsored assets in place, so the consuming
 /// transaction has to collect them itself. This script stands in for the account's fee-collection
 /// logic (for a network account, typically its auth procedure).
-fn collect_fee_tx_script(fee_asset: Asset) -> anyhow::Result<TransactionScript> {
+fn collect_fee_tx_script(fee_asset: FungibleAsset) -> anyhow::Result<TransactionScript> {
     let src = format!(
         "
         use miden::standards::wallets::basic as wallet
@@ -69,12 +69,12 @@ struct Fixture {
     stranger: Account,
     feature_note: Note,
     sponsorship_note: Note,
-    fee_asset: Asset,
+    fee_asset: FungibleAsset,
 }
 
 /// Builds the fixture with the given reclaim height (`None` disables reclaim) and reclaimer.
 fn setup(reclaim_height: Option<BlockNumber>, reclaimer: Reclaimer) -> anyhow::Result<Fixture> {
-    let fee_asset: Asset = FungibleAsset::mock(FEE_AMOUNT);
+    let fee_asset = FungibleAsset::new(FungibleAsset::mock_issuer(), FEE_AMOUNT)?;
     let mut rng = RandomCoin::new(Word::empty());
 
     let mut builder = MockChain::builder();
