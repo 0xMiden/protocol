@@ -1229,6 +1229,17 @@ pub enum BatchOutputError {
     ExpirationBlockNumberTooLarge(Felt),
 }
 
+// BLOCK OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockOutputError {
+    #[error(
+        "block kernel output stack has a non-zero element at index {index}, but everything past the nullifier commitment must be zero padding"
+    )]
+    PaddingNotZero { index: usize },
+}
+
 // PROPOSED BLOCK ERROR
 // ================================================================================================
 

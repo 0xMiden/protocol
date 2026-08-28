@@ -2,7 +2,7 @@ use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::header::ParentValidationError;
-use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockProof, BlockSignatures};
+use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockSignatures};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -10,6 +10,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::vm::ExecutionProof;
 
 // PROVEN BLOCK ERROR
 // ================================================================================================
@@ -90,8 +91,14 @@ pub struct ProvenBlock {
     /// The validators' positional signatures over the block header.
     signatures: BlockSignatures,
 
-    /// The proof of the block.
-    proof: BlockProof,
+    /// The execution proof of the block kernel over this block.
+    // TODO: The block kernel takes BATCHES_COMMITMENT as a public input, but this struct carries
+    // neither that commitment nor the `BatchId`s it is built from, so the claim the proof attests
+    // to cannot be reconstructed here. Recomputing the batch IDs additionally needs the per-batch
+    // grouping of `body.transactions()`, which is flattened away. Add the batch IDs and that
+    // grouping to this struct or to `BlockBody` so the proof can be tied back to the block's data:
+    // https://github.com/0xMiden/protocol/issues/1706
+    proof: ExecutionProof,
 }
 
 impl ProvenBlock {
@@ -124,7 +131,7 @@ impl ProvenBlock {
         header: BlockHeader,
         body: BlockBody,
         signatures: BlockSignatures,
-        proof: BlockProof,
+        proof: ExecutionProof,
     ) -> Result<Self, ProvenBlockError> {
         let proven_block = Self { header, signatures, body, proof };
 
@@ -143,7 +150,7 @@ impl ProvenBlock {
         header: BlockHeader,
         body: BlockBody,
         signatures: BlockSignatures,
-        proof: BlockProof,
+        proof: ExecutionProof,
     ) -> Self {
         Self { header, signatures, body, proof }
     }
@@ -214,13 +221,13 @@ impl ProvenBlock {
         &self.signatures
     }
 
-    /// Returns the proof of the block.
-    pub fn proof(&self) -> &BlockProof {
+    /// Returns the execution proof attached to this block.
+    pub fn proof(&self) -> &ExecutionProof {
         &self.proof
     }
 
     /// Destructures this proven block into individual parts.
-    pub fn into_parts(self) -> (BlockHeader, BlockBody, BlockSignatures, BlockProof) {
+    pub fn into_parts(self) -> (BlockHeader, BlockBody, BlockSignatures, ExecutionProof) {
         (self.header, self.body, self.signatures, self.proof)
     }
 
@@ -273,7 +280,7 @@ impl Deserializable for ProvenBlock {
             header: BlockHeader::read_from(source)?,
             body: BlockBody::read_from(source)?,
             signatures: BlockSignatures::read_from(source)?,
-            proof: BlockProof::read_from(source)?,
+            proof: ExecutionProof::read_from(source)?,
         };
 
         Ok(block)
@@ -314,7 +321,7 @@ mod tests {
         let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
         let signatures = parent_keys.sign_all(signers, header.commitment());
-        ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy())
+        ProvenBlock::new_unchecked(header, empty_body(), signatures, ExecutionProof::new_dummy())
     }
 
     #[test]
@@ -342,8 +349,12 @@ mod tests {
         // committed.
         let (impostor_signers, impostor_keys) = ValidatorConfig::random_with_signers(3);
         let signatures = impostor_keys.sign_all(&impostor_signers, header.commitment());
-        let block =
-            ProvenBlock::new_unchecked(header, empty_body(), signatures, BlockProof::new_dummy());
+        let block = ProvenBlock::new_unchecked(
+            header,
+            empty_body(),
+            signatures,
+            ExecutionProof::new_dummy(),
+        );
 
         let result = block.validate(Some(&parent));
         assert!(matches!(result, Err(ProvenBlockError::InvalidSignatureAtPosition { .. })));
