@@ -29,6 +29,8 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET,
+    ERR_MINT_POLICY_MODIFIED_NOTE_METADATA,
+    ERR_MINT_POLICY_MODIFIED_RECIPIENT,
     ERR_NFT_ALREADY_ISSUED,
     ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE,
     ERR_SENDER_NOT_OWNER,
@@ -266,6 +268,58 @@ async fn nft_mint_policy_modifying_asset_value_fails() -> anyhow::Result<()> {
     let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE);
+
+    Ok(())
+}
+
+/// A mint policy that mutates the output note's tag is rejected: the policy may reject a mint
+/// request based on the tag, but must not silently re-tag the minted note.
+#[tokio::test]
+async fn nft_mint_policy_modifying_note_tag_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
+
+    // the tag sits at stack index 4, directly below the asset value word
+    let policy =
+        custom_mint_policy("test::faucets::policies::mint::tag_mutating", "movup.4 add.1 movdn.4")?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
+    let mock_chain = builder.build()?;
+
+    let commitment =
+        NonFungibleFaucet::compute_asset_commitment(b"retagged token", Word::from([5, 5, 5, 5u32]));
+    let recipient = Word::from([6, 6, 6, 6u32]);
+
+    let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_MINT_POLICY_MODIFIED_NOTE_METADATA);
+
+    Ok(())
+}
+
+/// A mint policy that mutates the output note's recipient is rejected: the policy may reject a
+/// mint request based on the recipient, but must not redirect the minted note.
+#[tokio::test]
+async fn nft_mint_policy_modifying_recipient_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
+
+    // the recipient word spans stack indices 6..9
+    let policy = custom_mint_policy(
+        "test::faucets::policies::mint::recipient_mutating",
+        "movup.6 add.1 movdn.6",
+    )?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
+    let mock_chain = builder.build()?;
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"redirected token",
+        Word::from([5, 5, 5, 5u32]),
+    );
+    let recipient = Word::from([6, 6, 6, 6u32]);
+
+    let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_MINT_POLICY_MODIFIED_RECIPIENT);
 
     Ok(())
 }

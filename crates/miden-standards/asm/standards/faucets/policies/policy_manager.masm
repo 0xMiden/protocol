@@ -40,6 +40,15 @@ const ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::po
 # Local memory pointer used to pass a policy root to `dyncall`.
 const POLICY_PROC_ROOT_PTR=0
 
+# Local memory pointer at which the caller-supplied output note metadata is held across the mint
+# policy `dyncall`, so it can be checked for tampering once the policy returns.
+# Layout: [tag, note_type, 0, 0]
+const MINT_NOTE_METADATA_PTR=4
+
+# Local memory pointer at which the caller-supplied output note RECIPIENT is held across the mint
+# policy `dyncall`, so it can be checked for tampering once the policy returns.
+const MINT_RECIPIENT_PTR=8
+
 # ERRORS
 # =================================================================================================
 
@@ -47,6 +56,8 @@ const ERR_MINT_POLICY_ROOT_IS_ZERO="mint policy root is zero"
 const ERR_MINT_POLICY_ROOT_NOT_IN_ACCOUNT="mint policy root is not a procedure of this account"
 const ERR_MINT_POLICY_ROOT_NOT_ALLOWED="mint policy root is not allowed"
 const ERR_ACTIVE_MINT_POLICY_NOT_SET="active mint policy is not set"
+const ERR_MINT_POLICY_MODIFIED_NOTE_METADATA="mint policy must not modify the output note tag or type"
+const ERR_MINT_POLICY_MODIFIED_RECIPIENT="mint policy must not modify the output note recipient"
 
 const ERR_BURN_POLICY_ROOT_IS_ZERO="burn policy root is zero"
 const ERR_BURN_POLICY_ROOT_NOT_IN_ACCOUNT="burn policy root is not a procedure of this account"
@@ -282,24 +293,33 @@ end
 #! Executes active mint policy by dynamic invocation.
 #!
 #! The policy operates on the full asset value word so the interface is shared across fungible
-#! and non-fungible faucets. The policy may adjust the asset value and the output note's `tag`,
-#! `note_type`, and `RECIPIENT`.
+#! and non-fungible faucets. The policy may adjust the asset value: a fungible faucet mints the
+#! returned amount, while a non-fungible faucet rejects any change to it.
+#!
+#! The output note's `tag`, `note_type`, and `RECIPIENT` are passed to the policy for inspection
+#! only: a policy may reject a mint request based on them, but the values it returns are asserted
+#! to equal the ones the caller supplied. This keeps a policy from silently re-tagging, re-typing,
+#! or redirecting the minted note behind the caller's back.
 #!
 #! The policy is invoked via `dyncall`. The inputs are padded to a full call frame beforehand and
 #! the padding is truncated afterwards, so the policy sees exactly the ten values below and cannot
 #! observe or mutate anything deeper on the caller's stack.
 #!
 #! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT]
-#! Outputs: [ASSET_VALUE, tag, note_type, RECIPIENT]
+#! Outputs: [NEW_ASSET_VALUE, tag, note_type, RECIPIENT]
+#!
+#! Where:
+#! - NEW_ASSET_VALUE is the asset value as adjusted by the policy.
 #!
 #! Panics if:
 #! - the account is paused (`exec.pausable::assert_not_paused` is a no-op when the [`Pausable`]
 #!   component is not installed).
 #! - the active mint policy root is zero.
 #! - active mint policy predicate fails.
+#! - the active mint policy modified `tag`, `note_type`, or `RECIPIENT`.
 #!
 #! Invocation: exec
-@locals(4)
+@locals(12)
 pub proc execute_mint_policy
     exec.pausable::assert_not_paused
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
@@ -314,6 +334,22 @@ pub proc execute_mint_policy
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT]
 
+    # save the caller-supplied note metadata so the policy's return values can be checked against it
+    push.0.0 dup.7 dup.7
+    # => [tag, note_type, 0, 0, ASSET_VALUE, tag, note_type, RECIPIENT]
+
+    loc_storew_le.MINT_NOTE_METADATA_PTR dropw
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
+
+    # save the caller-supplied RECIPIENT, which straddles a word boundary on the stack
+    repeat.4
+        dup.9
+    end
+    # => [RECIPIENT, ASSET_VALUE, tag, note_type, RECIPIENT]
+
+    loc_storew_le.MINT_RECIPIENT_PTR dropw
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
+
     # pad the ten inputs into a full call frame by sinking six zeros underneath them
     push.0.0.0.0.0.0
     repeat.6
@@ -325,11 +361,33 @@ pub proc execute_mint_policy
     # => [policy_root_ptr, ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     dyncall
-    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+    # => [NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT, pad(6)]
 
     # truncate the call frame's padding
     movupw.3 dropw movup.11 drop movup.10 drop
-    # => [ASSET_VALUE, tag, note_type, RECIPIENT]
+    # => [NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
+
+    # assert the policy returned the note metadata unchanged
+    push.0.0 dup.7 dup.7
+    # => [new_tag, new_note_type, 0, 0, NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
+
+    padw loc_loadw_le.MINT_NOTE_METADATA_PTR
+    # => [NOTE_METADATA, NEW_NOTE_METADATA, NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
+
+    assert_eqw.err=ERR_MINT_POLICY_MODIFIED_NOTE_METADATA
+    # => [NEW_ASSET_VALUE, tag, note_type, NEW_RECIPIENT]
+
+    # assert the policy returned the RECIPIENT unchanged
+    repeat.4
+        dup.9
+    end
+    # => [NEW_RECIPIENT, NEW_ASSET_VALUE, tag, note_type, NEW_RECIPIENT]
+
+    padw loc_loadw_le.MINT_RECIPIENT_PTR
+    # => [RECIPIENT, NEW_RECIPIENT, NEW_ASSET_VALUE, tag, note_type, NEW_RECIPIENT]
+
+    assert_eqw.err=ERR_MINT_POLICY_MODIFIED_RECIPIENT
+    # => [NEW_ASSET_VALUE, tag, note_type, RECIPIENT]
 end
 
 #! Executes active burn policy for the provided asset by dynamic invocation.

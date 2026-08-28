@@ -247,6 +247,7 @@ end
 #!
 #! Panics if:
 #! - active mint policy validation fails.
+#! - the active mint policy modified the tag, note_type, or RECIPIENT.
 #! - the amount to mint, after the mint policy ran, is zero.
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
 #! - the token supply exceeds the maximum supply.
@@ -264,28 +265,29 @@ pub proc mint_and_send
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # Run the active mint policy over the full asset value word. The policy may adjust the asset
-    # value and the output note's tag, type, and recipient.
+    # value; the output note's tag, type, and recipient are passed for inspection only and the
+    # manager asserts the policy returned them unchanged.
     exec.policy_manager::execute_mint_policy
-    # => [NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT, pad(6)]
+    # => [NEW_ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # ASSET_VALUE for a fungible asset is `[amount, 0, 0, 0]`. Keep amount, drop the rest.
     movdn.3 drop drop drop
-    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+    # => [new_amount, tag, note_type, RECIPIENT, pad(9)]
 
     # Reject a zero amount.
     dup neq.0 assert.err=ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO
-    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+    # => [new_amount, tag, note_type, RECIPIENT, pad(9)]
 
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
 
     push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [token_supply, max_supply, decimals, token_symbol, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [token_supply, max_supply, decimals, token_symbol, new_amount, tag, note_type, RECIPIENT]
 
     # store a copy of the current slot content for the token_supply update later
     loc_storew_le.TOKEN_CONFIG_SLOT_LOCAL
     swap movup.2 drop movup.2 drop
-    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
     #
@@ -304,43 +306,43 @@ pub proc mint_and_send
     # ---------------------------------------------------------------------------------------------
 
     dup.1 dup.1
-    # => [max_supply, token_supply, max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # assert that token_supply <= max_supply
     lte assert.err=ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY
-    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
     dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
-    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     dup.2 swap dup.2
-    # => [token_supply, max_supply, new_amount, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [token_supply, max_supply, new_amount, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # compute maximum amount that can be minted, max_mint_amount = max_supply - token_supply
     sub
-    # => [max_mint_amount, new_amount, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_mint_amount, new_amount, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # assert amount <= max_mint_amount
     lte assert.err=ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
-    # => [token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # Compute the new token_supply and update in storage.
     # ---------------------------------------------------------------------------------------------
 
     dup.1 add
-    # => [new_token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [new_token_supply, new_amount, tag, note_type, RECIPIENT]
 
     padw loc_loadw_le.TOKEN_CONFIG_SLOT_LOCAL
-    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, new_amount, tag, note_type, RECIPIENT]
 
     drop movup.3
-    # => [[new_token_supply, max_supply, decimals, token_symbol], new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [[new_token_supply, max_supply, decimals, token_symbol], new_amount, tag, note_type, RECIPIENT]
 
     # update the token config slot with the new supply
     push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
-    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [new_amount, tag, note_type, RECIPIENT]
 
     # Create a new note.
     # ---------------------------------------------------------------------------------------------

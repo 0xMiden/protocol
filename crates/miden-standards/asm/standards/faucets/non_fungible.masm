@@ -196,6 +196,7 @@ end
 #!
 #! Panics if:
 #! - the active mint policy validation fails.
+#! - the active mint policy modified the tag, note_type, or RECIPIENT.
 #! - the faucet is paused.
 #! - the token ID derived from ASSET_VALUE has already been issued.
 #! - the asset stored in the MINT note does not belong to this faucet.
@@ -212,7 +213,8 @@ pub proc mint_and_send
     loc_storew_le.ASSET_VALUE_LOCAL
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
-    # run the active mint policy over the asset value
+    # run the active mint policy over the asset value; the manager asserts the policy returned
+    # the tag, note type, and recipient unchanged
     exec.policy_manager::execute_mint_policy
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
