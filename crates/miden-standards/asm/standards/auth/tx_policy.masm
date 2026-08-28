@@ -4,7 +4,7 @@ use miden::protocol::tx
 
 const ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE = "procedure must be called alone"
 const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES = "transaction must not include input notes"
-const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES = "transaction must not include output notes"
+const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES = "transaction must not create output notes of its own"
 
 #! Asserts that exactly one non-auth account procedure was called in the current transaction.
 #!
@@ -61,6 +61,9 @@ end
 #! Inputs:  []
 #! Outputs: []
 #!
+#! Panics if:
+#! - the transaction consumes at least one input note.
+#!
 #! Invocation: exec
 pub proc assert_no_input_notes
     exec.tx::get_num_input_notes
@@ -70,16 +73,34 @@ pub proc assert_no_input_notes
     # => []
 end
 
-#! Asserts that the current transaction does not create output notes.
+#! Asserts that the current transaction does not create output notes of its own.
 #!
-#! Inputs:  []
+#! The count must be sampled at the start of the authentication procedure, before it pays the
+#! transaction fee. A transaction's own output notes are created by its note scripts and its
+#! transaction script, all of which run before the epilogue invokes the authentication procedure, so
+#! the count sampled there is exactly those notes. Reading the live count here instead would also
+#! see the notes the authentication procedure itself creates while paying the fee — the TX_FEE note,
+#! and a FEE_SPONSORSHIP note for each network output note whose target charges for one (see
+#! `fee::pay_fee`) — which would make this assertion unsatisfiable on a chain that charges a non-zero
+#! verification base fee.
+#!
+#! The assertion therefore rejects a transaction's own notes without regard to what the
+#! authentication procedure appends afterwards, which puts the burden of sampling on the caller. A
+#! count below the true one weakens the check; a count above it, such as the live count, rejects
+#! transactions that should pass.
+#!
+#! Inputs:  [num_output_notes_before_auth]
 #! Outputs: []
 #!
+#! Where:
+#! - num_output_notes_before_auth is the number of output notes the transaction had created when
+#!   the authentication procedure began.
+#!
+#! Panics if:
+#! - num_output_notes_before_auth is non-zero.
+#!
 #! Invocation: exec
-pub proc assert_no_output_notes
-    exec.tx::get_num_output_notes
-    # => [num_output_notes]
-
+pub proc assert_no_output_notes(num_output_notes_before_auth: u16)
     assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
     # => []
 end

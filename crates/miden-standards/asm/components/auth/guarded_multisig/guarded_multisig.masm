@@ -2,8 +2,11 @@
 #
 # See the `AuthGuardedMultisig` Rust type's documentation for more details.
 
+use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::guardian
+use miden::standards::auth::signature
+use miden::standards::fee
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -13,7 +16,20 @@ pub use {is_signer} from miden::standards::auth::multisig
 
 pub use {update_guardian_public_key} from miden::standards::auth::guardian
 
-#! Authenticate a transaction with multi-signature support and optional guardian verification.
+# LOCAL ADDRESSES (auth_tx_guarded_multisig)
+# =================================================================================================
+
+const NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC = 0
+
+#! Authenticate a transaction with multi-signature support and optional guardian verification,
+#! paying the transaction fee in the process.
+#!
+#! It resolves the AUTH_ARGS into the block the summary binds, the summary salt and the fee
+#! conversion info, then pays the transaction fee by creating a public TX_FEE note. On chains with
+#! a zero verification base fee no note is created. Because the fee is paid before the transaction
+#! summary is created, the fee note and the vault withdrawal funding it are covered by the approver
+#! signatures, and by the guardian signature on every path that requires one. The guardian key
+#! rotation path requires none, so on that path the approvers alone authorize the payment.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -25,22 +41,49 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! - insufficient number of valid approver or guardian signatures.
 #! - the approval window ended at or before the transaction reference block, see
 #!   `multisig::auth_tx`.
+#! - `update_guardian_public_key` is called together with another non-auth procedure, or by a
+#!   transaction that consumes input notes or creates output notes of its own, see
+#!   `guardian::verify_signature`. The TX_FEE note this procedure creates is exempt from the latter.
+#! - the transaction fee cannot be paid, see `fee::pay_fee`. Most commonly the account vault holds
+#!   too little of the payment asset, or a non-zero fee was computed while the auth args committed
+#!   no conversion info.
 #!
 #! Invocation: call
+@locals(1)
 @auth_script
 pub proc auth_tx_guarded_multisig(auth_args: word)
+    # sample the transaction's own output note count before paying the fee below, so that the
+    # guardian key rotation path can tell the transaction's notes apart from the TX_FEE note this
+    # procedure creates. See `tx_policy::assert_no_output_notes`.
+    exec.tx::get_num_output_notes loc_store.NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [AUTH_ARGS]
+
     exec.multisig::resolve_auth_args
     # => [CONVERSION_INFO, block_number, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info is unused
-    dropw
+    # pay the transaction fee before the summary is created so that the TX_FEE note and the vault
+    # withdrawal funding it are covered by the approver and guardian signatures.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT]
+
+    # this component verifies the guardian signature on top of the approvers', so the flow performs
+    # up to one more verification than the plain multisig component does.
+    add.1
+    # => [num_of_signers, CONVERSION_INFO, block_number, SALT]
+
+    exec.signature::estimate_multisig_authentication_cycles
+    # => [num_extra_cycles, CONVERSION_INFO, block_number, SALT]
+
+    exec.fee::pay_fee drop
     # => [block_number, SALT]
 
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 
-    dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
+    dupw loc_load.NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [num_output_notes_before_auth, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
 
     exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT]

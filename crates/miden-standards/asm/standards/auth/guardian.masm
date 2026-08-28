@@ -114,27 +114,38 @@ end
 
 #! Conditionally verifies a guardian signature.
 #!
-#! Inputs:  [MSG]
+#! Inputs:  [num_output_notes_before_auth, MSG]
 #! Outputs: []
+#!
+#! Where:
+#! - num_output_notes_before_auth is the number of output notes the transaction had created when
+#!   the authentication procedure began, which excludes the note the authentication procedure
+#!   itself creates to pay the transaction fee. See `tx_policy::assert_no_output_notes`.
+#! - MSG is the message the guardian signature is verified against, the transaction summary
+#!   commitment.
 #!
 #! Panics if:
 #! - `update_guardian_public_key` is called together with another non-auth account procedure.
+#! - `update_guardian_public_key` is called by a transaction that consumes input notes or creates
+#!   output notes of its own.
 #! - `update_guardian_public_key` was not called and a valid guardian signature is missing or
 #!   invalid.
 #!
 #! Invocation: exec
-pub proc verify_signature(msg: word)
+pub proc verify_signature(num_output_notes_before_auth: u16, msg: word)
     procref.update_guardian_public_key
-    # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT, MSG]
-    
+    # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT, num_output_notes_before_auth, MSG]
+
     exec.native_account::was_procedure_called
-    # => [was_update_guardian_public_key_called, MSG]
+    # => [was_update_guardian_public_key_called, num_output_notes_before_auth, MSG]
 
     if.true
         # Check the notes first: creating an output note requires calling `create_note`, which
         # would also trip `assert_only_one_non_auth_procedure_called`. Running that check last lets
         # the more specific input/output-note errors surface when notes are present.
         exec.tx_policy::assert_no_input_notes
+        # => [num_output_notes_before_auth, MSG]
+
         exec.tx_policy::assert_no_output_notes
         # => [MSG]
 
@@ -144,6 +155,9 @@ pub proc verify_signature(msg: word)
         dropw
         # => []
     else
+        drop
+        # => [MSG]
+
         push.1
         # => [1, MSG]
 

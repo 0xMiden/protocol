@@ -2,8 +2,11 @@
 #
 # See the `AuthMultisigSmart` Rust type's documentation for more details.
 
+use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::multisig_smart
+use miden::standards::auth::signature
+use miden::standards::fee
 
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
 pub use {get_signer_at} from miden::standards::auth::multisig
@@ -11,7 +14,19 @@ pub use {is_signer} from miden::standards::auth::multisig
 pub use {set_procedure_policy} from miden::standards::auth::multisig_smart
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig_smart
 
-#! Authenticate a transaction using multisig smart-policy rules.
+# LOCAL ADDRESSES (auth_tx_multisig_smart)
+# =================================================================================================
+
+const NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC = 0
+
+#! Authenticate a transaction using multisig smart-policy rules, paying the transaction fee in the
+#! process.
+#!
+#! It resolves the AUTH_ARGS into the block the summary binds, the summary salt and the fee
+#! conversion info, then pays the transaction fee by creating a public TX_FEE note. On chains with
+#! a zero verification base fee no note is created. Because the fee is paid before the transaction
+#! summary is created, the fee note and the vault withdrawal funding it are covered by the approver
+#! signatures.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -23,16 +38,43 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig_sma
 #! - insufficient number of valid signatures (below threshold).
 #! - the approval window ended at or before the transaction reference block, see
 #!   `multisig_smart::auth_tx`.
+#! - a called procedure's policy forbids the transaction's input notes, or the output notes it had
+#!   created before authentication began, see `multisig_smart::enforce_note_restrictions`. The
+#!   TX_FEE note this procedure creates is exempt.
+#! - a called procedure's policy requires the delayed execution mode, which this component does not
+#!   support, see `multisig_smart::auth_tx`.
+#! - the transaction fee cannot be paid, see `fee::pay_fee`. Most commonly the account vault holds
+#!   too little of the payment asset, or a non-zero fee was computed while the auth args committed
+#!   no conversion info.
 #!
 #! Invocation: call
+@locals(1)
 @auth_script
 pub proc auth_tx_multisig_smart(auth_args: word)
+    # sample the transaction's own output note count before paying the fee below, so that the
+    # procedure policies' note restrictions can tell the transaction's notes apart from the TX_FEE
+    # note this procedure creates. See `tx_policy::assert_no_output_notes`.
+    exec.tx::get_num_output_notes loc_store.NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [AUTH_ARGS]
+
     exec.multisig::resolve_auth_args
     # => [CONVERSION_INFO, block_number, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info is unused
-    dropw
+    # pay the transaction fee before the summary is created so that the TX_FEE note and the vault
+    # withdrawal funding it are covered by the approver signatures.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT]
+
+    exec.signature::estimate_multisig_authentication_cycles
+    # => [num_extra_cycles, CONVERSION_INFO, block_number, SALT]
+
+    exec.fee::pay_fee drop
     # => [block_number, SALT]
+
+    loc_load.NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [num_output_notes_before_auth, block_number, SALT]
 
     exec.multisig_smart::auth_tx
     # => [TX_SUMMARY_COMMITMENT]

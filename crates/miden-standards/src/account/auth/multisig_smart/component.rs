@@ -131,6 +131,33 @@ fn validate_proc_policies(
 ///
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
+///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_multisig_smart` pays the transaction fee via
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on fee-charging
+/// chains the account must hold a sufficient balance of the payment asset. The payment asset and
+/// conversion rate come from the auth args (see
+/// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo); native fee asset at rate 1/1 for
+/// plain native payment). On chains with a zero verification base fee no note is created. The fee
+/// note is created before the transaction summary, so it is covered by the approver signatures.
+///
+/// `pay_fee` also prices every network output note the transaction carries through its target
+/// account's fee policy, creating a FEE_SPONSORSHIP note for each one the target charges for. The
+/// pricing is a foreign-procedure call, so a transaction that creates network notes now requires
+/// those targets to be provisioned as foreign accounts whether or not they charge. That applies
+/// even where the verification base fee is zero, and matches the components that already paid.
+///
+/// The fee note does not count against a procedure policy's
+/// [`ProcedurePolicyNoteRestriction`](super::ProcedurePolicyNoteRestriction), so a policy that
+/// forbids output notes remains satisfiable on a fee-charging chain. It follows that
+/// [`NoOutputNotes`](super::ProcedurePolicyNoteRestriction::NoOutputNotes) no longer implies that
+/// no assets leave the account through a note: the approvers meeting a procedure's policy threshold
+/// also choose the fee payment asset and rate, and `pay_fee` bounds the resulting payment only by
+/// the account's balance. A policy threshold below the default therefore lets a smaller group move
+/// vault assets into the fee note, so set note restrictions and low thresholds on the same
+/// procedure only where that is acceptable.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,

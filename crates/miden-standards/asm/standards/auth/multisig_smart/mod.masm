@@ -73,6 +73,20 @@ const NOTE_RESTRICTIONS_LOC = 2
 const EXECUTION_MODE_LOC = 0
 const DEFAULT_THRESHOLD_LOC = 1
 
+# LOCAL ADDRESSES (enforce_procedure_policy)
+# =================================================================================================
+
+const ENFORCE_POLICY_NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC = 0
+
+# LOCAL ADDRESSES (auth_tx)
+# =================================================================================================
+
+# `auth_tx` holds the sampled count at a different offset than `enforce_procedure_policy` does, so
+# both carry a procedure prefix; an unprefixed name would resolve to the wrong slot in one of them.
+const AUTH_TX_POLICY_THRESHOLD_LOC = 0
+const AUTH_TX_DEFAULT_THRESHOLD_LOC = 1
+const AUTH_TX_NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC = 2
+
 # LOCAL ADDRESSES (update_signers_and_threshold)
 # =================================================================================================
 
@@ -362,24 +376,40 @@ end
 #! - bit 0 (mask 1) → forbid input notes
 #! - bit 1 (mask 2) → forbid output notes
 #!
-#! Inputs:  [note_restrictions]
+#! Inputs:  [num_output_notes_before_auth, note_restrictions]
 #! Outputs: []
 #!
+#! Where:
+#! - num_output_notes_before_auth is the number of output notes the transaction had created when
+#!   the authentication procedure began, which excludes the note the authentication procedure
+#!   itself creates to pay the transaction fee. See `tx_policy::assert_no_output_notes`.
+#!
+#! Panics if:
+#! - the input note bit is set and the transaction consumes at least one input note.
+#! - the output note bit is set and the transaction creates at least one output note of its own.
+#!
 #! Invocation: exec
-pub proc enforce_note_restrictions
+pub proc enforce_note_restrictions(num_output_notes_before_auth: u16, note_restrictions: u32)
+    swap
+    # => [note_restrictions, num_output_notes_before_auth]
+
     dup u32and.NOTE_RESTRICTION_INPUT_NOTES_MASK eq.NOTE_RESTRICTION_INPUT_NOTES_MASK
-    # => [has_input_note_restriction, note_restrictions]
+    # => [has_input_note_restriction, note_restrictions, num_output_notes_before_auth]
 
     if.true
         exec.tx_policy::assert_no_input_notes
     end
-    # => [note_restrictions]
+    # => [note_restrictions, num_output_notes_before_auth]
 
     u32and.NOTE_RESTRICTION_OUTPUT_NOTES_MASK eq.NOTE_RESTRICTION_OUTPUT_NOTES_MASK
-    # => [has_output_note_restriction]
+    # => [has_output_note_restriction, num_output_notes_before_auth]
 
     if.true
         exec.tx_policy::assert_no_output_notes
+        # => []
+    else
+        drop
+        # => []
     end
     # => []
 end
@@ -387,16 +417,31 @@ end
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! Inputs:
-#!   Operand stack: [block_number, SALT]
+#!   Operand stack: [num_output_notes_before_auth, block_number, SALT]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
+#! - num_output_notes_before_auth is the number of output notes the transaction had created when
+#!   the authentication procedure began, which excludes the note the authentication procedure
+#!   itself creates to pay the transaction fee. It is forwarded to the procedure policies' note
+#!   restrictions, see `tx_policy::assert_no_output_notes`.
 #! - block_number and SALT are as described in `miden::standards::auth::multisig::auth_tx`.
+#!
+#! Panics if:
+#! - the approval window ended at or before the transaction reference block.
+#! - a called procedure's policy requires the delayed execution mode, which this component does not
+#!   support, see `compute_called_proc_policy`.
+#! - a called procedure's policy forbids the transaction's input notes, or the output notes it had
+#!   created when authentication began, see `enforce_note_restrictions`.
+#! - the number of valid signatures is below the threshold the called procedures require.
+#! - the bound block number is not a u32 or exceeds the transaction reference block, see
+#!   `auth::create_tx_summary_with_block`.
 #!
 #! Locals:
 #! 0: policy_threshold
 #! 1: default_threshold
+#! 2: num_output_notes_before_auth
 #!
 #! Invocation: exec
 #!
@@ -411,8 +456,11 @@ end
 #!   `ERR_EXECUTE_PATH_MISMATCH`), then call
 #!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
 #!   propose/cancel/execute state.
-@locals(2)
-pub proc auth_tx(block_number: BlockNumber, salt: word)
+@locals(3)
+pub proc auth_tx(num_output_notes_before_auth: u16, block_number: BlockNumber, salt: word)
+    loc_store.AUTH_TX_NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [block_number, SALT]
+
     exec.native_account::incr_nonce drop
     # => [block_number, SALT]
 
@@ -445,14 +493,17 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
 
     # Save default_threshold for the procedure-policy enforcement and the final tx-threshold
     # fallback below.
-    dup loc_store.1
+    dup loc_store.AUTH_TX_DEFAULT_THRESHOLD_LOC
     # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     # ------ Enforcing procedure policy (consumes default_threshold) ------
+    loc_load.AUTH_TX_NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [num_output_notes_before_auth, default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
     exec.enforce_procedure_policy
     # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
-    loc_store.0
+    loc_store.AUTH_TX_POLICY_THRESHOLD_LOC
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------
@@ -464,8 +515,8 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     # ------ Computing final transaction threshold ------
     # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
     # falls back to `default_threshold`; otherwise it returns the policy max directly.
-    loc_load.0
-    loc_load.1
+    loc_load.AUTH_TX_POLICY_THRESHOLD_LOC
+    loc_load.AUTH_TX_DEFAULT_THRESHOLD_LOC
     # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.compute_tx_threshold
@@ -772,12 +823,24 @@ end
 #! Always uses IMMEDIATE_EXECUTION_MODE; procedures whose policies require the delayed mode
 #! panic via [`compute_called_proc_policy`] because this component has no timelock.
 #!
-#! Inputs:  [default_threshold]
+#! Inputs:  [num_output_notes_before_auth, default_threshold]
 #! Outputs: [policy_threshold]
 #!
 #! Where:
+#! - num_output_notes_before_auth is forwarded to [`enforce_note_restrictions`].
 #! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
 #!   contribution for any called procedure without an explicit policy.
+#!
+#! Panics if:
+#! - a called procedure's policy requires the delayed execution mode, see
+#!   [`compute_called_proc_policy`].
+#! - the union of the called procedures' note restrictions forbids the transaction's input notes, or
+#!   the output notes it had created when authentication began, see [`enforce_note_restrictions`].
+#!
+#! Locals:
+#! - 0: num_output_notes_before_auth, held across the [`compute_called_proc_policy`] call. That
+#!   procedure's own local 0 holds a different value; `exec` gives each procedure its own frame, so
+#!   the two do not alias.
 #!
 #! Invocation: exec
 #!
@@ -785,7 +848,11 @@ end
 #! hardcoded IMMEDIATE_EXECUTION_MODE push will be replaced with a call to
 #! `timelock_controller::execution_mode`, and the procedure will also expose
 #! `policy_requires_delay` for downstream enforcement.
-proc enforce_procedure_policy(default_threshold: u32)
+@locals(1)
+proc enforce_procedure_policy(num_output_notes_before_auth: u16, default_threshold: u32)
+    loc_store.ENFORCE_POLICY_NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [default_threshold]
+
     push.IMMEDIATE_EXECUTION_MODE
     # => [execution_mode, default_threshold]
 
@@ -798,6 +865,9 @@ proc enforce_procedure_policy(default_threshold: u32)
 
     swap
     # => [note_restrictions, policy_threshold]
+
+    loc_load.ENFORCE_POLICY_NUM_OUTPUT_NOTES_BEFORE_AUTH_LOC
+    # => [num_output_notes_before_auth, note_restrictions, policy_threshold]
 
     exec.enforce_note_restrictions
     # => [policy_threshold]

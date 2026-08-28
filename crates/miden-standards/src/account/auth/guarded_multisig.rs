@@ -203,6 +203,38 @@ impl AuthGuardedMultisigConfig {
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
 ///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_guarded_multisig` pays the transaction fee via
+/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
+/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on fee-charging
+/// chains the account must hold a sufficient balance of the payment asset. The payment asset and
+/// conversion rate come from the auth args (see [`FeeConversionInfo`](super::FeeConversionInfo);
+/// native fee asset at rate 1/1 for plain native payment). On chains with a zero verification base
+/// fee no note is created. The fee note is created before the transaction summary, so it is covered
+/// by the approver signatures, and by the guardian signature on every path that requires one.
+///
+/// `pay_fee` also prices every network output note the transaction carries through its target
+/// account's fee policy, creating a FEE_SPONSORSHIP note for each one the target charges for. The
+/// pricing is a foreign-procedure call, so a transaction that creates network notes now requires
+/// those targets to be provisioned as foreign accounts whether or not they charge. That applies
+/// even where the verification base fee is zero, and matches the components that already paid.
+///
+/// The fee note does not count against the no-notes requirement of the guardian key rotation path,
+/// so a guarded account can still rotate its guardian key on a fee-charging chain. On that path the
+/// approvers therefore choose a payment asset and rate that no guardian signature covers, and
+/// `pay_fee` bounds the resulting payment only by the account's balance. The resulting
+/// [`TxFeeNote`](crate::note::TxFeeNote) restricts nobody, so the approvers meeting the rotation
+/// threshold can move vault assets out of the account and into a note that anyone, themselves
+/// included, may claim in a later transaction. They gain no exclusive right to it, but the assets
+/// have left the vault. Two consequences
+/// worth setting policy around: a per-procedure threshold on `update_guardian_public_key` below the
+/// default hands that reach to a smaller group, and a threshold *above* the default on an
+/// asset-moving procedure does not hold on this path, because the rotation must be the
+/// transaction's only non-auth call and so is the only threshold that applies. Where either
+/// matters, keep the rotation override at the default and treat the rotation threshold as the
+/// account's true bound on single-transaction vault access.
+///
 /// # Privacy
 ///
 /// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public
