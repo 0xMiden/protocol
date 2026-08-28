@@ -98,10 +98,10 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
-impl TryFrom<proto::account::AccountHeader> for AccountHeader {
+impl TryFrom<proto::account::AccountHeaderV1> for AccountHeader {
     type Error = ConversionError;
 
-    fn try_from(message: proto::account::AccountHeader) -> Result<Self, Self::Error> {
+    fn try_from(message: proto::account::AccountHeaderV1) -> Result<Self, Self::Error> {
         let decoder = message.decoder();
         let account_id = required!(decoder, message.account_id)?;
         let vault_root = required!(decoder, message.vault_root)?;
@@ -118,7 +118,7 @@ impl TryFrom<proto::account::AccountHeader> for AccountHeader {
     }
 }
 
-impl From<&AccountHeader> for proto::account::AccountHeader {
+impl From<&AccountHeader> for proto::account::AccountHeaderV1 {
     fn from(account_header: &AccountHeader) -> Self {
         Self {
             account_id: Some(account_header.id().into()),
@@ -126,6 +126,29 @@ impl From<&AccountHeader> for proto::account::AccountHeader {
             storage_commitment: Some(account_header.storage_commitment().into()),
             code_commitment: Some(account_header.code_commitment().into()),
             nonce: account_header.nonce().as_canonical_u64(),
+        }
+    }
+}
+
+impl TryFrom<proto::account::AccountHeader> for AccountHeader {
+    type Error = ConversionError;
+
+    fn try_from(message: proto::account::AccountHeader) -> Result<Self, Self::Error> {
+        use proto::account::account_header::Version;
+
+        match message.version {
+            Some(Version::V1(header)) => header.try_into().context("v1"),
+            None => Err(ConversionError::missing_field::<proto::account::AccountHeader>("version")),
+        }
+    }
+}
+
+impl From<&AccountHeader> for proto::account::AccountHeader {
+    fn from(account_header: &AccountHeader) -> Self {
+        use proto::account::account_header::Version;
+
+        Self {
+            version: Some(Version::V1(account_header.into())),
         }
     }
 }

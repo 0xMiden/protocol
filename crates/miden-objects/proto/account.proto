@@ -25,6 +25,12 @@ enum StorageSlotType {
 }
 
 message AccountHeader {
+  oneof version {
+    AccountHeaderV1 v1 = 1;
+  }
+}
+
+message AccountHeaderV1 {
   AccountId account_id = 1;
   primitives.Word vault_root = 2;
   primitives.Word storage_commitment = 3;

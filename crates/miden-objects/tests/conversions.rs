@@ -83,6 +83,16 @@ fn account_witness(account_id: AccountId) -> AccountWitness {
     AccountWitness::new(account_id, Word::empty(), path).unwrap()
 }
 
+fn account_header() -> AccountHeader {
+    AccountHeader::new(
+        private_account_id(),
+        Felt::ONE,
+        Word::from([1_u32, 2, 3, 4]),
+        Word::from([5_u32, 6, 7, 8]),
+        Word::from([9_u32, 10, 11, 12]),
+    )
+}
+
 #[test]
 fn account_witness_protobuf_round_trip() {
     let witness = account_witness(private_account_id());
@@ -156,17 +166,39 @@ fn account_id_protobuf_rejects_invalid_metadata() {
 }
 
 #[test]
-fn account_header_protobuf_preserves_invalid_nonce_source() {
+fn account_header_roundtrips_through_v1_protobuf_bytes() {
+    let header = account_header();
+
+    let encoded = proto::account::AccountHeader::from(&header).encode_to_vec();
+    let message = proto::account::AccountHeader::decode(encoded.as_slice()).unwrap();
+
+    assert!(matches!(message.version, Some(proto::account::account_header::Version::V1(_))));
+    assert_eq!(AccountHeader::try_from(message).unwrap(), header);
+}
+
+#[test]
+fn account_header_protobuf_requires_version() {
+    let error = AccountHeader::try_from(proto::account::AccountHeader::default()).unwrap_err();
+
+    assert!(error.to_string().ends_with("::version is missing"));
+}
+
+#[test]
+fn account_header_v1_protobuf_preserves_invalid_nonce_source() {
     let error = AccountHeader::try_from(proto::account::AccountHeader {
-        account_id: Some(private_account_id().into()),
-        vault_root: Some(Word::empty().into()),
-        storage_commitment: Some(Word::empty().into()),
-        code_commitment: Some(Word::empty().into()),
-        nonce: Felt::ORDER,
+        version: Some(proto::account::account_header::Version::V1(
+            proto::account::AccountHeaderV1 {
+                account_id: Some(private_account_id().into()),
+                vault_root: Some(Word::empty().into()),
+                storage_commitment: Some(Word::empty().into()),
+                code_commitment: Some(Word::empty().into()),
+                nonce: Felt::ORDER,
+            },
+        )),
     })
     .unwrap_err();
 
-    assert!(error.to_string().starts_with("nonce: "));
+    assert!(error.to_string().starts_with("v1.nonce: "));
     assert!(matches!(
         error
             .source()
