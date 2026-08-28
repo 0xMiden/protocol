@@ -1,7 +1,0 @@
-# Error constants shared by batch kernel modules.
-
-# ERRORS
-# =================================================================================================
-
-pub const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED =
-    "an erased input note was consumed before the transaction that created it"

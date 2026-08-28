@@ -1,8 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 
 use miden::batch_kernel::memory
-use {ERASED, ERASURE_EXPECTED, NOTE_ENTRY_FELT_LEN} from miden::batch_kernel::memory
-use {ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED} from miden::batch_kernel::errors
+use {NOTE_ENTRY_FELT_LEN, UNERASED} from miden::batch_kernel::memory
 
 # ERRORS
 # =================================================================================================
@@ -20,8 +19,8 @@ const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED =
 #! binding, this proves the list is exactly the union of the per-transaction output notes, so a host
 #! cannot fabricate an erasure with a note no transaction creates).
 #!
-#! The matching input-note checks (every entry consumed exactly once, none left pending-erasure) are
-#! folded into the single pass in [`compute_input_notes_commitment`].
+#! The matching input-note check (every entry consumed exactly once) is folded into the single pass
+#! in [`compute_input_notes_commitment`].
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -68,31 +67,25 @@ proc absorb_input_entry
     drop drop
 end
 
-#! Processes one input-note list entry: asserts the entry was consumed exactly once and is not
-#! left expected-to-be-erased, then absorbs it into the batch hasher unless it was erased.
+#! Processes one input-note list entry: asserts the entry was consumed exactly once, then absorbs
+#! it into the batch hasher unless it was erased.
 #!
-#! The absorbed_count is only incremented by 1 if the entry was not erased.
 #!
-#! Inputs:  [input_note_idx, absorbed_count, num_input_notes]
-#! Outputs: [input_note_idx + 1, absorbed_count, num_input_notes]
+#! Inputs:  [input_note_idx]
+#! Outputs: [input_note_idx + 1]
 proc process_input_entry
-    # Assert this entry was consumed exactly once and is not left expected-to-be-erased.
     dup exec.memory::get_input_note_is_consumed
-    # => [is_consumed, input_note_idx, absorbed_count, num_input_notes]
+    # => [is_consumed, input_note_idx]
     assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
-    # => [input_note_idx, absorbed_count, num_input_notes]
-    dup exec.memory::get_input_note_erasure_state
-    # => [erasure_state, input_note_idx, absorbed_count, num_input_notes]
-    dup neq.ERASURE_EXPECTED assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
-    # => [erasure_state, input_note_idx, absorbed_count, num_input_notes]
+    # => [input_note_idx]
 
     # Absorb the entry unless it was erased (created-and-consumed in this batch).
-    neq.ERASED
-    # => [not_erased, input_note_idx, absorbed_count, num_input_notes]
+    dup exec.memory::get_input_note_erasure_state
+    # => [erasure_state, input_note_idx]
+    eq.UNERASED
+    # => [is_unerased, input_note_idx]
     if.true
         dup exec.absorb_input_entry
-        swap add.1 swap
-        # => [input_note_idx, absorbed_count+1, num_input_notes]
     end
     add.1
 end
@@ -101,9 +94,8 @@ end
 #! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the nullifier-sorted input-note list (erased entries
 #! are skipped).
 #!
-#! The single pass over the input entries also enforces the epilogue invariants on each entry: it
-#! was consumed exactly once and is not left expected-to-be-erased (i.e. any created-and-consumed
-#! note had its creator processed).
+#! The single pass over the input entries also enforces the epilogue invariant that every entry was
+#! consumed exactly once.
 #!
 #! Inputs:  []
 #! Outputs: [INPUT_NOTES_COMMITMENT]
@@ -113,33 +105,23 @@ proc compute_input_notes_commitment
     exec.memory::set_batch_hasher_state
 
     exec.memory::get_num_input_notes
-    push.0 push.0
-    # => [input_note_idx, absorbed_count, num_input_notes]
+    push.0
+    # => [input_note_idx, num_input_notes]
 
-    dup dup.3 neq
-    # => [should_loop, input_note_idx, absorbed_count, num_input_notes]
+    dup dup.2 neq
+    # => [should_loop, input_note_idx, num_input_notes]
     while.true
         exec.process_input_entry
-        # => [input_note_idx+1, absorbed_count, num_input_notes]
-        dup dup.3 neq
-        # => [should_loop, input_note_idx+1, absorbed_count, num_input_notes]
+        # => [input_note_idx+1, num_input_notes]
+        dup dup.2 neq
+        # => [should_loop, input_note_idx+1, num_input_notes]
     end
-    # => [input_note_idx, absorbed_count, num_input_notes]
-    drop swap drop
-    # => [absorbed_count]
+    # => [input_note_idx, num_input_notes]
+    drop drop
 
-    # With no non-erased entries the commitment is the empty word, matching the early return in
-    # `build_input_note_commitment` (this is not the hash of zero elements). Otherwise squeeze the
-    # accumulated state.
-    eq.0
-    if.true
-        padw
-        # => [EMPTY_WORD]
-    else
-        exec.memory::get_batch_hasher_state
-        exec.poseidon2::squeeze_digest
-        # => [INPUT_NOTES_COMMITMENT]
-    end
+    exec.memory::get_batch_hasher_state
+    exec.poseidon2::squeeze_digest
+    # => [INPUT_NOTES_COMMITMENT]
 end
 
 # OUTPUT NOTES COMMITMENT
@@ -163,8 +145,8 @@ end
 #! Verifies the note-tracking results and computes the batch's note commitments.
 #!
 #! Asserts every output-note list entry was created, then computes the input- and output-notes
-#! commitments. The per-input-entry invariants (consumed exactly once, no pending erasure) are
-#! enforced inside the input-commitment pass.
+#! commitments. The per-input-entry invariant (consumed exactly once) is enforced inside the
+#! input-commitment pass.
 #!
 #! Inputs:  []
 #! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]

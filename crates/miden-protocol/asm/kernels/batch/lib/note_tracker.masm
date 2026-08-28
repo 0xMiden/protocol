@@ -16,7 +16,6 @@ use {
     TX_NOTES_SCRATCH_PTR,
     WORD_NUM_ELEMENTS,
 } from miden::batch_kernel::memory
-use {ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED} from miden::batch_kernel::errors
 
 # ERRORS
 # =================================================================================================
@@ -38,6 +37,9 @@ const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE =
 
 const ERR_BATCH_TX_TOO_MANY_NOTES =
     "a transaction's note set contains more notes than the maximum allowed"
+
+const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED =
+    "an erased input note was consumed before the transaction that created it"
 
 # SORTED NOTE LIST LOOKUP
 # =================================================================================================

@@ -5,7 +5,6 @@
 # executable defined in `src/main.masm`.
 
 pub mod epilogue
-pub mod errors
 pub mod memory
 pub mod note_tracker
 pub mod prologue
