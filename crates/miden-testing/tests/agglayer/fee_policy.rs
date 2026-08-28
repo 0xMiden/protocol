@@ -3,11 +3,12 @@ use alloc::collections::BTreeSet;
 use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
-use miden_protocol::asset::{AssetId, FungibleAsset};
+use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
+use miden_standards::account::faucets::TokenName;
 use miden_standards::account::fees::{
     BasicConstantFeePolicy,
     ConstantFeeManager,
@@ -158,10 +159,11 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
         ManagedAccount::Bridge => bridge,
         ManagedAccount::Faucet => AggLayerFaucet::account_builder(
             Word::from([1u32, 0, 0, 0]),
-            "AGG",
+            TokenName::new("AggLayer Token")?,
+            TokenSymbol::new("AGG")?,
             6,
-            1_000u32.into(),
-            Felt::ZERO,
+            AssetAmount::new(1_000)?,
+            AssetAmount::ZERO,
             account_admin,
             fee_manager_id(),
             bridge.id(),

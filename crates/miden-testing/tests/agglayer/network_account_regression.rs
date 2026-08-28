@@ -165,6 +165,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
 
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "Test Token",
         "TEST",
         8,
         Felt::new(1_000_000).unwrap(),
@@ -207,6 +208,7 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
 
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "Test Token",
         "TEST",
         8,
         Felt::new(1_000_000).unwrap(),

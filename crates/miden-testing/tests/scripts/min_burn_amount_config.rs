@@ -11,7 +11,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
@@ -62,7 +62,6 @@ fn create_faucet_with_min_burn_amount(owner: AccountId) -> anyhow::Result<Accoun
         .with_components(Auth::IncrNonce)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(faucet)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .build_existing()?;
 
