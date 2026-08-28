@@ -118,7 +118,6 @@ impl FeeSponsorshipNote {
             sender,
             serial_number,
             asset,
-            // The tag routes the note to the network account the feature note targets.
             tag: NoteTag::with_account_target(target),
             storage,
         })
