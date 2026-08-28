@@ -4,6 +4,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::note::TxFeeNote;
 
+mod guarded_multisig;
 mod multisig;
 mod network;
 mod no_auth;

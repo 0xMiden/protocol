@@ -4,6 +4,9 @@
 
 use miden::standards::auth::multisig
 use miden::standards::auth::guardian
+use miden::standards::auth::signature
+use miden::standards::fee
+use miden::protocol::tx
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -23,17 +26,53 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! Invocation: call
 @auth_script
 pub proc auth_tx_guarded_multisig(salt: word)
-    # zero the leading user params (not exposed through this component's interface); the SALT
-    # occupies the trailing four
+    # Pay the transaction fee before the summary is created so that the TX_FEE note and the vault
+    # withdrawal funding it are covered by the approver and guardian signatures.
+    # load_conversion_info consumes the AUTH_ARGS, so keep a copy to serve as the summary salt.
+    # ---------------------------------------------------------------------------------------------
+
+    # Sample the transaction's own output-note count before the fee is paid. pay_fee appends the
+    # TX_FEE note, so the rotation path's assert_no_output_notes must not read the live count.
+    exec.tx::get_num_output_notes movdn.4
+    # => [AUTH_ARGS, num_output_notes_before_auth]
+
+    dupw
+    # => [AUTH_ARGS, AUTH_ARGS, num_output_notes_before_auth]
+
+    exec.fee::load_conversion_info
+    # => [CONVERSION_INFO, AUTH_ARGS]
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CONVERSION_INFO, AUTH_ARGS]
+
+    # This component verifies the guardian signature in addition to the approvers', so the flow
+    # performs one more verification than the plain multisig component does.
+    add.1
+    # => [num_of_signers, CONVERSION_INFO, AUTH_ARGS]
+
+    exec.signature::estimate_multisig_authentication_cycles
+    # => [num_extra_cycles, CONVERSION_INFO, AUTH_ARGS]
+
+    exec.fee::pay_fee drop
+    # => [AUTH_ARGS]
+
+    # Authenticate the transaction and record it for replay protection.
+    # ---------------------------------------------------------------------------------------------
+
+    # zero the leading user params (not exposed through this component's interface); the AUTH_ARGS
+    # occupy the trailing four
     push.0.0.0
-    # => [0, 0, 0, SALT]
+    # => [0, 0, 0, AUTH_ARGS]
 
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 
     dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
-    
+    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, num_output_notes_before_auth]
+
+    movup.8
+    # => [num_output_notes_before_auth, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
+
     exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT]
 

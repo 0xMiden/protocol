@@ -7,6 +7,7 @@ use {APPROVER_PUBLIC_KEYS_SLOT} from miden::standards::auth::multisig
 use {APPROVER_SCHEME_ID_SLOT} from miden::standards::auth::multisig
 use {THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 use miden::standards::auth::signature
+use miden::protocol::tx
 use miden::standards::auth::tx_policy
 
 # STORAGE SLOTS
@@ -377,6 +378,11 @@ pub proc enforce_note_restrictions
     # => [has_output_note_restriction]
 
     if.true
+        # This component does not pay a transaction fee, so no note is appended after the
+        # transaction's own; the live count is exactly what this policy means to check.
+        exec.tx::get_num_output_notes
+        # => [num_output_notes]
+
         exec.tx_policy::assert_no_output_notes
     end
     # => []
