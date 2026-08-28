@@ -11,7 +11,6 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountType,
-    AssetCallbackFlag,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, NonFungibleAsset, TokenSymbol};
@@ -54,6 +53,7 @@ use miden_standards::errors::standards::{
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
+    ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
@@ -301,7 +301,6 @@ fn build_network_faucet_with_burn_switching(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 
@@ -339,7 +338,6 @@ fn build_existing_faucet_with_reserved_only_transfer_policy(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -382,7 +380,6 @@ fn build_network_faucet_with_min_burn_amount(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 
@@ -550,6 +547,40 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
         .await;
 
     assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY);
+    Ok(())
+}
+
+/// Tests that mint fails when the minted amount is zero.
+#[tokio::test]
+async fn faucet_contract_mint_fungible_asset_fails_zero_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        200,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let params = FaucetTestParams {
+        recipient: Word::from([0, 1, 2, 3u32]),
+        tag: NoteTag::default(),
+        note_type: NoteType::Private,
+        amount: Felt::new_unchecked(0),
+    };
+
+    let tx_script =
+        CodeBuilder::default().compile_tx_script(create_mint_script_code(&params, faucet.id()))?;
+    let tx = mock_chain
+        .build_transaction(faucet.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO);
     Ok(())
 }
 
@@ -2311,7 +2342,6 @@ fn build_network_faucet_mutable_max_supply(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 
@@ -2654,7 +2684,6 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused());
 

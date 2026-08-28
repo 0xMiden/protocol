@@ -1,10 +1,11 @@
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
+use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -24,6 +25,11 @@ use miden_protocol::assembly::{DefaultSourceManager, ModuleKind, ModuleParser, P
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::ProvenTransactionError;
+use miden_protocol::errors::tx_kernel::{
+    ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS,
+    ERR_TX_BLOCK_NUMBER_EXCEEDS_REFERENCE_BLOCK_NUMBER,
+    ERR_TX_BLOCK_NUMBER_NOT_U32,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -83,7 +89,13 @@ use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note, create_spawn_note};
-use crate::{Auth, MockChain, TestTransactionBuilder};
+use crate::{
+    Auth,
+    MockChain,
+    TestTransactionBuilder,
+    assert_execution_error,
+    assert_transaction_executor_error,
+};
 
 /// Tests that consuming a note created in a block that is newer than the reference block of the
 /// transaction fails.
@@ -172,9 +184,9 @@ async fn test_block_procedures() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # get the block data
-            exec.tx::get_block_number
+            exec.tx::get_reference_block_number
             exec.tx::get_block_timestamp
-            exec.tx::get_block_commitment
+            exec.tx::get_reference_block_commitment
             # => [BLOCK_COMMITMENT, block_timestamp, block_number]
 
             # truncate the stack
@@ -201,6 +213,98 @@ async fn test_block_procedures() -> anyhow::Result<()> {
         mock_tx.tx_inputs().block_header().block_num().as_u64(),
         "sixth element on the stack should be equal to the block number"
     );
+    Ok(())
+}
+
+/// Builds the code reading the commitment of the block with the provided number.
+fn get_block_commitment_code(block_number: &str) -> String {
+    format!(
+        "
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::tx
+        use miden::core::sys
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{block_number}
+            exec.tx::get_block_commitment
+            # => [BLOCK_COMMITMENT]
+
+            exec.sys::truncate_stack
+        end
+        "
+    )
+}
+
+/// Tests that `tx::get_block_commitment` returns the commitment of the transaction reference block
+/// as well as of an older block tracked by the partial blockchain.
+///
+/// The reference block commitment is served from kernel memory while older blocks are read from the
+/// partial blockchain, so both paths are covered.
+#[tokio::test]
+async fn tx_get_block_commitment_returns_tracked_block() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Private, [])?;
+    let mut chain = builder.build()?;
+    // Move the chain forward so that the note's block is older than the reference block.
+    chain.prove_next_block()?;
+
+    // Authenticating the note makes the partial blockchain track the block that created it.
+    let mock_tx = chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?;
+
+    let ref_block_header = mock_tx.tx_inputs().block_header().clone();
+    let older_block_header = mock_tx
+        .tx_inputs()
+        .blockchain()
+        .block_headers()
+        .find(|header| header.block_num() != ref_block_header.block_num())
+        .context("partial blockchain should track a block other than the reference block")?
+        .clone();
+
+    for block_header in [ref_block_header, older_block_header] {
+        let code = get_block_commitment_code(&block_header.block_num().to_string());
+        let exec_output = mock_tx.execute_code(&code).await?;
+
+        assert_eq!(exec_output.get_stack_word(0), block_header.commitment());
+    }
+
+    Ok(())
+}
+
+/// Tests that `tx::get_block_commitment` rejects block numbers beyond the transaction reference
+/// block and non-u32 block numbers.
+#[tokio::test]
+async fn tx_get_block_commitment_rejects_invalid_block_numbers() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    let mut chain = builder.build()?;
+    chain.prove_next_block()?;
+
+    let mock_tx = chain.build_transaction(account.id()).build()?;
+    let ref_block_number = mock_tx.tx_inputs().block_header().block_num();
+
+    let beyond_reference = (ref_block_number + 1).to_string();
+    let exec_output = mock_tx.execute_code(&get_block_commitment_code(&beyond_reference)).await;
+    assert_execution_error!(exec_output, ERR_TX_BLOCK_NUMBER_EXCEEDS_REFERENCE_BLOCK_NUMBER);
+
+    let non_u32 = (u64::from(u32::MAX) + 1).to_string();
+    let exec_output = mock_tx.execute_code(&get_block_commitment_code(&non_u32)).await;
+
+    // `u32assert` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
+    // variant explicitly and assert on its error code.
+    assert_execution_error!(
+        exec_output,
+        matches ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, .. },
+            ..
+        } if err_code == ERR_TX_BLOCK_NUMBER_NOT_U32.code()
+    );
+
     Ok(())
 }
 
@@ -457,11 +561,11 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           # => [final_nonce, pad(16)]
 
           # pass the final nonce as the last user param and zero the remaining ones
-          push.0.0.0.0.0.0
-          # => [user_params(7), pad(16)]
+          push.0.0.0.0.0
+          # => [user_params(6), pad(16)]
 
           exec.auth::create_tx_summary
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
@@ -500,6 +604,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         .build_transaction(account)
         .authenticated_input_note(input_note.id())
         .build()?;
+    let ref_block_number = mock_tx.tx_inputs().block_header().block_num();
     let ref_block_commitment = mock_tx.tx_inputs().block_header().commitment();
     let final_nonce = mock_tx.account().nonce().as_canonical_u64() as u32 + 1;
     let input_notes = mock_tx.input_notes().clone();
@@ -513,11 +618,12 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         assert_eq!(tx_summary.account_delta().nonce_delta().as_canonical_u64(), 1);
         assert_eq!(tx_summary.input_notes(), &input_notes);
         assert_eq!(tx_summary.output_notes(), &output_notes);
+        assert_eq!(tx_summary.block_number(), ref_block_number);
         assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
         assert_eq!(tx_summary.expiration_delta(), 0);
         assert_eq!(
             tx_summary.user_params(),
-            TransactionSummaryUserParams::new([0, 0, 0, 0, 0, 0, final_nonce].map(Felt::from))
+            TransactionSummaryUserParams::new([0, 0, 0, 0, 0, final_nonce].map(Felt::from))
         );
     });
 
@@ -550,11 +656,11 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           # => [final_nonce, pad(16)]
 
           # pass [7, 8, 9] as the leading user params and the final nonce as the last one
-          push.0.0.0.9.8.7
-          # => [user_params(7), pad(16)]
+          push.0.0.9.8.7
+          # => [user_params(6), pad(16)]
 
           exec.auth::create_tx_summary
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
@@ -591,7 +697,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
         assert_eq!(tx_summary.expiration_delta(), 42);
         assert_eq!(
             tx_summary.user_params(),
-            TransactionSummaryUserParams::new([7, 8, 9, 0, 0, 0, final_nonce].map(Felt::from))
+            TransactionSummaryUserParams::new([7, 8, 9, 0, 0, final_nonce].map(Felt::from))
         );
         assert_eq!(tx_summary.block_commitment(), ref_block_commitment);
     });
@@ -605,6 +711,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
 async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<()> {
     let source_code = r#"
       use miden::standards::auth
+      use miden::protocol::tx
       const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
@@ -613,19 +720,27 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
           dropw
           # => [pad(16)]
 
-          exec.::miden::protocol::native_account::incr_nonce
-          # => [final_nonce, pad(16)]
+          exec.::miden::protocol::native_account::incr_nonce drop
+          # => [pad(16)]
 
-          # pass the final nonce as the last user param and zero the remaining ones
-          push.0.0.0.0.0.0
-          # => [user_params(7), pad(16)]
+          # Assemble the summary preimage manually with a bogus BLOCK_COMMITMENT. The commitment is
+          # the deepest word of the preimage, so it cannot be patched in after create_tx_summary.
+          push.1.2.3.4
+          # => [FAKE_BLOCK_COMMITMENT, pad(16)]
 
-          exec.auth::create_tx_summary
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+          exec.tx::get_output_notes_commitment
+          exec.tx::get_input_notes_commitment
+          exec.::miden::protocol::native_account::compute_delta_commitment
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
 
-          # replace BLOCK_COMMITMENT with a bogus word
-          swapw.3 dropw push.1.2.3.4 swapw.3
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+          # the six user params are all zero here
+          padw push.0.0
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
+
+          # metadata binding the reference block number and an unset expiration delta, preceded by
+          # the layout version
+          exec.tx::get_reference_block_number push.1
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
@@ -670,8 +785,89 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
     Ok(())
 }
 
-/// Tests that the host rejects a transaction summary whose expiration delta does not match the
-/// kernel state of the transaction.
+/// Tests that the host rejects a transaction summary that binds a block the transaction does not
+/// authenticate, so that a signer is never shown a summary the host cannot verify.
+#[tokio::test]
+async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<()> {
+    let source_code = r#"
+      use miden::standards::auth
+      use miden::protocol::tx
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
+      #! Inputs:  [AUTH_ARGS, pad(12)]
+      #! Outputs: [pad(16)]
+      @auth_script
+      pub proc auth_abort_tx
+          dropw
+          # => [pad(16)]
+
+          exec.::miden::protocol::native_account::incr_nonce drop
+          # => [pad(16)]
+
+          # The bound block is not tracked by the transaction, so its commitment cannot be read
+          # from the partial blockchain and any word will do here.
+          push.1.2.3.4
+          # => [BLOCK_COMMITMENT, pad(16)]
+
+          exec.tx::get_output_notes_commitment
+          exec.tx::get_input_notes_commitment
+          exec.::miden::protocol::native_account::compute_delta_commitment
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          # the six user params are all zero here
+          padw push.0.0
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          # metadata binding the block before the reference block, which the transaction does not
+          # track, and an unset expiration delta, preceded by the layout version
+          exec.tx::get_reference_block_number sub.1 push.1
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          exec.auth::hash_and_insert_tx_summary
+          # => [MESSAGE, pad(16)]
+
+          emit.AUTH_UNAUTHORIZED_EVENT
+      end
+    "#;
+
+    let auth_code = CodeBuilder::default()
+        .compile_component_code("test::auth_component", source_code)
+        .context("failed to parse auth component")?;
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
+
+    let account = AccountBuilder::new([45; 32])
+        .account_type(AccountType::Private)
+        .with_component(auth_component)
+        .with_component(BasicWallet)
+        .build_existing()
+        .context("failed to build account")?;
+
+    let mut mock_chain = MockChain::builder().build()?;
+    // Advance the chain so that a block before the reference block exists.
+    mock_chain.prove_next_block()?;
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let error = mock_tx.execute().await.unwrap_err();
+
+    assert_matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error: ref event_err, .. }
+        ) if matches!(
+            event_err.downcast_ref::<TransactionKernelError>(),
+            Some(TransactionKernelError::TransactionSummaryUnknownBlockNumber(_))
+        )
+    );
+
+    Ok(())
+}
+
+/// Tests that the host rejects a transaction summary whose expiration does not match the kernel
+/// state of the transaction.
 #[tokio::test]
 async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result<()> {
     let source_code = r#"
@@ -688,19 +884,20 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
           exec.::miden::protocol::native_account::incr_nonce drop
           # => [pad(16)]
 
-          # Assemble the summary preimage manually with a forged PARAMS_HEAD word claiming an
+          # Assemble the summary preimage manually with a forged metadata felt claiming an
           # expiration delta of 777 while the transaction never set one.
-          padw
-          # => [PARAMS_TAIL, pad(16)]
-
-          push.0.0.0.777
-          # => [PARAMS_HEAD, PARAMS_TAIL, pad(16)]
-
-          exec.tx::get_block_commitment
+          exec.tx::get_reference_block_commitment
           exec.tx::get_output_notes_commitment
           exec.tx::get_input_notes_commitment
           exec.::miden::protocol::native_account::compute_delta_commitment
-          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(16)]
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          # the six user params are all zero here
+          padw push.0.0
+          # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
+
+          push.777 mul.0x100000000 exec.tx::get_reference_block_number add push.1
+          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
           # => [MESSAGE, pad(16)]
@@ -727,20 +924,21 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
         .context("failed to build account")?;
 
     let mock_chain = MockChain::builder().build()?;
+    let reference_block = mock_chain.latest_block_header().block_num();
     let mock_tx = mock_chain.build_transaction(account).build()?;
 
     let error = mock_tx.execute().await.unwrap_err();
 
+    // The transaction never set an expiration, so the kernel reports no deadline while the forged
+    // summary claims one.
     assert_matches!(
         error,
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::EventError { error: ref event_err, .. }
         ) if matches!(
             event_err.downcast_ref::<TransactionKernelError>(),
-            Some(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
-                expected: 0,
-                actual: 777,
-            })
+            Some(TransactionKernelError::TransactionSummaryExpirationMismatch { expected, actual })
+                if *expected == BlockNumber::MAX && *actual == reference_block + 777
         )
     );
 
@@ -768,6 +966,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         .unauthenticated_input_note(spawn_note.clone());
 
     let tx = tx_builder.clone().build()?;
+    let ref_block_number = tx.tx_inputs().block_header().block_num();
     let ref_block_commitment = tx.tx_inputs().block_header().commitment();
     let tx = tx.execute().await?;
 
@@ -784,10 +983,11 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         account_delta,
         InputNotes::new(vec![InputNote::unauthenticated(spawn_note)])?,
         RawOutputNotes::new(vec![RawOutputNote::Partial(PartialNote::from(p2any_note))])?,
+        ref_block_number,
         ref_block_commitment,
         0,
         TransactionSummaryUserParams::new(
-            [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0, 0].map(Felt::from),
+            [final_nonce.as_canonical_u64() as u32, 0, 0, 0, 0, 0].map(Felt::from),
         ),
     );
 
@@ -1249,6 +1449,42 @@ async fn kernel_procedures_are_not_directly_syscallable() -> anyhow::Result<()> 
         anyhow::bail!("syscall to kernel procedure {procedure_root} should be rejected");
     };
     assert!(error.to_string().contains("is not an exported kernel procedure"));
+
+    Ok(())
+}
+
+/// Tests that `exec_kernel_proc` rejects the first procedure offset which is out of bounds.
+#[tokio::test]
+async fn exec_kernel_proc_rejects_out_of_bounds_offset() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let chain = builder.build()?;
+
+    // Procedure offsets are zero-based, so the number of kernel procedures is the smallest offset
+    // which no longer refers to a kernel procedure.
+    let out_of_bounds_offset = TransactionKernel::PROCEDURES.len();
+    let tx_script_source = format!(
+        "
+        @transaction_script
+        pub proc main
+            # pad the stack the way the protocol library does before a syscall
+            padw padw padw push.0.0.0
+
+            push.{out_of_bounds_offset}
+            syscall.exec_kernel_proc
+        end
+        "
+    );
+    let tx_script = CodeBuilder::new().compile_tx_script(&tx_script_source)?;
+
+    let result = chain
+        .build_transaction(account.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS);
 
     Ok(())
 }

@@ -4,7 +4,7 @@ use {ASSET_SIZE} from miden::tx_kernel_core::asset
 use {NOTE_MEM_SIZE, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
 
-pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC}
+pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, validate_metadata, metadata_into_version}
     from miden::protocol_utils::note
 
 # ERRORS

@@ -27,10 +27,9 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
-    AssetCallbackFlag,
     StorageSlot,
 };
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
@@ -39,21 +38,22 @@ use miden_protocol::block::{
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
-    BlockProof,
     BlockSignatures,
     Blockchain,
     FeeParameters,
     OutputNoteBatch,
     ProvenBlock,
-    ValidatorKeys,
+    ValidatorConfig,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
+use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
+use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::SponsorshipPolicy;
@@ -249,7 +249,6 @@ impl MockChainBuilder {
         let note_tree = BlockNoteTree::from_note_batches(&output_note_batches)
             .context("failed to create block note tree")?;
 
-        let version = 0;
         let prev_block_commitment = Word::empty();
         let block_num = BlockNumber::from(0u32);
         let chain_commitment = Blockchain::new().commitment();
@@ -257,17 +256,15 @@ impl MockChainBuilder {
         let nullifier_root = NullifierTree::<Smt>::default().root();
         let note_root = note_tree.root();
         let tx_commitment = transactions.commitment();
-        let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
-        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
+        let fee_parameters = FeeParameters::new(self.verification_base_fee);
+        let protocol_config = ProtocolConfig::current(AssetId::new_fungible(self.fee_faucet_id))
+            .context("failed to build the genesis protocol config")?;
         let validator_secret_keys: Vec<SigningKey> =
             (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect();
-        let validator_keys =
-            ValidatorKeys::new(validator_secret_keys.iter().map(|sk| sk.public_key()).collect())
-                .expect("randomly generated genesis validator keys should be distinct");
+        let validator_config = ValidatorConfig::from_signers(&validator_secret_keys);
 
         let header = BlockHeader::new(
-            version,
             prev_block_commitment,
             block_num,
             chain_commitment,
@@ -275,9 +272,10 @@ impl MockChainBuilder {
             nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            validator_keys.clone(),
+            validator_config.clone(),
             fee_parameters,
+            protocol_config.to_commitment(),
+            None,
             timestamp,
         );
 
@@ -291,8 +289,8 @@ impl MockChainBuilder {
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
         let signatures = BlockSignatures::new(
-            validator_keys
-                .as_keys()
+            validator_config
+                .keys()
                 .iter()
                 .map(|key| {
                     let signer = validator_secret_keys
@@ -304,7 +302,7 @@ impl MockChainBuilder {
                 .collect(),
         )
         .expect("signature count same as validator key count");
-        let block_proof = BlockProof::new_dummy();
+        let block_proof = ExecutionProof::new_dummy();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
         MockChain::from_genesis_block(
@@ -312,6 +310,7 @@ impl MockChainBuilder {
             account_tree,
             self.account_authenticators,
             validator_secret_keys,
+            protocol_config,
             full_notes,
         )
     }
@@ -400,9 +399,6 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
-            .with_asset_callbacks(AssetCallbackFlag::from(
-                token_policy_manager.has_transfer_policy(),
-            ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager)
@@ -458,7 +454,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -492,7 +487,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Enabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused());
 
@@ -643,7 +637,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);

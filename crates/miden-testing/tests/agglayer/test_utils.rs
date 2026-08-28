@@ -26,7 +26,7 @@ use miden_processor::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId};
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteScriptRoot};
@@ -36,6 +36,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 use miden_standards::account::access::PausableStorage;
+use miden_standards::account::faucets::TokenName;
 use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder};
 use miden_tx::NetworkNotePricer;
@@ -98,7 +99,8 @@ pub fn fee_faucet_id() -> AccountId {
 
 pub fn network_note_pricer(verification_base_fee: u32) -> NetworkNotePricer {
     NetworkNotePricer::builder()
-        .fee_parameters(FeeParameters::new(fee_faucet_id(), verification_base_fee))
+        .fee_parameters(FeeParameters::new(verification_base_fee))
+        .fee_asset_id(AssetId::new_fungible(fee_faucet_id()))
         .build()
 }
 
@@ -150,8 +152,13 @@ pub fn create_existing_priced_bridge(
     ger_remover: AccountId,
     verification_base_fee: u32,
 ) -> anyhow::Result<Account> {
-    let roles =
-        BridgeRoles::new([faucet_manager].into(), [ger_injector].into(), [ger_remover].into())?;
+    let roles = BridgeRoles::new(
+        [faucet_manager].into(),
+        [ger_injector].into(),
+        [ger_remover].into(),
+        [bridge_admin].into(),
+        [bridge_admin].into(),
+    )?;
     let pricer = network_note_pricer(verification_base_fee);
     let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
     Ok(AggLayerBridge::account_builder(
@@ -159,7 +166,7 @@ pub fn create_existing_priced_bridge(
         bridge_admin,
         roles,
         MIDEN_NETWORK_ID,
-        pricer.fee_parameters().fee_faucet_id(),
+        pricer.fee_asset_id().faucet_id(),
         fee_policy,
     )
     .build_existing()?)
@@ -167,6 +174,7 @@ pub fn create_existing_priced_bridge(
 
 pub fn priced_faucet_builder(
     seed: Word,
+    token_name: &str,
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
@@ -179,13 +187,15 @@ pub fn priced_faucet_builder(
     let faucet_admin = bridge_admin_account_id();
     Ok(AggLayerFaucet::account_builder(
         seed,
-        token_symbol,
+        TokenName::new(token_name)?,
+        TokenSymbol::new(token_symbol)?,
         decimals,
-        max_supply,
-        initial_supply,
+        AssetAmount::try_from(max_supply)?,
+        AssetAmount::try_from(initial_supply)?,
+        faucet_admin,
         faucet_admin,
         bridge_account_id,
-        pricer.fee_parameters().fee_faucet_id(),
+        pricer.fee_asset_id().faucet_id(),
         fee_policy,
     ))
 }
@@ -234,6 +244,7 @@ pub struct BridgeSetup {
     pub faucet_manager: Account,
     pub ger_injector: Account,
     pub ger_remover: Account,
+    pub pauser: Account,
 }
 
 pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
@@ -246,13 +257,19 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
+    let pauser = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
+    let bridge_admin = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin_account_id(),
+        bridge_admin,
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin,
+        pauser.id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge.clone())?;
@@ -262,5 +279,6 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
         faucet_manager,
         ger_injector,
         ger_remover,
+        pauser,
     })
 }

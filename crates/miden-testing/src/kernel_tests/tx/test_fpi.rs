@@ -40,7 +40,7 @@ use miden_protocol::transaction::memory::{
     ACCOUNT_DATA_LENGTH,
     ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET,
     ACCT_CODE_COMMITMENT_OFFSET,
-    ACCT_ID_AND_NONCE_OFFSET,
+    ACCT_METADATA_OFFSET,
     ACCT_NUM_PROCEDURES_OFFSET,
     ACCT_NUM_STORAGE_SLOTS_OFFSET,
     ACCT_PROCEDURES_SECTION_OFFSET,
@@ -2025,11 +2025,11 @@ fn foreign_account_data_memory_assertions(
     // foreign procedure root should be zero word after FPI has ended
     assert_eq!(exec_output.get_kernel_mem_word(UPCOMING_FOREIGN_PROCEDURE_PTR), EMPTY_WORD);
 
-    // Check that account id and nonce match.
+    // Check that the account metadata word matches.
     let header = AccountHeader::from(foreign_account);
     assert_eq!(
         exec_output
-            .get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET)
+            .get_kernel_mem_word(foreign_account_data_ptr + ACCT_METADATA_OFFSET)
             .as_slice(),
         &header.to_elements()[0..4]
     );

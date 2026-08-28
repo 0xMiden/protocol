@@ -36,10 +36,10 @@ pub struct AccountStoragePatch {
 
 impl AccountStoragePatch {
     /// Domain separator for value storage slots in delta and patch commitments.
-    const DOMAIN_VALUE: Felt = Felt::new_unchecked(5);
+    const DOMAIN_VALUE: Felt = Felt::new_unchecked(2);
 
     /// Domain separator for map storage slots in delta and patch commitments.
-    const DOMAIN_MAP: Felt = Felt::new_unchecked(6);
+    const DOMAIN_MAP: Felt = Felt::new_unchecked(3);
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------

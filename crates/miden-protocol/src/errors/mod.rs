@@ -22,6 +22,7 @@ use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueN
 use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
+    AccountHeader,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
@@ -33,7 +34,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
-use crate::block::BlockNumber;
+use crate::block::{BlockNumber, ValidatorConfig};
 use crate::note::{
     NoteAssets,
     NoteAttachment,
@@ -43,6 +44,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
+use crate::protocol_config::KernelConfig;
 use crate::script::MastForestScriptError;
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
@@ -135,14 +137,22 @@ pub enum AccountError {
     AccountComponentMastForestMergeError(#[source] MastForestError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
+    #[error(
+        "storage of account {0} contains an asset callback slot but its asset callback flag is disabled, so the callback would never be invoked"
+    )]
+    AssetCallbackSlotWithDisabledFlag(AccountId),
     #[error("failed to update asset vault")]
     AssetVaultUpdateError(#[source] AssetVaultError),
     #[error("account build error: {0}")]
     BuildError(String, #[source] Option<Box<AccountError>>),
     #[error("failed to parse account ID from final account header")]
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
-    #[error("account header data has length {actual} but it must be of length {expected}")]
-    HeaderDataIncorrectLength { actual: usize, expected: usize },
+    #[error("account header data has length {actual} but it must be of length {expected}",
+        expected = AccountHeader::NUM_ELEMENTS
+    )]
+    UnexpectedHeaderLength { actual: usize },
+    #[error("account has an unsupported version {0}")]
+    UnsupportedAccountVersion(u64),
     #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(
@@ -179,6 +189,8 @@ pub enum AccountError {
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]
     UnsortedStorageSlots,
+    #[error("reserved element of a storage slot must be zero but was {0}")]
+    StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
@@ -601,6 +613,8 @@ pub enum AssetError {
     },
     #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
     ReservedAssetMetadata(u8),
+    #[error("unknown asset ID version: {0}")]
+    UnknownAssetIdVersion(u8),
 }
 
 // TOKEN SYMBOL ERROR
@@ -881,6 +895,10 @@ pub enum TransactionInputError {
         "partial blockchain has commitment {actual} which does not match the block header's chain commitment {expected}"
     )]
     InconsistentChainCommitment { expected: Word, actual: Word },
+    #[error(
+        "protocol config has commitment {actual} which does not match the block header's protocol config commitment {expected}"
+    )]
+    InconsistentProtocolConfig { expected: Word, actual: Word },
     #[error("block in which input note with id {0} was created is not in partial blockchain")]
     InputNoteBlockNotInPartialBlockchain(NoteId),
     #[error("input note with id {0} was not created in block {1}")]
@@ -978,12 +996,16 @@ pub enum OutputNoteError {
 
 #[derive(Debug, Error)]
 pub enum TransactionSummaryError {
-    #[error("expiration delta element {0} does not fit into a u16")]
-    ExpirationDeltaTooLarge(Felt),
     #[error(
         "transaction summary preimage contains {actual} elements but expected {expected} elements"
     )]
     InvalidPreimageLength { actual: usize, expected: usize },
+    #[error("transaction summary metadata element {0} sets bits above the packed fields")]
+    MetadataOutOfRange(Felt),
+    #[error(
+        "transaction summary layout version is {actual} but only version {expected} is supported"
+    )]
+    UnsupportedVersion { actual: Felt, expected: u8 },
 }
 
 // TRANSACTION EVENT PARSING ERROR
@@ -1207,6 +1229,17 @@ pub enum BatchOutputError {
     ExpirationBlockNumberTooLarge(Felt),
 }
 
+// BLOCK OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockOutputError {
+    #[error(
+        "block kernel output stack has a non-zero element at index {index}, but everything past the nullifier commitment must be zero padding"
+    )]
+    PaddingNotZero { index: usize },
+}
+
 // PROPOSED BLOCK ERROR
 // ================================================================================================
 
@@ -1371,6 +1404,46 @@ pub enum ProposedBlockError {
 
     #[error("nullifier witness has a different root than the current nullifier tree root")]
     NullifierWitnessRootMismatch(NullifierTreeError),
+}
+
+// PROTOCOL CONFIG ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid protocol configuration.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ProtocolConfigError {
+    #[error("fee asset composition {0:?} is not supported, it must be fungible")]
+    FeeAssetMustBeFungible(AssetComposition),
+    #[error("minimum proof security must be at least one bit")]
+    MinimumSecurityBitsMustBeNonZero,
+    #[error("next protocol config cannot become effective at the genesis block")]
+    NextConfigEffectiveAtGenesis,
+    #[error(
+        "kernel config contains {count} procedures but must contain at most {max}",
+        max = KernelConfig::MAX_NUM_KERNEL_PROCEDURES,
+    )]
+    TooManyKernelProcedures { count: usize },
+}
+
+// VALIDATOR CONFIG ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid [`ValidatorConfig`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ValidatorConfigError {
+    #[error("validator set must contain at least one key")]
+    EmptySet,
+    #[error(
+        "validator set contains {count} keys but must contain at most {max}",
+        max = ValidatorConfig::MAX_VALIDATORS,
+    )]
+    TooManyKeys { count: usize },
+    #[error("validator set contains duplicate public keys")]
+    DuplicateKey,
+    #[error("quorum is {quorum} but must equal the validator count of {count}")]
+    QuorumMustEqualValidatorCount { quorum: u16, count: usize },
 }
 
 // NULLIFIER TREE ERROR

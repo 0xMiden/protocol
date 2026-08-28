@@ -577,7 +577,6 @@ dependencies = [
  "miden-testing",
  "miden-tx",
  "rand 0.10.2",
- "rstest",
  "serde",
  "serde_json",
  "tokio",
@@ -2190,7 +2189,9 @@ dependencies = [
 name = "miden-block-prover"
 version = "0.17.0"
 dependencies = [
+ "miden-processor",
  "miden-protocol",
+ "miden-prover",
  "thiserror",
 ]
 

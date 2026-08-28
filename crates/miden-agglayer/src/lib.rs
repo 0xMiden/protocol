@@ -2,12 +2,10 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
-
-use miden_core::{Felt, Word};
-use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AssetCallbackFlag};
+use miden_core::Word;
+use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::NoteScript;
 use miden_protocol::vm::Package;
 use miden_standards::account::access::{
@@ -19,6 +17,7 @@ use miden_standards::account::access::{
     RoleConfig,
 };
 use miden_standards::account::auth::NetworkAccount;
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::{
     BasicConstantFeePolicy,
     ConstantFeeManager,
@@ -67,7 +66,7 @@ pub use deregister_note::DeregisterAggFaucetNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{GlobalIndex, GlobalIndexError, MetadataHash};
-pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
+pub use faucet::AggLayerFaucet;
 pub use remove_ger_note::RemoveGerNote;
 pub use update_ger_note::UpdateGerNote;
 pub use utils::Keccak256Output;
@@ -85,13 +84,6 @@ static BRIDGE_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-bridge.masp"));
     Package::read_from_bytes_trusted(bytes)
         .expect("shipped bridge component package is well-formed")
-});
-
-static FAUCET_COMPONENT_PACKAGE: LazyLock<Package> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/miden-agglayer-faucet.masp"));
-    Package::read_from_bytes_trusted(bytes)
-        .expect("shipped faucet component package is well-formed")
 });
 
 /// Returns the AggLayer package containing all agglayer modules, including the note scripts.
@@ -122,41 +114,8 @@ fn agglayer_bridge_component_package() -> Package {
     BRIDGE_COMPONENT_PACKAGE.clone()
 }
 
-/// Returns the Faucet component package.
-fn agglayer_faucet_component_package() -> Package {
-    FAUCET_COMPONENT_PACKAGE.clone()
-}
-
 // AGGLAYER ACCOUNT CREATION HELPERS
 // ================================================================================================
-
-/// Creates an agglayer faucet account component with the specified configuration.
-///
-/// The faucet holds only token metadata; conversion metadata (origin address, origin network,
-/// scale, metadata hash) lives on the bridge and is populated at registration time.
-///
-/// # Parameters
-/// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")
-/// - `decimals`: Number of decimal places for the token
-/// - `max_supply`: Maximum supply of the token
-/// - `initial_supply`: Initial outstanding token supply (0 for new faucets)
-///
-/// # Returns
-/// Returns an [`AccountComponent`] configured for agglayer faucet operations.
-///
-/// # Panics
-/// Panics if the token symbol is invalid or metadata validation fails.
-fn create_agglayer_faucet_component(
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    initial_supply: Felt,
-) -> AccountComponent {
-    let symbol = TokenSymbol::new(token_symbol).expect("token symbol should be valid");
-    AggLayerFaucet::new(symbol, decimals, max_supply, initial_supply)
-        .expect("agglayer faucet metadata should be valid")
-        .into()
-}
 
 impl AggLayerBridge {
     /// Returns an [`AccountBuilder`] for a bridge account with the standard configuration.
@@ -202,21 +161,32 @@ impl AggLayerFaucet {
     /// Returns an [`AccountBuilder`] for a faucet account with the specified deployment
     /// configuration.
     ///
-    /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role;
-    /// `bridge_account_id` is its [`Ownable2Step`] owner. `fee_policy` must contain entries for
-    /// [`AggLayerFaucet::allowed_notes`], denominated in the asset issued by `fee_faucet_id`.
+    /// The account is a standard [`FungibleFaucet`]: `mint_and_send` and `receive_and_burn` drive
+    /// bridge-in and bridge-out, and the standard metadata getters expose the token name, symbol
+    /// and decimals. Conversion metadata (origin address, origin network, scale, metadata hash)
+    /// lives on the bridge and is written there at registration time.
+    ///
+    /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
+    /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]
+    /// owner, which is what the `owner_only` mint and burn policies gate on. `fee_policy` must
+    /// contain entries for [`AggLayerFaucet::allowed_notes`], denominated in the asset issued by
+    /// `fee_faucet_id`.
     ///
     /// # Panics
     ///
-    /// Panics if the token metadata is invalid.
+    /// Panics if:
+    /// - `decimals` exceeds [`FungibleFaucet::MAX_DECIMALS`];
+    /// - `initial_supply` exceeds `max_supply`.
     #[allow(clippy::too_many_arguments)]
     pub fn account_builder(
         seed: Word,
-        token_symbol: &str,
+        token_name: TokenName,
+        token_symbol: TokenSymbol,
         decimals: u8,
-        max_supply: Felt,
-        initial_supply: Felt,
+        max_supply: AssetAmount,
+        initial_supply: AssetAmount,
         faucet_admin: AccountId,
+        fee_manager: AccountId,
         bridge_account_id: AccountId,
         fee_faucet_id: AccountId,
         fee_policy: BasicConstantFeePolicy,
@@ -225,8 +195,14 @@ impl AggLayerFaucet {
             .fee_faucet_id(fee_faucet_id)
             .active_fee_policy(fee_policy.into())
             .build();
-        let agglayer_component =
-            create_agglayer_faucet_component(token_symbol, decimals, max_supply, initial_supply);
+        let faucet = FungibleFaucet::builder()
+            .name(token_name)
+            .symbol(token_symbol)
+            .decimals(decimals)
+            .max_supply(max_supply)
+            .token_supply(initial_supply)
+            .build()
+            .expect("agglayer faucet decimals and supplies should be within their valid ranges");
 
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
@@ -235,18 +211,20 @@ impl AggLayerFaucet {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
-        let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
+        let rbac = RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(faucet_admin))
+            .role(RoleConfig::new(AggLayerFaucet::fee_manager_role()).with_member(fee_manager))
+            .build()
+            .expect("the faucet seeds non-empty roles administered by ADMIN");
 
         NetworkAccount::builder(seed.into(), AggLayerFaucet::allowed_notes(), fee_policy_manager)
             .expect("faucet note allowlist is non-empty")
-            .with_asset_callbacks(asset_callbacks)
-            .with_component(agglayer_component)
+            .with_component(faucet)
             .with_component(Ownable2Step::new(bridge_account_id))
-            .with_component(
-                RoleBasedAccessControl::with_admins([faucet_admin])
-                    .expect("the faucet seeds a non-empty ADMIN role"),
-            )
-            .with_component(Authority::RbacControlled { procedure_roles: BTreeMap::new() })
+            .with_component(rbac)
+            .with_component(Authority::RbacControlled {
+                procedure_roles: AggLayerFaucet::procedure_roles(),
+            })
             .with_components(token_policy_manager)
             .with_component(ConstantFeeManager::for_basic_constant_fee_policy())
     }
@@ -257,6 +235,9 @@ impl AggLayerFaucet {
 
 #[cfg(test)]
 mod tests {
+    use miden_core::Felt;
+    use miden_protocol::account::AssetCallbackFlag;
+    use miden_protocol::asset::AssetCallbacks;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use miden_standards::tx_script::ExpirationTransactionScript;
 
@@ -266,19 +247,49 @@ mod tests {
         create_existing_bridge_account_with_roles,
     };
 
+    /// The agglayer faucet registers send and receive transfer policies, so its policy manager
+    /// installs the protocol-reserved asset callback slots and its account ID must carry an enabled
+    /// asset callback flag. Without the flag the kernel would never invoke those policies.
+    #[test]
+    fn agglayer_faucet_has_asset_callbacks_enabled() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+        let faucet = create_existing_agglayer_faucet(
+            Word::default(),
+            "AggLayer Token",
+            "AGG",
+            6,
+            Felt::from(1000u32),
+            Felt::ZERO,
+            id,
+            id,
+        );
+
+        for slot_name in AssetCallbacks::slot_names() {
+            assert!(
+                faucet.storage().get(slot_name).is_some(),
+                "faucet should install the {slot_name} callback slot"
+            );
+        }
+        assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
+    }
+
     /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
     /// which the network transaction builder attaches to every network transaction.
     #[test]
     fn agglayer_accounts_allowlist_expiration_tx_script() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-        let bridge = create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, 77);
+        let bridge =
+            create_existing_bridge_account_with_roles(Word::default(), id, id, id, id, id, id, 77);
         let faucet = create_existing_agglayer_faucet(
             Word::default(),
+            "AggLayer Token",
             "AGG",
             6,
             Felt::from(1000u32),
             Felt::ZERO,
+            id,
             id,
         );
 

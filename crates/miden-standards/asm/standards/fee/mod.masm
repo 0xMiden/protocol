@@ -3,6 +3,7 @@ use miden::core::math::u64
 use miden::core::math::u128
 use miden::core::word
 use miden::protocol::active_account
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
@@ -138,7 +139,7 @@ end
 
 #! Returns conversion info paying the fee in the native fee asset at rate 1/1.
 #!
-#! The faucet ID is read from the transaction's reference block.
+#! The fee asset is read from the transaction's reference block.
 #!
 #! Inputs:  []
 #! Outputs: [CONVERSION_INFO]
@@ -151,7 +152,10 @@ pub proc native_conversion_info() -> ConversionInfo
     push.1.1
     # => [rate_num, rate_den]
 
-    exec.tx::get_fee_faucet_id
+    exec.tx::get_fee_asset_id
+    # => [FEE_ASSET_ID, rate_num, rate_den]
+
+    exec.asset::id_into_faucet_id
     # => [CONVERSION_INFO]
 end
 
@@ -280,7 +284,7 @@ pub proc create_and_fund_fee_note(asset: Asset)
     exec.active_account::get_nonce
     # => [initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
 
-    exec.tx::get_block_number
+    exec.tx::get_reference_block_number
     # => [ref_block_num, initial_nonce, account_id_suffix, account_id_prefix, ASSET_ID, ASSET_VALUE]
 
     # domain-separate the serial number by hashing the tuple with the FEE domain tag
@@ -367,7 +371,7 @@ end
 pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> felt
     # sponsor any network output notes before the fee is computed, so the sponsorship notes
     # this creates are counted by both the cycle estimate and compute_fee.
-    exec.tx::get_fee_faucet_id exec.fungible_asset::create_id
+    exec.tx::get_fee_asset_id
     # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO]
 
     exec.fees::create_network_note_sponsorships

@@ -26,6 +26,7 @@ use miden_standards::account::auth::{
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     GuardianConfig,
+    MultisigAuthArgs,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -42,7 +43,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
-use super::multisig::build_update_signers_config_vector;
+use super::multisig::{MultisigAuthArgsExt, build_update_signers_config_vector};
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -222,7 +223,10 @@ async fn test_guarded_multisig_signature_required(
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -343,7 +347,10 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_script)
-        .auth_args(update_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            update_salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -392,7 +399,9 @@ async fn test_guarded_multisig_update_guardian_public_key(
     // this same transaction.
     let next_salt = Word::from([Felt::new_unchecked(992); 4]);
     let mock_tx_builder_next =
-        mock_chain.build_transaction(updated_multisig_account.id()).auth_args(next_salt);
+        mock_chain.build_transaction(updated_multisig_account.id()).multisig_auth_args(
+            MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), next_salt),
+        );
 
     let tx_summary_next = mock_tx_builder_next
         .clone()
@@ -518,7 +527,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .build_transaction(multisig_account.id())
         .authenticated_input_note(receive_asset_note.id())
         .tx_script(update_guardian_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -616,7 +628,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .tx_script(update_guardian_with_output_script)
         .add_note_script(note_script)
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -686,7 +701,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_with_receive_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -821,7 +839,10 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .build_transaction(multisig_account.id())
         .authenticated_input_notes(input_ids)
         .tx_script(update_guardian_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
     if let Some(out) = output_note {
         mock_tx_builder = mock_tx_builder.expected_output_note(RawOutputNote::Full(out));
     }
@@ -921,7 +942,10 @@ async fn test_guarded_multisig_rotation_to_approver_public_key_is_rejected() -> 
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -1015,7 +1039,10 @@ async fn test_guarded_multisig_signer_update_to_guardian_public_key_is_rejected(
         .tx_script(update_signers_script)
         .tx_script_args(multisig_config_hash)
         .extend_advice_inputs(advice_inputs)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
