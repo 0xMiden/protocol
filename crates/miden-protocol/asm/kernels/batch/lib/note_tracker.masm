@@ -13,7 +13,6 @@ use {
     NOTE_ENTRY_NUM_WORDS,
     NOTE_ENTRY_VALUE_OFFSET,
     OUTPUT_NOTES_PTR,
-    TX_NOTES_SCRATCH_PTR,
     WORD_NUM_ELEMENTS,
 } from miden::batch_kernel::memory
 
@@ -242,29 +241,29 @@ proc bind_one_output_note
     end
 end
 
-#! Binds all of the transaction's output notes staged in the scratch region (see
+#! Binds all of the transaction's output notes staged in the scratch space at `scratch_ptr` (see
 #! [`bind_scratch_input_notes`] for the scratch layout).
 #!
-#! Inputs:  [num_output_notes]
+#! Inputs:  [num_output_notes, scratch_ptr]
 #! Outputs: []
 proc bind_scratch_output_notes
-    # => [num_output_notes]
+    # => [num_output_notes, scratch_ptr]
 
     # Iterate from num_output_notes - 1 down to 0.
     dup neq.0
     while.true
         sub.1
-        # => [scratch_idx]
+        # => [scratch_idx, scratch_ptr]
 
-        dup mul.NOTE_ENTRY_FELT_LEN add.TX_NOTES_SCRATCH_PTR
-        # => [verified_output_note_ptr, scratch_idx]
+        dup mul.NOTE_ENTRY_FELT_LEN dup.2 add
+        # => [verified_output_note_ptr, scratch_idx, scratch_ptr]
 
         exec.bind_one_output_note
 
         dup neq.0
-        # => [should_loop, scratch_idx]
+        # => [should_loop, scratch_idx, scratch_ptr]
     end
-    drop
+    drop drop
 end
 
 #! Verifies transaction `tx_index`'s `OUTPUT_NOTES_COMMITMENT_idx` against its piped
@@ -277,6 +276,7 @@ end
 #!     OUTPUT_NOTES_COMMITMENT_idx |-> [[DETAILS_COMMITMENT_0, METADATA_COMMITMENT_0], ...]
 #! Outputs:
 #!   Operand stack: []
+@locals(8192) # MAX_NOTES_PER_BATCH * NOTE_ENTRY_FELT_LEN
 proc process_tx_output_notes
     dup exec.memory::get_tx_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
@@ -287,7 +287,7 @@ proc process_tx_output_notes
     else
         # Pipe this transaction's output-note tuples into the scratch region, asserting their
         # sequential hash equals OUTPUT_NOTES_COMMITMENT_idx.
-        push.TX_NOTES_SCRATCH_PTR movdn.4
+        locaddr.0 movdn.4
         # => [OUTPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
 
         adv.push_mapvaln
@@ -304,9 +304,12 @@ proc process_tx_output_notes
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
         # num_notes = (end_ptr - scratch base) / felts-per-entry.
-        sub.TX_NOTES_SCRATCH_PTR div.NOTE_ENTRY_FELT_LEN
+        locaddr.0 sub div.NOTE_ENTRY_FELT_LEN
         # => [num_output_notes, tx_index]
         swap drop
+        # => [num_output_notes]
+        locaddr.0 swap
+        # => [num_output_notes, scratch_ptr]
         exec.bind_scratch_output_notes
     end
 end
@@ -382,32 +385,32 @@ proc bind_one_input_note
     exec.mark_input_note_consumed
 end
 
-#! Binds all of the transaction's input notes staged in the scratch region.
+#! Binds all of the transaction's input notes staged in the scratch space at `scratch_ptr`.
 #!
-#! The scratch region ([`memory::TX_NOTES_SCRATCH_PTR`]) holds the current transaction's note tuples
-#! piped from the advice provider; it is overwritten for each transaction. Entry `scratch_idx` is
-#! the 8 felts at `TX_NOTES_SCRATCH_PTR + scratch_idx * NOTE_ENTRY_FELT_LEN`.
+#! The scratch space is the caller's procedure-local memory; it holds the current transaction's
+#! note tuples piped from the advice provider. Entry `scratch_idx` is the 8 felts at
+#! `scratch_ptr + scratch_idx * NOTE_ENTRY_FELT_LEN`.
 #!
-#! Inputs:  [num_input_notes]
+#! Inputs:  [num_input_notes, scratch_ptr]
 #! Outputs: []
 proc bind_scratch_input_notes
-    # => [num_input_notes]
+    # => [num_input_notes, scratch_ptr]
 
     # Iterate from num_input_notes - 1 down to 0.
     dup neq.0
     while.true
         sub.1
-        # => [scratch_idx]
+        # => [scratch_idx, scratch_ptr]
 
-        dup mul.NOTE_ENTRY_FELT_LEN add.TX_NOTES_SCRATCH_PTR
-        # => [verified_input_note_ptr, scratch_idx]
+        dup mul.NOTE_ENTRY_FELT_LEN dup.2 add
+        # => [verified_input_note_ptr, scratch_idx, scratch_ptr]
 
         exec.bind_one_input_note
 
         dup neq.0
-        # => [should_loop, scratch_idx]
+        # => [should_loop, scratch_idx, scratch_ptr]
     end
-    drop
+    drop drop
 end
 
 #! Verifies transaction `tx_index`'s `INPUT_NOTES_COMMITMENT_idx` against its piped
@@ -420,6 +423,7 @@ end
 #!     INPUT_NOTES_COMMITMENT_idx |-> [[NULLIFIER_0, NOTE_ID_OR_EMPTY_0], ...]
 #! Outputs:
 #!   Operand stack: []
+@locals(8192) # MAX_NOTES_PER_BATCH * NOTE_ENTRY_FELT_LEN
 proc process_tx_input_notes
     dup exec.memory::get_tx_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
@@ -431,7 +435,7 @@ proc process_tx_input_notes
         # Pipe this transaction's input-note tuples into the scratch region, asserting their
         # sequential hash equals INPUT_NOTES_COMMITMENT_idx (so the tuples are exactly the committed
         # ones).
-        push.TX_NOTES_SCRATCH_PTR movdn.4
+        locaddr.0 movdn.4
         # => [INPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
 
         adv.push_mapvaln
@@ -448,9 +452,12 @@ proc process_tx_input_notes
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
         # num_notes = (end_ptr - scratch base) / felts-per-entry.
-        sub.TX_NOTES_SCRATCH_PTR div.NOTE_ENTRY_FELT_LEN
+        locaddr.0 sub div.NOTE_ENTRY_FELT_LEN
         # => [num_input_notes, tx_index]
         swap drop
+        # => [num_input_notes]
+        locaddr.0 swap
+        # => [num_input_notes, scratch_ptr]
         exec.bind_scratch_input_notes
     end
 end
