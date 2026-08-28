@@ -2,7 +2,6 @@
 #
 # See the `AuthNetworkAccount` Rust type's documentation for more details.
 
-use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::word
@@ -34,44 +33,45 @@ const NETWORK_POST_FEE_CYCLES = 1024
 
 const ERR_NETWORK_ACCOUNT_FEE_ASSET_NOT_NATIVE = "sponsoring at most the collected fees requires the account's fee asset to be the native fee asset"
 
-const ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION = "network account transactions must consume an input note, create an output note, or change account state before fee payment"
+const ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT = "network account transactions must have an effect before fee payment by consuming an input note, creating an output note, or changing account state"
 
 const ERR_NETWORK_ACCOUNT_SPONSORED_FEES_EXCEED_COLLECTED = "the fees moved into sponsorship notes exceed the fees collected in this transaction"
 
 # HELPERS
 # =================================================================================================
 
-#! Asserts that the transaction performed an action before fee collection and payment.
+#! Asserts that the transaction had an effect before fee collection and payment.
 #!
 #! Consuming an input note, creating an output note, or changing the account state counts as an
-#! action. Transaction metadata changes do not affect the account commitment and do not count.
-#! Output notes are checked explicitly because the auth procedure may sponsor them and change the
-#! account state after this pre-fee check.
+#! effect. Transaction metadata changes do not affect the account commitment and do not count.
+#!
+#! This intentionally differs from the transaction epilogue's post-authentication non-empty check.
+#! The input notes commitment is checked in the same way, but the account's current commitment is
+#! compared with its initial commitment because its delta cannot be computed before the auth
+#! procedure increments the nonce. Output notes also count here because this auth procedure may
+#! sponsor them and change the account state after this pre-fee check.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Invocation: exec
-proc assert_transaction_has_action
-    exec.tx::get_num_input_notes neq.0
+proc assert_tx_has_effect
+    exec.tx::get_input_notes_commitment
+    # => [INPUT_NOTES_COMMITMENT, pad(16)]
+
+    exec.word::eqz not
     # => [has_input_notes, pad(16)]
 
     exec.tx::get_num_output_notes neq.0
     # => [has_output_notes, has_input_notes, pad(16)]
 
     or
-    # => [has_note_io, pad(16)]
+    # => [has_note_effect, pad(16)]
 
-    exec.native_account::get_initial_commitment
-    # => [INITIAL_COMMITMENT, has_note_io, pad(16)]
+    exec.native_account::has_state_changed or
+    # => [has_effect, pad(16)]
 
-    exec.active_account::compute_commitment
-    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, has_note_io, pad(16)]
-
-    exec.word::eq not or
-    # => [has_action, pad(16)]
-
-    assert.err=ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION
+    assert.err=ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT
     # => [pad(16)]
 end
 
@@ -127,7 +127,7 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     # ---- Reject transactions whose only account effect would be fee payment ----
-    exec.assert_transaction_has_action
+    exec.assert_tx_has_effect
     # => [pad(16)]
 
     # ---- Read the sponsorship policy ----
@@ -180,16 +180,10 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     # ---- Increment nonce iff the account state changed or the account is new ----
-    exec.native_account::get_initial_commitment
-    # => [INITIAL_COMMITMENT, pad(16)]
-
-    exec.active_account::compute_commitment
-    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
-
-    exec.word::eq not
+    exec.native_account::has_state_changed
     # => [has_account_state_changed, pad(16)]
 
-    exec.active_account::get_nonce eq.0
+    exec.native_account::get_initial_commitment exec.word::eqz
     # => [is_new_account, has_account_state_changed, pad(16)]
 
     or

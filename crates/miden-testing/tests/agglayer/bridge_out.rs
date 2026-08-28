@@ -141,14 +141,10 @@ async fn bridge_out_consecutive(
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
-    let metadata_hash = MetadataHash::from_token_info(
-        &vectors.token_name,
-        &vectors.token_symbol,
-        vectors.token_decimals,
-    );
     let faucet_seed = builder.rng_mut().draw_word();
     let faucet = priced_faucet_builder(
         faucet_seed,
+        &vectors.token_name,
         &vectors.token_symbol,
         vectors.token_decimals,
         FungibleAsset::MAX_AMOUNT.into(),
@@ -157,6 +153,11 @@ async fn bridge_out_consecutive(
         verification_base_fee,
     )?
     .build_existing()?;
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by faucet manager)
@@ -465,19 +466,20 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
-    let metadata_hash = MetadataHash::from_token_info(
-        &vectors.token_name,
-        &vectors.token_symbol,
-        vectors.token_decimals,
-    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        &vectors.token_name,
         &vectors.token_symbol,
         vectors.token_decimals,
         Felt::from(FungibleAsset::MAX_AMOUNT),
         Felt::new_unchecked(amount),
         bridge_admin_account_id(),
         bridge_account.id(),
+    );
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
     );
     builder.add_account(faucet.clone())?;
 
@@ -602,6 +604,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     let vectors = &*SOLIDITY_MTF_VECTORS;
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        &vectors.token_name,
         &vectors.token_symbol,
         vectors.token_decimals,
         FungibleAsset::MAX_AMOUNT.into(),
@@ -708,19 +711,20 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     let origin_token_address =
         EthAddress::from_hex(&vectors.origin_token_address).expect("valid origin token address");
     let origin_network = 64u32;
-    let metadata_hash = MetadataHash::from_token_info(
-        &vectors.token_name,
-        &vectors.token_symbol,
-        vectors.token_decimals,
-    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        &vectors.token_name,
         &vectors.token_symbol,
         vectors.token_decimals,
         FungibleAsset::MAX_AMOUNT.into(),
         Felt::new_unchecked(100),
         bridge_admin_account_id(),
         bridge_account.id(),
+    );
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
     );
     builder.add_account(faucet.clone())?;
 
@@ -1121,7 +1125,12 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         .expect("valid eth address");
     let origin_network = 7u32; // any stable u32 — Miden's test network id
     let scale = 0u8;
-    let metadata_hash = MetadataHash::from_token_info("Native Token", "NATIVE", 8);
+    let native_metadata = FungibleFaucet::try_from(&native_faucet)?;
+    let metadata_hash = MetadataHash::from_token_info(
+        native_metadata.token_name().as_str(),
+        &native_metadata.symbol().to_string(),
+        native_metadata.decimals(),
+    );
 
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {

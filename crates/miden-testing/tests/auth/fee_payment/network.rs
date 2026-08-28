@@ -21,7 +21,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION;
+use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT;
 use miden_standards::note::{MintNote, MintNoteStorage, NetworkAccountConfigNote, TxFeeNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -263,7 +263,7 @@ async fn network_account_rejects_empty_fee_only_transaction() -> anyhow::Result<
 
     let (_, result) = execute_network_account_tx(VERIFICATION_BASE_FEE, [fee_asset], None).await?;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION);
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT);
 
     Ok(())
 }

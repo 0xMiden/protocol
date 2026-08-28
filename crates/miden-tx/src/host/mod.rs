@@ -103,8 +103,8 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Input notes consumed by the transaction.
     input_notes: InputNotes<InputNote>,
 
-    /// The commitment to the reference block of the transaction.
-    ref_block_commitment: Word,
+    /// The commitments of the blocks the transaction authenticates, keyed by block number.
+    block_commitments: BTreeMap<BlockNumber, Word>,
 
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
@@ -122,7 +122,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
-        ref_block_commitment: Word,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -147,7 +147,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
-            ref_block_commitment,
+            block_commitments,
             core_lib_handlers,
         }
     }
@@ -504,8 +504,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        let expected_block_commitment = self.ref_block_commitment;
-        if expected_block_commitment != block_commitment {
+        let expected_block_commitment = self
+            .block_commitments
+            .get(&block_number)
+            .ok_or(TransactionKernelError::TransactionSummaryUnknownBlockNumber(block_number))?;
+        if *expected_block_commitment != block_commitment {
             return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
                 format!(
                     "expected block commitment to be {expected_block_commitment} but was {block_commitment}"

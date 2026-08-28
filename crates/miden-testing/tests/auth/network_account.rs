@@ -23,7 +23,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY,
-    ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION,
+    ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
@@ -155,7 +155,7 @@ fn storage_update_tx_script(slot_name: &StorageSlotName) -> TransactionScript {
 /// account state before the auth procedure pays its fee. Otherwise, permissionless callers could
 /// repeatedly submit transactions that only withdraw the transaction fee from the account's vault.
 #[tokio::test]
-async fn test_auth_network_account_rejects_transaction_without_action() -> anyhow::Result<()> {
+async fn test_auth_network_account_rejects_transaction_without_effect() -> anyhow::Result<()> {
     let account = build_allowlist_account(vec![placeholder_script_root()])?;
 
     let mut builder = MockChain::builder();
@@ -164,14 +164,14 @@ async fn test_auth_network_account_rejects_transaction_without_action() -> anyho
 
     let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION);
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT);
 
     Ok(())
 }
 
 /// An allowlisted transaction script that only changes transaction metadata does not justify
 /// charging the network account. In particular, attaching the default expiration script must not
-/// let a zero-input transaction bypass the no-action check.
+/// let a zero-input transaction bypass the no-effect check.
 #[tokio::test]
 async fn test_auth_network_account_rejects_metadata_only_tx_script() -> anyhow::Result<()> {
     let tx_script = expiration_tx_script(10);
@@ -189,14 +189,14 @@ async fn test_auth_network_account_rejects_metadata_only_tx_script() -> anyhow::
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_ACTION);
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT);
 
     Ok(())
 }
 
 /// A root-allowlisted transaction script may execute without input notes or output notes when it
 /// changes the account state before authentication pays the fee. This preserves the script-only
-/// network-account use case while preventing fee payment itself from satisfying the action
+/// network-account use case while preventing fee payment itself from satisfying the effect
 /// requirement.
 #[tokio::test]
 async fn test_auth_network_account_accepts_state_changing_tx_script() -> anyhow::Result<()> {
