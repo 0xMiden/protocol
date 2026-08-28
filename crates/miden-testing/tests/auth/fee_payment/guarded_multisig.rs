@@ -717,11 +717,11 @@ async fn guarded_multisig_rotation_rejects_user_output_note_while_paying_the_fee
 /// path runs without a guardian signature, and a per-procedure threshold override lets it run below
 /// the account's default spending quorum. Before the paid amount was bounded, a single approver
 /// could rotate the guardian while supplying a conversion rate that moved the account's entire
-/// fee-asset balance into the TX_FEE note — theft or griefing authorized by one signer where a spend
-/// needs two. The bound in `pay_fee` now rejects any payment exceeding `MAX_FEE_PAYMENT_MARGIN`
-/// times the computed fee. Because `pay_fee` runs before the transaction summary is created, the
-/// inflated rate aborts the transaction before it reaches signature verification, so no summary is
-/// produced to sign.
+/// fee-asset balance into the TX_FEE note — theft or griefing authorized by one signer where a
+/// spend needs two. The bound in `pay_fee` now rejects any payment exceeding
+/// `MAX_FEE_PAYMENT_MARGIN` times the computed fee. Because `pay_fee` runs before the transaction
+/// summary is created, the inflated rate aborts the transaction before it reaches signature
+/// verification, so no summary is produced to sign.
 #[tokio::test]
 async fn guarded_multisig_rotation_cannot_drain_the_vault_via_the_fee_rate() -> anyhow::Result<()> {
     let update_guardian_root = AuthGuardedMultisig::code()
