@@ -7,25 +7,21 @@
 # | Address range     | Constant                | Contents                                                             |
 # +-------------------+-------------------------+----------------------------------------------------------------------+
 # | 0                 | NUM_TRANSACTIONS_PTR    | num_transactions (1 felt).                                           |
-# | 4..8              | BATCH_HASHER_RATE0_PTR  | RATE0 of the batch-level poseidon2 hasher state.                     |
-# | 8..12             | BATCH_HASHER_RATE1_PTR  | RATE1 of the batch-level poseidon2 hasher state.                     |
-# | 12..16            | BATCH_HASHER_CAP_PTR    | CAPACITY of the batch-level poseidon2 hasher state.                  |
-# | 18                | NUM_INPUT_NOTES_PTR     | number of entries in the nullifier-sorted input-note list.           |
-# | 19                | NUM_OUTPUT_NOTES_PTR    | number of entries in the note-id-sorted output-note list.            |
-# | 20..8212          | TX_TUPLES_PTR           | Layer 1 piped data: `[TX_ID, account_id_suffix, account_id_prefix,   |
+# | 1                 | NUM_INPUT_NOTES_PTR     | number of entries in the nullifier-sorted input-note list.           |
+# | 2                 | NUM_OUTPUT_NOTES_PTR    | number of entries in the note-id-sorted output-note list.            |
+# | 4..8196           | TX_TUPLES_PTR           | Layer 1 piped data: `[TX_ID, account_id_suffix, account_id_prefix,   |
 # |                   |                         | 0, 0]` per transaction (8 felts each, up to 1024 transactions).      |
-# | 8212..24596       | TX_HEADERS_PTR          | Layer 2 piped data: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,           |
+# | 8196..24580       | TX_HEADERS_PTR          | Layer 2 piped data: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,           |
 # |                   |                         | OUTPUT_NOTES_COMMITMENT]` (16 felts per transaction, up to 1024).    |
-# | 24596..32788      | TX_NOTES_SCRATCH_PTR    | per-transaction scratch space for Layer 3a / Layer 3b note data      |
-# |                   |                         | (overwritten each transaction).                                      |
-# | 32788..40980      | INPUT_NOTES_PTR         | nullifier-sorted input-note list: `[NULLIFIER, NOTE_ID_OR_EMPTY]`    |
+# | 24580..32772      | INPUT_NOTES_PTR         | nullifier-sorted input-note list: `[NULLIFIER, NOTE_ID_OR_EMPTY]`    |
 # |                   |                         | per note (8 felts each, up to 1024 notes).                           |
-# | 40980..45076      | INPUT_NOTE_FLAGS_PTR    | parallel input-note flags: `[erasure_state, is_consumed, 0, 0]` per  |
+# | 32772..36868      | INPUT_NOTE_FLAGS_PTR    | parallel input-note flags: `[erasure_state, is_consumed, 0, 0]` per  |
 # |                   |                         | note (4 felts each).                                                 |
-# | 45076..53268      | OUTPUT_NOTES_PTR        | note-id-sorted output-note list: `[NOTE_ID, 0, 0, 0, 0]` per note    |
+# | 36868..45060      | OUTPUT_NOTES_PTR        | note-id-sorted output-note list: `[NOTE_ID, 0, 0, 0, 0]` per note    |
 # |                   |                         | (8 felts each, up to 1024 notes).                                    |
-# | 53268..57364      | OUTPUT_NOTE_FLAGS_PTR   | parallel output-note flags: `[will_be_erased, is_created,            |
+# | 45060..49156      | OUTPUT_NOTE_FLAGS_PTR   | parallel output-note flags: `[will_be_erased, is_created,            |
 # |                   |                         | erased_by_input_note_idx, 0]` per note (4 felts each).               |
+#
 # +-------------------+-------------------------+----------------------------------------------------------------------+
 
 # GENERAL CONSTANTS
@@ -40,33 +36,21 @@ pub const WORD_NUM_ELEMENTS = 4
 # Single-felt slot holding `num_transactions` after Layer 1 verification.
 const NUM_TRANSACTIONS_PTR = 0
 
-# BATCH HASHER STATE
-# =================================================================================================
-
-# Word holding the RATE0 portion of the batch-level poseidon2 hasher state.
-const BATCH_HASHER_RATE0_PTR = 4
-
-# Word holding the RATE1 portion of the batch-level poseidon2 hasher state.
-const BATCH_HASHER_RATE1_PTR = 8
-
-# Word holding the CAPACITY portion of the batch-level poseidon2 hasher state.
-const BATCH_HASHER_CAP_PTR = 12
-
 # NOTE LIST BOOKKEEPING
 # =================================================================================================
 
 # Single-felt slot holding the number of entries in the nullifier-sorted input-note list.
-const NUM_INPUT_NOTES_PTR = 18
+const NUM_INPUT_NOTES_PTR = 1
 
 # Single-felt slot holding the number of entries in the note-id-sorted output-note list.
-const NUM_OUTPUT_NOTES_PTR = 19
+const NUM_OUTPUT_NOTES_PTR = 2
 
 # PIPED DATA REGIONS
 # =================================================================================================
 
 # Base of the Layer 1 piped data region. Per transaction, 8 felts:
 #   `[TX_ID, account_id_suffix, account_id_prefix, 0, 0]`.
-pub const TX_TUPLES_PTR = 20
+pub const TX_TUPLES_PTR = 4
 
 # Number of felts each transaction occupies in TX_TUPLES_PTR.
 const TX_TUPLE_FELT_LEN = 8
@@ -77,7 +61,7 @@ pub const TX_TUPLE_NUM_WORDS = 2
 # Base of the Layer 2 piped data region. Per transaction, 16 felts:
 #   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]`.
 # This must match the felt-sequence layout of `TransactionId::new`.
-const TX_HEADERS_PTR = 8212
+const TX_HEADERS_PTR = 8196
 
 # Number of felts each transaction occupies in TX_HEADERS_PTR.
 pub const TX_HEADER_FELT_LEN = 16
@@ -91,9 +75,6 @@ const TX_HEADER_INPUT_NOTES_OFFSET = 8
 # Felt offset within a transaction header where OUTPUT_NOTES_COMMITMENT starts.
 const TX_HEADER_OUTPUT_NOTES_OFFSET = 12
 
-# Per-transaction scratch space for Layer 3a / 3b note data, overwritten between iterations.
-pub const TX_NOTES_SCRATCH_PTR = 24596
-
 # SORTED NOTE LISTS
 # =================================================================================================
 
@@ -102,7 +83,7 @@ pub const TX_NOTES_SCRATCH_PTR = 24596
 # where the KEY word is the nullifier (the `sorted_array` lookup key) and the VALUE word is the
 # note id (for unauthenticated notes) or the empty word. The VALUE word doubles as the second half
 # of the `(nullifier, note_id_or_empty)` tuple hashed into INPUT_NOTES_COMMITMENT.
-pub const INPUT_NOTES_PTR = 32788
+pub const INPUT_NOTES_PTR = 24580
 
 # Number of felts each note occupies in INPUT_NOTES_PTR / OUTPUT_NOTES_PTR (KEY word + VALUE word).
 pub const NOTE_ENTRY_FELT_LEN = 8
@@ -117,7 +98,7 @@ pub const NOTE_ENTRY_VALUE_OFFSET = 4
 #   `[erasure_state, is_consumed, 0, 0]`
 # where `erasure_state` is an [`InputNoteErasureState`] and `is_consumed` is 0 or 1. Both are
 # reachable only through the accessors below.
-const INPUT_NOTE_FLAGS_PTR = 40980
+const INPUT_NOTE_FLAGS_PTR = 32772
 
 # Number of felts each note occupies in the flag arrays (one word).
 const NOTE_FLAGS_FELT_LEN = 4
@@ -144,13 +125,13 @@ pub enum InputNoteErasureState : u8 {
 # Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
 #   `[NOTE_ID, 0, 0, 0, 0]`
 # where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
-pub const OUTPUT_NOTES_PTR = 45076
+pub const OUTPUT_NOTES_PTR = 36868
 
 # Base of the parallel output-note flags array. Per note, one word
 #   `[will_be_erased, is_created, erased_by_input_note_idx, 0]`
 # where `erased_by_input_note_idx` is only meaningful when `will_be_erased` is 1, which is why the
 # two are read and written together by [`get_output_note_erasure`] / [`set_output_note_erasure`].
-const OUTPUT_NOTE_FLAGS_PTR = 53268
+const OUTPUT_NOTE_FLAGS_PTR = 45060
 
 # Felt offset of the `will_be_erased` flag within an output-note flag word.
 const OUTPUT_NOTE_WILL_BE_ERASED_OFFSET = 0
@@ -169,9 +150,10 @@ const OUTPUT_NOTE_ERASED_BY_OFFSET = 2
 pub const MAX_TRANSACTIONS_PER_BATCH = 1024
 
 # Maximum number of entries in a sorted note list and in a single transaction's note set. The
-# input/output note regions and the per-transaction scratch region each hold exactly this many
+# input/output note regions and the per-transaction scratch space each hold exactly this many
 # entries. Equals `MAX_INPUT_NOTES_PER_BATCH` = `MAX_OUTPUT_NOTES_PER_BATCH` in `src/constants.rs`.
 pub const MAX_NOTES_PER_BATCH = 1024
+
 
 # NUM TRANSACTIONS
 # =================================================================================================
@@ -190,29 +172,6 @@ end
 #! Outputs: [num_transactions]
 pub proc get_num_transactions
     mem_load.NUM_TRANSACTIONS_PTR
-end
-
-# BATCH HASHER STATE
-# =================================================================================================
-
-#! Stores the batch hasher state from the operand stack into memory.
-#!
-#! Inputs:  [RATE0, RATE1, CAPACITY]
-#! Outputs: []
-pub proc set_batch_hasher_state
-    mem_storew_le.BATCH_HASHER_RATE0_PTR dropw
-    mem_storew_le.BATCH_HASHER_RATE1_PTR dropw
-    mem_storew_le.BATCH_HASHER_CAP_PTR dropw
-end
-
-#! Returns the batch hasher state held in memory.
-#!
-#! Inputs:  []
-#! Outputs: [RATE0, RATE1, CAPACITY]
-pub proc get_batch_hasher_state
-    padw mem_loadw_le.BATCH_HASHER_CAP_PTR
-    padw mem_loadw_le.BATCH_HASHER_RATE1_PTR
-    padw mem_loadw_le.BATCH_HASHER_RATE0_PTR
 end
 
 # TRANSACTION TUPLE / HEADER ACCESSORS
