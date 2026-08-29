@@ -1805,6 +1805,8 @@ pub enum AuthSchemeError {
 pub enum TransactionVerifierError {
     #[error("failed to verify transaction")]
     TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof has an outstanding precompile obligation")]
+    IncompleteProof,
     #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

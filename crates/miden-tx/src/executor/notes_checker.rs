@@ -463,8 +463,7 @@ where
                 // reexecution. This avoids calls to the data store (to load data lazily) that have
                 // already been done as part of this execution.
                 let (_, advice_map, merkle_store) = execution_output.advice.into_parts();
-                let mut advice_inputs = AdviceInputs::default().with_merkle_store(merkle_store);
-                advice_inputs.map = advice_map;
+                let advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
                 tx_inputs.set_advice_inputs(advice_inputs);
                 Ok(cycle_counts)
             },

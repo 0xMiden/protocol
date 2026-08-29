@@ -1,6 +1,9 @@
+use alloc::string::ToString;
+
+use miden_processor::ExecutionError;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
-use miden_prover::{ExecutionProof, ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
+use miden_prover::{ExecutionProof, Prover};
 
 use crate::ExecutedBatch;
 
@@ -13,7 +16,7 @@ use crate::ExecutedBatch;
 /// [`ProvenBatch`] carrying an [`ExecutionProof`] over the batch's public commitments.
 #[derive(Clone, Default)]
 pub struct LocalBatchProver {
-    proving_options: ProvingOptions,
+    prover: Prover,
 }
 
 impl LocalBatchProver {
@@ -32,13 +35,13 @@ impl LocalBatchProver {
     ///
     /// Returns an error if proof generation fails.
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
-        let (proposed_batch, trace_inputs) = executed_batch.into_parts();
+        let (proposed_batch, witness) = executed_batch.into_parts();
 
-        let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
-            trace_inputs,
-            self.proving_options.clone(),
-        ))
-        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
+        let proof = self
+            .prover
+            .prove_full(witness)
+            .map_err(|error| ExecutionError::ProvingError(error.to_string()))
+            .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
         Self::build_proven_batch(proposed_batch, proof)
     }
@@ -50,7 +53,7 @@ impl LocalBatchProver {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, ProvenBatchError> {
-        Self::build_proven_batch(proposed_batch, ExecutionProof::new_dummy())
+        Self::build_proven_batch(proposed_batch, miden_protocol::testing::dummy_execution_proof())
     }
 
     /// Combines the parts of a [`ProposedBatch`] with the produced [`ExecutionProof`] into a

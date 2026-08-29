@@ -220,8 +220,7 @@ where
 
         // The stack is not necessary since it is being reconstructed when re-executing.
         let (_stack, advice_map, merkle_store) = advice_provider.into_parts();
-        let mut advice_inputs = AdviceInputs::default().with_merkle_store(merkle_store);
-        advice_inputs.map = advice_map;
+        let advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
 
         build_executed_transaction(advice_inputs, tx_inputs, stack_outputs, host)
     }
@@ -405,7 +404,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     }
 
     // Introduce generated signatures into the witness inputs.
-    advice_inputs.map.extend(generated_signatures);
+    advice_inputs.extend(AdviceInputs::default().with_map(generated_signatures));
 
     // Overwrite advice inputs from after the execution on the transaction inputs. This is
     // guaranteed to be a superset of the original advice inputs.

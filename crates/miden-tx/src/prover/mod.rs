@@ -13,7 +13,7 @@ use miden_protocol::transaction::{
     TxAccountUpdate,
 };
 use miden_prover::HashFunction::Poseidon2;
-pub use miden_prover::ProvingOptions;
+pub use miden_prover::Prover;
 use miden_prover::{ExecutionProof, Word, prove_sync};
 
 use super::TransactionProverError;
@@ -35,21 +35,21 @@ pub use mast_store::TransactionMastStore;
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
 #[derive(Debug, Clone)]
 pub struct LocalTransactionProver {
-    proof_options: ProvingOptions,
+    prover: Prover,
 }
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
         Self {
-            proof_options: ProvingOptions::new(Poseidon2),
+            prover: Prover::new().with_hash_fn(Poseidon2),
         }
     }
 }
 
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
-    pub fn new(proof_options: ProvingOptions) -> Self {
-        Self { proof_options }
+    pub fn new(prover: Prover) -> Self {
+        Self { prover }
     }
 
     fn build_proven_transaction(
@@ -146,12 +146,12 @@ impl LocalTransactionProver {
         let advice_inputs = advice_inputs.into_advice_inputs();
 
         let (stack_outputs, proof) = prove_sync(
+            &self.prover,
             &TransactionKernel::main(),
             stack_inputs,
             advice_inputs.clone(),
             &mut host,
             ExecutionOptions::default(),
-            self.proof_options.clone(),
         )
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
@@ -190,7 +190,7 @@ impl LocalTransactionProver {
             partial_account,
             ref_block.block_num(),
             ref_block.commitment(),
-            ExecutionProof::new_dummy(),
+            miden_protocol::testing::dummy_execution_proof(),
         )
     }
 }

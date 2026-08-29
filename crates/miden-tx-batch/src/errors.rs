@@ -9,6 +9,8 @@ use thiserror::Error;
 pub enum BatchVerifierError {
     #[error("failed to verify batch")]
     BatchVerificationFailed(#[source] VerificationError),
+    #[error("batch proof has an outstanding precompile obligation")]
+    IncompleteProof,
     #[error("batch proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

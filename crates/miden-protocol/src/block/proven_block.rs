@@ -321,7 +321,12 @@ mod tests {
         let next_keys = ValidatorConfig::random_with_signers(3).1;
         let header = BlockHeader::new_dummy(1, parent.commitment(), next_keys);
         let signatures = parent_keys.sign_all(signers, header.commitment());
-        ProvenBlock::new_unchecked(header, empty_body(), signatures, ExecutionProof::new_dummy())
+        ProvenBlock::new_unchecked(
+            header,
+            empty_body(),
+            signatures,
+            crate::testing::dummy_execution_proof(),
+        )
     }
 
     #[test]
@@ -353,7 +358,7 @@ mod tests {
             header,
             empty_body(),
             signatures,
-            ExecutionProof::new_dummy(),
+            crate::testing::dummy_execution_proof(),
         );
 
         let result = block.validate(Some(&parent));

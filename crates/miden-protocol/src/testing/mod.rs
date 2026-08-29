@@ -23,3 +23,19 @@ pub mod update_details;
 pub mod validator_config;
 pub mod vault_delta;
 pub mod vault_patch;
+
+/// Returns a structurally complete placeholder execution proof for tests that do not verify it.
+pub fn dummy_execution_proof() -> crate::vm::ExecutionProof {
+    use alloc::vec::Vec;
+
+    use miden_core::deferred::TRUE_DIGEST;
+    use miden_verifier::{HashFunction, StarkProof, VmProof};
+
+    crate::vm::ExecutionProof::Complete {
+        vm: VmProof {
+            proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
+            precompile_root: TRUE_DIGEST,
+        },
+        precompile: None,
+    }
+}

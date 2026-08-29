@@ -528,7 +528,6 @@ mod tests {
     use anyhow::Context;
     use miden_crypto::merkle::mmr::{Mmr, PartialMmr};
     use miden_crypto::rand::test_utils::rand_value;
-    use miden_verifier::ExecutionProof;
 
     use super::*;
     use crate::Word;
@@ -563,7 +562,7 @@ mod tests {
         let block_num = reference_block_header.block_num();
         let block_ref = reference_block_header.commitment();
         let expiration_block_num = reference_block_header.block_num() + 1;
-        let proof = ExecutionProof::new_dummy();
+        let proof = crate::testing::dummy_execution_proof();
 
         let account_update = TxAccountUpdate::new(
             account_id,

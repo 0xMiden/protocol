@@ -24,7 +24,7 @@ use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, Transa
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::MockChain;
-use miden_tx::{LocalTransactionProver, ProvingOptions};
+use miden_tx::{LocalTransactionProver, Prover};
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -39,8 +39,7 @@ pub async fn prove_and_verify_transaction(
     let executed_tx_header = TransactionHeader::from(&executed_transaction);
     // Prove the transaction
 
-    let proof_options = ProvingOptions::default();
-    let prover = LocalTransactionProver::new(proof_options);
+    let prover = LocalTransactionProver::new(Prover::default());
     let proven_transaction = prover.prove(executed_transaction).unwrap();
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
 

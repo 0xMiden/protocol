@@ -1,4 +1,4 @@
-use miden_verifier::{ExecutionClaim, verify};
+use miden_verifier::{ExecutionClaim, Verifier};
 
 use crate::errors::TransactionVerifierError;
 use crate::transaction::{ProvenTransaction, TransactionKernel};
@@ -52,8 +52,13 @@ impl TransactionVerifier {
             stack_inputs,
             stack_outputs,
         );
-        let proof_security_level = verify(transaction.proof().clone(), claim)
+        let outcome = Verifier::new()
+            .verify(&claim, transaction.proof())
             .map_err(TransactionVerifierError::TransactionVerificationFailed)?;
+        if !outcome.is_complete() {
+            return Err(TransactionVerifierError::IncompleteProof);
+        }
+        let proof_security_level = outcome.security_level();
 
         // check security level
         if proof_security_level < self.proof_security_level {

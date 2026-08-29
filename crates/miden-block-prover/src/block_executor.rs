@@ -38,15 +38,15 @@ impl BlockExecutor {
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(BlockProverError::BlockKernelExecutionFailed)?;
 
-        let trace_inputs = processor
-            .execute_trace_inputs_sync(&BlockKernel::main(), &mut DefaultHost::default())
+        let witness = processor
+            .execute_for_proving_sync(&BlockKernel::main(), &mut DefaultHost::default())
             .map_err(BlockProverError::BlockKernelExecutionFailed)?;
 
         // Parse and validate the output stack shape (padding cells are zero); the actual output
         // values themselves are not checked until the kernel computes them.
-        let block_outputs = BlockOutputs::parse(trace_inputs.stack_outputs())
+        let block_outputs = BlockOutputs::parse(witness.claim().stack_outputs())
             .map_err(BlockProverError::BlockKernelOutputInvalid)?;
 
-        Ok(ExecutedBlock::new(proposed_block, trace_inputs, block_outputs))
+        Ok(ExecutedBlock::new(proposed_block, witness, block_outputs))
     }
 }
