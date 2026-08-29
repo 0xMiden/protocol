@@ -8,6 +8,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
+use miden::standards::access::role_symbol
 
 # TYPE ALIASES
 # =================================================================================================
@@ -240,6 +241,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - a role is configured for the procedure and it is not a valid role symbol encoding.
 #! - a role is configured for the procedure and the sender does not hold it.
 #! - no role is configured for the procedure and the sender does not hold ADMIN.
 #!
@@ -269,9 +271,12 @@ proc assert_authorized_rbac
         exec.rbac::assert_sender_is_admin
         # => []
     else
-        # Assert the sender holds the configured role.
         # => [mapped_role]
 
+        dup exec.role_symbol::validate_encoding
+        # => [mapped_role]
+
+        # Assert the sender holds the configured role.
         exec.rbac::assert_sender_has_role
         # => []
     end

@@ -23,6 +23,9 @@ const MAX_U32=0x0000000100000000
 # StandardNoteAttachment::PswapAttachment in the Rust standards crate.
 const PSWAP_ATTACHMENT_SCHEME = 3
 
+# The number of words in the PswapAttachment.
+const PSWAP_ATTACHMENT_NUM_WORDS = 1
+
 # Note storage layout (7 felts, loaded at STORAGE_PTR by get_bounded_storage):
 # - requested_faucet_suffix    [0]  : 1 felt
 # - requested_faucet_prefix    [1]  : 1 felt
@@ -109,6 +112,7 @@ const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
 const ERR_PSWAP_FILL_BELOW_MINIMUM="PSWAP fill amount is below the minimum fill step"
+const ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS="PSWAP attachment must consist of exactly one word"
 
 # U64 VALIDATION
 # =================================================================================================
@@ -545,6 +549,9 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [current_depth]
+#!
+#! Panics if:
+#! - the PswapAttachment does not consist of exactly PSWAP_ATTACHMENT_NUM_WORDS words.
 @locals(4)
 proc get_current_depth
     push.PSWAP_ATTACHMENT_SCHEME
@@ -560,7 +567,8 @@ proc get_current_depth
         exec.active_note::write_attachment_to_memory
         # => [num_words]
 
-        drop
+        eq.PSWAP_ATTACHMENT_NUM_WORDS
+        assert.err=ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS
         # => []
 
         loc_load.PARENT_ATTACHMENT_DEPTH_OFFSET
