@@ -14,6 +14,7 @@ pub use storage::{
     StorageValuePatch,
 };
 pub use update_details::AccountUpdateDetails;
+pub(crate) use update_details::validate_new_public_account;
 pub use vault::AccountVaultPatch;
 
 use crate::account::{Account, AccountCode, AccountId, AccountStorage};
