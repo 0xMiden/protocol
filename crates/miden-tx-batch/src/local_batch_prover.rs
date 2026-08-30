@@ -56,6 +56,18 @@ impl LocalBatchProver {
         Self::build_proven_batch(proposed_batch, miden_protocol::testing::dummy_execution_proof())
     }
 
+    /// Returns a batch carrying a structurally incomplete proof for verifier tests.
+    #[cfg(any(feature = "testing", test))]
+    pub fn prove_dummy_deferred(
+        &self,
+        proposed_batch: ProposedBatch,
+    ) -> Result<ProvenBatch, ProvenBatchError> {
+        Self::build_proven_batch(
+            proposed_batch,
+            miden_protocol::testing::dummy_deferred_execution_proof(),
+        )
+    }
+
     /// Combines the parts of a [`ProposedBatch`] with the produced [`ExecutionProof`] into a
     /// [`ProvenBatch`].
     fn build_proven_batch(

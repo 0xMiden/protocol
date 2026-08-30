@@ -179,6 +179,28 @@ impl LocalTransactionProver {
         &self,
         executed_transaction: miden_protocol::transaction::ExecutedTransaction,
     ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with_dummy(
+            executed_transaction,
+            miden_protocol::testing::dummy_execution_proof(),
+        )
+    }
+
+    /// Returns a proven transaction carrying a structurally incomplete proof for verifier tests.
+    pub fn prove_dummy_deferred(
+        &self,
+        executed_transaction: miden_protocol::transaction::ExecutedTransaction,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with_dummy(
+            executed_transaction,
+            miden_protocol::testing::dummy_deferred_execution_proof(),
+        )
+    }
+
+    fn prove_with_dummy(
+        &self,
+        executed_transaction: miden_protocol::transaction::ExecutedTransaction,
+        proof: ExecutionProof,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
         let (tx_inputs, tx_outputs, account_patch, _) = executed_transaction.into_parts();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
@@ -190,7 +212,7 @@ impl LocalTransactionProver {
             partial_account,
             ref_block.block_num(),
             ref_block.commitment(),
-            miden_protocol::testing::dummy_execution_proof(),
+            proof,
         )
     }
 }

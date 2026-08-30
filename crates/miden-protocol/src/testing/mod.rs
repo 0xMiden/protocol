@@ -39,3 +39,19 @@ pub fn dummy_execution_proof() -> crate::vm::ExecutionProof {
         precompile: None,
     }
 }
+
+/// Returns a structurally incomplete placeholder execution proof for verifier tests.
+pub fn dummy_deferred_execution_proof() -> crate::vm::ExecutionProof {
+    use alloc::vec::Vec;
+
+    use miden_core::deferred::{DeferredStateWire, TRUE_DIGEST};
+    use miden_verifier::{HashFunction, StarkProof, VmProof};
+
+    crate::vm::ExecutionProof::Deferred {
+        vm: VmProof {
+            proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
+            precompile_root: TRUE_DIGEST,
+        },
+        precompile: DeferredStateWire::default(),
+    }
+}

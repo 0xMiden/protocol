@@ -43,6 +43,10 @@ impl BatchVerifier {
     /// - Batch proof verification fails.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
+        if !batch.proof().is_complete() {
+            return Err(BatchVerifierError::IncompleteProof);
+        }
+
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 

@@ -45,3 +45,17 @@ fn batch_verifier_rejects_dummy_proof() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// A deferred batch proof must be completed before protocol verification.
+#[test]
+fn batch_verifier_rejects_incomplete_proof() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let proven = LocalBatchProver::new().prove_dummy_deferred(batch)?;
+
+    let err = BatchVerifier::new(0).verify(&proven).unwrap_err();
+    assert_matches!(err, BatchVerifierError::IncompleteProof);
+
+    Ok(())
+}

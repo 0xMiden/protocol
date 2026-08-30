@@ -23,7 +23,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::MockChain;
+use miden_testing::{Auth, MockChain};
 use miden_tx::{LocalTransactionProver, Prover};
 
 // HELPER FUNCTIONS
@@ -54,6 +54,28 @@ pub async fn prove_and_verify_transaction(
     let verifier = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL);
 
     verifier.verify(&proven_transaction)
+}
+
+/// A deferred transaction proof must be completed before protocol verification.
+#[tokio::test]
+async fn transaction_verifier_rejects_incomplete_proof() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+    let proven = LocalTransactionProver::default().prove_dummy_deferred(executed)?;
+
+    let err = TransactionVerifier::new(0).verify(&proven).unwrap_err();
+    assert_matches::assert_matches!(err, TransactionVerifierError::IncompleteProof);
+
+    Ok(())
 }
 
 #[cfg(test)]
