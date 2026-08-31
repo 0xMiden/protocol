@@ -1731,10 +1731,6 @@ fn pswap_original_has_no_pswap_scheme() -> anyhow::Result<()> {
 
 /// Builds a PSWAP note carrying a hand-crafted `PswapAttachment` word and registers it on the
 /// builder.
-///
-/// The `PswapNote` builder validates the attachment, so a note with an out-of-range depth can
-/// only be assembled from the raw protocol types - which is exactly the shape the on-chain
-/// guard has to reject.
 fn pswap_note_with_planted_depth(
     builder: &mut MockChainBuilder,
     creator: AccountId,

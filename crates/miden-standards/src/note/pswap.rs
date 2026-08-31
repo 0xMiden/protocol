@@ -254,9 +254,6 @@ impl From<PswapNoteAttachment> for NoteAttachment {
 
 /// Parses a [`NoteAttachment`] carrying [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] into its typed
 /// form.
-///
-/// The word is only constrained by the note commitment, so every field is validated here: the
-/// `depth` bound mirrors the u32 range the on-chain `get_current_depth` procedure enforces.
 impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
     type Error = NoteError;
 
@@ -335,8 +332,6 @@ where
             ));
         }
 
-        // A PSWAP-scheme attachment must decode into its typed form, so a hand-crafted depth
-        // cannot leave the range the on-chain script and the lineage helpers work in.
         if let Some(attachment) = note.attachment.as_ref()
             && attachment.attachment_scheme() == PswapNote::PSWAP_ATTACHMENT_SCHEME
         {
@@ -611,10 +606,6 @@ impl PswapNote {
 
     /// Returns the number of fill rounds between this note and the round `attachment` was
     /// stamped in.
-    ///
-    /// `attachment.depth()` is absolute within the lineage while this note may itself sit at a
-    /// non-zero depth, so the serial-number offset of a reconstructed note is the distance
-    /// between the two rather than the depth itself.
     ///
     /// # Errors
     ///

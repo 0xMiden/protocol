@@ -575,10 +575,6 @@ proc get_current_depth
     end
     # => [parent_depth]
 
-    # The parent depth is only constrained by the consumed note's commitment, so bound it here:
-    # the u32 assert keeps a hand-crafted value from wrapping the field on the increment below,
-    # and the overflow check keeps the stamped depth inside the range the off-chain
-    # PswapNoteAttachment represents it in.
     u32assert.err=ERR_PSWAP_PARENT_DEPTH_NOT_U32
     # => [parent_depth]
 
