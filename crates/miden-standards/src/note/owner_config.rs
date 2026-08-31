@@ -122,12 +122,9 @@ impl From<OwnerConfig> for NoteStorage {
 /// makes the note a valid [`AccountTargetNetworkNote`], routing it to `account` for network
 /// execution.
 ///
-/// The builder always produces a [`NoteType::Public`] note, and network execution requires one:
-/// [`AccountTargetNetworkNote`](crate::note::AccountTargetNetworkNote) rejects a non-public note.
-/// The note script itself does not read the note type, so a hand-crafted private note carrying
-/// the same script and storage dispatches the same action when it is consumed in a local
-/// transaction. Authorization is unaffected either way: the called procedures authorize the note
-/// sender, which the kernel pins to the account that created the note.
+/// The builder always produces a public note; see
+/// [the module docs](crate::note#note-type-of-the-config-notes) for the note type the script
+/// accepts and why a private note dispatches the same action.
 ///
 /// Construct one with the [builder](OwnerConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
