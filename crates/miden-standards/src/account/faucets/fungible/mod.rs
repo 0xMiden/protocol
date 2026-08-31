@@ -569,32 +569,6 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// Caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter on the faucet
 /// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
 /// signature.
-///
-/// In addition to the explicit parameters, [`Pausable`] / [`PausableManager`] and [`BasicWallet`]
-/// (`receive_asset`, `move_asset_to_note`, `create_note`) are bundled. The wallet is what makes the
-/// faucet fundable: since protocol 0.16 a transaction pays its fee out of the acting account's own
-/// vault, and [`FungibleFaucet`] exports no inbound path of its own — `mint_and_send` credits an
-/// output note rather than the account vault, and `receive_and_burn` burns without crediting it
-/// either. Short of being seeded at genesis, a user faucet built without a wallet interface could
-/// never receive the fee asset, and so could never mint on a fee-charging chain.
-/// [`create_network_fungible_faucet`] deliberately omits the wallet, because it is credited
-/// directly by `fees::collect_sponsored_fees`.
-///
-/// Note that [`SendNotesTransactionScript`][send] chooses its branch from the batch as a whole:
-/// when every output note carries exactly one fungible asset, it routes the whole batch through
-/// `mint_and_send`. For this faucet's own token that mints rather than spending the vault, and for
-/// an asset the faucet does not issue — the fee asset included — it fails to build with
-/// [`IssuanceFaucetMismatch`][mismatch]. Either way, to move an asset the faucet already holds,
-/// build a [`SendWalletNotesTransactionScript`][wallet_send] directly.
-///
-/// Bundling the wallet also changes which branch that dispatch reaches for any *other* batch: one
-/// that is not all-single-fungible-asset used to fall through to a `FaucetNoteUnexpectedNumAssets`
-/// error and now builds a wallet script instead. That is the intended behaviour — such a batch
-/// spends assets the faucet holds — but it is a change in what the constructor returns.
-///
-/// [send]: crate::tx_script::SendNotesTransactionScript
-/// [wallet_send]: crate::tx_script::SendWalletNotesTransactionScript
-/// [mismatch]: crate::tx_script::SendNotesTransactionScriptError::IssuanceFaucetMismatch
 pub fn create_singlesig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -618,9 +592,6 @@ pub fn create_singlesig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a multisig approver set.
-///
-/// Bundles the same set of components as [`create_singlesig_user_fungible_faucet`], including
-/// [`BasicWallet`] so the faucet can be funded with the native fee asset.
 pub fn create_multisig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -642,9 +613,6 @@ pub fn create_multisig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a guardian-backed multisig.
-///
-/// Bundles the same set of components as [`create_singlesig_user_fungible_faucet`], including
-/// [`BasicWallet`] so the faucet can be funded with the native fee asset.
 pub fn create_guarded_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -672,19 +640,6 @@ pub fn create_guarded_user_fungible_faucet(
 ///
 /// In addition to the explicit parameters, [`Pausable`] (slot + `is_paused` view) and
 /// [`PausableManager`] (admin `pause` / `unpause` gated by `access_control`) are bundled.
-///
-/// Unlike the user factories above, [`BasicWallet`] is deliberately **not** bundled. In steady
-/// state a network faucet needs no inbound wallet path: it is credited directly by
-/// `fees::collect_sponsored_fees`, which runs inside the `AuthNetworkAccount` auth procedure this
-/// factory installs.
-///
-/// That does not cover deployment. A scriptless deploy on a fee-charging chain consumes a funding
-/// note before any sponsorship exists to collect, and `receive_asset` is the only standards
-/// procedure that can credit an account vault — the kernel refuses a vault credit whose calling
-/// procedure is not in the account's own code. A caller funding a network faucet that way composes
-/// [`BasicWallet`] itself. It is not bundled here because doing so would change this factory's code
-/// commitment, and with it the account ID derived by
-/// [`create_native_fungible_faucet_for_genesis`], which builds on this function.
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,

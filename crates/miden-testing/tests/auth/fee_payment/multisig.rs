@@ -29,7 +29,7 @@ use super::{
 /// The cycle estimate the multisig auth component passes to `pay_fee` for the given number of
 /// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
 /// procedure cycles.
-pub(super) fn multisig_auth_estimate(num_signers: usize) -> usize {
+fn multisig_auth_estimate(num_signers: usize) -> usize {
     num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
 }
 
