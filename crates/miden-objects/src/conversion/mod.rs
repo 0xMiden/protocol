@@ -6,6 +6,7 @@ mod block;
 mod merkle;
 mod note;
 mod primitives;
+mod protocol_config;
 mod transaction;
 
 use core::marker::PhantomData;

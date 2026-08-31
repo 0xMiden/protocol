@@ -154,6 +154,8 @@ impl_conversion_error_from!(
     miden_protocol::errors::AssetError,
     miden_protocol::errors::AssetVaultError,
     miden_protocol::errors::NoteError,
+    miden_protocol::errors::PartialAssetVaultError,
+    miden_protocol::errors::ProtocolConfigError,
     miden_protocol::errors::StorageSlotNameError,
 );
 

@@ -30,6 +30,10 @@ pub mod proto {
         include!(concat!(env!("OUT_DIR"), "/primitives.rs"));
     }
 
+    pub mod protocol_config {
+        include!(concat!(env!("OUT_DIR"), "/protocol_config.rs"));
+    }
+
     pub mod transaction {
         include!(concat!(env!("OUT_DIR"), "/transaction.rs"));
     }
@@ -49,5 +53,6 @@ pub const EXTERN_PATHS: &[(&str, &str)] = &[
     (".blockchain", "::miden_objects::proto::blockchain"),
     (".note", "::miden_objects::proto::note"),
     (".primitives", "::miden_objects::proto::primitives"),
+    (".protocol_config", "::miden_objects::proto::protocol_config"),
     (".transaction", "::miden_objects::proto::transaction"),
 ];

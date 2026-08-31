@@ -145,6 +145,11 @@ impl PartialVault {
         self.partial_smt.root()
     }
 
+    /// Returns the partial SMT underlying this vault.
+    pub fn partial_smt(&self) -> &PartialSmt {
+        &self.partial_smt
+    }
+
     /// Returns an iterator over all inner nodes in the Sparse Merkle Tree proofs.
     ///
     /// This is useful for reconstructing parts of the Sparse Merkle Tree or for
@@ -272,6 +277,14 @@ mod tests {
     use super::*;
     use crate::asset::{FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET;
+
+    #[test]
+    fn partial_smt_accessor_returns_vault_smt() {
+        let root = Word::from([1_u32, 2, 3, 4]);
+        let vault = PartialVault::new(root);
+
+        assert_eq!(vault.partial_smt().root(), root);
+    }
 
     #[test]
     fn partial_vault_open_returns_correct_asset_after_full_conversion() -> anyhow::Result<()> {

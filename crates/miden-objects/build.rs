@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "block_number.proto",
         "account.proto",
         "asset.proto",
+        "protocol_config.proto",
         "note.proto",
         "transaction.proto",
         "block.proto",

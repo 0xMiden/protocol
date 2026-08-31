@@ -49,6 +49,35 @@ message AccountCode {
   repeated primitives.Word procedure_roots = 2;
 }
 
+message StorageSlotId {
+  primitives.Felt suffix = 1;
+  primitives.Felt prefix = 2;
+}
+
+message PartialAccount {
+  AccountId account_id = 1;
+  primitives.Felt nonce = 2;
+  AccountCode code = 3;
+  PartialStorage storage = 4;
+  PartialVault vault = 5;
+  optional primitives.Word seed = 6;
+}
+
+message PartialStorage {
+  AccountStorageHeader header = 1;
+  repeated PartialStorageMap maps = 2;
+}
+
+message PartialStorageMap {
+  primitives.PartialSmt smt = 1;
+  repeated primitives.Word keys = 2;
+}
+
+message PartialVault {
+  primitives.PartialSmt smt = 1;
+  repeated primitives.Word asset_ids = 2;
+}
+
 enum StoragePatchOperation {
   STORAGE_PATCH_OPERATION_UNSPECIFIED = 0;
   STORAGE_PATCH_OPERATION_CREATE = 1;
