@@ -122,6 +122,9 @@ impl From<OwnerConfig> for NoteStorage {
 /// makes the note a valid [`AccountTargetNetworkNote`], routing it to `account` for network
 /// execution.
 ///
+/// The note must be public: the script rejects a non-public note, so the action cannot be
+/// hidden from the chain by a hand-crafted private note with the same script and storage.
+///
 /// Construct one with the [builder](OwnerConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]

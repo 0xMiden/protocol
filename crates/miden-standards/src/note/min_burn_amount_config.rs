@@ -68,6 +68,9 @@ static MIN_BURN_AMOUNT_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// policy; it is stored on the component either way, so it can be configured before the policy is
 /// switched in.
 ///
+/// The note must be public: the script rejects a non-public note, so the action cannot be
+/// hidden from the chain by a hand-crafted private note with the same script and storage.
+///
 /// Construct one with the [builder](MinBurnAmountConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]

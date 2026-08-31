@@ -61,6 +61,9 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 /// consuming account matches that target before calling `set_note_fee`, so the note cannot be
 /// consumed by a third-party account that merely accepts its sender.
 ///
+/// The note must be public: the script rejects a non-public note, so the action cannot be
+/// hidden from the chain by a hand-crafted private note with the same script and storage.
+///
 /// # Consuming account requirements
 ///
 /// The fee schedule and the fee asset ID live on an

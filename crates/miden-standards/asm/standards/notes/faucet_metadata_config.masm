@@ -44,6 +44,8 @@ const ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR = "faucet metadata config note
 
 const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet metadata config note storage item count does not match the selected action"
 
+const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config note must be public"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -76,10 +78,14 @@ const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet me
 #!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
 #!   the `Authority` and `Pausable` companion components.
 #!
+#! Consumption is restricted to public notes: the management action must remain publicly auditable,
+#! so a private note carrying the same script and storage is rejected.
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
@@ -89,6 +95,11 @@ const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet me
 @note_script
 pub proc main
     dropw
+    # => [pad(16)]
+
+    # restrict consumption to public notes: the management action must remain publicly auditable
+    exec.active_note::is_public
+    assert.err=ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's

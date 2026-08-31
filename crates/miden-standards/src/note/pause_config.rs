@@ -102,6 +102,9 @@ impl From<PauseConfig> for NoteStorage {
 /// that the consuming account matches that target before dispatching, so the note cannot be
 /// consumed by a third-party account that merely accepts its sender.
 ///
+/// The note must be public: the script rejects a non-public note, so the action cannot be
+/// hidden from the chain by a hand-crafted private note with the same script and storage.
+///
 /// Construct one with the [builder](PauseConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
