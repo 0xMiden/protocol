@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added `fee::assert_fee_bound`, an opt-in helper a caller invokes between `fee::estimate_fee` and the payment to cap the payment at `num / den` times the computed fee and pin the payment asset to the transaction's fee faucet; `fee::pay_fee` applies no bound of its own, so the bound stays an application-level policy ([#3332](https://github.com/0xMiden/protocol/issues/3332)).
 - Added a genesis-only native fungible faucet factory that configures the faucet to pay fees in its own asset ([#3584](https://github.com/0xMiden/protocol/issues/3584)).
 - Added `note_costs` to the `NetworkNotePricer` builder, a supplied cost map that extends or shadows the built-in cost tables ([#3602](https://github.com/0xMiden/protocol/pull/3602)).
 - [BREAKING] AggLayer bridge and faucet accounts deploy with a priced fee policy and `ADMIN`-gated repricing; both code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
