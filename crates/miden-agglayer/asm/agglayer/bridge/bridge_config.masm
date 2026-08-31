@@ -353,7 +353,7 @@ pub proc register_faucet
     # => [PREVIOUS_FAUCET_ID, pad(16)]
 
     # The token identity may be unassigned or already assigned to this faucet, but it cannot be
-    # taken over from a different faucet. A failed assertion rolls back every write above.
+    # taken over from a different faucet.
     dupw exec.word::eqz
     # => [was_unassigned, PREVIOUS_FAUCET_ID, pad(16)]
 
