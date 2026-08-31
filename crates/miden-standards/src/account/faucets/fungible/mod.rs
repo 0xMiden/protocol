@@ -673,9 +673,18 @@ pub fn create_guarded_user_fungible_faucet(
 /// In addition to the explicit parameters, [`Pausable`] (slot + `is_paused` view) and
 /// [`PausableManager`] (admin `pause` / `unpause` gated by `access_control`) are bundled.
 ///
-/// Unlike the user factories above, [`BasicWallet`] is deliberately **not** bundled: a network
-/// faucet is credited directly by `fees::collect_sponsored_fees`, so it needs no inbound wallet
-/// path to hold the fee asset.
+/// Unlike the user factories above, [`BasicWallet`] is deliberately **not** bundled. In steady
+/// state a network faucet needs no inbound wallet path: it is credited directly by
+/// `fees::collect_sponsored_fees`, which runs inside the `AuthNetworkAccount` auth procedure this
+/// factory installs.
+///
+/// That does not cover deployment. A scriptless deploy on a fee-charging chain consumes a funding
+/// note before any sponsorship exists to collect, and `receive_asset` is the only standards
+/// procedure that can credit an account vault — the kernel refuses a vault credit whose calling
+/// procedure is not in the account's own code. A caller funding a network faucet that way composes
+/// [`BasicWallet`] itself. It is not bundled here because doing so would change this factory's code
+/// commitment, and with it the account ID derived by
+/// [`create_native_fungible_faucet_for_genesis`], which builds on this function.
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
