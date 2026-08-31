@@ -223,9 +223,8 @@ mod tests {
         let extra_key = StorageMapKey::from_index(2);
         let tracked_value = Word::from([1_u32, 0, 0, 0]);
         let extra_value = Word::from([2_u32, 0, 0, 0]);
-        let storage_map = StorageMap::with_entries(
-            [(tracked_key, tracked_value), (extra_key, extra_value)].into_iter(),
-        )?;
+        let storage_map =
+            StorageMap::with_entries([(tracked_key, tracked_value), (extra_key, extra_value)])?;
         let partial_smt = PartialSmt::from_proofs([
             storage_map.open(&tracked_key).into(),
             storage_map.open(&extra_key).into(),
@@ -242,8 +241,7 @@ mod tests {
     #[test]
     fn try_from_parts_rejects_duplicate_keys() -> anyhow::Result<()> {
         let key = StorageMapKey::from_index(1);
-        let storage_map =
-            StorageMap::with_entries([(key, Word::from([1_u32, 0, 0, 0]))].into_iter())?;
+        let storage_map = StorageMap::with_entries([(key, Word::from([1_u32, 0, 0, 0]))])?;
         let partial_smt = PartialSmt::from_proofs([storage_map.open(&key).into()])?;
 
         let result = PartialStorageMap::try_from_parts(partial_smt, [key, key]);

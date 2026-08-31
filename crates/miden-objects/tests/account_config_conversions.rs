@@ -375,12 +375,12 @@ fn proof_security_policy_rejects_out_of_range_minimum_bits() {
     })
     .unwrap_err();
 
-    assert!(matches!(
+    assert!(
         error
             .source()
-            .and_then(|source| source.downcast_ref::<core::num::TryFromIntError>()),
-        Some(_)
-    ));
+            .and_then(|source| source.downcast_ref::<core::num::TryFromIntError>())
+            .is_some()
+    );
 }
 
 #[test]

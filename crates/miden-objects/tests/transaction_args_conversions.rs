@@ -21,14 +21,11 @@ fn note_id(value: u32) -> NoteId {
 #[test]
 fn advice_inputs_roundtrip_preserves_stack_order_and_normalizes_map_order() {
     let mut store = MerkleStore::new();
-    store.extend(
-        [InnerNodeInfo {
-            value: word(9),
-            left: word(10),
-            right: word(11),
-        }]
-        .into_iter(),
-    );
+    store.extend([InnerNodeInfo {
+        value: word(9),
+        left: word(10),
+        right: word(11),
+    }]);
     let advice_inputs = AdviceInputs::default()
         .with_advice_stack({
             let mut stack = AdviceInputs::default().advice_stack();
@@ -99,7 +96,7 @@ fn merkle_store_omits_identical_defaults_and_retains_default_parent_overrides() 
         left: word(10),
         right: word(11),
     };
-    store.extend([override_node.clone(), custom_node.clone()].into_iter());
+    store.extend([override_node.clone(), custom_node.clone()]);
 
     let default_message = proto::primitives::MerkleStore::from(&default_store);
     let override_message = proto::primitives::MerkleStore::from(&store);

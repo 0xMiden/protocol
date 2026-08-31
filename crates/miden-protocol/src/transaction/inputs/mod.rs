@@ -164,7 +164,7 @@ impl TransactionInputs {
             if let InputNote::Authenticated { note, proof } = note {
                 let note_block_num = proof.location().block_num();
                 let block_header = if note_block_num == block_header.block_num() {
-                    &block_header
+                    block_header
                 } else {
                     blockchain.get_block(note_block_num).ok_or(
                         TransactionInputError::InputNoteBlockNotInPartialBlockchain(note.id()),
