@@ -312,6 +312,59 @@ pub proc create_and_fund_fee_note(asset: Asset)
     # => []
 end
 
+#! Computes the fee of the current transaction without paying it.
+#!
+#! Before computing the fee, this creates a FEE_SPONSORSHIP note for every network output note
+#! of the transaction (see fees::create_network_note_sponsorships), so those notes are included
+#! in the cycle estimate and the fee. This prices each network note through its target account's
+#! fee policy via an FPI call, which requires that target to be provisioned as a foreign account.
+#!
+#! num_extra_cycles only needs to cover the number of cycles the caller spends after the fee flow
+#! returns (e.g. transaction summary creation, hashing and signature verification, see
+#! signature::estimate_authentication_cycles); this procedure adds the payment tail cycles and the
+#! post-authentication kernel epilogue cycles internally.
+#!
+#! Inputs:  [num_extra_cycles]
+#! Outputs: [fee_amount, total_sponsored_fee_amount]
+#!
+#! Where:
+#! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
+#!   the end of the authentication procedure.
+#! - fee_amount is the computed fee of the transaction, denominated in the native fee asset.
+#! - total_sponsored_fee_amount is the total amount the sponsorship step moved into sponsorship
+#!   notes.
+#!
+#! Panics if:
+#! - the sponsorship step fails (propagates the panics of
+#!   fees::create_network_note_sponsorships, e.g. a target's fee policy is unset/unreachable or
+#!   the vault underfunds a sponsored amount).
+#! - num_extra_cycles (plus internal margins) is not a u32 or the total cycle count exceeds the
+#!   maximum cycle count.
+#!
+#! Invocation: exec
+pub proc estimate_fee(num_extra_cycles: felt) -> (felt, felt)
+    # sponsor any network output notes before the fee is computed, so the sponsorship notes
+    # this creates are counted by both the cycle estimate and compute_fee.
+    exec.tx::get_fee_faucet_id exec.fungible_asset::create_id
+    # => [FEE_ASSET_ID, num_extra_cycles]
+
+    exec.fees::create_network_note_sponsorships
+    # => [total_sponsored_fee_amount, num_extra_cycles]
+
+    swap
+    # => [num_extra_cycles, total_sponsored_fee_amount]
+
+    exec.apply_cycle_margins
+    # => [num_estimated_extra_cycles, total_sponsored_fee_amount]
+
+    # no output notes are excluded from the fee computation
+    padw movup.4
+    # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, total_sponsored_fee_amount]
+
+    exec.tx::compute_fee
+    # => [fee_amount, total_sponsored_fee_amount]
+end
+
 #! Computes the transaction fee and pays it by creating and funding a public TX_FEE note.
 #!
 #! This is the fee payment flow for all account types: the caller supplies the decoded
@@ -323,23 +376,13 @@ end
 #! and obtain the conversion info via native_conversion_info, which needs no commitment since
 #! it is read from the reference block.
 #!
-#! The fee amount is computed via the compute_fee kernel procedure. num_extra_cycles only needs
-#! to cover the number of cycles the authentication procedure spends after this procedure
-#! returns (e.g. transaction summary creation, hashing and signature verification, see
-#! signature::estimate_authentication_cycles); this procedure adds its own tail cycles and the
-#! post-authentication kernel epilogue cycles internally.
-#!
-#! The paid amount is ceil(fee_amount * rate_num / rate_den) of the asset issued by the faucet
-#! in the conversion info.
+#! The fee is computed by estimate_fee, which also sponsors the transaction's network output
+#! notes. The paid amount is ceil(fee_amount * rate_num / rate_den) of the asset issued by the
+#! faucet in the conversion info.
 #!
 #! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
 #! fee note is created and no conversion info is required (the empty word is accepted). Note that
 #! the sponsorship step above may still have created notes and withdrawn from the vault.
-#!
-#! Before computing the fee, this creates a FEE_SPONSORSHIP note for every network output note
-#! of the transaction (see fees::create_network_note_sponsorships), so those notes are included
-#! in the cycle estimate and the fee. This prices each network note through its target account's
-#! fee policy via an FPI call, which requires that target to be provisioned as a foreign account.
 #!
 #! Inputs:  [num_extra_cycles, CONVERSION_INFO]
 #! Outputs: [total_sponsored_fee_amount]
@@ -353,11 +396,7 @@ end
 #!   notes.
 #!
 #! Panics if:
-#! - the sponsorship step fails (propagates the panics of
-#!   fees::create_network_note_sponsorships, e.g. a target's fee policy is unset/unreachable or
-#!   the vault underfunds a sponsored amount).
-#! - num_extra_cycles (plus internal margins) is not a u32 or the total cycle count exceeds the
-#!   maximum cycle count.
+#! - estimate_fee panics.
 #! - the computed fee is non-zero and CONVERSION_INFO is the empty word.
 #! - the conversion rate is malformed or the converted amount overflows.
 #! - the account vault holds less of the payment asset than the amount to be paid.
@@ -365,26 +404,10 @@ end
 #!
 #! Invocation: exec
 pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> felt
-    # sponsor any network output notes before the fee is computed, so the sponsorship notes
-    # this creates are counted by both the cycle estimate and compute_fee.
-    exec.tx::get_fee_faucet_id exec.fungible_asset::create_id
-    # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO]
+    exec.estimate_fee
+    # => [fee_amount, total_sponsored_fee_amount, CONVERSION_INFO]
 
-    exec.fees::create_network_note_sponsorships
-    # => [total_sponsored_fee_amount, num_extra_cycles, CONVERSION_INFO]
-
-    movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, total_sponsored_fee_amount]
-
-    exec.apply_cycle_margins
-    # => [num_estimated_extra_cycles, CONVERSION_INFO, total_sponsored_fee_amount]
-
-    # no output notes are excluded from the fee computation
-    padw movup.4
-    # => [num_estimated_extra_cycles, EXCLUDE_NOTES_COMMITMENT, CONVERSION_INFO,
-    #     total_sponsored_fee_amount]
-
-    exec.tx::compute_fee
+    swap movdn.5
     # => [fee_amount, CONVERSION_INFO, total_sponsored_fee_amount]
 
     dup eq.0
