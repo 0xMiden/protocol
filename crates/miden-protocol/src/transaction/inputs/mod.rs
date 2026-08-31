@@ -84,6 +84,60 @@ impl TransactionInputs {
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
     ) -> Result<Self, TransactionInputError> {
+        Self::try_from_parts(
+            account,
+            block_header,
+            protocol_config,
+            blockchain,
+            input_notes,
+            TransactionArgs::default(),
+            AdviceInputs::default(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+
+    /// Creates [`TransactionInputs`] from all transaction-input components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as [`Self::new`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_parts(
+        account: PartialAccount,
+        block_header: BlockHeader,
+        protocol_config: ProtocolConfig,
+        blockchain: PartialBlockchain,
+        input_notes: InputNotes<InputNote>,
+        tx_args: TransactionArgs,
+        advice_inputs: AdviceInputs,
+        foreign_account_code: Vec<AccountCode>,
+        foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+    ) -> Result<Self, TransactionInputError> {
+        Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
+
+        Ok(Self {
+            account,
+            block_header,
+            protocol_config,
+            blockchain,
+            input_notes,
+            tx_args,
+            advice_inputs,
+            foreign_account_code,
+            foreign_account_slot_names,
+        })
+    }
+
+    // VALIDATION
+    // --------------------------------------------------------------------------------------------
+
+    fn validate(
+        block_header: &BlockHeader,
+        protocol_config: &ProtocolConfig,
+        blockchain: &PartialBlockchain,
+        input_notes: &InputNotes<InputNote>,
+    ) -> Result<(), TransactionInputError> {
         // Check that the protocol config is the one the block header commits to.
         let protocol_config_commitment = protocol_config.to_commitment();
         if protocol_config_commitment != block_header.protocol_config_commitment() {
@@ -120,17 +174,7 @@ impl TransactionInputs {
             }
         }
 
-        Ok(Self {
-            account,
-            block_header,
-            protocol_config,
-            blockchain,
-            input_notes,
-            tx_args: TransactionArgs::default(),
-            advice_inputs: AdviceInputs::default(),
-            foreign_account_code: Vec::new(),
-            foreign_account_slot_names: BTreeMap::new(),
-        })
+        Ok(())
     }
 
     /// Replaces the transaction inputs and assigns the given asset witnesses.
