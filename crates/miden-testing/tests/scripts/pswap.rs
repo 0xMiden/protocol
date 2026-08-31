@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use miden_processor::ExecutionError;
+use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -12,17 +14,26 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{Note, NoteAttachments, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachments,
+    NoteType,
+    PartialNoteMetadata,
+};
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, RawOutputNotes};
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_PSWAP_DEPTH_OVERFLOW,
     ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
     ERR_PSWAP_OFFERED_ASSET_ALTERED,
+    ERR_PSWAP_PARENT_DEPTH_NOT_U32,
 };
 use miden_standards::note::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
@@ -33,6 +44,7 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
+use miden_tx::TransactionExecutorError;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rstest::rstest;
@@ -1717,6 +1729,108 @@ fn pswap_original_has_no_pswap_scheme() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Builds a PSWAP note carrying a hand-crafted `PswapAttachment` word and registers it on the
+/// builder.
+///
+/// The `PswapNote` builder validates the attachment, so a note with an out-of-range depth can
+/// only be assembled from the raw protocol types - which is exactly the shape the on-chain
+/// guard has to reject.
+fn pswap_note_with_planted_depth(
+    builder: &mut MockChainBuilder,
+    creator: AccountId,
+    offered_asset: FungibleAsset,
+    min_requested_asset: FungibleAsset,
+    depth: Felt,
+) -> anyhow::Result<Note> {
+    let serial_number = builder.rng_mut().draw_word();
+    let tag = PswapNote::create_tag(NoteType::Public, &offered_asset, &min_requested_asset);
+    let storage = PswapNoteStorage::builder()
+        .min_requested_asset(min_requested_asset)
+        .creator_account_id(creator)
+        .build();
+
+    let attachment = NoteAttachment::with_word(
+        PswapNote::PSWAP_ATTACHMENT_SCHEME,
+        Word::from([ONE, serial_number[1], depth, ZERO]),
+    );
+    let note = Note::with_attachments(
+        NoteAssets::new(vec![offered_asset.into()])?,
+        PartialNoteMetadata::new(creator, NoteType::Public).with_tag(tag),
+        storage.into_recipient(serial_number),
+        NoteAttachments::from(attachment),
+    );
+
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    Ok(note)
+}
+
+/// Fills a PSWAP note whose parent depth was planted at `planted_depth` and returns the
+/// execution result, so each guard on the depth increment can assert its own error shape.
+async fn fill_pswap_with_planted_depth(
+    planted_depth: Felt,
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+    let mut builder = MockChain::builder();
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1_000, Some(50))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1_000, Some(25))?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), 25)?.into()],
+    )?;
+
+    let pswap_note = pswap_note_with_planted_depth(
+        &mut builder,
+        alice,
+        FungibleAsset::new(usdc_faucet.id(), 50)?,
+        FungibleAsset::new(eth_faucet.id(), 25)?,
+        planted_depth,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let mut note_args_map = BTreeMap::new();
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(25, 0)?);
+
+    Ok(mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(pswap_note.id())
+        .extend_note_args(note_args_map)
+        .build()?
+        .execute()
+        .await)
+}
+
+/// A parent depth at the top of the u32 range must abort rather than stamp a depth the
+/// off-chain `PswapNoteAttachment` cannot represent. Only the creator of an original PSWAP can
+/// plant such a value, since attachments are folded into the note commitment.
+#[tokio::test]
+async fn pswap_rejects_parent_depth_at_the_u32_bound() -> anyhow::Result<()> {
+    let result = fill_pswap_with_planted_depth(Felt::from_u32(u32::MAX)).await?;
+
+    assert_transaction_executor_error!(result, ERR_PSWAP_DEPTH_OVERFLOW);
+
+    Ok(())
+}
+
+/// A parent depth one below the field's modulus would wrap to a small depth under plain field
+/// addition, converting the out-of-range error into a silently wrong lineage. The u32 assert on
+/// the parent depth rejects it before the increment runs.
+#[tokio::test]
+async fn pswap_rejects_parent_depth_that_wraps_the_field() -> anyhow::Result<()> {
+    let result = fill_pswap_with_planted_depth(Felt::MAX).await?;
+
+    // `u32assert` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
+    // variant explicitly and assert on its error code.
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, .. },
+            ..
+        } if err_code == ERR_PSWAP_PARENT_DEPTH_NOT_U32.code()
+    );
+
+    Ok(())
+}
+
 /// Regression test for the load-bearing line that sets the `attachment` field on a
 /// Rust-built remainder PswapNote. If this is forgotten, the remainder defaults to
 /// `attachment = None`, the on-chain `get_current_depth` reads parent_depth = 0 on the
@@ -1878,6 +1992,16 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
             "round {depth}: reconstructed payback commitment must match on-chain leaf",
         );
 
+        // The helpers offset the serial by the distance to the note they are called on rather
+        // than by the absolute depth, so the round's own parent reconstructs the same note.
+        assert_eq!(
+            current_pswap
+                .payback_note(on_chain_payback.metadata().sender(), &payback_attachment)?
+                .details_commitment(),
+            on_chain_payback.details_commitment(),
+            "round {depth}: reconstruction from the round's parent must match as well",
+        );
+
         // --- Alice reconstructs the remainder (when partial) from on-chain data alone ---
         if next_pswap_opt.is_some() {
             let on_chain_remainder = bob_tx.output_notes().get_note(1);
@@ -1899,6 +2023,18 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
                 reconstructed_remainder.details_commitment(),
                 on_chain_remainder.details_commitment(),
                 "round {depth}: reconstructed remainder commitment must match on-chain leaf",
+            );
+            assert_eq!(
+                current_pswap
+                    .remainder_note(
+                        on_chain_remainder.metadata().sender(),
+                        &remainder_attachment,
+                        AssetAmount::new(remaining_offered)?,
+                        AssetAmount::new(remaining_requested)?,
+                    )?
+                    .details_commitment(),
+                on_chain_remainder.details_commitment(),
+                "round {depth}: remainder reconstruction from the round's parent must match",
             );
         }
 
