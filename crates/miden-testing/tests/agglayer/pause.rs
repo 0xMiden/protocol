@@ -13,8 +13,9 @@ use miden_agglayer::{
 };
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
-use miden_protocol::account::{AccountId, AccountType};
+use miden_protocol::account::{AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::{Note, NoteAssets};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -103,8 +104,7 @@ async fn assert_note_rejected_while_paused(build_note: BuildNote<'_>) -> anyhow:
     Ok(())
 }
 
-/// An account ID standing in for a faucet the paused bridge never inspects (the pause guard
-/// fires before any registry lookup).
+/// Returns a stable account ID used as a faucet fixture in pause tests.
 fn dummy_faucet_id() -> AccountId {
     AccountIdBuilder::new().build_with_seed([7; 32])
 }
@@ -246,19 +246,55 @@ async fn paused_bridge_rejects_register_faucet() -> anyhow::Result<()> {
     .await
 }
 
-/// A paused bridge rejects faucet deregistration via DEREGISTER_AGG_FAUCET (the pause guard
-/// fires before the is-registered check).
+/// Faucet deregistration remains available while paused so an operator can revoke a compromised
+/// faucet without reopening claims and bridge-outs.
 #[tokio::test]
-async fn paused_bridge_rejects_deregister_faucet() -> anyhow::Result<()> {
-    assert_note_rejected_while_paused(&|builder, setup| {
-        Ok(DeregisterAggFaucetNote::create(
-            dummy_faucet_id(),
-            setup.faucet_manager.id(),
-            setup.bridge.id(),
-            builder.rng_mut(),
-        )?)
-    })
-    .await
+async fn paused_bridge_allows_deregister_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let faucet_id = dummy_faucet_id();
+
+    let register_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_id,
+            origin_token_address: EthAddress::from_hex(DUMMY_ETH_ADDRESS)?,
+            scale: 0,
+            origin_network: 1,
+            is_native: false,
+            metadata_hash: MetadataHash::from_token_info("Token", "TOK", 8),
+        },
+        setup.faucet_manager.id(),
+        setup.bridge.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(register_note.clone()));
+
+    let deregister_note = DeregisterAggFaucetNote::create(
+        faucet_id,
+        setup.faucet_manager.id(),
+        setup.bridge.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
+    let pause_note = stage_pause_note(&mut builder, &setup, PauseConfig::Pause)?;
+    let mut mock_chain = builder.build()?;
+
+    consume_note(&mut mock_chain, setup.bridge.id(), &register_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &pause_note).await?;
+    consume_note(&mut mock_chain, setup.bridge.id(), &deregister_note).await?;
+
+    let bridge = mock_chain.committed_account(setup.bridge.id())?;
+    let faucet_key = StorageMapKey::from_raw(AccountIdKey::new(faucet_id).as_word());
+    assert_eq!(
+        bridge
+            .storage()
+            .get_map_item(AggLayerBridge::faucet_registry_map_slot_name(), faucet_key)?,
+        [Felt::ZERO; 4].into(),
+        "faucet should be deregistered while the bridge remains paused"
+    );
+    assert!(is_bridge_paused(&mock_chain, setup.bridge.id())?);
+
+    Ok(())
 }
 
 /// A paused bridge rejects bridging out via B2AGG (the pause guard fires before the faucet
