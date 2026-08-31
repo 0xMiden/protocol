@@ -20,7 +20,7 @@ exclude      = [".github/"]
 homepage     = "https://miden.xyz"
 license      = "MIT"
 repository   = "https://github.com/0xMiden/protocol"
-rust-version = "1.96.1"
+rust-version = "1.97"
 version      = "0.16.0-rc.8"
 
 [profile.release]

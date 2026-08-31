@@ -651,8 +651,8 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
             dropw dropw dropw dropw
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
-        mock_map_slot = &*MOCK_MAP_SLOT,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
+        mock_map_slot = *MOCK_MAP_SLOT,
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
