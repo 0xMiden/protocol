@@ -39,6 +39,7 @@ use crate::account::account_component_code;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::TokenPolicyManager;
+use crate::account::wallets::BasicWallet;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -578,6 +579,7 @@ pub fn create_singlesig_user_fungible_faucet(
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -598,6 +600,7 @@ pub fn create_multisig_user_fungible_faucet(
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -618,6 +621,7 @@ pub fn create_guarded_user_fungible_faucet(
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
