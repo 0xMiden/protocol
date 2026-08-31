@@ -265,11 +265,12 @@ AggLayer-specific consequences are:
 #### Emergency pause
 
 The bridge account installs the `miden-standards` `Pausable` and `PausableManager` components.
-Every agglayer bridge procedure except `remove_ger` starts with `pausable::assert_not_paused`,
-so while the bridge is paused it rejects all bridge-out, claim, GER-injection, and
-faucet-management operations. `remove_ger` is deliberately exempt: a paused bridge can still
-revoke a fraudulent GER, and because `update_ger` is paused the revoked GER cannot be
-re-injected until unpause. The management notes (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`,
+Every agglayer bridge procedure except `remove_ger` and `deregister_faucet` starts with
+`pausable::assert_not_paused`, so while the bridge is paused it rejects all bridge-out, claim,
+GER-injection, and faucet-registration operations. The two removal procedures are deliberately
+exempt: a paused bridge can still revoke a fraudulent GER or compromised faucet without resuming
+claims and bridge-outs. Because `update_ger` and `register_faucet` remain paused, neither can be
+restored until unpause. The management notes (`RBAC_CONFIG`, `NETWORK_ACCOUNT_CONFIG`,
 `PAUSE_CONFIG`, `CONSTANT_FEE_POLICY_CONFIG`) remain consumable while paused, so a paused bridge
 can still be administered.
 
@@ -315,8 +316,8 @@ The underlying library code lives in `asm/agglayer/bridge/` with supporting modu
 
 In addition to the `bridge` component, the account installs the standards access-control stack
 (`RoleBasedAccessControl`, `Authority`) and the emergency-pause stack (`Pausable`,
-`PausableManager`). All bridge procedures below except `remove_ger` panic while the bridge is
-paused.
+`PausableManager`). All bridge procedures below except `remove_ger` and `deregister_faucet` panic
+while the bridge is paused.
 
 #### `bridge_out::bridge_out`
 
@@ -374,7 +375,7 @@ written, so a `token_registry` key never outlives the registration that created 
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused; faucet is not currently registered |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered |
 
 Asserts the note sender holds the `FAUCET_MNGR` role and the faucet is currently registered (via
 `assert_faucet_registered`), then clears all of the faucet's entries:
