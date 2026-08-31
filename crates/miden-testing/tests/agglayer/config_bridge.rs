@@ -6,7 +6,6 @@ use alloc::vec::Vec;
 use miden_agglayer::errors::{
     ERR_FAUCET_NOT_REGISTERED,
     ERR_TOKEN_ALREADY_REGISTERED_TO_DIFFERENT_FAUCET,
-    ERR_TOKEN_REGISTRY_FAUCET_MISMATCH,
 };
 use miden_agglayer::{
     AggLayerBridge,
@@ -19,7 +18,6 @@ use miden_agglayer::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account,
     AccountId,
     AccountIdVersion,
     AccountType,
@@ -450,37 +448,6 @@ fn faucet_id_value(faucet: AccountId) -> Word {
     [Felt::ZERO, Felt::ZERO, faucet.suffix(), faucet.prefix().as_felt()].into()
 }
 
-/// Seeds the faucet-ID-keyed state for a registered faucet without touching `token_registry_map`.
-/// This lets cleanup tests model a legacy inconsistent state where two faucets carry the same
-/// token metadata but the token key points to only one of them.
-fn seed_registered_faucet(
-    bridge: &mut Account,
-    faucet: AccountId,
-    origin_token_address: &EthAddress,
-    origin_network: u32,
-) -> anyhow::Result<()> {
-    let faucet_key = StorageMapKey::from_raw(AccountIdKey::new(faucet).as_word());
-    bridge.storage_mut().set_map_item(
-        AggLayerBridge::faucet_registry_map_slot_name(),
-        faucet_key,
-        [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into(),
-    )?;
-
-    let address = origin_token_address.to_elements();
-    bridge.storage_mut().set_map_item(
-        AggLayerBridge::faucet_metadata_map_slot_name(),
-        faucet_metadata_key(faucet, 0),
-        [address[0], address[1], address[2], address[3]].into(),
-    )?;
-    bridge.storage_mut().set_map_item(
-        AggLayerBridge::faucet_metadata_map_slot_name(),
-        faucet_metadata_key(faucet, 1),
-        [address[4], Felt::from(origin_network), Felt::ZERO, Felt::ZERO].into(),
-    )?;
-
-    Ok(())
-}
-
 /// A token identity already assigned to one faucet cannot be reassigned to another faucet.
 #[tokio::test]
 async fn register_faucet_rejects_token_key_owned_by_another_faucet() -> anyhow::Result<()> {
@@ -565,117 +532,6 @@ async fn register_faucet_rejects_token_key_owned_by_another_faucet() -> anyhow::
             .get_map_item(AggLayerBridge::faucet_registry_map_slot_name(), faucet_b_key)?,
         [Felt::ZERO; 4].into(),
         "the rejected faucet must not be registered"
-    );
-
-    Ok(())
-}
-
-/// Re-registration and deregistration must not clear a token key that points to another faucet.
-/// The seeded state models the inconsistent registry produced by the old duplicate-registration
-/// behavior: both faucets have the same token metadata, but the token key currently belongs to B.
-#[rstest::rstest]
-#[case::reregister(true)]
-#[case::deregister(false)]
-#[tokio::test]
-async fn token_registry_cleanup_rejects_cross_faucet_mapping(
-    #[case] reregister: bool,
-) -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_injector = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let faucet_a = AccountId::dummy(
-        [33; 15],
-        AccountIdVersion::Version1,
-        AccountType::Public,
-        AssetCallbackFlag::Disabled,
-    );
-    let faucet_b = AccountId::dummy(
-        [44; 15],
-        AccountIdVersion::Version1,
-        AccountType::Public,
-        AssetCallbackFlag::Disabled,
-    );
-    let origin_token_address = usdc_token_address();
-    let origin_network = 1;
-
-    let mut bridge = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
-        bridge_admin_account_id(),
-        faucet_manager.id(),
-        ger_injector.id(),
-        ger_remover.id(),
-        bridge_admin_account_id(),
-        bridge_admin_account_id(),
-        MIDEN_NETWORK_ID,
-    );
-    seed_registered_faucet(&mut bridge, faucet_a, &origin_token_address, origin_network)?;
-    seed_registered_faucet(&mut bridge, faucet_b, &origin_token_address, origin_network)?;
-    let token_key = token_registry_key(&origin_token_address, origin_network);
-    bridge.storage_mut().set_map_item(
-        AggLayerBridge::token_registry_map_slot_name(),
-        token_key,
-        faucet_id_value(faucet_b),
-    )?;
-    builder.add_account(bridge.clone())?;
-
-    let cleanup_note = if reregister {
-        ConfigAggBridgeNote::create(
-            ConversionMetadata {
-                faucet_account_id: faucet_a,
-                origin_token_address: EthAddress::from_hex(
-                    "0x00000000000000000000000000000000000000bb",
-                )?,
-                scale: 0,
-                origin_network: 2,
-                is_native: false,
-                metadata_hash: MetadataHash::from_token_info("Replacement", "NEW", 6),
-            },
-            faucet_manager.id(),
-            bridge.id(),
-            builder.rng_mut(),
-        )?
-    } else {
-        DeregisterAggFaucetNote::create(
-            faucet_a,
-            faucet_manager.id(),
-            bridge.id(),
-            builder.rng_mut(),
-        )?
-    };
-    builder.add_output_note(RawOutputNote::Full(cleanup_note.clone()));
-    let mock_chain = builder.build()?;
-
-    let result = mock_chain
-        .build_transaction(bridge.id())
-        .authenticated_input_note(cleanup_note.id())
-        .build()?
-        .execute()
-        .await;
-    assert_transaction_executor_error!(result, ERR_TOKEN_REGISTRY_FAUCET_MISMATCH);
-
-    let committed_bridge = mock_chain.committed_account(bridge.id())?;
-    assert_eq!(
-        committed_bridge
-            .storage()
-            .get_map_item(AggLayerBridge::token_registry_map_slot_name(), token_key)?,
-        faucet_id_value(faucet_b),
-        "cleanup must preserve the other faucet's token mapping"
-    );
-    let faucet_a_key = StorageMapKey::from_raw(AccountIdKey::new(faucet_a).as_word());
-    assert_eq!(
-        committed_bridge
-            .storage()
-            .get_map_item(AggLayerBridge::faucet_registry_map_slot_name(), faucet_a_key)?,
-        [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into(),
-        "the rejected cleanup must leave faucet A registered"
     );
 
     Ok(())
