@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "transaction.proto",
         "block.proto",
         "partial_blockchain.proto",
+        "transaction_inputs.proto",
         "batch.proto",
     ];
 

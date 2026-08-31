@@ -157,6 +157,7 @@ impl_conversion_error_from!(
     miden_protocol::errors::PartialAssetVaultError,
     miden_protocol::errors::ProtocolConfigError,
     miden_protocol::errors::StorageSlotNameError,
+    miden_protocol::errors::TransactionInputError,
 );
 
 impl From<prost::UnknownEnumValue> for ConversionError {
