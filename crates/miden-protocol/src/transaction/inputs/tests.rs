@@ -26,7 +26,7 @@ use crate::testing::account_id::{
 };
 use crate::transaction::{InputNotes, PartialBlockchain, TransactionArgs, TransactionInputs};
 use crate::utils::serde::{Deserializable, Serializable};
-use crate::vm::AdviceInputs;
+use crate::vm::{AdviceInputs, AdviceMap};
 use crate::{Felt, Word};
 
 #[test]
@@ -123,14 +123,11 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     let foreign_storage_header = AccountStorageHeader::new(slots.clone()).unwrap();
 
     // Create advice inputs with both account header and storage header.
-    let mut advice_inputs = AdviceInputs::default();
     let account_id_key = AccountIdKey::from(foreign_account_id);
-    advice_inputs
-        .map
-        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
-    advice_inputs
-        .map
-        .insert(foreign_header.storage_commitment(), foreign_storage_header.to_elements());
+    let advice_inputs = AdviceInputs::default().with_map([
+        (account_id_key.as_word(), foreign_header.to_elements().to_vec()),
+        (foreign_header.storage_commitment(), foreign_storage_header.to_elements()),
+    ]);
 
     let foreign_account_slot_names = BTreeMap::from([
         (slots[0].id(), slots[0].name().clone()),
@@ -234,26 +231,25 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     let foreign_witness = account_tree.open(foreign_account_id);
 
     // Create advice inputs with proper Merkle store data.
-    let mut advice_inputs = AdviceInputs::default();
-
-    // Add account header to advice map.
     let account_id_key = AccountIdKey::from(foreign_account_id);
-    advice_inputs
-        .map
-        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
-    // Add storage header to advice map.
-    advice_inputs
-        .map
-        .insert(foreign_header.storage_commitment(), foreign_storage_header.to_elements());
-
-    // Add authenticated nodes from the witness to the Merkle store.
-    advice_inputs.store.extend(foreign_witness.authenticated_nodes());
-
-    // Add the account leaf to the advice map (needed for witness verification).
     let leaf = foreign_witness.leaf();
-    advice_inputs
-        .map
-        .insert(leaf.hash(), leaf.to_elements().collect::<Arc<[Felt]>>());
+    let advice_map = AdviceMap::from_iter([
+        // Account header.
+        (
+            account_id_key.as_word(),
+            Arc::<[Felt]>::from(foreign_header.to_elements().to_vec()),
+        ),
+        // Storage header.
+        (
+            foreign_header.storage_commitment(),
+            Arc::<[Felt]>::from(foreign_storage_header.to_elements()),
+        ),
+        // Account leaf, needed for witness verification.
+        (leaf.hash(), leaf.to_elements().collect::<Arc<[Felt]>>()),
+    ]);
+    // Authenticated nodes from the witness go into the Merkle store.
+    let advice_inputs = AdviceInputs::from(advice_map)
+        .with_merkle_store(foreign_witness.authenticated_nodes().collect());
 
     let block_header = BlockHeader::mock(0, None, None, &[]);
 

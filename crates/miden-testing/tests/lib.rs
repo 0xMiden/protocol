@@ -23,8 +23,8 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::MockChain;
-use miden_tx::{LocalTransactionProver, ProvingOptions};
+use miden_testing::{Auth, MockChain};
+use miden_tx::{LocalTransactionProver, Prover};
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -39,8 +39,9 @@ pub async fn prove_and_verify_transaction(
     let executed_tx_header = TransactionHeader::from(&executed_transaction);
     // Prove the transaction
 
-    let proof_options = ProvingOptions::default();
-    let prover = LocalTransactionProver::new(proof_options);
+    // `Prover::new()` keeps the Blake3 hash function this helper has always proven with; the
+    // `LocalTransactionProver` default is Poseidon2, which is markedly slower to prove.
+    let prover = LocalTransactionProver::new(Prover::new());
     let proven_transaction = prover.prove(executed_transaction).unwrap();
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
 
@@ -55,6 +56,37 @@ pub async fn prove_and_verify_transaction(
     let verifier = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL);
 
     verifier.verify(&proven_transaction)
+}
+
+/// A proof that leaves its deferred precompile work unproven must be rejected.
+///
+/// The standard auth components verify signatures through precompiles, so accepting such a proof
+/// would accept a transaction whose signature check was asserted but never proved. `miden-vm`
+/// v0.29 rejected these inside `verify`; v0.30 reports them through the verification outcome and
+/// leaves the policy to [`TransactionVerifier`], which is what this pins down.
+#[tokio::test]
+async fn transaction_verifier_rejects_proof_with_unproven_precompile_work() -> anyhow::Result<()> {
+    use assert_matches::assert_matches;
+
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain.build_transaction(account.id()).build()?.execute().await?;
+
+    let prover = LocalTransactionProver::new(Prover::new());
+    let deferred = prover.prove_deferred(executed)?;
+
+    // The proof must survive a round trip: a deferred proof is a shape the wire format accepts, so
+    // rejecting it is the verifier's job rather than the deserializer's.
+    let deferred = ProvenTransaction::read_from_bytes(&deferred.to_bytes()).unwrap();
+
+    let err = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL)
+        .verify(&deferred)
+        .unwrap_err();
+    assert_matches!(err, TransactionVerifierError::IncompleteProof(_));
+
+    Ok(())
 }
 
 #[cfg(test)]

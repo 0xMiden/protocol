@@ -87,8 +87,10 @@ impl TransactionAdviceInputs {
     pub fn into_advice_mutations(self) -> impl Iterator<Item = AdviceMutation> {
         let (stack, map, store) = self.0.into_parts();
         [
-            AdviceMutation::ExtendMap { other: map },
-            AdviceMutation::ExtendMerkleStore { infos: store.inner_nodes().collect() },
+            AdviceMutation::ExtendMap { map },
+            AdviceMutation::ExtendMerkleStore {
+                inner_nodes: store.inner_nodes().collect(),
+            },
             AdviceMutation::ExtendStack { stack },
         ]
         .into_iter()
@@ -386,25 +388,24 @@ impl TransactionAdviceInputs {
 
     /// Extends the map of values with the given argument, replacing previously inserted items.
     fn extend_map(&mut self, iter: impl IntoIterator<Item = (Word, Vec<Felt>)>) {
-        self.0.map.extend(iter);
+        // `AdviceInputs` keeps its parts private, so every mutation goes through `extend`, which
+        // merges the other instance's stack, map and Merkle store into ours.
+        self.0.extend(AdviceInputs::default().with_map(iter));
     }
 
     fn add_map_entry(&mut self, key: Word, values: Vec<Felt>) {
-        self.0.map.extend([(key, values)]);
+        self.extend_map([(key, values)]);
     }
 
     /// Extends the stack with the given elements.
     fn extend_stack(&mut self, iter: impl IntoIterator<Item = Felt>) {
-        // `AdviceInputs` exposes its stack only as a typed `AdviceStack`, so appending goes
-        // through `extend`, which appends the other instance's stack elements to ours.
-        self.0
-            .extend(AdviceInputs::default().with_advice_stack(iter.into_iter().collect()));
+        self.0.extend(AdviceInputs::default().with_stack(iter.into_iter().collect()));
     }
 
     /// Extends the [`MerkleStore`](crate::crypto::merkle::MerkleStore) with the given
     /// nodes.
     fn extend_merkle_store(&mut self, iter: impl Iterator<Item = InnerNodeInfo>) {
-        self.0.store.extend(iter);
+        self.0.extend(AdviceInputs::default().with_merkle_store(iter.collect()));
     }
 }
 

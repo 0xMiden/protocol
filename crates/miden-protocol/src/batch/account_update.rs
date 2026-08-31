@@ -246,7 +246,6 @@ mod tests {
     use crate::testing::storage::AccountStoragePatchBuilder;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
     use crate::utils::serde::Serializable;
-    use crate::vm::ExecutionProof;
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, Felt, Word};
 
     fn map_update_patch(
@@ -293,7 +292,7 @@ mod tests {
             BlockNumber::from(1),
             Word::empty(),
             BlockNumber::from(2),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap()
     }

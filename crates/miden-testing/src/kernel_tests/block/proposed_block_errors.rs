@@ -4,12 +4,12 @@ use std::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::crypto::merkle::MerklePath;
-use miden_protocol::MAX_BATCHES_PER_BLOCK;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::note::{NoteInclusionProof, NoteType};
+use miden_protocol::{MAX_BATCHES_PER_BLOCK, Word};
 use miden_tx::LocalTransactionProver;
 
 use crate::kernel_tests::batch::proposed_batch::setup_circular_note_dependency_test;
@@ -415,10 +415,11 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
         .get(&p2id_note.id())
         .expect("note proof should have been fetched")
         .clone();
-    let mut original_merkle_path = MerklePath::from(original_note_proof.note_path().clone());
-    original_merkle_path.push(block2.header().commitment());
+    let mut nodes: Vec<Word> =
+        MerklePath::from(original_note_proof.note_path().clone()).nodes().to_vec();
     // Add a random hash to the path to make it invalid.
-    let invalid_note_path = SparseMerklePath::try_from(original_merkle_path).unwrap();
+    nodes.push(block2.header().commitment());
+    let invalid_note_path = SparseMerklePath::try_from(MerklePath::new(nodes)).unwrap();
     let invalid_note_proof = NoteInclusionProof::new(
         original_note_proof.location().block_num(),
         original_note_proof.location().block_note_tree_index(),

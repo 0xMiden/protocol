@@ -536,7 +536,6 @@ mod tests {
     use anyhow::Context;
     use assert_matches::assert_matches;
     use miden_crypto::rand::test_utils::rand_value;
-    use miden_verifier::ExecutionProof;
 
     use super::ProvenTransaction;
     use crate::account::{
@@ -729,7 +728,7 @@ mod tests {
         let ref_block_num = BlockNumber::from(1);
         let ref_block_commitment = Word::empty();
         let expiration_block_num = BlockNumber::from(2);
-        let proof = ExecutionProof::new_dummy();
+        let proof = crate::testing::proof::dummy_execution_proof();
 
         let account_update = TxAccountUpdate::new(
             account_id,

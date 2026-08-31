@@ -97,7 +97,7 @@ impl TestTransactionBuilder {
     ///
     /// To add multiple entries, call this repeatedly.
     pub(crate) fn add_advice_map_entry(mut self, key: Word, value: Vec<Felt>) -> Self {
-        self.advice_inputs.map.insert(key, value);
+        self.advice_inputs.extend(AdviceInputs::default().with_map([(key, value)]));
         self
     }
 

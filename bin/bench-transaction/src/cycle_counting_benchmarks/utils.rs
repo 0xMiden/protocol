@@ -350,7 +350,8 @@ mod tests {
             20,
             ChipletsLengths::from_parts(30, 40, 50, 60, 70),
             80,
-            128,
+            // The per-AIR padded heights are irrelevant to what this test asserts.
+            Default::default(),
         );
 
         let measurements = TraceMeasurements::from(summary);

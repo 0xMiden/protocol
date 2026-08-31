@@ -1,5 +1,6 @@
 use miden_processor::ExecutionError;
 use miden_protocol::errors::BlockOutputError;
+use miden_prover::ProverError;
 
 // BLOCK PROVER ERROR
 // ================================================================================================
@@ -11,4 +12,6 @@ pub enum BlockProverError {
     BlockKernelExecutionFailed(#[source] ExecutionError),
     #[error("block kernel produced an invalid output stack")]
     BlockKernelOutputInvalid(#[source] BlockOutputError),
+    #[error("block proof generation failed")]
+    BlockProvingFailed(#[source] ProverError),
 }

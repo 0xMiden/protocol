@@ -54,8 +54,7 @@ impl TransactionArgs {
     /// Returns new [TransactionArgs] instantiated with the provided transaction script, advice
     /// map and foreign account inputs.
     pub fn new(advice_map: AdviceMap) -> Self {
-        let mut advice_inputs = AdviceInputs::default();
-        advice_inputs.map = advice_map;
+        let advice_inputs = AdviceInputs::from(advice_map);
 
         Self {
             tx_script: None,
@@ -178,9 +177,10 @@ impl TransactionArgs {
         signature: Signature,
     ) {
         let pk_word: Word = pub_key.into();
-        self.advice_inputs
-            .map
-            .insert(Hasher::merge(&[pk_word, message]), signature.to_encoded_signature(message));
+        self.extend_advice_map([(
+            Hasher::merge(&[pk_word, message]),
+            signature.to_encoded_signature(message),
+        )]);
     }
 
     /// Populates the advice inputs with the specified note recipient details.
@@ -201,13 +201,17 @@ impl TransactionArgs {
     }
 
     /// Extends the internal advice inputs' map with the provided key-value pairs.
+    ///
+    /// `AdviceInputs` keeps its stack, map and Merkle store private, so this and the mutators below
+    /// build a throwaway instance and merge it in via `extend`, which appends to all three parts.
     pub fn extend_advice_map<T: IntoIterator<Item = (Word, Vec<Felt>)>>(&mut self, iter: T) {
-        self.advice_inputs.map.extend(iter);
+        self.advice_inputs.extend(AdviceInputs::default().with_map(iter));
     }
 
     /// Extends the internal advice inputs' merkle store with the provided nodes.
     pub fn extend_merkle_store<I: Iterator<Item = InnerNodeInfo>>(&mut self, iter: I) {
-        self.advice_inputs.store.extend(iter);
+        self.advice_inputs
+            .extend(AdviceInputs::default().with_merkle_store(iter.collect()));
     }
 
     /// Extends the advice inputs in self with the provided ones.

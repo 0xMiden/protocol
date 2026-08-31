@@ -108,11 +108,12 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     // The protocol package declares dependencies on the kernel and core packages, and the agglayer
     // projects depend on the standards package, so all of these must be available in the registry
     // for project dependency resolution to succeed.
-    for package in CoreLibrary::default().packages().into_iter().chain([
+    for package in [
+        CoreLibrary::default().package(),
         ProtocolLib::default().package(),
         TransactionKernel::package(),
         StandardsLib::default().package(),
-    ]) {
+    ] {
         registry.cache_package(package).into_diagnostic()?;
     }
 

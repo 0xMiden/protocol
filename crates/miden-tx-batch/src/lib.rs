@@ -9,7 +9,7 @@ mod batch_executor;
 pub use batch_executor::BatchExecutor;
 
 mod errors;
-pub use errors::BatchVerifierError;
+pub use errors::{BatchProverError, BatchVerifierError};
 
 mod executed_batch;
 pub use executed_batch::ExecutedBatch;

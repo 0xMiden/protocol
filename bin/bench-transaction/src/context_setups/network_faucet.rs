@@ -14,7 +14,7 @@ use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::vm::AdviceInputs;
+use miden_protocol::vm::{AdviceInputs, AdviceMap};
 use miden_standards::account::access::{AccessControl, Pausable, PausableManager};
 use miden_standards::account::faucets::{NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
@@ -124,16 +124,15 @@ fn add_fee_funded_network_non_fungible_faucet(
 fn minted_asset_witness(faucet: &Account, asset_id: AssetId) -> AdviceInputs {
     let witness = faucet.vault().open(asset_id);
 
-    let mut advice_inputs = AdviceInputs::default();
-    advice_inputs.store.extend(witness.authenticated_nodes());
+    let store = witness.authenticated_nodes().collect();
 
     let smt_proof = SmtProof::from(witness);
-    advice_inputs.map.extend([(
+    let map = AdviceMap::from_iter([(
         smt_proof.leaf().hash(),
         smt_proof.leaf().to_elements().collect::<Arc<[Felt]>>(),
     )]);
 
-    advice_inputs
+    AdviceInputs::from(map).with_merkle_store(store)
 }
 
 // MINT NOTE SETUPS

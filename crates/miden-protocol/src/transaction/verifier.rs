@@ -1,4 +1,4 @@
-use miden_verifier::{ExecutionClaim, verify};
+use miden_verifier::{ExecutionClaim, Verifier};
 
 use crate::errors::TransactionVerifierError;
 use crate::transaction::{ProvenTransaction, TransactionKernel};
@@ -29,6 +29,7 @@ impl TransactionVerifier {
     /// # Errors
     /// Returns an error if:
     /// - Transaction verification fails.
+    /// - The proof defers precompile work, leaving it unproven.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, transaction: &ProvenTransaction) -> Result<(), TransactionVerifierError> {
         // build stack inputs and outputs
@@ -52,10 +53,19 @@ impl TransactionVerifier {
             stack_inputs,
             stack_outputs,
         );
-        let proof_security_level = verify(transaction.proof().clone(), claim)
+        let outcome = Verifier::new()
+            .verify(&claim, transaction.proof())
             .map_err(TransactionVerifierError::TransactionVerificationFailed)?;
 
+        // A deferred proof carries only the VM STARK: the precompile work it authenticates is left
+        // unproven, and the standard auth components verify signatures through precompiles. The
+        // verifier reports this rather than rejecting it, so the completeness policy is ours.
+        if let Some(root) = outcome.outstanding_precompile_root() {
+            return Err(TransactionVerifierError::IncompleteProof(root));
+        }
+
         // check security level
+        let proof_security_level = outcome.security_level();
         if proof_security_level < self.proof_security_level {
             return Err(TransactionVerifierError::InsufficientProofSecurityLevel {
                 actual: proof_security_level,

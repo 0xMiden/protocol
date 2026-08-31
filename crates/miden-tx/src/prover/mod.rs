@@ -1,6 +1,8 @@
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionOptions;
+#[cfg(any(feature = "testing", test))]
+use miden_processor::{ExecutionError, FastProcessor};
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
@@ -13,7 +15,7 @@ use miden_protocol::transaction::{
     TxAccountUpdate,
 };
 use miden_prover::HashFunction::Poseidon2;
-pub use miden_prover::ProvingOptions;
+pub use miden_prover::Prover;
 use miden_prover::{ExecutionProof, Word, prove_sync};
 
 use super::TransactionProverError;
@@ -25,6 +27,17 @@ pub use prover_host::TransactionProverHost;
 mod mast_store;
 pub use mast_store::TransactionMastStore;
 
+/// Whether a proof should settle the transaction's deferred precompile work or leave it
+/// outstanding.
+#[derive(Debug, Clone, Copy)]
+enum PrecompilePolicy {
+    /// Prove the deferred work, yielding a complete [`ExecutionProof`].
+    Prove,
+    /// Leave the deferred work unproven, yielding an [`ExecutionProof::Deferred`].
+    #[cfg(any(feature = "testing", test))]
+    Defer,
+}
+
 // LOCAL TRANSACTION PROVER
 // ------------------------------------------------------------------------------------------------
 
@@ -35,21 +48,21 @@ pub use mast_store::TransactionMastStore;
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
 #[derive(Debug, Clone)]
 pub struct LocalTransactionProver {
-    proof_options: ProvingOptions,
+    prover: Prover,
 }
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
         Self {
-            proof_options: ProvingOptions::new(Poseidon2),
+            prover: Prover::new().with_hash_fn(Poseidon2),
         }
     }
 }
 
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
-    pub fn new(proof_options: ProvingOptions) -> Self {
-        Self { proof_options }
+    pub fn new(prover: Prover) -> Self {
+        Self { prover }
     }
 
     fn build_proven_transaction(
@@ -107,6 +120,16 @@ impl LocalTransactionProver {
         &self,
         tx_inputs: impl Into<TransactionInputs>,
     ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with(tx_inputs, PrecompilePolicy::Prove)
+    }
+
+    /// Proves the transaction, either completing the deferred precompile work or leaving it
+    /// outstanding.
+    fn prove_with(
+        &self,
+        tx_inputs: impl Into<TransactionInputs>,
+        precompile_policy: PrecompilePolicy,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
         let tx_inputs = tx_inputs.into();
         let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 
@@ -145,15 +168,36 @@ impl LocalTransactionProver {
 
         let advice_inputs = advice_inputs.into_advice_inputs();
 
-        let (stack_outputs, proof) = prove_sync(
-            &TransactionKernel::main(),
-            stack_inputs,
-            advice_inputs.clone(),
-            &mut host,
-            ExecutionOptions::default(),
-            self.proof_options.clone(),
-        )
-        .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
+        let (stack_outputs, proof) = match precompile_policy {
+            PrecompilePolicy::Prove => prove_sync(
+                &self.prover,
+                &TransactionKernel::main(),
+                stack_inputs,
+                advice_inputs.clone(),
+                &mut host,
+                ExecutionOptions::default(),
+            )
+            .map_err(TransactionProverError::TransactionProgramExecutionFailed)?,
+            #[cfg(any(feature = "testing", test))]
+            PrecompilePolicy::Defer => {
+                let processor = FastProcessor::new_with_options(
+                    stack_inputs,
+                    advice_inputs.clone(),
+                    ExecutionOptions::default(),
+                )
+                .map_err(ExecutionError::advice_error_no_context)
+                .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
+                let witness = processor
+                    .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
+                    .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
+                let stack_outputs = *witness.claim().stack_outputs();
+                let proof = self
+                    .prover
+                    .prove(witness)
+                    .map_err(TransactionProverError::ProofGenerationFailed)?;
+                (stack_outputs, proof)
+            },
+        };
 
         // Extract transaction outputs and process transaction data.
         let (account_patch, input_notes, output_notes) = host.into_parts();
@@ -175,6 +219,19 @@ impl LocalTransactionProver {
 
 #[cfg(any(feature = "testing", test))]
 impl LocalTransactionProver {
+    /// Proves the transaction but leaves its deferred precompile work unproven, yielding an
+    /// [`ExecutionProof::Deferred`].
+    ///
+    /// Such a proof authenticates the precompile root without proving the work behind it, so
+    /// verification must reject it. This exists so that rejection can be tested; a delegated
+    /// prover that hands back a deferred proof is the real-world source of one.
+    pub fn prove_deferred(
+        &self,
+        tx_inputs: impl Into<TransactionInputs>,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with(tx_inputs, PrecompilePolicy::Defer)
+    }
+
     pub fn prove_dummy(
         &self,
         executed_transaction: miden_protocol::transaction::ExecutedTransaction,
@@ -190,7 +247,7 @@ impl LocalTransactionProver {
             partial_account,
             ref_block.block_num(),
             ref_block.commitment(),
-            ExecutionProof::new_dummy(),
+            miden_protocol::testing::proof::dummy_execution_proof(),
         )
     }
 }

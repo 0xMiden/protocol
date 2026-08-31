@@ -1,8 +1,7 @@
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
-use miden_protocol::errors::ProvenBatchError;
-use miden_prover::{ExecutionProof, ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
+use miden_prover::{ExecutionProof, Prover};
 
-use crate::ExecutedBatch;
+use crate::{BatchProverError, ExecutedBatch};
 
 // LOCAL BATCH PROVER
 // ================================================================================================
@@ -13,7 +12,7 @@ use crate::ExecutedBatch;
 /// [`ProvenBatch`] carrying an [`ExecutionProof`] over the batch's public commitments.
 #[derive(Clone, Default)]
 pub struct LocalBatchProver {
-    proving_options: ProvingOptions,
+    prover: Prover,
 }
 
 impl LocalBatchProver {
@@ -30,15 +29,14 @@ impl LocalBatchProver {
     ///
     /// # Errors
     ///
-    /// Returns an error if proof generation fails.
-    pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
-        let (proposed_batch, trace_inputs) = executed_batch.into_parts();
+    /// Returns an error if proof generation fails or the proven batch cannot be built.
+    pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, BatchProverError> {
+        let (proposed_batch, execution_witness) = executed_batch.into_parts();
 
-        let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
-            trace_inputs,
-            self.proving_options.clone(),
-        ))
-        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
+        let proof = self
+            .prover
+            .prove_full(execution_witness)
+            .map_err(BatchProverError::ProofGenerationFailed)?;
 
         Self::build_proven_batch(proposed_batch, proof)
     }
@@ -49,8 +47,9 @@ impl LocalBatchProver {
     pub fn prove_dummy(
         &self,
         proposed_batch: ProposedBatch,
-    ) -> Result<ProvenBatch, ProvenBatchError> {
-        Self::build_proven_batch(proposed_batch, ExecutionProof::new_dummy())
+    ) -> Result<ProvenBatch, BatchProverError> {
+        let proof = miden_protocol::testing::proof::dummy_execution_proof();
+        Self::build_proven_batch(proposed_batch, proof)
     }
 
     /// Combines the parts of a [`ProposedBatch`] with the produced [`ExecutionProof`] into a
@@ -58,7 +57,7 @@ impl LocalBatchProver {
     fn build_proven_batch(
         proposed_batch: ProposedBatch,
         proof: ExecutionProof,
-    ) -> Result<ProvenBatch, ProvenBatchError> {
+    ) -> Result<ProvenBatch, BatchProverError> {
         let tx_headers = proposed_batch.transaction_headers();
         let (
             _transactions,
@@ -83,5 +82,6 @@ impl LocalBatchProver {
             tx_headers,
             proof,
         )
+        .map_err(BatchProverError::ProvenBatchBuildFailed)
     }
 }

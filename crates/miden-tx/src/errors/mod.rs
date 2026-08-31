@@ -23,6 +23,7 @@ use miden_protocol::errors::{
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
+use miden_prover::ProverError;
 use thiserror::Error;
 
 // NOTE EXECUTION ERROR
@@ -164,6 +165,8 @@ pub enum TransactionProverError {
     // case, the diagnostic is lost if the execution error is not explicitly unwrapped.
     #[error("failed to execute transaction kernel program:\n{}", PrintDiagnostic::new(.0))]
     TransactionProgramExecutionFailed(ExecutionError),
+    #[error("failed to generate the transaction proof")]
+    ProofGenerationFailed(#[source] ProverError),
     /// Custom error variant for errors not covered by the other variants.
     #[error("{error_msg}")]
     Other {

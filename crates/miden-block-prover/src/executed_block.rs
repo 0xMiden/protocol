@@ -1,4 +1,4 @@
-use miden_processor::TraceBuildInputs;
+use miden_processor::ExecutionWitness;
 use miden_protocol::block::{BlockOutputs, ProposedBlock};
 
 // EXECUTED BLOCK
@@ -8,24 +8,24 @@ use miden_protocol::block::{BlockOutputs, ProposedBlock};
 ///
 /// Produced by [`BlockExecutor::execute`](crate::BlockExecutor::execute) and consumed by
 /// [`LocalBlockProver::prove`](crate::LocalBlockProver::prove). It carries the executed block's
-/// trace inputs so that proving only needs to build the trace and generate the proof.
+/// execution witness so that proving only needs to build the trace and generate the proof.
 pub struct ExecutedBlock {
     proposed_block: ProposedBlock,
-    trace_inputs: TraceBuildInputs,
+    execution_witness: ExecutionWitness,
     block_outputs: BlockOutputs,
 }
 
 impl ExecutedBlock {
-    /// Creates a new [`ExecutedBlock`] from the proposed block, the trace inputs and the public
-    /// outputs produced by executing the block kernel over it.
+    /// Creates a new [`ExecutedBlock`] from the proposed block, the execution witness and the
+    /// public outputs produced by executing the block kernel over it.
     pub(crate) fn new(
         proposed_block: ProposedBlock,
-        trace_inputs: TraceBuildInputs,
+        execution_witness: ExecutionWitness,
         block_outputs: BlockOutputs,
     ) -> Self {
         Self {
             proposed_block,
-            trace_inputs,
+            execution_witness,
             block_outputs,
         }
     }
@@ -40,8 +40,8 @@ impl ExecutedBlock {
         &self.block_outputs
     }
 
-    /// Consumes the executed block, returning the trace inputs needed to prove it.
-    pub(crate) fn into_trace_inputs(self) -> TraceBuildInputs {
-        self.trace_inputs
+    /// Consumes the executed block, returning the execution witness needed to prove it.
+    pub(crate) fn into_execution_witness(self) -> ExecutionWitness {
+        self.execution_witness
     }
 }

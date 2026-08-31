@@ -23,7 +23,6 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TxAccountUpdate,
 };
-use miden_protocol::vm::ExecutionProof;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::LocalTransactionProver;
@@ -403,7 +402,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 genesis_block.block_num(),
                 genesis_block.commitment(),
                 BlockNumber::from(u32::MAX),
-                ExecutionProof::new_dummy(),
+                miden_protocol::testing::proof::dummy_execution_proof(),
             )
             .context("failed to build proven transaction")
             .unwrap()

@@ -2,7 +2,7 @@ use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
-use miden_verifier::{ExecutionClaim, verify};
+use miden_verifier::{ExecutionClaim, Verifier};
 
 use crate::BatchVerifierError;
 
@@ -41,6 +41,7 @@ impl BatchVerifier {
     /// # Errors
     /// Returns an error if:
     /// - Batch proof verification fails.
+    /// - The proof defers precompile work, leaving it unproven.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
         let stack_inputs =
@@ -59,9 +60,17 @@ impl BatchVerifier {
             stack_inputs,
             stack_outputs,
         );
-        let proof_security_level = verify(batch.proof().clone(), claim)
+        let outcome = Verifier::new()
+            .verify(&claim, batch.proof())
             .map_err(BatchVerifierError::BatchVerificationFailed)?;
 
+        // A deferred proof carries only the VM STARK, leaving the precompile work it authenticates
+        // unproven. The verifier reports this rather than rejecting it, so the policy is ours.
+        if let Some(root) = outcome.outstanding_precompile_root() {
+            return Err(BatchVerifierError::IncompleteProof(root));
+        }
+
+        let proof_security_level = outcome.security_level();
         if proof_security_level < self.proof_security_level {
             return Err(BatchVerifierError::InsufficientProofSecurityLevel {
                 actual: proof_security_level,

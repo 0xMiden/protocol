@@ -13,7 +13,6 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TxAccountUpdate,
 };
-use miden_protocol::vm::ExecutionProof;
 
 /// A builder to build mocked [`ProvenTransaction`]s.
 pub struct MockProvenTxBuilder {
@@ -130,7 +129,7 @@ impl MockProvenTxBuilder {
             ref_block_num,
             ref_block_commitment,
             self.expiration_block_num,
-            ExecutionProof::new_dummy(),
+            miden_protocol::testing::proof::dummy_execution_proof(),
         )
         .context("failed to build proven transaction")
     }

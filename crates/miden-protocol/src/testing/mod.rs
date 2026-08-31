@@ -13,6 +13,7 @@ pub mod noop_auth_component;
 pub mod note;
 pub mod note_script_root;
 pub mod partial_blockchain;
+pub mod proof;
 pub mod protocol_config;
 pub mod random_secret_key;
 pub mod slot_name;

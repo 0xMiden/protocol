@@ -417,7 +417,6 @@ mod tests {
         TransactionHeader,
     };
     use crate::utils::serde::{Deserializable, Serializable};
-    use crate::vm::ExecutionProof;
     use crate::{MAX_ACCOUNTS_PER_BATCH, Word};
 
     fn account_id() -> AccountId {
@@ -520,7 +519,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -538,7 +537,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap();
 
@@ -558,7 +557,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -591,7 +590,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -619,7 +618,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -639,7 +638,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -681,7 +680,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -726,7 +725,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -757,7 +756,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -778,7 +777,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap();
 
@@ -807,7 +806,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap();
 
@@ -826,7 +825,7 @@ mod tests {
             output_notes,
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -849,7 +848,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -869,7 +868,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -892,7 +891,7 @@ mod tests {
             vec![output_note.clone(), output_note],
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -914,7 +913,7 @@ mod tests {
             output_notes,
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            crate::testing::proof::dummy_execution_proof(),
         )
         .unwrap_err();
 
