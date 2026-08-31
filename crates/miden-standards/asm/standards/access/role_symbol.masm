@@ -60,7 +60,13 @@ pub proc validate_encoding
 
     # The encoding stacks `num_chars` character digits on top of the length digit, so it spans
     # `num_chars + 1` base-`ALPHABET_LEN` digits: hence the `add.1` in the exponent.
-    push.ALPHABET_LEN swap add.1 exp
+    #
+    # The assertion above caps that exponent at `MAX_LENGTH + 1 = 13`, so four bits carry it, and
+    # spelling the width out is what makes the bound trustworthy: a bare `exp` decomposes the
+    # exponent into 64 bits, which do not pin down a field element, so a prover may reconstruct
+    # `e + Q` in place of `e` and land on `ALPHABET_LEN^(e + 1)` as the bound, admitting one digit
+    # past the announced length. Keep `MAX_LENGTH` below 15 so the exponent still fits four bits.
+    push.ALPHABET_LEN swap add.1 exp.u4
     # => [upper_bound, role_symbol]
 
     # The value must fit in the characters its length announces.
