@@ -154,14 +154,11 @@ pub proc set_procedure_policy
     # => [is_immediate_threshold_zero, PROC_ROOT]
 
     if.true
-        # immediate is zero, so the entry can only clear the policy. A delay-only policy is
-        # rejected: `enforce_procedure_policy` always runs in immediate mode, so the procedure
-        # would be permanently uncallable, including `set_procedure_policy` itself.
+        # immediate is zero, so the entry can only clear the policy.
         loc_load.DELAYED_THRESHOLD_LOC eq.0 assert.err=ERR_DELAY_ONLY_POLICY_UNSUPPORTED
         # => [PROC_ROOT]
 
-        # Both thresholds are zero, so note_restrictions must be zero as well, otherwise the
-        # policy would forbid notes for a procedure that has no threshold to authorize them.
+        # both thresholds are zero, so note_restrictions must be zero as well.
         loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
         # => [PROC_ROOT]
     else

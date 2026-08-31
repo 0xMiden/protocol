@@ -647,11 +647,7 @@ async fn test_multisig_smart_set_procedure_policy_rejects_foreign_root() -> anyh
     Ok(())
 }
 
-/// `set_procedure_policy` must reject a delay-only policy (immediate threshold 0, delayed
-/// threshold non-zero). Policy enforcement always runs in immediate mode, so such a policy would
-/// make its procedure permanently uncallable. Targeting `set_procedure_policy` itself, as this
-/// test does, would additionally remove the only way to repair the policy map. The shape guard
-/// aborts during execution, before the epilogue auth check, so no signatures are required.
+/// `set_procedure_policy` must reject a delay-only policy.
 #[tokio::test]
 async fn test_multisig_smart_set_procedure_policy_rejects_delay_only_policy() -> anyhow::Result<()>
 {
