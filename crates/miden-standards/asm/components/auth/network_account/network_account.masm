@@ -38,7 +38,7 @@ const ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT = "network account transacti
 
 const ERR_NETWORK_ACCOUNT_SPONSORED_FEES_EXCEED_COLLECTED = "the fees moved into sponsorship notes exceed the fees collected in this transaction"
 
-# HELPERS
+# HELPER PROCEDURES
 # =================================================================================================
 
 #! Asserts that the transaction had an effect before fee collection and payment.
