@@ -44,6 +44,16 @@ use super::test_utils::{
     setup_bridge,
 };
 
+const USDC_TOKEN_ADDR: &str = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+
+fn usdc_token_address() -> EthAddress {
+    EthAddress::from_hex(USDC_TOKEN_ADDR).expect("USDC token address should be valid")
+}
+
+fn usdc_metadata_hash() -> MetadataHash {
+    MetadataHash::from_token_info("USD Coin", "USDC", 6)
+}
+
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
 /// Mirrors `bridge_config::hash_token_address` in `bridge_config.masm`: hashes the 5-felt token
@@ -149,11 +159,10 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let scale = 0u8;
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_to_register,
@@ -240,12 +249,11 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     let faucet_network_2 =
         AccountId::builder().account_type(AccountType::Public).build_with_seed([22; 32]);
 
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network_1: u32 = 1;
     let origin_network_2: u32 = 2;
 
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
     let config_note_1 = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_network_1,
@@ -363,14 +371,11 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_to_register,
-            origin_token_address: EthAddress::from_hex(
-                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-            )
-            .unwrap(),
+            origin_token_address: usdc_token_address(),
             scale: 0,
             origin_network: 1,
             is_native: false,
-            metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+            metadata_hash: usdc_metadata_hash(),
         },
         ger_injector.id(),
         bridge_account.id(),
@@ -493,9 +498,9 @@ async fn register_faucet_rejects_token_key_owned_by_another_faucet() -> anyhow::
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address = EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")?;
+    let origin_token_address = usdc_token_address();
     let origin_network = 1;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
 
     let register_a = ConfigAggBridgeNote::create(
         ConversionMetadata {
@@ -598,7 +603,7 @@ async fn token_registry_cleanup_rejects_cross_faucet_mapping(
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address = EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")?;
+    let origin_token_address = usdc_token_address();
     let origin_network = 1;
 
     let mut bridge = create_existing_bridge_account_with_roles(
@@ -718,10 +723,9 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
 
     // ---- Build registration + deregistration notes ----
     let config_note = ConfigAggBridgeNote::create(
@@ -865,10 +869,9 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
 
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
@@ -1007,14 +1010,11 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         Some(ConfigAggBridgeNote::create(
             ConversionMetadata {
                 faucet_account_id: faucet_id,
-                origin_token_address: EthAddress::from_hex(
-                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                )
-                .unwrap(),
+                origin_token_address: usdc_token_address(),
                 scale: 0,
                 origin_network: 1,
                 is_native: false,
-                metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+                metadata_hash: usdc_metadata_hash(),
             },
             faucet_manager.id(),
             bridge_account.id(),
