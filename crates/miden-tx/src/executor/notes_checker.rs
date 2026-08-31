@@ -13,7 +13,6 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
 };
-use miden_protocol::vm::PackageDebugInfo;
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
 use super::{ProgramExecutor, TransactionExecutor};
@@ -436,19 +435,20 @@ where
                 .await
                 .map_err(TransactionCheckerError::TransactionPreparation)?;
 
-        let processor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options);
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let fallback_debug_info = PackageDebugInfo::default();
-        let result = processor
-            .execute_with_package_debug_info(
-                &program,
-                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
-                TransactionKernel::main_entrypoint_source_node(),
-                &mut host,
-            )
-            .await
+        let result = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options)
+            .map_err(ExecutionError::advice_error_no_context)
             .map_err(map_execution_error);
+        let result = match result {
+            Ok(processor) => processor
+                .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
+                .with_entrypoint_source_node(TransactionKernel::main_entrypoint_source_node())
+                .execute(&program, &mut host)
+                .await
+                .map_err(map_execution_error),
+            Err(error) => Err(error),
+        };
 
         match result {
             Ok(execution_output) => {
