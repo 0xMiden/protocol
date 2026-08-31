@@ -69,3 +69,54 @@ message SmtOpening {
   SparseMerklePath path = 1;
   SmtLeaf leaf = 2;
 }
+
+// A compact representation of a partial SMT containing the nodes needed to reconstruct the
+// tracked openings.
+message PartialSmt {
+  // The root expected after reconstruction.
+  Word root = 1;
+
+  // Boundary nodes needed to reconstruct intermediate nodes, grouped by depth.
+  repeated PartialSmtNodeLevel node_levels = 2;
+
+  // Fully materialized, non-empty leaves.
+  repeated IndexedSmtLeaf leaves = 3;
+
+  // Leaves for which only the hash is known.
+  repeated IndexedDigest value_only_leaves = 4;
+}
+
+// Partial SMT boundary nodes at a single depth.
+message PartialSmtNodeLevel {
+  // Depth of all nodes in this group.
+  uint32 depth = 1;
+
+  // Boundary nodes at this depth.
+  repeated PartialSmtNode nodes = 2;
+}
+
+// A boundary node needed to reconstruct a partial SMT.
+message PartialSmtNode {
+  // Position of the node within its depth.
+  fixed64 index = 1;
+
+  oneof value {
+    // Hash of a non-empty boundary node.
+    Word digest = 2;
+
+    // Indicates the canonical empty subtree root for the containing depth.
+    bool empty_subtree_root = 3;
+  }
+}
+
+// A fully materialized SMT leaf together with its index.
+message IndexedSmtLeaf {
+  fixed64 index = 1;
+  SmtLeaf leaf = 2;
+}
+
+// A digest together with its SMT leaf index.
+message IndexedDigest {
+  fixed64 index = 1;
+  Word value = 2;
+}

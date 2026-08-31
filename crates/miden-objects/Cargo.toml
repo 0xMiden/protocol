@@ -27,3 +27,4 @@ protox      = { workspace = true }
 
 [dev-dependencies]
 miden-protocol = { features = ["testing"], workspace = true }
+rstest         = { workspace = true }
