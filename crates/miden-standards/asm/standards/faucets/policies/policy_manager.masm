@@ -362,26 +362,11 @@ pub proc execute_mint_policy
     movupw.3 dropw movup.11 drop movup.10 drop
     # => [NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
 
-    # assert the policy returned the note metadata unchanged
-    push.0.0 dup.7 dup.7
-    # => [new_tag, new_note_type, 0, 0, NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
+    # assert the policy returned the note metadata and RECIPIENT unchanged
+    locaddr.MINT_RECIPIENT_PTR locaddr.MINT_NOTE_METADATA_PTR
+    # => [metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
 
-    padw loc_loadw_le.MINT_NOTE_METADATA_PTR
-    # => [NOTE_METADATA, NEW_NOTE_METADATA, NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
-
-    assert_eqw.err=ERR_MINT_POLICY_MODIFIED_NOTE_METADATA
-    # => [NEW_ASSET_VALUE, tag, note_type, NEW_RECIPIENT]
-
-    # assert the policy returned the RECIPIENT unchanged
-    repeat.4
-        dup.9
-    end
-    # => [NEW_RECIPIENT, NEW_ASSET_VALUE, tag, note_type, NEW_RECIPIENT]
-
-    padw loc_loadw_le.MINT_RECIPIENT_PTR
-    # => [RECIPIENT, NEW_RECIPIENT, NEW_ASSET_VALUE, tag, note_type, NEW_RECIPIENT]
-
-    assert_eqw.err=ERR_MINT_POLICY_MODIFIED_RECIPIENT
+    exec.assert_mint_note_target_unchanged
     # => [NEW_ASSET_VALUE, tag, note_type, RECIPIENT]
 end
 
@@ -473,6 +458,49 @@ proc assert_allowed_mint_policy_root
     exec.word::eqz
     assertz.err=ERR_MINT_POLICY_ROOT_NOT_ALLOWED
     # => [MINT_POLICY_ROOT]
+end
+
+#! Asserts that the mint policy returned the output note's target unchanged.
+#!
+#! The note's target is its metadata and RECIPIENT: together they fix where the note goes, so the
+#! policy may only adjust the asset value. `metadata_ptr` and `recipient_ptr` must point at the
+#! metadata word ([tag, note_type, 0, 0]) and the RECIPIENT word saved before the policy `dyncall`.
+#!
+#! Inputs:  [metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
+#! Outputs: [NEW_ASSET_VALUE, tag, note_type, RECIPIENT]
+#!
+#! Panics if:
+#! - the policy modified `tag`, `note_type`, or `RECIPIENT`.
+#!
+#! Invocation: exec
+proc assert_mint_note_target_unchanged
+    # rebuild the returned note metadata as a word
+    push.0.0 dup.9 dup.9
+    # => [new_tag, new_note_type, 0, 0, metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, new_tag,
+    #     new_note_type, NEW_RECIPIENT]
+
+    padw dup.8 mem_loadw_le
+    # => [NOTE_METADATA, NEW_NOTE_METADATA, metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, new_tag,
+    #     new_note_type, NEW_RECIPIENT]
+
+    assert_eqw.err=ERR_MINT_POLICY_MODIFIED_NOTE_METADATA
+    # => [metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT]
+
+    repeat.4
+        dup.11
+    end
+    # => [NEW_RECIPIENT, metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, new_tag, new_note_type,
+    #     NEW_RECIPIENT]
+
+    padw dup.9 mem_loadw_le
+    # => [RECIPIENT, NEW_RECIPIENT, metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, new_tag,
+    #     new_note_type, NEW_RECIPIENT]
+
+    assert_eqw.err=ERR_MINT_POLICY_MODIFIED_RECIPIENT
+    # => [metadata_ptr, recipient_ptr, NEW_ASSET_VALUE, tag, note_type, RECIPIENT]
+
+    drop drop
+    # => [NEW_ASSET_VALUE, tag, note_type, RECIPIENT]
 end
 
 #! Reads active burn policy root from storage.
