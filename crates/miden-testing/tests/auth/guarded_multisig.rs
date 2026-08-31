@@ -978,11 +978,16 @@ async fn test_guarded_multisig_rotation_to_approver_public_key_is_rejected() -> 
     Ok(())
 }
 
-/// Tests the symmetric case of the check above: the approver set must not be updated to include the
-/// configured guardian public key.
+/// Tests the symmetric case of the check above: the approver set must not be updated to include
+/// the configured guardian public key, while an update that keeps the guardian outside the new
+/// approver set still goes through.
+#[rstest]
+#[case::guardian_added_as_approver(true)]
+#[case::guardian_outside_approver_set(false)]
 #[tokio::test]
-async fn test_guarded_multisig_signer_update_to_guardian_public_key_is_rejected()
--> anyhow::Result<()> {
+async fn test_guarded_multisig_signer_update_enforces_the_guardian_invariant(
+    #[case] add_guardian_as_approver: bool,
+) -> anyhow::Result<()> {
     let auth_scheme = AuthScheme::EcdsaK256Keccak;
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
@@ -1013,9 +1018,15 @@ async fn test_guarded_multisig_signer_update_to_guardian_public_key_is_rejected(
         .build()
         .unwrap();
 
-    // Extend the signer set with the guardian public key.
+    // Grow the signer set by one key: either the guardian's, which must be rejected, or an
+    // unrelated one, which must be accepted.
+    let new_approver_public_key = if add_guardian_as_approver {
+        guardian_public_key.clone()
+    } else {
+        AuthSecretKey::new_ecdsa_k256_keccak().public_key()
+    };
     let new_public_keys =
-        vec![public_keys[0].clone(), public_keys[1].clone(), guardian_public_key.clone()];
+        vec![public_keys[0].clone(), public_keys[1].clone(), new_approver_public_key.clone()];
     let config_and_pubkeys_vector =
         build_update_signers_config_vector(2, 3, &new_public_keys, auth_scheme);
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
@@ -1072,7 +1083,27 @@ async fn test_guarded_multisig_signer_update_to_guardian_public_key_is_rejected(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PUBLIC_KEY_IS_APPROVER);
+    if add_guardian_as_approver {
+        assert_transaction_executor_error!(result, ERR_PUBLIC_KEY_IS_APPROVER);
+
+        return Ok(());
+    }
+
+    // The new signer set is applied and the guardian keeps its own key.
+    let mut updated_multisig_account = multisig_account.clone();
+    updated_multisig_account.apply_patch(result?.account_patch())?;
+
+    let stored_new_approver = updated_multisig_account.storage().get_map_item(
+        AuthGuardedMultisig::approver_public_keys_slot(),
+        StorageMapKey::from_index(2),
+    )?;
+    assert_eq!(stored_new_approver, Word::from(new_approver_public_key.to_commitment()));
+
+    let stored_guardian = updated_multisig_account.storage().get_map_item(
+        AuthGuardedMultisig::guardian_public_key_slot(),
+        StorageMapKey::from_index(0),
+    )?;
+    assert_eq!(stored_guardian, Word::from(guardian_public_key.to_commitment()));
 
     Ok(())
 }

@@ -15,6 +15,12 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 
 #! Authenticate a transaction with multi-signature support and optional guardian verification.
 #!
+#! The guardian must not be an approver, otherwise a single signature would satisfy both the
+#! multisig and the guardian check, so this procedure re-checks the invariant that
+#! `AuthGuardedMultisigConfig::new` enforces at deployment time. Both sides are read from the
+#! current account state, so a guardian rotation or an approver-set update performed by this
+#! transaction is covered.
+#!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
 #!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
@@ -46,10 +52,6 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT]
 
-    # Enforce the composition invariant that `AuthGuardedMultisigConfig::new` checks at deployment
-    # time: the guardian must not be an approver, otherwise a single signature would satisfy both
-    # the multisig and the guardian check. Both sides are read from the current account state, so a
-    # guardian rotation or an approver-set update performed by this transaction is covered.
     exec.guardian::get_guardian_public_key
     # => [GUARDIAN_PUBLIC_KEY, TX_SUMMARY_COMMITMENT]
 
