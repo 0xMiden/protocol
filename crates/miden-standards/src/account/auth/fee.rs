@@ -14,6 +14,13 @@ use miden_protocol::{Felt, Hasher, Word};
 /// `pay_fee` pays `ceil(fee_amount * rate_num / rate_den)` of the asset issued by `faucet_id`.
 /// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::one_to_one`].
 ///
+/// Components whose authorization can fall below the account's full spending quorum bound what
+/// they accept here, because the rate reaches the VM from the host: the guarded and smart multisig
+/// components require `faucet_id` to be the native fee faucet and cap the paid amount at twice the
+/// computed fee. Conversion info violating either aborts the transaction in-VM. Components
+/// authenticated by the full quorum apply no such bound, since their signers can already move the
+/// same value through an ordinary note.
+///
 /// For signature-based authentication components the conversion info is typically committed to
 /// via the transaction's auth args (see [`commit_fee_conversion_info`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -70,17 +70,28 @@ pub proc assert_no_input_notes
     # => []
 end
 
-#! Asserts that the current transaction does not create output notes.
+#! Asserts that the current transaction created no output notes beyond those the caller created
+#! itself.
 #!
-#! Inputs:  []
+#! The total is read from the kernel, so only the caller's own share is supplied. Understating it
+#! tightens the assertion: a caller that creates no notes passes zero and gets the strictest check.
+#!
+#! Inputs:  [num_own_output_notes]
 #! Outputs: []
 #!
+#! Where:
+#! - num_own_output_notes is the number of output notes the caller itself created, e.g. the notes
+#!   a `fee::pay_fee` flow creates to pay the transaction fee.
+#!
+#! Panics if:
+#! - the transaction created an output note the caller did not create itself.
+#!
 #! Invocation: exec
-pub proc assert_no_output_notes
+pub proc assert_no_output_notes(num_own_output_notes: u16)
     exec.tx::get_num_output_notes
-    # => [num_output_notes]
+    # => [num_output_notes, num_own_output_notes]
 
-    assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
+    eq assert.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
     # => []
 end
 

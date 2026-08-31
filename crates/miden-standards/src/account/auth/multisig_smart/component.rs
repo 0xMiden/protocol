@@ -126,6 +126,31 @@ fn validate_proc_policies(
 }
 
 /// An [`AccountComponent`] implementing a multisig auth component with smart-policy slots.
+///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_multisig_smart` pays the transaction fee: it creates a public
+/// TX_FEE note (see [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
+/// conversion info is committed to via the transaction's auth args (see
+/// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo)). On chains with a zero
+/// verification base fee no note is created. The fee note is created before the transaction
+/// summary, so it is covered by the approver signatures.
+///
+/// The fee payment also prices every network output note through its target's fee policy, creating
+/// a FEE_SPONSORSHIP note for each one that charges. The pricing is a foreign-procedure call, so a
+/// transaction creating network notes requires those targets to be provisioned as foreign accounts
+/// even where the verification base fee is zero.
+///
+/// The notes the authentication procedure creates to pay the fee do not count against a
+/// [`ProcedurePolicyNoteRestriction`](super::ProcedurePolicyNoteRestriction), so
+/// [`NoOutputNotes`](super::ProcedurePolicyNoteRestriction::NoOutputNotes) stays satisfiable on a
+/// fee-charging chain — it follows that such a policy no longer implies that literally no note
+/// leaves the account. Because a per-procedure policy can authorize a transaction below the
+/// account's default threshold and the conversion rate is host-supplied, the component bounds the
+/// payment to the native fee asset at at most twice the computed fee
+/// (`fee::assert_fee_bound`), so such a transaction can at most overpay the fee through the fee
+/// note, not move arbitrary value out of the account.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,

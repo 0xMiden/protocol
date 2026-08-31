@@ -198,6 +198,33 @@ impl AuthGuardedMultisigConfig {
 /// guardian signature. This substantially mitigates low-threshold state-withholding scenarios
 /// since the guardian is expected to forward state updates to other approvers.
 ///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_guarded_multisig` pays the transaction fee: it creates a public
+/// TX_FEE note (see [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
+/// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
+/// conversion info is committed to via the transaction's auth args (see
+/// [`FeeConversionInfo`](super::FeeConversionInfo) and
+/// [`commit_fee_conversion_info`](super::commit_fee_conversion_info)). On chains with a zero
+/// verification base fee no note is created. The fee note is created before the transaction
+/// summary, so it is covered by the approver and guardian signatures; the auth args word continues
+/// to serve as the summary salt, and the uniqueness replay protection relies on originates from
+/// the caller-chosen salt.
+///
+/// The conversion rate is host-supplied, and guardian key rotation authenticates without a
+/// guardian signature and can be thresholded below the account's spending quorum. The component
+/// therefore bounds the payment: it must be in the native fee asset and at most twice the computed
+/// fee (`fee::assert_fee_bound`), so a rotation authorized below that quorum can at most overpay
+/// the fee, not move arbitrary value out of the account.
+///
+/// Rotation requires that the transaction create no notes beyond the fee note, so it works on a
+/// fee-charging chain — but it does require the vault to fund the fee. Rotation also forbids input
+/// notes, and assets can only enter a vault through an input note, so the funding transaction must
+/// be a separate one, and being a separate one it takes the ordinary path and needs a guardian
+/// signature. A guarded account on a fee-charging chain must therefore keep a standing balance of
+/// the native fee asset while its guardian key still works: a lost guardian key combined with an
+/// unfunded vault cannot be recovered.
+///
 /// # Privacy
 ///
 /// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public
