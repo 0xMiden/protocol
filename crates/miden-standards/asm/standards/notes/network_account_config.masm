@@ -35,8 +35,6 @@ const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage i
 
 const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account config note attachment target account does not match the consuming account"
 
-const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config note must be public"
-
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -69,14 +67,10 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 #! - `miden::standards::fees::fee_manager::add_allowed_fee_policy`
 #! - `miden::standards::fees::fee_manager::remove_allowed_fee_policy`
 #!
-#! Consumption is restricted to public notes: the management action must remain publicly auditable,
-#! so a private note carrying the same script and storage is rejected.
-#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
@@ -86,11 +80,6 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 pub proc main
     # drop the note script args
     dropw
-    # => [pad(16)]
-
-    # restrict consumption to public notes: the management action must remain publicly auditable
-    exec.active_note::is_public
-    assert.err=ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted network account: reject if the consuming account is not the

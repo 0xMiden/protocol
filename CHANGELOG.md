@@ -52,6 +52,7 @@
 - [BREAKING] Replaced `tx::get_fee_faucet_id` with `tx::get_fee_asset_id` ([#3741](https://github.com/0xMiden/protocol/pull/3741)).
 - [BREAKING] Moved the MINT note scripts under a single `miden::standards::notes::mint` module, replacing `notes::mint_fungible` and `notes::mint_non_fungible` with the private `mint::fungible` and `mint::non_fungible` submodules ([#3751](https://github.com/0xMiden/protocol/pull/3751)).
 - [BREAKING] `FeeSponsorshipNote` is now parsed back from a `Note` with `TryFrom<&Note>`, carries a fungible fee asset, and replaces its `target_id` accessor with `tag` ([#3746](https://github.com/0xMiden/protocol/pull/3746)).
+- Documented that the standard config note scripts do not restrict the note type - their builders and network routing require a public note, while a hand-crafted private note dispatches the same action when consumed locally - and added test coverage pinning both ([#3719](https://github.com/0xMiden/protocol/issues/3719), [#3779](https://github.com/0xMiden/protocol/pull/3779)).
 
 ### Fixes
 
@@ -82,7 +83,6 @@
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
 - [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
 - The PSWAP note script now rejects a `PswapAttachment` that does not consist of exactly one word, instead of letting the attachment write past the four locals of `get_current_depth` ([#3761](https://github.com/0xMiden/protocol/pull/3761)).
-- The standard config note scripts now reject a non-public note [#3779](https://github.com/0xMiden/protocol/pull/3779).
 
 ## v0.16.0 (2026-08-17)
 

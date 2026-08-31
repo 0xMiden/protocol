@@ -68,8 +68,12 @@ static MIN_BURN_AMOUNT_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// policy; it is stored on the component either way, so it can be configured before the policy is
 /// switched in.
 ///
-/// The note must be public: the script rejects a non-public note, so the action cannot be
-/// hidden from the chain by a hand-crafted private note with the same script and storage.
+/// The builder always produces a [`NoteType::Public`] note, and network execution requires one:
+/// [`AccountTargetNetworkNote`](crate::note::AccountTargetNetworkNote) rejects a non-public note.
+/// The note script itself does not read the note type, so a hand-crafted private note carrying
+/// the same script and storage dispatches the same action when it is consumed in a local
+/// transaction. Authorization is unaffected either way: the called procedures authorize the note
+/// sender, which the kernel pins to the account that created the note.
 ///
 /// Construct one with the [builder](MinBurnAmountConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.

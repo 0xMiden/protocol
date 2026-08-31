@@ -21,8 +21,6 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "min burn amount conf
 
 const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn amount config note storage item count is not the expected count"
 
-const ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "min burn amount config note must be public"
-
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -45,14 +43,10 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "min burn amount config no
 #! - `miden::standards::faucets::policies::burn::min_burn_amount::set_min_burn_amount` (the
 #!   `MinBurnAmount` burn policy component), backed by an `Authority` companion component.
 #!
-#! Consumption is restricted to public notes: the management action must remain publicly auditable,
-#! so a private note carrying the same script and storage is rejected.
-#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
 #! - the note sender is not authorized (per the `Authority` component).
@@ -60,11 +54,6 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "min burn amount config no
 pub proc main
     # drop the note script args
     dropw
-    # => [pad(16)]
-
-    # restrict consumption to public notes: the management action must remain publicly auditable
-    exec.active_note::is_public
-    assert.err=ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's

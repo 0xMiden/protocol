@@ -14,7 +14,6 @@ use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
@@ -27,7 +26,7 @@ use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
-use crate::{consume_note, into_private_note};
+use crate::consume_note;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -914,39 +913,6 @@ async fn test_auth_network_account_rejects_invalid_sponsorship_policy(
     let result = mock_chain.build_transaction(account.id()).build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY);
-
-    Ok(())
-}
-
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before the allowlist changes.
-#[tokio::test]
-async fn test_private_config_note_cannot_mutate_allowlist() -> anyhow::Result<()> {
-    let owner = owner_id();
-    let mut builder = MockChain::builder();
-
-    let new_note = build_input_note()?;
-    let new_root = new_note.script().root();
-
-    let account = build_owner_controlled_account(vec![], vec![], owner, vec![])?;
-    let admin_note = build_config_note(
-        owner,
-        account.id(),
-        NetworkAccountConfig::AddAllowedNoteScript { script_root: new_root },
-        4,
-    )?;
-
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
-    let result = mock_chain
-        .build_transaction(account.id())
-        .unauthenticated_input_note(into_private_note(admin_note))
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC);
 
     Ok(())
 }
