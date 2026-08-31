@@ -11,6 +11,7 @@
 
 ### Changes
 
+- [BREAKING] Incremented the MSRV to 1.97.
 - [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
 - Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([#3485](https://github.com/0xMiden/protocol/pull/3485)).
