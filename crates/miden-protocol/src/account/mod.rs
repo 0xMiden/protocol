@@ -46,6 +46,7 @@ pub mod interface;
 pub use interface::{AccountCodeInterface, AccountComponentName};
 
 mod patch;
+pub(crate) use patch::validate_new_public_account;
 pub use patch::{
     AccountPatch,
     AccountStoragePatch,
