@@ -28,6 +28,7 @@ use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS,
     ERR_PSWAP_DEPTH_OVERFLOW,
     ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_FILL_SUM_OVERFLOW,
@@ -1729,26 +1730,25 @@ fn pswap_original_has_no_pswap_scheme() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Builds a PSWAP note carrying a hand-crafted `PswapAttachment` word and registers it on the
-/// builder.
-fn pswap_note_with_planted_depth(
+/// Builds a PSWAP note carrying a hand-crafted attachment and registers it on the builder.
+///
+/// `PswapNote::builder` validates a PSWAP-scheme attachment, so a note whose attachment is out
+/// of range can only be assembled from the raw protocol types - which is exactly the shape the
+/// on-chain guards have to reject.
+fn pswap_note_with_raw_attachment(
     builder: &mut MockChainBuilder,
     creator: AccountId,
     offered_asset: FungibleAsset,
     min_requested_asset: FungibleAsset,
-    depth: Felt,
+    serial_number: Word,
+    attachment: NoteAttachment,
 ) -> anyhow::Result<Note> {
-    let serial_number = builder.rng_mut().draw_word();
     let tag = PswapNote::create_tag(NoteType::Public, &offered_asset, &min_requested_asset);
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
         .creator_account_id(creator)
         .build();
 
-    let attachment = NoteAttachment::with_word(
-        PswapNote::PSWAP_ATTACHMENT_SCHEME,
-        Word::from([ONE, serial_number[1], depth, ZERO]),
-    );
     let note = Note::with_attachments(
         NoteAssets::new(vec![offered_asset.into()])?,
         PartialNoteMetadata::new(creator, NoteType::Public).with_tag(tag),
@@ -1774,12 +1774,18 @@ async fn fill_pswap_with_planted_depth(
         [FungibleAsset::new(eth_faucet.id(), 25)?.into()],
     )?;
 
-    let pswap_note = pswap_note_with_planted_depth(
+    let serial_number = builder.rng_mut().draw_word();
+    let attachment = NoteAttachment::with_word(
+        PswapNote::PSWAP_ATTACHMENT_SCHEME,
+        Word::from([ONE, serial_number[1], planted_depth, ZERO]),
+    );
+    let pswap_note = pswap_note_with_raw_attachment(
         &mut builder,
         alice,
         FungibleAsset::new(usdc_faucet.id(), 50)?,
         FungibleAsset::new(eth_faucet.id(), 25)?,
-        planted_depth,
+        serial_number,
+        attachment,
     )?;
     let mock_chain = builder.build()?;
 
@@ -2218,6 +2224,76 @@ fn pswap_parse_inputs_roundtrip() {
 
     // Verify requested amount from value word
     assert_eq!(parsed.min_requested_amount(), 25, "Requested amount should be 25");
+}
+
+/// A consumed PSWAP note whose `PswapAttachment` spans more than one word must be rejected.
+#[tokio::test]
+async fn pswap_multi_word_attachment_is_rejected() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1_000, Some(50))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1_000, Some(25))?;
+    let alice = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), 25)?.into()],
+    )?;
+
+    let serial_number = builder.rng_mut().draw_word();
+
+    // A two-word attachment under the PSWAP scheme: the first word is a well-formed
+    // [amount, order_id, depth, 0], the second is the payload that would be written past the
+    // four locals of `get_current_depth`.
+    let attachment = NoteAttachment::with_words(
+        PswapNote::PSWAP_ATTACHMENT_SCHEME,
+        vec![
+            Word::from([Felt::from(10u32), serial_number[1], ONE, ZERO]),
+            Word::from([Felt::from(u32::MAX); 4]),
+        ],
+    )?;
+
+    // The Rust builder rejects the same shape off chain, so the note has to be assembled from
+    // the raw protocol types to reach the on-chain guard.
+    assert!(
+        PswapNote::builder()
+            .sender(alice)
+            .storage(
+                PswapNoteStorage::builder()
+                    .min_requested_asset(FungibleAsset::new(eth_faucet.id(), 25)?)
+                    .creator_account_id(alice)
+                    .build(),
+            )
+            .serial_number(serial_number)
+            .note_type(NoteType::Public)
+            .offered_asset(FungibleAsset::new(usdc_faucet.id(), 50)?)
+            .attachment(attachment.clone())
+            .build()
+            .is_err(),
+        "a multi-word PSWAP attachment must not build a PswapNote",
+    );
+
+    let pswap_note = pswap_note_with_raw_attachment(
+        &mut builder,
+        alice,
+        FungibleAsset::new(usdc_faucet.id(), 50)?,
+        FungibleAsset::new(eth_faucet.id(), 25)?,
+        serial_number,
+        attachment,
+    )?;
+
+    let mock_chain = builder.build()?;
+
+    // Empty note args fall back to a full fill, which still stamps the payback attachment and so
+    // reaches `get_current_depth`.
+    let result = mock_chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(pswap_note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS);
+
+    Ok(())
 }
 
 /// Regression test for the offered-asset drain (issue #3601, PSWAP leg).
