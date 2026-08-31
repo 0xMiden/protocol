@@ -721,11 +721,8 @@ async fn test_rbac_non_admin_cannot_set_role_admin() -> anyhow::Result<()> {
 /// that no reader can decode back into a symbol.
 ///
 /// `27` announces a length of zero (it is the first multiple of the alphabet size), and
-/// `MAX_ENCODED_VALUE + 1` runs past the longest encodable symbol; neither names a role.
-///
-/// `ALPHABET_LEN^13 + 12` announces the longest encodable length while carrying a digit past it,
-/// so only the `ALPHABET_LEN^(num_chars + 1)` bound rejects it. It pins that bound at the widest
-/// exponent the validation computes.
+/// `MAX_ENCODED_VALUE + 1` runs past the longest encodable symbol, and `ALPHABET_LEN^13 + 12`
+/// announces the longest encodable length while carrying a digit past it; none names a role.
 #[rstest]
 #[case::announces_no_characters(Felt::new(27).unwrap())]
 #[case::past_the_longest_symbol(Felt::new(4052555153018976253).unwrap())]
