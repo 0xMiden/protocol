@@ -274,6 +274,41 @@ mod tests {
         assert_eq!(StorageMap::default().root(), EMPTY_STORAGE_MAP_ROOT);
     }
 
+    /// The transaction kernel hardcodes the empty-SMT root as a MASM constant, which no build step
+    /// derives from Rust. A VM upgrade that changes the hash function silently invalidates it, so
+    /// parse the literal out of the kernel source and pin it to the computed root.
+    #[test]
+    fn masm_empty_smt_root_matches_computed_root() {
+        const KERNEL_CONSTANTS: &str =
+            include_str!("../../../../asm/kernels/transaction-core/src/constants.masm");
+
+        let declaration = KERNEL_CONSTANTS
+            .split_once("pub const EMPTY_SMT_ROOT")
+            .expect("kernel constants should declare EMPTY_SMT_ROOT")
+            .1;
+        let literal = declaration
+            .split_once('[')
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .expect("EMPTY_SMT_ROOT should be a bracketed word literal")
+            .0;
+
+        let masm_root: alloc::vec::Vec<u64> = literal
+            .split(',')
+            .map(|element| {
+                element.trim().parse().expect("EMPTY_SMT_ROOT elements should be integers")
+            })
+            .collect();
+        let computed_root: alloc::vec::Vec<u64> = EMPTY_STORAGE_MAP_ROOT
+            .iter()
+            .map(|element| element.as_canonical_u64())
+            .collect();
+
+        assert_eq!(
+            masm_root, computed_root,
+            "EMPTY_SMT_ROOT in constants.masm is stale; update it to {computed_root:?}"
+        );
+    }
+
     #[test]
     fn account_storage_map_fails_on_duplicate_entries() {
         // StorageMap with values
