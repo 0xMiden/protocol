@@ -82,6 +82,7 @@
 - Fixed the fungible and non-fungible MINT note scripts assuming their `exec` callers provide blank stack slot ([#3668](https://github.com/0xMiden/protocol/pull/3668)).
 - [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
 - The PSWAP note script now rejects a `PswapAttachment` that does not consist of exactly one word, instead of letting the attachment write past the four locals of `get_current_depth` ([#3761](https://github.com/0xMiden/protocol/pull/3761)).
+- Role symbol validation now computes its upper bound with `exp.u4`, whose unique exponent decomposition stops a prover from widening the bound and slipping a non-canonical symbol through ([#3774](https://github.com/0xMiden/protocol/pull/3774)).
 
 ## v0.16.0 (2026-08-17)
 
