@@ -57,3 +57,21 @@ message ProvenTransaction {
   blockchain.BlockNumber expiration_block_num = 6;
   primitives.ExecutionProof proof = 7;
 }
+
+message TransactionScript {
+  uint32 entrypoint = 1;
+  primitives.MastForest mast = 2;
+}
+
+message NoteArgument {
+  note.NoteId note_id = 1;
+  primitives.Word args = 2;
+}
+
+message TransactionArgs {
+  optional TransactionScript tx_script = 1;
+  primitives.Word tx_script_args = 2;
+  repeated NoteArgument note_args = 3;
+  primitives.AdviceInputs advice_inputs = 4;
+  primitives.Word auth_args = 5;
+}

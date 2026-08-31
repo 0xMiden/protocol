@@ -1,10 +1,15 @@
+use alloc::collections::BTreeMap;
 use alloc::format;
+use alloc::vec::Vec;
 
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
+use miden_protocol::crypto::merkle::InnerNodeInfo;
+use miden_protocol::crypto::merkle::store::MerkleStore;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_protocol::vm::ExecutionProof;
+use miden_protocol::vm::{AdviceInputs, AdviceMap, AdviceStack, ExecutionProof};
 use miden_protocol::{Felt, MastForest, Word};
 
+use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 const WORD_SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
@@ -151,6 +156,148 @@ impl TryFrom<&proto::primitives::MastForest> for MastForest {
         Self::read_from_bytes(&value.encoded)
             .map_err(|error| ConversionError::deserialization("MastForest", error))
             .map_err(|error| error.context("encoded"))
+    }
+}
+
+// ADVICE INPUTS
+// ================================================================================================
+
+impl From<&AdviceStack> for proto::primitives::AdviceStack {
+    fn from(value: &AdviceStack) -> Self {
+        Self {
+            values: value.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::primitives::AdviceStack> for AdviceStack {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::AdviceStack) -> Result<Self, Self::Error> {
+        value
+            .values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| Felt::try_from(value).context(format!("values[{index}]")))
+            .collect::<Result<AdviceStack, _>>()
+    }
+}
+
+impl From<&AdviceMap> for proto::primitives::AdviceMap {
+    fn from(value: &AdviceMap) -> Self {
+        Self {
+            entries: value
+                .iter()
+                .map(|(key, values)| proto::primitives::AdviceMapEntry {
+                    key: Some(key.into()),
+                    values: values.iter().map(Into::into).collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::primitives::AdviceMap> for AdviceMap {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::AdviceMap) -> Result<Self, Self::Error> {
+        let mut entries = BTreeMap::new();
+        for (index, entry) in value.entries.into_iter().enumerate() {
+            let decoder = entry.decoder();
+            let key: Word = required!(decoder, entry.key).context(format!("entries[{index}]"))?;
+            let values = entry
+                .values
+                .into_iter()
+                .enumerate()
+                .map(|(value_index, value)| {
+                    Felt::try_from(value).context(format!("entries[{index}].values[{value_index}]"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if entries.insert(key, values).is_some() {
+                return Err(ConversionError::message("duplicate advice map key")
+                    .context(format!("entries[{index}].key")));
+            }
+        }
+
+        Ok(entries.into())
+    }
+}
+
+impl From<&MerkleStore> for proto::primitives::MerkleStore {
+    fn from(value: &MerkleStore) -> Self {
+        let default_nodes = MerkleStore::new()
+            .inner_nodes()
+            .map(|node| (node.value, (node.left, node.right)))
+            .collect::<BTreeMap<_, _>>();
+        let mut nodes = value
+            .inner_nodes()
+            .filter(|node| default_nodes.get(&node.value) != Some(&(node.left, node.right)))
+            .collect::<Vec<_>>();
+        nodes.sort_by_key(|node| node.value);
+
+        Self {
+            nodes: nodes
+                .into_iter()
+                .map(|node| proto::primitives::MerkleStoreNode {
+                    value: Some(node.value.into()),
+                    left: Some(node.left.into()),
+                    right: Some(node.right.into()),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::primitives::MerkleStore> for MerkleStore {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::MerkleStore) -> Result<Self, Self::Error> {
+        let mut nodes = BTreeMap::new();
+        for (index, node) in value.nodes.into_iter().enumerate() {
+            let decoder = node.decoder();
+            let parent: Word = required!(decoder, node.value).context(format!("nodes[{index}]"))?;
+            let left = required!(decoder, node.left).context(format!("nodes[{index}]"))?;
+            let right = required!(decoder, node.right).context(format!("nodes[{index}]"))?;
+            if nodes.insert(parent, (left, right)).is_some() {
+                return Err(ConversionError::message("duplicate Merkle store parent")
+                    .context(format!("nodes[{index}].value")));
+            }
+        }
+
+        let mut store = MerkleStore::new();
+        store.extend(nodes.into_iter().map(|(value, (left, right))| InnerNodeInfo {
+            value,
+            left,
+            right,
+        }));
+        Ok(store)
+    }
+}
+
+impl From<&AdviceInputs> for proto::primitives::AdviceInputs {
+    fn from(value: &AdviceInputs) -> Self {
+        Self {
+            advice_stack: Some((&value.advice_stack()).into()),
+            advice_map: Some((&value.map).into()),
+            merkle_store: Some((&value.store).into()),
+        }
+    }
+}
+
+impl TryFrom<proto::primitives::AdviceInputs> for AdviceInputs {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::primitives::AdviceInputs) -> Result<Self, Self::Error> {
+        let decoder = value.decoder();
+        let advice_stack = required!(decoder, value.advice_stack)?;
+        let advice_map: AdviceMap = required!(decoder, value.advice_map)?;
+        let merkle_store: MerkleStore = required!(decoder, value.merkle_store)?;
+
+        let mut advice_inputs = AdviceInputs::default()
+            .with_advice_stack(advice_stack)
+            .with_merkle_store(merkle_store);
+        advice_inputs.map = advice_map;
+        Ok(advice_inputs)
     }
 }
 

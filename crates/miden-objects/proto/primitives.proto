@@ -121,3 +121,32 @@ message IndexedDigest {
   fixed64 index = 1;
   Word value = 2;
 }
+
+message AdviceStack {
+  repeated Felt values = 1;
+}
+
+message AdviceMapEntry {
+  Word key = 1;
+  repeated Felt values = 2;
+}
+
+message AdviceMap {
+  repeated AdviceMapEntry entries = 1;
+}
+
+message MerkleStoreNode {
+  Word value = 1;
+  Word left = 2;
+  Word right = 3;
+}
+
+message MerkleStore {
+  repeated MerkleStoreNode nodes = 1;
+}
+
+message AdviceInputs {
+  AdviceStack advice_stack = 1;
+  AdviceMap advice_map = 2;
+  MerkleStore merkle_store = 3;
+}

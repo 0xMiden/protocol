@@ -1,9 +1,10 @@
+use alloc::collections::BTreeMap;
 use alloc::format;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::{AccountId, AccountUpdateDetails};
-use miden_protocol::note::{NoteHeader, Nullifier};
+use miden_protocol::note::{NoteHeader, NoteId, Nullifier};
 use miden_protocol::transaction::{
     InputNoteCommitment,
     InputNotes,
@@ -11,13 +12,93 @@ use miden_protocol::transaction::{
     PrivateOutputNote,
     ProvenTransaction,
     PublicOutputNote,
+    TransactionArgs,
     TransactionHeader,
     TransactionId,
+    TransactionScript,
     TxAccountUpdate,
 };
+use miden_protocol::{MastForest, MastNodeId, Word};
 
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
+
+// TRANSACTION ARGUMENTS
+// ================================================================================================
+
+impl From<&TransactionScript> for proto::transaction::TransactionScript {
+    fn from(value: &TransactionScript) -> Self {
+        Self {
+            entrypoint: value.entrypoint().into(),
+            mast: Some(value.mast().as_ref().into()),
+        }
+    }
+}
+
+impl TryFrom<proto::transaction::TransactionScript> for TransactionScript {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::transaction::TransactionScript) -> Result<Self, Self::Error> {
+        let decoder = value.decoder();
+        let mast: MastForest = required!(decoder, value.mast)?;
+        let entrypoint = MastNodeId::from_u32_safe(value.entrypoint, &mast).map_err(|error| {
+            ConversionError::deserialization("transaction_script.entrypoint", error)
+        })?;
+
+        Self::from_parts(Arc::new(mast), entrypoint).map_err(ConversionError::new)
+    }
+}
+
+impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
+    fn from(value: &TransactionArgs) -> Self {
+        Self {
+            tx_script: value.tx_script().map(Into::into),
+            tx_script_args: Some(value.tx_script_args().into()),
+            note_args: value
+                .note_args()
+                .iter()
+                .map(|(note_id, args)| proto::transaction::NoteArgument {
+                    note_id: Some(note_id.into()),
+                    args: Some(args.into()),
+                })
+                .collect(),
+            advice_inputs: Some(value.advice_inputs().into()),
+            auth_args: Some(value.auth_args().into()),
+        }
+    }
+}
+
+impl From<TransactionArgs> for proto::transaction::TransactionArgs {
+    fn from(value: TransactionArgs) -> Self {
+        (&value).into()
+    }
+}
+
+impl TryFrom<proto::transaction::TransactionArgs> for TransactionArgs {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::transaction::TransactionArgs) -> Result<Self, Self::Error> {
+        let decoder = value.decoder();
+        let tx_script = value.tx_script.map(TryInto::try_into).transpose()?;
+        let tx_script_args = required!(decoder, value.tx_script_args)?;
+        let mut note_args = BTreeMap::new();
+        for (index, note_arg) in value.note_args.into_iter().enumerate() {
+            let decoder = note_arg.decoder();
+            let note_id_word: Word =
+                required!(decoder, note_arg.note_id).context(format!("note_args[{index}]"))?;
+            let note_id = NoteId::from_raw(note_id_word);
+            let args = required!(decoder, note_arg.args).context(format!("note_args[{index}]"))?;
+            if note_args.insert(note_id, args).is_some() {
+                return Err(ConversionError::message("duplicate note argument")
+                    .context(format!("note_args[{index}].note_id")));
+            }
+        }
+        let advice_inputs = required!(decoder, value.advice_inputs)?;
+        let auth_args = required!(decoder, value.auth_args)?;
+
+        Ok(Self::from_parts(tx_script, tx_script_args, note_args, advice_inputs, auth_args))
+    }
+}
 
 // TX ACCOUNT UPDATE
 // ================================================================================================
