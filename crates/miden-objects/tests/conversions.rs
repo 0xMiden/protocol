@@ -229,6 +229,19 @@ fn note_protobuf_roundtrips_through_versioned_note_metadata() {
 }
 
 #[test]
+fn note_protobuf_requires_note_attachments() {
+    let mut message = proto::note::Note::from(Note::mock_noop(Word::empty()));
+    message.note_attachments = None;
+
+    let error = Note::try_from(message).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "field miden_objects::proto::note::Note::note_attachments is missing"
+    );
+}
+
+#[test]
 fn note_metadata_protobuf_requires_version() {
     let error = NoteMetadata::try_from(proto::note::NoteMetadata::default()).unwrap_err();
 

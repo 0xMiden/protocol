@@ -479,10 +479,10 @@ fn decode_partial_note_metadata_v1(
 
 /// Requires and decodes the structured attachments carried by a note message.
 fn decode_note_attachments<M: prost::Message>(
-    attachments: Option<proto::note::NoteAttachments>,
+    note_attachments: Option<proto::note::NoteAttachments>,
 ) -> Result<NoteAttachments, ConversionError> {
     let decoder = MessageDecoder::<M>::default();
-    required!(decoder, attachments)
+    required!(decoder, note_attachments)
 }
 
 /// Decodes structured note details, optionally allowing the field to be absent.
