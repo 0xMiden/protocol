@@ -49,9 +49,10 @@ use miden_standards::errors::standards::{
     ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT,
     ERR_BURN_ASSET_MISMATCH,
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
+    ERR_BURN_UNSUPPORTED_FAUCET,
+    ERR_MINT_UNSUPPORTED_FAUCET,
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
-    ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
@@ -729,8 +730,10 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
     Ok(())
 }
 
-/// Tests that a non-fungible asset issued by the faucet account itself cannot be burned through
-/// the fungible faucet's `receive_and_burn`.
+/// Tests that a non-fungible asset naming the faucet account as its issuer cannot be burned
+/// against a fungible faucet. The BURN script takes the faucet kind from the stored asset's
+/// composition, so such an asset selects the non-fungible `receive_and_burn`, which the script
+/// then finds the fungible faucet does not expose.
 #[tokio::test]
 async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
     // issue the maximum representable supply so the burn below is not stopped by the
@@ -778,7 +781,55 @@ async fn faucet_burn_rejects_non_fungible_asset() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE);
+    assert_transaction_executor_error!(tx, ERR_BURN_UNSUPPORTED_FAUCET);
+    Ok(())
+}
+
+/// Tests that a MINT note whose stored asset is non-fungible cannot be consumed by a fungible
+/// faucet. The MINT script takes the faucet kind from the stored asset's composition, so such a
+/// note selects the non-fungible `mint_and_send`, which the script then finds the fungible faucet
+/// does not expose.
+#[tokio::test]
+async fn faucet_mint_rejects_non_fungible_asset() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        1000,
+        Some(1000),
+    )?;
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"not a fungible asset",
+        Word::from([3u32, 0, 0, 0]),
+    );
+    let asset = Asset::from(NonFungibleAsset::from_parts(faucet.id(), commitment));
+
+    let note = Note::from(
+        MintNote::builder()
+            .sender(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?)
+            .mint_storage(MintNoteStorage::new_private(
+                Word::from([1, 2, 3, 4u32]),
+                asset,
+                NoteTag::default(),
+            ))
+            .serial_number(Word::from([5, 6, 7, 8u32]))
+            .build()?,
+    );
+
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx = mock_chain
+        .build_transaction(faucet.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_MINT_UNSUPPORTED_FAUCET);
     Ok(())
 }
 

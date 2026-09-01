@@ -44,12 +44,12 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// A MINT note: instructs a network faucet to mint the asset embedded in its storage.
 ///
-/// The single MINT script works against both fungible and non-fungible faucets: it detects the
-/// faucet kind by reflection (via the `CodeInspection` component) and calls the matching
-/// `mint_and_send`. The script reads the asset directly from the note's storage, in the same layout
-/// for both faucet kinds. MINT notes are always public (for network execution) and carry no assets;
-/// the output note minted on consumption can be private or public depending on the
-/// [`MintNoteStorage`] variant.
+/// The single MINT script works against both fungible and non-fungible faucets: it reads the asset
+/// directly from the note's storage, in the same layout for both faucet kinds, and calls the
+/// `mint_and_send` matching that asset's composition. MINT notes are always public (for network
+/// execution) and carry no assets; the output note minted on consumption can be private or public
+/// depending on the [`MintNoteStorage`] variant, which the script reads from the selector in the
+/// note's first storage item.
 ///
 /// A MINT note for a public faucet is tagged for that faucet and carries a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment naming it, both derived
@@ -109,13 +109,13 @@ impl MintNote {
 
     /// Expected number of storage items of a MINT note (private mode).
     ///
-    /// Layout: RECIPIENT(4) + ASSET_ID(4) + ASSET_VALUE(4) + tag(1).
-    pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 13;
+    /// Layout: selector(1) + tag(1) + padding(2) + ASSET_ID(4) + ASSET_VALUE(4) + RECIPIENT(4).
+    pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 16;
 
     /// Minimum number of storage items of a MINT note (public mode).
     ///
-    /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + ASSET_ID(4) + ASSET_VALUE(4) + tag(1) +
-    /// padding(3) + variable output-note storage. The variable portion starts at offset 20
+    /// Layout: selector(1) + tag(1) + padding(2) + ASSET_ID(4) + ASSET_VALUE(4) + SCRIPT_ROOT(4) +
+    /// SERIAL_NUM(4) + variable output-note storage. The variable portion starts at offset 20
     /// (word-aligned) and may contain zero or more items.
     pub const MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 20;
 
@@ -221,11 +221,15 @@ impl From<MintNote> for Note {
 /// binds the note to one faucet - the faucet's `mint_and_send` derives the asset for the active
 /// account and asserts it equals the stored `ASSET_ID`, so a note created for one faucet cannot be
 /// minted by another. This works for non-fungible assets too, since a non-fungible `ASSET_ID` is
-/// `f(faucet_id, ASSET_VALUE)` and is therefore known when the note is built.
+/// `f(faucet_id, ASSET_VALUE)` and is therefore known when the note is built. Its composition is
+/// also what the script dispatches the faucet kind on, so no separate marker is stored for it.
 ///
-/// - Private (13 items): RECIPIENT + ASSET_ID + ASSET_VALUE + tag.
-/// - Public (20+ items): SCRIPT_ROOT + SERIAL_NUM + ASSET_ID + ASSET_VALUE + tag + padding(3) +
-///   variable output-note storage (word-aligned at offset 20).
+/// The first storage item is the selector telling the script which of the two variants the note
+/// was built as; the layouts share everything up to the asset and differ only in the tail:
+///
+/// - Private (16 items): selector + tag + padding(2) + ASSET_ID + ASSET_VALUE + RECIPIENT.
+/// - Public (20+ items): selector + tag + padding(2) + ASSET_ID + ASSET_VALUE + SCRIPT_ROOT +
+///   SERIAL_NUM + variable output-note storage (word-aligned at offset 20).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MintNoteStorage {
     Private {
@@ -241,6 +245,13 @@ pub enum MintNoteStorage {
 }
 
 impl MintNoteStorage {
+    // SELECTORS
+    // --------------------------------------------------------------------------------------------
+
+    // Output note mode selectors stored in the first storage item. Keep in sync with `mint.masm`.
+    const SELECTOR_PRIVATE: u8 = 0;
+    const SELECTOR_PUBLIC: u8 = 1;
+
     /// Builds private-mode storage (creates a private output note).
     pub fn new_private(recipient_digest: Word, asset: impl Into<Asset>, tag: NoteTag) -> Self {
         Self::Private {
@@ -277,6 +288,16 @@ impl MintNoteStorage {
     pub fn faucet_id(&self) -> AccountId {
         self.asset().faucet_id()
     }
+
+    /// Returns the storage items shared by both variants: the selector and the tag, followed by 2
+    /// padding felts so the asset - and everything after it - stays word-aligned.
+    fn header(selector: u8, tag: NoteTag, asset: Asset) -> [Felt; 12] {
+        let mut header = [Felt::ZERO; 12];
+        header[0] = Felt::from(selector);
+        header[1] = tag.into();
+        header[4..].copy_from_slice(&asset.as_elements());
+        header
+    }
 }
 
 impl From<MintNoteStorage> for NoteStorage {
@@ -284,20 +305,24 @@ impl From<MintNoteStorage> for NoteStorage {
         match mint_storage {
             MintNoteStorage::Private { recipient_digest, asset, tag } => {
                 let mut storage_values = Vec::with_capacity(MintNote::NUM_STORAGE_ITEMS_PRIVATE);
+                storage_values.extend_from_slice(&MintNoteStorage::header(
+                    MintNoteStorage::SELECTOR_PRIVATE,
+                    tag,
+                    asset,
+                ));
                 storage_values.extend_from_slice(recipient_digest.as_elements());
-                storage_values.extend_from_slice(&asset.as_elements());
-                storage_values.push(tag.into());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
             MintNoteStorage::Public { recipient, asset, tag } => {
                 let mut storage_values = Vec::new();
+                storage_values.extend_from_slice(&MintNoteStorage::header(
+                    MintNoteStorage::SELECTOR_PUBLIC,
+                    tag,
+                    asset,
+                ));
                 storage_values.extend_from_slice(recipient.script().root().as_elements());
                 storage_values.extend_from_slice(recipient.serial_num().as_elements());
-                storage_values.extend_from_slice(&asset.as_elements());
-                // tag followed by 3 padding felts so the variable storage that follows starts at
-                // a word-aligned offset (20).
-                storage_values.extend_from_slice(&[tag.into(), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
                 storage_values.extend_from_slice(recipient.storage().items());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
@@ -376,6 +401,51 @@ mod tests {
         let target = NetworkAccountTarget::try_from(note.attachments()).unwrap();
         assert_eq!(target.target_id(), faucet());
         assert_eq!(target.execution_hint(), NoteExecutionHint::Always);
+    }
+
+    /// The private-mode storage pins the layout `mint.masm` reads: the selector in the first item,
+    /// the tag in the second, then the asset at the word-aligned offset 4 and the recipient at 12.
+    #[test]
+    fn private_storage_lays_out_selector_tag_and_asset() {
+        let asset = Asset::from(FungibleAsset::new(faucet(), 50).unwrap());
+        let recipient_digest = Word::from([9u32, 8, 7, 6]);
+        let tag = NoteTag::with_account_target(faucet());
+
+        let storage = NoteStorage::from(MintNoteStorage::new_private(recipient_digest, asset, tag));
+        let items = storage.items();
+
+        assert_eq!(items.len(), MintNote::NUM_STORAGE_ITEMS_PRIVATE);
+        assert_eq!(items[0], Felt::from(MintNoteStorage::SELECTOR_PRIVATE));
+        assert_eq!(items[1], Felt::from(tag));
+        assert_eq!(items[2..4], [Felt::ZERO, Felt::ZERO]);
+        assert_eq!(items[4..12], asset.as_elements());
+        assert_eq!(items[12..16], *recipient_digest.as_elements());
+    }
+
+    /// The public-mode storage shares the private layout up to the asset and continues with the
+    /// output note's recipient parts, keeping its variable storage word-aligned at offset 20.
+    #[test]
+    fn public_storage_lays_out_selector_tag_and_asset() {
+        let asset = Asset::from(FungibleAsset::new(faucet(), 50).unwrap());
+        let tag = NoteTag::with_account_target(faucet());
+        let recipient = NoteRecipient::new(
+            Word::from([1u32, 2, 3, 4]),
+            MintNote::script(),
+            NoteStorage::new(vec![Felt::from(7u32)]).unwrap(),
+        );
+
+        let storage =
+            NoteStorage::from(MintNoteStorage::new_public(recipient.clone(), asset, tag).unwrap());
+        let items = storage.items();
+
+        assert_eq!(items.len(), MintNote::MIN_NUM_STORAGE_ITEMS_PUBLIC + 1);
+        assert_eq!(items[0], Felt::from(MintNoteStorage::SELECTOR_PUBLIC));
+        assert_eq!(items[1], Felt::from(tag));
+        assert_eq!(items[2..4], [Felt::ZERO, Felt::ZERO]);
+        assert_eq!(items[4..12], asset.as_elements());
+        assert_eq!(items[12..16], *recipient.script().root().as_elements());
+        assert_eq!(items[16..20], *recipient.serial_num().as_elements());
+        assert_eq!(items[20..], *recipient.storage().items());
     }
 
     /// A private faucet is never a network account, so no target is derived for it. The note is

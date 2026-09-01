@@ -1,0 +1,279 @@
+use miden::protocol::active_note
+use miden::protocol::asset
+use {COMPOSITION_FUNGIBLE, COMPOSITION_NONE} from miden::protocol::asset
+use miden::protocol::note
+use {NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC} from miden::protocol::note
+use miden::standards::faucets::fungible as fungible
+use miden::standards::faucets::non_fungible as non_fungible
+use miden::standards::inspection::code_inspection
+
+# CONSTANTS
+# =================================================================================================
+
+# Memory base at which the note storage is written by `active_note::get_storage`.
+const STORAGE_PTR = 0
+
+# Memory address of the MINT note storage selector and of the output note tag sharing its word.
+const SELECTOR_PTR = STORAGE_PTR
+const TAG_PTR = STORAGE_PTR + 1
+
+# Memory address of the asset to mint, at the same offset in both output note modes.
+const ASSET_PTR = STORAGE_PTR + 4
+
+# Output note mode selectors, stored in the first storage item. Keep in sync with
+# `MintNoteStorage` on the Rust side.
+pub const SELECTOR_PRIVATE = 0
+pub const SELECTOR_PUBLIC = 1
+
+# Memory addresses of the mode-specific tail of the MINT note storage (private mode).
+const PRIVATE_RECIPIENT_PTR = STORAGE_PTR + 12
+
+# Memory addresses of the mode-specific tail of the MINT note storage (public mode).
+const PUBLIC_SCRIPT_ROOT_PTR = STORAGE_PTR + 12
+const PUBLIC_SERIAL_NUM_PTR = STORAGE_PTR + 16
+const PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 20
+
+# Expected note storage item count per output note mode.
+const NUM_STORAGE_ITEMS_PRIVATE = 16
+const MIN_NUM_STORAGE_ITEMS_PUBLIC = 20
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MINT_UNKNOWN_SELECTOR = "mint note selector does not match a known output note mode"
+
+const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "mint note storage item count does not match the selected output note mode"
+
+const ERR_MINT_UNSUPPORTED_ASSET_COMPOSITION = "mint note asset is neither a fungible nor a non-fungible asset"
+
+const ERR_MINT_UNSUPPORTED_FAUCET = "the consuming account does not expose the mint_and_send procedure of the minted asset's faucet kind"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! MINT script: mints the asset stored in the note by calling the consuming faucet's
+#! `mint_and_send` procedure. Works against both fungible and non-fungible faucets.
+#!
+#! Both dispatch decisions are read from the note itself, never from the consuming account:
+#! - the faucet kind comes from the composition of the stored `ASSET_ID`, which is fixed when the
+#!   asset is built: `COMPOSITION_FUNGIBLE` selects the fungible faucet, `COMPOSITION_NONE` the
+#!   non-fungible one.
+#! - the output note mode comes from the selector in the first storage item (see the layout below).
+#!
+#! The script then confirms - via the `CodeInspection` component's `has_procedure` - that the
+#! account exposes the selected `mint_and_send`, so a note pointed at the wrong faucet kind fails
+#! with a named error instead of an unresolved procedure call.
+#!
+#! The note storage layout is shared by both faucet kinds and both output note modes up to the
+#! asset:
+#! - `[0]`     selector: `SELECTOR_PRIVATE` or `SELECTOR_PUBLIC`.
+#! - `[1]`     tag: the tag of the output note.
+#! - `[2..3]`  padding, word-aligning the asset that follows.
+#! - `[4..11]` the asset to mint (`ASSET_ID` + `ASSET_VALUE`).
+#!
+#! and then continues per output note mode:
+#! - private (16 items):  `[12..15]` RECIPIENT of the output note.
+#! - public (20+ items):  `[12..15]` SCRIPT_ROOT, `[16..19]` SERIAL_NUM and `[20..]` the variable
+#!   storage of the output note.
+#!
+#! This note is intended to be executed against a network faucet account.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
+#! - `miden::standards::faucets::fungible::mint_and_send` or
+#!   `miden::standards::faucets::non_fungible::mint_and_send`, matching the stored asset.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the stored asset is neither a fungible nor a non-fungible asset.
+#! - the selector is not a known output note mode.
+#! - the number of storage items does not match the selected output note mode.
+#! - the account does not expose the `has_procedure` procedure.
+#! - the account does not expose the `mint_and_send` procedure of the stored asset's faucet kind.
+#! - the asset stored in the note does not belong to the consuming faucet.
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR; `build_mint_args` reads the item
+    # count back with `get_storage_info`, keeping the operand stack clear for the calls below
+    push.STORAGE_PTR exec.active_note::get_storage drop
+    # => [pad(16)]
+
+    # determine the faucet kind from the asset the note was built to mint
+    padw mem_loadw_le.ASSET_PTR exec.asset::id_into_composition
+    # => [asset_composition, pad(16)]
+
+    dup eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible, asset_composition, pad(16)]
+
+    if.true
+        drop
+        # => [pad(16)]
+
+        # confirm the account exposes the fungible mint_and_send before calling it
+        procref.fungible::mint_and_send
+        # => [FUNGIBLE_MINT_AND_SEND_ROOT, pad(16)]
+
+        call.code_inspection::has_procedure
+        # => [is_available, pad(19)]
+
+        movdn.4 dropw
+        # => [is_available, pad(15)]
+
+        assert.err=ERR_MINT_UNSUPPORTED_FAUCET
+        # => [pad(16)]
+
+        exec.build_mint_args
+        # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+
+        call.fungible::mint_and_send
+        # => [note_idx, pad(15)]
+    else
+        # not a fungible asset: require that it is a non-fungible one
+        eq.COMPOSITION_NONE assert.err=ERR_MINT_UNSUPPORTED_ASSET_COMPOSITION
+        # => [pad(16)]
+
+        # confirm the account exposes the non-fungible mint_and_send before calling it
+        procref.non_fungible::mint_and_send
+        # => [NON_FUNGIBLE_MINT_AND_SEND_ROOT, pad(16)]
+
+        call.code_inspection::has_procedure
+        # => [is_available, pad(19)]
+
+        movdn.4 dropw
+        # => [is_available, pad(15)]
+
+        assert.err=ERR_MINT_UNSUPPORTED_FAUCET
+        # => [pad(16)]
+
+        exec.build_mint_args
+        # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+
+        call.non_fungible::mint_and_send
+        # => [note_idx, pad(15)]
+    end
+    # => [note_idx, pad(15)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Builds the `mint_and_send` input window from the note storage, dispatching on the output note
+#! mode selector stored in the first storage item.
+#!
+#! Inputs:  []
+#! Outputs: [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+#!
+#! Panics if:
+#! - the selector is not a known output note mode.
+#! - the number of storage items does not match the selected output note mode.
+#!
+#! Invocation: exec
+proc build_mint_args
+    exec.active_note::get_storage_info dropw
+    # => [num_storage_items]
+
+    mem_load.SELECTOR_PTR
+    # => [selector, num_storage_items]
+
+    dup eq.SELECTOR_PRIVATE
+    # => [is_private, selector, num_storage_items]
+
+    if.true
+        drop
+        # => [num_storage_items]
+
+        exec.build_private_mint_args
+    else
+        eq.SELECTOR_PUBLIC assert.err=ERR_MINT_UNKNOWN_SELECTOR
+        # => [num_storage_items]
+
+        exec.build_public_mint_args
+    end
+    # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+end
+
+#! Builds the mint arguments for a PRIVATE output note from the note storage.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+#!
+#! Panics if:
+#! - the number of storage items is not NUM_STORAGE_ITEMS_PRIVATE.
+#!
+#! Invocation: exec
+proc build_private_mint_args
+    eq.NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # pad the tail of the `mint_and_send` input window
+    push.0.0
+    # => [pad(2)]
+
+    padw mem_loadw_le.PRIVATE_RECIPIENT_PTR
+    # => [RECIPIENT, pad(2)]
+
+    # push note_type and tag, then the asset on top
+    push.NOTE_TYPE_PRIVATE
+    # => [note_type, RECIPIENT, pad(2)]
+
+    mem_load.TAG_PTR
+    # => [tag, note_type, RECIPIENT, pad(2)]
+
+    push.ASSET_PTR exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+end
+
+#! Builds the mint arguments for a PUBLIC output note from the note storage.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+#!
+#! Panics if:
+#! - the number of storage items is below MIN_NUM_STORAGE_ITEMS_PUBLIC.
+#!
+#! Invocation: exec
+proc build_public_mint_args
+    dup u32assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    u32gte.MIN_NUM_STORAGE_ITEMS_PUBLIC
+    assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [num_storage_items]
+
+    # pad the tail of the `mint_and_send` input window, keeping num_storage_items on top
+    push.0.0 movup.2
+    # => [num_storage_items, pad(2)]
+
+    padw mem_loadw_le.PUBLIC_SCRIPT_ROOT_PTR
+    # => [SCRIPT_ROOT, num_storage_items, pad(2)]
+
+    padw mem_loadw_le.PUBLIC_SERIAL_NUM_PTR
+    # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(2)]
+
+    # compute the length of the variable output note storage
+    movup.8 sub.MIN_NUM_STORAGE_ITEMS_PUBLIC
+    # => [num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(2)]
+
+    push.PUBLIC_OUTPUT_NOTE_STORAGE_PTR
+    # => [storage_ptr, num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(2)]
+
+    exec.note::compute_and_store_recipient
+    # => [RECIPIENT, pad(2)]
+
+    # push note_type and tag, then the asset on top
+    push.NOTE_TYPE_PUBLIC
+    # => [note_type, RECIPIENT, pad(2)]
+
+    mem_load.TAG_PTR
+    # => [tag, note_type, RECIPIENT, pad(2)]
+
+    push.ASSET_PTR exec.asset::load
+    # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+end

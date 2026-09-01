@@ -8,6 +8,7 @@ use miden::standards::assets::fungible_asset
 use miden::standards::note::note_tag
 use {DEFAULT_TAG} from miden::standards::note::note_tag
 use miden::standards::notes::p2id
+use {SELECTOR_PUBLIC as MINT_NOTE_SELECTOR_PUBLIC} from miden::standards::notes::mint
 use miden::standards::attachments::network_account_target
 use {ALWAYS} from miden::standards::note::execution_hint
 
@@ -16,27 +17,29 @@ use {ALWAYS} from miden::standards::note::execution_hint
 
 # MINT note storage layout (public mode, 22 felts total). The full window feeds the
 # storage commitment via `note::compute_and_store_recipient`, so it must match
-# `MintNoteStorage::Public` exactly. The padding at [17..19] keeps the P2ID storage
-# at [20..21] word-aligned and is written as explicit zeros rather than relying on
-# memory zero-init.
-# - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
-# - SERIAL_NUM        [4..7]   : 4 felts
-# - ASSET_ID          [8..11]  : 4 felts (asset ID of asset to mint)
-# - ASSET_VALUE       [12..15] : 4 felts (asset value word; [amount, 0, 0, 0])
-# - tag               [16]     : 1 felt
-# - padding           [17..19] : 3 felts (word-aligns P2ID; explicitly zeroed)
+# `MintNoteStorage::Public` exactly. The selector at [0] is what the MINT script dispatches the
+# output note mode on. The padding at [2..3] keeps the asset below word-aligned and is written as
+# explicit zeros rather than relying on memory zero-init.
+# - selector          [0]      : 1 felt (MINT_NOTE_SELECTOR_PUBLIC)
+# - tag               [1]      : 1 felt
+# - padding           [2..3]   : 2 felts (word-aligns the asset; explicitly zeroed)
+# - ASSET_ID          [4..7]   : 4 felts (asset ID of asset to mint)
+# - ASSET_VALUE       [8..11]  : 4 felts (asset value word; [amount, 0, 0, 0])
+# - P2ID_SCRIPT_ROOT  [12..15] : 4 felts
+# - SERIAL_NUM        [16..19] : 4 felts
 # - account_id_suffix [20]     : 1 felt
 # - account_id_prefix [21]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 22
 
 # Memory addresses for MINT note output construction
 const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
-const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 800
-const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 804
-const MINT_NOTE_STORAGE_ASSET_ID = 808
-const MINT_NOTE_STORAGE_ASSET_VALUE = 812
-const MINT_NOTE_STORAGE_DEST_TAG = 816
-# padding at 817, 818, 819 so the P2ID storage below stays word-aligned
+const MINT_NOTE_STORAGE_SELECTOR = 800
+const MINT_NOTE_STORAGE_DEST_TAG = 801
+# padding at 802, 803 so the asset below stays word-aligned
+const MINT_NOTE_STORAGE_ASSET_ID = 804
+const MINT_NOTE_STORAGE_ASSET_VALUE = 808
+const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 812
+const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 816
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 820
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 821
 
@@ -166,12 +169,13 @@ end
 #! Writes all 22 MINT note storage items to global memory.
 #!
 #! Storage layout:
-#! - [0..3]:   P2ID_SCRIPT_ROOT (script root of the P2ID note)
-#! - [4..7]:   SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
-#! - [8..11]:  ASSET_ID (asset ID of the fungible asset that the AggLayer faucet must mint)
-#! - [12..15]: ASSET_VALUE (value word of the asset: [native_amount, 0, 0, 0])
-#! - [16]:     dest_tag (note tag for the P2ID output note, targeting the destination account)
-#! - [17..19]: padding (so the P2ID storage below stays word-aligned at [20..21])
+#! - [0]:      selector (MINT_NOTE_SELECTOR_PUBLIC, selecting the public output note mode)
+#! - [1]:      dest_tag (note tag for the P2ID output note, targeting the destination account)
+#! - [2..3]:   padding (so the asset below stays word-aligned at [4..11])
+#! - [4..7]:   ASSET_ID (asset ID of the fungible asset that the AggLayer faucet must mint)
+#! - [8..11]:  ASSET_VALUE (value word of the asset: [native_amount, 0, 0, 0])
+#! - [12..15]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
+#! - [16..19]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
 #! - [20]:     account_id_suffix (destination account suffix)
 #! - [21]:     account_id_prefix (destination account prefix)
 #!
@@ -190,16 +194,17 @@ proc write_mint_note_storage
     drop
     # => [destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    # compute the destination tag [16] (consumes destination_id_prefix)
+    # compute the destination tag [1] (consumes destination_id_prefix)
     exec.note_tag::create_account_target
     # => [dest_tag, faucet_id_suffix, faucet_id_prefix]
 
-    # write the tag word [16..19] as [dest_tag, 0, 0, 0]: the tag at [16] plus explicit zeros
-    # at the padding elements [17..19] that keep the P2ID storage word-aligned
-    push.0 push.0 push.0 movup.3
-    # => [dest_tag, 0, 0, 0, faucet_id_suffix, faucet_id_prefix]
+    # write the header word [0..3] as [selector, dest_tag, 0, 0]: the output note mode selector at
+    # [0] and the tag at [1], plus explicit zeros at the padding elements [2..3] that keep the
+    # asset word-aligned
+    push.0 push.0 movup.2 push.MINT_NOTE_SELECTOR_PUBLIC
+    # => [selector, dest_tag, 0, 0, faucet_id_suffix, faucet_id_prefix]
 
-    mem_storew_le.MINT_NOTE_STORAGE_DEST_TAG dropw
+    mem_storew_le.MINT_NOTE_STORAGE_SELECTOR dropw
     # => [faucet_id_suffix, faucet_id_prefix]
 
     # build ASSET_ID + ASSET_VALUE for the faucet's fungible asset at the resolved
@@ -218,22 +223,22 @@ proc write_mint_note_storage
     exec.fungible_asset::create
     # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
-    # write ASSET_ID [8..11]
+    # write ASSET_ID [4..7]
     mem_storew_le.MINT_NOTE_STORAGE_ASSET_ID dropw
     # => [ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
-    # write ASSET_VALUE [12..15]
+    # write ASSET_VALUE [8..11]
     mem_storew_le.MINT_NOTE_STORAGE_ASSET_VALUE dropw
     # => [faucet_id_suffix, faucet_id_prefix]
 
-    # write P2ID_SCRIPT_ROOT to MINT note storage [0..3]
+    # write P2ID_SCRIPT_ROOT to MINT note storage [12..15]
     procref.::miden::standards::notes::p2id::main
     # => [P2ID_SCRIPT_ROOT, faucet_id_suffix, faucet_id_prefix]
 
     mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
     # => [faucet_id_suffix, faucet_id_prefix]
 
-    # write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [4..7]
+    # write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [16..19]
     padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM, faucet_id_suffix, faucet_id_prefix]
 

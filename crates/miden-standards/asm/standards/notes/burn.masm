@@ -1,8 +1,9 @@
 use miden::standards::faucets::fungible as fungible
 use miden::standards::faucets::non_fungible as non_fungible
-use miden::standards::inspection::code_inspection
 use miden::protocol::active_note
 use miden::protocol::asset
+use {COMPOSITION_FUNGIBLE, COMPOSITION_NONE} from miden::protocol::asset
+use miden::standards::inspection::code_inspection
 
 # MEMORY
 # =================================================================================================
@@ -14,7 +15,8 @@ const NUM_STORAGE_ITEMS = 8
 # ERRORS
 # =================================================================================================
 
-const ERR_BURN_UNSUPPORTED_FAUCET = "the consuming account exposes neither a fungible nor a non-fungible faucet receive_and_burn procedure"
+const ERR_BURN_UNSUPPORTED_ASSET_COMPOSITION = "burn note asset is neither a fungible nor a non-fungible asset"
+const ERR_BURN_UNSUPPORTED_FAUCET = "the consuming account does not expose the receive_and_burn procedure of the burned asset's faucet kind"
 const ERR_BURN_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "burn note expects exactly 8 note storage items"
 const ERR_BURN_WRONG_NUMBER_OF_ASSETS = "burn note must carry exactly one asset"
 const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the asset it carries"
@@ -22,10 +24,12 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #! BURN script: burns the asset stored in and carried by the note by calling the consuming faucet's
 #! `receive_and_burn` procedure. Works against both fungible and non-fungible faucets.
 #!
-#! The faucet kind is determined by reflection: the script asks the account (via the
-#! `CodeInspection` component's `has_procedure`) whether it exposes the fungible
-#! `receive_and_burn`; if so the fungible procedure is called, otherwise the non-fungible one is
-#! called after asserting the account exposes it.
+#! The faucet kind is read from the note itself, never from the consuming account: the composition
+#! of the stored `ASSET_ID` is fixed when the asset is built, so `COMPOSITION_FUNGIBLE` selects the
+#! fungible `receive_and_burn` and `COMPOSITION_NONE` the non-fungible one. The script then
+#! confirms - via the `CodeInspection` component's `has_procedure` - that the account exposes the
+#! selected procedure, so a note pointed at the wrong faucet kind fails with a named error instead
+#! of an unresolved procedure call.
 #!
 #! Before calling the faucet, the script checks that the note carries exactly one asset and that it
 #! exactly matches the asset embedded in note storage. The faucet receives that stored asset as an
@@ -34,17 +38,18 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
-#! - either `miden::standards::faucets::fungible::receive_and_burn` or
-#!   `miden::standards::faucets::non_fungible::receive_and_burn`.
+#! - `miden::standards::faucets::fungible::receive_and_burn` or
+#!   `miden::standards::faucets::non_fungible::receive_and_burn`, matching the stored asset.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the account does not expose the `has_procedure` procedure.
-#! - the account exposes neither faucet's `receive_and_burn` procedure.
 #! - the note storage does not contain exactly one asset.
 #! - the note does not carry exactly one asset, or that asset differs from the stored asset.
+#! - the stored asset is neither a fungible nor a non-fungible asset.
+#! - the account does not expose the `has_procedure` procedure.
+#! - the account does not expose the `receive_and_burn` procedure of the stored asset's faucet kind.
 #! - any of the validations in the `receive_and_burn` procedure fail.
 @note_script
 pub proc main
@@ -71,17 +76,30 @@ pub proc main
     assert_eqw.err=ERR_BURN_ASSET_MISMATCH
     # => [pad(16)]
 
-    # Determine the faucet kind
-    procref.fungible::receive_and_burn
-    # => [FUNGIBLE_RECEIVE_AND_BURN_ROOT, pad(16)]
+    # Determine the faucet kind from the asset the note was built to burn.
+    padw mem_loadw_le.STORAGE_PTR exec.asset::id_into_composition
+    # => [asset_composition, pad(16)]
 
-    call.code_inspection::has_procedure
-    # => [is_fungible, pad(19)]
-
-    movdn.4 dropw
-    # => [is_fungible, pad(15)]
+    dup eq.COMPOSITION_FUNGIBLE
+    # => [is_fungible, asset_composition, pad(16)]
 
     if.true
+        drop
+        # => [pad(16)]
+
+        # Confirm the account exposes the fungible receive_and_burn before calling it.
+        procref.fungible::receive_and_burn
+        # => [FUNGIBLE_RECEIVE_AND_BURN_ROOT, pad(16)]
+
+        call.code_inspection::has_procedure
+        # => [is_available, pad(19)]
+
+        movdn.4 dropw
+        # => [is_available, pad(15)]
+
+        assert.err=ERR_BURN_UNSUPPORTED_FAUCET
+        # => [pad(16)]
+
         # Fungible faucet: burn the fungible asset.
         push.STORAGE_PTR exec.asset::load
         swapdw dropw dropw
@@ -90,15 +108,19 @@ pub proc main
         call.fungible::receive_and_burn
         # => [pad(16)]
     else
-        # Not a fungible faucet: require that it is a non-fungible faucet.
+        # Not a fungible asset: require that it is a non-fungible one.
+        eq.COMPOSITION_NONE assert.err=ERR_BURN_UNSUPPORTED_ASSET_COMPOSITION
+        # => [pad(16)]
+
+        # Confirm the account exposes the non-fungible receive_and_burn before calling it.
         procref.non_fungible::receive_and_burn
         # => [NON_FUNGIBLE_RECEIVE_AND_BURN_ROOT, pad(16)]
 
         call.code_inspection::has_procedure
-        # => [is_non_fungible, pad(19)]
+        # => [is_available, pad(19)]
 
         movdn.4 dropw
-        # => [is_non_fungible, pad(15)]
+        # => [is_available, pad(15)]
 
         assert.err=ERR_BURN_UNSUPPORTED_FAUCET
         # => [pad(16)]
