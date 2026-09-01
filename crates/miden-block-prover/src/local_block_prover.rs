@@ -68,6 +68,9 @@ impl LocalBlockProver {
     }
 }
 
+// TODO: Once https://github.com/0xMiden/miden-vm/pull/3757 is released, replace this helper with
+// `ExecutionProof::has_precompiles()` and reject precompile work before proving with
+// `ExecutionWitness::has_precompiles()`.
 fn proof_has_precompiles(proof: &ExecutionProof) -> bool {
     matches!(
         proof,
