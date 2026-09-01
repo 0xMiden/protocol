@@ -51,9 +51,6 @@ const ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC = "pause config note must be public"
 #! - `miden::standards::access::pausable::manager::{pause, unpause}` (the `PausableManager`
 #!   component), backed by the `Pausable` and `Authority` companion components.
 #!
-#! Consumption is restricted to public notes: the management action must remain publicly auditable,
-#! so a private note carrying the same script and storage is rejected.
-#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -69,7 +66,6 @@ pub proc main
     dropw
     # => [pad(16)]
 
-    # restrict consumption to public notes: the management action must remain publicly auditable
     exec.active_note::is_public
     assert.err=ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]

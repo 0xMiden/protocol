@@ -69,9 +69,6 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 #! - `miden::standards::fees::fee_manager::add_allowed_fee_policy`
 #! - `miden::standards::fees::fee_manager::remove_allowed_fee_policy`
 #!
-#! Consumption is restricted to public notes: the management action must remain publicly auditable,
-#! so a private note carrying the same script and storage is rejected.
-#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -88,7 +85,6 @@ pub proc main
     dropw
     # => [pad(16)]
 
-    # restrict consumption to public notes: the management action must remain publicly auditable
     exec.active_note::is_public
     assert.err=ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]

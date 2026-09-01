@@ -64,9 +64,6 @@ const ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC = "rbac config note must be public"
 #! - `miden::standards::access::rbac::{grant_role, revoke_role, set_role_admin, renounce_role}`
 #!   (the `RoleBasedAccessControl` component).
 #!
-#! Consumption is restricted to public notes: the management action must remain publicly auditable,
-#! so a private note carrying the same script and storage is rejected.
-#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -82,7 +79,6 @@ pub proc main
     dropw
     # => [pad(16)]
 
-    # restrict consumption to public notes: the management action must remain publicly auditable
     exec.active_note::is_public
     assert.err=ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]

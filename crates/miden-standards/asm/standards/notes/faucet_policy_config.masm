@@ -57,9 +57,6 @@ const ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet policy config note m
 #!   set_send_policy, set_receive_policy}` (the `TokenPolicyManager` component), backed by the
 #!   `Authority` companion component.
 #!
-#! Consumption is restricted to public notes: the management action must remain publicly auditable,
-#! so a private note carrying the same script and storage is rejected.
-#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -76,7 +73,6 @@ pub proc main
     dropw
     # => [pad(16)]
 
-    # restrict consumption to public notes: the management action must remain publicly auditable
     exec.active_note::is_public
     assert.err=ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]

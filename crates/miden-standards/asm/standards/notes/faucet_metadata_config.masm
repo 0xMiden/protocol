@@ -78,9 +78,6 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
 #!   the `Authority` and `Pausable` companion components.
 #!
-#! Consumption is restricted to public notes: the management action must remain publicly auditable,
-#! so a private note carrying the same script and storage is rejected.
-#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -97,7 +94,6 @@ pub proc main
     dropw
     # => [pad(16)]
 
-    # restrict consumption to public notes: the management action must remain publicly auditable
     exec.active_note::is_public
     assert.err=ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]

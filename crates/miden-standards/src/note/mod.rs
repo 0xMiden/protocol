@@ -3,12 +3,7 @@
 //! # Note type of the config notes
 //!
 //! The config note scripts require a public note, so the management action a config note carries
-//! cannot be dispatched from a hand-crafted private note with the same script and storage. The
-//! requirement holds at every layer: the builders always produce
-//! [`NoteType::Public`](miden_protocol::note::NoteType::Public) notes, network execution rejects
-//! a non-public note ([`AccountTargetNetworkNote`]), and each script asserts it before dispatching.
-//! Authorization is separate and unaffected: the called procedures authorize the note sender,
-//! which the kernel pins to the account that created the note.
+//! cannot be dispatched from a private note with the same script and storage.
 
 use alloc::boxed::Box;
 use alloc::string::ToString;
