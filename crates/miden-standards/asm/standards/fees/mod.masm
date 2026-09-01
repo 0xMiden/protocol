@@ -65,7 +65,7 @@ const WORD_ALIGNMENT_MASK = 0xFFFFFFFC
 const SPONSORSHIP_STORAGE_LOC = 0
 const SPONSORSHIP_FEATURE_NOTE_ID_LOC = SPONSORSHIP_STORAGE_LOC + FEATURE_NOTE_ID_ITEM_OFFSET
 
-# Local memory offset at which `create_network_note_sponsorship` caches the expected fee asset ID.
+# Local memory offset at which `handle_network_note_sponsorship` caches the expected fee asset ID.
 const EXPECTED_FEE_ASSET_ID_LOC = 0
 
 # Local memory offsets used by `compute_sponsorship_fee` (in its own local frame).
@@ -312,12 +312,13 @@ pub proc create_network_note_sponsorships(fee_asset_id: AssetId) -> felt
             # => [note_idx, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
             #     total_sponsored_fee_amount]
 
-            # pass a copy of the expected fee asset ID along with the note parameters
-            dupw.1 movup.5 movup.5
-            # => [note_idx, attachment_idx, FEE_ASSET_ID, note_idx, num_output_notes, FEE_ASSET_ID,
-            #     total_sponsored_fee_amount]
+            # pass a copy of the expected fee asset ID along with the note parameters, and ask for
+            # the sponsorship note to be created
+            dupw.1 movup.5 movup.5 push.1 movdn.6
+            # => [note_idx, attachment_idx, FEE_ASSET_ID, is_create = 1, note_idx, num_output_notes,
+            #     FEE_ASSET_ID, total_sponsored_fee_amount]
 
-            exec.create_network_note_sponsorship
+            exec.handle_network_note_sponsorship
             # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
             #     total_sponsored_fee_amount]
 
@@ -394,12 +395,13 @@ pub proc estimate_network_note_sponsorships(fee_asset_id: AssetId) -> (felt, fel
             # => [note_idx, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
             #     total_sponsored_fee_amount, num_sponsorship_notes]
 
-            # pass a copy of the expected fee asset ID along with the note parameters
-            dupw.1 movup.5 movup.5
-            # => [note_idx, attachment_idx, FEE_ASSET_ID, note_idx, num_output_notes, FEE_ASSET_ID,
-            #     total_sponsored_fee_amount, num_sponsorship_notes]
+            # pass a copy of the expected fee asset ID along with the note parameters, and ask for
+            # the note to only be priced
+            dupw.1 movup.5 movup.5 push.0 movdn.6
+            # => [note_idx, attachment_idx, FEE_ASSET_ID, is_create = 0, note_idx, num_output_notes,
+            #     FEE_ASSET_ID, total_sponsored_fee_amount, num_sponsorship_notes]
 
-            exec.estimate_network_note_sponsorship
+            exec.handle_network_note_sponsorship
             # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
             #     total_sponsored_fee_amount, num_sponsorship_notes]
 
@@ -697,20 +699,24 @@ proc is_network_note(note_idx: u16) -> (Bool, u8)
     # => [is_found, attachment_idx]
 end
 
-#! Creates a FEE_SPONSORSHIP note for the network output note at the given index.
+#! Prices the network output note at the given index and, when asked to, creates its
+#! FEE_SPONSORSHIP note.
 #!
-#! See [`create_network_note_sponsorships`] for the full behaviour; this procedure handles a single network
-#! note. A network note the target account prices to zero produces no sponsorship note.
+#! See [`create_network_note_sponsorships`] for the full behaviour; this procedure handles a single
+#! network note. A network note the target account prices to zero needs no sponsorship note, so
+#! none is created for it. When is_create is 0 the note is only priced: the vault and the output
+#! notes are left untouched.
 #!
-#! Inputs:  [note_idx, attachment_idx, EXPECTED_FEE_ASSET_ID]
+#! Inputs:  [note_idx, attachment_idx, EXPECTED_FEE_ASSET_ID, is_create]
 #! Outputs: [sponsored_fee_amount]
 #!
 #! Where:
 #! - note_idx is the index of the network output note to sponsor.
 #! - attachment_idx is the index of the note's network account target attachment.
 #! - EXPECTED_FEE_ASSET_ID is the ID of the asset the sponsorship note must be funded with.
-#! - sponsored_fee_amount is the amount moved into the sponsorship note, or zero if none was
-#!   created.
+#! - is_create is 1 to create the sponsorship note, 0 to only price it.
+#! - sponsored_fee_amount is the amount the sponsorship note carries, or zero if the target prices
+#!   the note to zero and so it needs none.
 #!
 #! Panics if:
 #! - the note's target ID attachment does not consist of exactly one word.
@@ -718,98 +724,55 @@ end
 #!   or does not hash to the recipient.
 #! - the target account's active fee policy is not set.
 #! - the target account charges a non-zero fee in an asset other than the expected fee asset.
-#! - the native account's vault does not hold enough of the fee asset.
+#! - is_create is 1 and the native account's vault does not hold enough of the fee asset.
 #!
 #! Invocation: exec
 @locals(4)
-proc create_network_note_sponsorship(
+proc handle_network_note_sponsorship(
     note_idx: u16,
     attachment_idx: u8,
-    expected_fee_asset_id: AssetId
+    expected_fee_asset_id: AssetId,
+    is_create: Bool
 ) -> felt
     # cache the expected fee asset ID for the target fee asset check
     movdn.5 movdn.5 loc_storew_le.EXPECTED_FEE_ASSET_ID_LOC dropw
-    # => [note_idx, attachment_idx]
+    # => [note_idx, attachment_idx, is_create]
 
-    dup movdn.2
-    # => [note_idx, attachment_idx, note_idx]
+    dup movdn.3
+    # => [note_idx, attachment_idx, is_create, note_idx]
 
     exec.compute_sponsorship_fee
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
+    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, is_create, note_idx]
 
     exec.fungible_asset::to_amount
-    # => [fee_amount, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
+    # => [fee_amount, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, is_create, note_idx]
 
-    movdn.10 dup.10 eq.0
-    # => [is_zero_fee, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx, fee_amount]
+    movdn.11 dup.11 eq.0
+    # => [is_zero_fee, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, is_create, note_idx,
+    #     fee_amount]
 
     if.true
-        # if the price of the note is zero, do not create a sponsorship note
-        dropw dropw drop drop
+        # if the price of the note is zero, it needs no sponsorship note
+        dropw dropw drop drop drop
         # => [fee_amount]
     else
         # reject a target whose fee asset differs from the expected fee asset
         dupw padw loc_loadw_le.EXPECTED_FEE_ASSET_ID_LOC exec.word::eq
         assert.err=ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx, fee_amount]
+        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, is_create, note_idx, fee_amount]
 
-        exec.create_sponsorship_note
-        # => [fee_amount]
+        movup.9
+        # => [is_create, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx, fee_amount]
+
+        if.true
+            exec.create_sponsorship_note
+            # => [fee_amount]
+        else
+            # only pricing the note: discard the inputs of the note creation
+            dropw dropw drop drop
+            # => [fee_amount]
+        end
     end
-end
-
-#! Prices the network output note at the given index without creating its FEE_SPONSORSHIP note.
-#!
-#! The estimation twin of `create_network_note_sponsorship`: it prices the note through the same
-#! fee policy call and applies the same fee asset check, but leaves the vault and the output notes
-#! untouched.
-#!
-#! Inputs:  [note_idx, attachment_idx, EXPECTED_FEE_ASSET_ID]
-#! Outputs: [sponsored_fee_amount]
-#!
-#! Where:
-#! - note_idx is the index of the network output note to price.
-#! - attachment_idx is the index of the note's network account target attachment.
-#! - EXPECTED_FEE_ASSET_ID is the ID of the asset the sponsorship note must be funded with.
-#! - sponsored_fee_amount is the amount the note's sponsorship note will carry, or zero if the
-#!   target prices it to zero and so needs none.
-#!
-#! Panics if:
-#! - the note's target ID attachment does not consist of exactly one word.
-#! - the target account's fee policy requires the note's recipient preimage and it is unavailable
-#!   or does not hash to the recipient.
-#! - the target account's active fee policy is not set.
-#! - the target account charges a non-zero fee in an asset other than the expected fee asset.
-#!
-#! Invocation: exec
-@locals(4)
-proc estimate_network_note_sponsorship(
-    note_idx: u16,
-    attachment_idx: u8,
-    expected_fee_asset_id: AssetId
-) -> felt
-    # cache the expected fee asset ID for the target fee asset check
-    movdn.5 movdn.5 loc_storew_le.EXPECTED_FEE_ASSET_ID_LOC dropw
-    # => [note_idx, attachment_idx]
-
-    exec.compute_sponsorship_fee
-    # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix]
-
-    exec.fungible_asset::to_amount
-    # => [fee_amount, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix]
-
-    movdn.9 dup.9 neq.0
-    # => [is_sponsored, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, fee_amount]
-
-    if.true
-        # reject a target whose fee asset differs from the expected fee asset
-        dupw padw loc_loadw_le.EXPECTED_FEE_ASSET_ID_LOC exec.word::eq
-        assert.err=ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH
-        # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, fee_amount]
-    end
-
-    dropw dropw drop
-    # => [fee_amount]
 end
 
 #! Computes the fee the target network account charges for the output note at the given index.
