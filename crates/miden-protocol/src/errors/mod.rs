@@ -1348,6 +1348,9 @@ pub enum ProposedBatchError {
         source: TransactionVerifierError,
     },
 
+    #[error("transaction {transaction_id} has an outstanding precompile obligation")]
+    IncompleteTransactionProof { transaction_id: TransactionId },
+
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
     )]

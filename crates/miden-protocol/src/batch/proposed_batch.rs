@@ -341,13 +341,11 @@ impl ProposedBatch {
     /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
     /// execution proof against the transaction kernel.
     ///
-    /// A verified transaction may have an outstanding precompile obligation. The proposed batch
-    /// retains the full transaction proof so later batch processing can inspect that obligation.
-    ///
     /// # Errors
     ///
     /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
-    /// or if a transaction's proof fails to verify or does not meet `proof_security_level`.
+    /// if a transaction's proof fails to verify or does not meet `proof_security_level`, or if the
+    /// proof has an outstanding precompile obligation.
     pub fn new(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
@@ -364,12 +362,17 @@ impl ProposedBatch {
 
         let verifier = TransactionVerifier::new(proof_security_level);
         for tx in batch.transactions() {
-            let _verification_outcome = verifier.verify(tx).map_err(|source| {
+            let verification_outcome = verifier.verify(tx).map_err(|source| {
                 ProposedBatchError::TransactionVerificationFailed {
                     transaction_id: tx.id(),
                     source,
                 }
             })?;
+            if !verification_outcome.is_complete() {
+                return Err(ProposedBatchError::IncompleteTransactionProof {
+                    transaction_id: tx.id(),
+                });
+            }
         }
 
         Ok(batch)
