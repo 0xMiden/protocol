@@ -60,7 +60,7 @@ pub proc validate_encoding
 
     # The encoding stacks `num_chars` character digits on top of the length digit, so it spans
     # `num_chars + 1` base-`ALPHABET_LEN` digits: hence the `add.1` in the exponent.
-    push.ALPHABET_LEN swap add.1 exp
+    push.ALPHABET_LEN swap add.1 exp.u4
     # => [upper_bound, role_symbol]
 
     # The value must fit in the characters its length announces.

@@ -345,7 +345,7 @@ Bridges an asset out of Miden into the AggLayer:
 | **Inputs** | `[origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; bridge is paused; token key is assigned to a different faucet |
 
 Asserts that the note sender holds the `FAUCET_MNGR`
 role, then registers the faucet across three storage maps:
@@ -363,9 +363,10 @@ role, then registers the faucet across three storage maps:
    the address alone would let a CLAIM bound to one origin network resolve to the faucet of
    the same address on another network.
 
-If the faucet is already registered (a re-registration under a different token identity), the prior
-`token_registry` key is recomputed from the existing metadata and cleared before the new entry is
-written, so a `token_registry` key never outlives the registration that created it.
+The new token key must be unassigned or already point to the faucet being registered. If the faucet
+is already registered under a different token identity, the prior `token_registry` key is
+recomputed from the existing metadata and cleared only after confirming that it still points to
+that faucet. These checks preserve a one-to-one mapping between token identities and faucets.
 
 #### `bridge_config::deregister_faucet`
 
@@ -375,16 +376,15 @@ written, so a `token_registry` key never outlives the registration that created 
 | **Inputs** | `[faucet_id_suffix, faucet_id_prefix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `DEREGISTER_AGG_FAUCET` note on the bridge account |
-| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered |
+| **Panics** | Note sender does not hold the `FAUCET_MNGR` role; faucet is not currently registered; token key does not point to the faucet |
 
 Asserts the note sender holds the `FAUCET_MNGR` role and the faucet is currently registered (via
 `assert_faucet_registered`), then clears all of the faucet's entries:
 
 1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [0, 0, 0, 0]`.
 2. `token_registry_map`: recomputes the key from the faucet's stored `origin_token_addr` and
-   `origin_network` (via `get_faucet_conversion_info`, matching `register_faucet`) and clears it to
-   `[0, 0, 0, 0]`. Recomputing the key from on-chain metadata rather than the note guarantees it
-   matches the faucet's current registration.
+   `origin_network` (via `get_faucet_conversion_info`, matching `register_faucet`), asserts that it
+   still points to the faucet, and clears it to `[0, 0, 0, 0]`.
 3. `faucet_metadata_map`: clears all four sub-keys (origin address, network, scale, metadata hash).
 
 After deregistration, in-flight B2AGG / CLAIM notes referencing the faucet fail, so a `FAUCET_MNGR`
@@ -1411,7 +1411,9 @@ consumption:
   (`bridge_config::lookup_faucet_by_token_address`). Keying on the pair (rather than the
   address alone) matches the canonical asset identity used by Solidity's
   `tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))` and
-  prevents same-address cross-network collisions.
+  prevents same-address cross-network collisions. Each token key is owned by at most one faucet;
+  registration cannot overwrite another faucet's mapping, and cleanup verifies ownership before
+  clearing a key.
 - **Faucet metadata map** (`agglayer::bridge::faucet_metadata_map`): stores all conversion
   metadata — origin address, origin network, scale, and the precomputed
   `keccak256(abi.encode(name, symbol, decimals))` metadata hash — for every registered
@@ -1471,7 +1473,8 @@ perform the following writes:
    `[2, 0, fid_s, fid_p]` and `[3, 0, fid_s, fid_p]`.
 3. `token_registry_map`: `Poseidon2(origin_token_addr, origin_network)` → `[0, 0, fid_s, fid_p]`.
    Keying on the pair (not the address alone) matches Solidity's `tokenInfoHash` and
-   prevents same-address cross-network collisions.
+   prevents same-address cross-network collisions. Registration fails if this key already points
+   to a different faucet.
 
 The token registry enables the bridge to resolve which Miden-side faucet corresponds to a
 given origin asset during CLAIM note processing. When the bridge processes a

@@ -168,7 +168,7 @@ impl AccountStorageHeader {
         }
 
         let mut slots = Vec::new();
-        for chunk in elements.chunks_exact(StorageSlot::NUM_ELEMENTS) {
+        for chunk in elements.as_chunks::<{ StorageSlot::NUM_ELEMENTS }>().0 {
             // The first element of each slot record is reserved and must be zero.
             if chunk[0] != Felt::ZERO {
                 return Err(AccountError::StorageSlotReservedElementNotZero(chunk[0]));
