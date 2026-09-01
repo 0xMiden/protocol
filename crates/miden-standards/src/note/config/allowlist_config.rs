@@ -22,63 +22,63 @@ use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
 use crate::note::NetworkAccountTarget;
-use crate::note::costs::{BLOCKLIST_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
+use crate::note::costs::{ALLOWLIST_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
 
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the BLOCKLIST_CONFIG note script procedure in the standards library.
-const BLOCKLIST_CONFIG_SCRIPT_PATH: &str = "::miden::standards::notes::blocklist_config::main";
+/// Path to the ALLOWLIST_CONFIG note script procedure in the standards library.
+const ALLOWLIST_CONFIG_SCRIPT_PATH: &str = "::miden::standards::notes::allowlist_config::main";
 
-// Initialize the BLOCKLIST_CONFIG note script only once.
-static BLOCKLIST_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the ALLOWLIST_CONFIG note script only once.
+static ALLOWLIST_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(BLOCKLIST_CONFIG_SCRIPT_PATH);
+    let path = Path::new(ALLOWLIST_CONFIG_SCRIPT_PATH);
     NoteScript::from_package_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains BLOCKLIST_CONFIG note script procedure")
+        .expect("Standards library contains ALLOWLIST_CONFIG note script procedure")
 });
 
-// BLOCKLIST CONFIG
+// ALLOWLIST CONFIG
 // ================================================================================================
 
 /// A management action of the
-/// [`BlocklistManager`](crate::account::policies::BlocklistManager) component that a
-/// [`BlocklistConfigNote`] triggers on the account that consumes it.
+/// [`AllowlistManager`](crate::account::policies::AllowlistManager) component that an
+/// [`AllowlistConfigNote`] triggers on the account that consumes it.
 ///
 /// The action, together with its argument, is encoded into the note's storage (see [`NoteStorage`]
 /// conversion below) and is fixed at note creation, bound into the note commitment. The consuming
-/// account's `BlocklistManager` procedures authorize the action through the account-wide
+/// account's `AllowlistManager` procedures authorize the action through the account-wide
 /// [`Authority`](crate::account::access::Authority) component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlocklistConfig {
-    /// Add `account` to the blocklist. Blocking an already blocked account is a noop.
-    BlockAccount { account: AccountId },
-    /// Remove `account` from the blocklist. Unblocking an account that is not blocked is a noop.
-    UnblockAccount { account: AccountId },
+pub enum AllowlistConfig {
+    /// Add `account` to the allowlist. Allowing an already allowed account is a noop.
+    AllowAccount { account: AccountId },
+    /// Remove `account` from the allowlist. Disallowing an account that is not allowed is a noop.
+    DisallowAccount { account: AccountId },
 }
 
-impl BlocklistConfig {
+impl AllowlistConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
     // Config note selectors stored in the first storage item. Keep in sync with
-    // `blocklist_config.masm`.
-    const SELECTOR_BLOCK_ACCOUNT: u8 = 0;
-    const SELECTOR_UNBLOCK_ACCOUNT: u8 = 1;
+    // `allowlist_config.masm`.
+    const SELECTOR_ALLOW_ACCOUNT: u8 = 0;
+    const SELECTOR_DISALLOW_ACCOUNT: u8 = 1;
 
     /// Returns the selector encoding this action in the first storage item.
     const fn selector(self) -> u8 {
         match self {
-            BlocklistConfig::BlockAccount { .. } => Self::SELECTOR_BLOCK_ACCOUNT,
-            BlocklistConfig::UnblockAccount { .. } => Self::SELECTOR_UNBLOCK_ACCOUNT,
+            AllowlistConfig::AllowAccount { .. } => Self::SELECTOR_ALLOW_ACCOUNT,
+            AllowlistConfig::DisallowAccount { .. } => Self::SELECTOR_DISALLOW_ACCOUNT,
         }
     }
 
     /// Returns the account the action operates on.
     const fn target(self) -> AccountId {
         match self {
-            BlocklistConfig::BlockAccount { account }
-            | BlocklistConfig::UnblockAccount { account } => account,
+            AllowlistConfig::AllowAccount { account }
+            | AllowlistConfig::DisallowAccount { account } => account,
         }
     }
 
@@ -90,27 +90,27 @@ impl BlocklistConfig {
     }
 }
 
-impl From<BlocklistConfig> for NoteStorage {
-    fn from(config: BlocklistConfig) -> Self {
+impl From<AllowlistConfig> for NoteStorage {
+    fn from(config: AllowlistConfig) -> Self {
         NoteStorage::new(config.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-// BLOCKLIST CONFIG NOTE
+// ALLOWLIST CONFIG NOTE
 // ================================================================================================
 
-/// A BlocklistConfig note: triggers a
-/// [`BlocklistManager`](crate::account::policies::BlocklistManager) admin action on the account
+/// An AllowlistConfig note: triggers an
+/// [`AllowlistManager`](crate::account::policies::AllowlistManager) admin action on the account
 /// that consumes it.
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the component's
-/// admin procedures (`block_account`, `unblock_account`). Authorization is enforced by those
+/// admin procedures (`allow_account`, `disallow_account`). Authorization is enforced by those
 /// procedures through the account-wide [`Authority`](crate::account::access::Authority) component,
 /// so the note carries no assets.
 ///
 /// The note is always public and tagged for `target` — the account carrying the
-/// `BlocklistManager` component whose blocklist is being managed.
+/// `AllowlistManager` component whose allowlist is being managed.
 ///
 /// The note is bound to `target` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
@@ -118,22 +118,22 @@ impl From<BlocklistConfig> for NoteStorage {
 /// consumed by a third-party account that merely accepts its sender.
 ///
 /// The note must be public: the script rejects a non-public note. See
-/// [the module docs](crate::note#note-type-of-the-config-notes) for the layers that enforce it.
+/// [the module docs](crate::note::config#note-type) for the layers that enforce it.
 ///
-/// Construct one with the [builder](BlocklistConfigNote::builder); convert it into a protocol
+/// Construct one with the [builder](AllowlistConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct BlocklistConfigNote {
+pub struct AllowlistConfigNote {
     sender: AccountId,
     target: AccountId,
-    config: BlocklistConfig,
+    config: AllowlistConfig,
     serial_number: Word,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
-impl BlocklistConfigNote {
-    /// Builds a new [`BlocklistConfigNote`] that applies `config` to `target`.
+impl AllowlistConfigNote {
+    /// Builds a new [`AllowlistConfigNote`] that applies `config` to `target`.
     ///
     /// # Errors
     ///
@@ -148,14 +148,14 @@ impl BlocklistConfigNote {
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
-        config: BlocklistConfig,
+        config: AllowlistConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
         NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source(
-                "failed to bind the BlocklistConfig note to its target account",
+                "failed to bind the AllowlistConfig note to its target account",
                 err,
             )
         })?;
@@ -172,11 +172,11 @@ impl BlocklistConfigNote {
     }
 }
 
-impl BlocklistConfigNote {
+impl AllowlistConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a BlocklistConfig note: a selector followed by the account ID
+    /// Number of storage items of an AllowlistConfig note: a selector followed by the account ID
     /// the action operates on.
     ///
     /// Both actions carry the same arguments, so the layout is fixed at `[selector,
@@ -186,14 +186,14 @@ impl BlocklistConfigNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the BlocklistConfig note.
+    /// Returns the script of the AllowlistConfig note.
     pub fn script() -> NoteScript {
-        BLOCKLIST_CONFIG_SCRIPT.clone()
+        ALLOWLIST_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the BlocklistConfig note script root.
+    /// Returns the AllowlistConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        BLOCKLIST_CONFIG_SCRIPT.root()
+        ALLOWLIST_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the authorizing party under an owner- or
@@ -208,7 +208,7 @@ impl BlocklistConfigNote {
     }
 
     /// Returns the admin action carried by the note.
-    pub fn config(&self) -> BlocklistConfig {
+    pub fn config(&self) -> AllowlistConfig {
         self.config
     }
 
@@ -226,7 +226,7 @@ impl BlocklistConfigNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: blocklist_config_note_builder::State> BlocklistConfigNoteBuilder<S> {
+impl<S: allowlist_config_note_builder::State> AllowlistConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
@@ -243,15 +243,15 @@ impl<S: blocklist_config_note_builder::State> BlocklistConfigNoteBuilder<S> {
     }
 }
 
-impl<S: blocklist_config_note_builder::State> BlocklistConfigNoteBuilder<S>
+impl<S: allowlist_config_note_builder::State> AllowlistConfigNoteBuilder<S>
 where
-    S::SerialNumber: blocklist_config_note_builder::IsUnset,
+    S::SerialNumber: allowlist_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> BlocklistConfigNoteBuilder<blocklist_config_note_builder::SetSerialNumber<S>> {
+    ) -> AllowlistConfigNoteBuilder<allowlist_config_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -259,15 +259,15 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<BlocklistConfigNote> for Note {
-    fn from(note: BlocklistConfigNote) -> Self {
-        // BlocklistConfig notes carry no assets and are always public for network execution; the
+impl From<AllowlistConfigNote> for Note {
+    fn from(note: AllowlistConfigNote) -> Self {
+        // AllowlistConfig notes carry no assets and are always public for network execution; the
         // action and its argument live in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            BlocklistConfigNote::script(),
+            AllowlistConfigNote::script(),
             NoteStorage::from(note.config),
         );
 
@@ -278,9 +278,9 @@ impl From<BlocklistConfigNote> for Note {
 // NOTE CONSUMPTION COST
 // ================================================================================================
 
-impl NoteConsumptionCost for BlocklistConfigNote {
+impl NoteConsumptionCost for AllowlistConfigNote {
     fn consumption_cycles() -> u32 {
-        BLOCKLIST_CONFIG_CONSUMPTION_CYCLES
+        ALLOWLIST_CONFIG_CONSUMPTION_CYCLES
     }
 }
 
@@ -302,16 +302,16 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
-    fn builder_builds_blocklist_config_note() {
+    fn builder_builds_allowlist_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let managed = account_id(1);
         let owner = account_id(2);
-        let blocked = account_id(3);
+        let allowed = account_id(3);
 
-        let note = BlocklistConfigNote::builder()
+        let note = AllowlistConfigNote::builder()
             .sender(owner)
             .target(managed)
-            .config(BlocklistConfig::BlockAccount { account: blocked })
+            .config(AllowlistConfig::AllowAccount { account: allowed })
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
@@ -325,34 +325,34 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// `BlockAccount` storage is `[selector, account_suffix, account_prefix]`.
+    /// `AllowAccount` storage is `[selector, account_suffix, account_prefix]`.
     #[test]
-    fn block_account_storage_layout() {
-        let blocked = account_id(3);
-        let storage = NoteStorage::from(BlocklistConfig::BlockAccount { account: blocked });
+    fn allow_account_storage_layout() {
+        let allowed = account_id(3);
+        let storage = NoteStorage::from(AllowlistConfig::AllowAccount { account: allowed });
 
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(BlocklistConfig::SELECTOR_BLOCK_ACCOUNT),
-                blocked.suffix(),
-                blocked.prefix().as_felt(),
+                Felt::from(AllowlistConfig::SELECTOR_ALLOW_ACCOUNT),
+                allowed.suffix(),
+                allowed.prefix().as_felt(),
             ]
         );
     }
 
-    /// `UnblockAccount` storage is `[selector, account_suffix, account_prefix]`.
+    /// `DisallowAccount` storage is `[selector, account_suffix, account_prefix]`.
     #[test]
-    fn unblock_account_storage_layout() {
-        let blocked = account_id(3);
-        let storage = NoteStorage::from(BlocklistConfig::UnblockAccount { account: blocked });
+    fn disallow_account_storage_layout() {
+        let allowed = account_id(3);
+        let storage = NoteStorage::from(AllowlistConfig::DisallowAccount { account: allowed });
 
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(BlocklistConfig::SELECTOR_UNBLOCK_ACCOUNT),
-                blocked.suffix(),
-                blocked.prefix().as_felt(),
+                Felt::from(AllowlistConfig::SELECTOR_DISALLOW_ACCOUNT),
+                allowed.suffix(),
+                allowed.prefix().as_felt(),
             ]
         );
     }

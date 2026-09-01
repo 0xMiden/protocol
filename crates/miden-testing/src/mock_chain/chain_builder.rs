@@ -67,15 +67,8 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{
-    BurnNote,
-    MintNote,
-    NetworkAccountConfigNote,
-    P2idNote,
-    P2ideNote,
-    SwapNote,
-    TxFeeNote,
-};
+use miden_standards::note::config::NetworkAccountConfigNote;
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
 

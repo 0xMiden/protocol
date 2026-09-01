@@ -145,7 +145,7 @@ impl From<NetworkAccountConfig> for NoteStorage {
 /// construction, so no extra setup is required.
 ///
 /// The note must be public: the script rejects a non-public note. See
-/// [the module docs](crate::note#note-type-of-the-config-notes) for the layers that enforce it.
+/// [the module docs](crate::note::config#note-type) for the layers that enforce it.
 ///
 /// Construct one with the [builder](NetworkAccountConfigNote::builder); convert it into a
 /// protocol [`Note`] infallibly via `Note::from`.

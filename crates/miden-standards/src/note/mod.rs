@@ -1,10 +1,3 @@
-//! The standardized notes of `miden-standards`.
-//!
-//! # Note type of the config notes
-//!
-//! The config note scripts require a public note, so the management action a config note carries
-//! cannot be dispatched from a private note with the same script and storage.
-
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::error::Error;
@@ -14,25 +7,24 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
+use self::config::{
+    AllowlistConfigNote,
+    BlocklistConfigNote,
+    ConstantFeePolicyConfigNote,
+    FaucetMetadataConfigNote,
+    FaucetPolicyConfigNote,
+    MinBurnAmountConfigNote,
+    NetworkAccountConfigNote,
+    OwnerConfigNote,
+    PauseConfigNote,
+    RbacConfigNote,
+};
+
+pub mod config;
 pub mod costs;
-
-mod allowlist_config;
-pub use allowlist_config::{AllowlistConfig, AllowlistConfigNote};
-
-mod blocklist_config;
-pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
 
 mod burn;
 pub use burn::BurnNote;
-
-mod constant_fee_policy_config;
-pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
-
-mod faucet_metadata_config;
-pub use faucet_metadata_config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
-
-mod faucet_policy_config;
-pub use faucet_policy_config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
 
 mod fee_sponsorship;
 pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
@@ -43,17 +35,8 @@ pub use execution_hint::NoteExecutionHint;
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 
-mod min_burn_amount_config;
-pub use min_burn_amount_config::MinBurnAmountConfigNote;
-
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
-
-mod network_account_config;
-pub use network_account_config::{NetworkAccountConfig, NetworkAccountConfigNote};
-
-mod owner_config;
-pub use owner_config::{OwnerConfig, OwnerConfigNote};
 
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
@@ -61,14 +44,8 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
-mod pause_config;
-pub use pause_config::{PauseConfig, PauseConfigNote};
-
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
-
-mod rbac_config;
-pub use rbac_config::{RbacConfig, RbacConfigNote};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};

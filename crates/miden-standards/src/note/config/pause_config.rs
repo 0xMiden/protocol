@@ -22,125 +22,110 @@ use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
 use crate::note::NetworkAccountTarget;
-use crate::note::costs::{ALLOWLIST_CONFIG_CONSUMPTION_CYCLES, NoteConsumptionCost};
+use crate::note::costs::{NoteConsumptionCost, PAUSE_CONFIG_CONSUMPTION_CYCLES};
 
 // NOTE SCRIPT
 // ================================================================================================
 
-/// Path to the ALLOWLIST_CONFIG note script procedure in the standards library.
-const ALLOWLIST_CONFIG_SCRIPT_PATH: &str = "::miden::standards::notes::allowlist_config::main";
+/// Path to the PAUSE_CONFIG note script procedure in the standards library.
+const PAUSE_CONFIG_SCRIPT_PATH: &str = "::miden::standards::notes::pause_config::main";
 
-// Initialize the ALLOWLIST_CONFIG note script only once.
-static ALLOWLIST_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+// Initialize the PAUSE_CONFIG note script only once.
+static PAUSE_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let standards_lib = StandardsLib::default();
-    let path = Path::new(ALLOWLIST_CONFIG_SCRIPT_PATH);
+    let path = Path::new(PAUSE_CONFIG_SCRIPT_PATH);
     NoteScript::from_package_reference(standards_lib.as_ref(), path)
-        .expect("Standards library contains ALLOWLIST_CONFIG note script procedure")
+        .expect("Standards library contains PAUSE_CONFIG note script procedure")
 });
 
-// ALLOWLIST CONFIG
+// PAUSE CONFIG
 // ================================================================================================
 
 /// A management action of the
-/// [`AllowlistManager`](crate::account::policies::AllowlistManager) component that an
-/// [`AllowlistConfigNote`] triggers on the account that consumes it.
+/// [`PausableManager`](crate::account::access::pausable::PausableManager) component that a
+/// [`PauseConfigNote`] triggers on the account that consumes it.
 ///
-/// The action, together with its argument, is encoded into the note's storage (see [`NoteStorage`]
-/// conversion below) and is fixed at note creation, bound into the note commitment. The consuming
-/// account's `AllowlistManager` procedures authorize the action through the account-wide
+/// The action is encoded into the note's storage (see [`NoteStorage`] conversion below) and is
+/// fixed at note creation, bound into the note commitment. The consuming account's
+/// `PausableManager` procedures authorize the action through the account-wide
 /// [`Authority`](crate::account::access::Authority) component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AllowlistConfig {
-    /// Add `account` to the allowlist. Allowing an already allowed account is a noop.
-    AllowAccount { account: AccountId },
-    /// Remove `account` from the allowlist. Disallowing an account that is not allowed is a noop.
-    DisallowAccount { account: AccountId },
+pub enum PauseConfig {
+    /// Pause the account, blocking pause-gated procedures until a matching unpause.
+    Pause,
+    /// Unpause the account.
+    Unpause,
 }
 
-impl AllowlistConfig {
+impl PauseConfig {
     // SELECTORS
     // --------------------------------------------------------------------------------------------
 
     // Config note selectors stored in the first storage item. Keep in sync with
-    // `allowlist_config.masm`.
-    const SELECTOR_ALLOW_ACCOUNT: u8 = 0;
-    const SELECTOR_DISALLOW_ACCOUNT: u8 = 1;
+    // `pause_config.masm`.
+    const SELECTOR_PAUSE: u8 = 0;
+    const SELECTOR_UNPAUSE: u8 = 1;
 
-    /// Returns the selector encoding this action in the first storage item.
-    const fn selector(self) -> u8 {
-        match self {
-            AllowlistConfig::AllowAccount { .. } => Self::SELECTOR_ALLOW_ACCOUNT,
-            AllowlistConfig::DisallowAccount { .. } => Self::SELECTOR_DISALLOW_ACCOUNT,
-        }
-    }
-
-    /// Returns the account the action operates on.
-    const fn target(self) -> AccountId {
-        match self {
-            AllowlistConfig::AllowAccount { account }
-            | AllowlistConfig::DisallowAccount { account } => account,
-        }
-    }
-
-    /// Returns the note storage values encoding this action, laid out as `[selector,
-    /// account_suffix, account_prefix]`.
+    /// Returns the note storage values encoding this action, laid out as `[selector]`.
     fn to_storage_values(self) -> Vec<Felt> {
-        let account = self.target();
-        vec![Felt::from(self.selector()), account.suffix(), account.prefix().as_felt()]
+        match self {
+            PauseConfig::Pause => vec![Felt::from(Self::SELECTOR_PAUSE)],
+            PauseConfig::Unpause => vec![Felt::from(Self::SELECTOR_UNPAUSE)],
+        }
     }
 }
 
-impl From<AllowlistConfig> for NoteStorage {
-    fn from(config: AllowlistConfig) -> Self {
+impl From<PauseConfig> for NoteStorage {
+    fn from(config: PauseConfig) -> Self {
         NoteStorage::new(config.to_storage_values())
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-// ALLOWLIST CONFIG NOTE
+// PAUSE CONFIG NOTE
 // ================================================================================================
 
-/// An AllowlistConfig note: triggers an
-/// [`AllowlistManager`](crate::account::policies::AllowlistManager) admin action on the account
-/// that consumes it.
+/// A PauseConfig note: triggers a
+/// [`PausableManager`](crate::account::access::pausable::PausableManager) admin action on the
+/// account that consumes it.
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the component's
-/// admin procedures (`allow_account`, `disallow_account`). Authorization is enforced by those
-/// procedures through the account-wide [`Authority`](crate::account::access::Authority) component,
-/// so the note carries no assets.
+/// admin procedures (`pause`, `unpause`). Authorization is enforced by those procedures through
+/// the account-wide [`Authority`](crate::account::access::Authority) component, so the note carries
+/// no assets.
 ///
-/// The note is always public and tagged for `target` — the account carrying the
-/// `AllowlistManager` component whose allowlist is being managed.
+/// The note is always public (for network execution) and tagged for `account` — the account
+/// carrying the `PausableManager` component whose pause state is being managed.
 ///
-/// The note is bound to `target` by a
+/// The note is bound to the target `account` by a
 /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) attachment: the script asserts
 /// that the consuming account matches that target before dispatching, so the note cannot be
 /// consumed by a third-party account that merely accepts its sender.
 ///
 /// The note must be public: the script rejects a non-public note. See
-/// [the module docs](crate::note#note-type-of-the-config-notes) for the layers that enforce it.
+/// [the module docs](crate::note::config#note-type) for the layers that enforce it.
 ///
-/// Construct one with the [builder](AllowlistConfigNote::builder); convert it into a protocol
-/// [`Note`] infallibly via `Note::from`.
+/// Construct one with the [builder](PauseConfigNote::builder); convert it into a protocol [`Note`]
+/// infallibly via `Note::from`.
 #[derive(Debug, Clone)]
-pub struct AllowlistConfigNote {
+pub struct PauseConfigNote {
     sender: AccountId,
     target: AccountId,
-    config: AllowlistConfig,
+    config: PauseConfig,
     serial_number: Word,
     attachments: NoteAttachments,
 }
 
 #[bon::bon]
-impl AllowlistConfigNote {
-    /// Builds a new [`AllowlistConfigNote`] that applies `config` to `target`.
+impl PauseConfigNote {
+    /// Builds a new [`PauseConfigNote`] that applies `config` to `account`.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `target` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
+    /// - `account` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
     ///   which requires a public target).
-    /// - the attachments carry a `NetworkAccountTarget` for an account other than `target`.
+    /// - the attachments carry a `NetworkAccountTarget` for an account other than `account`.
     /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the target
     ///   attachment occupies one of the available slots when the caller does not supply it.
     #[builder]
@@ -148,14 +133,14 @@ impl AllowlistConfigNote {
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
-        config: AllowlistConfig,
+        config: PauseConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
         NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
             NoteError::other_with_source(
-                "failed to bind the AllowlistConfig note to its target account",
+                "failed to bind the PauseConfig note to its target account",
                 err,
             )
         })?;
@@ -172,28 +157,24 @@ impl AllowlistConfigNote {
     }
 }
 
-impl AllowlistConfigNote {
+impl PauseConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of an AllowlistConfig note: a selector followed by the account ID
-    /// the action operates on.
-    ///
-    /// Both actions carry the same arguments, so the layout is fixed at `[selector,
-    /// account_suffix, account_prefix]`.
-    pub const NUM_STORAGE_ITEMS: usize = 3;
+    /// Number of storage items of a PauseConfig note: a single selector.
+    pub const NUM_STORAGE_ITEMS: usize = 1;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the AllowlistConfig note.
+    /// Returns the script of the PauseConfig note.
     pub fn script() -> NoteScript {
-        ALLOWLIST_CONFIG_SCRIPT.clone()
+        PAUSE_CONFIG_SCRIPT.clone()
     }
 
-    /// Returns the AllowlistConfig note script root.
+    /// Returns the PauseConfig note script root.
     pub fn script_root() -> NoteScriptRoot {
-        ALLOWLIST_CONFIG_SCRIPT.root()
+        PAUSE_CONFIG_SCRIPT.root()
     }
 
     /// Returns the account ID of the note's sender (the authorizing party under an owner- or
@@ -208,7 +189,7 @@ impl AllowlistConfigNote {
     }
 
     /// Returns the admin action carried by the note.
-    pub fn config(&self) -> AllowlistConfig {
+    pub fn config(&self) -> PauseConfig {
         self.config
     }
 
@@ -226,7 +207,7 @@ impl AllowlistConfigNote {
 // BUILDER EXTENSIONS
 // ================================================================================================
 
-impl<S: allowlist_config_note_builder::State> AllowlistConfigNoteBuilder<S> {
+impl<S: pause_config_note_builder::State> PauseConfigNoteBuilder<S> {
     /// Adds a single attachment to the note.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
         self.attachments.push(attachment.into());
@@ -243,15 +224,15 @@ impl<S: allowlist_config_note_builder::State> AllowlistConfigNoteBuilder<S> {
     }
 }
 
-impl<S: allowlist_config_note_builder::State> AllowlistConfigNoteBuilder<S>
+impl<S: pause_config_note_builder::State> PauseConfigNoteBuilder<S>
 where
-    S::SerialNumber: allowlist_config_note_builder::IsUnset,
+    S::SerialNumber: pause_config_note_builder::IsUnset,
 {
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
         rng: &mut impl FeltRng,
-    ) -> AllowlistConfigNoteBuilder<allowlist_config_note_builder::SetSerialNumber<S>> {
+    ) -> PauseConfigNoteBuilder<pause_config_note_builder::SetSerialNumber<S>> {
         self.serial_number(rng.draw_word())
     }
 }
@@ -259,15 +240,15 @@ where
 // CONVERSIONS
 // ================================================================================================
 
-impl From<AllowlistConfigNote> for Note {
-    fn from(note: AllowlistConfigNote) -> Self {
-        // AllowlistConfig notes carry no assets and are always public for network execution; the
-        // action and its argument live in the note storage.
+impl From<PauseConfigNote> for Note {
+    fn from(note: PauseConfigNote) -> Self {
+        // PauseConfig notes carry no assets and are always public for network execution; the action
+        // lives in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target));
         let recipient = NoteRecipient::new(
             note.serial_number,
-            AllowlistConfigNote::script(),
+            PauseConfigNote::script(),
             NoteStorage::from(note.config),
         );
 
@@ -278,9 +259,9 @@ impl From<AllowlistConfigNote> for Note {
 // NOTE CONSUMPTION COST
 // ================================================================================================
 
-impl NoteConsumptionCost for AllowlistConfigNote {
+impl NoteConsumptionCost for PauseConfigNote {
     fn consumption_cycles() -> u32 {
-        ALLOWLIST_CONFIG_CONSUMPTION_CYCLES
+        PAUSE_CONFIG_CONSUMPTION_CYCLES
     }
 }
 
@@ -302,21 +283,20 @@ mod tests {
 
     /// The builder produces a public, asset-less note tagged for the managed account.
     #[test]
-    fn builder_builds_allowlist_config_note() {
+    fn builder_builds_pause_config_note() {
         let mut rng = RandomCoin::new(Word::empty());
         let managed = account_id(1);
-        let owner = account_id(2);
-        let allowed = account_id(3);
+        let sender = account_id(2);
 
-        let note = AllowlistConfigNote::builder()
-            .sender(owner)
+        let note = PauseConfigNote::builder()
+            .sender(sender)
             .target(managed)
-            .config(AllowlistConfig::AllowAccount { account: allowed })
+            .config(PauseConfig::Pause)
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
 
-        assert_eq!(note.sender(), owner);
+        assert_eq!(note.sender(), sender);
         assert_eq!(note.target(), managed);
 
         let note = Note::from(note);
@@ -325,35 +305,13 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// `AllowAccount` storage is `[selector, account_suffix, account_prefix]`.
+    /// `Pause` / `Unpause` storage is a single selector item.
     #[test]
-    fn allow_account_storage_layout() {
-        let allowed = account_id(3);
-        let storage = NoteStorage::from(AllowlistConfig::AllowAccount { account: allowed });
+    fn action_storage_layout() {
+        let pause = NoteStorage::from(PauseConfig::Pause);
+        assert_eq!(pause.items(), &[Felt::from(PauseConfig::SELECTOR_PAUSE)]);
 
-        assert_eq!(
-            storage.items(),
-            &[
-                Felt::from(AllowlistConfig::SELECTOR_ALLOW_ACCOUNT),
-                allowed.suffix(),
-                allowed.prefix().as_felt(),
-            ]
-        );
-    }
-
-    /// `DisallowAccount` storage is `[selector, account_suffix, account_prefix]`.
-    #[test]
-    fn disallow_account_storage_layout() {
-        let allowed = account_id(3);
-        let storage = NoteStorage::from(AllowlistConfig::DisallowAccount { account: allowed });
-
-        assert_eq!(
-            storage.items(),
-            &[
-                Felt::from(AllowlistConfig::SELECTOR_DISALLOW_ACCOUNT),
-                allowed.suffix(),
-                allowed.prefix().as_felt(),
-            ]
-        );
+        let unpause = NoteStorage::from(PauseConfig::Unpause);
+        assert_eq!(unpause.items(), &[Felt::from(PauseConfig::SELECTOR_UNPAUSE)]);
     }
 }

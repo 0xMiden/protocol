@@ -134,7 +134,7 @@ impl From<FaucetPolicyConfig> for NoteStorage {
 /// consumed by a third-party account that merely accepts its sender.
 ///
 /// The note must be public: the script rejects a non-public note. See
-/// [the module docs](crate::note#note-type-of-the-config-notes) for the layers that enforce it.
+/// [the module docs](crate::note::config#note-type) for the layers that enforce it.
 ///
 /// Construct one with the [builder](FaucetPolicyConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
