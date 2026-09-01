@@ -2553,7 +2553,6 @@ dependencies = [
  "prost",
  "prost-build",
  "protox",
- "rstest",
 ]
 
 [[package]]

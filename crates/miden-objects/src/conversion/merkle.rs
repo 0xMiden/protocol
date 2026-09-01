@@ -395,7 +395,6 @@ mod tests {
 
     use miden_protocol::crypto::merkle::smt::{PartialSmt, Smt, UniqueNodes};
     use prost::Message;
-    use rstest::rstest;
 
     use super::*;
 
@@ -449,223 +448,252 @@ mod tests {
         assert_eq!(first.encode_to_vec(), second.encode_to_vec());
     }
 
-    enum InvalidPartialSmt {
-        MissingRoot,
-        FalseEmptySubtreeMarker,
-        DuplicateDepth,
-        InvalidNodeIndex,
-        MissingNodeValue,
-        MissingLeaf,
-        MissingValueOnlyLeaf,
-        DepthOverflow,
-        ZeroDepth,
-        SmtDepth,
-        DuplicateNodeIndex,
-        DuplicateLeafIndex,
-        DuplicateValueOnlyLeafIndex,
-        OverlappingLeafIndex,
-        EmbeddedLeafIndexMismatch,
-        ReconstructionMissingNode,
-    }
-
-    #[rstest]
-    #[case::missing_root(
-        InvalidPartialSmt::MissingRoot,
-        "field miden_objects::proto::primitives::PartialSmt::root is missing"
-    )]
-    #[case::false_empty_subtree_marker(
-        InvalidPartialSmt::FalseEmptySubtreeMarker,
-        "partial SMT empty_subtree_root marker must be true"
-    )]
-    #[case::duplicate_depth(
-        InvalidPartialSmt::DuplicateDepth,
-        "partial SMT contains duplicate node depth 1"
-    )]
-    #[case::invalid_node_index(
-        InvalidPartialSmt::InvalidNodeIndex,
-        "node_levels.nodes.index: node index position 2 is not valid for depth 1"
-    )]
-    #[case::missing_node_value(
-        InvalidPartialSmt::MissingNodeValue,
-        "field miden_objects::proto::primitives::PartialSmtNode::value is missing"
-    )]
-    #[case::missing_leaf(
-        InvalidPartialSmt::MissingLeaf,
-        "field miden_objects::proto::primitives::IndexedSmtLeaf::leaf is missing"
-    )]
-    #[case::missing_value_only_leaf(
-        InvalidPartialSmt::MissingValueOnlyLeaf,
-        "field miden_objects::proto::primitives::IndexedDigest::value is missing"
-    )]
-    #[case::depth_overflow(
-        InvalidPartialSmt::DepthOverflow,
-        "node_levels.depth: out of range integral type conversion attempted"
-    )]
-    #[case::zero_depth(
-        InvalidPartialSmt::ZeroDepth,
-        "partial SMT node depth 0 must be in the range 1..64"
-    )]
-    #[case::smt_depth(
-        InvalidPartialSmt::SmtDepth,
-        "partial SMT node depth 64 must be in the range 1..64"
-    )]
-    #[case::duplicate_node_index(
-        InvalidPartialSmt::DuplicateNodeIndex,
-        "partial SMT contains duplicate node index 0 at depth 1"
-    )]
-    #[case::duplicate_leaf_index(
-        InvalidPartialSmt::DuplicateLeafIndex,
-        "partial SMT contains duplicate leaf index 0"
-    )]
-    #[case::duplicate_value_only_leaf_index(
-        InvalidPartialSmt::DuplicateValueOnlyLeafIndex,
-        "partial SMT contains duplicate value-only leaf index 0"
-    )]
-    #[case::overlapping_leaf_index(
-        InvalidPartialSmt::OverlappingLeafIndex,
-        "partial SMT leaf index 0 has both a leaf and a value-only leaf"
-    )]
-    #[case::embedded_leaf_index_mismatch(
-        InvalidPartialSmt::EmbeddedLeafIndexMismatch,
-        "failed to deserialize PartialSmt: invalid value: Node index 0 did not match the embedded leaf index depth=64, position=1"
-    )]
-    #[case::reconstruction_missing_node(
-        InvalidPartialSmt::ReconstructionMissingNode,
-        "failed to deserialize PartialSmt: invalid value: Node at depth=1, position=1 not found but is required"
-    )]
-    fn partial_smt_rejects_invalid_wire_data(
-        #[case] invalid_partial_smt: InvalidPartialSmt,
-        #[case] expected_error: &str,
-    ) {
-        use proto::primitives::partial_smt_node::Value;
-
-        let mut encoded = proto::primitives::PartialSmt {
+    fn empty_partial_smt_message() -> proto::primitives::PartialSmt {
+        proto::primitives::PartialSmt {
             root: Some(PartialSmt::EMPTY_ROOT.into()),
             node_levels: vec![],
             leaves: vec![],
             value_only_leaves: vec![],
-        };
+        }
+    }
 
-        match invalid_partial_smt {
-            InvalidPartialSmt::MissingRoot => encoded.root = None,
-            InvalidPartialSmt::FalseEmptySubtreeMarker => {
-                encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
-                    depth: 1,
-                    nodes: vec![proto::primitives::PartialSmtNode {
-                        index: 0,
-                        value: Some(Value::EmptySubtreeRoot(false)),
-                    }],
-                }];
-            },
-            InvalidPartialSmt::DuplicateDepth => {
-                encoded.node_levels = vec![
-                    proto::primitives::PartialSmtNodeLevel { depth: 1, nodes: vec![] },
-                    proto::primitives::PartialSmtNodeLevel { depth: 1, nodes: vec![] },
-                ];
-            },
-            InvalidPartialSmt::InvalidNodeIndex => {
-                encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
-                    depth: 1,
-                    nodes: vec![proto::primitives::PartialSmtNode {
-                        index: 2,
-                        value: Some(Value::EmptySubtreeRoot(true)),
-                    }],
-                }];
-            },
-            InvalidPartialSmt::MissingNodeValue => {
-                encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
-                    depth: 1,
-                    nodes: vec![proto::primitives::PartialSmtNode { index: 0, value: None }],
-                }];
-            },
-            InvalidPartialSmt::MissingLeaf => {
-                encoded.leaves = vec![proto::primitives::IndexedSmtLeaf { index: 0, leaf: None }];
-            },
-            InvalidPartialSmt::MissingValueOnlyLeaf => {
-                encoded.value_only_leaves =
-                    vec![proto::primitives::IndexedDigest { index: 0, value: None }];
-            },
-            InvalidPartialSmt::DepthOverflow => {
-                encoded.node_levels =
-                    vec![proto::primitives::PartialSmtNodeLevel { depth: 256, nodes: vec![] }];
-            },
-            InvalidPartialSmt::ZeroDepth => {
-                encoded.node_levels =
-                    vec![proto::primitives::PartialSmtNodeLevel { depth: 0, nodes: vec![] }];
-            },
-            InvalidPartialSmt::SmtDepth => {
-                encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
-                    depth: u32::from(SMT_DEPTH),
-                    nodes: vec![],
-                }];
-            },
-            InvalidPartialSmt::DuplicateNodeIndex => {
-                encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
-                    depth: 1,
-                    nodes: vec![
-                        proto::primitives::PartialSmtNode {
-                            index: 0,
-                            value: Some(Value::EmptySubtreeRoot(true)),
-                        },
-                        proto::primitives::PartialSmtNode {
-                            index: 0,
-                            value: Some(Value::EmptySubtreeRoot(true)),
-                        },
-                    ],
-                }];
-            },
-            InvalidPartialSmt::DuplicateLeafIndex => {
-                encoded.leaves = vec![
-                    proto::primitives::IndexedSmtLeaf {
-                        index: 0,
-                        leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(0)).into()),
-                    },
-                    proto::primitives::IndexedSmtLeaf {
-                        index: 0,
-                        leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(0)).into()),
-                    },
-                ];
-            },
-            InvalidPartialSmt::DuplicateValueOnlyLeafIndex => {
-                encoded.value_only_leaves = vec![
-                    proto::primitives::IndexedDigest {
-                        index: 0,
-                        value: Some(Word::empty().into()),
-                    },
-                    proto::primitives::IndexedDigest {
-                        index: 0,
-                        value: Some(Word::empty().into()),
-                    },
-                ];
-            },
-            InvalidPartialSmt::OverlappingLeafIndex => {
-                encoded.leaves = vec![proto::primitives::IndexedSmtLeaf {
-                    index: 0,
-                    leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(0)).into()),
-                }];
-                encoded.value_only_leaves = vec![proto::primitives::IndexedDigest {
-                    index: 0,
-                    value: Some(Word::empty().into()),
-                }];
-            },
-            InvalidPartialSmt::EmbeddedLeafIndexMismatch => {
-                encoded.leaves = vec![proto::primitives::IndexedSmtLeaf {
-                    index: 0,
-                    leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(1)).into()),
-                }];
-            },
-            InvalidPartialSmt::ReconstructionMissingNode => {
-                encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
-                    depth: 1,
-                    nodes: vec![proto::primitives::PartialSmtNode {
-                        index: 0,
-                        value: Some(Value::Digest(Word::empty().into())),
-                    }],
-                }];
-            },
-        };
-
+    fn assert_partial_smt_decode_error(
+        encoded: proto::primitives::PartialSmt,
+        expected_error: &str,
+    ) {
         let error = PartialSmt::try_from(encoded).unwrap_err();
         assert_eq!(error.to_string(), expected_error);
+    }
+
+    #[test]
+    fn partial_smt_rejects_missing_root() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.root = None;
+        assert_partial_smt_decode_error(
+            encoded,
+            "field miden_objects::proto::primitives::PartialSmt::root is missing",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_false_empty_subtree_marker() {
+        use proto::primitives::partial_smt_node::Value;
+
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
+            depth: 1,
+            nodes: vec![proto::primitives::PartialSmtNode {
+                index: 0,
+                value: Some(Value::EmptySubtreeRoot(false)),
+            }],
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "partial SMT empty_subtree_root marker must be true",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_duplicate_depth() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels = vec![
+            proto::primitives::PartialSmtNodeLevel { depth: 1, nodes: vec![] },
+            proto::primitives::PartialSmtNodeLevel { depth: 1, nodes: vec![] },
+        ];
+        assert_partial_smt_decode_error(encoded, "partial SMT contains duplicate node depth 1");
+    }
+
+    #[test]
+    fn partial_smt_rejects_invalid_node_index() {
+        use proto::primitives::partial_smt_node::Value;
+
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
+            depth: 1,
+            nodes: vec![proto::primitives::PartialSmtNode {
+                index: 2,
+                value: Some(Value::EmptySubtreeRoot(true)),
+            }],
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "node_levels.nodes.index: node index position 2 is not valid for depth 1",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_missing_node_value() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
+            depth: 1,
+            nodes: vec![proto::primitives::PartialSmtNode { index: 0, value: None }],
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "field miden_objects::proto::primitives::PartialSmtNode::value is missing",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_missing_leaf() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.leaves = vec![proto::primitives::IndexedSmtLeaf { index: 0, leaf: None }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "field miden_objects::proto::primitives::IndexedSmtLeaf::leaf is missing",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_missing_value_only_leaf() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.value_only_leaves =
+            vec![proto::primitives::IndexedDigest { index: 0, value: None }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "field miden_objects::proto::primitives::IndexedDigest::value is missing",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_depth_overflow() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels =
+            vec![proto::primitives::PartialSmtNodeLevel { depth: 256, nodes: vec![] }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "node_levels.depth: out of range integral type conversion attempted",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_zero_depth() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels =
+            vec![proto::primitives::PartialSmtNodeLevel { depth: 0, nodes: vec![] }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "partial SMT node depth 0 must be in the range 1..64",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_smt_depth() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
+            depth: u32::from(SMT_DEPTH),
+            nodes: vec![],
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "partial SMT node depth 64 must be in the range 1..64",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_duplicate_node_index() {
+        use proto::primitives::partial_smt_node::Value;
+
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
+            depth: 1,
+            nodes: vec![
+                proto::primitives::PartialSmtNode {
+                    index: 0,
+                    value: Some(Value::EmptySubtreeRoot(true)),
+                },
+                proto::primitives::PartialSmtNode {
+                    index: 0,
+                    value: Some(Value::EmptySubtreeRoot(true)),
+                },
+            ],
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "partial SMT contains duplicate node index 0 at depth 1",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_duplicate_leaf_index() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.leaves = vec![
+            proto::primitives::IndexedSmtLeaf {
+                index: 0,
+                leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(0)).into()),
+            },
+            proto::primitives::IndexedSmtLeaf {
+                index: 0,
+                leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(0)).into()),
+            },
+        ];
+        assert_partial_smt_decode_error(encoded, "partial SMT contains duplicate leaf index 0");
+    }
+
+    #[test]
+    fn partial_smt_rejects_duplicate_value_only_leaf_index() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.value_only_leaves = vec![
+            proto::primitives::IndexedDigest {
+                index: 0,
+                value: Some(Word::empty().into()),
+            },
+            proto::primitives::IndexedDigest {
+                index: 0,
+                value: Some(Word::empty().into()),
+            },
+        ];
+        assert_partial_smt_decode_error(
+            encoded,
+            "partial SMT contains duplicate value-only leaf index 0",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_overlapping_leaf_index() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.leaves = vec![proto::primitives::IndexedSmtLeaf {
+            index: 0,
+            leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(0)).into()),
+        }];
+        encoded.value_only_leaves = vec![proto::primitives::IndexedDigest {
+            index: 0,
+            value: Some(Word::empty().into()),
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "partial SMT leaf index 0 has both a leaf and a value-only leaf",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_embedded_leaf_index_mismatch() {
+        let mut encoded = empty_partial_smt_message();
+        encoded.leaves = vec![proto::primitives::IndexedSmtLeaf {
+            index: 0,
+            leaf: Some(SmtLeaf::new_empty(LeafIndex::new_max_depth(1)).into()),
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "failed to deserialize PartialSmt: invalid value: Node index 0 did not match the embedded leaf index depth=64, position=1",
+        );
+    }
+
+    #[test]
+    fn partial_smt_rejects_reconstruction_missing_node() {
+        use proto::primitives::partial_smt_node::Value;
+
+        let mut encoded = empty_partial_smt_message();
+        encoded.node_levels = vec![proto::primitives::PartialSmtNodeLevel {
+            depth: 1,
+            nodes: vec![proto::primitives::PartialSmtNode {
+                index: 0,
+                value: Some(Value::Digest(Word::empty().into())),
+            }],
+        }];
+        assert_partial_smt_decode_error(
+            encoded,
+            "failed to deserialize PartialSmt: invalid value: Node at depth=1, position=1 not found but is required",
+        );
     }
 }
