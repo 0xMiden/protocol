@@ -83,5 +83,5 @@ pub mod vm {
     };
     pub use miden_processor::trace::RowIndex;
     pub use miden_processor::{FutureMaybeSend, MIN_STACK_DEPTH, StackInputs, StackOutputs};
-    pub use miden_verifier::ExecutionProof;
+    pub use miden_verifier::{ExecutionProof, VerificationOutcome};
 }

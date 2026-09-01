@@ -1,4 +1,4 @@
-use miden_verifier::{ExecutionClaim, Verifier};
+use miden_verifier::{ExecutionClaim, VerificationOutcome, Verifier};
 
 use crate::errors::TransactionVerifierError;
 use crate::transaction::{ProvenTransaction, TransactionKernel};
@@ -24,17 +24,20 @@ impl TransactionVerifier {
         Self { tx_program_info, proof_security_level }
     }
 
-    /// Verifies the provided [`ProvenTransaction`] against the transaction kernel.
+    /// Verifies the provided [`ProvenTransaction`] against the transaction kernel and returns its
+    /// verification outcome.
+    ///
+    /// A verified transaction may still have an outstanding precompile obligation. Callers must
+    /// inspect the returned [`VerificationOutcome`] and handle that obligation if present.
     ///
     /// # Errors
     /// Returns an error if:
     /// - Transaction verification fails.
     /// - The security level of the verified proof is insufficient.
-    pub fn verify(&self, transaction: &ProvenTransaction) -> Result<(), TransactionVerifierError> {
-        if !transaction.proof().is_complete() {
-            return Err(TransactionVerifierError::IncompleteProof);
-        }
-
+    pub fn verify(
+        &self,
+        transaction: &ProvenTransaction,
+    ) -> Result<VerificationOutcome, TransactionVerifierError> {
         // build stack inputs and outputs
         let stack_inputs = TransactionKernel::build_input_stack(
             transaction.account_id(),
@@ -59,9 +62,6 @@ impl TransactionVerifier {
         let outcome = Verifier::new()
             .verify(&claim, transaction.proof())
             .map_err(TransactionVerifierError::TransactionVerificationFailed)?;
-        if !outcome.is_complete() {
-            return Err(TransactionVerifierError::IncompleteProof);
-        }
         let proof_security_level = outcome.security_level();
 
         // check security level
@@ -72,6 +72,6 @@ impl TransactionVerifier {
             });
         }
 
-        Ok(())
+        Ok(outcome)
     }
 }

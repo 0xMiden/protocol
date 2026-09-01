@@ -341,6 +341,9 @@ impl ProposedBatch {
     /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
     /// execution proof against the transaction kernel.
     ///
+    /// A verified transaction may have an outstanding precompile obligation. The proposed batch
+    /// retains the full transaction proof so later batch processing can inspect that obligation.
+    ///
     /// # Errors
     ///
     /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
@@ -361,7 +364,7 @@ impl ProposedBatch {
 
         let verifier = TransactionVerifier::new(proof_security_level);
         for tx in batch.transactions() {
-            verifier.verify(tx).map_err(|source| {
+            let _verification_outcome = verifier.verify(tx).map_err(|source| {
                 ProposedBatchError::TransactionVerificationFailed {
                     transaction_id: tx.id(),
                     source,

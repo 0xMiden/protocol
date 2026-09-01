@@ -53,12 +53,19 @@ pub async fn prove_and_verify_transaction(
     // Verify that the generated proof is valid
     let verifier = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL);
 
-    verifier.verify(&proven_transaction)
+    let outcome = verifier.verify(&proven_transaction)?;
+    assert!(
+        outcome.is_complete(),
+        "the local transaction prover must settle precompile work"
+    );
+
+    Ok(())
 }
 
-/// A deferred transaction proof must be completed before protocol verification.
+/// Deferred transaction proofs are validated by the VM verifier rather than rejected by their
+/// lifecycle state alone.
 #[tokio::test]
-async fn transaction_verifier_rejects_incomplete_proof() -> anyhow::Result<()> {
+async fn transaction_verifier_delegates_deferred_proof_validation() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
     let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
@@ -73,7 +80,10 @@ async fn transaction_verifier_rejects_incomplete_proof() -> anyhow::Result<()> {
     let proven = LocalTransactionProver::default().prove_dummy_deferred(executed)?;
 
     let err = TransactionVerifier::new(0).verify(&proven).unwrap_err();
-    assert_matches::assert_matches!(err, TransactionVerifierError::IncompleteProof);
+    assert_matches::assert_matches!(
+        err,
+        TransactionVerifierError::TransactionVerificationFailed(_)
+    );
 
     Ok(())
 }
