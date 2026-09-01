@@ -55,7 +55,21 @@ fn batch_verifier_rejects_incomplete_proof() -> anyhow::Result<()> {
     let proven = LocalBatchProver::default().prove_dummy_deferred(batch)?;
 
     let err = BatchVerifier::new(0).verify(&proven).unwrap_err();
-    assert_matches!(err, BatchVerifierError::IncompleteProof);
+    assert_matches!(err, BatchVerifierError::BatchProofContainsPrecompiles);
+
+    Ok(())
+}
+
+/// A complete batch proof with precompile work is not a valid protocol batch proof.
+#[test]
+fn batch_verifier_rejects_precompile_proof() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let proven = LocalBatchProver::default().prove_dummy_precompile(batch)?;
+
+    let err = BatchVerifier::new(0).verify(&proven).unwrap_err();
+    assert_matches!(err, BatchVerifierError::BatchProofContainsPrecompiles);
 
     Ok(())
 }

@@ -6,7 +6,7 @@ use miden_protocol::errors::ProvenBatchError;
 use miden_prover::HashFunction::Poseidon2;
 use miden_prover::{ExecutionProof, Prover};
 
-use crate::ExecutedBatch;
+use crate::{ExecutedBatch, proof_has_precompiles};
 
 // LOCAL BATCH PROVER
 // ================================================================================================
@@ -42,15 +42,19 @@ impl LocalBatchProver {
     ///
     /// # Errors
     ///
-    /// Returns an error if proof generation fails.
+    /// Returns an error if proof generation fails or the batch execution used a precompile.
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
         let (proposed_batch, witness) = executed_batch.into_parts();
 
         let proof = self
             .prover
-            .prove_full(witness)
+            .prove(witness)
             .map_err(|error| ExecutionError::ProvingError(error.to_string()))
             .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
+
+        if proof_has_precompiles(&proof) {
+            return Err(ProvenBatchError::BatchKernelUsedPrecompiles);
+        }
 
         Self::build_proven_batch(proposed_batch, proof)
     }
@@ -74,6 +78,18 @@ impl LocalBatchProver {
         Self::build_proven_batch(
             proposed_batch,
             miden_protocol::testing::dummy_deferred_execution_proof(),
+        )
+    }
+
+    /// Returns a batch carrying a structurally complete proof with precompile work.
+    #[cfg(any(feature = "testing", test))]
+    pub fn prove_dummy_precompile(
+        &self,
+        proposed_batch: ProposedBatch,
+    ) -> Result<ProvenBatch, ProvenBatchError> {
+        Self::build_proven_batch(
+            proposed_batch,
+            miden_protocol::testing::dummy_precompile_execution_proof(),
         )
     }
 

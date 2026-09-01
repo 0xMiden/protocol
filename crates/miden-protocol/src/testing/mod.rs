@@ -55,3 +55,22 @@ pub fn dummy_deferred_execution_proof() -> crate::vm::ExecutionProof {
         precompile: DeferredStateWire::default(),
     }
 }
+
+/// Returns a structurally complete placeholder proof containing precompile work.
+pub fn dummy_precompile_execution_proof() -> crate::vm::ExecutionProof {
+    use alloc::vec::Vec;
+
+    use miden_verifier::{HashFunction, PrecompileProof, StarkProof};
+
+    let crate::vm::ExecutionProof::Complete { vm, .. } = dummy_execution_proof() else {
+        unreachable!("dummy execution proof must be complete");
+    };
+
+    crate::vm::ExecutionProof::Complete {
+        vm,
+        precompile: Some(PrecompileProof {
+            proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
+            roots: Vec::new(),
+        }),
+    }
+}

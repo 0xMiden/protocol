@@ -1530,6 +1530,8 @@ pub enum ProvenBatchError {
     BatchKernelExecutionFailed(#[source] ExecutionError),
     #[error("batch kernel proving failed")]
     BatchKernelProvingFailed(#[source] ExecutionError),
+    #[error("batch kernel execution used precompiles")]
+    BatchKernelUsedPrecompiles,
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
 }

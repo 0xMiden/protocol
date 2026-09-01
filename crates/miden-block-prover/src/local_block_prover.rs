@@ -46,17 +46,45 @@ impl LocalBlockProver {
     ///
     /// # Errors
     ///
-    /// Returns an error if proof generation fails.
+    /// Returns an error if proof generation fails or the block execution used a precompile.
     pub fn prove(&self, executed_block: ExecutedBlock) -> Result<ExecutionProof, BlockProverError> {
-        self.prover
-            .prove_full(executed_block.into_witness())
+        let proof = self
+            .prover
+            .prove(executed_block.into_witness())
             .map_err(|error| ExecutionError::ProvingError(error.to_string()))
-            .map_err(BlockProverError::BlockKernelProvingFailed)
+            .map_err(BlockProverError::BlockKernelProvingFailed)?;
+
+        if proof_has_precompiles(&proof) {
+            return Err(BlockProverError::BlockKernelUsedPrecompiles);
+        }
+
+        Ok(proof)
     }
 
     /// Returns a dummy [`ExecutionProof`], without running the block kernel.
     #[cfg(feature = "testing")]
     pub fn prove_dummy(&self) -> ExecutionProof {
         miden_protocol::testing::dummy_execution_proof()
+    }
+}
+
+fn proof_has_precompiles(proof: &ExecutionProof) -> bool {
+    matches!(
+        proof,
+        ExecutionProof::Deferred { .. } | ExecutionProof::Complete { precompile: Some(_), .. }
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proof_has_precompiles;
+
+    #[test]
+    fn detects_precompile_work_in_any_proof_state() {
+        assert!(!proof_has_precompiles(&miden_protocol::testing::dummy_execution_proof()));
+        assert!(proof_has_precompiles(&miden_protocol::testing::dummy_deferred_execution_proof()));
+        assert!(proof_has_precompiles(
+            &miden_protocol::testing::dummy_precompile_execution_proof()
+        ));
     }
 }

@@ -4,7 +4,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
 use miden_verifier::{ExecutionClaim, Verifier};
 
-use crate::BatchVerifierError;
+use crate::{BatchVerifierError, proof_has_precompiles};
 
 // BATCH VERIFIER
 // ================================================================================================
@@ -40,11 +40,12 @@ impl BatchVerifier {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - The batch proof contains precompile work.
     /// - Batch proof verification fails.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
-        if !batch.proof().is_complete() {
-            return Err(BatchVerifierError::IncompleteProof);
+        if proof_has_precompiles(batch.proof()) {
+            return Err(BatchVerifierError::BatchProofContainsPrecompiles);
         }
 
         let stack_inputs =
