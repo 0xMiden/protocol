@@ -250,17 +250,12 @@ pub proc convert_amount(amount: felt, rate: ConversionRate) -> felt
     # => [converted_amount]
 end
 
-#! Asserts that a fee payment is at most bound.num / bound.den times the computed fee, and returns
-#! the payment unchanged so it can be handed straight to the payment step.
+#! Asserts that a fee payment is at most bound times the computed fee.
 #!
-#! The bound is an application-level policy, so pay_fee does not apply one; the caller picks the
-#! fraction and invokes this between the fee estimate and the payment. It matters for callers whose
-#! authentication can be satisfied by less authority than an ordinary note transfer would need
-#! (the guarded multisig's guardian rotation path), where a host-supplied conversion rate would
-#! otherwise drain the vault through the fee note.
+#! The bound is an application-level policy; the caller picks the fraction and invokes this between
+#! the fee estimate and the payment.
 #!
-#! The payment faucet is pinned to the transaction's fee faucet, since the computed fee is
-#! denominated in the native fee asset and a payment in any other asset is not comparable to it.
+#! The payment faucet is pinned to the native fee asset.
 #!
 #! Inputs:  [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix,
 #!           payment_amount, fee_amount]
