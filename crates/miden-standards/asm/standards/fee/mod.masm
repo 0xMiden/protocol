@@ -338,7 +338,7 @@ pub proc create_and_fund_fee_note(asset: Asset)
     # => []
 end
 
-#! Computes the fee of the current transaction without paying anything.
+#! Estimates the fee of the current transaction.
 #!
 #! The fee covers the notes the payment goes on to create: the TX_FEE note, and one
 #! FEE_SPONSORSHIP note per network output note (see pay_network_note_sponsorships). Counting the
