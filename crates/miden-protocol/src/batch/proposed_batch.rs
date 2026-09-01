@@ -511,6 +511,13 @@ impl Deserializable for ProposedBatch {
             .map(Arc::new)
             .collect::<Vec<Arc<ProvenTransaction>>>();
 
+        if let Some(tx) = transactions.iter().find(|tx| !tx.proof().is_complete()) {
+            return Err(DeserializationError::InvalidValue(format!(
+                "transaction {} has an outstanding precompile obligation",
+                tx.id()
+            )));
+        }
+
         let block_header = BlockHeader::read_from(source)?;
         let partial_blockchain = PartialBlockchain::read_from(source)?;
         let unauthenticated_note_proofs =
@@ -580,7 +587,7 @@ mod tests {
         .context("failed to build account update")?;
 
         let tx = ProvenTransaction::new(
-            account_update,
+            account_update.clone(),
             Vec::<InputNoteCommitment>::new(),
             Vec::<OutputNote>::new(),
             block_num,
@@ -592,8 +599,8 @@ mod tests {
 
         let batch = ProposedBatch::new_unverified(
             vec![Arc::new(tx)],
-            reference_block_header,
-            partial_blockchain,
+            reference_block_header.clone(),
+            partial_blockchain.clone(),
             BTreeMap::new(),
         )
         .context("failed to propose batch")?;
@@ -612,6 +619,34 @@ mod tests {
         assert_eq!(batch.batch_expiration_block_num, batch2.batch_expiration_block_num);
         assert_eq!(batch.input_notes, batch2.input_notes);
         assert_eq!(batch.output_notes, batch2.output_notes);
+
+        let tx = ProvenTransaction::new(
+            account_update,
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<OutputNote>::new(),
+            block_num,
+            block_ref,
+            expiration_block_num,
+            crate::testing::dummy_deferred_execution_proof(),
+        )
+        .context("failed to build deferred proven transaction")?;
+        let transaction_id = tx.id();
+        let batch = ProposedBatch::new_unverified(
+            vec![Arc::new(tx)],
+            reference_block_header,
+            partial_blockchain,
+            BTreeMap::new(),
+        )
+        .context("failed to propose deferred batch")?;
+
+        let error = ProposedBatch::read_from_bytes(&batch.to_bytes()).unwrap_err();
+        let expected_error =
+            format!("transaction {transaction_id} has an outstanding precompile obligation");
+        assert_matches::assert_matches!(
+            error,
+            DeserializationError::InvalidValue(message)
+                if message == expected_error
+        );
 
         Ok(())
     }
