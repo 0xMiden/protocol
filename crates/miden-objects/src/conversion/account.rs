@@ -40,6 +40,32 @@ impl From<AccountId> for proto::account::AccountId {
     }
 }
 
+/// Decodes a protobuf storage slot type into its domain representation.
+///
+/// Protobuf reserves discriminant 0 for an unspecified value, while the domain
+/// enum uses discriminants 0 and 1 for `Value` and `Map`, respectively.
+fn decode_storage_slot_type(slot_type: i32) -> Result<StorageSlotType, ConversionError> {
+    match proto::account::StorageSlotType::try_from(slot_type) {
+        Ok(proto::account::StorageSlotType::Value) => Ok(StorageSlotType::Value),
+        Ok(proto::account::StorageSlotType::Map) => Ok(StorageSlotType::Map),
+        Ok(proto::account::StorageSlotType::Unspecified) => {
+            Err(ConversionError::message("storage slot type is unspecified"))
+        },
+        Err(error) => Err(ConversionError::with_source(
+            format!("unknown storage slot type {slot_type}"),
+            error,
+        )),
+    }
+}
+
+/// Encodes a domain storage slot type using its protobuf representation.
+fn encode_storage_slot_type(slot_type: StorageSlotType) -> i32 {
+    match slot_type {
+        StorageSlotType::Value => proto::account::StorageSlotType::Value as i32,
+        StorageSlotType::Map => proto::account::StorageSlotType::Map as i32,
+    }
+}
+
 impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     type Error = ConversionError;
 
@@ -50,21 +76,7 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
             .map(|slot| {
                 let decoder = slot.decoder();
                 let name = StorageSlotName::new(slot.slot_name)?;
-                let slot_type = match proto::account::StorageSlotType::try_from(slot.slot_type) {
-                    Ok(proto::account::StorageSlotType::Value) => StorageSlotType::Value,
-                    Ok(proto::account::StorageSlotType::Map) => StorageSlotType::Map,
-                    Ok(proto::account::StorageSlotType::Unspecified) => {
-                        return Err(ConversionError::message("storage slot type is unspecified")
-                            .context("slot_type"));
-                    },
-                    Err(error) => {
-                        return Err(ConversionError::with_source(
-                            format!("unknown storage slot type {}", slot.slot_type),
-                            error,
-                        )
-                        .context("slot_type"));
-                    },
-                };
+                let slot_type = decode_storage_slot_type(slot.slot_type).context("slot_type")?;
                 let commitment = required!(decoder, slot.commitment)?;
                 Ok(StorageSlotHeader::new(name, slot_type, commitment))
             })
@@ -81,10 +93,7 @@ impl From<&AccountStorageHeader> for proto::account::AccountStorageHeader {
                 .slots()
                 .map(|slot| proto::account::account_storage_header::StorageSlot {
                     slot_name: slot.name().to_string(),
-                    slot_type: match slot.slot_type() {
-                        StorageSlotType::Value => proto::account::StorageSlotType::Value as i32,
-                        StorageSlotType::Map => proto::account::StorageSlotType::Map as i32,
-                    },
+                    slot_type: encode_storage_slot_type(slot.slot_type()),
                     commitment: Some(slot.value().into()),
                 })
                 .collect(),
