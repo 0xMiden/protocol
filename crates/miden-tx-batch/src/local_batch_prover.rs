@@ -21,8 +21,8 @@ pub struct LocalBatchProver {
 
 impl LocalBatchProver {
     /// Creates a new [`LocalBatchProver`] instance.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(prover: Prover) -> Self {
+        Self { prover }
     }
 
     /// Proves the [`ExecutedBatch`] into a [`ProvenBatch`].
@@ -41,7 +41,7 @@ impl LocalBatchProver {
             .prover
             .prove_full(witness)
             .map_err(|error| ExecutionError::ProvingError(error.to_string()))
-            .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
+            .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
 
         Self::build_proven_batch(proposed_batch, proof)
     }

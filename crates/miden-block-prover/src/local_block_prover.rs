@@ -27,10 +27,8 @@ pub struct LocalBlockProver {
 
 impl LocalBlockProver {
     /// Creates a new [`LocalBlockProver`] instance.
-    pub fn new(_proof_security_level: u32) -> Self {
-        // TODO: This will eventually take the security level as a parameter, but until we verify
-        // blocks it is ignored.
-        Self::default()
+    pub fn new(prover: Prover) -> Self {
+        Self { prover }
     }
 
     /// Proves the [`ExecutedBlock`] into an [`ExecutionProof`].
@@ -44,7 +42,7 @@ impl LocalBlockProver {
         self.prover
             .prove_full(executed_block.into_witness())
             .map_err(|error| ExecutionError::ProvingError(error.to_string()))
-            .map_err(BlockProverError::BlockKernelExecutionFailed)
+            .map_err(BlockProverError::BlockKernelProvingFailed)
     }
 
     /// Returns a dummy [`ExecutionProof`], without running the block kernel.

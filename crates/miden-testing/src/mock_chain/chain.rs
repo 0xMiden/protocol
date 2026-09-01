@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_block_prover::LocalBlockProver;
 use miden_processor::serde::DeserializationError;
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
@@ -36,10 +37,9 @@ use miden_protocol::transaction::{
     TransactionInputs,
 };
 use miden_protocol::vm::ExecutionProof;
-use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
-use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
+use miden_tx::{LocalTransactionProver, Prover};
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
@@ -571,7 +571,7 @@ impl MockChain {
         &self,
         proposed_batch: ProposedBatch,
     ) -> anyhow::Result<ProvenBatch> {
-        let batch_prover = LocalBatchProver::new();
+        let batch_prover = LocalBatchProver::new(Prover::default());
         Ok(batch_prover.prove_dummy(proposed_batch)?)
     }
 
@@ -1135,7 +1135,7 @@ impl MockChain {
     /// Proves proposed block alongside a corresponding list of batches.
     pub fn prove_block(&self, proposed_block: ProposedBlock) -> anyhow::Result<ProvenBlock> {
         let (header, body) = proposed_block.into_header_and_body()?;
-        let block_proof = LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL).prove_dummy();
+        let block_proof = LocalBlockProver::new(Prover::default()).prove_dummy();
         let signatures = self.sign_block(header.commitment());
         Ok(ProvenBlock::new_unchecked(header, body, signatures, block_proof))
     }

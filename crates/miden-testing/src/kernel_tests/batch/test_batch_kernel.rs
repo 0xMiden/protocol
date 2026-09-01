@@ -5,6 +5,7 @@ use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
+use miden_tx::Prover;
 use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
@@ -81,7 +82,9 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let expected_id = batch.id();
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
-    let proven = LocalBatchProver::new().prove(executed).context("batch proving failed")?;
+    let proven = LocalBatchProver::new(Prover::default())
+        .prove(executed)
+        .context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
 

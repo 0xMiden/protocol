@@ -1525,6 +1525,8 @@ pub enum ProvenBatchError {
     },
     #[error("batch kernel execution failed")]
     BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel proving failed")]
+    BatchKernelProvingFailed(#[source] ExecutionError),
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
 }

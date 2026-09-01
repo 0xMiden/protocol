@@ -1,9 +1,10 @@
 use anyhow::Context;
 use miden_block_prover::{BlockExecutor, LocalBlockProver};
+use miden_protocol::Word;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::ProposedBlock;
 use miden_protocol::note::NoteType;
-use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_tx::Prover;
 
 use super::utils::MockChainBlockExt;
 use crate::{Auth, MockChain};
@@ -61,7 +62,7 @@ async fn block_executor_then_prover_produces_block_proof() -> anyhow::Result<()>
     let block = two_batch_block().await?;
 
     let executed = BlockExecutor::new().execute(block).context("block execution failed")?;
-    LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL)
+    LocalBlockProver::new(Prover::default())
         .prove(executed)
         .context("block proving failed")?;
 
