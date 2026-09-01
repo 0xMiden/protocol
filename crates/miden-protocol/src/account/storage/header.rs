@@ -168,7 +168,7 @@ impl AccountStorageHeader {
         }
 
         let mut slots = Vec::new();
-        for chunk in elements.chunks_exact(StorageSlot::NUM_ELEMENTS) {
+        for chunk in elements.as_chunks::<{ StorageSlot::NUM_ELEMENTS }>().0 {
             // Parse slot type from second element.
             let slot_type_felt = chunk[1];
             let slot_type = slot_type_felt.try_into()?;
