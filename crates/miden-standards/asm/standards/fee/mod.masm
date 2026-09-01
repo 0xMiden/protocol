@@ -32,11 +32,13 @@ pub type ConversionInfo = word
 const PAY_FEE_CYCLES = 8192
 
 # Estimated upper bounds on the number of cycles the sponsorship payment spends after the
-# compute_fee call returns. It walks every output note looking for network notes (measured ~225
-# cycles per note), then prices and funds a FEE_SPONSORSHIP note for each one it finds; the
-# per-sponsorship figure covers the foreign procedure call into the target's fee policy (measured
-# ~4k cycles), the note creation and the vault withdrawal. Guarded by the fee-payment regression
-# tests.
+# compute_fee call returns: a walk over every output note looking for network notes, then pricing
+# and funding a FEE_SPONSORSHIP note for each one found, which covers the foreign procedure call
+# into the target's fee policy, the note creation and the vault withdrawal.
+#
+# NOT covered by a regression test: zeroing both leaves the suite green, because the sponsoring
+# case lands exactly on an ilog2 boundary either way. They are margins over a measurement, so a
+# test would have to assert cycle counts rather than behaviour. Re-measure if the payment changes.
 const SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES = 512
 const SPONSORSHIP_NOTE_CYCLES = 16384
 
