@@ -25,6 +25,8 @@ const ERR_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "const
 
 const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy config note is not targeted at the consuming account"
 
+const ERR_CONSTANT_FEE_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "constant fee policy config note must be public"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -49,10 +51,14 @@ const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy con
 #! - allowlists this note's own script root and already has a set-marked fee schedule entry for it,
 #!   so the network account can price and consume this note.
 #!
+#! Consumption is restricted to public notes: the management action must remain publicly auditable,
+#! so a private note carrying the same script and storage is rejected.
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the note is missing its `NetworkAccountTarget` attachment or carries a malformed one (e.g. a
 #!   hand-crafted note reusing this script), or the consuming account is not the target account.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
@@ -62,6 +68,11 @@ const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy con
 pub proc main
     # drop the note script args
     dropw
+    # => [pad(16)]
+
+    # restrict consumption to public notes: the management action must remain publicly auditable
+    exec.active_note::is_public
+    assert.err=ERR_CONSTANT_FEE_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # assert the consuming account is the account the note is targeted at, so it cannot be consumed

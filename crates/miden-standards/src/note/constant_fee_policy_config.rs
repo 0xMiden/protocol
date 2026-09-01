@@ -61,9 +61,8 @@ static CONSTANT_FEE_POLICY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|
 /// consuming account matches that target before calling `set_note_fee`, so the note cannot be
 /// consumed by a third-party account that merely accepts its sender.
 ///
-/// The builder always produces a public note; see
-/// [the module docs](crate::note#note-type-of-the-config-notes) for the note type the script
-/// accepts and why a private note dispatches the same action.
+/// The note must be public: the script rejects a non-public note. See
+/// [the module docs](crate::note#note-type-of-the-config-notes) for the layers that enforce it.
 ///
 /// # Consuming account requirements
 ///

@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use assert_matches::assert_matches;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
@@ -12,14 +11,13 @@ use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::errors::standards::{
+    ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR,
 };
 use miden_standards::note::{
-    AccountTargetNetworkNote,
     NetworkAccountTarget,
-    NetworkAccountTargetError,
     NoteExecutionHint,
     PauseConfig,
     PauseConfigNote,
@@ -228,12 +226,10 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
     Ok(())
 }
 
-/// The note script does not read the note type, so a private note carrying the same script and
-/// storage dispatches the action when it is consumed in a local transaction; authorization still
-/// runs against the note sender. The public-note requirement of the standard lives at the
-/// network-routing boundary instead, which rejects that same note.
+/// The management action must stay publicly auditable: a private note carrying the same script and
+/// storage as a legitimate config note is rejected before the pause state changes.
 #[tokio::test]
-async fn private_note_dispatches_locally_but_is_not_network_routable() -> anyhow::Result<()> {
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let account = create_pausable_account(owner)?;
@@ -242,18 +238,14 @@ async fn private_note_dispatches_locally_but_is_not_network_routable() -> anyhow
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    let note =
-        into_private_note(pause_config_note(owner, account.id(), PauseConfig::Pause, &mut rng)?);
+    let note = pause_config_note(owner, account.id(), PauseConfig::Pause, &mut rng)?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
 
-    // The network never routes it: a network note must be public.
-    assert_matches!(
-        AccountTargetNetworkNote::new(note.clone()),
-        Err(NetworkAccountTargetError::NoteNotPublic(_))
-    );
-
-    // Consumed locally, it dispatches the Pause action like its public counterpart.
-    let paused = execute_note_and_apply(&mock_chain, &account, &note).await?;
-    assert!(is_paused(&paused)?);
-
+    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC);
     Ok(())
 }

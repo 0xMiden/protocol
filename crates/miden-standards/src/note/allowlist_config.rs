@@ -117,9 +117,8 @@ impl From<AllowlistConfig> for NoteStorage {
 /// that the consuming account matches that target before dispatching, so the note cannot be
 /// consumed by a third-party account that merely accepts its sender.
 ///
-/// The builder always produces a public note; see
-/// [the module docs](crate::note#note-type-of-the-config-notes) for the note type the script
-/// accepts and why a private note dispatches the same action.
+/// The note must be public: the script rejects a non-public note. See
+/// [the module docs](crate::note#note-type-of-the-config-notes) for the layers that enforce it.
 ///
 /// Construct one with the [builder](AllowlistConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.

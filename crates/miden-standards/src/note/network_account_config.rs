@@ -144,9 +144,8 @@ impl From<NetworkAccountConfig> for NoteStorage {
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) allowlists it by default at
 /// construction, so no extra setup is required.
 ///
-/// The builder always produces a public note; see
-/// [the module docs](crate::note#note-type-of-the-config-notes) for the note type the script
-/// accepts and why a private note dispatches the same action.
+/// The note must be public: the script rejects a non-public note. See
+/// [the module docs](crate::note#note-type-of-the-config-notes) for the layers that enforce it.
 ///
 /// Construct one with the [builder](NetworkAccountConfigNote::builder); convert it into a
 /// protocol [`Note`] infallibly via `Note::from`.

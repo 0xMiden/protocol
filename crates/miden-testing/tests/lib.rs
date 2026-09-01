@@ -95,9 +95,9 @@ pub async fn consume_note(
 
 /// Rebuilds `note` as a private note, keeping its script, storage, assets and attachments.
 ///
-/// The typed note builders of the standard config notes always produce public notes, so this is
-/// how a sender would hand-craft a private note that is otherwise indistinguishable from a
-/// legitimate config note.
+/// The typed note builders of the standard config notes fix the note type to
+/// [`NoteType::Public`], so this is how a sender would hand-craft a private note that is
+/// otherwise indistinguishable from a legitimate config note.
 #[cfg(test)]
 pub fn into_private_note(note: Note) -> Note {
     let metadata = PartialNoteMetadata::new(note.metadata().sender(), NoteType::Private)
