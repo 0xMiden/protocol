@@ -287,67 +287,16 @@ end
 #!
 #! Invocation: exec
 pub proc create_network_note_sponsorships(fee_asset_id: AssetId) -> felt
-    push.0 movdn.4
-    # => [FEE_ASSET_ID, total_sponsored_fee_amount = 0]
-
-    # get the output note count before any sponsorship notes were created, since creating them
-    # increments the count
-    exec.tx::get_num_output_notes
-    # => [num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-
-    push.0
-    # => [note_idx = 0, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-
-    dup.1 dup.1 neq
-    # => [should_loop, note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-
-    while.true
-        # only network output notes are sponsored
-        dup exec.is_network_note
-        # => [is_network_note, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
-        #     total_sponsored_fee_amount]
-
-        if.true
-            dup.1
-            # => [note_idx, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
-            #     total_sponsored_fee_amount]
-
-            # pass a copy of the expected fee asset ID along with the note parameters, and ask for
-            # the sponsorship note to be created
-            dupw.1 movup.5 movup.5 push.1 movdn.6
-            # => [note_idx, attachment_idx, FEE_ASSET_ID, is_create = 1, note_idx, num_output_notes,
-            #     FEE_ASSET_ID, total_sponsored_fee_amount]
-
-            exec.handle_network_note_sponsorship
-            # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
-            #     total_sponsored_fee_amount]
-
-            movup.7 add movdn.6
-            # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-        else
-            # do not sponsor non-network output notes
-            drop
-            # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-        end
-
-        add.1
-        # => [note_idx+1, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-
-        dup.1 dup.1 neq
-        # => [should_loop, note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-    end
-    # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount]
-
-    drop drop dropw
+    push.1 movdn.4 exec.handle_network_note_sponsorships swap drop
     # => [total_sponsored_fee_amount]
 end
 
 #! Estimates the FEE_SPONSORSHIP notes that this transaction's network output notes require.
 #!
-#! Walks the transaction's output notes exactly as `create_network_note_sponsorships` does and
-#! prices each network note through its target account's fee policy, but creates no note and moves
-#! nothing out of the vault. A note the target prices to zero needs no sponsorship note and so is
-#! counted in neither return value.
+#! Prices the network output notes exactly as `create_network_note_sponsorships` does, but creates
+#! no note and moves nothing out of the vault, so a caller can charge for those notes before it
+#! pays for them. A note the target prices to zero needs no sponsorship note and so is counted in
+#! neither return value.
 #!
 #! Inputs:  [FEE_ASSET_ID]
 #! Outputs: [total_sponsored_fee_amount, num_sponsorship_notes]
@@ -367,71 +316,7 @@ end
 #!
 #! Invocation: exec
 pub proc estimate_network_note_sponsorships(fee_asset_id: AssetId) -> (felt, felt)
-    push.0 movdn.4
-    # => [FEE_ASSET_ID, num_sponsorship_notes = 0]
-
-    push.0 movdn.4
-    # => [FEE_ASSET_ID, total_sponsored_fee_amount = 0, num_sponsorship_notes]
-
-    exec.tx::get_num_output_notes
-    # => [num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount, num_sponsorship_notes]
-
-    push.0
-    # => [note_idx = 0, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
-    #     num_sponsorship_notes]
-
-    dup.1 dup.1 neq
-    # => [should_loop, note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
-    #     num_sponsorship_notes]
-
-    while.true
-        # only network output notes are sponsored
-        dup exec.is_network_note
-        # => [is_network_note, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
-        #     total_sponsored_fee_amount, num_sponsorship_notes]
-
-        if.true
-            dup.1
-            # => [note_idx, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
-            #     total_sponsored_fee_amount, num_sponsorship_notes]
-
-            # pass a copy of the expected fee asset ID along with the note parameters, and ask for
-            # the note to only be priced
-            dupw.1 movup.5 movup.5 push.0 movdn.6
-            # => [note_idx, attachment_idx, FEE_ASSET_ID, is_create = 0, note_idx, num_output_notes,
-            #     FEE_ASSET_ID, total_sponsored_fee_amount, num_sponsorship_notes]
-
-            exec.handle_network_note_sponsorship
-            # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
-            #     total_sponsored_fee_amount, num_sponsorship_notes]
-
-            # a note priced to zero is sponsored by no note
-            dup neq.0 movup.9 add movdn.8
-            # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
-            #     total_sponsored_fee_amount, num_sponsorship_notes]
-
-            movup.7 add movdn.6
-            # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
-            #     num_sponsorship_notes]
-        else
-            # do not sponsor non-network output notes
-            drop
-            # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
-            #     num_sponsorship_notes]
-        end
-
-        add.1
-        # => [note_idx+1, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
-        #     num_sponsorship_notes]
-
-        dup.1 dup.1 neq
-        # => [should_loop, note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
-        #     num_sponsorship_notes]
-    end
-    # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
-    #     num_sponsorship_notes]
-
-    drop drop dropw
+    push.0 movdn.4 exec.handle_network_note_sponsorships
     # => [total_sponsored_fee_amount, num_sponsorship_notes]
 end
 
@@ -699,13 +584,105 @@ proc is_network_note(note_idx: u16) -> (Bool, u8)
     # => [is_found, attachment_idx]
 end
 
+#! Walks the transaction's output notes and prices every network note through its target account's
+#! fee policy, creating its FEE_SPONSORSHIP note along the way when asked to.
+#!
+#! Backs `create_network_note_sponsorships` (is_create = 1) and
+#! `estimate_network_note_sponsorships` (is_create = 0); see those for the full behaviour.
+#!
+#! Inputs:  [FEE_ASSET_ID, is_create]
+#! Outputs: [total_sponsored_fee_amount, num_sponsorship_notes]
+#!
+#! Where:
+#! - FEE_ASSET_ID is the ID of the asset the sponsorship notes are funded with.
+#! - is_create is 1 to create the sponsorship notes, 0 to only price them.
+#! - total_sponsored_fee_amount is the total amount the sponsorship notes carry.
+#! - num_sponsorship_notes is the number of network notes priced above zero, i.e. of sponsorship
+#!   notes created or to be created.
+#!
+#! Panics if:
+#! - handle_network_note_sponsorship panics for a network output note.
+#!
+#! Invocation: exec
+proc handle_network_note_sponsorships(fee_asset_id: AssetId, is_create: Bool) -> (felt, felt)
+    push.0 movdn.4
+    # => [FEE_ASSET_ID, num_sponsorship_notes = 0, is_create]
+
+    push.0 movdn.4
+    # => [FEE_ASSET_ID, total_sponsored_fee_amount = 0, num_sponsorship_notes, is_create]
+
+    # get the output note count before any sponsorship notes are created, since creating them
+    # increments the count
+    exec.tx::get_num_output_notes
+    # => [num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount, num_sponsorship_notes,
+    #     is_create]
+
+    push.0
+    # => [note_idx = 0, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
+    #     num_sponsorship_notes, is_create]
+
+    dup.1 dup.1 neq
+    # => [should_loop, note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
+    #     num_sponsorship_notes, is_create]
+
+    while.true
+        # only network output notes are sponsored
+        dup exec.is_network_note
+        # => [is_network_note, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
+        #     total_sponsored_fee_amount, num_sponsorship_notes, is_create]
+
+        if.true
+            dup.1
+            # => [note_idx, attachment_idx, note_idx, num_output_notes, FEE_ASSET_ID,
+            #     total_sponsored_fee_amount, num_sponsorship_notes, is_create]
+
+            # pass a copy of the expected fee asset ID and of the create flag along with the note
+            # parameters
+            dupw.1 movup.5 movup.5 dup.14 movdn.6
+            # => [note_idx, attachment_idx, FEE_ASSET_ID, is_create, note_idx, num_output_notes,
+            #     FEE_ASSET_ID, total_sponsored_fee_amount, num_sponsorship_notes, is_create]
+
+            exec.handle_network_note_sponsorship
+            # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
+            #     total_sponsored_fee_amount, num_sponsorship_notes, is_create]
+
+            # a note priced to zero is sponsored by no note
+            dup neq.0 movup.9 add movdn.8
+            # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
+            #     total_sponsored_fee_amount, num_sponsorship_notes, is_create]
+
+            movup.7 add movdn.6
+            # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
+            #     num_sponsorship_notes, is_create]
+        else
+            # do not sponsor non-network output notes
+            drop
+            # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
+            #     num_sponsorship_notes, is_create]
+        end
+
+        add.1
+        # => [note_idx+1, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
+        #     num_sponsorship_notes, is_create]
+
+        dup.1 dup.1 neq
+        # => [should_loop, note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
+        #     num_sponsorship_notes, is_create]
+    end
+    # => [note_idx, num_output_notes, FEE_ASSET_ID, total_sponsored_fee_amount,
+    #     num_sponsorship_notes, is_create]
+
+    drop drop dropw movup.2 drop
+    # => [total_sponsored_fee_amount, num_sponsorship_notes]
+end
+
 #! Prices the network output note at the given index and, when asked to, creates its
 #! FEE_SPONSORSHIP note.
 #!
-#! See [`create_network_note_sponsorships`] for the full behaviour; this procedure handles a single
-#! network note. A network note the target account prices to zero needs no sponsorship note, so
-#! none is created for it. When is_create is 0 the note is only priced: the vault and the output
-#! notes are left untouched.
+#! Handles a single network note for `create_network_note_sponsorships` (is_create = 1) and
+#! `estimate_network_note_sponsorships` (is_create = 0); see those for the full behaviour. A network
+#! note the target account prices to zero needs no sponsorship note, so none is created for it.
+#! When is_create is 0 the note is only priced: the vault and the output notes are left untouched.
 #!
 #! Inputs:  [note_idx, attachment_idx, EXPECTED_FEE_ASSET_ID, is_create]
 #! Outputs: [sponsored_fee_amount]
