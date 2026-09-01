@@ -79,8 +79,8 @@ async fn test_upgrade_manager_stores_commitments_when_authorized() -> anyhow::Re
             dropw dropw dropw dropw
         end
         "#,
-        code_upgrade_commitment = &code_upgrade_commitment,
-        storage_upgrade_commitment = &storage_upgrade_commitment,
+        code_upgrade_commitment = code_upgrade_commitment,
+        storage_upgrade_commitment = storage_upgrade_commitment,
     );
 
     let exec_output = &mock_tx.execute_code(&code).await?;
