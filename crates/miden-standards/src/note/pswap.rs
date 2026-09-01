@@ -266,7 +266,9 @@ impl From<PswapNoteAttachment> for NoteAttachment {
 /// fill amounts via note_args) and in network transactions (where note_args default to
 /// `[0, 0, 0, 0]`, triggering a full fill). To route a PSWAP note to a network account,
 /// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
-/// via the builder.
+/// via the builder. The routing applies to that note alone: a partial fill replaces it with a
+/// remainder carrying only the PSWAP lineage attachment, so the leftover order is no longer a
+/// network note and has to be filled locally or reclaimed by its creator.
 ///
 /// Fills are priced against the note's initial offered asset.
 #[derive(Debug, Clone, bon::Builder)]
@@ -394,8 +396,8 @@ impl PswapNote {
     /// For notes targeting a network account, this may contain a
     /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) with scheme = 2. For a
     /// remainder PSWAP this contains the [`Self::PSWAP_ATTACHMENT_SCHEME`] word
-    /// `[amt_payout, order_id, depth, 0]`. For an original PSWAP (no prior fill),
-    /// this is typically empty.
+    /// `[amt_payout, order_id, depth, 0]` and never a routing target. For an original PSWAP (no
+    /// prior fill), this is typically empty.
     pub fn attachments(&self) -> Option<&NoteAttachment> {
         self.attachment.as_ref()
     }
@@ -632,6 +634,9 @@ impl PswapNote {
     ///   remainder. Both are required because the price formula uses floor division, so one isn't
     ///   derivable from the other across rounds in general.
     ///
+    /// Like the note the script creates, the reconstructed remainder carries `attachment` as its
+    /// only attachment.
+    ///
     /// # Errors
     ///
     /// Returns an error if `attachment.depth() == 0` or if any amount is not a valid asset
@@ -820,6 +825,14 @@ impl PswapNote {
     /// [`Self::PSWAP_ATTACHMENT_SCHEME`]. The remainder must carry this attachment so that
     /// when *it* is later consumed as a parent, `get_current_depth` reads the right scheme
     /// and increments depth correctly.
+    ///
+    /// It is also the remainder's only attachment: a
+    /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) on this note is deliberately not
+    /// copied over, matching the on-chain script. Carrying it over would make every remainder a
+    /// network output note, which a fee-paying consumer must sponsor - the fill would have to
+    /// provision the target as a foreign account and fund its sponsorship note, and a consumer that
+    /// is itself the target could not fill at all, since the kernel forbids a foreign context
+    /// against the native account.
     fn create_remainder_pswap_note(
         &self,
         consumer_account_id: AccountId,

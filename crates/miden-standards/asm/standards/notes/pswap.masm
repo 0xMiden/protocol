@@ -349,6 +349,15 @@ end
 #! most significant element of the active note's serial number), creates the output
 #! note, sets the attachment, and adds the remaining offered asset.
 #!
+#! The round's PswapAttachment is the remainder's only attachment: any other attachment of the
+#! parent, a `NetworkAccountTarget` included, is intentionally dropped, so a routing target applies
+#! to the note it is attached to and not to the order's lineage. Carrying it over would make every
+#! remainder a network output note, which the consumer's auth component sponsors before paying the
+#! transaction fee (see `fees::create_network_note_sponsorships`): the fill would have to provision
+#! the target as a foreign account and fund its sponsorship note, and a consumer that is itself the
+#! target could not fill at all, since the kernel forbids a foreign context against the native
+#! account.
+#!
 #! Inputs:  [offered_faucet_suffix, offered_faucet_prefix,
 #!           amt_payout, amt_offered,
 #!           remaining_requested, note_type, tag]
