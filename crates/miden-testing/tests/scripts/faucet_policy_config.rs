@@ -32,12 +32,8 @@ use miden_standards::errors::standards::{
     ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{
-    FaucetPolicyConfig,
-    FaucetPolicyConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -310,8 +306,8 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
     Ok(())
 }
 
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before any policy switch runs.
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any policy switch runs.
 #[tokio::test]
 async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);

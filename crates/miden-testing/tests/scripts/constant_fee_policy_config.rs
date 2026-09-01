@@ -20,7 +20,8 @@ use miden_standards::errors::standards::{
     ERR_NETWORK_ACCOUNT_TARGET_MISSING,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{ConstantFeePolicyConfigNote, NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::note::config::ConstantFeePolicyConfigNote;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
@@ -251,8 +252,8 @@ async fn config_note_without_target_attachment_is_rejected() -> anyhow::Result<(
     Ok(())
 }
 
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before `set_note_fee` runs.
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before `set_note_fee` runs.
 #[tokio::test]
 async fn private_config_note_is_rejected() -> anyhow::Result<()> {
     let owner = owner_id();

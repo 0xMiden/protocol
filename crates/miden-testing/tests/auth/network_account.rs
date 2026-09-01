@@ -21,7 +21,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
-use miden_standards::note::{NetworkAccountConfig, NetworkAccountConfigNote};
+use miden_standards::note::config::{NetworkAccountConfig, NetworkAccountConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -918,8 +918,8 @@ async fn test_auth_network_account_rejects_invalid_sponsorship_policy(
     Ok(())
 }
 
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before the allowlist changes.
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before the allowlist changes.
 #[tokio::test]
 async fn test_private_config_note_cannot_mutate_allowlist() -> anyhow::Result<()> {
     let owner = owner_id();

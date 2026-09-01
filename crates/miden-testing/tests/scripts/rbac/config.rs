@@ -13,7 +13,8 @@ use miden_standards::errors::standards::{
     ERR_RBAC_CONFIG_UNKNOWN_SELECTOR,
     ERR_SENDER_NOT_ROLE_ADMIN,
 };
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, RbacConfig, RbacConfigNote};
+use miden_standards::note::config::{RbacConfig, RbacConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -271,8 +272,8 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
     Ok(())
 }
 
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before any role change runs.
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any role change runs.
 #[tokio::test]
 async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let admin = test_account_id(41);

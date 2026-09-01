@@ -18,12 +18,8 @@ use miden_standards::errors::standards::{
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{
-    FaucetMetadataConfig,
-    FaucetMetadataConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -275,8 +271,8 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
     Ok(())
 }
 
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before any metadata change runs.
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any metadata change runs.
 #[tokio::test]
 async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let owner = owner_id();

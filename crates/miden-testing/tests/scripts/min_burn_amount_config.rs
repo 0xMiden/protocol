@@ -31,7 +31,8 @@ use miden_standards::errors::standards::{
     ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
 };
-use miden_standards::note::{MinBurnAmountConfigNote, NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::note::config::MinBurnAmountConfigNote;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -227,8 +228,8 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
     Ok(())
 }
 
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before the threshold changes.
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before the threshold changes.
 #[tokio::test]
 async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);

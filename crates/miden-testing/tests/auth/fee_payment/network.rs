@@ -20,7 +20,8 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{NetworkAccountConfigNote, TxFeeNote};
+use miden_standards::note::TxFeeNote;
+use miden_standards::note::config::NetworkAccountConfigNote;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 

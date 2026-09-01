@@ -19,12 +19,8 @@ use miden_standards::errors::standards::{
     ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_BLOCKLIST_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{
-    BlocklistConfig,
-    BlocklistConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::config::{BlocklistConfig, BlocklistConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -263,8 +259,8 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
     Ok(())
 }
 
-/// The management action must stay publicly auditable: a private note carrying the same script and
-/// storage as a legitimate config note is rejected before the list changes.
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before the list changes.
 #[tokio::test]
 async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
