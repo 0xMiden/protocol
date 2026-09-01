@@ -1,6 +1,5 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_tx::Prover;
 use miden_tx_batch::{BatchExecutor, BatchVerifier, BatchVerifierError, LocalBatchProver};
 
 use super::proposed_batch::setup_chain;
@@ -17,9 +16,7 @@ fn batch_verifier_accepts_freshly_proven_batch() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
-    let proven = LocalBatchProver::new(Prover::default())
-        .prove(executed)
-        .context("batch proving failed")?;
+    let proven = LocalBatchProver::default().prove(executed).context("batch proving failed")?;
 
     let security_level = proven.proof_security_level();
 
@@ -41,7 +38,7 @@ fn batch_verifier_rejects_dummy_proof() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let proven = LocalBatchProver::new(Prover::default()).prove_dummy(batch)?;
+    let proven = LocalBatchProver::default().prove_dummy(batch)?;
 
     let err = BatchVerifier::new(0).verify(&proven).unwrap_err();
     assert_matches!(err, BatchVerifierError::BatchVerificationFailed(_));
@@ -55,7 +52,7 @@ fn batch_verifier_rejects_incomplete_proof() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let proven = LocalBatchProver::new(Prover::default()).prove_dummy_deferred(batch)?;
+    let proven = LocalBatchProver::default().prove_dummy_deferred(batch)?;
 
     let err = BatchVerifier::new(0).verify(&proven).unwrap_err();
     assert_matches!(err, BatchVerifierError::IncompleteProof);

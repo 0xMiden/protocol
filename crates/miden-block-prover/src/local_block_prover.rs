@@ -1,5 +1,6 @@
 use miden_processor::ExecutionError;
 use miden_protocol::vm::ExecutionProof;
+use miden_prover::HashFunction::Poseidon2;
 use miden_prover::Prover;
 
 use crate::{BlockProverError, ExecutedBlock};
@@ -20,9 +21,17 @@ use crate::{BlockProverError, ExecutedBlock};
 /// block's account updates, notes or nullifiers, so a block whose contents were mutated would
 /// still carry a valid proof. This must therefore not be relied on at a trust boundary until the
 /// kernel verification logic that emits and binds the real commitments lands.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct LocalBlockProver {
     prover: Prover,
+}
+
+impl Default for LocalBlockProver {
+    fn default() -> Self {
+        Self {
+            prover: Prover::new().with_hash_fn(Poseidon2),
+        }
+    }
 }
 
 impl LocalBlockProver {

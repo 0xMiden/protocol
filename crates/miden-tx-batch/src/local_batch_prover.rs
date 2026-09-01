@@ -3,6 +3,7 @@ use alloc::string::ToString;
 use miden_processor::ExecutionError;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
+use miden_prover::HashFunction::Poseidon2;
 use miden_prover::{ExecutionProof, Prover};
 
 use crate::ExecutedBatch;
@@ -14,9 +15,17 @@ use crate::ExecutedBatch;
 ///
 /// Proves an [`ExecutedBatch`] (produced by [`BatchExecutor`](crate::BatchExecutor)) into a
 /// [`ProvenBatch`] carrying an [`ExecutionProof`] over the batch's public commitments.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct LocalBatchProver {
     prover: Prover,
+}
+
+impl Default for LocalBatchProver {
+    fn default() -> Self {
+        Self {
+            prover: Prover::new().with_hash_fn(Poseidon2),
+        }
+    }
 }
 
 impl LocalBatchProver {
