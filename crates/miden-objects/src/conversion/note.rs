@@ -393,7 +393,7 @@ impl TryFrom<proto::note::NoteHeader> for NoteHeader {
 
     fn try_from(value: proto::note::NoteHeader) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let details_commitment_word: Word = required!(decoder, value.details_commitment)?;
+        let details_commitment_word = required!(decoder, value.details_commitment)?;
         let metadata: NoteMetadata = required!(decoder, value.metadata)?;
 
         Ok(NoteHeader::new(
