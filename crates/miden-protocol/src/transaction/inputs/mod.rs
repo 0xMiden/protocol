@@ -136,12 +136,11 @@ impl TransactionInputs {
     /// Replaces the transaction inputs and assigns the given asset witnesses.
     pub fn with_asset_witnesses(mut self, witnesses: Vec<AssetWitness>) -> Self {
         for witness in witnesses {
-            let store = witness.authenticated_nodes().collect();
-            let smt_proof = SmtProof::from(witness);
-            let map_entry =
-                (smt_proof.leaf().hash(), smt_proof.leaf().to_elements().collect::<Vec<_>>());
-            self.advice_inputs
-                .extend(AdviceInputs::default().with_merkle_store(store).with_map([map_entry]));
+            let leaf = witness.proof().leaf();
+            let witness_inputs = AdviceInputs::default()
+                .with_merkle_store(witness.authenticated_nodes().collect())
+                .with_map([(leaf.hash(), leaf.to_elements().collect())]);
+            self.advice_inputs.extend(witness_inputs);
         }
 
         self
