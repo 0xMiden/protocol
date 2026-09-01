@@ -2,7 +2,7 @@ use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{Note, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -18,6 +18,7 @@ use miden_standards::account::auth::{
     Approver,
     ApproverSet,
     FeeConversionInfo,
+    SponsorshipPolicy,
     commit_fee_conversion_info,
 };
 use miden_standards::account::wallets::BasicWallet;
@@ -27,12 +28,13 @@ use miden_standards::errors::standards::{
     ERR_FEE_PAYMENT_EXCEEDS_BOUND,
     ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE,
 };
-use miden_standards::note::{P2idNote, TxFeeNote};
+use miden_standards::note::{FeeSponsorshipNote, P2idNote, TxFeeNote};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 
 use super::super::multisig::setup_keys_and_authenticators_with_scheme;
+use super::sponsorship::{FEE_AMOUNT, fee_asset, network_account, p2id_network_note};
 use super::{
     FALCON_512_POSEIDON2_AUTH_CYCLES,
     MULTISIG_AUTH_BASE_CYCLES,
@@ -593,6 +595,114 @@ async fn multisig_smart_cannot_drain_the_vault_via_the_fee_payment() -> anyhow::
 
         assert_transaction_executor_error!(result, expected_error);
     }
+
+    Ok(())
+}
+
+/// A smart multisig that creates a network output note must sponsor it, funding a FEE_SPONSORSHIP
+/// note from its own vault alongside its TX_FEE note.
+///
+/// The bounded flow this component uses spells the sponsorship out as its own call, where the
+/// unbounded `fee::pay_fee` bundles it into one procedure. Nothing else here creates a network
+/// note under this component, so dropping that call is otherwise invisible: every other test
+/// transacts without network notes, and their paid-fee assertions still hold. Removing the call
+/// fails this test alone.
+#[tokio::test]
+async fn multisig_smart_sponsors_its_network_output_note() -> anyhow::Result<()> {
+    let mut rng = RandomCoin::new(Word::from([91u32, 92, 93, 94]));
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    // the fixture funds the account with the fee asset only, so the network note carries some of it
+    let payload_asset: Asset = FungibleAsset::new(fee_faucet_id, 7)?.into();
+
+    let MultisigSmartFixture { mut builder, account, signers } =
+        multisig_smart_fixture(2, VERIFICATION_BASE_FEE, vec![])?;
+
+    // the target network account prices the P2ID script root, which is what the sponsorship pays
+    let target = network_account(
+        [5; 32],
+        [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
+        &[(P2idNote::script_root(), FEE_AMOUNT)],
+        [],
+        SponsorshipPolicy::default(),
+    )?;
+    builder.add_account(target.clone())?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let network_note = p2id_network_note(account.id(), target.id(), payload_asset, &mut rng)?;
+    let send_notes_script = SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(network_note.clone())],
+    )?;
+
+    let (args, advice_value) = commit_fee_conversion_info(
+        FeeConversionInfo::one_to_one(fee_faucet_id),
+        Word::from([95u32, 96, 97, 98]),
+    );
+
+    let foreign_target = mock_chain.get_foreign_account_inputs(target.id())?;
+    let mock_tx_builder = mock_chain
+        .build_transaction(account.id())
+        .foreign_accounts([foreign_target])
+        .expected_output_note(RawOutputNote::Full(network_note.clone()))
+        .send_notes_script(&send_notes_script)
+        .auth_args(args)
+        .add_advice_map_entry(args, advice_value);
+
+    // Execute once unsigned to obtain the summary that every signer must sign.
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let mut signed_builder = mock_tx_builder;
+    for (public_key, authenticator) in &signers {
+        let signature =
+            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
+        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
+    }
+
+    let executed_transaction = signed_builder.build()?.execute().await?;
+
+    // the network note, its sponsorship note and the account's own fee note
+    let output_notes = executed_transaction.output_notes();
+    assert_eq!(output_notes.num_notes(), 3);
+
+    let sponsorship = output_notes
+        .iter()
+        .find(|note| {
+            note.recipient().map(|recipient| recipient.script().root())
+                == Some(FeeSponsorshipNote::script_root())
+        })
+        .expect("the smart multisig should sponsor the network note it created");
+    let sponsorship_assets: Vec<Asset> = sponsorship.assets().iter().copied().collect();
+    assert_eq!(sponsorship_assets, vec![fee_asset(FEE_AMOUNT)?]);
+    assert_eq!(sponsorship.metadata().tag(), NoteTag::with_account_target(target.id()));
+
+    // the account still pays its own fee, and it still covers what the transaction cost
+    let fee_note = output_notes
+        .iter()
+        .find(|note| note.metadata().tag() == TxFeeNote::TAG)
+        .expect("the smart multisig should pay its own fee note");
+    let paid = fee_note
+        .assets()
+        .iter()
+        .next()
+        .expect("the fee note should carry an asset")
+        .unwrap_fungible();
+    assert!(
+        paid.amount() >= executed_transaction.compute_fee(),
+        "paid fee {} should cover the required fee {}",
+        paid.amount(),
+        executed_transaction.compute_fee(),
+    );
 
     Ok(())
 }

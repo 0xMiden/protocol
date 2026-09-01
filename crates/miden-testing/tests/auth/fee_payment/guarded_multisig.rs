@@ -1,3 +1,4 @@
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{AccountProcedureRoot, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -7,7 +8,9 @@ use miden_protocol::note::{
     NoteAssets,
     NoteRecipient,
     NoteStorage,
+    NoteTag,
     NoteType,
+    PartialNote,
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
@@ -23,6 +26,7 @@ use miden_standards::account::auth::{
     AuthGuardedMultisig,
     FeeConversionInfo,
     GuardianConfig,
+    SponsorshipPolicy,
     commit_fee_conversion_info,
 };
 use miden_standards::code_builder::CodeBuilder;
@@ -31,12 +35,15 @@ use miden_standards::errors::standards::{
     ERR_FEE_PAYMENT_EXCEEDS_BOUND,
     ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE,
 };
+use miden_standards::note::{FeeSponsorshipNote, P2idNote, TxFeeNote};
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
 use super::super::multisig::setup_keys_and_authenticators_with_scheme;
+use super::sponsorship::{FEE_AMOUNT, fee_asset, network_account, p2id_network_note};
 use super::{
     FALCON_512_POSEIDON2_AUTH_CYCLES,
     MULTISIG_AUTH_BASE_CYCLES,
@@ -558,6 +565,133 @@ async fn guarded_multisig_rotation_cannot_pay_the_fee_in_a_foreign_asset() -> an
     .await?;
 
     assert_transaction_executor_error!(result, ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE);
+
+    Ok(())
+}
+
+/// A guarded multisig that creates a network output note must sponsor it, funding a
+/// FEE_SPONSORSHIP note from its own vault alongside its TX_FEE note.
+///
+/// The bounded flow this component uses spells the sponsorship out as its own call, where the
+/// unbounded `fee::pay_fee` bundles it into one procedure. Nothing else here creates a network
+/// note under this component, so dropping that call is otherwise invisible: every other test
+/// transacts without network notes, and their paid-fee assertions still hold. Removing the call
+/// fails this test alone.
+#[tokio::test]
+async fn guarded_multisig_sponsors_its_network_output_note() -> anyhow::Result<()> {
+    let mut rng = RandomCoin::new(Word::from([81u32, 82, 83, 84]));
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    // the payload the network note carries, issued by a faucet other than the fee faucet so the
+    // sponsorship's fee-asset funding is unambiguous
+    let payload_asset: Asset = FungibleAsset::mock(50);
+
+    let fixture = guarded_fixture(2, AuthScheme::EcdsaK256Keccak)?;
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::GuardedMultisig {
+            approver_set: fixture.approver_set,
+            guardian_config: fixture.guardian_config,
+            proc_threshold_map: vec![],
+        },
+        [fee_asset(1_000_000)?, payload_asset],
+    )?;
+
+    // the target network account prices the P2ID script root, which is what the sponsorship pays
+    let target = network_account(
+        [4; 32],
+        [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
+        &[(P2idNote::script_root(), FEE_AMOUNT)],
+        [],
+        SponsorshipPolicy::default(),
+    )?;
+    builder.add_account(target.clone())?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let network_note = p2id_network_note(account.id(), target.id(), payload_asset, &mut rng)?;
+    let send_notes_script = SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(network_note.clone())],
+    )?;
+
+    let (args, advice_value) = commit_fee_conversion_info(
+        FeeConversionInfo::one_to_one(fee_faucet_id),
+        Word::from([85u32, 86, 87, 88]),
+    );
+
+    let foreign_target = mock_chain.get_foreign_account_inputs(target.id())?;
+    let mock_tx_builder = mock_chain
+        .build_transaction(account.id())
+        .foreign_accounts([foreign_target])
+        .expected_output_note(RawOutputNote::Full(network_note.clone()))
+        .send_notes_script(&send_notes_script)
+        .auth_args(args)
+        .add_advice_map_entry(args, advice_value);
+
+    // Execute once unsigned to obtain the summary that every signer must sign.
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let mut signed_builder = mock_tx_builder;
+    for (public_key, authenticator) in &fixture.signers {
+        let signature =
+            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
+        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
+    }
+    let guardian_signature = fixture
+        .guardian_authenticator
+        .get_signature(fixture.guardian_public_key.to_commitment(), &signing_inputs)
+        .await?;
+    signed_builder = signed_builder.add_signature(
+        fixture.guardian_public_key.to_commitment(),
+        msg,
+        guardian_signature,
+    );
+
+    let executed_transaction = signed_builder.build()?.execute().await?;
+
+    // the network note, its sponsorship note and the account's own fee note
+    let output_notes = executed_transaction.output_notes();
+    assert_eq!(output_notes.num_notes(), 3);
+
+    let sponsorship = output_notes
+        .iter()
+        .find(|note| {
+            note.recipient().map(|recipient| recipient.script().root())
+                == Some(FeeSponsorshipNote::script_root())
+        })
+        .expect("the guarded multisig should sponsor the network note it created");
+    let sponsorship_assets: Vec<Asset> = sponsorship.assets().iter().copied().collect();
+    assert_eq!(sponsorship_assets, vec![fee_asset(FEE_AMOUNT)?]);
+    assert_eq!(sponsorship.metadata().tag(), NoteTag::with_account_target(target.id()));
+
+    // the account still pays its own fee, and it still covers what the transaction cost
+    let fee_note = output_notes
+        .iter()
+        .find(|note| note.metadata().tag() == TxFeeNote::TAG)
+        .expect("the guarded multisig should pay its own fee note");
+    let paid = fee_note
+        .assets()
+        .iter()
+        .next()
+        .expect("the fee note should carry an asset")
+        .unwrap_fungible();
+    assert!(
+        paid.amount() >= executed_transaction.compute_fee(),
+        "paid fee {} should cover the required fee {}",
+        paid.amount(),
+        executed_transaction.compute_fee(),
+    );
 
     Ok(())
 }
