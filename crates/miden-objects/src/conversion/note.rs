@@ -2,7 +2,6 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_protocol::asset::Asset;
-use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -93,7 +92,7 @@ impl TryFrom<proto::note::NoteMetadataV1> for NoteMetadata {
 
         let partial = decode_partial_note_metadata_v1(sender, note_type, tag)?;
         let decoder = MessageDecoder::<proto::note::NoteMetadataV1>::default();
-        let attachments_commitment: Word = required!(decoder, attachments_commitment)?;
+        let attachments_commitment = required!(decoder, attachments_commitment)?;
 
         if attachment_schemes.len() > NoteAttachments::MAX_COUNT {
             return Err(ConversionError::message("too many attachment schemes"));
@@ -360,11 +359,11 @@ impl TryFrom<&proto::note::NoteInclusionProof> for (NoteId, NoteInclusionProof) 
     fn try_from(
         proof: &proto::note::NoteInclusionProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
+        let proof = proof.clone();
         let decoder = proof.decoder();
-        let inclusion_path: SparseMerklePath =
-            decoder.decode_field("inclusion_path", proof.inclusion_path.clone())?;
-        let note_id: Word = decoder.decode_field("note_id", proof.note_id.clone())?;
-        let block_num = decoder.decode_field("block_num", proof.block_num).context("block_num")?;
+        let inclusion_path = required!(decoder, proof.inclusion_path)?;
+        let note_id = required!(decoder, proof.note_id)?;
+        let block_num = required!(decoder, proof.block_num).context("block_num")?;
 
         Ok((
             NoteId::from_raw(note_id),
@@ -482,7 +481,8 @@ fn decode_partial_note_metadata_v1(
 fn decode_note_attachments<M: prost::Message>(
     attachments: Option<proto::note::NoteAttachments>,
 ) -> Result<NoteAttachments, ConversionError> {
-    MessageDecoder::<M>::default().decode_field("note_attachments", attachments)
+    let decoder = MessageDecoder::<M>::default();
+    required!(decoder, attachments)
 }
 
 /// Decodes structured note details, optionally allowing the field to be absent.

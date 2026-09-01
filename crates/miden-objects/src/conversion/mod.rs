@@ -22,18 +22,6 @@ impl<M: prost::Message> Default for MessageDecoder<M> {
 }
 
 impl<M: prost::Message> MessageDecoder<M> {
-    pub(crate) fn decode_field<T, U>(
-        &self,
-        name: &'static str,
-        value: Option<T>,
-    ) -> Result<U, ConversionError>
-    where
-        T: TryInto<U>,
-        T::Error: Into<ConversionError>,
-    {
-        self.required(name, value)
-    }
-
     pub(crate) fn required<T, U>(
         &self,
         name: &'static str,

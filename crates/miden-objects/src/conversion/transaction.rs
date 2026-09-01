@@ -145,9 +145,6 @@ impl TryFrom<proto::transaction::TransactionId> for TransactionId {
     }
 }
 
-// NULLIFIER
-// ================================================================================================
-
 // INPUT NOTE COMMITMENT
 // ================================================================================================
 
@@ -173,8 +170,7 @@ impl TryFrom<proto::transaction::InputNoteCommitment> for InputNoteCommitment {
         let decoder = value.decoder();
         let nullifier = Nullifier::from_raw(required!(decoder, value.nullifier)?);
 
-        let header: Option<miden_protocol::note::NoteHeader> =
-            value.header.map(TryInto::try_into).transpose().context("header")?;
+        let header = value.header.map(TryInto::try_into).transpose().context("header")?;
 
         Ok(InputNoteCommitment::from_parts_unchecked(nullifier, header))
     }
@@ -207,8 +203,8 @@ impl TryFrom<proto::transaction::TransactionHeader> for TransactionHeader {
 
     fn try_from(header: proto::transaction::TransactionHeader) -> Result<Self, Self::Error> {
         let decoder = header.decoder();
-        let transmitted_id: TransactionId = required!(decoder, header.transaction_id)?;
-        let account_id: AccountId = required!(decoder, header.account_id)?;
+        let transmitted_id = required!(decoder, header.transaction_id)?;
+        let account_id = required!(decoder, header.account_id)?;
         let initial_state_commitment = required!(decoder, header.initial_state_commitment)?;
         let final_state_commitment = required!(decoder, header.final_state_commitment)?;
         let input_notes = header

@@ -103,8 +103,7 @@ impl TryFrom<proto::primitives::MmrDelta> for MmrDelta {
             .collect::<Result<_, _>>()
             .context("update_data")?;
 
-        let forest_size: usize =
-            value.forest.try_into().context("forest size does not fit in usize")?;
+        let forest_size = value.forest.try_into().context("forest size does not fit in usize")?;
         let forest = Forest::new(forest_size).context("forest size out of range")?;
 
         Ok(MmrDelta { forest, data })
@@ -129,12 +128,12 @@ impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
                 Ok(Self::new_empty(LeafIndex::new_max_depth(leaf_index)))
             },
             proto::primitives::smt_leaf::Leaf::Single(entry) => {
-                let (key, value): (Word, Word) = entry.try_into().context("entry")?;
+                let (key, value) = entry.try_into().context("entry")?;
 
                 Ok(SmtLeaf::new_single(key, value))
             },
             proto::primitives::smt_leaf::Leaf::Multiple(entries) => {
-                let domain_entries: Vec<(Word, Word)> = entries
+                let domain_entries = entries
                     .entries
                     .into_iter()
                     .map(TryInto::try_into)
@@ -171,8 +170,8 @@ impl TryFrom<proto::primitives::SmtLeafEntry> for (Word, Word) {
 
     fn try_from(entry: proto::primitives::SmtLeafEntry) -> Result<Self, Self::Error> {
         let decoder = entry.decoder();
-        let key: Word = required!(decoder, entry.key)?;
-        let value: Word = required!(decoder, entry.value)?;
+        let key = required!(decoder, entry.key)?;
+        let value = required!(decoder, entry.value)?;
 
         Ok((key, value))
     }
@@ -195,8 +194,8 @@ impl TryFrom<proto::primitives::SmtOpening> for SmtProof {
 
     fn try_from(opening: proto::primitives::SmtOpening) -> Result<Self, Self::Error> {
         let decoder = opening.decoder();
-        let path: SparseMerklePath = required!(decoder, opening.path)?;
-        let leaf: SmtLeaf = required!(decoder, opening.leaf)?;
+        let path = required!(decoder, opening.path)?;
+        let leaf = required!(decoder, opening.leaf)?;
 
         Ok(SmtProof::new(path, leaf)?)
     }

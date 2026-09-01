@@ -2,7 +2,7 @@ use alloc::format;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::{AccountId, AccountUpdateDetails};
+use miden_protocol::account::AccountUpdateDetails;
 use miden_protocol::block::{
     BlockAccountUpdate,
     BlockBody,
@@ -196,7 +196,7 @@ impl TryFrom<proto::blockchain::BlockHeaderV1> for BlockHeader {
 
     fn try_from(value: proto::blockchain::BlockHeaderV1) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let block_num: BlockNumber = required!(decoder, value.block_num).context("block_num")?;
+        let block_num = required!(decoder, value.block_num).context("block_num")?;
         let prev_block_commitment = required!(decoder, value.prev_block_commitment)?;
         let chain_commitment = required!(decoder, value.chain_commitment)?;
         let account_root = required!(decoder, value.account_root)?;
@@ -343,7 +343,7 @@ impl TryFrom<proto::blockchain::BlockAccountUpdate> for BlockAccountUpdate {
 
     fn try_from(update: proto::blockchain::BlockAccountUpdate) -> Result<Self, Self::Error> {
         let decoder = update.decoder();
-        let account_id: AccountId = required!(decoder, update.account_id)?;
+        let account_id = required!(decoder, update.account_id)?;
         let final_state_commitment = required!(decoder, update.final_state_commitment)?;
         let details: AccountUpdateDetails = required!(decoder, update.details)?;
         BlockAccountUpdate::new(account_id, final_state_commitment, details)
@@ -419,8 +419,8 @@ impl TryFrom<proto::blockchain::SignedBlock> for SignedBlock {
 
     fn try_from(value: proto::blockchain::SignedBlock) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let header: BlockHeader = required!(decoder, value.header)?;
-        let body: BlockBody = required!(decoder, value.body)?;
+        let header = required!(decoder, value.header)?;
+        let body = required!(decoder, value.body)?;
         let signatures = value
             .signatures
             .into_iter()

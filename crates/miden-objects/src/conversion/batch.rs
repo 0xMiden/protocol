@@ -37,7 +37,7 @@ impl TryFrom<proto::transaction::BatchAccountUpdate> for BatchAccountUpdate {
 
     fn try_from(value: proto::transaction::BatchAccountUpdate) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let account_id: AccountId = required!(decoder, value.account_id)?;
+        let account_id = required!(decoder, value.account_id)?;
         let initial_state_commitment = required!(decoder, value.initial_state_commitment)?;
         let final_state_commitment = required!(decoder, value.final_state_commitment)?;
         let details: AccountUpdateDetails = required!(decoder, value.details)?;

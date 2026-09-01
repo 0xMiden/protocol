@@ -163,12 +163,14 @@ impl TryFrom<proto::account::StorageMapPatch> for StorageMapPatch {
         let mut entries = BTreeMap::new();
         for (index, entry) in patch.entries.into_iter().enumerate() {
             let decoder = entry.decoder();
-            let key: Word = required!(decoder, entry.key).context(format!("entries[{index}]"))?;
-            let value = required!(decoder, entry.value).context(format!("entries[{index}]"))?;
-            let key = StorageMapKey::from_raw(key);
+            let entry_context = format!("entries[{index}]");
+            let key = StorageMapKey::from_raw(
+                required!(decoder, entry.key).context(entry_context.clone())?,
+            );
+            let value = required!(decoder, entry.value).context(entry_context.clone())?;
             if entries.insert(key, value).is_some() {
                 return Err(ConversionError::message("duplicate storage map key")
-                    .context(format!("entries[{index}].key")));
+                    .context(format!("{entry_context}.key")));
             }
         }
 
