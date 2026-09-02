@@ -365,7 +365,7 @@ fn kernel_config_rejects_oversized_procedure_list() {
 
 #[test]
 fn protocol_config_reports_the_full_nested_repeated_field_path() {
-    let mut message = proto::protocol_config::ProtocolConfig::from(protocol_config());
+    let mut message = proto::protocol_config::ProtocolConfig::from(dummy_protocol_config());
     message
         .tx_kernel
         .as_mut()

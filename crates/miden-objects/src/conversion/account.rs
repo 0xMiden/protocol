@@ -111,8 +111,7 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
             .into_iter()
             .map(|slot| {
                 let decoder = slot.decoder();
-                let name =
-                    StorageSlotName::new(slot.slot_name).map_err(ConversionError::new)?;
+                let name = StorageSlotName::new(slot.slot_name).map_err(ConversionError::new)?;
                 let slot_type = decode_storage_slot_type(slot.slot_type).context("slot_type")?;
                 let commitment = required!(decoder, slot.commitment)?;
                 Ok(StorageSlotHeader::new(name, slot_type, commitment))

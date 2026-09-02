@@ -23,9 +23,9 @@ prost          = { features = ["derive"], workspace = true }
 
 [build-dependencies]
 miden-protobuf = { features = ["build"], workspace = true }
-prost           = { features = ["derive"], workspace = true }
-prost-build     = { workspace = true }
-protox          = { workspace = true }
+prost          = { features = ["derive"], workspace = true }
+prost-build    = { workspace = true }
+protox         = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }

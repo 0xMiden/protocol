@@ -444,7 +444,7 @@ fn decode_note_metadata(
         *slot = if raw == 0 {
             NoteAttachmentHeader::absent()
         } else {
-            NoteAttachmentHeader::new(NoteAttachmentScheme::new(raw)?)
+            NoteAttachmentHeader::new(NoteAttachmentScheme::new(raw).map_err(ConversionError::new)?)
         };
     }
 

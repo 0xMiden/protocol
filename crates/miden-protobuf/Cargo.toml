@@ -19,6 +19,6 @@ std     = ["prost/std"]
 
 [dependencies]
 miden-protobuf-derive = { optional = true, workspace = true }
-prost                  = { workspace = true }
-prost-build            = { optional = true, workspace = true }
-prost-types            = { optional = true, workspace = true }
+prost                 = { workspace = true }
+prost-build           = { optional = true, workspace = true }
+prost-types           = { optional = true, workspace = true }
