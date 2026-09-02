@@ -1,4 +1,4 @@
-//! Tests for the [`miden_standards::note::ConstantFeePolicyConfigNote`] standardized note,
+//! Tests for the [`miden_standards::note::config::ConstantFeePolicyConfigNote`] standardized note,
 //! which schedules a fee for a note script root by calling the consuming network account's
 //! [`ConstantFeeManager`](miden_standards::account::fees::ConstantFeeManager)
 //! `set_note_fee` procedure.
