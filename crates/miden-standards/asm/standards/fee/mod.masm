@@ -2,11 +2,12 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
 use miden::core::word
+use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::tx
-use {Asset} from miden::protocol::types
+use {AccountId, Asset} from miden::protocol::types
 use miden::standards::assets::fungible_asset
 use miden::standards::fees
 use miden::standards::notes::tx_fee
@@ -17,6 +18,9 @@ use miden::standards::notes::tx_fee
 #! A fee conversion rate, applied to an amount as ceil(amount * num / den). The numerator and
 #! denominator are arbitrary non-zero field elements.
 pub type ConversionRate = struct { num: felt, den: felt }
+
+#! An upper bound on a fee payment, expressed as the fraction num / den of the computed fee.
+pub type FeeBound = struct { num: felt, den: felt }
 
 #! Fee conversion info: the fungible faucet of the payment asset and the conversion rate from the
 #! native fee asset, laid out as [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den].
@@ -80,6 +84,12 @@ const ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO = "fee conversion rate denominato
 const ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO = "fee conversion rate numerator must be non-zero"
 
 const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit into a fungible asset amount"
+
+const ERR_FEE_BOUND_DENOMINATOR_ZERO = "fee bound denominator must be non-zero"
+
+const ERR_FEE_PAYMENT_EXCEEDS_BOUND = "the fee payment exceeds the caller's bound on the computed fee"
+
+const ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE = "the fee payment asset must be issued by the native fee faucet"
 
 # PROCEDURES
 # =================================================================================================
@@ -239,6 +249,63 @@ pub proc convert_amount(amount: felt, rate: ConversionRate) -> felt
     # recombine the limbs into a felt amount
     swap mul.U32_LIMB_MULTIPLIER add
     # => [converted_amount]
+end
+
+#! Asserts that a fee payment is at most bound times the computed fee.
+#!
+#! The bound is an application-level policy; the caller picks the fraction and invokes this between
+#! the fee estimate and the payment.
+#!
+#! The payment faucet is pinned to the native fee asset.
+#!
+#! Inputs:  [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix,
+#!           payment_amount, fee_amount]
+#! Outputs: [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount]
+#!
+#! Where:
+#! - bound_num and bound_den are the numerator and denominator of the largest multiple of the
+#!   computed fee the caller accepts.
+#! - payment_faucet_id_{suffix,prefix} identify the faucet issuing the payment asset.
+#! - payment_amount is the amount about to be paid.
+#! - fee_amount is the fee computed by tx::compute_fee.
+#!
+#! Panics if:
+#! - bound_den is zero.
+#! - the payment faucet is not the transaction's fee faucet.
+#! - payment_amount exceeds fee_amount * bound_num / bound_den.
+#!
+#! Invocation: exec
+pub proc assert_fee_bound(
+    bound: FeeBound,
+    payment_faucet_id: AccountId,
+    payment_amount: felt,
+    fee_amount: felt,
+) -> (payment_faucet_id: AccountId, payment_amount: felt)
+    # a zero denominator would make the bound vacuous
+    dup.1 neq.0 assert.err=ERR_FEE_BOUND_DENOMINATOR_ZERO
+    # => [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
+    #     fee_amount]
+
+    exec.tx::get_fee_faucet_id
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, bound_num, bound_den,
+    #     payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, fee_amount]
+
+    dup.5 dup.5 exec.account_id::eq assert.err=ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE
+    # => [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
+    #     fee_amount]
+
+    # the bound holds iff payment_amount * bound_den <= fee_amount * bound_num; both sides are
+    # computed as 128-bit products, so the comparison is exact and cannot overflow
+    movup.5 u32split movup.2 u32split exec.u64::widening_mul
+    # => [max0, max1, max2, max3, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix,
+    #     payment_amount]
+
+    movup.4 u32split dup.8 u32split exec.u64::widening_mul
+    # => [paid0, paid1, paid2, paid3, max0, max1, max2, max3, payment_faucet_id_suffix,
+    #     payment_faucet_id_prefix, payment_amount]
+
+    swapw exec.u128::lte assert.err=ERR_FEE_PAYMENT_EXCEEDS_BOUND
+    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount]
 end
 
 #! Adds the internal cycle margins of a fee flow to the caller's estimate of remaining
