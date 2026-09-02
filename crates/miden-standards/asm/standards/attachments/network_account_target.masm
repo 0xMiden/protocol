@@ -187,10 +187,17 @@ end
 #! An attachment carrying [`NETWORK_ACCOUNT_TARGET_NO_EXPIRATION`] never expires and this procedure
 #! is a no-op for it.
 #!
-#! Otherwise the procedure applies two bounds, and both are required for the expiration to hold:
-#! - it requires the transaction's reference block to lie strictly before the expiration block, and
-#! - it caps the transaction expiration block delta at the number of blocks left until the
-#!   expiration block, or [`DEFAULT_EXPIRATION_BLOCK_DELTA`] if that is smaller.
+#! Otherwise the expiration is enforced by requiring the transaction's reference block to lie
+#! strictly before the expiration block, so the note can still be consumed anywhere in the window
+#! between the two.
+#!
+#! Proving the transaction within that window is not sufficient on its own, since a transaction can
+#! be included into the chain long after its reference block. The procedure therefore also narrows
+#! the transaction expiration block delta to the smaller of [`DEFAULT_EXPIRATION_BLOCK_DELTA`] and
+#! the blocks left until the expiration block, which keeps the transaction from being included past
+#! that block. The delta is deliberately not widened to the note's full remaining lifetime: a wider
+#! inclusion window would let the note take effect against a more outdated view of the account, and
+#! [`tx::update_expiration_block_delta`] accepts a delta of at most 0xFFFF blocks anyway.
 #!
 #! The attachment is loaded with [`load_attachment`].
 #!
@@ -229,8 +236,8 @@ pub proc assert_not_expired
         sub
         # => [blocks_until_expiration]
 
-        # cap the inclusion window at whichever is smaller: the default delta, or the blocks left
-        # until the expiration block
+        # narrow the inclusion window so the transaction cannot be included past the expiration
+        # block, bounded from above by the default delta
         push.DEFAULT_EXPIRATION_BLOCK_DELTA u32min
         # => [expiration_block_delta]
 
