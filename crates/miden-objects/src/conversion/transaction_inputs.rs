@@ -10,16 +10,6 @@ use miden_protocol::transaction::{InputNote, InputNotes, TransactionInputs};
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
-fn decode_required<M, T, U>(name: &'static str, value: Option<T>) -> Result<U, ConversionError>
-where
-    M: prost::Message,
-    T: TryInto<U>,
-    T::Error: Into<ConversionError>,
-{
-    let value = value.ok_or_else(|| ConversionError::missing_field::<M>(name).context(name))?;
-    value.try_into().map_err(Into::into).context(name)
-}
-
 impl From<&InputNote> for proto::transaction::InputNote {
     fn from(value: &InputNote) -> Self {
         use proto::transaction::input_note::Note as ProtoInputNote;
@@ -61,15 +51,9 @@ impl TryFrom<proto::transaction::InputNote> for InputNote {
 fn decode_authenticated_input_note(
     authenticated: proto::transaction::AuthenticatedInputNote,
 ) -> Result<InputNote, ConversionError> {
-    let note: Note = decode_required::<proto::transaction::AuthenticatedInputNote, _, _>(
-        "note",
-        authenticated.note,
-    )?;
-    let proof_message: proto::note::NoteInclusionProof = decode_required::<
-        proto::transaction::AuthenticatedInputNote,
-        _,
-        _,
-    >("proof", authenticated.proof)?;
+    let decoder = authenticated.decoder();
+    let note: Note = required!(decoder, authenticated.note)?;
+    let proof_message: proto::note::NoteInclusionProof = required!(decoder, authenticated.proof)?;
     let (proof_note_id, proof): (NoteId, NoteInclusionProof) =
         (&proof_message).try_into().context("proof")?;
     if proof_note_id != note.id() {
@@ -147,34 +131,14 @@ impl TryFrom<proto::transaction::TransactionInputsV1> for TransactionInputs {
     type Error = ConversionError;
 
     fn try_from(value: proto::transaction::TransactionInputsV1) -> Result<Self, Self::Error> {
-        let account = decode_required::<proto::transaction::TransactionInputsV1, _, _>(
-            "account",
-            value.account,
-        )?;
-        let block_header = decode_required::<proto::transaction::TransactionInputsV1, _, _>(
-            "block_header",
-            value.block_header,
-        )?;
-        let protocol_config = decode_required::<proto::transaction::TransactionInputsV1, _, _>(
-            "protocol_config",
-            value.protocol_config,
-        )?;
-        let partial_blockchain = decode_required::<proto::transaction::TransactionInputsV1, _, _>(
-            "partial_blockchain",
-            value.partial_blockchain,
-        )?;
-        let input_notes = decode_required::<proto::transaction::TransactionInputsV1, _, _>(
-            "input_notes",
-            value.input_notes,
-        )?;
-        let tx_args = decode_required::<proto::transaction::TransactionInputsV1, _, _>(
-            "tx_args",
-            value.tx_args,
-        )?;
-        let advice_inputs = decode_required::<proto::transaction::TransactionInputsV1, _, _>(
-            "advice_inputs",
-            value.advice_inputs,
-        )?;
+        let decoder = value.decoder();
+        let account = required!(decoder, value.account)?;
+        let block_header = required!(decoder, value.block_header)?;
+        let protocol_config = required!(decoder, value.protocol_config)?;
+        let partial_blockchain = required!(decoder, value.partial_blockchain)?;
+        let input_notes = required!(decoder, value.input_notes)?;
+        let tx_args = required!(decoder, value.tx_args)?;
+        let advice_inputs = required!(decoder, value.advice_inputs)?;
         let foreign_account_code = value
             .foreign_account_code
             .into_iter()
@@ -187,18 +151,19 @@ impl TryFrom<proto::transaction::TransactionInputsV1> for TransactionInputs {
         let mut foreign_account_slot_names = BTreeMap::new();
         for (index, entry) in value.foreign_account_slot_names.into_iter().enumerate() {
             let decoder = entry.decoder();
-            let slot_id: StorageSlotId = required!(decoder, entry.slot_id)
-                .context(format!("foreign_account_slot_names[{index}]"))?;
+            let slot_name_context = format!("foreign_account_slot_names[{index}]");
+            let slot_id: StorageSlotId =
+                required!(decoder, entry.slot_id).context(&slot_name_context)?;
             let slot_name = StorageSlotName::new(entry.slot_name)
                 .map_err(ConversionError::new)
-                .context(format!("foreign_account_slot_names[{index}].slot_name"))?;
+                .context(format!("{slot_name_context}.slot_name"))?;
             if slot_name.id() != slot_id {
                 return Err(ConversionError::message("storage slot ID does not match slot name")
-                    .context(format!("foreign_account_slot_names[{index}].slot_id")));
+                    .context(format!("{slot_name_context}.slot_id")));
             }
             if foreign_account_slot_names.insert(slot_id, slot_name).is_some() {
                 return Err(ConversionError::message("duplicate foreign account storage slot ID")
-                    .context(format!("foreign_account_slot_names[{index}].slot_id")));
+                    .context(format!("{slot_name_context}.slot_id")));
             }
         }
 

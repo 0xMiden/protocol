@@ -204,18 +204,19 @@ impl TryFrom<proto::primitives::AdviceMap> for AdviceMap {
         let mut entries = BTreeMap::new();
         for (index, entry) in value.entries.into_iter().enumerate() {
             let decoder = entry.decoder();
-            let key: Word = required!(decoder, entry.key).context(format!("entries[{index}]"))?;
+            let entry_context = format!("entries[{index}]");
+            let key = required!(decoder, entry.key).context(&entry_context)?;
             let values = entry
                 .values
                 .into_iter()
                 .enumerate()
                 .map(|(value_index, value)| {
-                    Felt::try_from(value).context(format!("entries[{index}].values[{value_index}]"))
+                    Felt::try_from(value).context(format!("{entry_context}.values[{value_index}]"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             if entries.insert(key, values).is_some() {
                 return Err(ConversionError::message("duplicate advice map key")
-                    .context(format!("entries[{index}].key")));
+                    .context(format!("{entry_context}.key")));
             }
         }
 
@@ -255,12 +256,13 @@ impl TryFrom<proto::primitives::MerkleStore> for MerkleStore {
         let mut nodes = BTreeMap::new();
         for (index, node) in value.nodes.into_iter().enumerate() {
             let decoder = node.decoder();
-            let parent: Word = required!(decoder, node.value).context(format!("nodes[{index}]"))?;
-            let left = required!(decoder, node.left).context(format!("nodes[{index}]"))?;
-            let right = required!(decoder, node.right).context(format!("nodes[{index}]"))?;
+            let node_context = format!("nodes[{index}]");
+            let parent = required!(decoder, node.value).context(&node_context)?;
+            let left = required!(decoder, node.left).context(&node_context)?;
+            let right = required!(decoder, node.right).context(&node_context)?;
             if nodes.insert(parent, (left, right)).is_some() {
                 return Err(ConversionError::message("duplicate Merkle store parent")
-                    .context(format!("nodes[{index}].value")));
+                    .context(format!("{node_context}.value")));
             }
         }
 

@@ -47,7 +47,7 @@ fn transaction_inputs_v1_requires_every_singular_message() {
         let error = TransactionInputs::try_from(message).unwrap_err();
 
         assert!(
-            error.to_string().starts_with(&format!("v1.{field}: field ")),
+            error.to_string().starts_with("v1: field "),
             "unexpected error for {field}: {error}"
         );
         assert!(error.to_string().ends_with(&format!("::{field} is missing")));
@@ -67,13 +67,13 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
     let mut message = common::transaction_inputs_message();
     common::authenticated_input_note(&mut message).note = None;
     let error = TransactionInputs::try_from(message).unwrap_err();
-    assert!(error.to_string().contains("input_notes.notes[0].authenticated"));
+    assert!(error.to_string().starts_with("v1.input_notes.notes[0].authenticated: field "));
     assert!(error.to_string().ends_with("::note is missing"));
 
     let mut message = common::transaction_inputs_message();
     common::authenticated_input_note(&mut message).proof = None;
     let error = TransactionInputs::try_from(message).unwrap_err();
-    assert!(error.to_string().contains("input_notes.notes[0].authenticated"));
+    assert!(error.to_string().starts_with("v1.input_notes.notes[0].authenticated: field "));
     assert!(error.to_string().ends_with("::proof is missing"));
 }
 

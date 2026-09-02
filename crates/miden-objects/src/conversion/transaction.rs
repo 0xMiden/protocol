@@ -84,13 +84,14 @@ impl TryFrom<proto::transaction::TransactionArgs> for TransactionArgs {
         let mut note_args = BTreeMap::new();
         for (index, note_arg) in value.note_args.into_iter().enumerate() {
             let decoder = note_arg.decoder();
+            let note_arg_context = format!("note_args[{index}]");
             let note_id_word: Word =
-                required!(decoder, note_arg.note_id).context(format!("note_args[{index}]"))?;
+                required!(decoder, note_arg.note_id).context(&note_arg_context)?;
             let note_id = NoteId::from_raw(note_id_word);
-            let args = required!(decoder, note_arg.args).context(format!("note_args[{index}]"))?;
+            let args = required!(decoder, note_arg.args).context(&note_arg_context)?;
             if note_args.insert(note_id, args).is_some() {
                 return Err(ConversionError::message("duplicate note argument")
-                    .context(format!("note_args[{index}].note_id")));
+                    .context(format!("{note_arg_context}.note_id")));
             }
         }
         let advice_inputs = required!(decoder, value.advice_inputs)?;

@@ -4,13 +4,13 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{
-    AccountCode,
     AccountHeader,
     AccountId,
     AccountStorageHeader,
     PartialAccount,
     PartialStorage,
     PartialStorageMap,
+    StorageMapKey,
     StorageSlotHeader,
     StorageSlotId,
     StorageSlotName,
@@ -18,7 +18,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetId, PartialVault};
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::crypto::merkle::smt::PartialSmt;
 use miden_protocol::{Felt, Word};
 
 use super::{MessageDecodeExt, required};
@@ -165,14 +164,14 @@ impl TryFrom<proto::account::PartialStorageMap> for PartialStorageMap {
 
     fn try_from(message: proto::account::PartialStorageMap) -> Result<Self, Self::Error> {
         let decoder = message.decoder();
-        let smt: PartialSmt = required!(decoder, message.smt)?;
+        let smt = required!(decoder, message.smt)?;
         let keys = message
             .keys
             .into_iter()
             .enumerate()
             .map(|(index, key)| {
                 Word::try_from(key)
-                    .map(miden_protocol::account::StorageMapKey::from_raw)
+                    .map(StorageMapKey::from_raw)
                     .context(format!("keys[{index}]"))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -211,10 +210,11 @@ impl TryFrom<proto::account::PartialStorage> for PartialStorage {
             .into_iter()
             .enumerate()
             .map(|(index, map)| {
-                let map = PartialStorageMap::try_from(map).context(format!("maps[{index}]"))?;
+                let map_context = format!("maps[{index}]");
+                let map = PartialStorageMap::try_from(map).context(&map_context)?;
                 if !roots.insert(map.root()) {
                     return Err(ConversionError::message("duplicate partial storage map root")
-                        .context(format!("maps[{index}]")));
+                        .context(map_context));
                 }
                 Ok(map)
             })
@@ -247,15 +247,16 @@ impl TryFrom<proto::account::PartialVault> for PartialVault {
 
     fn try_from(message: proto::account::PartialVault) -> Result<Self, Self::Error> {
         let decoder = message.decoder();
-        let smt: PartialSmt = required!(decoder, message.smt)?;
+        let smt = required!(decoder, message.smt)?;
         let asset_ids = message
             .asset_ids
             .into_iter()
             .enumerate()
             .map(|(index, id)| {
+                let asset_id_context = format!("asset_ids[{index}]");
                 Word::try_from(id)
-                    .context(format!("asset_ids[{index}]"))
-                    .and_then(|id| AssetId::try_from(id).context(format!("asset_ids[{index}]")))
+                    .context(&asset_id_context)
+                    .and_then(|id| AssetId::try_from(id).context(asset_id_context))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -288,7 +289,7 @@ impl TryFrom<proto::account::PartialAccount> for PartialAccount {
         let decoder = message.decoder();
         let account_id = required!(decoder, message.account_id)?;
         let nonce = required!(decoder, message.nonce)?;
-        let code: AccountCode = required!(decoder, message.code)?;
+        let code = required!(decoder, message.code)?;
         let storage = required!(decoder, message.storage)?;
         let vault = required!(decoder, message.vault)?;
         let seed = message.seed.map(Word::try_from).transpose().context("seed")?;
