@@ -110,8 +110,8 @@ fn p2id_network_note(
 
 /// Returns whether the output note is a FEE_SPONSORSHIP note.
 fn is_sponsorship_note(note: &RawOutputNote) -> bool {
-    note.recipient().map(|recipient| recipient.script().root())
-        == Some(FeeSponsorshipNote::script_root())
+    note.recipient()
+        .is_some_and(|recipient| recipient.script().root() == FeeSponsorshipNote::script_root())
 }
 
 /// Has a signing wallet send a P2ID network note to a network account that prices the P2ID script
