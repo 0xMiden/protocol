@@ -11,8 +11,8 @@ pub enum BlockProverError {
     BlockKernelExecutionFailed(#[source] ExecutionError),
     #[error("block kernel proving failed")]
     BlockKernelProvingFailed(#[source] ExecutionError),
-    #[error("block kernel execution used precompiles")]
-    BlockKernelUsedPrecompiles,
+    #[error("block proof contains precompiles")]
+    BlockProofContainsPrecompiles,
     #[error("block kernel produced an invalid output stack")]
     BlockKernelOutputInvalid(#[source] BlockOutputError),
 }

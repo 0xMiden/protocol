@@ -53,7 +53,7 @@ impl LocalBatchProver {
             .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
 
         if proof_has_precompiles(&proof) {
-            return Err(ProvenBatchError::BatchKernelUsedPrecompiles);
+            return Err(ProvenBatchError::BatchProofContainsPrecompiles);
         }
 
         Self::build_proven_batch(proposed_batch, proof)

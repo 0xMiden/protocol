@@ -55,7 +55,7 @@ impl LocalBlockProver {
             .map_err(BlockProverError::BlockKernelProvingFailed)?;
 
         if proof_has_precompiles(&proof) {
-            return Err(BlockProverError::BlockKernelUsedPrecompiles);
+            return Err(BlockProverError::BlockProofContainsPrecompiles);
         }
 
         Ok(proof)
