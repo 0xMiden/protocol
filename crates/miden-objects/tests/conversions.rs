@@ -142,7 +142,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
     let faucet_id = Some(FungibleAsset::mock_issuer().into());
 
     let unspecified = AssetId::try_from(proto::asset::AssetId {
-        asset_class: Some(asset_class.clone()),
+        asset_class: Some(asset_class),
         composition: proto::asset::AssetComposition::Unspecified as i32,
         faucet_id: faucet_id.clone(),
     })
@@ -150,7 +150,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
     assert_eq!(unspecified.to_string(), "composition: asset composition is unspecified");
 
     let unknown = AssetId::try_from(proto::asset::AssetId {
-        asset_class: Some(asset_class.clone()),
+        asset_class: Some(asset_class),
         composition: 4,
         faucet_id: faucet_id.clone(),
     })
