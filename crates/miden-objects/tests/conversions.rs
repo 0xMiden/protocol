@@ -83,6 +83,10 @@ fn fungible_asset_roundtrips_through_structured_protobuf() {
     let encoded = proto::asset::Asset::from(asset);
 
     assert_eq!(
+        encoded.asset_id.as_ref().unwrap().version,
+        proto::asset::AssetVersion::V1 as i32
+    );
+    assert_eq!(
         encoded.asset_id.as_ref().unwrap().composition,
         proto::asset::AssetComposition::Fungible as i32
     );
@@ -124,10 +128,15 @@ fn structured_asset_conversion_requires_message_fields() {
         "field miden_objects::proto::asset::AssetClass::prefix is missing"
     );
 
-    let asset_id_error = AssetId::try_from(proto::asset::AssetId::default()).unwrap_err();
+    let asset_id_error = AssetId::try_from(proto::asset::AssetId {
+        version: proto::asset::AssetVersion::V1 as i32,
+        ..Default::default()
+    })
+    .unwrap_err();
     assert!(asset_id_error.to_string().ends_with("::asset_class is missing"));
 
     let faucet_id_error = AssetId::try_from(proto::asset::AssetId {
+        version: proto::asset::AssetVersion::V1 as i32,
         asset_class: Some(proto::asset::AssetClass {
             suffix: Some(Felt::ZERO.into()),
             prefix: Some(Felt::ZERO.into()),
@@ -143,6 +152,7 @@ fn structured_asset_conversion_requires_message_fields() {
 
     let value_error = Asset::try_from(proto::asset::Asset {
         asset_id: Some(proto::asset::AssetId {
+            version: proto::asset::AssetVersion::V1 as i32,
             asset_class: Some(proto::asset::AssetClass {
                 suffix: Some(Felt::ZERO.into()),
                 prefix: Some(Felt::ZERO.into()),
@@ -165,6 +175,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
     let faucet_id = Some(FungibleAsset::mock_issuer().into());
 
     let unspecified = AssetId::try_from(proto::asset::AssetId {
+        version: proto::asset::AssetVersion::V1 as i32,
         asset_class: Some(asset_class),
         composition: proto::asset::AssetComposition::Unspecified as i32,
         faucet_id: faucet_id.clone(),
@@ -173,6 +184,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
     assert_eq!(unspecified.to_string(), "composition: asset composition is unspecified");
 
     let unknown = AssetId::try_from(proto::asset::AssetId {
+        version: proto::asset::AssetVersion::V1 as i32,
         asset_class: Some(asset_class),
         composition: 4,
         faucet_id: faucet_id.clone(),
@@ -181,6 +193,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
     assert_eq!(unknown.to_string(), "composition: unknown asset composition 4");
 
     let custom = AssetId::try_from(proto::asset::AssetId {
+        version: proto::asset::AssetVersion::V1 as i32,
         asset_class: Some(asset_class),
         composition: proto::asset::AssetComposition::Custom as i32,
         faucet_id,
@@ -195,6 +208,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
 #[test]
 fn structured_asset_conversion_rejects_nonzero_fungible_class() {
     let error = AssetId::try_from(proto::asset::AssetId {
+        version: proto::asset::AssetVersion::V1 as i32,
         asset_class: Some(proto::asset::AssetClass {
             suffix: Some(Felt::ONE.into()),
             prefix: Some(Felt::ZERO.into()),
@@ -214,6 +228,7 @@ fn structured_asset_conversion_rejects_nonzero_fungible_class() {
 fn structured_asset_conversion_rejects_invalid_fungible_values() {
     let error = Asset::try_from(proto::asset::Asset {
         asset_id: Some(proto::asset::AssetId {
+            version: proto::asset::AssetVersion::V1 as i32,
             asset_class: Some(proto::asset::AssetClass {
                 suffix: Some(Felt::ZERO.into()),
                 prefix: Some(Felt::ZERO.into()),
@@ -229,6 +244,34 @@ fn structured_asset_conversion_rejects_invalid_fungible_values() {
         error.source().and_then(|source| source.downcast_ref::<AssetError>()),
         Some(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_))
     ));
+}
+
+#[test]
+fn asset_id_protobuf_rejects_unspecified_version_before_payload_fields() {
+    let error = AssetId::try_from(proto::asset::AssetId {
+        version: proto::asset::AssetVersion::Unspecified as i32,
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert_eq!(error.to_string(), "version: asset id version is unspecified");
+}
+
+#[test]
+fn asset_id_protobuf_preserves_unknown_version_error_sources() {
+    for version in [i32::MAX, i32::MIN] {
+        let error =
+            AssetId::try_from(proto::asset::AssetId { version, ..Default::default() }).unwrap_err();
+
+        assert_eq!(error.to_string(), format!("version: unknown asset id version {version}"));
+        assert!(matches!(
+            error
+                .source()
+                .and_then(Error::source)
+                .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
+            Some(prost::UnknownEnumValue(value)) if *value == version
+        ));
+    }
 }
 
 #[test]
