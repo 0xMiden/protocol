@@ -207,13 +207,17 @@ impl MockChainBuilder {
             .map(|account| {
                 let account_id = account.id();
                 let account_commitment = account.to_commitment();
-                let account_patch = AccountPatch::try_from(account)
-                    .expect("chain builder should only store existing accounts without seeds");
-                let update_details = AccountUpdateDetails::Public(account_patch);
+                let update_details = if account_id.is_private() {
+                    AccountUpdateDetails::Private
+                } else {
+                    let account_patch = AccountPatch::try_from(account)
+                        .expect("chain builder should only store existing accounts without seeds");
+                    AccountUpdateDetails::Public(account_patch)
+                };
 
                 BlockAccountUpdate::new(account_id, account_commitment, update_details)
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         let account_tree = AccountTree::with_entries(
             block_account_updates

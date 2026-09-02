@@ -14,7 +14,15 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+use miden_protocol::account::component::{
+    AccountComponentCode,
+    AccountComponentMetadata,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
+    ValueSlotSchema,
+    WordSchema,
+};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -520,20 +528,54 @@ impl TokenPolicyManager {
     ///
     /// The returned schema might not be the exact schema defined in the component manifest: the
     /// asset-callback slots are only installed when at least one send or receive policy is
-    /// configured.
+    /// configured, and when installed they default to the `invoke_*_policy` wrapper roots, which
+    /// are only known once the component code is compiled and so cannot be declared in the
+    /// manifest.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
         let metadata = package_metadata(Self::code());
-        if self.has_transfer_policy() {
-            return metadata;
+        if !self.has_transfer_policy() {
+            return metadata_without_slots(
+                metadata,
+                &[
+                    AssetCallbacks::on_before_asset_added_to_account_slot(),
+                    AssetCallbacks::on_before_asset_added_to_note_slot(),
+                ],
+            );
         }
 
-        metadata_without_slots(
-            metadata,
-            &[
+        let callback_defaults = [
+            (
                 AssetCallbacks::on_before_asset_added_to_account_slot(),
+                Self::invoke_receive_policy_root(),
+            ),
+            (
                 AssetCallbacks::on_before_asset_added_to_note_slot(),
-            ],
-        )
+                Self::invoke_send_policy_root(),
+            ),
+        ];
+        let slots = metadata.storage_schema().iter().map(|(slot_name, schema)| {
+            let schema = match callback_defaults.iter().find(|(name, _)| *name == slot_name) {
+                Some((_, root)) => {
+                    let description = match schema {
+                        StorageSlotSchema::Value(value) => value.description().cloned(),
+                        StorageSlotSchema::Map(_) => None,
+                    };
+                    StorageSlotSchema::Value(ValueSlotSchema::new(
+                        description,
+                        WordSchema::new_simple_with_default(
+                            SchemaType::native_word(),
+                            root.as_word(),
+                        ),
+                    ))
+                },
+                None => schema.clone(),
+            };
+            (slot_name.clone(), schema)
+        });
+        let storage_schema =
+            StorageSchema::new(slots).expect("adding defaults keeps a valid schema valid");
+
+        metadata.with_storage_schema(storage_schema)
     }
 
     /// Returns `true` if at least one send or receive policy is configured, in which case the
