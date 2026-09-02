@@ -50,11 +50,11 @@ fn transaction_inputs_roundtrip_preserves_all_nested_fields_and_ordered_collecti
     let normalized_slot_ids = normalized
         .foreign_account_slot_names
         .iter()
-        .map(|entry| entry.slot_id.clone().unwrap())
+        .map(|entry| entry.slot_id.unwrap())
         .collect::<Vec<_>>();
     assert!(normalized_slot_ids.windows(2).all(|ids| {
-        miden_protocol::account::StorageSlotId::try_from(ids[0].clone()).unwrap()
-            < miden_protocol::account::StorageSlotId::try_from(ids[1].clone()).unwrap()
+        miden_protocol::account::StorageSlotId::try_from(ids[0]).unwrap()
+            < miden_protocol::account::StorageSlotId::try_from(ids[1]).unwrap()
     }));
 
     let decoded_code = actual.foreign_account_code();

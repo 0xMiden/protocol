@@ -135,7 +135,7 @@ fn foreign_slot_names_reject_invalid_names_and_preserve_the_domain_source() {
 fn foreign_slot_names_reject_id_name_mismatches() {
     let mut message = common::dummy_transaction_inputs_message();
     let v1 = common::transaction_inputs_v1_mut(&mut message);
-    v1.foreign_account_slot_names[0].slot_id = v1.foreign_account_slot_names[1].slot_id.clone();
+    v1.foreign_account_slot_names[0].slot_id = v1.foreign_account_slot_names[1].slot_id;
 
     let error = TransactionInputs::try_from(message).unwrap_err();
 
