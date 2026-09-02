@@ -148,11 +148,13 @@ impl TryFrom<proto::blockchain::PartialBlockchain> for PartialBlockchain {
 // BLOCK HEADER
 // ================================================================================================
 
-impl From<&BlockHeader> for proto::blockchain::BlockHeaderV1 {
+impl From<&BlockHeader> for proto::blockchain::BlockHeader {
     fn from(header: &BlockHeader) -> Self {
         Self {
-            prev_block_commitment: Some(header.prev_block_commitment().into()),
+            version: proto::blockchain::BlockVersion::V1 as i32,
+            timestamp: header.timestamp(),
             block_num: Some(header.block_num().into()),
+            prev_block_commitment: Some(header.prev_block_commitment().into()),
             chain_commitment: Some(header.chain_commitment().into()),
             account_root: Some(header.account_root().into()),
             nullifier_root: Some(header.nullifier_root().into()),
@@ -162,17 +164,6 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeaderV1 {
             fee_parameters: Some(header.fee_parameters().into()),
             protocol_config_commitment: Some(header.protocol_config_commitment().into()),
             next_protocol_config: header.next_protocol_config().map(Into::into),
-            timestamp: header.timestamp(),
-        }
-    }
-}
-
-impl From<&BlockHeader> for proto::blockchain::BlockHeader {
-    fn from(header: &BlockHeader) -> Self {
-        use proto::blockchain::block_header::Version;
-
-        Self {
-            version: Some(Version::V1(header.into())),
         }
     }
 }
@@ -191,22 +182,24 @@ impl TryFrom<&proto::blockchain::BlockHeader> for BlockHeader {
     }
 }
 
-impl TryFrom<proto::blockchain::BlockHeaderV1> for BlockHeader {
+impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
     type Error = ConversionError;
 
-    fn try_from(value: proto::blockchain::BlockHeaderV1) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let block_num = required!(decoder, value.block_num).context("block_num")?;
-        let prev_block_commitment = required!(decoder, value.prev_block_commitment)?;
-        let chain_commitment = required!(decoder, value.chain_commitment)?;
-        let account_root = required!(decoder, value.account_root)?;
-        let nullifier_root = required!(decoder, value.nullifier_root)?;
-        let note_root = required!(decoder, value.note_root)?;
-        let tx_commitment = required!(decoder, value.tx_commitment)?;
-        let validator_config = required!(decoder, value.validator_config)?;
-        let fee_parameters = required!(decoder, value.fee_parameters)?;
-        let protocol_config_commitment = required!(decoder, value.protocol_config_commitment)?;
-        let next_protocol_config = value
+    fn try_from(header: proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
+        decode_block_version(header.version).context("version")?;
+
+        let decoder = header.decoder();
+        let block_num = required!(decoder, header.block_num).context("block_num")?;
+        let prev_block_commitment = required!(decoder, header.prev_block_commitment)?;
+        let chain_commitment = required!(decoder, header.chain_commitment)?;
+        let account_root = required!(decoder, header.account_root)?;
+        let nullifier_root = required!(decoder, header.nullifier_root)?;
+        let note_root = required!(decoder, header.note_root)?;
+        let tx_commitment = required!(decoder, header.tx_commitment)?;
+        let validator_config = required!(decoder, header.validator_config)?;
+        let fee_parameters = required!(decoder, header.fee_parameters)?;
+        let protocol_config_commitment = required!(decoder, header.protocol_config_commitment)?;
+        let next_protocol_config = header
             .next_protocol_config
             .map(TryInto::try_into)
             .transpose()
@@ -224,23 +217,21 @@ impl TryFrom<proto::blockchain::BlockHeaderV1> for BlockHeader {
             fee_parameters,
             protocol_config_commitment,
             next_protocol_config,
-            value.timestamp,
+            header.timestamp,
         ))
     }
 }
 
-impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
-    type Error = ConversionError;
-
-    fn try_from(header: proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
-        use proto::blockchain::block_header::Version;
-
-        match header.version {
-            Some(Version::V1(v1)) => v1.try_into().context("v1"),
-            None => {
-                Err(ConversionError::missing_field::<proto::blockchain::BlockHeader>("version"))
-            },
-        }
+fn decode_block_version(version: i32) -> Result<(), ConversionError> {
+    match proto::blockchain::BlockVersion::try_from(version) {
+        Ok(proto::blockchain::BlockVersion::V1) => Ok(()),
+        Ok(proto::blockchain::BlockVersion::Unspecified) => {
+            Err(ConversionError::message("block header version is unspecified"))
+        },
+        Err(error) => Err(ConversionError::with_source(
+            format!("unknown block header version {version}"),
+            error,
+        )),
     }
 }
 
