@@ -8,7 +8,7 @@ use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::account::auth::{
     AuthNetworkAccount,
     FeeConversionInfo,
@@ -108,14 +108,18 @@ fn p2id_network_note(
         .into())
 }
 
-// TESTS
-// ================================================================================================
+/// Returns whether the output note is a FEE_SPONSORSHIP note.
+fn is_sponsorship_note(note: &RawOutputNote) -> bool {
+    note.recipient()
+        .is_some_and(|recipient| recipient.script().root() == FeeSponsorshipNote::script_root())
+}
 
-/// When a fee-paying account creates a network output note, `pay_fee` sponsors it: a
-/// FEE_SPONSORSHIP note funded from the creator's vault is emitted alongside the network note,
-/// carrying exactly the fee the target account's policy prices the note at.
-#[tokio::test]
-async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
+/// Has a signing wallet send a P2ID network note to a network account that prices the P2ID script
+/// root at `target_fee`, paying its fee through `pay_fee`. Returns the executed transaction, the
+/// network note it created and the target's ID.
+async fn send_network_note(
+    target_fee: u64,
+) -> anyhow::Result<(ExecutedTransaction, Note, AccountId)> {
     let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
     // a payload asset issued by a faucet other than the fee faucet, carried by the network note
     let payload_asset: Asset = FungibleAsset::mock(50);
@@ -129,11 +133,11 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
         [fee_asset(1_000_000)?, payload_asset],
     )?;
 
-    // the target network account prices the P2ID script root at FEE_AMOUNT
+    // the target network account prices the P2ID script root at target_fee
     let target = network_account(
         [2; 32],
         [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
-        &[(P2idNote::script_root(), FEE_AMOUNT)],
+        &[(P2idNote::script_root(), target_fee)],
         [],
         SponsorshipPolicy::default(),
     )?;
@@ -163,6 +167,19 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
         .execute()
         .await?;
 
+    Ok((executed, network_note, target.id()))
+}
+
+// TESTS
+// ================================================================================================
+
+/// When a fee-paying account creates a network output note, `pay_fee` sponsors it: a
+/// FEE_SPONSORSHIP note funded from the creator's vault is emitted alongside the network note,
+/// carrying exactly the fee the target account's policy prices the note at.
+#[tokio::test]
+async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
+    let (executed, network_note, target_id) = send_network_note(FEE_AMOUNT).await?;
+
     // three output notes: the network note, its sponsorship note, and the sponsor's fee note
     let output_notes = executed.output_notes();
     assert_eq!(output_notes.num_notes(), 3);
@@ -178,14 +195,11 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     // target network account
     let sponsorship = output_notes
         .iter()
-        .find(|note| {
-            note.recipient().map(|recipient| recipient.script().root())
-                == Some(FeeSponsorshipNote::script_root())
-        })
+        .find(|note| is_sponsorship_note(note))
         .expect("a sponsorship note should be created for the network note");
     let sponsorship_assets: Vec<Asset> = sponsorship.assets().iter().copied().collect();
     assert_eq!(sponsorship_assets, vec![fee_asset(FEE_AMOUNT)?]);
-    assert_eq!(sponsorship.metadata().tag(), NoteTag::with_account_target(target.id()));
+    assert_eq!(sponsorship.metadata().tag(), NoteTag::with_account_target(target_id));
 
     // the sponsor still pays its own fee, and the paid amount covers the fee required for the
     // transaction including the sponsorship note it just created
@@ -195,6 +209,40 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
         .expect("the sponsor should pay its own fee note");
     let fee_note_asset = fee_note.assets().iter().next().expect("fee note carries one asset");
     let paid = fee_note_asset.unwrap_fungible();
+    assert!(
+        paid.amount() >= executed.compute_fee(),
+        "paid fee {} should cover the required fee {}",
+        paid.amount(),
+        executed.compute_fee(),
+    );
+
+    Ok(())
+}
+
+/// A network note priced to zero by its target needs no sponsorship: `pay_fee` creates no
+/// FEE_SPONSORSHIP note for it and still pays the sponsor's own fee.
+#[tokio::test]
+async fn pay_fee_does_not_sponsor_network_note_priced_to_zero() -> anyhow::Result<()> {
+    let (executed, network_note, _) = send_network_note(0).await?;
+
+    // two output notes: the network note and the sponsor's fee note
+    let output_notes = executed.output_notes();
+    assert_eq!(output_notes.num_notes(), 2);
+    assert_eq!(output_notes.get_note(0).id(), network_note.id());
+    assert!(
+        output_notes.iter().all(|note| !is_sponsorship_note(note)),
+        "a network note priced to zero should not be sponsored",
+    );
+    // the sponsor's fee note still covers the fee required for the transaction, including the
+    // pricing call the payment makes for the unsponsored note after the fee is computed
+    let fee_note = output_notes.get_note(1);
+    assert_eq!(fee_note.metadata().tag(), TxFeeNote::TAG);
+    let paid = fee_note
+        .assets()
+        .iter()
+        .next()
+        .expect("fee note carries one asset")
+        .unwrap_fungible();
     assert!(
         paid.amount() >= executed.compute_fee(),
         "paid fee {} should cover the required fee {}",
@@ -254,10 +302,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
     let sponsorship_id = creation_tx
         .output_notes()
         .iter()
-        .find(|note| {
-            note.recipient().map(|recipient| recipient.script().root())
-                == Some(FeeSponsorshipNote::script_root())
-        })
+        .find(|note| is_sponsorship_note(note))
         .expect("a sponsorship note should be created")
         .id();
 
@@ -373,10 +418,7 @@ async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> a
     let sponsorship_id = spawn_tx
         .output_notes()
         .iter()
-        .find(|note| {
-            note.recipient().map(|recipient| recipient.script().root())
-                == Some(FeeSponsorshipNote::script_root())
-        })
+        .find(|note| is_sponsorship_note(note))
         .expect("A should sponsor the spawned note")
         .id();
 
