@@ -205,11 +205,16 @@ fn advice_inputs_require_nested_messages_and_reject_duplicate_map_keys() {
 #[test]
 fn advice_stack_rejects_invalid_felts() {
     let error = miden_protocol::vm::AdviceStack::try_from(proto::primitives::AdviceStack {
-        values: vec![proto::primitives::Felt { encoded: vec![0; 7] }],
+        values: vec![proto::primitives::Felt { value: Felt::ORDER }],
     })
     .unwrap_err();
 
-    assert_eq!(error.to_string(), "values[0].felt.encoded: expected exactly 8 bytes, got 7");
+    assert!(matches!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<<Felt as TryFrom<u64>>::Error>()),
+        Some(source) if source.as_u64() == Felt::ORDER
+    ));
 }
 
 #[test]
