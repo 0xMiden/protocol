@@ -3,7 +3,10 @@ extern crate alloc;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_agglayer::errors::ERR_FAUCET_NOT_REGISTERED;
+use miden_agglayer::errors::{
+    ERR_FAUCET_NOT_REGISTERED,
+    ERR_TOKEN_ALREADY_REGISTERED_TO_DIFFERENT_FAUCET,
+};
 use miden_agglayer::{
     AggLayerBridge,
     AgglayerBridgeError,
@@ -36,7 +39,18 @@ use super::test_utils::{
     MIDEN_NETWORK_ID,
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
+    setup_bridge,
 };
+
+const USDC_TOKEN_ADDR: &str = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+
+fn usdc_token_address() -> EthAddress {
+    EthAddress::from_hex(USDC_TOKEN_ADDR).expect("USDC token address should be valid")
+}
+
+fn usdc_metadata_hash() -> MetadataHash {
+    MetadataHash::from_token_info("USD Coin", "USDC", 6)
+}
 
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
@@ -143,11 +157,10 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let scale = 0u8;
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_to_register,
@@ -234,12 +247,11 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     let faucet_network_2 =
         AccountId::builder().account_type(AccountType::Public).build_with_seed([22; 32]);
 
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network_1: u32 = 1;
     let origin_network_2: u32 = 2;
 
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
     let config_note_1 = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_network_1,
@@ -357,14 +369,11 @@ async fn config_agg_bridge_non_admin_sender_reverts() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet_to_register,
-            origin_token_address: EthAddress::from_hex(
-                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-            )
-            .unwrap(),
+            origin_token_address: usdc_token_address(),
             scale: 0,
             origin_network: 1,
             is_native: false,
-            metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+            metadata_hash: usdc_metadata_hash(),
         },
         ger_injector.id(),
         bridge_account.id(),
@@ -434,6 +443,100 @@ fn faucet_metadata_key(faucet: AccountId, sub_key: u8) -> StorageMapKey {
     )
 }
 
+/// Encodes a faucet account ID in the value layout used by `token_registry_map`.
+fn faucet_id_value(faucet: AccountId) -> Word {
+    [Felt::ZERO, Felt::ZERO, faucet.suffix(), faucet.prefix().as_felt()].into()
+}
+
+/// A token identity already assigned to one faucet cannot be reassigned to another faucet.
+#[tokio::test]
+async fn register_faucet_rejects_token_key_owned_by_another_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let setup = setup_bridge(&mut builder)?;
+    let faucet_a = AccountId::dummy(
+        [11; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let faucet_b = AccountId::dummy(
+        [22; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let origin_token_address = usdc_token_address();
+    let origin_network = 1;
+    let metadata_hash = usdc_metadata_hash();
+
+    let register_a = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_a,
+            origin_token_address,
+            scale: 0,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        setup.faucet_manager.id(),
+        setup.bridge.id(),
+        builder.rng_mut(),
+    )?;
+    let register_b = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_b,
+            origin_token_address,
+            scale: 0,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        setup.faucet_manager.id(),
+        setup.bridge.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(register_a.clone()));
+    builder.add_output_note(RawOutputNote::Full(register_b.clone()));
+    let mut mock_chain = builder.build()?;
+
+    let register_a_tx = mock_chain
+        .build_transaction(setup.bridge.id())
+        .authenticated_input_note(register_a.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&register_a_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_transaction(setup.bridge.id())
+        .authenticated_input_note(register_b.id())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_TOKEN_ALREADY_REGISTERED_TO_DIFFERENT_FAUCET);
+
+    let bridge = mock_chain.committed_account(setup.bridge.id())?;
+    let token_key = token_registry_key(&origin_token_address, origin_network);
+    assert_eq!(
+        bridge
+            .storage()
+            .get_map_item(AggLayerBridge::token_registry_map_slot_name(), token_key)?,
+        faucet_id_value(faucet_a),
+        "the original faucet must retain the token key"
+    );
+    let faucet_b_key = StorageMapKey::from_raw(AccountIdKey::new(faucet_b).as_word());
+    assert_eq!(
+        bridge
+            .storage()
+            .get_map_item(AggLayerBridge::faucet_registry_map_slot_name(), faucet_b_key)?,
+        [Felt::ZERO; 4].into(),
+        "the rejected faucet must not be registered"
+    );
+
+    Ok(())
+}
+
 /// Tests that a DEREGISTER_AGG_FAUCET note clears a previously-registered faucet from the faucet
 /// registry, the token registry, AND the faucet metadata map.
 ///
@@ -476,10 +579,9 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
 
     // ---- Build registration + deregistration notes ----
     let config_note = ConfigAggBridgeNote::create(
@@ -623,10 +725,9 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         AccountType::Public,
         AssetCallbackFlag::Disabled,
     );
-    let origin_token_address =
-        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let origin_token_address = usdc_token_address();
     let origin_network = 1u32;
-    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
+    let metadata_hash = usdc_metadata_hash();
 
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
@@ -765,14 +866,11 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         Some(ConfigAggBridgeNote::create(
             ConversionMetadata {
                 faucet_account_id: faucet_id,
-                origin_token_address: EthAddress::from_hex(
-                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                )
-                .unwrap(),
+                origin_token_address: usdc_token_address(),
                 scale: 0,
                 origin_network: 1,
                 is_native: false,
-                metadata_hash: MetadataHash::from_token_info("USD Coin", "USDC", 6),
+                metadata_hash: usdc_metadata_hash(),
             },
             faucet_manager.id(),
             bridge_account.id(),

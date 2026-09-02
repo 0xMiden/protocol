@@ -2,9 +2,9 @@ use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
-use miden_verifier::{ExecutionClaim, verify};
+use miden_verifier::{ExecutionClaim, Verifier};
 
-use crate::BatchVerifierError;
+use crate::{BatchVerifierError, proof_has_precompiles};
 
 // BATCH VERIFIER
 // ================================================================================================
@@ -40,9 +40,14 @@ impl BatchVerifier {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - The batch proof contains precompile work.
     /// - Batch proof verification fails.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
+        if proof_has_precompiles(batch.proof()) {
+            return Err(BatchVerifierError::BatchProofContainsPrecompiles);
+        }
+
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
@@ -59,8 +64,13 @@ impl BatchVerifier {
             stack_inputs,
             stack_outputs,
         );
-        let proof_security_level = verify(batch.proof().clone(), claim)
+        let outcome = Verifier::new()
+            .verify(&claim, batch.proof())
             .map_err(BatchVerifierError::BatchVerificationFailed)?;
+        if !outcome.is_complete() {
+            return Err(BatchVerifierError::IncompleteProof);
+        }
+        let proof_security_level = outcome.security_level();
 
         if proof_security_level < self.proof_security_level {
             return Err(BatchVerifierError::InsufficientProofSecurityLevel {
