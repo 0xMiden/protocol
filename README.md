@@ -3,7 +3,7 @@
 [![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/protocol/blob/main/LICENSE)
 [![test](https://github.com/0xMiden/protocol/actions/workflows/test.yml/badge.svg)](https://github.com/0xMiden/protocol/actions/workflows/test.yml)
 [![build](https://github.com/0xMiden/protocol/actions/workflows/build.yml/badge.svg)](https://github.com/0xMiden/protocol/actions/workflows/build.yml)
-[![RUST_VERSION](https://img.shields.io/badge/rustc-1.96+-lightgray.svg)](https://www.rust-lang.org/tools/install)
+[![RUST_VERSION](https://img.shields.io/badge/rustc-1.98+-lightgray.svg)](https://www.rust-lang.org/tools/install)
 [![GitHub Release](https://img.shields.io/github/release/0xMiden/protocol)](https://github.com/0xMiden/protocol/releases/)
 
 Description and core structures for the Miden Rollup protocol.

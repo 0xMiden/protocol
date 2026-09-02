@@ -2,6 +2,7 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
 use miden::core::word
+use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::output_note
@@ -290,8 +291,7 @@ pub proc assert_fee_bound(
     # => [fee_faucet_id_suffix, fee_faucet_id_prefix, bound_num, bound_den,
     #     payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, fee_amount]
 
-    dup.4 assert_eq.err=ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE
-    dup.4 assert_eq.err=ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE
+    dup.5 dup.5 exec.account_id::eq assert.err=ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE
     # => [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
     #     fee_amount]
 
