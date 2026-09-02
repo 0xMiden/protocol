@@ -154,7 +154,6 @@ pub proc verify_signature(num_own_output_notes: u16, msg: word)
         dropw
         # => []
     else
-        # the count is only consulted on the rotation path
         drop
         # => [MSG]
 
