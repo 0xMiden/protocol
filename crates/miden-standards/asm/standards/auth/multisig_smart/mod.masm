@@ -72,6 +72,18 @@ const NOTE_RESTRICTIONS_LOC = 2
 const EXECUTION_MODE_LOC = 0
 const DEFAULT_THRESHOLD_LOC = 1
 
+# LOCAL ADDRESSES (enforce_procedure_policy)
+# =================================================================================================
+
+const ENFORCE_POLICY_NUM_OWN_OUTPUT_NOTES_LOC = 0
+
+# LOCAL ADDRESSES (auth_tx)
+# =================================================================================================
+
+const AUTH_TX_POLICY_THRESHOLD_LOC = 0
+const AUTH_TX_DEFAULT_THRESHOLD_LOC = 1
+const AUTH_TX_NUM_OWN_OUTPUT_NOTES_LOC = 2
+
 # LOCAL ADDRESSES (update_signers_and_threshold)
 # =================================================================================================
 
@@ -360,24 +372,33 @@ end
 #! - bit 0 (mask 1) → forbid input notes
 #! - bit 1 (mask 2) → forbid output notes
 #!
-#! Inputs:  [note_restrictions]
+#! Inputs:  [num_own_output_notes, note_restrictions]
 #! Outputs: []
 #!
+#! Where:
+#! - num_own_output_notes is the number of output notes the authentication procedure created
+#!   itself, e.g. to pay the transaction fee. See `tx_policy::assert_no_output_notes`.
+#!
 #! Invocation: exec
-pub proc enforce_note_restrictions
+pub proc enforce_note_restrictions(num_own_output_notes: u16, note_restrictions: u32)
+    swap
+    # => [note_restrictions, num_own_output_notes]
+
     dup u32and.NOTE_RESTRICTION_INPUT_NOTES_MASK eq.NOTE_RESTRICTION_INPUT_NOTES_MASK
-    # => [has_input_note_restriction, note_restrictions]
+    # => [has_input_note_restriction, note_restrictions, num_own_output_notes]
 
     if.true
         exec.tx_policy::assert_no_input_notes
     end
-    # => [note_restrictions]
+    # => [note_restrictions, num_own_output_notes]
 
     u32and.NOTE_RESTRICTION_OUTPUT_NOTES_MASK eq.NOTE_RESTRICTION_OUTPUT_NOTES_MASK
-    # => [has_output_note_restriction]
+    # => [has_output_note_restriction, num_own_output_notes]
 
     if.true
         exec.tx_policy::assert_no_output_notes
+    else
+        drop
     end
     # => []
 end
@@ -385,12 +406,14 @@ end
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! Inputs:
-#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
-#!                   user_param6]
+#!   Operand stack: [num_own_output_notes, user_param0, user_param1, user_param2, user_param3,
+#!                   user_param4, user_param5, user_param6]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
+#! - num_own_output_notes is the number of output notes the authentication procedure created
+#!   itself; it is forwarded to the procedure policies' note restrictions.
 #! - user_param0 through user_param6 are arbitrary, user-defined inputs folded into the signed
 #!   message. Binding them enforces no meaning, so any semantics must be implemented by the calling
 #!   component. The components calling this procedure pass a cryptographically random salt in
@@ -399,6 +422,7 @@ end
 #! Locals:
 #! 0: policy_threshold
 #! 1: default_threshold
+#! 2: num_own_output_notes
 #!
 #! Invocation: exec
 #!
@@ -413,8 +437,11 @@ end
 #!   `ERR_EXECUTE_PATH_MISMATCH`), then call
 #!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
 #!   propose/cancel/execute state.
-@locals(2)
-pub proc auth_tx(user_params: [felt; 7])
+@locals(3)
+pub proc auth_tx(num_own_output_notes: u16, user_params: [felt; 7])
+    loc_store.AUTH_TX_NUM_OWN_OUTPUT_NOTES_LOC
+    # => [user_params(7)]
+
     exec.native_account::incr_nonce drop
     # => [user_params(7)]
 
@@ -433,14 +460,17 @@ pub proc auth_tx(user_params: [felt; 7])
 
     # Save default_threshold for the procedure-policy enforcement and the final tx-threshold
     # fallback below.
-    dup loc_store.1
+    dup loc_store.AUTH_TX_DEFAULT_THRESHOLD_LOC
     # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     # ------ Enforcing procedure policy (consumes default_threshold) ------
+    loc_load.AUTH_TX_NUM_OWN_OUTPUT_NOTES_LOC
+    # => [num_own_output_notes, default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
     exec.enforce_procedure_policy
     # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
-    loc_store.0
+    loc_store.AUTH_TX_POLICY_THRESHOLD_LOC
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------
@@ -452,8 +482,8 @@ pub proc auth_tx(user_params: [felt; 7])
     # ------ Computing final transaction threshold ------
     # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
     # falls back to `default_threshold`; otherwise it returns the policy max directly.
-    loc_load.0
-    loc_load.1
+    loc_load.AUTH_TX_POLICY_THRESHOLD_LOC
+    loc_load.AUTH_TX_DEFAULT_THRESHOLD_LOC
     # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.compute_tx_threshold
@@ -760,12 +790,16 @@ end
 #! Always uses IMMEDIATE_EXECUTION_MODE; procedures whose policies require the delayed mode
 #! panic via [`compute_called_proc_policy`] because this component has no timelock.
 #!
-#! Inputs:  [default_threshold]
+#! Inputs:  [num_own_output_notes, default_threshold]
 #! Outputs: [policy_threshold]
 #!
 #! Where:
+#! - num_own_output_notes is forwarded to [`enforce_note_restrictions`].
 #! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
 #!   contribution for any called procedure without an explicit policy.
+#!
+#! Locals:
+#! 0: num_own_output_notes
 #!
 #! Invocation: exec
 #!
@@ -773,7 +807,11 @@ end
 #! hardcoded IMMEDIATE_EXECUTION_MODE push will be replaced with a call to
 #! `timelock_controller::execution_mode`, and the procedure will also expose
 #! `policy_requires_delay` for downstream enforcement.
-proc enforce_procedure_policy(default_threshold: u32)
+@locals(1)
+proc enforce_procedure_policy(num_own_output_notes: u16, default_threshold: u32)
+    loc_store.ENFORCE_POLICY_NUM_OWN_OUTPUT_NOTES_LOC
+    # => [default_threshold]
+
     push.IMMEDIATE_EXECUTION_MODE
     # => [execution_mode, default_threshold]
 
@@ -786,6 +824,9 @@ proc enforce_procedure_policy(default_threshold: u32)
 
     swap
     # => [note_restrictions, policy_threshold]
+
+    loc_load.ENFORCE_POLICY_NUM_OWN_OUTPUT_NOTES_LOC
+    # => [num_own_output_notes, note_restrictions, policy_threshold]
 
     exec.enforce_note_restrictions
     # => [policy_threshold]
