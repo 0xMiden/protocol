@@ -5,6 +5,7 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::deferred::IntegrityError;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -17,7 +18,13 @@ use super::account::{AccountId, RoleSymbol};
 use super::asset::{Asset, AssetComposition, AssetId, FungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
-use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use super::{
+    MAX_ACCOUNTS_PER_BLOCK,
+    MAX_BATCHES_PER_BLOCK,
+    MAX_INPUT_NOTES_PER_BLOCK,
+    MAX_OUTPUT_NOTES_PER_BATCH,
+    Word,
+};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
 use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
@@ -241,6 +248,37 @@ impl AccountError {
             source: Some(Box::new(source)),
         }
     }
+}
+
+/// Error returned when account update details are incompatible with an account ID.
+#[derive(Debug)]
+pub(crate) enum AccountUpdateDetailsValidationError {
+    PrivateAccountWithDetails(AccountId),
+    PublicStateAccountMissingDetails(AccountId),
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+}
+
+/// Error returned when serialized account update details exceed the size limit.
+#[derive(Debug)]
+pub(crate) struct AccountUpdateSizeValidationError {
+    pub(crate) account_id: AccountId,
+    pub(crate) update_size: usize,
+}
+
+/// Error returned when a new public account cannot be reconstructed from its update details.
+#[derive(Debug)]
+pub(crate) enum NewPublicAccountValidationError {
+    RequiresFullStatePatch {
+        id: AccountId,
+        source: AccountError,
+    },
+    FinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
 }
 
 // ACCOUNT ID ERROR
@@ -550,6 +588,33 @@ pub enum StorageMapError {
 #[derive(Debug, Error)]
 pub enum BatchAccountUpdateError {
     #[error(
+        "account update of size {update_size} for account {account_id} exceeds maximum update size of {ACCOUNT_UPDATE_MAX_SIZE}"
+    )]
+    AccountUpdateSizeLimitExceeded {
+        account_id: AccountId,
+        update_size: usize,
+    },
+    #[error("private account {0} should not have account details")]
+    PrivateAccountWithDetails(AccountId),
+    #[error("account {0} with public state is missing its account details")]
+    PublicStateAccountMissingDetails(AccountId),
+    #[error(
+        "batch account update's account ID {account_id} and account patch ID {patch_account_id} must match"
+    )]
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error(
+        "batch account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
+    )]
+    AccountFinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
+    #[error(
         "account update for account {expected_account_id} cannot be merged with update from transaction {transaction} which was executed against account {actual_account_id}"
     )]
     AccountUpdateIdMismatch {
@@ -563,6 +628,62 @@ pub enum BatchAccountUpdateError {
     AccountUpdateInitialStateMismatch(TransactionId),
     #[error("failed to merge account patch from transaction {0}")]
     TransactionUpdateMergeError(TransactionId, #[source] Box<AccountPatchError>),
+}
+
+// BLOCK ACCOUNT UPDATE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockAccountUpdateError {
+    #[error("private account {0} should not have account details")]
+    PrivateAccountWithDetails(AccountId),
+    #[error("account {0} with public state is missing its account details")]
+    PublicStateAccountMissingDetails(AccountId),
+    #[error(
+        "block account update's account ID {account_id} and account patch ID {patch_account_id} must match"
+    )]
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error(
+        "block account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
+    )]
+    AccountFinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
+}
+
+// BLOCK BODY ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockBodyError {
+    #[error("block has {0} account updates but at most {MAX_ACCOUNTS_PER_BLOCK} are allowed")]
+    TooManyAccountUpdates(usize),
+    #[error("block has {0} nullifiers but at most {MAX_INPUT_NOTES_PER_BLOCK} are allowed")]
+    TooManyNullifiers(usize),
+    #[error("block has {0} output note batches but at most {MAX_BATCHES_PER_BLOCK} are allowed")]
+    TooManyOutputNoteBatches(usize),
+    #[error(
+        "output note batch {batch_index} has {note_count} notes but at most {MAX_OUTPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyOutputNotes { batch_index: usize, note_count: usize },
+    #[error("output note batch {batch_index} contains invalid note index {note_index}")]
+    InvalidOutputNoteIndex { batch_index: usize, note_index: usize },
+    #[error("output note batch {batch_index} contains note index {note_index} twice")]
+    DuplicateOutputNoteIndex { batch_index: usize, note_index: usize },
+    #[error("output note {0} appears twice in the block body")]
+    DuplicateOutputNote(NoteId),
+    #[error("account update for {0} appears twice in the block body")]
+    DuplicateAccountUpdate(AccountId),
+    #[error("nullifier {0} appears twice in the block body")]
+    DuplicateNullifier(Nullifier),
+    #[error("transaction {0} appears twice in the block body")]
+    DuplicateTransaction(TransactionId),
 }
 
 // ASSET ERROR
@@ -1079,6 +1200,144 @@ pub enum ProvenTransactionError {
     NoteCreatedAndConsumed(NoteId),
 }
 
+// TRANSACTION HEADER ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid transaction header.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum TransactionHeaderError {
+    #[error("input note with nullifier {0} appears twice in the transaction header")]
+    DuplicateInputNote(Nullifier),
+    #[error("output note {0} appears twice in the transaction header")]
+    DuplicateOutputNote(NoteId),
+    #[error("note with id {0} is both created and consumed by the transaction header")]
+    NoteCreatedAndConsumed(NoteId),
+}
+
+impl From<AccountUpdateDetailsValidationError> for ProvenTransactionError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch {
+                tx_account_id: account_id,
+                details_account_id: patch_account_id,
+            },
+        }
+    }
+}
+
+impl From<AccountUpdateSizeValidationError> for ProvenTransactionError {
+    fn from(error: AccountUpdateSizeValidationError) -> Self {
+        Self::AccountUpdateSizeLimitExceeded {
+            account_id: error.account_id,
+            update_size: error.update_size,
+        }
+    }
+}
+
+impl From<AccountUpdateSizeValidationError> for BatchAccountUpdateError {
+    fn from(error: AccountUpdateSizeValidationError) -> Self {
+        Self::AccountUpdateSizeLimitExceeded {
+            account_id: error.account_id,
+            update_size: error.update_size,
+        }
+    }
+}
+
+impl From<AccountUpdateDetailsValidationError> for BatchAccountUpdateError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch { account_id, patch_account_id },
+        }
+    }
+}
+
+impl From<AccountUpdateDetailsValidationError> for BlockAccountUpdateError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch { account_id, patch_account_id },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for ProvenTransactionError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                tx_final_commitment: final_state_commitment,
+                details_commitment: account_commitment,
+            },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for BatchAccountUpdateError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            },
+        }
+    }
+}
+
 // PROPOSED BATCH ERROR
 // ================================================================================================
 
@@ -1089,6 +1348,9 @@ pub enum ProposedBatchError {
         transaction_id: TransactionId,
         source: TransactionVerifierError,
     },
+
+    #[error("transaction {transaction_id} has an outstanding precompile obligation")]
+    IncompleteTransactionProof { transaction_id: TransactionId },
 
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
@@ -1205,6 +1467,59 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
+    #[error("transaction batch must contain at least one transaction")]
+    EmptyTransactionBatch,
+    #[error("transaction {0} appears twice in the proven batch")]
+    DuplicateTransaction(TransactionId),
+    #[error(
+        "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyInputNotes(usize),
+    #[error("input note with nullifier {0} appears twice in the proven batch")]
+    DuplicateInputNote(Nullifier),
+    #[error(
+        "transaction batch has {0} output notes but at most {MAX_OUTPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyOutputNotes(usize),
+    #[error(
+        "transaction batch has at least {0} account updates but at most {MAX_ACCOUNTS_PER_BATCH} are allowed"
+    )]
+    TooManyAccountUpdates(usize),
+    #[error("output note {0} appears twice in the proven batch")]
+    DuplicateOutputNote(NoteId),
+    #[error("note with id {0} is both created and consumed by the proven batch")]
+    NoteCreatedAndConsumed(NoteId),
+    #[error("account {0} is updated more than once in the proven batch")]
+    DuplicateAccountUpdate(AccountId),
+    #[error("account update for {0} is missing from the proven batch")]
+    MissingAccountUpdate(AccountId),
+    #[error("account update for {0} has no corresponding transaction in the proven batch")]
+    UnexpectedAccountUpdate(AccountId),
+    #[error(
+        "transaction {transaction_id} for account {account_id} starts from state {actual_initial_state_commitment}, but the previous transaction ends at state {expected_initial_state_commitment}"
+    )]
+    TransactionAccountStateMismatch {
+        account_id: AccountId,
+        transaction_id: TransactionId,
+        expected_initial_state_commitment: Word,
+        actual_initial_state_commitment: Word,
+    },
+    #[error(
+        "account update for {account_id} starts from state {actual}, but its first transaction starts from state {expected}"
+    )]
+    AccountUpdateInitialStateMismatch {
+        account_id: AccountId,
+        expected: Word,
+        actual: Word,
+    },
+    #[error(
+        "account update for {account_id} ends at state {actual}, but its last transaction ends at state {expected}"
+    )]
+    AccountUpdateFinalStateMismatch {
+        account_id: AccountId,
+        expected: Word,
+        actual: Word,
+    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]
@@ -1214,6 +1529,10 @@ pub enum ProvenBatchError {
     },
     #[error("batch kernel execution failed")]
     BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel proving failed")]
+    BatchKernelProvingFailed(#[source] ExecutionError),
+    #[error("batch proof contains precompiles")]
+    BatchProofContainsPrecompiles,
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
 }
@@ -1494,6 +1813,14 @@ pub enum AuthSchemeError {
 pub enum TransactionVerifierError {
     #[error("failed to verify transaction")]
     TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof contains settled precompile work")]
+    TransactionProofContainsPrecompiles,
+    #[error("transaction precompile witness is invalid")]
+    InvalidTransactionPrecompileWitness(#[source] IntegrityError),
+    #[error(
+        "transaction precompile witness root ({actual}) does not match the VM proof root ({expected})"
+    )]
+    TransactionPrecompileRootMismatch { expected: Word, actual: Word },
     #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

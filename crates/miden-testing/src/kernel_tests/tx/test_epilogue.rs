@@ -462,7 +462,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
             push.{expected_nonce} assert_eq.err="nonce mismatch"
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
     );
 
     mock_tx.execute_code(code.as_str()).await?;
@@ -489,7 +489,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
             dropw
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;

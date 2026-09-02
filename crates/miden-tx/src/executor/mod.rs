@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{ExecutionError, FastProcessor, StackInputs};
-pub use miden_processor::{ExecutionOptions, MastForestStore};
+pub use miden_processor::{ExecutionOptions, MastForestStore, ProgramExecutor};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
@@ -19,7 +19,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
 };
-use miden_protocol::vm::{PackageDebugInfo, StackOutputs};
+use miden_protocol::vm::StackOutputs;
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
@@ -41,9 +41,6 @@ pub use notes_checker::{
     NoteConsumptionInfo,
     SuccessfulNote,
 };
-
-mod program_executor;
-pub use program_executor::ProgramExecutor;
 
 // TRANSACTION EXECUTOR
 // ================================================================================================
@@ -201,27 +198,20 @@ where
 
         // Use the package-debug execution API even when the embedded release kernel has no debug
         // sections. This enables package-owned debug info for dynamically loaded scripts.
-        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
-
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let fallback_debug_info = PackageDebugInfo::default();
-        let output = processor
-            .execute_with_package_debug_info(
-                &program,
-                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
-                TransactionKernel::main_entrypoint_source_node(),
-                &mut host,
-            )
-            .await
-            .map_err(map_execution_error)?;
+        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+            .map_err(ExecutionError::advice_error_no_context)
+            .map_err(map_execution_error)?
+            .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
+            .with_entrypoint_source_node(TransactionKernel::main_entrypoint_source_node());
+        let output = processor.execute(&program, &mut host).await.map_err(map_execution_error)?;
         let stack_outputs = output.stack;
         let advice_provider = output.advice;
 
         // The stack is not necessary since it is being reconstructed when re-executing.
         let (_stack, advice_map, merkle_store) = advice_provider.into_parts();
-        let mut advice_inputs = AdviceInputs::default().with_merkle_store(merkle_store);
-        advice_inputs.map = advice_map;
+        let advice_inputs = AdviceInputs::from(advice_map).with_merkle_store(merkle_store);
 
         build_executed_transaction(advice_inputs, tx_inputs, stack_outputs, host)
     }
@@ -252,17 +242,18 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
         let program = TransactionKernel::tx_script_main();
         let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
-        let fallback_debug_info = PackageDebugInfo::default();
+        let processor =
+            EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+                .map_err(ExecutionError::advice_error_no_context)
+                .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?
+                .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
+                .with_entrypoint_source_node(
+                    TransactionKernel::tx_script_main_entrypoint_source_node(),
+                );
         let output = processor
-            .execute_with_package_debug_info(
-                &program,
-                kernel_debug_info.as_deref().unwrap_or(&fallback_debug_info),
-                TransactionKernel::tx_script_main_entrypoint_source_node(),
-                &mut host,
-            )
+            .execute(&program, &mut host)
             .await
             .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?;
         let stack_outputs = output.stack;
@@ -405,7 +396,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     }
 
     // Introduce generated signatures into the witness inputs.
-    advice_inputs.map.extend(generated_signatures);
+    advice_inputs.extend(AdviceInputs::default().with_map(generated_signatures));
 
     // Overwrite advice inputs from after the execution on the transaction inputs. This is
     // guaranteed to be a superset of the original advice inputs.

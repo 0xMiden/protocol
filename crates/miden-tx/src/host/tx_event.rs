@@ -906,7 +906,9 @@ fn extract_note_attachment(
     }
 
     let words: Vec<Word> = elements
-        .chunks_exact(WORD_SIZE)
+        .as_chunks::<WORD_SIZE>()
+        .0
+        .iter()
         .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();
 
