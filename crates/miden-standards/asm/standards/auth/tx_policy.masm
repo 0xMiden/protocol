@@ -73,9 +73,6 @@ end
 #! Asserts that the current transaction created no output notes beyond those the caller created
 #! itself.
 #!
-#! The total is read from the kernel, so only the caller's own share is supplied. Understating it
-#! tightens the assertion: a caller that creates no notes passes zero and gets the strictest check.
-#!
 #! Inputs:  [num_own_output_notes]
 #! Outputs: []
 #!
