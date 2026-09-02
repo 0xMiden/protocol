@@ -409,6 +409,7 @@ mod tests {
     use alloc::vec;
     use core::error::Error;
 
+    use assert_matches::assert_matches;
     use miden_protocol::testing::dummy_execution_proof;
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_protocol::utils::serde::DeserializationError;
@@ -424,12 +425,12 @@ mod tests {
         }
 
         let error = Felt::try_from(proto::primitives::Felt { value: Felt::ORDER }).unwrap_err();
-        assert!(matches!(
+        assert_matches!(
             error
                 .source()
                 .and_then(|source| source.downcast_ref::<<Felt as TryFrom<u64>>::Error>()),
             Some(source) if source.as_u64() == Felt::ORDER
-        ));
+        );
     }
 
     #[test]
@@ -471,26 +472,26 @@ mod tests {
             encoded: vec![],
         })
         .unwrap_err();
-        assert!(matches!(
+        assert_matches!(
             public_key_error
                 .source()
                 .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<DeserializationError>()),
             Some(DeserializationError::UnexpectedEOF)
-        ));
+        );
 
         let signature_error = Signature::try_from(proto::primitives::Signature {
             variant: proto::primitives::SignatureVariant::EcdsaK256Keccak as i32,
             encoded: vec![],
         })
         .unwrap_err();
-        assert!(matches!(
+        assert_matches!(
             signature_error
                 .source()
                 .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<DeserializationError>()),
             Some(DeserializationError::UnexpectedEOF)
-        ));
+        );
     }
 
     #[test]

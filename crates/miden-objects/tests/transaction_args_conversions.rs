@@ -209,12 +209,12 @@ fn advice_stack_rejects_invalid_felts() {
     })
     .unwrap_err();
 
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(|source| source.downcast_ref::<<Felt as TryFrom<u64>>::Error>()),
         Some(source) if source.as_u64() == Felt::ORDER
-    ));
+    );
 }
 
 #[test]
