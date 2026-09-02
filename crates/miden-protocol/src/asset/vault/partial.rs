@@ -1,4 +1,4 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -107,10 +107,9 @@ impl PartialVault {
         ids: impl IntoIterator<Item = AssetId>,
     ) -> Result<Self, PartialAssetVaultError> {
         let mut entries = BTreeMap::new();
-        let mut seen_ids = BTreeSet::new();
 
         for id in ids {
-            if !seen_ids.insert(id) {
+            if entries.contains_key(&id) {
                 return Err(PartialAssetVaultError::DuplicateAssetId(id));
             }
 
