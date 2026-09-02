@@ -12,22 +12,22 @@ enum NoteType {
   NOTE_TYPE_PRIVATE = 2;
 }
 
+enum NoteVersion {
+  NOTE_VERSION_UNSPECIFIED = 0;
+  NOTE_VERSION_V1 = 1;
+}
+
 message NoteId {
   primitives.Word id = 1;
 }
 
 message NoteMetadata {
-  oneof version {
-    NoteMetadataV1 v1 = 1;
-  }
-}
-
-message NoteMetadataV1 {
-  account.AccountId sender = 1;
-  NoteType note_type = 2;
-  fixed32 tag = 3;
-  repeated fixed32 attachment_schemes = 4;
-  primitives.Word attachments_commitment = 5;
+  NoteVersion version = 1;
+  account.AccountId sender = 2;
+  NoteType note_type = 3;
+  fixed32 tag = 4;
+  repeated fixed32 attachment_schemes = 5;
+  primitives.Word attachments_commitment = 6;
 }
 
 message NoteAttachment {

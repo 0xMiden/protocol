@@ -464,13 +464,13 @@ fn account_patch_protobuf_preserves_unknown_version_error_sources() {
 }
 
 #[test]
-fn note_metadata_roundtrips_through_v1_protobuf_bytes() {
+fn note_metadata_roundtrips_through_flat_v1_protobuf_bytes() {
     let metadata = *Note::mock_noop(Word::empty()).metadata();
 
     let encoded = proto::note::NoteMetadata::from(metadata).encode_to_vec();
     let message = proto::note::NoteMetadata::decode(encoded.as_slice()).unwrap();
 
-    assert!(matches!(message.version, Some(proto::note::note_metadata::Version::V1(_))));
+    assert_eq!(message.version, proto::note::NoteVersion::V1 as i32);
     assert_eq!(NoteMetadata::try_from(message).unwrap(), metadata);
 }
 
@@ -511,24 +511,68 @@ fn note_protobuf_requires_note_details() {
 }
 
 #[test]
-fn note_metadata_protobuf_requires_version() {
-    let error = NoteMetadata::try_from(proto::note::NoteMetadata::default()).unwrap_err();
+fn note_metadata_protobuf_rejects_unspecified_version_before_payload_fields() {
+    let error = NoteMetadata::try_from(proto::note::NoteMetadata {
+        version: proto::note::NoteVersion::Unspecified as i32,
+        ..Default::default()
+    })
+    .unwrap_err();
 
-    assert!(error.to_string().ends_with("::version is missing"));
+    assert_eq!(error.to_string(), "version: note metadata version is unspecified");
 }
 
 #[test]
-fn note_metadata_v1_protobuf_reports_invalid_sender() {
+fn note_metadata_protobuf_preserves_unknown_version_error_sources() {
+    for version in [i32::MAX, i32::MIN] {
+        let error =
+            NoteMetadata::try_from(proto::note::NoteMetadata { version, ..Default::default() })
+                .unwrap_err();
+
+        assert_eq!(error.to_string(), format!("version: unknown note metadata version {version}"));
+        assert!(matches!(
+            error
+                .source()
+                .and_then(Error::source)
+                .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
+            Some(prost::UnknownEnumValue(value)) if *value == version
+        ));
+    }
+}
+
+#[test]
+fn note_protobuf_rejects_unspecified_metadata_version_before_payload_fields() {
+    let error = Note::try_from(proto::note::Note {
+        metadata: Some(proto::note::NoteMetadata {
+            version: proto::note::NoteVersion::Unspecified as i32,
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert_eq!(error.to_string(), "version: note metadata version is unspecified");
+}
+
+#[test]
+fn note_protobuf_reconstructs_attachment_metadata_from_structured_attachments() {
+    let note = Note::mock_noop(Word::empty());
+    let mut message = proto::note::Note::from(note.clone());
+    let metadata = message.metadata.as_mut().unwrap();
+    metadata.attachment_schemes = vec![42];
+    metadata.attachments_commitment = Some(Word::empty().into());
+
+    assert_eq!(Note::try_from(message).unwrap(), note);
+}
+
+#[test]
+fn note_metadata_protobuf_reports_invalid_sender() {
     let metadata = *Note::mock_noop(Word::empty()).metadata();
     let mut message = proto::note::NoteMetadata::from(metadata);
-    let Some(proto::note::note_metadata::Version::V1(v1)) = message.version.as_mut() else {
-        panic!("note metadata should encode as v1");
-    };
-    v1.sender.as_mut().unwrap().id.clear();
+    message.sender.as_mut().unwrap().id.clear();
 
     let error = NoteMetadata::try_from(message).unwrap_err();
 
-    assert!(error.to_string().starts_with("v1.sender: "));
+    assert!(error.to_string().starts_with("sender: "));
     assert!(
         error
             .source()
