@@ -28,6 +28,7 @@
 ### Changes
 
 - [BREAKING] Split fee estimation out of fee payment: the new `fee::estimate_fee` only computes the fee, pricing the FEE_SPONSORSHIP notes the payment will need through the new `fees::estimate_network_note_sponsorships`, and the new `fee::pay_network_note_sponsorships` creates them; `fee::pay_fee` composes the two, with unchanged inputs, outputs and computed fee, but its MAST root and therefore the code commitment of every fee-paying component change ([#3332](https://github.com/0xMiden/protocol/issues/3332)).
+- [BREAKING] Incremented the MSRV to 1.98.
 - [BREAKING] The user fungible faucet factories now install `BasicWallet` so a faucet can hold the native fee asset ([#3766](https://github.com/0xMiden/protocol/pull/3766)).
 - [BREAKING] Bind the standard config notes to their target account: `OwnerConfigNote`, `PauseConfigNote`, `RbacConfigNote`, `FaucetPolicyConfigNote`, `AllowlistConfigNote`, `BlocklistConfigNote` and `FaucetMetadataConfigNote` now carry a `NetworkAccountTarget` attachment for that account ([#3433](https://github.com/0xMiden/protocol/issues/3433), [#3455](https://github.com/0xMiden/protocol/pull/3455)).
 - [BREAKING] BURN notes now store and validate the asset passed to `receive_and_burn`, and target its faucet with a `NetworkAccountTarget` attachment ([#2343](https://github.com/0xMiden/protocol/issues/2343)).
