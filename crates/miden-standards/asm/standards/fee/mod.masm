@@ -2,6 +2,7 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
 use miden::core::word
+use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::output_note
