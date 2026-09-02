@@ -1,3 +1,5 @@
+use alloc::string::ToString;
+
 use miden_core::Word;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
@@ -17,6 +19,8 @@ use crate::vm::ExecutionProof;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProvenBlockError {
+    #[error("block proof contains precompiles")]
+    BlockProofContainsPrecompiles,
     #[error(
         "proven block has {actual} signatures but its parent's validator set has {expected} keys"
     )]
@@ -123,6 +127,7 @@ impl ProvenBlock {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - If the execution proof contains precompiles.
     /// - If the transaction commitment in the block header is inconsistent with the transactions
     ///   included in the block body.
     /// - If the note root in the block header is inconsistent with the notes included in the block
@@ -179,6 +184,7 @@ impl ProvenBlock {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - the execution proof contains precompiles;
     /// - the transaction commitment in the block header is inconsistent with the transactions
     ///   included in the block body;
     /// - the note root in the block header is inconsistent with the notes included in the block
@@ -187,6 +193,8 @@ impl ProvenBlock {
     ///   block (which has no parent), the parent's number or commitment do not match, or the
     ///   signatures do not verify against the parent's validator keys.
     pub fn validate(&self, parent: Option<&BlockHeader>) -> Result<(), ProvenBlockError> {
+        self.validate_proof()?;
+
         // Validate that header / body transaction commitments match.
         self.validate_tx_commitment()?;
 
@@ -233,6 +241,18 @@ impl ProvenBlock {
 
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
+
+    /// Validates that the block proof has no outstanding or settled precompile work.
+    fn validate_proof(&self) -> Result<(), ProvenBlockError> {
+        if matches!(
+            self.proof,
+            ExecutionProof::Deferred { .. } | ExecutionProof::Complete { precompile: Some(_), .. }
+        ) {
+            Err(ProvenBlockError::BlockProofContainsPrecompiles)
+        } else {
+            Ok(())
+        }
+    }
 
     /// Validates that the transaction commitments between the header and body match for this proven
     /// block.
@@ -282,6 +302,10 @@ impl Deserializable for ProvenBlock {
             signatures: BlockSignatures::read_from(source)?,
             proof: ExecutionProof::read_from(source)?,
         };
+
+        block
+            .validate_proof()
+            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))?;
 
         Ok(block)
     }
@@ -341,6 +365,29 @@ mod tests {
         let (signers, keys) = ValidatorConfig::random_with_signers(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
+    }
+
+    #[test]
+    fn rejects_proofs_with_precompiles() {
+        let (signers, keys) = ValidatorConfig::random_with_signers(1);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let block = block_one(&parent, &keys, &signers);
+        let (header, body, signatures, _) = block.into_parts();
+
+        for proof in [
+            crate::testing::dummy_deferred_execution_proof(),
+            crate::testing::dummy_precompile_execution_proof(),
+        ] {
+            let error =
+                ProvenBlock::new(header.clone(), body.clone(), signatures.clone(), proof.clone())
+                    .unwrap_err();
+            assert!(matches!(error, ProvenBlockError::BlockProofContainsPrecompiles));
+
+            let block =
+                ProvenBlock::new_unchecked(header.clone(), body.clone(), signatures.clone(), proof);
+            let error = ProvenBlock::read_from_bytes(&block.to_bytes()).unwrap_err();
+            assert!(matches!(error, DeserializationError::InvalidValue(_)));
+        }
     }
 
     #[test]

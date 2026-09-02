@@ -65,8 +65,8 @@ impl ProvenBatch {
     ///
     /// # Errors
     ///
-    /// Returns an error if any local structural limit or invariant is violated, or if the aggregate
-    /// account updates do not match the transaction headers.
+    /// Returns an error if the proof contains precompiles, any local structural limit or invariant
+    /// is violated, or the aggregate account updates do not match the transaction headers.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         reference_block_commitment: Word,
@@ -78,6 +78,13 @@ impl ProvenBatch {
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
+        if matches!(
+            proof,
+            ExecutionProof::Deferred { .. } | ExecutionProof::Complete { precompile: Some(_), .. }
+        ) {
+            return Err(ProvenBatchError::BatchProofContainsPrecompiles);
+        }
+
         if transactions.as_slice().is_empty() {
             return Err(ProvenBatchError::EmptyTransactionBatch);
         }
@@ -408,7 +415,11 @@ mod tests {
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         AccountIdBuilder,
     };
-    use crate::testing::dummy_execution_proof;
+    use crate::testing::{
+        dummy_deferred_execution_proof,
+        dummy_execution_proof,
+        dummy_precompile_execution_proof,
+    };
     use crate::transaction::{
         InputNoteCommitment,
         InputNotes,
@@ -543,6 +554,25 @@ mod tests {
         .unwrap();
 
         assert_eq!(batch.account_updates().keys().copied().collect::<Vec<_>>(), vec![account_id]);
+    }
+
+    #[test]
+    fn rejects_proofs_with_precompiles() {
+        for proof in [dummy_deferred_execution_proof(), dummy_precompile_execution_proof()] {
+            let error = ProvenBatch::new(
+                Word::empty(),
+                BlockNumber::from(1),
+                vec![private_account_update()],
+                InputNotes::default(),
+                Vec::new(),
+                BlockNumber::from(2),
+                transaction_headers(),
+                proof,
+            )
+            .unwrap_err();
+
+            assert_matches!(error, ProvenBatchError::BatchProofContainsPrecompiles);
+        }
     }
 
     #[test]
