@@ -196,6 +196,18 @@ impl LocalTransactionProver {
         )
     }
 
+    /// Returns a proven transaction carrying a complete proof with precompile work for verifier
+    /// tests.
+    pub fn prove_dummy_precompile(
+        &self,
+        executed_transaction: miden_protocol::transaction::ExecutedTransaction,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
+        self.prove_with_dummy(
+            executed_transaction,
+            miden_protocol::testing::dummy_precompile_execution_proof(),
+        )
+    }
+
     fn prove_with_dummy(
         &self,
         executed_transaction: miden_protocol::transaction::ExecutedTransaction,

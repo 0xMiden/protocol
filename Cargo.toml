@@ -55,6 +55,7 @@ miden-crypto           = { default-features = false, version = "0.30.0" }
 miden-crypto-derive    = { default-features = false, version = "0.30.0" }
 miden-mast-package     = { default-features = false, version = "0.30.0" }
 miden-package-registry = { default-features = false, version = "0.30.0" }
+miden-precompiles      = { default-features = false, version = "0.30.0" }
 miden-processor        = { default-features = false, version = "0.30.0" }
 miden-project          = { default-features = false, version = "0.30.0" }
 miden-prover           = { default-features = false, version = "0.30.0" }

@@ -88,6 +88,30 @@ async fn transaction_verifier_delegates_deferred_proof_validation() -> anyhow::R
     Ok(())
 }
 
+#[tokio::test]
+async fn transaction_verifier_rejects_settled_precompile_proofs() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+    let proven = LocalTransactionProver::default().prove_dummy_precompile(executed)?;
+
+    let error = TransactionVerifier::new(0).verify(&proven).unwrap_err();
+    assert_matches::assert_matches!(
+        error,
+        TransactionVerifierError::TransactionProofContainsPrecompiles
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 pub fn get_note_with_fungible_asset_and_script(
     fungible_asset: FungibleAsset,
