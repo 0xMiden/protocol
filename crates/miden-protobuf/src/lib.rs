@@ -38,3 +38,33 @@ pub mod __private {
         decode,
     };
 }
+
+/// Configures Prost messages to derive `ProtoDecode`.
+#[cfg(feature = "build")]
+#[macro_export]
+macro_rules! configure_proto_decodes {
+    (
+        prost: $prost:expr,
+        descriptors: $descriptors:expr,
+        $(
+            $message_name:literal => {
+                target: $target:ty,
+                $constructor_kind:ident: $constructor:expr $(,)?
+            }
+        ),+ $(,)?
+    ) => {
+        $crate::build::configure_proto_decodes(
+            $prost,
+            $descriptors,
+            [
+                $(
+                    $crate::build::ProtoDecodeConfig::$constructor_kind(
+                        $message_name,
+                        ::core::stringify!($target),
+                        ::core::stringify!($constructor),
+                    )
+                ),+
+            ],
+        )
+    };
+}

@@ -1,4 +1,5 @@
 use std::borrow::ToOwned;
+use std::collections::BTreeSet;
 use std::string::String;
 use std::vec::Vec;
 use std::{format, io};
@@ -8,18 +9,85 @@ use prost_types::{DescriptorProto, FileDescriptorSet};
 
 const OPTIONAL_ATTRIBUTE: &str = "#[proto_decode(optional)]";
 
-/// Configures a generated message for `ProtoDecode` and preserves explicitly optional message
+/// Structured configuration for a generated `ProtoDecode` implementation.
+#[doc(hidden)]
+pub struct ProtoDecodeConfig {
+    message_name: &'static str,
+    target: &'static str,
+    constructor: &'static str,
+    constructor_kind: ConstructorKind,
+}
+
+impl ProtoDecodeConfig {
+    #[doc(hidden)]
+    pub const fn constructor(
+        message_name: &'static str,
+        target: &'static str,
+        constructor: &'static str,
+    ) -> Self {
+        Self {
+            message_name,
+            target,
+            constructor,
+            constructor_kind: ConstructorKind::Infallible,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn try_constructor(
+        message_name: &'static str,
+        target: &'static str,
+        constructor: &'static str,
+    ) -> Self {
+        Self {
+            message_name,
+            target,
+            constructor,
+            constructor_kind: ConstructorKind::Fallible,
+        }
+    }
+
+    fn derive_attribute(&self) -> String {
+        let constructor = match self.constructor_kind {
+            ConstructorKind::Infallible => "constructor",
+            ConstructorKind::Fallible => "try_constructor",
+        };
+
+        format!(
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target({}), {}({}))]",
+            self.target, constructor, self.constructor
+        )
+    }
+}
+
+enum ConstructorKind {
+    Infallible,
+    Fallible,
+}
+
+/// Configures generated messages for `ProtoDecode` and preserves explicitly optional message
 /// fields that Prost's Rust attributes cannot distinguish from unlabelled message fields.
-pub fn configure_proto_decode(
+pub fn configure_proto_decodes(
     prost: &mut prost_build::Config,
     descriptors: &FileDescriptorSet,
-    message_name: &str,
-    derive_attribute: &str,
+    configs: impl IntoIterator<Item = ProtoDecodeConfig>,
 ) -> Result<(), io::Error> {
-    prost.type_attribute(message_name, derive_attribute);
+    let mut configured = BTreeSet::new();
+    for config in configs {
+        let canonical_name = config.message_name.strip_prefix('.').unwrap_or(config.message_name);
+        if !configured.insert(canonical_name) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("duplicate ProtoDecode message `{canonical_name}`"),
+            ));
+        }
 
-    for field_name in explicit_optional_message_fields(descriptors, message_name)? {
-        prost.field_attribute(field_name, OPTIONAL_ATTRIBUTE);
+        prost.type_attribute(config.message_name, config.derive_attribute());
+
+        for field_name in explicit_optional_message_fields(descriptors, config.message_name)? {
+            prost.field_attribute(field_name, OPTIONAL_ATTRIBUTE);
+        }
     }
 
     Ok(())
@@ -79,6 +147,7 @@ fn find_message(
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use std::{format, vec};
 
     use prost_types::field_descriptor_proto::Label;
@@ -135,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn configure_proto_decode_injects_the_marker_only_into_the_selected_message() {
+    fn configure_proto_decodes_injects_the_marker_only_into_the_selected_message() {
         let descriptors = FileDescriptorSet {
             file: vec![FileDescriptorProto {
                 name: Some("optional.proto".to_owned()),
@@ -158,12 +227,14 @@ mod tests {
 
         let mut prost = prost_build::Config::new();
         prost.out_dir(&out_dir);
-        configure_proto_decode(
-            &mut prost,
-            &descriptors,
-            ".example.Selected",
-            "#[derive(SelectedMarker)]",
-        )
+        crate::configure_proto_decodes! {
+            prost: &mut prost,
+            descriptors: &descriptors,
+            ".example.Selected" => {
+                target: SelectedTarget,
+                constructor: SelectedTarget::new(value),
+            },
+        }
         .unwrap();
         prost.compile_fds(descriptors).unwrap();
 
@@ -175,6 +246,37 @@ mod tests {
         assert_eq!(generated.matches(OPTIONAL_ATTRIBUTE).count(), 1);
 
         std::fs::remove_dir_all(out_dir).unwrap();
+    }
+
+    #[test]
+    fn configure_proto_decodes_rejects_duplicate_messages() {
+        let descriptors = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                package: Some("example".to_owned()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Selected".to_owned()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+        let mut prost = prost_build::Config::new();
+
+        let error = crate::configure_proto_decodes! {
+            prost: &mut prost,
+            descriptors: &descriptors,
+            ".example.Selected" => {
+                target: SelectedTarget,
+                constructor: SelectedTarget::new(),
+            },
+            "example.Selected" => {
+                target: SelectedTarget,
+                constructor: SelectedTarget::new(),
+            },
+        }
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "duplicate ProtoDecode message `example.Selected`");
     }
 
     fn field(name: &str, field_type: Type, proto3_optional: bool) -> FieldDescriptorProto {
