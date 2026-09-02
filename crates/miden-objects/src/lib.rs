@@ -14,6 +14,10 @@ pub mod proto {
         include!(concat!(env!("OUT_DIR"), "/account.rs"));
     }
 
+    pub mod asset {
+        include!(concat!(env!("OUT_DIR"), "/asset.rs"));
+    }
+
     pub mod blockchain {
         include!(concat!(env!("OUT_DIR"), "/blockchain.rs"));
     }
@@ -41,6 +45,7 @@ pub const FILE_DESCRIPTOR_SET: &[u8] =
 /// imported from this descriptor are represented by this crate's generated Rust types.
 pub const EXTERN_PATHS: &[(&str, &str)] = &[
     (".account", "::miden_objects::proto::account"),
+    (".asset", "::miden_objects::proto::asset"),
     (".blockchain", "::miden_objects::proto::blockchain"),
     (".note", "::miden_objects::proto::note"),
     (".primitives", "::miden_objects::proto::primitives"),

@@ -1,6 +1,5 @@
 use alloc::format;
 
-use miden_protocol::asset::Asset;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
@@ -255,48 +254,11 @@ impl TryFrom<&proto::primitives::Signature> for Signature {
     }
 }
 
-// ASSET
-// ================================================================================================
-
-impl From<&Asset> for proto::primitives::Asset {
-    fn from(value: &Asset) -> Self {
-        Self {
-            key: Some(value.to_id_word().into()),
-            value: Some(value.to_value_word().into()),
-        }
-    }
-}
-
-impl From<Asset> for proto::primitives::Asset {
-    fn from(value: Asset) -> Self {
-        (&value).into()
-    }
-}
-
-impl TryFrom<proto::primitives::Asset> for Asset {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::Asset) -> Result<Self, Self::Error> {
-        let key = value
-            .key
-            .ok_or_else(|| ConversionError::missing_field::<proto::primitives::Asset>("key"))?
-            .try_into()
-            .map_err(|error: ConversionError| error.context("key"))?;
-        let value = value
-            .value
-            .ok_or_else(|| ConversionError::missing_field::<proto::primitives::Asset>("value"))?
-            .try_into()
-            .map_err(|error: ConversionError| error.context("value"))?;
-        Asset::from_id_and_value_words(key, value).map_err(ConversionError::new)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use core::error::Error;
-
     use alloc::string::ToString;
     use alloc::vec;
+    use core::error::Error;
 
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_protocol::utils::serde::DeserializationError;

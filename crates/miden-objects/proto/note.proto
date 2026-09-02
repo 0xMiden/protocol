@@ -2,6 +2,7 @@ syntax = "proto3";
 package note;
 
 import "account.proto";
+import "asset.proto";
 import "block_number.proto";
 import "primitives.proto";
 
@@ -49,7 +50,7 @@ message NoteRecipient {
 }
 
 message NoteDetails {
-  repeated primitives.Asset assets = 1;
+  repeated asset.Asset assets = 1;
   NoteRecipient recipient = 2;
 }
 

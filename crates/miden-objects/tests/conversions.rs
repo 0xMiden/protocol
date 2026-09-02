@@ -18,6 +18,13 @@ use miden_protocol::account::{
     StorageSlotType,
     StorageValuePatch,
 };
+use miden_protocol::asset::{
+    Asset,
+    AssetComposition as ProtocolAssetComposition,
+    AssetId,
+    FungibleAsset,
+    NonFungibleAsset,
+};
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{
@@ -30,6 +37,7 @@ use miden_protocol::block::{
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::{
     AccountIdError,
+    AssetError,
     ProtocolConfigError,
     TransactionHeaderError,
     ValidatorConfigError,
@@ -46,6 +54,150 @@ use miden_protocol::transaction::{
 use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{Felt, Word};
 use prost::Message;
+
+#[test]
+fn protobuf_descriptor_includes_structured_asset_schema() {
+    assert!(
+        miden_objects::FILE_DESCRIPTOR_SET
+            .windows(b"asset.proto".len())
+            .any(|window| window == b"asset.proto")
+    );
+}
+
+#[test]
+fn fungible_asset_roundtrips_through_structured_protobuf() {
+    let asset = FungibleAsset::mock(42);
+
+    let encoded = proto::asset::Asset::from(asset);
+
+    assert_eq!(
+        encoded.asset_id.as_ref().unwrap().composition,
+        proto::asset::AssetComposition::Fungible as i32
+    );
+    assert_eq!(Asset::try_from(encoded).unwrap(), asset);
+}
+
+#[test]
+fn non_fungible_asset_roundtrips_through_structured_protobuf() {
+    let asset = NonFungibleAsset::mock(&[1, 2, 3]);
+
+    let encoded = proto::asset::Asset::from(asset);
+
+    assert_eq!(
+        encoded.asset_id.as_ref().unwrap().composition,
+        proto::asset::AssetComposition::None as i32
+    );
+    assert_eq!(Asset::try_from(encoded).unwrap(), asset);
+}
+
+#[test]
+fn structured_asset_conversion_requires_message_fields() {
+    let asset_id_error = AssetId::try_from(proto::asset::AssetId::default()).unwrap_err();
+    assert!(asset_id_error.to_string().ends_with("::asset_class is missing"));
+
+    let faucet_id_error = AssetId::try_from(proto::asset::AssetId {
+        asset_class: Some(proto::asset::AssetClass {
+            suffix: Some(Felt::ZERO.into()),
+            prefix: Some(Felt::ZERO.into()),
+        }),
+        composition: proto::asset::AssetComposition::Fungible as i32,
+        faucet_id: None,
+    })
+    .unwrap_err();
+    assert!(faucet_id_error.to_string().ends_with("::faucet_id is missing"));
+
+    let asset_error = Asset::try_from(proto::asset::Asset::default()).unwrap_err();
+    assert!(asset_error.to_string().ends_with("::asset_id is missing"));
+
+    let value_error = Asset::try_from(proto::asset::Asset {
+        asset_id: Some(proto::asset::AssetId {
+            asset_class: Some(proto::asset::AssetClass {
+                suffix: Some(Felt::ZERO.into()),
+                prefix: Some(Felt::ZERO.into()),
+            }),
+            composition: proto::asset::AssetComposition::Fungible as i32,
+            faucet_id: Some(FungibleAsset::mock_issuer().into()),
+        }),
+        value: None,
+    })
+    .unwrap_err();
+    assert!(value_error.to_string().ends_with("::value is missing"));
+}
+
+#[test]
+fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositions() {
+    let asset_class = proto::asset::AssetClass {
+        suffix: Some(Felt::ZERO.into()),
+        prefix: Some(Felt::ZERO.into()),
+    };
+    let faucet_id = Some(FungibleAsset::mock_issuer().into());
+
+    let unspecified = AssetId::try_from(proto::asset::AssetId {
+        asset_class: Some(asset_class.clone()),
+        composition: proto::asset::AssetComposition::Unspecified as i32,
+        faucet_id: faucet_id.clone(),
+    })
+    .unwrap_err();
+    assert_eq!(unspecified.to_string(), "composition: asset composition is unspecified");
+
+    let unknown = AssetId::try_from(proto::asset::AssetId {
+        asset_class: Some(asset_class.clone()),
+        composition: 4,
+        faucet_id: faucet_id.clone(),
+    })
+    .unwrap_err();
+    assert_eq!(unknown.to_string(), "composition: unknown asset composition 4");
+
+    let custom = AssetId::try_from(proto::asset::AssetId {
+        asset_class: Some(asset_class),
+        composition: proto::asset::AssetComposition::Custom as i32,
+        faucet_id,
+    })
+    .unwrap_err();
+    assert!(matches!(
+        custom.source().and_then(|source| source.downcast_ref::<AssetError>()),
+        Some(AssetError::UnsupportedAssetComposition(ProtocolAssetComposition::Custom))
+    ));
+}
+
+#[test]
+fn structured_asset_conversion_rejects_nonzero_fungible_class() {
+    let error = AssetId::try_from(proto::asset::AssetId {
+        asset_class: Some(proto::asset::AssetClass {
+            suffix: Some(Felt::ONE.into()),
+            prefix: Some(Felt::ZERO.into()),
+        }),
+        composition: proto::asset::AssetComposition::Fungible as i32,
+        faucet_id: Some(FungibleAsset::mock_issuer().into()),
+    })
+    .unwrap_err();
+
+    assert!(matches!(
+        error.source().and_then(|source| source.downcast_ref::<AssetError>()),
+        Some(AssetError::FungibleAssetClassMustBeZero(_))
+    ));
+}
+
+#[test]
+fn structured_asset_conversion_rejects_invalid_fungible_values() {
+    let error = Asset::try_from(proto::asset::Asset {
+        asset_id: Some(proto::asset::AssetId {
+            asset_class: Some(proto::asset::AssetClass {
+                suffix: Some(Felt::ZERO.into()),
+                prefix: Some(Felt::ZERO.into()),
+            }),
+            composition: proto::asset::AssetComposition::Fungible as i32,
+            faucet_id: Some(FungibleAsset::mock_issuer().into()),
+        }),
+        value: Some(Word::from([1_u32, 1, 0, 0]).into()),
+    })
+    .unwrap_err();
+
+    assert!(matches!(
+        error.source().and_then(|source| source.downcast_ref::<AssetError>()),
+        Some(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_))
+    ));
+}
 
 #[test]
 fn conversion_error_preserves_deserialization_error_source() {

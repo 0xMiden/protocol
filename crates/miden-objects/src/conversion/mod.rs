@@ -1,5 +1,6 @@
 mod account;
 mod account_patch;
+mod asset;
 mod batch;
 mod block;
 mod merkle;

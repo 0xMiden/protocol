@@ -1,0 +1,28 @@
+syntax = "proto3";
+package asset;
+
+import "account.proto";
+import "primitives.proto";
+
+message AssetClass {
+  primitives.Felt suffix = 1;
+  primitives.Felt prefix = 2;
+}
+
+enum AssetComposition {
+  ASSET_COMPOSITION_UNSPECIFIED = 0;
+  ASSET_COMPOSITION_NONE = 1;
+  ASSET_COMPOSITION_FUNGIBLE = 2;
+  ASSET_COMPOSITION_CUSTOM = 3;
+}
+
+message AssetId {
+  AssetClass asset_class = 1;
+  AssetComposition composition = 2;
+  account.AccountId faucet_id = 3;
+}
+
+message Asset {
+  AssetId asset_id = 1;
+  primitives.Word value = 2;
+}
