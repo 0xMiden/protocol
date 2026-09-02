@@ -1256,11 +1256,23 @@ async fn sponsors_and_collects_multiple_notes() -> anyhow::Result<()> {
 // SPONSORSHIP POLICY
 // ================================================================================================
 
-/// Under [`SponsorshipPolicy::AtMostCollectedFees`], a sponsorship that no collected fee backs is
-/// rejected.
+/// Under [`SponsorshipPolicy::AtMostCollectedFees`], sponsorships the collected fees do not cover
+/// are rejected: one that nothing backs, and two whose summed amount exceeds the one collected fee.
+/// The latter pins that the cap compares the summed amount: a total that collapsed to the number
+/// of sponsorship notes would pass it.
+#[rstest]
+// (network notes created, collected notes consumed)
+#[case::nothing_collected(1, 0)]
+#[case::one_of_two_covered(2, 1)]
 #[tokio::test]
-async fn sponsoring_more_than_collected_is_rejected() -> anyhow::Result<()> {
-    let test = SponsorshipTest::builder().build()?;
+async fn sponsoring_more_than_collected_is_rejected(
+    #[case] num_network_notes: u32,
+    #[case] num_collected_notes: u32,
+) -> anyhow::Result<()> {
+    let test = SponsorshipTest::builder()
+        .num_network_notes(num_network_notes)
+        .num_collected_notes(num_collected_notes)
+        .build()?;
 
     let result = test.transaction()?.execute().await;
 
