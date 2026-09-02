@@ -9,7 +9,7 @@
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
 - Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` that runs it ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
 - Added the `miden-objects` crate with canonical, `no_std`-compatible Protobuf representations and validated conversions for protocol objects exchanged between clients and nodes ([#3707](https://github.com/0xMiden/protocol/pull/3707)).
-- Added canonical Protobuf representations and validated conversions for `TransactionInputs` ([#3707](https://github.com/0xMiden/protocol/pull/3707)).
+- Added canonical Protobuf representations and validated conversions for `TransactionInputs` ([#3776](https://github.com/0xMiden/protocol/pull/3776)).
 
 ### Changes
 
