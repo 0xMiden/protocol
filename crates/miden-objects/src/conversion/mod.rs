@@ -10,6 +10,7 @@ mod protocol_config;
 mod transaction;
 mod transaction_inputs;
 
+use core::error::Error;
 use core::marker::PhantomData;
 
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
@@ -32,12 +33,12 @@ impl<M: prost::Message> MessageDecoder<M> {
     ) -> Result<U, ConversionError>
     where
         T: TryInto<U>,
-        T::Error: Into<ConversionError>,
+        T::Error: Error + Send + Sync + 'static,
     {
         value
             .ok_or_else(|| ConversionError::missing_field::<M>(name))?
             .try_into()
-            .map_err(Into::into)
+            .map_err(ConversionError::new)
             .map_err(|error: ConversionError| error.context(name))
     }
 }

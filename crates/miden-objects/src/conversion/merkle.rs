@@ -66,7 +66,7 @@ impl TryFrom<proto::primitives::SparseMerklePath> for SparseMerklePath {
     type Error = ConversionError;
 
     fn try_from(merkle_path: proto::primitives::SparseMerklePath) -> Result<Self, Self::Error> {
-        Ok(SparseMerklePath::from_parts(
+        SparseMerklePath::from_parts(
             merkle_path.empty_nodes_mask,
             merkle_path
                 .siblings
@@ -74,7 +74,8 @@ impl TryFrom<proto::primitives::SparseMerklePath> for SparseMerklePath {
                 .map(Word::try_from)
                 .collect::<Result<Vec<_>, _>>()
                 .context("siblings")?,
-        )?)
+        )
+        .map_err(ConversionError::new)
     }
 }
 
@@ -139,7 +140,7 @@ impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
                     .collect::<Result<_, _>>()
                     .context("entries")?;
 
-                Ok(SmtLeaf::new_multiple(domain_entries)?)
+                Ok(SmtLeaf::new_multiple(domain_entries).map_err(ConversionError::new)?)
             },
         }
     }
@@ -196,7 +197,7 @@ impl TryFrom<proto::primitives::SmtOpening> for SmtProof {
         let path = required!(decoder, opening.path)?;
         let leaf = required!(decoder, opening.leaf)?;
 
-        Ok(SmtProof::new(path, leaf)?)
+        SmtProof::new(path, leaf).map_err(ConversionError::new)
     }
 }
 

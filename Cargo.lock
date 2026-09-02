@@ -2550,6 +2550,7 @@ name = "miden-objects"
 version = "0.17.0"
 dependencies = [
  "assert_matches",
+ "miden-protobuf",
  "miden-protocol",
  "prost",
  "prost-build",
@@ -2643,6 +2644,26 @@ dependencies = [
  "serde-untagged",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "miden-protobuf"
+version = "0.17.0"
+dependencies = [
+ "miden-protobuf-derive",
+ "prost",
+ "prost-build",
+ "prost-types",
+]
+
+[[package]]
+name = "miden-protobuf-derive"
+version = "0.17.0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

@@ -1,0 +1,24 @@
+[package]
+authors.workspace      = true
+categories             = ["encoding", "no-std"]
+description            = "Protobuf conversion support for Miden"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["miden", "protobuf", "serialization"]
+license.workspace      = true
+name                   = "miden-protobuf"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[features]
+build   = ["dep:prost-build", "dep:prost-types", "std"]
+default = ["derive", "std"]
+derive  = ["dep:miden-protobuf-derive"]
+std     = ["prost/std"]
+
+[dependencies]
+miden-protobuf-derive = { optional = true, workspace = true }
+prost                  = { workspace = true }
+prost-build            = { optional = true, workspace = true }
+prost-types            = { optional = true, workspace = true }

@@ -3,9 +3,8 @@
 extern crate alloc;
 
 pub mod conversion;
-pub mod error;
 
-pub use error::{ConversionError, ConversionResultExt};
+pub use miden_protobuf::{ConversionError, ConversionResultExt};
 pub use prost;
 
 /// Generated canonical Protobuf messages.

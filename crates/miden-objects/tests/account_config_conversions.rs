@@ -364,6 +364,24 @@ fn kernel_config_rejects_oversized_procedure_list() {
 }
 
 #[test]
+fn protocol_config_reports_the_full_nested_repeated_field_path() {
+    let mut message = proto::protocol_config::ProtocolConfig::from(protocol_config());
+    message
+        .tx_kernel
+        .as_mut()
+        .unwrap()
+        .kernel_procs
+        .push(proto::primitives::Word { encoded: vec![0_u8; 31] });
+
+    let error = ProtocolConfig::try_from(message).unwrap_err();
+
+    assert!(
+        error.to_string().starts_with("tx_kernel.kernel_procs[1].word.encoded:"),
+        "unexpected error path: {error}"
+    );
+}
+
+#[test]
 fn proof_security_policy_rejects_out_of_range_minimum_bits() {
     let error = ProofSecurityPolicy::try_from(proto::protocol_config::ProofSecurityPolicy {
         security_estimator_root: Some(Word::empty().into()),

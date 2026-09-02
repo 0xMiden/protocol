@@ -101,7 +101,7 @@ impl TryFrom<proto::note::NoteAttachment> for NoteAttachment {
     fn try_from(attachment: proto::note::NoteAttachment) -> Result<Self, Self::Error> {
         let scheme = u16::try_from(attachment.scheme).context("scheme")?;
         let scheme = NoteAttachmentScheme::new(scheme)
-            .map_err(ConversionError::from)
+            .map_err(ConversionError::new)
             .context("scheme")?;
         let words = attachment
             .words
@@ -111,7 +111,7 @@ impl TryFrom<proto::note::NoteAttachment> for NoteAttachment {
             .context("words")?;
 
         NoteAttachment::with_words(scheme, words)
-            .map_err(ConversionError::from)
+            .map_err(ConversionError::new)
             .context("words")
     }
 }
@@ -142,7 +142,7 @@ impl TryFrom<proto::note::NoteAttachments> for NoteAttachments {
             .context("attachments")?;
 
         NoteAttachments::new(attachments)
-            .map_err(ConversionError::from)
+            .map_err(ConversionError::new)
             .context("attachments")
     }
 }
@@ -175,7 +175,7 @@ impl TryFrom<proto::note::NoteStorage> for NoteStorage {
             .collect::<Result<Vec<_>, _>>()
             .context("items")?;
 
-        NoteStorage::new(items).map_err(ConversionError::from).context("items")
+        NoteStorage::new(items).map_err(ConversionError::new).context("items")
     }
 }
 
@@ -234,7 +234,7 @@ impl TryFrom<proto::note::NoteDetails> for NoteDetails {
             .map(Asset::try_from)
             .collect::<Result<Vec<_>, _>>()
             .context("assets")?;
-        let assets = NoteAssets::new(assets).map_err(ConversionError::from).context("assets")?;
+        let assets = NoteAssets::new(assets).map_err(ConversionError::new).context("assets")?;
         let recipient = required!(decoder, details.recipient)?;
 
         Ok(NoteDetails::new(assets, recipient))
@@ -326,7 +326,8 @@ impl TryFrom<&proto::note::NoteInclusionProof> for (NoteId, NoteInclusionProof) 
                 block_num,
                 proof.note_index_in_block.try_into().context("note_index_in_block")?,
                 inclusion_path,
-            )?,
+            )
+            .map_err(ConversionError::new)?,
         ))
     }
 }
