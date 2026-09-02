@@ -2,8 +2,7 @@ syntax = "proto3";
 package primitives;
 
 message Felt {
-  // Exactly eight bytes containing a canonically serialized field element.
-  bytes encoded = 1;
+  fixed64 value = 1;
 }
 
 message Word {
@@ -21,12 +20,24 @@ message MastForest {
   bytes encoded = 1;
 }
 
+enum PublicKeyVariant {
+  PUBLIC_KEY_VARIANT_UNSPECIFIED = 0;
+  PUBLIC_KEY_VARIANT_ECDSA_K256_KECCAK = 1;
+}
+
 message PublicKey {
-  bytes encoded = 1;
+  PublicKeyVariant variant = 1;
+  bytes encoded = 2;
+}
+
+enum SignatureVariant {
+  SIGNATURE_VARIANT_UNSPECIFIED = 0;
+  SIGNATURE_VARIANT_ECDSA_K256_KECCAK = 1;
 }
 
 message Signature {
-  bytes encoded = 1;
+  SignatureVariant variant = 1;
+  bytes encoded = 2;
 }
 
 message Asset {
