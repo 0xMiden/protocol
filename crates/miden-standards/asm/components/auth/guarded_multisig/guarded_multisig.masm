@@ -69,7 +69,7 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     # load_conversion_info consumes the AUTH_ARGS, so keep a copy to serve as the summary salt.
     # ---------------------------------------------------------------------------------------------
 
-    # sample the output-note count so the notes the fee payment goes on to create can be counted
+    # read the output-note count so the notes the fee payment goes on to create can be counted
     exec.tx::get_num_output_notes movdn.4
     # => [AUTH_ARGS, num_output_notes_before_fee]
 
@@ -102,7 +102,7 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     dup movdn.5
     # => [fee_amount, CONVERSION_INFO, fee_amount, AUTH_ARGS, num_output_notes_before_fee]
 
-    exec.fee::resolve_payment
+    exec.fee::resolve_payment_info
     # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, fee_amount,
     #     AUTH_ARGS, num_output_notes_before_fee]
 

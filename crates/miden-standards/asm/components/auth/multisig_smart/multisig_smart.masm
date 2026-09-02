@@ -89,7 +89,7 @@ pub proc auth_tx_multisig_smart(auth_args: word)
     dup movdn.5
     # => [fee_amount, CONVERSION_INFO, fee_amount, AUTH_ARGS, num_output_notes_before_fee]
 
-    exec.fee::resolve_payment
+    exec.fee::resolve_payment_info
     # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, fee_amount,
     #     AUTH_ARGS, num_output_notes_before_fee]
 
