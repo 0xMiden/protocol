@@ -1,6 +1,7 @@
 use core::error::Error;
 
-use miden_objects::proto;
+use assert_matches::assert_matches;
+use miden_objects::{ConversionError, proto};
 use miden_protocol::account::{
     AccountCode,
     AccountId,
@@ -42,7 +43,7 @@ use miden_protocol::protocol_config::{
 use miden_protocol::{Felt, Word};
 use prost::Message;
 
-fn account_id(seed: u8) -> AccountId {
+fn dummy_account_id(seed: u8) -> AccountId {
     AccountId::dummy(
         [seed; 15],
         AccountIdVersion::Version1,
@@ -53,7 +54,7 @@ fn account_id(seed: u8) -> AccountId {
 
 fn partial_account() -> PartialAccount {
     PartialAccount::new(
-        account_id(7),
+        dummy_account_id(7),
         Felt::ONE,
         AccountCode::mock(),
         PartialStorage::new(AccountStorageHeader::new(vec![]).unwrap(), []).unwrap(),
@@ -63,9 +64,9 @@ fn partial_account() -> PartialAccount {
     .unwrap()
 }
 
-fn protocol_config() -> ProtocolConfig {
+fn dummy_protocol_config() -> ProtocolConfig {
     ProtocolConfig::new(
-        AssetId::new_fungible(account_id(8)),
+        AssetId::new_fungible(dummy_account_id(8)),
         KernelConfig::new(Word::from([1_u32, 0, 0, 0]), vec![Word::from([2_u32, 0, 0, 0])])
             .unwrap(),
         KernelConfig::new(Word::from([3_u32, 0, 0, 0]), vec![]).unwrap(),
@@ -77,6 +78,10 @@ fn protocol_config() -> ProtocolConfig {
         ),
     )
     .unwrap()
+}
+
+fn error_source<E: Error + 'static>(error: &ConversionError) -> Option<&E> {
+    error.source().and_then(|source| source.downcast_ref::<E>())
 }
 
 #[test]
@@ -116,10 +121,10 @@ fn partial_account_preserves_seed_validation_source() {
 
     let error = PartialAccount::try_from(message).unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<AccountError>()),
+    assert_matches!(
+        error_source::<AccountError>(&error),
         Some(AccountError::ExistingAccountWithSeed)
-    ));
+    );
 }
 
 #[test]
@@ -129,10 +134,10 @@ fn partial_account_rejects_new_account_without_seed() {
 
     let error = PartialAccount::try_from(message).unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<AccountError>()),
+    assert_matches!(
+        error_source::<AccountError>(&error),
         Some(AccountError::NewAccountMissingSeed)
-    ));
+    );
 }
 
 #[test]
@@ -159,10 +164,10 @@ fn partial_storage_preserves_root_not_in_header_source() {
 
     let error = PartialStorage::try_from(message).unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<AccountError>()),
+    assert_matches!(
+        error_source::<AccountError>(&error),
         Some(AccountError::StorageMapRootNotFound(root)) if *root == Word::from([9_u32, 0, 0, 0])
-    ));
+    );
 }
 
 #[test]
@@ -175,12 +180,10 @@ fn partial_storage_map_rejects_duplicate_raw_keys() {
 
     let error = PartialStorageMap::try_from(message).unwrap_err();
 
-    assert!(matches!(
-            error.source().and_then(
-                |source| source.downcast_ref::<miden_protocol::crypto::merkle::MerkleError>()
-            ),
-            Some(miden_protocol::crypto::merkle::MerkleError::DuplicateValuesForIndex(_))
-        ));
+    assert_matches!(
+        error_source::<miden_protocol::crypto::merkle::MerkleError>(&error),
+        Some(miden_protocol::crypto::merkle::MerkleError::DuplicateValuesForIndex(_))
+    );
 }
 
 #[test]
@@ -191,17 +194,15 @@ fn partial_storage_map_rejects_untracked_raw_keys() {
 
     let error = PartialStorageMap::try_from(message).unwrap_err();
 
-    assert!(matches!(
-            error.source().and_then(
-                |source| source.downcast_ref::<miden_protocol::crypto::merkle::MerkleError>()
-            ),
-            Some(miden_protocol::crypto::merkle::MerkleError::UntrackedKey(_))
-        ));
+    assert_matches!(
+        error_source::<miden_protocol::crypto::merkle::MerkleError>(&error),
+        Some(miden_protocol::crypto::merkle::MerkleError::UntrackedKey(_))
+    );
 }
 
 #[test]
 fn partial_vault_rejects_duplicate_asset_ids() {
-    let id = AssetId::new_fungible(account_id(9));
+    let id = AssetId::new_fungible(dummy_account_id(9));
     let asset = Asset::new(id, Word::from([2_u32, 0, 0, 0])).unwrap();
     let mut message: proto::account::PartialVault =
         PartialVault::new_full(AssetVault::new(&[asset]).unwrap()).into();
@@ -209,10 +210,10 @@ fn partial_vault_rejects_duplicate_asset_ids() {
 
     let error = PartialVault::try_from(message).unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<PartialAssetVaultError>()),
+    assert_matches!(
+        error_source::<PartialAssetVaultError>(&error),
         Some(PartialAssetVaultError::DuplicateAssetId(actual)) if *actual == id
-    ));
+    );
 }
 
 #[test]
@@ -222,15 +223,12 @@ fn partial_vault_preserves_invalid_asset_id_source() {
 
     let error = PartialVault::try_from(message).unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<AssetError>()),
-        Some(AssetError::UnknownAssetIdVersion(0))
-    ));
+    assert_matches!(error_source::<AssetError>(&error), Some(AssetError::UnknownAssetIdVersion(0)));
 }
 
 #[test]
 fn partial_vault_preserves_invalid_asset_value_source() {
-    let id = AssetId::new_fungible(account_id(9));
+    let id = AssetId::new_fungible(dummy_account_id(9));
     let smt = Smt::with_entries([(id.hash().as_word(), Word::from([1_u32, 2, 0, 0]))]).unwrap();
     let message = proto::account::PartialVault {
         smt: Some(PartialSmt::from_proofs([smt.open(&id.hash().as_word())]).unwrap().into()),
@@ -239,15 +237,13 @@ fn partial_vault_preserves_invalid_asset_value_source() {
 
     let error = PartialVault::try_from(message).unwrap_err();
 
-    assert!(matches!(
-        error
-            .source()
-            .and_then(|source| source.downcast_ref::<PartialAssetVaultError>()),
+    assert_matches!(
+        error_source::<PartialAssetVaultError>(&error),
         Some(PartialAssetVaultError::InvalidAssetForId {
             source: AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_),
             ..
         })
-    ));
+    );
 }
 
 #[test]
@@ -294,7 +290,7 @@ fn partial_account_encoding_canonicalizes_map_like_fields() {
             .unwrap();
     let partial_storage = PartialStorage::new_full(storage);
     let account = PartialAccount::new(
-        account_id(7),
+        dummy_account_id(7),
         Felt::ONE,
         AccountCode::mock(),
         partial_storage,
@@ -311,7 +307,7 @@ fn partial_account_encoding_canonicalizes_map_like_fields() {
 
 #[test]
 fn protocol_config_roundtrips_through_protobuf_bytes_and_preserves_kernel_order() {
-    let config = protocol_config();
+    let config = dummy_protocol_config();
 
     let encoded = proto::protocol_config::ProtocolConfig::from(&config).encode_to_vec();
     let message = proto::protocol_config::ProtocolConfig::decode(encoded.as_slice()).unwrap();
@@ -325,7 +321,7 @@ fn protocol_config_roundtrips_through_protobuf_bytes_and_preserves_kernel_order(
 
 #[test]
 fn protocol_config_requires_all_nested_messages() {
-    let mut message = proto::protocol_config::ProtocolConfig::from(protocol_config());
+    let mut message = proto::protocol_config::ProtocolConfig::from(dummy_protocol_config());
     message.proof_verification = None;
 
     let error = ProtocolConfig::try_from(message).unwrap_err();
@@ -335,10 +331,10 @@ fn protocol_config_requires_all_nested_messages() {
 
 #[test]
 fn protocol_config_preserves_fee_asset_validation_source() {
-    let mut message = proto::protocol_config::ProtocolConfig::from(protocol_config());
+    let mut message = proto::protocol_config::ProtocolConfig::from(dummy_protocol_config());
     let non_fungible = AssetId::new(
         miden_protocol::asset::AssetClass::default(),
-        account_id(10),
+        dummy_account_id(10),
         miden_protocol::asset::AssetComposition::None,
     )
     .unwrap();
@@ -346,10 +342,10 @@ fn protocol_config_preserves_fee_asset_validation_source() {
 
     let error = ProtocolConfig::try_from(message).unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<ProtocolConfigError>()),
+    assert_matches!(
+        error_source::<ProtocolConfigError>(&error),
         Some(ProtocolConfigError::FeeAssetMustBeFungible(_))
-    ));
+    );
 }
 
 #[test]
@@ -360,11 +356,11 @@ fn kernel_config_rejects_oversized_procedure_list() {
     })
     .unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<ProtocolConfigError>()),
+    assert_matches!(
+        error_source::<ProtocolConfigError>(&error),
         Some(ProtocolConfigError::TooManyKernelProcedures { count })
             if *count == KernelConfig::MAX_NUM_KERNEL_PROCEDURES + 1
-    ));
+    );
 }
 
 #[test]
@@ -375,12 +371,7 @@ fn proof_security_policy_rejects_out_of_range_minimum_bits() {
     })
     .unwrap_err();
 
-    assert!(
-        error
-            .source()
-            .and_then(|source| source.downcast_ref::<core::num::TryFromIntError>())
-            .is_some()
-    );
+    assert_matches!(error_source::<core::num::TryFromIntError>(&error), Some(_));
 }
 
 #[test]
@@ -391,8 +382,8 @@ fn proof_security_policy_preserves_zero_bits_validation_source() {
     })
     .unwrap_err();
 
-    assert!(matches!(
-        error.source().and_then(|source| source.downcast_ref::<ProtocolConfigError>()),
+    assert_matches!(
+        error_source::<ProtocolConfigError>(&error),
         Some(ProtocolConfigError::MinimumSecurityBitsMustBeNonZero)
-    ));
+    );
 }

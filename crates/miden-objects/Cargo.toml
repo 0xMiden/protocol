@@ -26,4 +26,5 @@ prost-build = { workspace = true }
 protox      = { workspace = true }
 
 [dev-dependencies]
+assert_matches  = { workspace = true }
 miden-protocol = { features = ["testing"], workspace = true }

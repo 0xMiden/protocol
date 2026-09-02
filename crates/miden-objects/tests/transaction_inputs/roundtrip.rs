@@ -3,14 +3,13 @@ use miden_protocol::note::Note;
 use miden_protocol::transaction::TransactionInputs;
 use prost::Message;
 
-#[path = "support/transaction_inputs.rs"]
-mod common;
+use super::common;
 
 #[test]
 fn transaction_inputs_roundtrip_preserves_all_nested_fields_and_ordered_collections() {
-    let expected = common::transaction_inputs();
+    let expected = common::dummy_transaction_inputs();
     let mut message = proto::transaction::TransactionInputs::from(&expected);
-    let v1 = common::transaction_inputs_v1(&mut message);
+    let v1 = common::transaction_inputs_v1_mut(&mut message);
 
     let encoded_note_ids = v1
         .input_notes

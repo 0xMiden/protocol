@@ -1,6 +1,7 @@
 use core::error::Error;
 use std::collections::BTreeMap;
 
+use assert_matches::assert_matches;
 use miden_objects::proto;
 use miden_protocol::crypto::merkle::InnerNodeInfo;
 use miden_protocol::crypto::merkle::store::MerkleStore;
@@ -10,21 +11,21 @@ use miden_protocol::utils::serde::DeserializationError;
 use miden_protocol::vm::{AdviceInputs, AdviceMap};
 use miden_protocol::{Felt, Word};
 
-fn word(value: u32) -> Word {
+fn dummy_word(value: u32) -> Word {
     Word::from([value, 0, 0, 0])
 }
 
 fn note_id(value: u32) -> NoteId {
-    Note::mock_noop(word(value)).id()
+    Note::mock_noop(dummy_word(value)).id()
 }
 
 #[test]
 fn advice_inputs_roundtrip_preserves_stack_order_and_normalizes_map_order() {
     let mut store = MerkleStore::new();
     store.extend([InnerNodeInfo {
-        value: word(9),
-        left: word(10),
-        right: word(11),
+        value: dummy_word(9),
+        left: dummy_word(10),
+        right: dummy_word(11),
     }]);
     let advice_inputs = AdviceInputs::default()
         .with_advice_stack({
@@ -32,7 +33,10 @@ fn advice_inputs_roundtrip_preserves_stack_order_and_normalizes_map_order() {
             stack.append_elements([Felt::from(1_u32), Felt::from(2_u32)]);
             stack
         })
-        .with_map([(word(7), vec![Felt::from(3_u32)]), (word(5), vec![Felt::from(4_u32)])])
+        .with_map([
+            (dummy_word(7), vec![Felt::from(3_u32)]),
+            (dummy_word(5), vec![Felt::from(4_u32)]),
+        ])
         .with_merkle_store(store);
 
     let message = proto::primitives::AdviceInputs::from(&advice_inputs);
@@ -50,7 +54,7 @@ fn advice_inputs_roundtrip_preserves_stack_order_and_normalizes_map_order() {
             .iter()
             .map(|entry| Word::try_from(entry.key.clone().unwrap()).unwrap())
             .collect::<Vec<_>>(),
-        vec![word(5), word(7)]
+        vec![dummy_word(5), dummy_word(7)]
     );
     assert_eq!(AdviceInputs::try_from(message).unwrap(), advice_inputs);
 }
@@ -60,11 +64,11 @@ fn advice_map_decoding_normalizes_arbitrary_entry_order() {
     let map = AdviceMap::try_from(proto::primitives::AdviceMap {
         entries: vec![
             proto::primitives::AdviceMapEntry {
-                key: Some(word(7).into()),
+                key: Some(dummy_word(7).into()),
                 values: vec![Felt::from(3_u32).into()],
             },
             proto::primitives::AdviceMapEntry {
-                key: Some(word(5).into()),
+                key: Some(dummy_word(5).into()),
                 values: vec![Felt::from(4_u32).into()],
             },
         ],
@@ -77,7 +81,7 @@ fn advice_map_decoding_normalizes_arbitrary_entry_order() {
             .iter()
             .map(|entry| Word::try_from(entry.key.clone().unwrap()).unwrap())
             .collect::<Vec<_>>(),
-        vec![word(5), word(7)]
+        vec![dummy_word(5), dummy_word(7)]
     );
 }
 
@@ -88,13 +92,13 @@ fn merkle_store_omits_identical_defaults_and_retains_default_parent_overrides() 
     let mut store = MerkleStore::new();
     let override_node = InnerNodeInfo {
         value: default_node.value,
-        left: word(12),
+        left: dummy_word(12),
         right: default_node.right,
     };
     let custom_node = InnerNodeInfo {
-        value: word(9),
-        left: word(10),
-        right: word(11),
+        value: dummy_word(9),
+        left: dummy_word(10),
+        right: dummy_word(11),
     };
     store.extend([override_node.clone(), custom_node.clone()]);
 
@@ -117,10 +121,10 @@ fn transaction_args_roundtrip_normalizes_note_args_order() {
     let second = note_id(2);
     let args = TransactionArgs::from_parts(
         None,
-        word(3),
-        BTreeMap::from([(second, word(4)), (first, word(5))]),
-        AdviceInputs::default().with_map([(word(6), vec![Felt::from(7_u32)])]),
-        word(8),
+        dummy_word(3),
+        BTreeMap::from([(second, dummy_word(4)), (first, dummy_word(5))]),
+        AdviceInputs::default().with_map([(dummy_word(6), vec![Felt::from(7_u32)])]),
+        dummy_word(8),
     );
 
     let message = proto::transaction::TransactionArgs::from(&args);
@@ -142,15 +146,15 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
     let second = note_id(2);
     let args = TransactionArgs::try_from(proto::transaction::TransactionArgs {
         tx_script: None,
-        tx_script_args: Some(word(3).into()),
+        tx_script_args: Some(dummy_word(3).into()),
         note_args: vec![
             proto::transaction::NoteArgument {
                 note_id: Some((&second).into()),
-                args: Some(word(4).into()),
+                args: Some(dummy_word(4).into()),
             },
             proto::transaction::NoteArgument {
                 note_id: Some((&first).into()),
-                args: Some(word(5).into()),
+                args: Some(dummy_word(5).into()),
             },
         ],
         advice_inputs: Some(proto::primitives::AdviceInputs {
@@ -158,7 +162,7 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
             advice_map: Some(proto::primitives::AdviceMap { entries: vec![] }),
             merkle_store: Some(proto::primitives::MerkleStore { nodes: vec![] }),
         }),
-        auth_args: Some(word(6).into()),
+        auth_args: Some(dummy_word(6).into()),
     })
     .unwrap();
 
@@ -185,11 +189,11 @@ fn advice_inputs_require_nested_messages_and_reject_duplicate_map_keys() {
     let duplicate = proto::primitives::AdviceMap {
         entries: vec![
             proto::primitives::AdviceMapEntry {
-                key: Some(word(1).into()),
+                key: Some(dummy_word(1).into()),
                 values: vec![Felt::from(2_u32).into()],
             },
             proto::primitives::AdviceMapEntry {
-                key: Some(word(1).into()),
+                key: Some(dummy_word(1).into()),
                 values: vec![Felt::from(3_u32).into()],
             },
         ],
@@ -206,15 +210,14 @@ fn advice_stack_rejects_invalid_felts() {
     .unwrap_err();
 
     assert_eq!(error.to_string(), "values[0].felt.encoded: expected exactly 8 bytes, got 7");
-    assert!(error.source().is_some());
 }
 
 #[test]
 fn merkle_store_rejects_duplicate_parents_and_preserves_invalid_word_source() {
     let node = proto::primitives::MerkleStoreNode {
-        value: Some(word(1).into()),
-        left: Some(word(2).into()),
-        right: Some(word(3).into()),
+        value: Some(dummy_word(1).into()),
+        left: Some(dummy_word(2).into()),
+        right: Some(dummy_word(3).into()),
     };
     let duplicate = proto::primitives::MerkleStore { nodes: vec![node.clone(), node] };
     let error = MerkleStore::try_from(duplicate).unwrap_err();
@@ -223,8 +226,8 @@ fn merkle_store_rejects_duplicate_parents_and_preserves_invalid_word_source() {
     let invalid = proto::primitives::MerkleStore {
         nodes: vec![proto::primitives::MerkleStoreNode {
             value: Some(proto::primitives::Word { encoded: vec![0; 31] }),
-            left: Some(word(2).into()),
-            right: Some(word(3).into()),
+            left: Some(dummy_word(2).into()),
+            right: Some(dummy_word(3).into()),
         }],
     };
     let error = MerkleStore::try_from(invalid).unwrap_err();
@@ -243,7 +246,7 @@ fn transaction_args_require_nested_messages_and_reject_duplicate_note_ids() {
             advice_map: Some(proto::primitives::AdviceMap { entries: vec![] }),
             merkle_store: Some(proto::primitives::MerkleStore { nodes: vec![] }),
         }),
-        auth_args: Some(word(1).into()),
+        auth_args: Some(dummy_word(1).into()),
     };
     let error = TransactionArgs::try_from(missing).unwrap_err();
     assert!(error.to_string().ends_with("::tx_script_args is missing"));
@@ -251,15 +254,15 @@ fn transaction_args_require_nested_messages_and_reject_duplicate_note_ids() {
     let note = note_id(1);
     let duplicate = proto::transaction::TransactionArgs {
         tx_script: None,
-        tx_script_args: Some(word(2).into()),
+        tx_script_args: Some(dummy_word(2).into()),
         note_args: vec![
             proto::transaction::NoteArgument {
                 note_id: Some((&note).into()),
-                args: Some(word(3).into()),
+                args: Some(dummy_word(3).into()),
             },
             proto::transaction::NoteArgument {
                 note_id: Some((&note).into()),
-                args: Some(word(4).into()),
+                args: Some(dummy_word(4).into()),
             },
         ],
         advice_inputs: Some(proto::primitives::AdviceInputs {
@@ -267,7 +270,7 @@ fn transaction_args_require_nested_messages_and_reject_duplicate_note_ids() {
             advice_map: Some(proto::primitives::AdviceMap { entries: vec![] }),
             merkle_store: Some(proto::primitives::MerkleStore { nodes: vec![] }),
         }),
-        auth_args: Some(word(5).into()),
+        auth_args: Some(dummy_word(5).into()),
     };
     let error = TransactionArgs::try_from(duplicate).unwrap_err();
     assert_eq!(error.to_string(), "note_args[1].note_id: duplicate note argument");
@@ -290,13 +293,13 @@ fn transaction_script_rejects_missing_mast_and_invalid_entrypoint() {
             .to_string()
             .starts_with("failed to deserialize transaction_script.entrypoint: ")
     );
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(Error::source)
             .and_then(|source| source.downcast_ref::<DeserializationError>()),
         Some(DeserializationError::InvalidValue(_))
-    ));
+    );
 
     let malformed_mast = proto::transaction::TransactionScript {
         entrypoint: 0,
@@ -310,11 +313,11 @@ fn transaction_script_rejects_missing_mast_and_invalid_entrypoint() {
             .starts_with("mast.encoded: failed to deserialize MastForest: "),
         "{error}"
     );
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(Error::source)
             .and_then(|source| source.downcast_ref::<DeserializationError>()),
         Some(DeserializationError::UnexpectedEOF)
-    ));
+    );
 }

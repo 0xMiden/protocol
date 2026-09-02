@@ -37,11 +37,11 @@ use miden_protocol::transaction::{
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Word};
 
-pub fn word(value: u32) -> Word {
+pub fn dummy_word(value: u32) -> Word {
     Word::from([value, value + 1, value + 2, value + 3])
 }
 
-fn account_id(seed: u8) -> AccountId {
+fn dummy_account_id(seed: u8) -> AccountId {
     AccountId::dummy(
         [seed; 15],
         AccountIdVersion::Version1,
@@ -50,22 +50,22 @@ fn account_id(seed: u8) -> AccountId {
     )
 }
 
-fn protocol_config() -> ProtocolConfig {
+fn dummy_protocol_config() -> ProtocolConfig {
     ProtocolConfig::new(
-        AssetId::new_fungible(account_id(8)),
-        KernelConfig::new(word(10), vec![word(11)]).unwrap(),
-        KernelConfig::new(word(12), vec![word(13)]).unwrap(),
-        KernelConfig::new(word(14), vec![word(15)]).unwrap(),
+        AssetId::new_fungible(dummy_account_id(8)),
+        KernelConfig::new(dummy_word(10), vec![dummy_word(11)]).unwrap(),
+        KernelConfig::new(dummy_word(12), vec![dummy_word(13)]).unwrap(),
+        KernelConfig::new(dummy_word(14), vec![dummy_word(15)]).unwrap(),
         ProofVerificationConfig::new(
-            word(16),
-            word(17),
-            ProofSecurityPolicy::new(word(18), 96).unwrap(),
+            dummy_word(16),
+            dummy_word(17),
+            ProofSecurityPolicy::new(dummy_word(18), 96).unwrap(),
         ),
     )
     .unwrap()
 }
 
-fn second_account_code() -> AccountCode {
+fn dummy_secondary_account_code() -> AccountCode {
     const CODE: &str = "
         @account_procedure
         pub proc baz
@@ -84,23 +84,23 @@ fn second_account_code() -> AccountCode {
     AccountCode::from_components(&[NoopAuthComponent.into(), component]).unwrap()
 }
 
-fn advice_inputs(stack_values: [u32; 2], map_key: u32, node_value: u32) -> AdviceInputs {
+fn dummy_advice_inputs(stack_values: [u32; 2], map_key: u32, node_value: u32) -> AdviceInputs {
     let mut stack = AdviceInputs::default().advice_stack();
     stack.append_elements(stack_values.map(Felt::from));
     let mut store = MerkleStore::new();
     store.extend([InnerNodeInfo {
-        value: word(node_value),
-        left: word(node_value + 1),
-        right: word(node_value + 2),
+        value: dummy_word(node_value),
+        left: dummy_word(node_value + 1),
+        right: dummy_word(node_value + 2),
     }]);
 
     AdviceInputs::default()
         .with_advice_stack(stack)
-        .with_map([(word(map_key), vec![Felt::from(map_key + 1)])])
+        .with_map([(dummy_word(map_key), vec![Felt::from(map_key + 1)])])
         .with_merkle_store(store)
 }
 
-fn block_header(
+fn dummy_block_header(
     blockchain: &PartialBlockchain,
     note_root: Word,
     protocol_config: &ProtocolConfig,
@@ -127,20 +127,20 @@ fn block_header(
     )
 }
 
-pub fn transaction_inputs() -> TransactionInputs {
+pub fn dummy_transaction_inputs() -> TransactionInputs {
     let account_code = AccountCode::mock();
     let account = PartialAccount::new(
-        account_id(7),
+        dummy_account_id(7),
         Felt::from(9_u32),
         account_code.clone(),
         PartialStorage::new(AccountStorageHeader::new(vec![]).unwrap(), []).unwrap(),
-        PartialVault::new(word(20)),
+        PartialVault::new(dummy_word(20)),
         None,
     )
     .unwrap();
 
-    let authenticated_note = Note::mock_noop(word(30));
-    let unauthenticated_note = Note::mock_noop(word(40));
+    let authenticated_note = Note::mock_noop(dummy_word(30));
+    let unauthenticated_note = Note::mock_noop(dummy_word(40));
     let note_index = BlockNoteIndex::new(0, 0).unwrap();
     let note_tree =
         BlockNoteTree::with_entries([(note_index, authenticated_note.header())]).unwrap();
@@ -156,23 +156,24 @@ pub fn transaction_inputs() -> TransactionInputs {
     ])
     .unwrap();
 
-    let protocol_config = protocol_config();
+    let protocol_config = dummy_protocol_config();
     let mut blockchain = PartialBlockchain::default();
-    let note_block_header = block_header(&blockchain, note_tree.root(), &protocol_config);
+    let note_block_header = dummy_block_header(&blockchain, note_tree.root(), &protocol_config);
     blockchain.add_block(&note_block_header, true);
     let intermediate_block_header =
-        block_header(&blockchain, BlockNoteTree::empty().root(), &protocol_config);
+        dummy_block_header(&blockchain, BlockNoteTree::empty().root(), &protocol_config);
     blockchain.add_block(&intermediate_block_header, false);
-    let block_header = block_header(&blockchain, BlockNoteTree::empty().root(), &protocol_config);
+    let block_header =
+        dummy_block_header(&blockchain, BlockNoteTree::empty().root(), &protocol_config);
     let tx_args = TransactionArgs::from_parts(
         None,
-        word(50),
-        BTreeMap::from([(unauthenticated_note.id(), word(51))]),
-        advice_inputs([52, 53], 54, 55),
-        word(56),
+        dummy_word(50),
+        BTreeMap::from([(unauthenticated_note.id(), dummy_word(51))]),
+        dummy_advice_inputs([52, 53], 54, 55),
+        dummy_word(56),
     );
-    let advice_inputs = advice_inputs([60, 61], 62, 63);
-    let foreign_account_code = vec![account_code, second_account_code()];
+    let advice_inputs = dummy_advice_inputs([60, 61], 62, 63);
+    let foreign_account_code = vec![account_code, dummy_secondary_account_code()];
     let first_slot = StorageSlotName::new("foreign::first::value").unwrap();
     let second_slot = StorageSlotName::new("foreign::second::map").unwrap();
     let foreign_account_slot_names =
@@ -193,11 +194,11 @@ pub fn transaction_inputs() -> TransactionInputs {
 }
 
 #[allow(dead_code)]
-pub fn transaction_inputs_message() -> proto::transaction::TransactionInputs {
-    transaction_inputs().into()
+pub fn dummy_transaction_inputs_message() -> proto::transaction::TransactionInputs {
+    dummy_transaction_inputs().into()
 }
 
-pub fn transaction_inputs_v1(
+pub fn transaction_inputs_v1_mut(
     message: &mut proto::transaction::TransactionInputs,
 ) -> &mut proto::transaction::TransactionInputsV1 {
     let Some(proto::transaction::transaction_inputs::Version::V1(v1)) = message.version.as_mut()
@@ -208,10 +209,10 @@ pub fn transaction_inputs_v1(
 }
 
 #[allow(dead_code)]
-pub fn authenticated_input_note(
+pub fn authenticated_input_note_mut(
     message: &mut proto::transaction::TransactionInputs,
 ) -> &mut proto::transaction::AuthenticatedInputNote {
-    let input_notes = transaction_inputs_v1(message).input_notes.as_mut().unwrap();
+    let input_notes = transaction_inputs_v1_mut(message).input_notes.as_mut().unwrap();
     let Some(proto::transaction::input_note::Note::Authenticated(note)) =
         input_notes.notes[0].note.as_mut()
     else {
