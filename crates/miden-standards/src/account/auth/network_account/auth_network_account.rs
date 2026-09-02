@@ -119,10 +119,9 @@ procedure_root!(
 /// whose only legitimate inputs are a known, finite set of system-issued notes and scripts.
 ///
 /// The component exports a single auth procedure, `auth_network_transaction`, that rejects the
-/// transaction unless:
-/// - the transaction script root, if any, is present in the component's tx-script allowlist, and
-/// - every consumed input note has a script root present in the component's note-script allowlist,
-///   and
+/// transaction unless all three of the following are true:
+/// - the transaction script root, if any, is present in the component's tx-script allowlist
+/// - every consumed input note has a script root present in the component's note-script allowlist
 /// - before fee collection and payment, it has consumed at least one input note, created at least
 ///   one output note, or changed the account state.
 ///
