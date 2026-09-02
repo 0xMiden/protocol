@@ -40,11 +40,6 @@ message Signature {
   bytes encoded = 2;
 }
 
-message Asset {
-  Word key = 1;
-  Word value = 2;
-}
-
 message MerklePath {
   repeated Word siblings = 1;
 }

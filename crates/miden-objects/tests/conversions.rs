@@ -20,6 +20,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{
     Asset,
+    AssetClass,
     AssetComposition as ProtocolAssetComposition,
     AssetId,
     FungibleAsset,
@@ -101,6 +102,26 @@ fn non_fungible_asset_roundtrips_through_structured_protobuf() {
 
 #[test]
 fn structured_asset_conversion_requires_message_fields() {
+    let suffix_error = AssetClass::try_from(proto::asset::AssetClass {
+        suffix: None,
+        prefix: Some(Felt::ZERO.into()),
+    })
+    .unwrap_err();
+    assert_eq!(
+        suffix_error.to_string(),
+        "field miden_objects::proto::asset::AssetClass::suffix is missing"
+    );
+
+    let prefix_error = AssetClass::try_from(proto::asset::AssetClass {
+        suffix: Some(Felt::ZERO.into()),
+        prefix: None,
+    })
+    .unwrap_err();
+    assert_eq!(
+        prefix_error.to_string(),
+        "field miden_objects::proto::asset::AssetClass::prefix is missing"
+    );
+
     let asset_id_error = AssetId::try_from(proto::asset::AssetId::default()).unwrap_err();
     assert!(asset_id_error.to_string().ends_with("::asset_class is missing"));
 
