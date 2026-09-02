@@ -27,6 +27,15 @@
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
 //! manager's `dyncall` can dispatch to it.
 //!
+//! Policies that may run through FPI and read mutable security state must set a transaction
+//! expiration delta in the same execution path that reads the state. This includes transfer
+//! policies reached through asset callbacks and policies that read blocklists, allowlists, pause
+//! flags, active policy roots, oracle values, risk parameters, or similar mutable data. The
+//! built-in mutable transfer policies apply `miden::standards::expiration::apply_default`; custom
+//! policies should call that helper or `tx::update_expiration_block_delta` directly with their own
+//! staleness limit. Policies that only read immutable data, or for which stale data is acceptable,
+//! do not need an expiration delta.
+//!
 //! A faucet constructs the manager via [`TokenPolicyManager::builder`], setting the required
 //! `active_*_policy` for each kind (and optionally any number of reserved `allowed_*_policy`
 //! entries), then passes the built manager directly to

@@ -22,6 +22,24 @@ merged to form the account's `Code` and `Storage`.
 
 The component's code defines a library of functions that can perform arbitrary computations, as well as read and write to account storage.
 
+### FPI-callable mutable reads
+
+Account component procedures can become part of an account's public interface and can be called
+from note scripts, transaction scripts, and foreign accounts through FPI. If such a procedure reads
+mutable security state, it must call `tx::update_expiration_block_delta` in the execution path that
+reads that state.
+
+This rule applies to asset callbacks and to procedures that read blocklists, allowlists, pause
+flags, role maps, active policy roots, oracle values, risk parameters, or other mutable state where
+stale reads can change an authorization or pricing decision. The component owns the recency bound:
+callers can choose an old reference block, so callers cannot be trusted to set the expiration
+policy for the component.
+
+Procedures that only read immutable data, or for which stale data is acceptable, may omit the
+expiration delta. Standards components can use `miden::standards::expiration::apply_default` for
+the common limit, or call `tx::update_expiration_block_delta` directly when they need a custom
+limit.
+
 ## Component metadata
 
 The component metadata describes the account component entirely: its name, description, version, and storage layout.

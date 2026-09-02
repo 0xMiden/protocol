@@ -62,7 +62,11 @@ pub enum TransferPolicyError {
 /// an ordinary send. The bundled blocklist and allowlist policies therefore exempt the issuer by
 /// comparing the asset's faucet ID against the native account ID.
 ///
-/// Policies should apply a transaction expiration delta based on their staleness considerations.
+/// Transfer policies reached through asset callbacks run through FPI. Policies that read mutable
+/// security state must apply a transaction expiration delta in the execution path that reads that
+/// state. The built-in blocklist and allowlist policies apply the standards default; custom
+/// policies should call `miden::standards::expiration::apply_default` or
+/// `tx::update_expiration_block_delta` directly with their own staleness limit.
 ///
 /// The companion components carried by the descriptor are inlined into the account by the
 /// [`super::TokenPolicyManager`] when it is converted into account components.

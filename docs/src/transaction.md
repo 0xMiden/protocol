@@ -57,6 +57,39 @@ A `Transaction` requires several inputs:
 
 The proof together with the corresponding data needed for verification and updates of the global state can then be submitted and processed by the network.
 
+### Foreign procedure invocation (FPI) and expiration
+
+Note scripts and transaction scripts can read state from foreign accounts by calling public
+account procedures through foreign procedure invocation (FPI). FPI authenticates the foreign
+account state against the transaction reference block. It does not prove that the foreign account
+state is current when the transaction is included in a block.
+
+The executor chooses the transaction reference block. If no expiration delta is set, a transaction
+can be proved against an old canonical block where mutable foreign state still allowed the action.
+For example, a prover could choose a block from before an account was added to a blocklist, before
+an account was removed from an allowlist, or before an oracle value or active policy root changed.
+
+:::warning
+
+Any FPI-callable procedure or asset callback that reads mutable security state must call
+`tx::update_expiration_block_delta` in the execution path that reads that state.
+
+:::
+
+The expiration block is computed as:
+
+```text
+expiration_block = transaction_reference_block + expiration_delta
+```
+
+The expiration delta bounds how old the reference block may be relative to the block that includes
+the transaction. For example, if an oracle price is updated every 5 blocks, the oracle account
+should set an expiration delta of 5 or smaller. If the current block is 40 and the delta is 5, the
+reference block must be block 35 or newer, so a value from block 20 cannot be used.
+
+This requirement belongs to the foreign account procedure, not to the caller. Procedures that only
+read immutable data, or for which stale data is acceptable, do not need to set an expiration delta.
+
 ## Examples
 
 To illustrate the `Transaction` protocol, we provide two examples for a basic `Transaction`. We will use references to the existing Miden `Transaction` kernel — the reference implementation of the protocol — and to the methods in Miden Assembly.
@@ -129,9 +162,7 @@ The ability to facilitate both, local and network transactions, **is one of the 
 
 - In Miden, executors can choose arbitrary reference blocks to execute against their state. Hence it is possible to set `Transaction` expiration heights and in doing so, to define a block height until a `Transaction` should be included into a block. If the `Transaction` is expired, the resulting account state change is not valid and the `Transaction` cannot be verified anymore.
 
-- Note and `Transaction` scripts can read the state of foreign accounts during execution. This is called foreign procedure invocation (FPI). A transaction can load at most **63 distinct foreign accounts** in addition to its native account. This does not limit the total number of FPI calls: once a foreign account is loaded, subsequent calls to the same account reuse the loaded data and do not consume another foreign-account slot. For example, the price of an asset for the **Swap** script might depend on a certain value stored in the oracle account. The caller identifies the invoked procedure by its root, which the kernel requires to be part of the code of the foreign account it is called on, so the executed logic is always one the account committed to.
-
-- Values read from a foreign account through foreign procedure invocation reflect that account's state at the transaction's reference block, which the executor chooses and which may be an older canonical block. Unlike the native account's initial state, a foreign read is bound only to the reference block: the foreign account commitment is not part of the transaction's public inputs and is never revalidated against the foreign account's current on-chain state when the `Transaction` is included in a block. Because the party proving the `Transaction` can anchor it to a past block in which a foreign value was outdated but favorable (for example to bypass cross-account authorization such as roles or allowlists, or to act on a stale oracle price), a foreign account holding time-sensitive data must protect itself: it is the responsibility of that account to set a transaction expiration delta according to how time-sensitive the data is, so the FPI interface cannot be used in unintended ways. The delta bounds how old the reference block can be relative to the block the `Transaction` is included in. For example, if an oracle price is updated every 5 blocks, the oracle account should set an expiration delta of 5 (or smaller): if the current block is 40 and the delta is 5, the reference block must be block 35 or newer, so a value from block 20 could not be read.
+- Note and `Transaction` scripts can read the state of foreign accounts during execution. This is called [foreign procedure invocation (FPI)](#foreign-procedure-invocation-fpi-and-expiration). A transaction can load at most **63 distinct foreign accounts** in addition to its native account. This does not limit the total number of FPI calls: once a foreign account is loaded, subsequent calls to the same account reuse the loaded data and do not consume another foreign-account slot. The caller identifies the invoked procedure by its root, which the kernel requires to be part of the code of the foreign account it is called on, so the executed logic is always one the account committed to.
 
 - An example of the right usage of `Transaction` arguments is the consumption of a **Swap** note. Those notes allow asset exchange based on predefined conditions. Example:
   - The note's consumption condition is defined as "anyone can consume this note to take `X` units of asset A if they simultaneously create a note sending Y units of asset B back to the creator." If an executor wants to buy only a fraction `(X-m)` of asset A, they provide this amount via transaction arguments. The executor would provide the value `m`. The note script then enforces the correct transfer:
