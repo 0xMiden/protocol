@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, AccountUpdateDetails};
-use miden_protocol::note::{Note, NoteHeader, Nullifier};
+use miden_protocol::note::{NoteHeader, Nullifier};
 use miden_protocol::transaction::{
     InputNoteCommitment,
     InputNotes,
@@ -19,7 +19,7 @@ use miden_protocol::transaction::{
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
-// PROVEN TRANSACTION
+// TX ACCOUNT UPDATE
 // ================================================================================================
 
 impl From<&TxAccountUpdate> for proto::transaction::TxAccountUpdate {
@@ -55,7 +55,10 @@ impl TryFrom<proto::transaction::TxAccountUpdate> for TxAccountUpdate {
     }
 }
 
-impl From<&ProvenTransaction> for proto::transaction::ProvenTransactionData {
+// PROVEN TRANSACTION
+// ================================================================================================
+
+impl From<&ProvenTransaction> for proto::transaction::ProvenTransaction {
     fn from(value: &ProvenTransaction) -> Self {
         Self {
             account_update: Some(value.account_update().into()),
@@ -69,16 +72,16 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransactionData {
     }
 }
 
-impl From<ProvenTransaction> for proto::transaction::ProvenTransactionData {
+impl From<ProvenTransaction> for proto::transaction::ProvenTransaction {
     fn from(value: ProvenTransaction) -> Self {
         Self::from(&value)
     }
 }
 
-impl TryFrom<proto::transaction::ProvenTransactionData> for ProvenTransaction {
+impl TryFrom<proto::transaction::ProvenTransaction> for ProvenTransaction {
     type Error = ConversionError;
 
-    fn try_from(value: proto::transaction::ProvenTransactionData) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::transaction::ProvenTransaction) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
         let account_update = required!(decoder, value.account_update)?;
         let input_notes = value
@@ -252,14 +255,8 @@ impl TryFrom<proto::transaction::TransactionHeader> for TransactionHeader {
 
 impl From<&PublicOutputNote> for proto::transaction::PublicOutputNote {
     fn from(note: &PublicOutputNote) -> Self {
-        let details = proto::note::NoteDetails {
-            assets: note.assets().iter().copied().map(Into::into).collect(),
-            recipient: Some(note.recipient().into()),
-        };
         Self {
-            metadata: Some((*note.metadata()).into()),
-            details: Some(details),
-            attachments: Some(note.as_note().attachments().into()),
+            note: Some(note.as_note().clone().into()),
         }
     }
 }
@@ -274,11 +271,8 @@ impl TryFrom<proto::transaction::PublicOutputNote> for PublicOutputNote {
     type Error = ConversionError;
 
     fn try_from(note: proto::transaction::PublicOutputNote) -> Result<Self, Self::Error> {
-        let domain_note = Note::try_from(proto::note::Note {
-            metadata: note.metadata,
-            note_details: note.details,
-            note_attachments: note.attachments,
-        })?;
+        let decoder = note.decoder();
+        let domain_note = required!(decoder, note.note)?;
         PublicOutputNote::new(domain_note).map_err(ConversionError::new)
     }
 }

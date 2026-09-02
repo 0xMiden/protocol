@@ -25,9 +25,7 @@ message TransactionHeader {
 }
 
 message PublicOutputNote {
-  note.NoteMetadata metadata = 1;
-  note.NoteDetails details = 2;
-  note.NoteAttachments attachments = 3;
+  note.Note note = 1;
 }
 
 message PrivateOutputNote {
@@ -50,7 +48,7 @@ message TxAccountUpdate {
   account.AccountUpdateDetails details = 5;
 }
 
-message ProvenTransactionData {
+message ProvenTransaction {
   TxAccountUpdate account_update = 1;
   repeated InputNoteCommitment input_notes = 2;
   repeated OutputNote output_notes = 3;

@@ -38,16 +38,25 @@ use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::{
     AccountIdError,
     AssetError,
+    OutputNoteError,
     ProtocolConfigError,
     TransactionHeaderError,
     ValidatorConfigError,
 };
-use miden_protocol::note::{Note, NoteId, NoteInclusionProof, NoteMetadata};
+use miden_protocol::note::{
+    Note,
+    NoteId,
+    NoteInclusionProof,
+    NoteMetadata,
+    NoteType,
+    PartialNoteMetadata,
+};
 use miden_protocol::protocol_config::NextProtocolConfig;
 use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
     ProvenTransaction,
+    PublicOutputNote,
     TransactionHeader,
     TxAccountUpdate,
 };
@@ -394,6 +403,19 @@ fn note_protobuf_requires_note_attachments() {
 }
 
 #[test]
+fn note_protobuf_requires_note_details() {
+    let mut message = proto::note::Note::from(Note::mock_noop(Word::empty()));
+    message.note_details = None;
+
+    let error = Note::try_from(message).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "field miden_objects::proto::note::Note::note_details is missing"
+    );
+}
+
+#[test]
 fn note_metadata_protobuf_requires_version() {
     let error = NoteMetadata::try_from(proto::note::NoteMetadata::default()).unwrap_err();
 
@@ -427,7 +449,7 @@ fn assert_missing_block_number(error: ConversionError, field: &str) {
     assert!(error.ends_with(&format!("::{field} is missing")));
 }
 
-fn proven_transaction_data() -> proto::transaction::ProvenTransactionData {
+fn proven_transaction_data() -> proto::transaction::ProvenTransaction {
     let account_update = TxAccountUpdate::new(
         private_account_id(),
         Word::empty(),
@@ -437,7 +459,7 @@ fn proven_transaction_data() -> proto::transaction::ProvenTransactionData {
     )
     .unwrap();
 
-    proto::transaction::ProvenTransactionData {
+    proto::transaction::ProvenTransaction {
         account_update: Some((&account_update).into()),
         input_notes: vec![],
         output_notes: vec![],
@@ -446,6 +468,51 @@ fn proven_transaction_data() -> proto::transaction::ProvenTransactionData {
         expiration_block_num: Some(proto::blockchain::BlockNumber { block_num: 2 }),
         proof: Some(ExecutionProof::new_dummy().into()),
     }
+}
+
+fn public_note() -> Note {
+    let (assets, metadata, recipient, attachments) = Note::mock_noop(Word::empty()).into_parts();
+    let metadata =
+        PartialNoteMetadata::new(metadata.sender(), NoteType::Public).with_tag(metadata.tag());
+
+    Note::with_attachments(assets, metadata, recipient, attachments)
+}
+
+#[test]
+fn public_output_note_roundtrips_through_protobuf() {
+    let note = PublicOutputNote::new(public_note()).unwrap();
+
+    let encoded = proto::transaction::PublicOutputNote::from(note.clone()).encode_to_vec();
+    let message = proto::transaction::PublicOutputNote::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(PublicOutputNote::try_from(message).unwrap(), note);
+}
+
+#[test]
+fn public_output_note_protobuf_requires_nested_note() {
+    let error =
+        PublicOutputNote::try_from(proto::transaction::PublicOutputNote::default()).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "field miden_objects::proto::transaction::PublicOutputNote::note is missing"
+    );
+}
+
+#[test]
+fn public_output_note_protobuf_rejects_private_note() {
+    let note = Note::mock_noop(Word::empty());
+    let error = PublicOutputNote::try_from(proto::transaction::PublicOutputNote {
+        note: Some(note.clone().into()),
+    })
+    .unwrap_err();
+
+    assert!(matches!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<OutputNoteError>()),
+        Some(OutputNoteError::NoteIsPrivate(note_id)) if *note_id == note.id()
+    ));
 }
 
 fn proven_batch_data() -> proto::transaction::ProvenBatch {

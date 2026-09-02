@@ -10,7 +10,7 @@ import "primitives.proto";
 import "transaction.proto";
 
 message ProposedBatch {
-  repeated ProvenTransactionData transactions = 1;
+  repeated ProvenTransaction transactions = 1;
   blockchain.BlockHeader reference_block_header = 2;
   blockchain.PartialBlockchain partial_blockchain = 3;
   repeated note.NoteInclusionProof unauthenticated_note_proofs = 4;

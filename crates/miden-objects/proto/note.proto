@@ -56,7 +56,7 @@ message NoteDetails {
 
 message Note {
   NoteMetadata metadata = 1;
-  optional NoteDetails note_details = 2;
+  NoteDetails note_details = 2;
   NoteAttachments note_attachments = 3;
 }
 
@@ -68,8 +68,8 @@ message NoteInclusionProof {
 }
 
 message NoteHeader {
-  primitives.Word details_commitment = 1;
-  NoteMetadata metadata = 2;
+  NoteMetadata metadata = 1;
+  primitives.Word details_commitment = 2;
 }
 
 message NoteScript {

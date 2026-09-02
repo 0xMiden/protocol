@@ -130,7 +130,7 @@ impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
     }
 }
 
-// NOTE
+// NOTE ATTACHMENTS
 // ================================================================================================
 
 impl From<&NoteAttachment> for proto::note::NoteAttachment {
@@ -288,6 +288,9 @@ impl TryFrom<proto::note::NoteDetails> for NoteDetails {
     }
 }
 
+// NOTE
+// ================================================================================================
+
 impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
         let (assets, metadata, recipient, attachments) = note.into_parts();
@@ -309,8 +312,7 @@ impl TryFrom<proto::note::Note> for Note {
         let metadata = required!(decoder, metadata)?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
 
-        let note_details = decode_note_details::<proto::note::Note>(note_details, true)?
-            .expect("required note details decoder must return a value");
+        let note_details: NoteDetails = required!(decoder, note_details)?;
         let (assets, recipient) = note_details.into_parts();
         let attachments = decode_note_attachments::<proto::note::Note>(note_attachments)?;
 
@@ -483,16 +485,4 @@ fn decode_note_attachments<M: prost::Message>(
 ) -> Result<NoteAttachments, ConversionError> {
     let decoder = MessageDecoder::<M>::default();
     required!(decoder, note_attachments)
-}
-
-/// Decodes structured note details, optionally allowing the field to be absent.
-fn decode_note_details<M: prost::Message>(
-    details: Option<proto::note::NoteDetails>,
-    required: bool,
-) -> Result<Option<NoteDetails>, ConversionError> {
-    match details {
-        Some(details) => details.try_into().map(Some).context("note_details"),
-        None if required => Err(ConversionError::missing_field::<M>("note_details")),
-        None => Ok(None),
-    }
 }
