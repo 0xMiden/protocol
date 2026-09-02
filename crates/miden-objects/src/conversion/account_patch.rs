@@ -252,6 +252,19 @@ impl TryFrom<proto::account::AccountStoragePatch> for AccountStoragePatch {
 // VAULT AND ACCOUNT PATCHES
 // ================================================================================================
 
+fn decode_account_patch_version(version: i32) -> Result<(), ConversionError> {
+    match proto::account::AccountPatchVersion::try_from(version) {
+        Ok(proto::account::AccountPatchVersion::V1) => Ok(()),
+        Ok(proto::account::AccountPatchVersion::Unspecified) => {
+            Err(ConversionError::message("account patch version is unspecified"))
+        },
+        Err(error) => Err(ConversionError::with_source(
+            format!("unknown account patch version {version}"),
+            error,
+        )),
+    }
+}
+
 impl From<&AccountVaultPatch> for proto::account::AccountVaultPatch {
     fn from(patch: &AccountVaultPatch) -> Self {
         Self {
@@ -295,6 +308,7 @@ impl TryFrom<proto::account::AccountVaultPatch> for AccountVaultPatch {
 impl From<&AccountPatch> for proto::account::AccountPatch {
     fn from(patch: &AccountPatch) -> Self {
         Self {
+            version: proto::account::AccountPatchVersion::V1 as i32,
             account_id: Some(patch.id().into()),
             storage: Some(patch.storage().into()),
             vault: Some(patch.vault().into()),
@@ -314,6 +328,8 @@ impl TryFrom<proto::account::AccountPatch> for AccountPatch {
     type Error = ConversionError;
 
     fn try_from(patch: proto::account::AccountPatch) -> Result<Self, Self::Error> {
+        decode_account_patch_version(patch.version).context("version")?;
+
         let decoder = patch.decoder();
         let account_id = required!(decoder, patch.account_id)?;
         let storage = required!(decoder, patch.storage)?;

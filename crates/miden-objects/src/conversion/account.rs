@@ -107,10 +107,25 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
-impl TryFrom<proto::account::AccountHeaderV1> for AccountHeader {
+fn decode_account_version(version: i32) -> Result<(), ConversionError> {
+    match proto::account::AccountVersion::try_from(version) {
+        Ok(proto::account::AccountVersion::V1) => Ok(()),
+        Ok(proto::account::AccountVersion::Unspecified) => {
+            Err(ConversionError::message("account header version is unspecified"))
+        },
+        Err(error) => Err(ConversionError::with_source(
+            format!("unknown account header version {version}"),
+            error,
+        )),
+    }
+}
+
+impl TryFrom<proto::account::AccountHeader> for AccountHeader {
     type Error = ConversionError;
 
-    fn try_from(message: proto::account::AccountHeaderV1) -> Result<Self, Self::Error> {
+    fn try_from(message: proto::account::AccountHeader) -> Result<Self, Self::Error> {
+        decode_account_version(message.version).context("version")?;
+
         let decoder = message.decoder();
         let account_id = required!(decoder, message.account_id)?;
         let vault_root = required!(decoder, message.vault_root)?;
@@ -127,37 +142,15 @@ impl TryFrom<proto::account::AccountHeaderV1> for AccountHeader {
     }
 }
 
-impl From<&AccountHeader> for proto::account::AccountHeaderV1 {
+impl From<&AccountHeader> for proto::account::AccountHeader {
     fn from(account_header: &AccountHeader) -> Self {
         Self {
+            version: proto::account::AccountVersion::V1 as i32,
             account_id: Some(account_header.id().into()),
             vault_root: Some(account_header.vault_root().into()),
             storage_commitment: Some(account_header.storage_commitment().into()),
             code_commitment: Some(account_header.code_commitment().into()),
             nonce: account_header.nonce().as_canonical_u64(),
-        }
-    }
-}
-
-impl TryFrom<proto::account::AccountHeader> for AccountHeader {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::account::AccountHeader) -> Result<Self, Self::Error> {
-        use proto::account::account_header::Version;
-
-        match message.version {
-            Some(Version::V1(header)) => header.try_into().context("v1"),
-            None => Err(ConversionError::missing_field::<proto::account::AccountHeader>("version")),
-        }
-    }
-}
-
-impl From<&AccountHeader> for proto::account::AccountHeader {
-    fn from(account_header: &AccountHeader) -> Self {
-        use proto::account::account_header::Version;
-
-        Self {
-            version: Some(Version::V1(account_header.into())),
         }
     }
 }

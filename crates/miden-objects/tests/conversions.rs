@@ -6,10 +6,12 @@ use miden_protocol::account::{
     AccountHeader,
     AccountId,
     AccountIdVersion,
+    AccountPatch,
     AccountStorageHeader,
     AccountStoragePatch,
     AccountType,
     AccountUpdateDetails,
+    AccountVaultPatch,
     AssetCallbackFlag,
     StorageMapPatch,
     StorageSlotHeader,
@@ -275,6 +277,17 @@ fn account_header() -> AccountHeader {
     )
 }
 
+fn account_patch() -> AccountPatch {
+    AccountPatch::new(
+        private_account_id(),
+        AccountStoragePatch::from_entries([]).unwrap(),
+        AccountVaultPatch::new([].into()).unwrap(),
+        None,
+        None,
+    )
+    .unwrap()
+}
+
 #[test]
 fn account_witness_protobuf_round_trip() {
     let witness = account_witness(private_account_id());
@@ -348,45 +361,106 @@ fn account_id_protobuf_rejects_invalid_metadata() {
 }
 
 #[test]
-fn account_header_roundtrips_through_v1_protobuf_bytes() {
+fn account_header_roundtrips_through_explicit_versioned_protobuf_bytes() {
     let header = account_header();
 
     let encoded = proto::account::AccountHeader::from(&header).encode_to_vec();
     let message = proto::account::AccountHeader::decode(encoded.as_slice()).unwrap();
 
-    assert!(matches!(message.version, Some(proto::account::account_header::Version::V1(_))));
+    assert_eq!(message.version, proto::account::AccountVersion::V1 as i32);
     assert_eq!(AccountHeader::try_from(message).unwrap(), header);
 }
 
 #[test]
-fn account_header_protobuf_requires_version() {
-    let error = AccountHeader::try_from(proto::account::AccountHeader::default()).unwrap_err();
-
-    assert!(error.to_string().ends_with("::version is missing"));
-}
-
-#[test]
-fn account_header_v1_protobuf_preserves_invalid_nonce_source() {
+fn account_header_protobuf_rejects_unspecified_version_before_payload_fields() {
     let error = AccountHeader::try_from(proto::account::AccountHeader {
-        version: Some(proto::account::account_header::Version::V1(
-            proto::account::AccountHeaderV1 {
-                account_id: Some(private_account_id().into()),
-                vault_root: Some(Word::empty().into()),
-                storage_commitment: Some(Word::empty().into()),
-                code_commitment: Some(Word::empty().into()),
-                nonce: Felt::ORDER,
-            },
-        )),
+        version: proto::account::AccountVersion::Unspecified as i32,
+        ..Default::default()
     })
     .unwrap_err();
 
-    assert!(error.to_string().starts_with("v1.nonce: "));
+    assert_eq!(error.to_string(), "version: account header version is unspecified");
+}
+
+#[test]
+fn account_header_protobuf_preserves_unknown_version_error_sources() {
+    for version in [i32::MAX, i32::MIN] {
+        let error = AccountHeader::try_from(proto::account::AccountHeader {
+            version,
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), format!("version: unknown account header version {version}"));
+        assert!(matches!(
+            error
+                .source()
+                .and_then(Error::source)
+                .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
+            Some(prost::UnknownEnumValue(value)) if *value == version
+        ));
+    }
+}
+
+#[test]
+fn account_header_protobuf_preserves_invalid_nonce_source() {
+    let error = AccountHeader::try_from(proto::account::AccountHeader {
+        version: proto::account::AccountVersion::V1 as i32,
+        account_id: Some(private_account_id().into()),
+        vault_root: Some(Word::empty().into()),
+        storage_commitment: Some(Word::empty().into()),
+        code_commitment: Some(Word::empty().into()),
+        nonce: Felt::ORDER,
+    })
+    .unwrap_err();
+
+    assert!(error.to_string().starts_with("nonce: "));
     assert!(matches!(
         error
             .source()
             .and_then(|source| source.downcast_ref::<<Felt as TryFrom<u64>>::Error>()),
         Some(source) if source.as_u64() == Felt::ORDER
     ));
+}
+
+#[test]
+fn account_patch_roundtrips_through_explicit_versioned_protobuf_bytes() {
+    let patch = account_patch();
+
+    let encoded = proto::account::AccountPatch::from(&patch).encode_to_vec();
+    let message = proto::account::AccountPatch::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(message.version, proto::account::AccountPatchVersion::V1 as i32);
+    assert_eq!(AccountPatch::try_from(message).unwrap(), patch);
+}
+
+#[test]
+fn account_patch_protobuf_rejects_unspecified_version_before_payload_fields() {
+    let error = AccountPatch::try_from(proto::account::AccountPatch {
+        version: proto::account::AccountPatchVersion::Unspecified as i32,
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert_eq!(error.to_string(), "version: account patch version is unspecified");
+}
+
+#[test]
+fn account_patch_protobuf_preserves_unknown_version_error_sources() {
+    for version in [i32::MAX, i32::MIN] {
+        let error =
+            AccountPatch::try_from(proto::account::AccountPatch { version, ..Default::default() })
+                .unwrap_err();
+
+        assert_eq!(error.to_string(), format!("version: unknown account patch version {version}"));
+        assert!(matches!(
+            error
+                .source()
+                .and_then(Error::source)
+                .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
+            Some(prost::UnknownEnumValue(value)) if *value == version
+        ));
+    }
 }
 
 #[test]

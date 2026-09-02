@@ -24,18 +24,18 @@ enum StorageSlotType {
   STORAGE_SLOT_TYPE_MAP = 2;
 }
 
-message AccountHeader {
-  oneof version {
-    AccountHeaderV1 v1 = 1;
-  }
+enum AccountVersion {
+  ACCOUNT_VERSION_UNSPECIFIED = 0;
+  ACCOUNT_VERSION_V1 = 1;
 }
 
-message AccountHeaderV1 {
-  AccountId account_id = 1;
-  primitives.Word vault_root = 2;
-  primitives.Word storage_commitment = 3;
-  primitives.Word code_commitment = 4;
-  uint64 nonce = 5;
+message AccountHeader {
+  AccountVersion version = 1;
+  AccountId account_id = 2;
+  primitives.Word vault_root = 3;
+  primitives.Word storage_commitment = 4;
+  primitives.Word code_commitment = 5;
+  uint64 nonce = 6;
 }
 
 message AccountWitness {
@@ -93,12 +93,18 @@ message AccountVaultPatch {
   repeated AccountVaultPatchEntry entries = 1;
 }
 
+enum AccountPatchVersion {
+  ACCOUNT_PATCH_VERSION_UNSPECIFIED = 0;
+  ACCOUNT_PATCH_VERSION_V1 = 1;
+}
+
 message AccountPatch {
-  AccountId account_id = 1;
-  AccountStoragePatch storage = 2;
-  AccountVaultPatch vault = 3;
-  optional AccountCode code = 4;
-  optional primitives.Felt final_nonce = 5;
+  AccountPatchVersion version = 1;
+  AccountId account_id = 2;
+  AccountStoragePatch storage = 3;
+  AccountVaultPatch vault = 4;
+  optional AccountCode code = 5;
+  optional primitives.Felt final_nonce = 6;
 }
 
 message PrivateAccountUpdate {}
