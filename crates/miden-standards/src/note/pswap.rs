@@ -629,15 +629,15 @@ impl PswapNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if `attachment` was not stamped in a round after this note, or if the
-    /// fill amount is not a valid asset amount.
+    /// Returns an error if the attachment's depth is not greater than this note's depth,
+    /// or if the attachment's fill amount is not a valid fungible asset amount.
     pub fn payback_note(
         &self,
         consumer_account_id: AccountId,
         attachment: &PswapNoteAttachment,
     ) -> Result<Note, NoteError> {
-        // The payback of a round is derived from the note consumed in that round, whose serial
-        // sits one bump per preceding round after this note's.
+        // Payback serial = consumed PSWAP's serial (last element bumped `rounds - 1`
+        // times from this note's) with the first element incremented by one.
         let rounds = self.rounds_since(attachment)?;
         let p2id_serial = Word::from([
             self.serial_number[0] + ONE,
