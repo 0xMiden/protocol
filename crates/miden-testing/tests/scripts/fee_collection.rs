@@ -1180,15 +1180,17 @@ fn assert_network_note_is_sponsored(
 /// A network note whose target charges its fee in the native fee asset is sponsored by the auth
 /// procedure: the sponsorship note is funded with the fee from the sponsor's vault.
 ///
-/// The sponsor collects nothing, so this also covers [`SponsorshipPolicy::Unlimited`] permitting a
-/// sponsorship that no collected fee backs. Its configured fee asset is not the native one, which
-/// shows that sponsorship notes are always funded in the native fee asset.
+/// The sponsor consumes no input notes and starts with no account changes, so this also pins that
+/// creating an output note is a valid pre-fee effect. It covers [`SponsorshipPolicy::Unlimited`]
+/// permitting a sponsorship that no collected fee backs. Its configured fee asset is not the
+/// native one, which shows that sponsorship notes are always funded in the native fee asset.
 #[tokio::test]
 async fn create_sponsorships_funds_note_in_native_fee_asset() -> anyhow::Result<()> {
     let test = SponsorshipTest::builder()
         .sponsor_fee_faucet(fee_faucet_id()?)
         .sponsorship_policy(SponsorshipPolicy::Unlimited)
         .build()?;
+    assert!(test.input_notes.is_empty());
     let mut sponsor = test.sponsor.clone();
 
     let executed = test.transaction()?.execute().await?;
