@@ -16,6 +16,8 @@ const ERR_GER_NOT_FOUND = "GER not found in storage"
 const ERR_GER_ALREADY_REGISTERED = "GER is already registered in storage"
 const ERR_FAUCET_NOT_REGISTERED = "faucet is not registered in the bridge's faucet registry"
 const ERR_TOKEN_NOT_REGISTERED = "(origin token address, origin network) pair is not registered in the bridge's token registry"
+const ERR_TOKEN_ALREADY_REGISTERED_TO_DIFFERENT_FAUCET = "token registry key is already assigned to a different faucet"
+const ERR_TOKEN_REGISTRY_FAUCET_MISMATCH = "token registry key does not point to the faucet being changed"
 
 # CONSTANTS
 # =================================================================================================
@@ -216,6 +218,7 @@ end
 #! Panics if:
 #! - the note sender does not hold the faucet manager role.
 #! - the bridge is paused.
+#! - the token registry key is assigned to a different faucet.
 #!
 #! Invocation: call
 @locals(14)
@@ -279,12 +282,10 @@ pub proc register_faucet
         exec.hash_token_address
         # => [PREV_TOKEN_HASH, addr(5), pad(11)]
 
-        padw swapw
-        # => [PREV_TOKEN_HASH, 0, 0, 0, 0, addr(5), pad(11)]
+        loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC push.0.0
+        # => [EXPECTED_FAUCET_ID, PREV_TOKEN_HASH, addr(5), pad(11)]
 
-        push.TOKEN_REGISTRY_MAP_SLOT[0..2]
-        exec.native_account::set_map_item
-        dropw
+        exec.clear_owned_token_key
         # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
     end
     # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
@@ -349,8 +350,23 @@ pub proc register_faucet
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
-    dropw
-    # => [pad(16)]
+    # => [PREVIOUS_FAUCET_ID, pad(16)]
+
+    # The token identity may be unassigned or already assigned to this faucet, but it cannot be
+    # taken over from a different faucet.
+    dupw exec.word::eqz
+    # => [was_unassigned, PREVIOUS_FAUCET_ID, pad(16)]
+
+    if.true
+        dropw
+        # => [pad(16)]
+    else
+        loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC push.0.0
+        # => [EXPECTED_FAUCET_ID, PREVIOUS_FAUCET_ID, pad(16)]
+
+        assert_eqw.err=ERR_TOKEN_ALREADY_REGISTERED_TO_DIFFERENT_FAUCET
+        # => [pad(16)]
+    end
 end
 
 #! Stores the metadata hash for a registered faucet in the bridge's faucet metadata map.
@@ -409,6 +425,7 @@ end
 #! Panics if:
 #! - the note sender does not hold the faucet manager role.
 #! - the faucet is not currently registered in the faucet registry.
+#! - the faucet's token registry key does not point to the faucet.
 #!
 #! Locals:
 #! - 0: faucet_id_suffix
@@ -447,12 +464,10 @@ pub proc deregister_faucet
     exec.hash_token_address
     # => [TOKEN_ADDR_HASH, pad(16)]
 
-    padw swapw
-    # => [TOKEN_ADDR_HASH, 0, 0, 0, 0, pad(16)]
+    loc_load.DEREG_FAUCET_ID_PREFIX_LOC loc_load.DEREG_FAUCET_ID_SUFFIX_LOC push.0.0
+    # => [EXPECTED_FAUCET_ID, TOKEN_ADDR_HASH, pad(16)]
 
-    push.TOKEN_REGISTRY_MAP_SLOT[0..2]
-    exec.native_account::set_map_item
-    dropw
+    exec.clear_owned_token_key
     # => [pad(16)]
 
     # --- 3. Clear faucet_registry: KEY=[0,0,suffix,prefix], VALUE=[0,0,0,0] ---
@@ -483,6 +498,41 @@ pub proc deregister_faucet
     end
     drop
     # => [pad(16)]
+end
+
+#! Clears a token registry key after asserting that it points to the provided faucet. Used when
+#! re-registering a faucet under a new token identity or deregistering a faucet, so cleanup cannot
+#! accidentally remove a token key currently owned by a different faucet.
+#!
+#! Inputs:  [EXPECTED_FAUCET_ID, TOKEN_ADDR_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - EXPECTED_FAUCET_ID is [0, 0, faucet_id_suffix, faucet_id_prefix] for the faucet being changed.
+#! - TOKEN_ADDR_HASH is the `token_registry_map` key derived from that faucet's stored
+#!   (origin_token_address, origin_network). In a stale or corrupted registry it could already
+#!   resolve to another faucet; in that case this procedure aborts instead of clearing the key.
+#!
+#! Panics if:
+#! - the token registry key does not point to the faucet.
+#!
+#! Invocation: exec
+proc clear_owned_token_key
+    dupw.1
+    push.TOKEN_REGISTRY_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [CURRENT_FAUCET_ID, EXPECTED_FAUCET_ID, TOKEN_ADDR_HASH]
+
+    assert_eqw.err=ERR_TOKEN_REGISTRY_FAUCET_MISMATCH
+    # => [TOKEN_ADDR_HASH]
+
+    padw swapw
+    # => [TOKEN_ADDR_HASH, 0, 0, 0, 0]
+
+    push.TOKEN_REGISTRY_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+    # => []
 end
 
 #! Asserts that a faucet is registered in the bridge's faucet registry.
