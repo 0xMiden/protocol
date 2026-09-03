@@ -105,13 +105,13 @@ proc set_output_erases_input
     exec.memory::set_output_note_erasure
 end
 
-#! For input note `input_note_idx`: if it is unauthenticated (its note id is non-empty) and that
-#! note id appears in the output-note list, marks the input note erasure-expected and links the
-#! matching output note back to it. This is the static (order-independent) erasure determination;
-#! the temporal ordering is enforced during per-transaction processing.
+#! Marks input note `input_note_idx` as erasure-expected and links it to the matching output note,
+#! when it is unauthenticated (non-empty note id) and its note id appears in the output-note list.
+#! This order-independent check happens at setup; temporal ordering is enforced during
+#! per-transaction processing.
 #!
-#! If two input notes carry the same note id (impossible for real notes, whose nullifier is
-#! derived from the note), the second link overwrites the first and the kernel later aborts.
+#! If two input notes carry the same note id (impossible for real notes, whose nullifier is derived
+#! from the note), the second link overwrites the first and the kernel later aborts.
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: []
@@ -172,10 +172,13 @@ end
 # PER-TRANSACTION OUTPUT NOTES
 # =================================================================================================
 
-#! Marks output note as created, asserting it was not already created.
+#! Marks output note as created.
 #!
 #! Inputs:  [output_note_idx]
 #! Outputs: []
+#!
+#! Panics if:
+#! - the output note was already created in this batch.
 proc mark_output_note_created
     dup exec.memory::get_output_note_is_created
     # => [is_created, output_note_idx]
@@ -189,11 +192,14 @@ proc mark_output_note_created
     exec.memory::set_output_note_is_created
 end
 
-#! Advances input note's erasure state from `ERASURE_EXPECTED` to `ERASED` (its
-#! creator output note has been processed), asserting the erasure was expected.
+#! Advances input note's erasure state from `ERASURE_EXPECTED` to `ERASED`, its creator output note
+#! having been processed.
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: []
+#!
+#! Panics if:
+#! - the input note is not in the `ERASURE_EXPECTED` state.
 proc mark_input_note_erased
     dup exec.memory::get_input_note_erasure_state
     # => [erasure_state, input_note_idx]
@@ -214,6 +220,11 @@ end
 #!
 #! Inputs:  [verified_output_note_ptr]
 #! Outputs: []
+#!
+#! Panics if:
+#! - the output note is not in the note-id-sorted output-note list.
+#! - the output note was already created in this batch.
+#! - the input note it erases is not in the `ERASURE_EXPECTED` state.
 proc bind_one_output_note
     # Derive the output note's id as merge(details_commitment, metadata_commitment).
     dup padw movup.4 mem_loadw_le
@@ -261,6 +272,9 @@ end
 #!
 #! Inputs:  [num_output_notes, scratch_ptr]
 #! Outputs: []
+#!
+#! Panics if:
+#! - [`bind_one_output_note`] fails to verify any of them.
 proc bind_scratch_output_notes
     # => [num_output_notes, scratch_ptr]
 
@@ -291,6 +305,11 @@ end
 #!     OUTPUT_NOTES_COMMITMENT_idx |-> [[DETAILS_COMMITMENT_0, METADATA_COMMITMENT_0], ...]
 #! Outputs:
 #!   Operand stack: []
+#!
+#! Panics if:
+#! - the transaction's output-note set is larger than the maximum allowed.
+#! - the piped tuples do not hash to `OUTPUT_NOTES_COMMITMENT_idx`.
+#! - [`bind_scratch_output_notes`] fails to verify.
 @locals(8192) # MAX_NOTES_PER_BATCH * NOTE_ENTRY_FELT_LEN
 proc process_tx_output_notes
     dup exec.memory::get_tx_output_notes_commitment
@@ -336,10 +355,13 @@ end
 # PER-TRANSACTION INPUT NOTES
 # =================================================================================================
 
-#! Marks input note as consumed, asserting it was not already consumed.
+#! Marks input note as consumed.
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: []
+#!
+#! Panics if:
+#! - the input note was already consumed in this batch.
 proc mark_input_note_consumed
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx]
@@ -359,6 +381,9 @@ end
 #!
 #! Inputs:  [input_note_idx]
 #! Outputs: []
+#!
+#! Panics if:
+#! - the input note was consumed before being created.
 proc assert_input_not_consumed_before_created
     exec.memory::get_input_note_erasure_state
     # => [erasure_state]
@@ -377,6 +402,12 @@ end
 #!
 #! Inputs:  [verified_input_note_ptr]
 #! Outputs: []
+#!
+#! Panics if:
+#! - the input note is not in the nullifier-sorted input-note list.
+#! - the claimed note id does not match the verified note id.
+#! - the input note was consumed before being created.
+#! - the input note was already consumed in this batch.
 proc bind_one_input_note
     # Look the per-transaction note up in the nullifier-sorted input-note list by its nullifier.
     dup padw movup.4 mem_loadw_le
@@ -419,6 +450,9 @@ end
 #!
 #! Inputs:  [num_input_notes, scratch_ptr]
 #! Outputs: []
+#!
+#! Panics if:
+#! - [`bind_one_input_note`] fails to verify any of them.
 proc bind_scratch_input_notes
     # => [num_input_notes, scratch_ptr]
 
@@ -449,6 +483,11 @@ end
 #!     INPUT_NOTES_COMMITMENT_idx |-> [[NULLIFIER_0, NOTE_ID_OR_EMPTY_0], ...]
 #! Outputs:
 #!   Operand stack: []
+#!
+#! Panics if:
+#! - the transaction's input-note set is larger than the maximum allowed.
+#! - the piped tuples do not hash to `INPUT_NOTES_COMMITMENT_idx`.
+#! - [`bind_scratch_input_notes`] fails to verify.
 @locals(8192) # MAX_NOTES_PER_BATCH * NOTE_ENTRY_FELT_LEN
 proc process_tx_input_notes
     dup exec.memory::get_tx_input_notes_commitment
@@ -506,6 +545,9 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Panics if:
+#! - [`process_tx_input_notes`] or [`process_tx_output_notes`] fails to verify any transaction.
 proc bind_per_tx_notes
     exec.memory::get_num_transactions
     push.0
@@ -535,6 +577,9 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Panics if:
+#! - [`bind_per_tx_notes`] fails to verify.
 pub proc track_notes
     exec.cross_reference_erasure
     exec.bind_per_tx_notes

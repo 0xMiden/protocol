@@ -33,6 +33,9 @@ const HASHER_CAPACITY_OFFSET = 2 * WORD_NUM_ELEMENTS
 #!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Panics if:
+#! - an output-note list entry was not created by any transaction.
 proc assert_all_output_notes_created
     exec.memory::get_num_output_notes
     # => [num_output_notes]
@@ -145,6 +148,9 @@ end
 #!   Operand stack: [input_note_idx + 1, hasher_state_ptr]
 #!   Memory:
 #!     hasher_state_ptr |-> the hasher state
+#!
+#! Panics if:
+#! - the input note was not consumed by any transaction.
 proc process_input_entry
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx, hasher_state_ptr]
@@ -185,6 +191,9 @@ end
 #!     the nullifier-sorted input-note list and its parallel flag array
 #! Outputs:
 #!   Operand stack: [INPUT_NOTES_COMMITMENT]
+#!
+#! Panics if:
+#! - [`process_input_entry`] fails to verify any entry.
 #!
 @locals(12) # the three words of a poseidon2 hasher state: RATE0, RATE1 and CAPACITY.
 proc compute_input_notes_commitment
@@ -245,6 +254,9 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]
+#!
+#! Panics if:
+#! - [`assert_all_output_notes_created`] or [`compute_input_notes_commitment`] fails to verify.
 #!
 #! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
 pub proc finalize

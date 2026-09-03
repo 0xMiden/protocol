@@ -64,6 +64,10 @@ const ERR_BATCH_NOTE_LIST_TOO_LONG =
 #!     KEY |-> [[KEY_0, VALUE_0], ..., [KEY_n, VALUE_n]]
 #! Outputs:
 #!   Operand stack: [num_notes]
+#!
+#! Panics if:
+#! - the advice-supplied list length is not a multiple of `NOTE_ENTRY_FELT_LEN`.
+#! - the list contains more entries than the maximum allowed.
 proc load_note_list
     adv.push_mapvaln
     # OS => [KEY, write_ptr]
@@ -149,6 +153,10 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Panics if:
+#! - [`load_note_list`] fails to verify.
+#! - the list is not strictly sorted (see [`assert_list_strictly_sorted`]).
 proc prepare_input_note_list
     push.INPUT_NOTES_PTR
     push.INPUT_NOTE_LIST_KEY
@@ -173,6 +181,10 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Panics if:
+#! - [`load_note_list`] fails to verify.
+#! - the list is not strictly sorted (see [`assert_list_strictly_sorted`]).
 proc prepare_output_note_list
     push.OUTPUT_NOTES_PTR
     push.OUTPUT_NOTE_LIST_KEY
@@ -228,6 +240,7 @@ end
 #! - a transaction's header is not `TX_HEADER_FELT_LEN` felts long.
 #! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT)`
 #!   data piped from the advice map does not hash to its `tx_id`.
+#! - [`prepare_input_note_list`] or [`prepare_output_note_list`] fails to verify.
 #!
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
 #!       BLOCK_COMMITMENT.
