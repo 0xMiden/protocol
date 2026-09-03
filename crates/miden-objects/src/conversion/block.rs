@@ -13,7 +13,7 @@ use miden_protocol::block::{
     SignedBlock,
     ValidatorConfig,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_protocol::crypto::merkle::MerklePath;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::Nullifier;
@@ -424,22 +424,6 @@ impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
 
 // VALIDATOR AND PROTOCOL CONFIGURATION
 // ================================================================================================
-
-impl TryFrom<proto::blockchain::ValidatorConfig> for ValidatorConfig {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::ValidatorConfig) -> Result<Self, Self::Error> {
-        let keys = value
-            .keys
-            .into_iter()
-            .enumerate()
-            .map(|(index, key)| PublicKey::try_from(key).context(format!("keys[{index}]")))
-            .collect::<Result<Vec<_>, _>>()?;
-        let quorum = u16::try_from(value.quorum).context("quorum")?;
-
-        Self::new(keys, quorum).map_err(ConversionError::new)
-    }
-}
 
 impl From<&ValidatorConfig> for proto::blockchain::ValidatorConfig {
     fn from(value: &ValidatorConfig) -> Self {
