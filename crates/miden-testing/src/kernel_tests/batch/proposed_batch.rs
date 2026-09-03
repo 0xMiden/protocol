@@ -678,12 +678,10 @@ async fn batch_kernel_rejects_in_batch_authenticated_note() -> anyhow::Result<()
     // The unauthenticated input note became authenticated at the batch level.
     assert_eq!(batch.input_notes().num_notes(), 1);
 
-    // `ExecutedBatch` is not `Debug`, so match on the result explicitly.
-    match BatchExecutor::new().execute(batch) {
-        Err(ProvenBatchError::UnsupportedInBatchAuthenticatedNote(_)) => {},
-        Ok(_) => panic!("expected the batch execution to reject the in-batch authenticated note"),
-        Err(other) => panic!("expected UnsupportedInBatchAuthenticatedNote, got: {other}"),
-    }
+    let err = BatchExecutor::new()
+        .execute(batch)
+        .expect_err("expected the batch execution to reject the in-batch authenticated note");
+    assert_matches!(err, ProvenBatchError::UnsupportedInBatchAuthenticatedNote(_));
 
     Ok(())
 }

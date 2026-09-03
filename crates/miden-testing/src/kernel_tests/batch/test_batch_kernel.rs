@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
+use assert_matches::assert_matches;
 use miden_protocol::batch::{
     BatchKernel,
     INPUT_NOTE_LIST_KEY,
@@ -268,14 +269,10 @@ fn batch_executor_rejects_too_many_transactions() -> anyhow::Result<()> {
         BTreeMap::default(),
     )?;
 
-    // `ExecutedBatch` is not `Debug`, so match on the result explicitly.
-    match BatchExecutor::new().execute(batch) {
-        Err(ProvenBatchError::TooManyTransactions(count)) => {
-            assert_eq!(count, num_transactions);
-        },
-        Ok(_) => panic!("expected the batch execution to reject the oversized transaction list"),
-        Err(other) => panic!("expected TooManyTransactions, got: {other}"),
-    }
+    let err = BatchExecutor::new()
+        .execute(batch)
+        .expect_err("expected the batch execution to reject the oversized transaction list");
+    assert_matches!(err, ProvenBatchError::TooManyTransactions(count) if count == num_transactions);
 
     Ok(())
 }
