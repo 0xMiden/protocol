@@ -20,18 +20,6 @@ impl From<AssetClass> for proto::asset::AssetClass {
     }
 }
 
-impl TryFrom<proto::asset::AssetClass> for AssetClass {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::asset::AssetClass) -> Result<Self, Self::Error> {
-        let decoder = message.decoder();
-        let suffix = required!(decoder, message.suffix)?;
-        let prefix = required!(decoder, message.prefix)?;
-
-        Ok(Self::new(suffix, prefix))
-    }
-}
-
 fn decode_asset_composition(composition: i32) -> Result<AssetComposition, ConversionError> {
     match proto::asset::AssetComposition::try_from(composition) {
         Ok(proto::asset::AssetComposition::None) => Ok(AssetComposition::None),

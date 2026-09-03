@@ -113,6 +113,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 slots,
             ),
         },
+        ".asset.AssetClass" => {
+            target: ::miden_protocol::asset::AssetClass,
+            constructor: ::miden_protocol::asset::AssetClass::new(
+                suffix,
+                prefix,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(
