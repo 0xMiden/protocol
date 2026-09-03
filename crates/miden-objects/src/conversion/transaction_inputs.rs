@@ -3,9 +3,18 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountCode, StorageSlotId, StorageSlotName};
+use miden_protocol::account::{AccountCode, PartialAccount, StorageSlotId, StorageSlotName};
+use miden_protocol::block::BlockHeader;
 use miden_protocol::note::{Note, NoteId, NoteInclusionProof};
-use miden_protocol::transaction::{InputNote, InputNotes, TransactionInputs};
+use miden_protocol::protocol_config::ProtocolConfig;
+use miden_protocol::transaction::{
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    TransactionArgs,
+    TransactionInputs,
+};
+use miden_protocol::vm::AdviceInputs;
 
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
@@ -118,59 +127,55 @@ impl From<TransactionInputs> for proto::transaction::TransactionInputs {
     }
 }
 
-impl TryFrom<proto::transaction::TransactionInputsV1> for TransactionInputs {
+impl TryFrom<proto::transaction::ForeignAccountSlotName> for (StorageSlotId, StorageSlotName) {
     type Error = ConversionError;
 
-    fn try_from(value: proto::transaction::TransactionInputsV1) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let account = required!(decoder, value.account)?;
-        let block_header = required!(decoder, value.block_header)?;
-        let protocol_config = required!(decoder, value.protocol_config)?;
-        let partial_blockchain = required!(decoder, value.partial_blockchain)?;
-        let input_notes = required!(decoder, value.input_notes)?;
-        let tx_args = required!(decoder, value.tx_args)?;
-        let advice_inputs = required!(decoder, value.advice_inputs)?;
-        let foreign_account_code = value
-            .foreign_account_code
-            .into_iter()
-            .enumerate()
-            .map(|(index, code)| {
-                AccountCode::try_from(code).context(format!("foreign_account_code[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut foreign_account_slot_names = BTreeMap::new();
-        for (index, entry) in value.foreign_account_slot_names.into_iter().enumerate() {
-            let decoder = entry.decoder();
-            let slot_name_context = format!("foreign_account_slot_names[{index}]");
-            let slot_id: StorageSlotId =
-                required!(decoder, entry.slot_id).context(&slot_name_context)?;
-            let slot_name = StorageSlotName::new(entry.slot_name)
-                .map_err(ConversionError::new)
-                .context(format!("{slot_name_context}.slot_name"))?;
-            if slot_name.id() != slot_id {
-                return Err(ConversionError::message("storage slot ID does not match slot name")
-                    .context(format!("{slot_name_context}.slot_id")));
-            }
-            if foreign_account_slot_names.insert(slot_id, slot_name).is_some() {
-                return Err(ConversionError::message("duplicate foreign account storage slot ID")
-                    .context(format!("{slot_name_context}.slot_id")));
-            }
+    fn try_from(entry: proto::transaction::ForeignAccountSlotName) -> Result<Self, Self::Error> {
+        let decoder = entry.decoder();
+        let slot_id = required!(decoder, entry.slot_id)?;
+        let slot_name = StorageSlotName::new(entry.slot_name)
+            .map_err(ConversionError::new)
+            .context("slot_name")?;
+        if slot_name.id() != slot_id {
+            return Err(ConversionError::message("storage slot ID does not match slot name")
+                .context("slot_id"));
         }
-
-        TransactionInputs::try_from_parts(
-            account,
-            block_header,
-            protocol_config,
-            partial_blockchain,
-            input_notes,
-            tx_args,
-            advice_inputs,
-            foreign_account_code,
-            foreign_account_slot_names,
-        )
-        .map_err(ConversionError::new)
+        Ok((slot_id, slot_name))
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn decode_transaction_inputs_v1(
+    account: PartialAccount,
+    block_header: BlockHeader,
+    protocol_config: ProtocolConfig,
+    partial_blockchain: PartialBlockchain,
+    input_notes: InputNotes<InputNote>,
+    tx_args: TransactionArgs,
+    advice_inputs: AdviceInputs,
+    foreign_account_code: Vec<AccountCode>,
+    decoded_slot_names: Vec<(StorageSlotId, StorageSlotName)>,
+) -> Result<TransactionInputs, ConversionError> {
+    let mut foreign_account_slot_names = BTreeMap::new();
+    for (index, (slot_id, slot_name)) in decoded_slot_names.into_iter().enumerate() {
+        if foreign_account_slot_names.insert(slot_id, slot_name).is_some() {
+            return Err(ConversionError::message("duplicate foreign account storage slot ID")
+                .context(format!("foreign_account_slot_names[{index}].slot_id")));
+        }
+    }
+
+    TransactionInputs::try_from_parts(
+        account,
+        block_header,
+        protocol_config,
+        partial_blockchain,
+        input_notes,
+        tx_args,
+        advice_inputs,
+        foreign_account_code,
+        foreign_account_slot_names,
+    )
+    .map_err(ConversionError::new)
 }
 
 impl TryFrom<proto::transaction::TransactionInputs> for TransactionInputs {

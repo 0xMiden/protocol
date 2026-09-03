@@ -39,7 +39,7 @@ pub(crate) use transaction::{
     decode_transaction_header,
     decode_transaction_script,
 };
-pub(crate) use transaction_inputs::decode_input_notes;
+pub(crate) use transaction_inputs::{decode_input_notes, decode_transaction_inputs_v1};
 
 use crate::ConversionError;
 

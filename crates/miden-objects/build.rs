@@ -315,6 +315,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 notes,
             ),
         },
+        ".transaction.TransactionInputsV1" => {
+            target: ::miden_protocol::transaction::TransactionInputs,
+            try_constructor: crate::conversion::decode_transaction_inputs_v1(
+                account,
+                block_header,
+                protocol_config,
+                partial_blockchain,
+                input_notes,
+                tx_args,
+                advice_inputs,
+                foreign_account_code,
+                foreign_account_slot_names,
+            ),
+        },
         ".transaction.PublicOutputNote" => {
             target: ::miden_protocol::transaction::PublicOutputNote,
             try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(
