@@ -83,7 +83,7 @@ pub fn configure_proto_decodes(
             ));
         }
 
-        prost.message_attribute(config.message_name, config.derive_attribute());
+        prost.message_attribute(canonical_name, config.derive_attribute());
 
         for field_name in explicit_optional_message_fields(descriptors, config.message_name)? {
             prost.field_attribute(field_name, OPTIONAL_ATTRIBUTE);
@@ -292,6 +292,10 @@ mod tests {
     fn message_with_explicit_optional_field(name: &str) -> DescriptorProto {
         DescriptorProto {
             name: Some(name.to_owned()),
+            nested_type: vec![DescriptorProto {
+                name: Some("Nested".to_owned()),
+                ..Default::default()
+            }],
             field: vec![
                 FieldDescriptorProto {
                     name: Some("value".to_owned()),
