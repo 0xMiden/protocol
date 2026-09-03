@@ -63,7 +63,7 @@ pub enum TransferPolicyError {
 /// comparing the asset's faucet ID against the native account ID.
 ///
 /// Transfer policies reached through asset callbacks run through FPI. Policies that read mutable
-/// security state must apply a transaction expiration delta in the execution path that reads that
+/// sensitive state must apply a transaction expiration delta in the execution path that reads that
 /// state. The built-in blocklist and allowlist policies apply the standards default; custom
 /// policies should call `miden::standards::expiration::apply_default` or
 /// `tx::update_expiration_block_delta` directly with their own staleness limit.
