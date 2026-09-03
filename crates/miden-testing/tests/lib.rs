@@ -147,3 +147,21 @@ pub async fn consume_note(
     mock_chain.prove_next_block()?;
     Ok(())
 }
+
+/// Rebuilds `note` as a private note, keeping its script, storage, assets and attachments.
+///
+/// The typed note builders of the standard config notes fix the note type to
+/// [`NoteType::Public`], so this is how a sender would hand-craft a private note that is
+/// otherwise indistinguishable from a legitimate config note.
+#[cfg(test)]
+pub fn into_private_note(note: Note) -> Note {
+    let metadata = PartialNoteMetadata::new(note.metadata().sender(), NoteType::Private)
+        .with_tag(note.metadata().tag());
+
+    Note::with_attachments(
+        note.assets().clone(),
+        metadata,
+        note.recipient().clone(),
+        note.attachments().clone(),
+    )
+}

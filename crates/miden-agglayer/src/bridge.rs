@@ -23,15 +23,13 @@ use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_standards::account::access::{PausableManager, PausableStorage, RoleConfig};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::ConstantFeeManager;
-use miden_standards::note::{
+use miden_standards::note::config::{
     ConstantFeePolicyConfigNote,
-    NetworkAccountTarget,
-    NetworkAccountTargetError,
-    NoteExecutionHint,
     PauseConfig,
     PauseConfigNote,
     RbacConfigNote,
 };
+use miden_standards::note::{NetworkAccountTarget, NetworkAccountTargetError, NoteExecutionHint};
 use miden_standards::procedure_root;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;

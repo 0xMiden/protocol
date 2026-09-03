@@ -13,20 +13,18 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
 use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoURI};
 use miden_standards::errors::standards::{
+    ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{
-    FaucetMetadataConfig,
-    FaucetMetadataConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
 use super::{INITIAL_MAX_SUPPLY, consume_note, create_faucet, metadata, owner_id};
+use crate::into_private_note;
 
 // HELPERS
 // ================================================================================================
@@ -269,6 +267,35 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         .await;
 
     assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH);
+
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any metadata change runs.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let faucet = create_faucet(owner, true)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(faucet.clone())?;
+    let mock_chain = builder.build()?;
+
+    let note = config_note(
+        owner,
+        faucet.id(),
+        FaucetMetadataConfig::SetMaxSupply { max_supply: AssetAmount::new(1)? },
+        9,
+    )?;
+
+    let result = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC);
 
     Ok(())
 }
