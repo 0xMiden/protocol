@@ -267,6 +267,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entrypoint,
             ),
         },
+        ".transaction.InputNoteCommitment" => {
+            target: ::miden_protocol::transaction::InputNoteCommitment,
+            constructor: ::miden_protocol::transaction::InputNoteCommitment::from_parts_unchecked(
+                nullifier,
+                header,
+            ),
+        },
         ".transaction.PublicOutputNote" => {
             target: ::miden_protocol::transaction::PublicOutputNote,
             try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(
