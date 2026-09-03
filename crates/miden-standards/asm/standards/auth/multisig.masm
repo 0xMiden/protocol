@@ -33,8 +33,8 @@ const DEFAULT_THRESHOLD_LOC=0
 const UNIQUE_OUTER_INDEX_LOC=0
 const UNIQUE_INNER_INDEX_LOC=1
 
-# pay_bounded_fee locals: the sponsorship price table, fees::SPONSORSHIP_PRICE_TABLE_NUM_ENTRIES
-# entries indexed by output note index.
+# pay_bounded_fee locals: the sponsorship price table, fees::SPONSORSHIP_PRICE_TABLE_NUM_ELEMENTS
+# elements holding one fee asset value word per output note.
 const PAY_BOUNDED_FEE_PRICE_TABLE_LOC=0
 
 # CONSTANTS
@@ -864,7 +864,7 @@ end
 #! - fee::estimate_fee or fees::create_network_note_sponsorships panics.
 #!
 #! Invocation: exec
-@locals(1024)
+@locals(4096)
 pub proc pay_bounded_fee(num_of_signers: u32, conversion_info: ConversionInfo) -> u16
     # read the output-note count before the payment so the notes it creates can be counted
     exec.tx::get_num_output_notes movdn.5
