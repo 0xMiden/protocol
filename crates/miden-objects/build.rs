@@ -42,6 +42,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 prefix,
             ),
         },
+        ".account.AccountWitness" => {
+            target: ::miden_protocol::block::account_tree::AccountWitness,
+            try_constructor: ::miden_protocol::block::account_tree::AccountWitness::new(
+                witness_id,
+                commitment,
+                path,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(

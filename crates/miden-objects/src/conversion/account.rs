@@ -348,19 +348,6 @@ impl From<AccountHeader> for proto::account::AccountHeader {
     }
 }
 
-impl TryFrom<proto::account::AccountWitness> for AccountWitness {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::account::AccountWitness) -> Result<Self, Self::Error> {
-        let decoder = message.decoder();
-        let witness_id = required!(decoder, message.witness_id)?;
-        let commitment = required!(decoder, message.commitment)?;
-        let path = required!(decoder, message.path)?;
-
-        AccountWitness::new(witness_id, commitment, path).map_err(ConversionError::new)
-    }
-}
-
 impl From<&AccountWitness> for proto::account::AccountWitness {
     fn from(witness: &AccountWitness) -> Self {
         Self {
