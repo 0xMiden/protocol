@@ -71,7 +71,6 @@ fn add_faucet_with_allow_all_transfer(builder: &mut MockChainBuilder) -> anyhow:
 
     let account_builder = AccountBuilder::new([45u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(
