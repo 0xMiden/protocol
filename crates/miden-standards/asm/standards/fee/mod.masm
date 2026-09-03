@@ -557,18 +557,14 @@ end
 
 #! Computes the transaction fee and pays it by creating and funding a public TX_FEE note.
 #!
-#! This is the unbounded fee payment flow: the caller supplies the decoded conversion info and
-#! invokes this procedure from the authentication procedure BEFORE any transaction summary is
-#! created, so that the TX_FEE note and the vault withdrawal funding it are covered by a signature
-#! where one exists. Signature-based components (e.g. singlesig, multisig) obtain the conversion
-#! info from the auth args via load_conversion_info, so the signer authorizes the payment asset and
-#! rate; network accounts pay in the native fee asset and obtain the conversion info via
-#! native_conversion_info, which needs no commitment since it is read from the reference block.
-#!
-#! A component whose authentication can be satisfied by less authority than an ordinary note
-#! transfer would need must not use this procedure, since the rate is host-supplied and unbounded
-#! here. Such a component composes this procedure's steps itself, inserting assert_fee_bound
-#! between resolve_payment_info and pay_estimated_fee.
+#! This is the fee payment flow for all account types: the caller supplies the decoded
+#! conversion info and invokes this procedure from the authentication procedure BEFORE any
+#! transaction summary is created, so that the TX_FEE note and the vault withdrawal funding
+#! it are covered by a signature where one exists. Signature-based components (e.g. singlesig,
+#! multisig) obtain the conversion info from the auth args via load_conversion_info, so the
+#! signer authorizes the payment asset and rate; network accounts pay in the native fee asset
+#! and obtain the conversion info via native_conversion_info, which needs no commitment since
+#! it is read from the reference block.
 #!
 #! The fee is computed by estimate_fee, which prices the network output notes once and records the
 #! prices in this procedure's local memory. The payment then settles both of the transaction's fee
@@ -579,6 +575,9 @@ end
 #! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
 #! fee note is created and no conversion info is required (the empty word is accepted). The
 #! sponsorship notes are created regardless.
+#!
+#! Callers that bound the payment compose resolve_payment_info and pay_estimated_fee instead;
+#! the payment tail stays inline here so plain fee payers pay no extra procedure-call cycles.
 #!
 #! Inputs:  [num_extra_cycles, CONVERSION_INFO]
 #! Outputs: [total_sponsored_fee_amount]
@@ -591,8 +590,11 @@ end
 #! - total_sponsored_fee_amount is the total amount moved into the sponsorship notes.
 #!
 #! Panics if:
-#! - estimate_fee, fees::create_network_note_sponsorships, resolve_payment_info or
-#!   pay_estimated_fee panics.
+#! - estimate_fee or fees::create_network_note_sponsorships panics.
+#! - the computed fee is non-zero and CONVERSION_INFO is the empty word.
+#! - the conversion rate is malformed or the converted amount overflows.
+#! - the account vault holds less of the payment asset than the amount to be paid.
+#! - the maximum number of output notes is exceeded.
 #!
 #! Invocation: exec
 @locals(4096)
@@ -622,10 +624,39 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> fel
     movdn.5
     # => [fee_amount, CONVERSION_INFO, total_sponsored_fee_amount]
 
-    exec.resolve_payment_info
-    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
-    #     total_sponsored_fee_amount]
+    dup eq.0
+    if.true
+        # a zero fee requires no fee note
+        drop dropw
+        # => [total_sponsored_fee_amount]
+    else
+        movdn.4
+        # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 
-    exec.pay_estimated_fee
-    # => [total_sponsored_fee_amount]
+        # a non-zero fee requires committed conversion info
+        exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
+        # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
+
+        # convert the fee amount into the payment asset's amount
+        # (CONVERSION_INFO reads [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den])
+        movup.2 movup.3 movup.4
+        # => [fee_amount, rate_den, rate_num, faucet_id_suffix, faucet_id_prefix,
+        #     total_sponsored_fee_amount]
+
+        movup.2 swap
+        # => [fee_amount, rate_num, rate_den, faucet_id_suffix, faucet_id_prefix,
+        #     total_sponsored_fee_amount]
+
+        exec.convert_amount
+        # => [payment_amount, faucet_id_suffix, faucet_id_prefix, total_sponsored_fee_amount]
+
+        movdn.2
+        # => [faucet_id_suffix, faucet_id_prefix, payment_amount, total_sponsored_fee_amount]
+
+        exec.fungible_asset::create
+        # => [ASSET_ID, ASSET_VALUE, total_sponsored_fee_amount]
+
+        exec.create_and_fund_fee_note
+        # => [total_sponsored_fee_amount]
+    end
 end
