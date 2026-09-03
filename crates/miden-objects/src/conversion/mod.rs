@@ -35,6 +35,7 @@ pub(crate) use note::{
 };
 pub(crate) use transaction::{
     decode_proven_transaction,
+    decode_transaction_args,
     decode_transaction_header,
     decode_transaction_script,
 };

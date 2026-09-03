@@ -297,6 +297,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 output_notes,
             ),
         },
+        ".transaction.TransactionArgs" => {
+            target: ::miden_protocol::transaction::TransactionArgs,
+            try_constructor: crate::conversion::decode_transaction_args(
+                tx_script,
+                tx_script_args,
+                note_args,
+                advice_inputs,
+                auth_args,
+            ),
+        },
         ".transaction.PublicOutputNote" => {
             target: ::miden_protocol::transaction::PublicOutputNote,
             try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(

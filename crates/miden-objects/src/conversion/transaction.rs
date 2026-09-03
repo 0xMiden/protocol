@@ -72,31 +72,39 @@ impl From<TransactionArgs> for proto::transaction::TransactionArgs {
     }
 }
 
-impl TryFrom<proto::transaction::TransactionArgs> for TransactionArgs {
+impl TryFrom<proto::transaction::NoteArgument> for (NoteId, Word) {
     type Error = ConversionError;
 
-    fn try_from(value: proto::transaction::TransactionArgs) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let tx_script = value.tx_script.map(TryInto::try_into).transpose()?;
-        let tx_script_args = required!(decoder, value.tx_script_args)?;
-        let mut note_args = BTreeMap::new();
-        for (index, note_arg) in value.note_args.into_iter().enumerate() {
-            let decoder = note_arg.decoder();
-            let note_arg_context = format!("note_args[{index}]");
-            let note_id_word: Word =
-                required!(decoder, note_arg.note_id).context(&note_arg_context)?;
-            let note_id = NoteId::from_raw(note_id_word);
-            let args = required!(decoder, note_arg.args).context(&note_arg_context)?;
-            if note_args.insert(note_id, args).is_some() {
-                return Err(ConversionError::message("duplicate note argument")
-                    .context(format!("{note_arg_context}.note_id")));
-            }
-        }
-        let advice_inputs = required!(decoder, value.advice_inputs)?;
-        let auth_args = required!(decoder, value.auth_args)?;
-
-        Ok(Self::from_parts(tx_script, tx_script_args, note_args, advice_inputs, auth_args))
+    fn try_from(note_arg: proto::transaction::NoteArgument) -> Result<Self, Self::Error> {
+        let decoder = note_arg.decoder();
+        let note_id = NoteId::from_raw(required!(decoder, note_arg.note_id)?);
+        let args = required!(decoder, note_arg.args)?;
+        Ok((note_id, args))
     }
+}
+
+pub(crate) fn decode_transaction_args(
+    tx_script: Option<TransactionScript>,
+    tx_script_args: Word,
+    decoded_note_args: Vec<(NoteId, Word)>,
+    advice_inputs: miden_protocol::vm::AdviceInputs,
+    auth_args: Word,
+) -> Result<TransactionArgs, ConversionError> {
+    let mut note_args = BTreeMap::new();
+    for (index, (note_id, args)) in decoded_note_args.into_iter().enumerate() {
+        if note_args.insert(note_id, args).is_some() {
+            return Err(ConversionError::message("duplicate note argument")
+                .context(format!("note_args[{index}].note_id")));
+        }
+    }
+
+    Ok(TransactionArgs::from_parts(
+        tx_script,
+        tx_script_args,
+        note_args,
+        advice_inputs,
+        auth_args,
+    ))
 }
 
 // TX ACCOUNT UPDATE
