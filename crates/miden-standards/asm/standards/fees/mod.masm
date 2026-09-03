@@ -648,7 +648,7 @@ proc process_network_note_sponsorships(fee_asset_id: AssetId, create_notes: Bool
             # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
             #     total_sponsored_fee_amount, num_sponsorship_notes, create_notes]
 
-            # a note priced to zero is sponsored by no note
+            # only increment `num_sponsorship_notes` if the amount is non-zero
             dup neq.0 movup.9 add movdn.8
             # => [sponsored_fee_amount, note_idx, num_output_notes, FEE_ASSET_ID,
             #     total_sponsored_fee_amount, num_sponsorship_notes, create_notes]
@@ -678,14 +678,13 @@ proc process_network_note_sponsorships(fee_asset_id: AssetId, create_notes: Bool
     # => [total_sponsored_fee_amount, num_sponsorship_notes, num_output_notes]
 end
 
-#! Prices the network output note at the given index and, when asked to, creates its
+#! Prices the network output note at the given index and, optionally, creates its
 #! FEE_SPONSORSHIP note.
 #!
 #! Handles a single network note for `create_network_note_sponsorships` (create_notes = 1) and
 #! `estimate_network_note_sponsorships` (create_notes = 0); see those for the full behaviour. A
 #! network note the target account prices to zero needs no sponsorship note, so none is created for
-#! it. When create_notes is 0 the note is only priced: the vault and the output notes are left
-#! untouched.
+#! it.
 #!
 #! Inputs:  [note_idx, attachment_idx, EXPECTED_FEE_ASSET_ID, create_notes]
 #! Outputs: [sponsored_fee_amount]
