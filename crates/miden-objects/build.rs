@@ -50,6 +50,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 path,
             ),
         },
+        ".account.PartialAccount" => {
+            target: ::miden_protocol::account::PartialAccount,
+            try_constructor: ::miden_protocol::account::PartialAccount::new(
+                account_id,
+                nonce,
+                code,
+                storage,
+                vault,
+                seed,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(
