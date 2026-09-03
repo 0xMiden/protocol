@@ -192,19 +192,7 @@ Both callbacks are invoked via `dyncall`, so they must follow the convention of 
 
 #### Expiration requirement
 
-Asset callbacks execute against the issuing faucet through FPI. Any callback or callback-dispatched
-policy that reads mutable security state must call `tx::update_expiration_block_delta` in the
-execution path that reads that state. This includes checks against blocklists, allowlists, pause
-flags, active policy roots, oracle values, risk parameters, or similar state.
-
-Without an expiration delta, a prover can choose an older reference block where the callback state
-allowed the transfer. The expiration delta bounds how stale that reference block may be when the
-transaction is included. Standards components that need the common limit can use
-`miden::standards::expiration::apply_default`; custom callbacks can call
-`tx::update_expiration_block_delta` directly with a tighter limit.
-
-Callbacks that only inspect immutable data, or for which stale data is acceptable, do not need to
-set an expiration delta.
+Asset callbacks execute against the issuing faucet through FPI. Any callback or callback-dispatched policy that reads mutable, security-sensitive state must set an expiration delta in the execution path that reads that state. Standards components can use `miden::standards::expiration::apply_default` for the common expiration delta, and custom callbacks can call `tx::update_expiration_block_delta` directly. For more information, see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).
 
 #### Callback skipping
 
@@ -224,6 +212,4 @@ All data structures not following the Miden asset model that can be exchanged.
 
 Miden is flexible enough to support other `Asset` models. For example, developers can replicate Ethereum’s ERC20 pattern, where fungible `Asset` ownership is recorded in a single account. To transact, users send a note to that account, triggering updates in the global hashmap state.
 
-Alternative or programmable asset models that expose FPI-callable checks must follow the same
-expiration rule as native asset callbacks: if a check reads mutable security state, it must set a
-transaction expiration delta in that execution path.
+Alternative or programmable asset models that expose FPI-callable checks follow the same expiration delta rule as native asset callbacks; see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).

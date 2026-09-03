@@ -59,20 +59,13 @@ The proof together with the corresponding data needed for verification and updat
 
 ### Foreign procedure invocation (FPI) and expiration
 
-Note scripts and transaction scripts can read state from foreign accounts by calling public
-account procedures through foreign procedure invocation (FPI). FPI authenticates the foreign
-account state against the transaction reference block. It does not prove that the foreign account
-state is current when the transaction is included in a block.
+Note scripts and transaction scripts can read state from foreign accounts by calling public account procedures through foreign procedure invocation (FPI). FPI authenticates the foreign account state against the transaction reference block, but it does not prove that the state is current when the transaction is included in a block.
 
-The executor chooses the transaction reference block. If no expiration delta is set, a transaction
-can be proved against an old canonical block where mutable foreign state still allowed the action.
-For example, a prover could choose a block from before an account was added to a blocklist, before
-an account was removed from an allowlist, or before an oracle value or active policy root changed.
+The executor chooses the transaction reference block. If no expiration delta is set, a transaction can be proved against an old canonical block where mutable, security-sensitive foreign state still allowed the action. For example, a prover could choose a block from before an account was added to a blocklist, before an account was removed from an allowlist, or before an oracle value or active policy root changed.
 
 :::warning
 
-Any FPI-callable procedure or asset callback that reads mutable security state must call
-`tx::update_expiration_block_delta` in the execution path that reads that state.
+Any FPI-callable procedure or asset callback that reads mutable, security-sensitive state must call `tx::update_expiration_block_delta` in the execution path that reads that state.
 
 :::
 
@@ -82,13 +75,9 @@ The expiration block is computed as:
 expiration_block = transaction_reference_block + expiration_delta
 ```
 
-The expiration delta bounds how old the reference block may be relative to the block that includes
-the transaction. For example, if an oracle price is updated every 5 blocks, the oracle account
-should set an expiration delta of 5 or smaller. If the current block is 40 and the delta is 5, the
-reference block must be block 35 or newer, so a value from block 20 cannot be used.
+The expiration delta bounds the age of the reference block relative to the block that includes the transaction. For example, if an oracle price is updated every 5 blocks, the oracle account should set an expiration delta of 5 or less. If the current block is 40 and the delta is 5, the reference block must be block 35 or newer, so a value from block 20 cannot be used.
 
-This requirement belongs to the foreign account procedure, not to the caller. Procedures that only
-read immutable data, or for which stale data is acceptable, do not need to set an expiration delta.
+The FPI-callable procedure sets the expiration delta because the caller controls which valid reference block is used for proving. No expiration delta is required when the procedure reads only immutable data or when stale data is acceptable.
 
 ## Examples
 

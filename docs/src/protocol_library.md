@@ -188,27 +188,16 @@ Transaction procedures manage transaction-level operations including note creati
 | `get_num_input_notes`           | Returns the total number of input notes consumed by this transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[num_input_notes]`                                                                           | Any     |
 | `get_num_output_notes`          | Returns the current number of output notes created in this transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[num_output_notes]`                                                                        | Any     |
 | `execute_foreign_procedure`     | Executes the provided procedure against the foreign account. Values read from the foreign account are authenticated for the transaction reference block, not for the inclusion block.<br/><br/>**Inputs:** `[foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, <inputs>, pad(n)]`<br/>**Outputs:** `[<outputs>]` | Any     |
-| `get_expiration_block_delta`    | Returns the transaction expiration delta, or 0 if not set.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[block_height_delta]`                                                                                   | Any     |
-| `update_expiration_block_delta` | Updates the transaction expiration delta.<br/><br/>**Inputs:** `[block_height_delta]`<br/>**Outputs:** `[]`                                                                                                    | Any     |
+| `get_expiration_block_delta`    | Returns the expiration delta, or 0 if not set.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[block_height_delta]`                                                                                               | Any     |
+| `update_expiration_block_delta` | Updates the expiration delta.<br/><br/>**Inputs:** `[block_height_delta]`<br/>**Outputs:** `[]`                                                                                                                | Any     |
 | `compute_fee`                   | Computes the fee required for the current transaction.<br/><br/>**Inputs:** `[num_extra_cycles, EXCLUDE_NOTES_COMMITMENT]`<br/>**Outputs:** `[fee_amount]`                                                                                                    | Any     |
 | `get_fee_asset_id`              | Returns the ID of the asset that fees are paid in.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[FEE_ASSET_ID]`                                                                                                 | Any     |
 
 ### Foreign procedure invocation and expiration
 
-`execute_foreign_procedure` reads the foreign account's state at the transaction reference block,
-which is chosen by the executor. The foreign account commitment is not a transaction public input
-and is not revalidated against the foreign account's current on-chain state at inclusion, so a
-foreign read may be outdated.
+`execute_foreign_procedure` reads the foreign account's state at the transaction reference block, which is chosen by the executor. The foreign account commitment is not a transaction public input and is not revalidated against the foreign account's current on-chain state at inclusion, so a foreign read may be outdated.
 
-Any FPI-callable procedure that reads mutable security state must call
-`tx::update_expiration_block_delta` in the execution path that reads that state. This includes
-asset callbacks and procedures that read blocklists, allowlists, pause flags, role maps, active
-policy roots, oracle values, risk parameters, or other mutable data where stale reads can change an
-authorization or pricing decision.
-
-The call is the foreign account's responsibility because the caller controls which valid reference
-block is used for proving. Procedures may omit the call only when they read immutable data or stale
-data is acceptable.
+Any FPI-callable procedure that reads mutable, security-sensitive state must set an expiration delta in the execution path that reads that state. For the full rule and rationale, see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).
 
 ## Faucet Procedures (`miden::protocol::faucet`)
 

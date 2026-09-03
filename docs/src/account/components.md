@@ -24,21 +24,11 @@ The component's code defines a library of functions that can perform arbitrary c
 
 ### FPI-callable mutable reads
 
-Account component procedures can become part of an account's public interface and can be called
-from note scripts, transaction scripts, and foreign accounts through FPI. If such a procedure reads
-mutable security state, it must call `tx::update_expiration_block_delta` in the execution path that
-reads that state.
+Account component procedures can become part of an account's public interface and can be called from note scripts, transaction scripts, and foreign accounts through FPI. If a procedure reads mutable, security-sensitive state, it must set an expiration delta in the execution path that reads that state.
 
-This rule applies to asset callbacks and to procedures that read blocklists, allowlists, pause
-flags, role maps, active policy roots, oracle values, risk parameters, or other mutable state where
-stale reads can change an authorization or pricing decision. The component owns the recency bound:
-callers can choose an old reference block, so callers cannot be trusted to set the expiration
-policy for the component.
+The component procedure defines the expiration delta because callers can choose an old reference block, so callers cannot be trusted to set it. Standards components can use `miden::standards::expiration::apply_default` for the common expiration delta, or call `tx::update_expiration_block_delta` directly when they need a custom expiration delta.
 
-Procedures that only read immutable data, or for which stale data is acceptable, may omit the
-expiration delta. Standards components can use `miden::standards::expiration::apply_default` for
-the common limit, or call `tx::update_expiration_block_delta` directly when they need a custom
-limit.
+For more information, see [Foreign procedure invocation (FPI) and expiration](../transaction#foreign-procedure-invocation-fpi-and-expiration).
 
 ## Component metadata
 

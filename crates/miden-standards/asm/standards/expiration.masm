@@ -1,27 +1,28 @@
 # miden::standards::expiration
 #
-# Helpers for applying transaction expiration limits.
+# Helpers for applying expiration deltas.
 
 use miden::protocol::tx
 
 # CONSTANTS
 # =================================================================================================
 
-#! The default expiration limit for standards procedures that read mutable security state through
-#! FPI.
+#! The default expiration delta for standards procedures that read mutable, security-sensitive state
+#! through FPI.
 #! At the default three-second block interval, this corresponds to approximately one minute.
 pub const DEFAULT_EXPIRATION_BLOCK_DELTA = 20
 
 # PROCEDURES
 # =================================================================================================
 
-#! Applies the default expiration block delta to the transaction.
+#! Applies the default expiration delta to the transaction.
 #!
-#! A procedure that reads mutable or time-sensitive state exposed through FPI must call
-#! this in the execution path that reads the state; a procedure needing a custom limit can call
-#! [`tx::update_expiration_block_delta`] directly. Policy dispatchers deliberately leave the limit
-#! to the invoked policy. The transaction-wide expiration can only decrease, so several procedures
-#! may safely apply different limits in the same transaction.
+#! A procedure that reads mutable, security-sensitive state exposed through FPI must call
+#! this in the execution path that reads the state; a procedure needing a custom expiration delta
+#! can call [`tx::update_expiration_block_delta`] directly. Policy dispatchers deliberately leave
+#! the expiration delta to the invoked policy. The transaction-wide expiration delta can only
+#! decrease, so several procedures may safely apply different expiration deltas in the same
+#! transaction.
 #!
 #! Inputs:  []
 #! Outputs: []
