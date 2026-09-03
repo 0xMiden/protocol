@@ -123,6 +123,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 attachments,
             ),
         },
+        ".note.NoteHeader" => {
+            target: ::miden_protocol::note::NoteHeader,
+            constructor: ::miden_protocol::note::NoteHeader::new(
+                details_commitment,
+                metadata,
+            ),
+        },
         ".blockchain.BlockAccountUpdate" => {
             target: ::miden_protocol::block::BlockAccountUpdate,
             try_constructor: ::miden_protocol::block::BlockAccountUpdate::new(

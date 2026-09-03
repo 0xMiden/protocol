@@ -294,18 +294,11 @@ impl From<NoteHeader> for proto::note::NoteHeader {
     }
 }
 
-impl TryFrom<proto::note::NoteHeader> for NoteHeader {
+impl TryFrom<proto::primitives::Word> for NoteDetailsCommitment {
     type Error = ConversionError;
 
-    fn try_from(value: proto::note::NoteHeader) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let details_commitment_word = required!(decoder, value.details_commitment)?;
-        let metadata: NoteMetadata = required!(decoder, value.metadata)?;
-
-        Ok(NoteHeader::new(
-            NoteDetailsCommitment::from_raw(details_commitment_word),
-            metadata,
-        ))
+    fn try_from(value: proto::primitives::Word) -> Result<Self, Self::Error> {
+        Word::try_from(value).map(Self::from_raw)
     }
 }
 
