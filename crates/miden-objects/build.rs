@@ -55,6 +55,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 siblings,
             ),
         },
+        ".primitives.SmtOpening" => {
+            target: ::miden_protocol::crypto::merkle::smt::SmtProof,
+            try_constructor: ::miden_protocol::crypto::merkle::smt::SmtProof::new(
+                path,
+                leaf,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(

@@ -164,18 +164,6 @@ impl From<(Word, Word)> for proto::primitives::SmtLeafEntry {
 // SMT PROOF
 // ------------------------------------------------------------------------------------------------
 
-impl TryFrom<proto::primitives::SmtOpening> for SmtProof {
-    type Error = ConversionError;
-
-    fn try_from(opening: proto::primitives::SmtOpening) -> Result<Self, Self::Error> {
-        let decoder = opening.decoder();
-        let path = required!(decoder, opening.path)?;
-        let leaf = required!(decoder, opening.leaf)?;
-
-        SmtProof::new(path, leaf).map_err(ConversionError::new)
-    }
-}
-
 impl From<SmtProof> for proto::primitives::SmtOpening {
     fn from(proof: SmtProof) -> Self {
         let (path, leaf) = proof.into_parts();
