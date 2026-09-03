@@ -78,9 +78,7 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.multisig::get_initial_threshold_and_num_approvers drop
     # => [num_of_approvers, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
 
-    # one slot beyond the approvers, for the guardian signature. It is unconditional because the
-    # rotation path verifies no guardian signature but scans every account procedure instead, which
-    # the slot also covers.
+    # one slot beyond the approvers, for the guardian signature.
     add.1
     # => [num_of_signers, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
 
