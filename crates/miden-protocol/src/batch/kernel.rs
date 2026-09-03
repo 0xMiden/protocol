@@ -1,12 +1,23 @@
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_core::program::KernelDescriptor;
+use miden_core::utils::hash_string_to_word;
 
 use crate::batch::{BatchId, ProposedBatch};
+use crate::errors::ProvenBatchError;
+use crate::note::Nullifier;
+use crate::transaction::{OrderedTransactionHeaders, TransactionCommitments};
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
-use crate::{Felt, Word};
+use crate::{
+    Felt,
+    MAX_INPUT_NOTES_PER_BATCH,
+    MAX_OUTPUT_NOTES_PER_BATCH,
+    MAX_TRANSACTIONS_PER_BATCH,
+    Word,
+};
 
 // CONSTANTS
 // ================================================================================================
@@ -21,6 +32,13 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
         .try_into_program()
         .expect("batch kernel package should contain a program")
 });
+
+// Advice-map keys under which the sorted (pre-erasure) note lists are provided to the kernel.
+pub static INPUT_NOTE_LIST_KEY: LazyLock<Word> =
+    LazyLock::new(|| hash_string_to_word("miden::batch_kernel::input_note_list"));
+
+pub static OUTPUT_NOTE_LIST_KEY: LazyLock<Word> =
+    LazyLock::new(|| hash_string_to_word("miden::batch_kernel::output_note_list"));
 
 // BATCH KERNEL
 // ================================================================================================
@@ -63,6 +81,65 @@ impl BatchKernel {
         (stack_inputs, advice_inputs)
     }
 
+    /// Rejects a [`ProposedBatch`] the batch kernel cannot prove.
+    ///
+    /// The batch must fit the kernel's fixed-size memory regions, so it can hold at most
+    /// [`MAX_TRANSACTIONS_PER_BATCH`] transactions.
+    ///
+    /// Two of the checks cover temporary limitations:
+    /// - Authenticated input notes (converted from unauthenticated via inclusion proof). The kernel
+    ///   reconstructs their commitment from per-transaction `(NULLIFIER, NOTE_ID)` tuples, whereas
+    ///   the batch commits `(NULLIFIER, EMPTY)` for such notes, so the two commitments diverge.
+    /// - Pre-erasure note union exceeding `MAX_INPUT_NOTES_PER_BATCH` / `MAX_OUTPUT_NOTES_PER_BATCH`.
+    ///   The kernel stores the pre-erasure lists in fixed-size regions, so it rejects such batches
+    ///   even when valid post-erasure. Tracked in
+    ///   <https://github.com/0xMiden/protocol/issues/3184>.
+    pub fn ensure_supported(proposed_batch: &ProposedBatch) -> Result<(), ProvenBatchError> {
+        let num_transactions = proposed_batch.transactions().len();
+        if num_transactions > MAX_TRANSACTIONS_PER_BATCH {
+            return Err(ProvenBatchError::TooManyTransactions(num_transactions));
+        }
+
+        // The pre-erasure note unions must fit the kernel's fixed-size note regions.
+        let num_input_notes = proposed_batch
+            .transactions()
+            .iter()
+            .map(|tx| usize::from(tx.input_notes().num_notes()))
+            .sum();
+        if num_input_notes > MAX_INPUT_NOTES_PER_BATCH {
+            return Err(ProvenBatchError::TooManyPreErasureInputNotes(num_input_notes));
+        }
+        let num_output_notes = proposed_batch
+            .transactions()
+            .iter()
+            .map(|tx| tx.output_notes().num_notes())
+            .sum();
+        if num_output_notes > MAX_OUTPUT_NOTES_PER_BATCH {
+            return Err(ProvenBatchError::TooManyPreErasureOutputNotes(num_output_notes));
+        }
+
+        // An input note that some transaction consumed as unauthenticated but which the batch
+        // authenticated (header erased to the `(NULLIFIER, EMPTY)` form) is not yet supported.
+        // Erased notes are absent from `input_notes()`, so they are not flagged.
+        let consumed_unauthenticated: BTreeSet<Nullifier> = proposed_batch
+            .transactions()
+            .iter()
+            .flat_map(|tx| tx.input_notes().iter())
+            .filter_map(|note| note.header().is_some().then_some(note.nullifier()))
+            .collect();
+        let unsupported_note = proposed_batch
+            .input_notes()
+            .iter()
+            .filter(|note| note.header().is_none())
+            .find(|note| consumed_unauthenticated.contains(&note.nullifier()));
+
+        if let Some(note) = unsupported_note {
+            return Err(ProvenBatchError::UnsupportedInBatchAuthenticatedNote(note.nullifier()));
+        }
+
+        Ok(())
+    }
+
     /// Returns the stack with the public inputs required by the batch kernel.
     ///
     /// The initial stack is:
@@ -85,10 +162,102 @@ impl BatchKernel {
     // ADVICE BUILDER
     // --------------------------------------------------------------------------------------------
 
-    /// Builds the advice inputs (map + stack) consumed by the batch kernel.
+    /// Builds the advice inputs consumed by the batch kernel.
     ///
-    /// The skeleton kernel ignores its advice inputs, so this returns the default empty value.
-    fn build_advice_inputs(_proposed_batch: &ProposedBatch) -> AdviceInputs {
-        AdviceInputs::default()
+    /// The kernel reconstructs and verifies the batch's `INPUT_NOTES_COMMITMENT` by walking a
+    /// layered advice map, each layer keyed by a hash the previous layer verified:
+    /// - `BATCH_ID` -> the `(tx_id, account_id)` tuple list (matching
+    ///   `OrderedTransactionHeaders::hash_input_elements`).
+    /// - each `tx_id` -> the transaction header felt sequence (matching
+    ///   [`TransactionCommitments::elements`]).
+    /// - each per-tx `INPUT_NOTES_COMMITMENT` -> the `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples.
+    /// - each per-tx `OUTPUT_NOTES_COMMITMENT` -> the `(DETAILS_COMMITMENT, METADATA_COMMITMENT)`
+    ///   tuples (the kernel derives each output `NoteId` from these via `poseidon2::merge`).
+    ///
+    /// It also provides two sorted lists: the pre-erasure union of every transaction's input
+    /// notes, sorted by nullifier (keyed by [`INPUT_NOTE_LIST_KEY`]), and of their output notes,
+    /// sorted by note id (keyed by [`OUTPUT_NOTE_LIST_KEY`]). The kernel binds every entry of
+    /// these lists to the per-transaction notes above (so the host cannot inject, omit, or
+    /// duplicate notes), derives erasure by cross-referencing the two lists, and hashes the
+    /// non-erased input notes in nullifier order to reproduce
+    /// `ProposedBatch::input_notes().commitment()`.
+    fn build_advice_inputs(proposed_batch: &ProposedBatch) -> AdviceInputs {
+        let mut map_entries: Vec<(Word, Vec<Felt>)> = Vec::new();
+
+        // Layer 1: BATCH_ID -> [(tx_id, account_id) tuples].
+        let layer1_data = OrderedTransactionHeaders::hash_input_elements(
+            proposed_batch.transactions().iter().map(|tx| (tx.id(), tx.account_id())),
+        );
+        map_entries.push((proposed_batch.id().as_word(), layer1_data));
+
+        // Pre-erasure union of every transaction's notes, collected while walking the per-tx
+        // layers and sorted below: input notes by nullifier, output notes by note id, matching
+        // `ProposedBatch`.
+        let mut input_list = Vec::new(); // (nullifier, note_id_or_empty)
+        let mut output_list = Vec::new();
+
+        for tx in proposed_batch.transactions().iter() {
+            // Layer 2: tx_id -> the felt sequence TransactionId::new hashes.
+            let header_data = TransactionCommitments::from(tx.as_ref()).elements();
+            map_entries.push((tx.id().as_word(), header_data.to_vec()));
+
+            // Layer 3a: per-tx INPUT_NOTES_COMMITMENT -> [NULLIFIER, NOTE_ID_OR_EMPTY] tuples.
+            // This must reproduce `build_input_note_commitment` exactly.
+            let input_notes_commitment = tx.input_notes().commitment();
+            if input_notes_commitment != Word::empty() {
+                let mut preimage_data =
+                    Vec::with_capacity(usize::from(tx.input_notes().num_notes()) * 8);
+                for note_commit in tx.input_notes().iter() {
+                    let nullifier = note_commit.nullifier();
+                    let note_id_or_empty =
+                        note_commit.header().map_or(Word::empty(), |header| header.id().as_word());
+                    preimage_data.extend_from_slice(nullifier.as_word().as_elements());
+                    preimage_data.extend_from_slice(note_id_or_empty.as_elements());
+                    input_list.push((nullifier, note_id_or_empty));
+                }
+                map_entries.push((input_notes_commitment, preimage_data));
+            }
+
+            // Layer 3b: per-tx OUTPUT_NOTES_COMMITMENT -> [DETAILS_COMMITMENT,
+            // METADATA_COMMITMENT] tuples. Mirrors `OutputNotes::commitment`; the kernel derives
+            // each output NoteId as `merge(details_commitment, metadata_commitment)`.
+            let output_notes_commitment = tx.output_notes().commitment();
+            if output_notes_commitment != Word::empty() {
+                let mut preimage_data = Vec::with_capacity(tx.output_notes().num_notes() * 8);
+                for note in tx.output_notes().iter() {
+                    preimage_data
+                        .extend_from_slice(note.details_commitment().as_word().as_elements());
+                    preimage_data.extend_from_slice(note.metadata().to_commitment().as_elements());
+                    output_list.push(note.id());
+                }
+                map_entries.push((output_notes_commitment, preimage_data));
+            }
+        }
+
+        // Sort the input-note list by nullifier and the output-note list by note id, ascending.
+        // `Word`'s ordering compares the most-significant felt first, matching the batch kernel's
+        // `word::lt` strict-sort check, `sorted_array`'s lookup order, and `ProposedBatch`'s
+        // `InputNoteCommitment::nullifier` order.
+        input_list.sort_by_key(|entry| entry.0);
+        output_list.sort_unstable();
+
+        // INPUT_NOTE_LIST_KEY -> [NULLIFIER, NOTE_ID_OR_EMPTY] (8 felts per note).
+        let mut input_blob = Vec::with_capacity(input_list.len() * 8);
+        for (nullifier, note_id_or_empty) in &input_list {
+            input_blob.extend_from_slice(nullifier.as_word().as_elements());
+            input_blob.extend_from_slice(note_id_or_empty.as_elements());
+        }
+        map_entries.push((*INPUT_NOTE_LIST_KEY, input_blob));
+
+        // OUTPUT_NOTE_LIST_KEY -> [NOTE_ID, 0, 0, 0, 0] (8 felts per note; the VALUE word
+        // is unused, present only so the entries fit `sorted_array`'s KEY+VALUE layout).
+        let mut output_blob = Vec::with_capacity(output_list.len() * 8);
+        for note_id in &output_list {
+            output_blob.extend_from_slice(note_id.as_word().as_elements());
+            output_blob.extend_from_slice(Word::empty().as_elements());
+        }
+        map_entries.push((*OUTPUT_NOTE_LIST_KEY, output_blob));
+
+        AdviceInputs::default().with_map(map_entries)
     }
 }

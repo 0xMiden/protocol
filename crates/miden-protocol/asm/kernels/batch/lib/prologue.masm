@@ -1,0 +1,326 @@
+use miden::core::mem
+use miden::core::word
+
+use miden::batch_kernel::memory
+use {
+    INPUT_NOTES_PTR,
+    MAX_NOTES_PER_BATCH,
+    MAX_TRANSACTIONS_PER_BATCH,
+    NOTE_ENTRY_FELT_LEN,
+    NOTE_ENTRY_NUM_WORDS,
+    OUTPUT_NOTES_PTR,
+    TX_HEADER_FELT_LEN,
+    TX_HEADER_NUM_WORDS,
+    TX_TUPLE_NUM_WORDS,
+    TX_TUPLES_PTR,
+    WORD_NUM_ELEMENTS,
+} from miden::batch_kernel::memory
+
+# CONSTANTS
+# =================================================================================================
+
+# Advice-map keys under which the sorted note lists (input notes by nullifier, output notes by
+# note id) are provided. Each key is the word hash of a domain message, matching `kernel.rs`.
+const INPUT_NOTE_LIST_KEY = word("miden::batch_kernel::input_note_list")
+const OUTPUT_NOTE_LIST_KEY = word("miden::batch_kernel::output_note_list")
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BATCH_TOO_MANY_TRANSACTIONS =
+    "the batch contains more transactions than the maximum allowed"
+
+const ERR_BATCH_NO_TRANSACTIONS = "the batch contains no transactions"
+
+const ERR_BATCH_TX_HEADER_INVALID_LENGTH =
+    "a transaction header does not have the expected length"
+
+const ERR_BATCH_NOTE_LIST_NOT_SORTED = "a batch note list is not strictly sorted by its key"
+
+const ERR_BATCH_NOTE_LIST_RANGE_NOT_U32 = "a batch note list range pointer is not a u32 value"
+
+const ERR_BATCH_NOTE_LIST_RANGE_INVERTED =
+    "a batch note list start pointer is greater than its end pointer"
+
+const ERR_BATCH_NOTE_LIST_START_NOT_ALIGNED =
+    "a batch note list start pointer is not word-aligned"
+
+const ERR_BATCH_NOTE_LIST_RANGE_NOT_ALIGNED =
+    "a batch note list range is not double-word aligned with its start pointer"
+
+const ERR_BATCH_NOTE_LIST_TOO_LONG =
+    "a batch note list contains more entries than the maximum allowed"
+
+# SORTED NOTE LIST LOADING
+# =================================================================================================
+
+#! Pipes a sorted note list (8-felt `[KEY, VALUE]` entries) from the advice map into memory and
+#! returns the number of entries. The list is not hashed against a commitment; its integrity is
+#! established later by binding every entry to a verified per-transaction note.
+#!
+#! Inputs:
+#!   Operand stack: [KEY, write_ptr]
+#!   Advice map:
+#!     KEY |-> [[KEY_0, VALUE_0], ..., [KEY_n, VALUE_n]]
+#! Outputs:
+#!   Operand stack: [num_notes]
+#!
+#! Panics if:
+#! - the advice-supplied list length is not a multiple of `NOTE_ENTRY_FELT_LEN`.
+#! - the list contains more entries than the maximum allowed.
+proc load_note_list
+    adv.push_mapvaln
+    # OS => [KEY, write_ptr]
+    # AS => [len_felts, [note_list_entries]]
+
+    dropw
+    # OS => [write_ptr]
+
+    adv_push
+    # OS => [len_felts, write_ptr]
+    # AS => [[note_list_entries]]
+
+    div.WORD_NUM_ELEMENTS
+    # => [num_words, write_ptr]
+
+    dup div.NOTE_ENTRY_NUM_WORDS
+    # => [num_notes, num_words, write_ptr]
+
+    # Both divisions are field divisions rather than integer divisions, so a length that is not a
+    # multiple of 8 felts does not truncate: dividing an odd felt by 2 yields (x + p) / 2, which is
+    # around 2^63. Any such length therefore lands far outside the u32 range and is rejected by the
+    # assertion below rather than silently reinterpreted as a smaller count.
+    dup u32assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
+    u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
+    movdn.2
+    # => [num_words, write_ptr, num_notes]
+
+    exec.mem::pipe_words_to_memory
+    # => [R0, R1, C, end_ptr, num_notes]
+
+    dropw dropw dropw drop
+    # => [num_notes]
+end
+
+#! Asserts that the KEY words in an array of (key, value) word tuples are strictly increasing.
+#!
+#! This establishes the sortedness precondition that `sorted_array::find_key_value` lookups rely on.
+#! It mirrors `sorted_array::assert_sorted_keys`, with the difference that sortedness is asserted
+#! to be strict here.
+#!
+#! Inputs:  [start_ptr, end_ptr]
+#! Outputs: [start_ptr, end_ptr]
+#!
+#! Panics if:
+#! - `start_ptr` or `end_ptr` is not a u32 value.
+#! - `start_ptr` is not word-aligned.
+#! - `end_ptr` is not double-word-aligned with `start_ptr`.
+#! - `start_ptr > end_ptr`.
+#! - any adjacent key pair is not strictly increasing.
+@locals(1)
+proc assert_list_strictly_sorted
+    # locals:
+    # 0: current_ptr
+    dup add.NOTE_ENTRY_FELT_LEN loc_store.0
+    # => [start_ptr, end_ptr]
+
+    dup.1 dup.1 u32assert2.err=ERR_BATCH_NOTE_LIST_RANGE_NOT_U32
+    u32gte assert.err=ERR_BATCH_NOTE_LIST_RANGE_INVERTED
+    dup u32mod.WORD_NUM_ELEMENTS assertz.err=ERR_BATCH_NOTE_LIST_START_NOT_ALIGNED
+    dup.1 dup.1 sub u32mod.NOTE_ENTRY_FELT_LEN assertz.err=ERR_BATCH_NOTE_LIST_RANGE_NOT_ALIGNED
+    # => [start_ptr, end_ptr]
+
+    loc_load.0 dup.2 u32lt
+    while.true
+        loc_load.0 sub.NOTE_ENTRY_FELT_LEN padw movup.4 mem_loadw_le
+        # => [PREVIOUS_KEY, start_ptr, end_ptr]
+
+        loc_load.0 padw movup.4 mem_loadw_le
+        # => [CURRENT_KEY, PREVIOUS_KEY, start_ptr, end_ptr]
+
+        exec.word::lt
+        assert.err=ERR_BATCH_NOTE_LIST_NOT_SORTED
+        # => [start_ptr, end_ptr]
+
+        loc_load.0 add.NOTE_ENTRY_FELT_LEN loc_store.0
+        # => [start_ptr, end_ptr]
+
+        loc_load.0 dup.2 u32lt
+    end
+end
+
+#! Loads and verifies the nullifier-sorted input-note list into [`memory::INPUT_NOTES_PTR`].
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - [`load_note_list`] fails to verify.
+#! - the list is not strictly sorted (see [`assert_list_strictly_sorted`]).
+proc prepare_input_note_list
+    push.INPUT_NOTES_PTR
+    push.INPUT_NOTE_LIST_KEY
+    # => [KEY, input_notes_ptr]
+
+    exec.load_note_list
+    # => [num_input_notes]
+
+    exec.memory::set_num_input_notes
+    # => []
+
+    exec.memory::get_input_notes_end_ptr push.INPUT_NOTES_PTR
+    # => [input_notes_ptr, input_notes_end_ptr]
+
+    exec.assert_list_strictly_sorted
+    # => [input_notes_ptr, input_notes_end_ptr]
+
+    drop drop
+end
+
+#! Loads and verifies the note-id-sorted output-note list into [`memory::OUTPUT_NOTES_PTR`].
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - [`load_note_list`] fails to verify.
+#! - the list is not strictly sorted (see [`assert_list_strictly_sorted`]).
+proc prepare_output_note_list
+    push.OUTPUT_NOTES_PTR
+    push.OUTPUT_NOTE_LIST_KEY
+    # => [KEY, output_notes_ptr]
+
+    exec.load_note_list
+    # => [num_output_notes]
+
+    exec.memory::set_num_output_notes
+    # => []
+
+    exec.memory::get_output_notes_end_ptr push.OUTPUT_NOTES_PTR
+    # => [output_notes_ptr, output_notes_end_ptr]
+
+    exec.assert_list_strictly_sorted
+    # => [output_notes_ptr, output_notes_end_ptr]
+
+    drop drop
+end
+
+# PROLOGUE
+# =================================================================================================
+
+#! Loads to memory and verifies the batch's structural commitments from the advice provider.
+#!
+#! Performs two steps:
+#! - Layer 1: pipes the `(tx_id, account_id)` tuples from the advice map keyed by `BATCH_ID` into
+#!   [`memory::TX_TUPLES_PTR`], asserting that the sequential hash of the piped data matches
+#!   `BATCH_ID`. The number of transactions is derived from the piped length, validated to be
+#!   non-zero and at most [`MAX_TRANSACTIONS_PER_BATCH`], and stored in
+#!   [`memory::NUM_TRANSACTIONS_PTR`].
+#! - Layer 2: for each transaction, pipes its pre-image from the advice map keyed by the verified
+#!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
+#!   per-tx offset.
+#! - Note lists: loads the input-note list (sorted by nullifier) and the output-note list (sorted
+#!   by note id) from the advice map and asserts each is strictly sorted by its key. Their
+#!   integrity is established later, when the note tracker binds every entry to a verified
+#!   per-transaction note.
+#!
+#! Inputs:
+#!   Operand stack: [BATCH_ID]
+#!   Advice map:
+#!     BATCH_ID |-> [(tx_id_0, account_id_0_pair), (tx_id_1, account_id_1_pair), ...]
+#!     For each verified tx_id_i:
+#!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i]
+#!
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Panics if:
+#! - the number of transactions is zero or exceeds the maximum allowed.
+#! - the `(tx_id, account_id)` tuple list piped from the advice map does not hash to `BATCH_ID`.
+#! - a transaction's header is not `TX_HEADER_FELT_LEN` felts long.
+#! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT)`
+#!   data piped from the advice map does not hash to its `tx_id`.
+#! - [`prepare_input_note_list`] or [`prepare_output_note_list`] fails to verify.
+#!
+#! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
+#!       BLOCK_COMMITMENT.
+#! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment.
+pub proc prepare_batch
+    # Layer 1: pipe BATCH_ID's mapped value to tx_tuples_ptr + verify.
+    # ---------------------------------------------------------------------------------------------
+
+    adv.push_mapvaln
+    # OS => [BATCH_ID]
+    # AS => [tx_tuples_len, [TX_TUPLES]]
+
+    adv_push div.WORD_NUM_ELEMENTS
+    # OS => [num_words, BATCH_ID]
+    # AS => [[TX_TUPLES]]
+
+    # num_transactions = num_words / 2 (each tx contributes 2 words: tx_id + account_id_pair).
+    dup div.TX_TUPLE_NUM_WORDS
+    # => [num_transactions, num_words, BATCH_ID]
+
+    dup u32assert.err=ERR_BATCH_TOO_MANY_TRANSACTIONS
+    u32lte.MAX_TRANSACTIONS_PER_BATCH assert.err=ERR_BATCH_TOO_MANY_TRANSACTIONS
+    dup neq.0 assert.err=ERR_BATCH_NO_TRANSACTIONS
+    exec.memory::set_num_transactions
+    # => [num_words, BATCH_ID]
+
+    push.TX_TUPLES_PTR swap
+    # => [num_words, tx_tuples_ptr, BATCH_ID]
+
+    # Pipe the tuples into memory, asserting their poseidon2 hash equals BATCH_ID.
+    exec.mem::pipe_preimage_to_memory
+    # => [end_ptr]
+
+    drop
+
+    # Layer 2: for each transaction, pipe + verify its header.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.memory::get_num_transactions
+    # => [num_transactions]
+
+    # Layer 1 asserted num_transactions > 0, so enter the loop unconditionally and iterate
+    # tx_index from num_transactions - 1 down to 0.
+    push.1
+    while.true
+        sub.1
+        # => [tx_index]
+
+        dup exec.memory::get_tx_id
+        # => [TX_ID, tx_index]
+
+        adv.push_mapvaln
+        # OS => [TX_ID, tx_index]
+        # AS => [tx_header_len, [TX_HEADER]]
+
+        adv_push
+        # OS => [tx_header_len, TX_ID, tx_index]
+        # AS => [[TX_HEADER]]
+
+        eq.TX_HEADER_FELT_LEN assert.err=ERR_BATCH_TX_HEADER_INVALID_LENGTH
+        # => [TX_ID, tx_index]
+
+        dup.4 exec.memory::get_tx_header_ptr push.TX_HEADER_NUM_WORDS
+        # => [num_words, tx_header_ptr, TX_ID, tx_index]
+
+        # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.
+        exec.mem::pipe_preimage_to_memory
+        # => [end_ptr, tx_index]
+
+        drop
+
+        dup neq.0
+        # => [should_loop, tx_index]
+    end
+
+    drop
+
+    # Note lists: load the sorted note lists and assert each is strictly sorted by its key.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.prepare_input_note_list
+    exec.prepare_output_note_list
+end

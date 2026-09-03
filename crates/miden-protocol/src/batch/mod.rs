@@ -19,7 +19,7 @@ pub use ordered_batches::OrderedBatches;
 pub(super) mod note_tracker;
 
 mod kernel;
-pub use kernel::BatchKernel;
+pub use kernel::{BatchKernel, INPUT_NOTE_LIST_KEY, OUTPUT_NOTE_LIST_KEY};
 
 mod batch_outputs;
 pub use batch_outputs::BatchOutputs;

@@ -40,7 +40,7 @@ use crate::account::{
 };
 use crate::address::AddressType;
 use crate::asset::AssetClass;
-use crate::batch::BatchId;
+use crate::batch::{BatchId, BatchOutputs};
 use crate::block::{BlockNumber, ValidatorConfig};
 use crate::note::{
     NoteAssets,
@@ -64,6 +64,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    MAX_TRANSACTIONS_PER_BATCH,
     NOTE_MAX_SIZE,
 };
 
@@ -82,6 +83,12 @@ pub mod tx_kernel {
 #[cfg(any(feature = "testing", test))]
 pub mod protocol {
     include!(concat!(env!("OUT_DIR"), "/protocol_errors.rs"));
+}
+
+/// The errors from the MASM code of the batch kernel.
+#[cfg(any(feature = "testing", test))]
+pub mod batch_kernel {
+    include!(concat!(env!("OUT_DIR"), "/batch_kernel_errors.rs"));
 }
 
 // ACCOUNT COMPONENT TEMPLATE ERROR
@@ -1537,6 +1544,27 @@ pub enum ProvenBatchError {
     BatchProofContainsPrecompiles,
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
+    #[error(
+        "batch kernel outputs do not match the outputs expected for the proposed batch (expected {expected:?}, actual {actual:?})"
+    )]
+    BatchKernelOutputMismatch {
+        expected: Box<BatchOutputs>,
+        actual: Box<BatchOutputs>,
+    },
+    #[error(
+        "input note {0} is authenticated within the batch, which the batch kernel does not yet support (see the note-authentication TODO in asm/kernels/batch/main.masm)"
+    )]
+    UnsupportedInBatchAuthenticatedNote(Nullifier),
+    #[error(
+        "batch has {0} pre-erasure input notes but the batch kernel temporarily supports at most {MAX_INPUT_NOTES_PER_BATCH} (see https://github.com/0xMiden/protocol/issues/3184)"
+    )]
+    TooManyPreErasureInputNotes(usize),
+    #[error(
+        "batch has {0} pre-erasure output notes but the batch kernel temporarily supports at most {MAX_OUTPUT_NOTES_PER_BATCH} (see https://github.com/0xMiden/protocol/issues/3184)"
+    )]
+    TooManyPreErasureOutputNotes(usize),
+    #[error("batch has {0} transactions but at most {MAX_TRANSACTIONS_PER_BATCH} are allowed")]
+    TooManyTransactions(usize),
 }
 
 // BATCH OUTPUT ERROR

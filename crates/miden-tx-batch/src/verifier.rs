@@ -17,33 +17,43 @@ use crate::{BatchVerifierError, proof_has_precompiles};
 ///
 /// # Warning
 ///
-/// The current batch kernel is a skeleton that drops its inputs and emits an all-zero output
-/// region, so a successful [`verify`](BatchVerifier::verify) attests only that the kernel program
-/// ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` public inputs. It does **not** yet bind the
-/// batch's notes, account updates, or expiration: those values are not part of what the proof
-/// commits to, so a `ProvenBatch` whose contents were mutated would still verify. This verifier
-/// must therefore not be relied on at a trust boundary until the kernel verification logic that
-/// emits and binds the real commitments lands.
+/// The batch kernel binds only the batch's `INPUT_NOTES_COMMITMENT`. The batch note tree root and
+/// expiration are emitted as the empty word and zero, and input notes are not authenticated against
+/// the chain MMR. A successful [`verify`](BatchVerifier::verify) therefore attests that the kernel
+/// ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` inputs and produced
+/// `batch.input_notes().commitment()`, but does **not** bind the batch's output notes, account
+/// updates, or expiration. The `BATCH_ID` and reference block commitment fed to the kernel are
+/// taken from the [`ProvenBatch`]'s own fields and are not recomputed from its transactions, so
+/// verification binds nothing that an entity constructing the [`ProvenBatch`] could not also forge.
+/// This verifier must not be relied on at a trust boundary.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
-    proof_security_level: u32,
+    min_proof_security_level: u32,
 }
 
 impl BatchVerifier {
     /// Returns a new [`BatchVerifier`] instantiated with the specified minimum security level.
-    pub fn new(proof_security_level: u32) -> Self {
+    pub fn new(min_proof_security_level: u32) -> Self {
         let batch_program_info = BatchKernel::program_info();
-        Self { batch_program_info, proof_security_level }
+        Self {
+            batch_program_info,
+            min_proof_security_level,
+        }
     }
 
     /// Verifies the provided [`ProvenBatch`]'s execution proof against the batch kernel.
+    ///
+    /// On success, returns the security level (in bits) of the verified proof. See the
+    /// [type-level warning](BatchVerifier#warning): a successful result must not be relied on at a
+    /// trust boundary while the kernel binds only `INPUT_NOTES_COMMITMENT`.
     ///
     /// # Errors
     /// Returns an error if:
     /// - The batch proof contains precompile work.
     /// - Batch proof verification fails.
-    /// - The security level of the verified proof is insufficient.
-    pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
+    /// - The verified proof has an outstanding precompile obligation.
+    /// - The security level of the verified proof is below the configured minimum.
+    pub fn verify(&self, batch: &ProvenBatch) -> Result<u32, BatchVerifierError> {
         if proof_has_precompiles(batch.proof()) {
             return Err(BatchVerifierError::BatchProofContainsPrecompiles);
         }
@@ -51,13 +61,14 @@ impl BatchVerifier {
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
-        // The skeleton kernel drops its inputs and emits the all-zero output region, so the proof
-        // attests to empty outputs. Once the kernel computes the real commitments, these empty
-        // values become `batch.input_notes().commitment()`, the batch note tree root and
-        // `batch.batch_expiration_block_num()`.
-        let stack_outputs =
-            BatchOutputs::new(Word::empty(), Word::empty(), BlockNumber::from(0u32))
-                .into_stack_outputs();
+        // The kernel binds the batch's INPUT_NOTES_COMMITMENT but not the batch note tree root or
+        // expiration, so those are passed as the empty word and zero.
+        let stack_outputs = BatchOutputs::new(
+            batch.input_notes().commitment(),
+            Word::empty(),
+            BlockNumber::from(0u32),
+        )
+        .into_stack_outputs();
 
         let claim = ExecutionClaim::from_program_info(
             self.batch_program_info.clone(),
@@ -70,15 +81,15 @@ impl BatchVerifier {
         if !outcome.is_complete() {
             return Err(BatchVerifierError::IncompleteProof);
         }
-        let proof_security_level = outcome.security_level();
+        let verified_security_level = outcome.security_level();
 
-        if proof_security_level < self.proof_security_level {
+        if verified_security_level < self.min_proof_security_level {
             return Err(BatchVerifierError::InsufficientProofSecurityLevel {
-                actual: proof_security_level,
-                expected_minimum: self.proof_security_level,
+                actual: verified_security_level,
+                expected_minimum: self.min_proof_security_level,
             });
         }
 
-        Ok(())
+        Ok(verified_security_level)
     }
 }

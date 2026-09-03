@@ -2,5 +2,12 @@
 name              = "miden-batch-kernel"
 version.workspace = true
 
+[lib]
+namespace = "miden::batch_kernel"
+path      = "lib/mod.masm"
+
 [[bin]]
 path = "src/main.masm"
+
+[dependencies]
+miden-core.workspace = true

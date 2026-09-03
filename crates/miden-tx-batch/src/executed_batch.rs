@@ -9,6 +9,7 @@ use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 /// Produced by [`BatchExecutor::execute`](crate::BatchExecutor::execute) and consumed by
 /// [`LocalBatchProver::prove`](crate::LocalBatchProver::prove). It carries the executed batch's
 /// execution witness so that proving only needs to build the trace and generate the proof.
+#[derive(Debug)]
 pub struct ExecutedBatch {
     proposed_batch: ProposedBatch,
     witness: ExecutionWitness,

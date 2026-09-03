@@ -67,6 +67,19 @@ impl OrderedTransactionHeaders {
     pub(crate) fn compute_commitment(
         transactions: impl IntoIterator<Item = (TransactionId, AccountId)>,
     ) -> Word {
+        Hasher::hash_elements(&Self::hash_input_elements(transactions))
+    }
+
+    /// Returns the felt sequence that [`Self::compute_commitment`] hashes.
+    ///
+    /// The layout is, for each `(transaction_id, account_id)` pair in iteration order:
+    ///   `[transaction_id[4], account_id_suffix, account_id_prefix, 0, 0]`
+    ///
+    /// The batch kernel pipes this same felt sequence from the advice provider to memory and
+    /// asserts the resulting hash matches the public input `BATCH_ID`.
+    pub(crate) fn hash_input_elements(
+        transactions: impl IntoIterator<Item = (TransactionId, AccountId)>,
+    ) -> Vec<Felt> {
         let mut elements = vec![];
         for (transaction_id, account_id) in transactions {
             elements.extend_from_slice(transaction_id.as_elements());
@@ -77,8 +90,7 @@ impl OrderedTransactionHeaders {
                 Felt::ZERO,
             ]);
         }
-
-        Hasher::hash_elements(&elements)
+        elements
     }
 }
 

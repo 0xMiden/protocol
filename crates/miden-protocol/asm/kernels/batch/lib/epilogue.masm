@@ -1,0 +1,269 @@
+use miden::core::crypto::hashes::poseidon2
+
+use miden::batch_kernel::memory
+use {NOTE_ENTRY_FELT_LEN, UNERASED, WORD_NUM_ELEMENTS} from miden::batch_kernel::memory
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED =
+    "an input-note list entry was not consumed by any transaction"
+
+const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED =
+    "an output-note list entry was not created by any transaction"
+
+# CONSTANTS
+# =================================================================================================
+
+# Felt offset of the RATE1 word within a stored poseidon2 hasher state.
+const HASHER_RATE1_OFFSET = WORD_NUM_ELEMENTS
+
+# Felt offset of the CAPACITY word within a stored poseidon2 hasher state.
+const HASHER_CAPACITY_OFFSET = 2 * WORD_NUM_ELEMENTS
+
+# ASSERTIONS
+# =================================================================================================
+
+#! Asserts every output-note list entry was created by exactly one transaction (with the per-tx
+#! binding, this proves the list is exactly the union of the per-transaction output notes, so a host
+#! cannot fabricate an erasure with a note no transaction creates).
+#!
+#! The matching input-note check (every entry consumed exactly once) is folded into the single pass
+#! in [`compute_input_notes_commitment`].
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - an output-note list entry was not created by any transaction.
+proc assert_all_output_notes_created
+    exec.memory::get_num_output_notes
+    # => [num_output_notes]
+
+    # Iterate from num_output_notes - 1 down to 0.
+    dup neq.0
+    while.true
+        sub.1
+        # => [output_note_idx]
+
+        dup exec.memory::get_output_note_is_created
+        # => [is_created, output_note_idx]
+
+        assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
+
+        dup neq.0
+        # => [should_loop, output_note_idx]
+    end
+    drop
+end
+
+# INPUT NOTES COMMITMENT
+# =================================================================================================
+
+#! Returns the poseidon2 hasher state stored at `hasher_state_ptr`.
+#!
+#! Inputs:  [hasher_state_ptr]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+proc load_hasher_state
+    padw dup.4 add.HASHER_CAPACITY_OFFSET mem_loadw_le
+    # => [CAPACITY, hasher_state_ptr]
+
+    padw dup.8 add.HASHER_RATE1_OFFSET mem_loadw_le
+    # => [RATE1, CAPACITY, hasher_state_ptr]
+
+    padw dup.12 mem_loadw_le
+    # => [RATE0, RATE1, CAPACITY, hasher_state_ptr]
+
+    movup.12 drop
+end
+
+#! Stores a poseidon2 hasher state at `hasher_state_ptr`.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY, hasher_state_ptr]
+#! Outputs: []
+proc store_hasher_state
+    movup.12
+    # => [hasher_state_ptr, RATE0, RATE1, CAPACITY]
+
+    dup movdn.5
+    # => [hasher_state_ptr, RATE0, hasher_state_ptr, RATE1, CAPACITY]
+
+    mem_storew_le dropw
+    # => [hasher_state_ptr, RATE1, CAPACITY]
+
+    dup movdn.5
+    # => [hasher_state_ptr, RATE1, hasher_state_ptr, CAPACITY]
+
+    add.HASHER_RATE1_OFFSET mem_storew_le dropw
+    # => [hasher_state_ptr, CAPACITY]
+
+    add.HASHER_CAPACITY_OFFSET mem_storew_le dropw
+end
+
+#! Absorbs input note `input_note_idx`'s 8-felt `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuple into the
+#! hasher state at `hasher_state_ptr` (overwrite-mode poseidon2, matching `Hasher::hash_elements`).
+#!
+#! Both the tuple and the hasher state are passed in memory rather than on the operand stack.
+#!
+#! Inputs:
+#!   Operand stack: [input_note_idx, hasher_state_ptr]
+#!   Memory:
+#!     input-note list entry `input_note_idx` |-> [NULLIFIER, NOTE_ID_OR_EMPTY]
+#!     hasher_state_ptr                       |-> [RATE0, RATE1, CAPACITY]
+#! Outputs:
+#!   Operand stack: []
+#!   Memory:
+#!     hasher_state_ptr |-> [RATE0', RATE1', CAPACITY']
+proc absorb_input_entry
+    # The entry occupies one double word [entry_ptr, entry_ptr + NOTE_ENTRY_FELT_LEN).
+    exec.memory::get_input_note_entry_ptr
+    # => [entry_ptr, hasher_state_ptr]
+
+    dup add.NOTE_ENTRY_FELT_LEN swap
+    # => [entry_ptr, end_ptr, hasher_state_ptr]
+
+    dup.2 exec.load_hasher_state
+    # => [RATE0, RATE1, CAPACITY, entry_ptr, end_ptr, hasher_state_ptr]
+
+    exec.poseidon2::absorb_double_words_from_memory
+    # => [RATE0', RATE1', CAPACITY', end_ptr, end_ptr, hasher_state_ptr]
+
+    movup.12 drop movup.12 drop
+    # => [RATE0', RATE1', CAPACITY', hasher_state_ptr]
+
+    exec.store_hasher_state
+end
+
+#! Processes one input-note list entry: asserts the entry was consumed exactly once, then absorbs
+#! it into the batch hasher unless it was erased.
+#!
+#!
+#! Inputs:
+#!   Operand stack: [input_note_idx, hasher_state_ptr]
+#!   Memory:
+#!     input-note list entry `input_note_idx` |-> [NULLIFIER, NOTE_ID_OR_EMPTY]
+#!     its flag word                          |-> [erasure_state, is_consumed, 0, 0]
+#!     hasher_state_ptr                       |-> [RATE0, RATE1, CAPACITY]
+#! Outputs:
+#!   Operand stack: [input_note_idx + 1, hasher_state_ptr]
+#!   Memory:
+#!     hasher_state_ptr |-> the hasher state
+#!
+#! Panics if:
+#! - the input note was not consumed by any transaction.
+proc process_input_entry
+    dup exec.memory::get_input_note_is_consumed
+    # => [is_consumed, input_note_idx, hasher_state_ptr]
+
+    assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
+    # => [input_note_idx, hasher_state_ptr]
+
+    # Absorb the entry unless it was erased (created-and-consumed in this batch).
+    dup exec.memory::get_input_note_erasure_state
+    # => [erasure_state, input_note_idx, hasher_state_ptr]
+
+    eq.UNERASED
+    # => [is_unerased, input_note_idx, hasher_state_ptr]
+
+    if.true
+        dup.1 dup.1 exec.absorb_input_entry
+    end
+    add.1
+end
+
+#! Computes INPUT_NOTES_COMMITMENT as the sequential poseidon2 hash of the non-erased
+#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the nullifier-sorted input-note list (erased entries
+#! are skipped).
+#!
+#! The single pass over the input entries also enforces the epilogue invariant that every entry was
+#! consumed exactly once.
+#!
+#! With no non-erased entries this is the empty word, matching the early return in
+#! `build_input_note_commitment`: `init_no_padding` starts the state at zero and `squeeze_digest`
+#! returns the first rate word without permuting, so an unabsorbed state squeezes to the empty
+#! word rather than to the hash of zero elements.
+#!
+#! The entries are read from memory; only the commitment is returned on the operand stack.
+#!
+#! Inputs:
+#!   Operand stack: []
+#!   Memory:
+#!     the nullifier-sorted input-note list and its parallel flag array
+#! Outputs:
+#!   Operand stack: [INPUT_NOTES_COMMITMENT]
+#!
+#! Panics if:
+#! - [`process_input_entry`] fails to verify any entry.
+#!
+@locals(12) # the three words of a poseidon2 hasher state: RATE0, RATE1 and CAPACITY.
+proc compute_input_notes_commitment
+    # Initialize the hasher state in this procedure's local memory.
+    exec.poseidon2::init_no_padding
+    locaddr.0 movdn.12
+    # => [RATE0, RATE1, CAPACITY, hasher_state_ptr]
+
+    exec.store_hasher_state
+
+    exec.memory::get_num_input_notes
+    locaddr.0 push.0
+    # => [input_note_idx, hasher_state_ptr, num_input_notes]
+
+    dup dup.3 neq
+    # => [should_loop, input_note_idx, hasher_state_ptr, num_input_notes]
+
+    while.true
+        exec.process_input_entry
+        # => [input_note_idx+1, hasher_state_ptr, num_input_notes]
+
+        dup dup.3 neq
+        # => [should_loop, input_note_idx+1, hasher_state_ptr, num_input_notes]
+    end
+    # => [input_note_idx, hasher_state_ptr, num_input_notes]
+
+    drop swap drop
+    # => [hasher_state_ptr]
+
+    exec.load_hasher_state
+    exec.poseidon2::squeeze_digest
+    # => [INPUT_NOTES_COMMITMENT]
+end
+
+# OUTPUT NOTES COMMITMENT
+# =================================================================================================
+
+#! Computes the batch's output-notes commitment (the batch note tree root).
+#!
+#! Placeholder: returns the empty word until the batch note tree is wired up.
+#!
+#! Inputs:  []
+#! Outputs: [OUTPUT_NOTES_COMMITMENT]
+#!
+#! TODO: hash the batch's output notes into the batch note tree (SMT) root.
+proc compute_output_notes_commitment
+    padw
+end
+
+# EPILOGUE
+# =================================================================================================
+
+#! Verifies the note-tracking results and computes the batch's note commitments.
+#!
+#! Asserts every output-note list entry was created, then computes the input- and output-notes
+#! commitments. The per-input-entry invariant (consumed exactly once) is enforced inside the
+#! input-commitment pass.
+#!
+#! Inputs:  []
+#! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]
+#!
+#! Panics if:
+#! - [`assert_all_output_notes_created`] or [`compute_input_notes_commitment`] fails to verify.
+#!
+#! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
+pub proc finalize
+    exec.assert_all_output_notes_created
+    exec.compute_output_notes_commitment
+    # => [OUTPUT_NOTES_COMMITMENT]
+
+    exec.compute_input_notes_commitment
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]
+end
