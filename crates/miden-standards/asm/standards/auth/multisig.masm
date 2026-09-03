@@ -840,13 +840,12 @@ end
 
 #! Pays the transaction fee of a multisig authentication, bounded.
 #!
-#! A multisig can authenticate a transaction below its spending quorum (a guardian key rotation,
-#! a reduced per-procedure threshold) while the conversion rate is host-supplied, so an unbounded
-#! payment would let such a transaction drain the vault through the fee note. The payment is
-#! therefore pinned to the native fee asset and capped at FEE_BOUND_NUM / FEE_BOUND_DEN of the
-#! computed fee (see fee::assert_fee_bound). On chains with a zero verification base fee no note is
-#! created. Must run before the transaction summary is created, so the signatures cover the fee
-#! note and the vault withdrawal funding it.
+#! The conversion rate is host-supplied, so the payment is pinned to the native fee asset and
+#! capped at FEE_BOUND_NUM / FEE_BOUND_DEN of the computed fee (see fee::assert_fee_bound):
+#! whatever quorum signed, a rate cannot move more than that margin over the fee owed out of the
+#! vault through the fee note. On chains with a zero verification base fee no note is created.
+#! Must run before the transaction summary is created, so the signatures cover the fee note and
+#! the vault withdrawal funding it.
 #!
 #! The estimate records the sponsorship prices in local memory and the payment reuses them.
 #!

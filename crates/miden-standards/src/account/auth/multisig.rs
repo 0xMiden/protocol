@@ -152,14 +152,14 @@ impl AuthMultisigConfig {
 ///
 /// # Fees
 ///
-/// Before authenticating, `auth_tx_multisig` pays the transaction fee via
-/// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
-/// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
-/// fee-charging chains the account must hold a sufficient balance of the payment asset. The
-/// payment asset and conversion rate come from the auth args (see
-/// [`FeeConversionInfo`](super::FeeConversionInfo); native fee asset at rate 1/1 for plain native
-/// payment). On chains with a zero verification base fee no note is created. The fee note is
-/// created before the transaction summary, so it is covered by the approver signatures.
+/// Before authenticating, `auth_tx_multisig` pays the transaction fee by creating a public TX_FEE
+/// note (see [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, at the rate
+/// of the auth args' [`FeeConversionInfo`](super::FeeConversionInfo). On chains with a zero
+/// verification base fee no note is created. The fee note is created before the transaction
+/// summary, so the approver signatures cover it.
+///
+/// The conversion rate is host-supplied, so the payment is bounded (`fee::assert_fee_bound`): it
+/// must be in the native fee asset and at most twice the computed fee.
 ///
 /// # Expiration
 ///

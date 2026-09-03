@@ -3,8 +3,6 @@
 # See the `AuthMultisig` Rust type's documentation for more details.
 
 use miden::standards::auth::multisig
-use miden::standards::auth::signature
-use miden::standards::fee
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -16,10 +14,9 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! process.
 #!
 #! It resolves the AUTH_ARGS into the block the summary binds, the summary salt and the fee
-#! conversion info, then pays the transaction fee by creating a public TX_FEE note. On chains with
-#! a zero verification base fee no note is created. Because the fee is paid before the transaction
-#! summary is created, the fee note and the vault withdrawal funding it are covered by the approver
-#! signatures.
+#! conversion info, then pays the transaction fee before the summary is created, bounded and in
+#! the native fee asset (see multisig::pay_bounded_fee), so the fee note and the vault withdrawal
+#! funding it are covered by the approver signatures.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -28,6 +25,8 @@ pub use {is_signer} from miden::standards::auth::multisig
 #!   Operand stack: []
 #!
 #! Panics if:
+#! - the auth args cannot be resolved, see `multisig::resolve_auth_args`.
+#! - the fee payment fails, see `multisig::pay_bounded_fee`.
 #! - insufficient number of valid signatures (below threshold).
 #! - the approval window ended at or before the transaction reference block, see
 #!   `multisig::auth_tx`.
@@ -45,10 +44,8 @@ pub proc auth_tx_multisig(auth_args: word)
     exec.multisig::get_initial_threshold_and_num_approvers drop
     # => [num_of_approvers, CONVERSION_INFO, block_number, SALT]
 
-    exec.signature::estimate_multisig_authentication_cycles
-    # => [num_extra_cycles, CONVERSION_INFO, block_number, SALT]
-
-    exec.fee::pay_fee drop
+    # the notes the payment created need no accounting here
+    exec.multisig::pay_bounded_fee drop
     # => [block_number, SALT]
 
     # Authenticate the transaction and record it for replay protection.
