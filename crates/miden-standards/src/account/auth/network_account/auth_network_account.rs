@@ -24,7 +24,8 @@ use super::{
 };
 use crate::account::account_component_code;
 use crate::account::fees::FeePolicyManager;
-use crate::note::{FeeSponsorshipNote, NetworkAccountConfigNote};
+use crate::note::FeeSponsorshipNote;
+use crate::note::config::NetworkAccountConfigNote;
 use crate::procedure_root;
 use crate::tx_script::ExpirationTransactionScript;
 
@@ -459,7 +460,7 @@ mod tests {
 
     use super::*;
     use crate::account::wallets::BasicWallet;
-    use crate::note::NetworkAccountConfigNote;
+    use crate::note::config::NetworkAccountConfigNote;
 
     #[test]
     fn auth_network_account_component_builds() {

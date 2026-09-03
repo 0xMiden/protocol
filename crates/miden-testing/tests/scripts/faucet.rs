@@ -57,15 +57,8 @@ use miden_standards::errors::standards::{
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{
-    BurnNote,
-    MinBurnAmountConfigNote,
-    MintNote,
-    MintNoteStorage,
-    NetworkAccountConfigNote,
-    P2idNote,
-    StandardNote,
-};
+use miden_standards::note::config::{MinBurnAmountConfigNote, NetworkAccountConfigNote};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,

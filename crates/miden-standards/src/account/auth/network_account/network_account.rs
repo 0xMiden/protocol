@@ -216,7 +216,7 @@ mod tests {
             network_account.allowed_notes().allowed_script_roots().iter().copied().collect();
 
         let mut expected = roots;
-        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        expected.insert(crate::note::config::NetworkAccountConfigNote::script_root());
         expected.insert(FeeSponsorshipNote::script_root());
         assert_eq!(actual, expected);
     }
