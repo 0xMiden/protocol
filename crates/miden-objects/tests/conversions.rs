@@ -50,6 +50,7 @@ use miden_protocol::errors::{
 use miden_protocol::note::{
     Note,
     NoteAttachment,
+    NoteAttachments,
     NoteId,
     NoteInclusionProof,
     NoteMetadata,
@@ -108,6 +109,26 @@ fn note_attachment_reports_semantic_and_item_paths() {
     let empty = proto::note::NoteAttachment { scheme: 1, words: vec![] };
     let error = NoteAttachment::try_from(empty).unwrap_err();
     assert!(error.to_string().starts_with("words:"));
+}
+
+#[test]
+fn note_attachments_reports_item_and_invariant_paths() {
+    let valid = proto::note::NoteAttachment {
+        scheme: 1,
+        words: vec![Word::empty().into()],
+    };
+    let invalid = proto::note::NoteAttachment { scheme: u32::MAX, words: vec![] };
+    let error = NoteAttachments::try_from(proto::note::NoteAttachments {
+        attachments: vec![valid.clone(), invalid],
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("attachments[1].scheme:"));
+
+    let error = NoteAttachments::try_from(proto::note::NoteAttachments {
+        attachments: vec![valid; NoteAttachments::MAX_COUNT + 1],
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("attachments:"));
 }
 
 #[test]

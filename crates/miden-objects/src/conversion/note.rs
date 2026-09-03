@@ -123,21 +123,12 @@ impl From<&NoteAttachments> for proto::note::NoteAttachments {
     }
 }
 
-impl TryFrom<proto::note::NoteAttachments> for NoteAttachments {
-    type Error = ConversionError;
-
-    fn try_from(attachments: proto::note::NoteAttachments) -> Result<Self, Self::Error> {
-        let attachments = attachments
-            .attachments
-            .into_iter()
-            .map(NoteAttachment::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("attachments")?;
-
-        NoteAttachments::new(attachments)
-            .map_err(ConversionError::new)
-            .context("attachments")
-    }
+pub(crate) fn validate_note_attachments(
+    attachments: Vec<NoteAttachment>,
+) -> Result<NoteAttachments, ConversionError> {
+    NoteAttachments::new(attachments)
+        .map_err(ConversionError::new)
+        .context("attachments")
 }
 
 // NOTE DETAILS

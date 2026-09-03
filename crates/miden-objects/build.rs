@@ -117,6 +117,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 words,
             ),
         },
+        ".note.NoteAttachments" => {
+            target: ::miden_protocol::note::NoteAttachments,
+            try_constructor: crate::conversion::validate_note_attachments(
+                attachments,
+            ),
+        },
         ".blockchain.BlockAccountUpdate" => {
             target: ::miden_protocol::block::BlockAccountUpdate,
             try_constructor: ::miden_protocol::block::BlockAccountUpdate::new(
