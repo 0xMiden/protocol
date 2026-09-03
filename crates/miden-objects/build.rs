@@ -35,6 +35,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     miden_protobuf::configure_proto_decodes! {
         prost: &mut prost,
         descriptors: &descriptors,
+        ".account.StorageSlotId" => {
+            target: ::miden_protocol::account::StorageSlotId,
+            constructor: ::miden_protocol::account::StorageSlotId::new(
+                suffix,
+                prefix,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(

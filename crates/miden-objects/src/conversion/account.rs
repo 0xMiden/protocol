@@ -50,17 +50,6 @@ impl From<AccountId> for proto::account::AccountId {
 // STORAGE SLOT ID
 // ================================================================================================
 
-impl TryFrom<proto::account::StorageSlotId> for StorageSlotId {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::account::StorageSlotId) -> Result<Self, Self::Error> {
-        let decoder = message.decoder();
-        let suffix = required!(decoder, message.suffix)?;
-        let prefix = required!(decoder, message.prefix)?;
-        Ok(Self::new(suffix, prefix))
-    }
-}
-
 impl From<StorageSlotId> for proto::account::StorageSlotId {
     fn from(id: StorageSlotId) -> Self {
         Self {
