@@ -204,6 +204,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 details,
             ),
         },
+        ".blockchain.BlockBody" => {
+            target: ::miden_protocol::block::BlockBody,
+            try_constructor: crate::conversion::decode_block_body(
+                updated_accounts,
+                output_note_batches,
+                created_nullifiers,
+                transactions,
+            ),
+        },
         ".blockchain.NextProtocolConfig" => {
             target: ::miden_protocol::protocol_config::NextProtocolConfig,
             try_constructor: ::miden_protocol::protocol_config::NextProtocolConfig::new(

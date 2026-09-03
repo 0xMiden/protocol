@@ -258,53 +258,27 @@ impl From<BlockBody> for proto::blockchain::BlockBody {
     }
 }
 
-impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
+impl TryFrom<proto::primitives::Word> for Nullifier {
     type Error = ConversionError;
 
-    fn try_from(value: proto::blockchain::BlockBody) -> Result<Self, Self::Error> {
-        let updated_accounts = value
-            .updated_accounts
-            .into_iter()
-            .enumerate()
-            .map(|(index, update)| {
-                BlockAccountUpdate::try_from(update).context(format!("updated_accounts[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let output_note_batches = value
-            .output_note_batches
-            .into_iter()
-            .enumerate()
-            .map(|(index, batch)| {
-                OutputNoteBatch::try_from(batch).context(format!("output_note_batches[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let created_nullifiers = value
-            .created_nullifiers
-            .into_iter()
-            .enumerate()
-            .map(|(index, nullifier)| {
-                Word::try_from(nullifier)
-                    .map(Nullifier::from_raw)
-                    .context(format!("created_nullifiers[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let transactions = value
-            .transactions
-            .into_iter()
-            .enumerate()
-            .map(|(index, transaction)| {
-                TransactionHeader::try_from(transaction).context(format!("transactions[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        BlockBody::new(
-            updated_accounts,
-            output_note_batches,
-            created_nullifiers,
-            OrderedTransactionHeaders::new_unchecked(transactions),
-        )
-        .map_err(ConversionError::new)
+    fn try_from(nullifier: proto::primitives::Word) -> Result<Self, Self::Error> {
+        Word::try_from(nullifier).map(Self::from_raw)
     }
+}
+
+pub(crate) fn decode_block_body(
+    updated_accounts: Vec<BlockAccountUpdate>,
+    output_note_batches: Vec<OutputNoteBatch>,
+    created_nullifiers: Vec<Nullifier>,
+    transactions: Vec<TransactionHeader>,
+) -> Result<BlockBody, ConversionError> {
+    BlockBody::new(
+        updated_accounts,
+        output_note_batches,
+        created_nullifiers,
+        OrderedTransactionHeaders::new_unchecked(transactions),
+    )
+    .map_err(ConversionError::new)
 }
 
 impl TryFrom<&proto::blockchain::BlockBody> for BlockBody {
