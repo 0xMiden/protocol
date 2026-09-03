@@ -55,6 +55,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::protocol_config::NextProtocolConfig;
+use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
@@ -63,7 +64,6 @@ use miden_protocol::transaction::{
     TransactionHeader,
     TxAccountUpdate,
 };
-use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{Felt, Word};
 use prost::Message;
 
@@ -648,7 +648,7 @@ fn proven_transaction_data() -> proto::transaction::ProvenTransaction {
         reference_block_num: Some(proto::blockchain::BlockNumber { block_num: 1 }),
         reference_block_commitment: Some(Word::empty().into()),
         expiration_block_num: Some(proto::blockchain::BlockNumber { block_num: 2 }),
-        proof: Some(ExecutionProof::new_dummy().into()),
+        proof: Some(dummy_execution_proof().into()),
     }
 }
 
@@ -706,7 +706,7 @@ fn proven_batch_data() -> proto::transaction::ProvenBatch {
         output_notes: vec![],
         expiration_block_num: Some(proto::blockchain::BlockNumber { block_num: 2 }),
         transactions: vec![],
-        proof: Some(ExecutionProof::new_dummy().into()),
+        proof: Some(dummy_execution_proof().into()),
     }
 }
 

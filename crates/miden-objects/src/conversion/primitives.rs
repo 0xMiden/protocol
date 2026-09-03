@@ -260,6 +260,7 @@ mod tests {
     use alloc::vec;
     use core::error::Error;
 
+    use miden_protocol::testing::dummy_execution_proof;
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_protocol::utils::serde::DeserializationError;
 
@@ -375,7 +376,7 @@ mod tests {
 
     #[test]
     fn execution_proof_roundtrips() {
-        let proof = ExecutionProof::new_dummy();
+        let proof = dummy_execution_proof();
         let encoded = proto::primitives::ExecutionProof::from(&proof);
         assert_eq!(ExecutionProof::try_from(encoded).unwrap(), proof);
     }
