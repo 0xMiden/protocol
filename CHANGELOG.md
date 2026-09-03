@@ -59,6 +59,7 @@
 
 ### Fixes
 
+- `NoteConsumptionChecker` now groups input notes into bundles that must be consumed together and searches over those bundles, so a feature note and the `FEE_SPONSORSHIP` notes bound to it are kept as a unit instead of being dropped alongside an unrelated note whose fee is uncovered ([#3710](https://github.com/0xMiden/protocol/issues/3710)).
 - Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] AggLayer bridge token registration now rejects keys owned by another faucet, and token-key cleanup verifies ownership before clearing a mapping ([#3754](https://github.com/0xMiden/protocol/pull/3754)).
 - [BREAKING] AggLayer bridges now allow faucet deregistration while paused, so compromised faucets can be revoked without resuming claims and bridge-outs ([#3750](https://github.com/0xMiden/protocol/pull/3753)).
