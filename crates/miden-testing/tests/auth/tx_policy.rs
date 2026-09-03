@@ -23,7 +23,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 ///
 /// The procedure still cannot detect a caller that overstates, since only the caller knows what it
 /// created. What changed is what the caller is trusted about: a fact about its own code rather
-/// than a fact about transaction state it had to sample at the right moment.
+/// than a fact about transaction state it had to read at the right moment.
 #[tokio::test]
 async fn assert_no_output_notes_rejects_an_understated_own_count() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
