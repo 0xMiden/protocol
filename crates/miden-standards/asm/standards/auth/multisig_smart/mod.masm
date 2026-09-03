@@ -48,7 +48,9 @@ const ERR_PROC_POLICY_INVALID_MODE = "called procedures do not support the selec
 
 const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
 
-const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate or delayed threshold"
+const ERR_DELAY_ONLY_POLICY_UNSUPPORTED = "delayed threshold requires an immediate threshold"
+
+const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate threshold"
 
 const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
 
@@ -89,16 +91,22 @@ const INIT_NUM_OF_APPROVERS_LOC = 1
 #!
 #! Where:
 #! - immediate_threshold is the threshold for direct execution, or 0 when disabled.
-#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled.
+#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled. It requires a
+#!   non-zero immediate_threshold: delayed execution is not implemented yet, so a delay-only
+#!   policy would make the procedure permanently uncallable.
 #! - note_restrictions is the note restriction enum value in the 0..=NOTE_RESTRICTION_MAX range.
 #! - PROC_ROOT is the root of the account procedure whose policy is being updated.
+#!
+#! Passing a zero immediate_threshold together with a zero delayed_threshold and no note
+#! restrictions clears the procedure's policy.
 #!
 #! Panics if:
 #! - immediate_threshold or delayed_threshold is not a u32 value.
 #! - note_restrictions is outside the supported range.
 #! - either threshold exceeds the current number of approvers.
 #! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
-#! - note_restrictions is non-zero while both thresholds are zero.
+#! - delayed_threshold is non-zero while immediate_threshold is zero.
+#! - note_restrictions is non-zero while immediate_threshold is zero.
 #! - PROC_ROOT is not one of the account's procedures.
 #!
 #! Invocation: call
@@ -146,15 +154,13 @@ pub proc set_procedure_policy
     # => [is_immediate_threshold_zero, PROC_ROOT]
 
     if.true
-        # immediate is zero. If delayed is also zero, note_restrictions must be zero, otherwise
-        # the policy would forbid notes for a procedure that has no threshold to authorize them.
-        loc_load.DELAYED_THRESHOLD_LOC eq.0
-        # => [is_delayed_threshold_zero, PROC_ROOT]
+        # immediate is zero, so the entry can only clear the policy.
+        loc_load.DELAYED_THRESHOLD_LOC eq.0 assert.err=ERR_DELAY_ONLY_POLICY_UNSUPPORTED
+        # => [PROC_ROOT]
 
-        if.true
-            loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
-            # => [PROC_ROOT]
-        end
+        # both thresholds are zero, so note_restrictions must be zero as well.
+        loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
+        # => [PROC_ROOT]
     else
         # immediate is non-zero. Validate delayed_threshold <= immediate_threshold.
         loc_load.DELAYED_THRESHOLD_LOC loc_load.IMMEDIATE_THRESHOLD_LOC
