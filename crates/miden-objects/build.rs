@@ -166,6 +166,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entries,
             ),
         },
+        ".primitives.MerkleStore" => {
+            target: ::miden_protocol::crypto::merkle::store::MerkleStore,
+            try_constructor: crate::conversion::decode_merkle_store(
+                nodes,
+            ),
+        },
         ".primitives.AdviceInputs" => {
             target: ::miden_protocol::vm::AdviceInputs,
             constructor: ::miden_protocol::vm::AdviceInputs::new(

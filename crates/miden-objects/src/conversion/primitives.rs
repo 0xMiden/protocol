@@ -243,31 +243,36 @@ impl From<&MerkleStore> for proto::primitives::MerkleStore {
     }
 }
 
-impl TryFrom<proto::primitives::MerkleStore> for MerkleStore {
+impl TryFrom<proto::primitives::MerkleStoreNode> for InnerNodeInfo {
     type Error = ConversionError;
 
-    fn try_from(value: proto::primitives::MerkleStore) -> Result<Self, Self::Error> {
-        let mut nodes = BTreeMap::new();
-        for (index, node) in value.nodes.into_iter().enumerate() {
-            let decoder = node.decoder();
-            let node_context = format!("nodes[{index}]");
-            let parent = required!(decoder, node.value).context(&node_context)?;
-            let left = required!(decoder, node.left).context(&node_context)?;
-            let right = required!(decoder, node.right).context(&node_context)?;
-            if nodes.insert(parent, (left, right)).is_some() {
-                return Err(ConversionError::message("duplicate Merkle store parent")
-                    .context(format!("{node_context}.value")));
-            }
-        }
-
-        let mut store = MerkleStore::new();
-        store.extend(nodes.into_iter().map(|(value, (left, right))| InnerNodeInfo {
-            value,
-            left,
-            right,
-        }));
-        Ok(store)
+    fn try_from(node: proto::primitives::MerkleStoreNode) -> Result<Self, Self::Error> {
+        let decoder = node.decoder();
+        let value = required!(decoder, node.value)?;
+        let left = required!(decoder, node.left)?;
+        let right = required!(decoder, node.right)?;
+        Ok(Self { value, left, right })
     }
+}
+
+pub(crate) fn decode_merkle_store(
+    decoded_nodes: Vec<InnerNodeInfo>,
+) -> Result<MerkleStore, ConversionError> {
+    let mut nodes = BTreeMap::new();
+    for (index, node) in decoded_nodes.into_iter().enumerate() {
+        if nodes.insert(node.value, (node.left, node.right)).is_some() {
+            return Err(ConversionError::message("duplicate Merkle store parent")
+                .context(format!("nodes[{index}].value")));
+        }
+    }
+
+    let mut store = MerkleStore::new();
+    store.extend(nodes.into_iter().map(|(value, (left, right))| InnerNodeInfo {
+        value,
+        left,
+        right,
+    }));
+    Ok(store)
 }
 
 impl From<&AdviceInputs> for proto::primitives::AdviceInputs {
