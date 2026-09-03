@@ -346,9 +346,8 @@ end
 
 #! Estimates the fee of the current transaction.
 #!
-#! The fee covers the notes the payment goes on to create: the TX_FEE note, and one
-#! FEE_SPONSORSHIP note per network output note its target prices above zero (see
-#! fees::create_network_note_sponsorships).
+#! The fee covers the notes that will be created: the TX_FEE note, and one
+#! FEE_SPONSORSHIP note per network output note.
 #!
 #! num_extra_cycles only needs to cover the number of cycles the caller spends after the fee flow
 #! returns (e.g. transaction summary creation, hashing and signature verification, see
