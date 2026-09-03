@@ -34,8 +34,8 @@ use crate::{ConversionError, ConversionResultExt, proto};
 impl From<NoteType> for proto::note::NoteType {
     fn from(note_type: NoteType) -> Self {
         match note_type {
-            NoteType::Public => proto::note::NoteType::Public,
             NoteType::Private => proto::note::NoteType::Private,
+            NoteType::Public => proto::note::NoteType::Public,
         }
     }
 }
@@ -45,8 +45,8 @@ impl TryFrom<proto::note::NoteType> for NoteType {
 
     fn try_from(note_type: proto::note::NoteType) -> Result<Self, Self::Error> {
         match note_type {
-            proto::note::NoteType::Public => Ok(NoteType::Public),
             proto::note::NoteType::Private => Ok(NoteType::Private),
+            proto::note::NoteType::Public => Ok(NoteType::Public),
             proto::note::NoteType::Unspecified => {
                 Err(ConversionError::message("enum variant discriminant out of range"))
             },

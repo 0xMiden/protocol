@@ -8,8 +8,8 @@ import "primitives.proto";
 
 enum NoteType {
   NOTE_TYPE_UNSPECIFIED = 0;
-  NOTE_TYPE_PUBLIC = 1;
-  NOTE_TYPE_PRIVATE = 2;
+  NOTE_TYPE_PRIVATE = 1;
+  NOTE_TYPE_PUBLIC = 2;
 }
 
 enum NoteVersion {
