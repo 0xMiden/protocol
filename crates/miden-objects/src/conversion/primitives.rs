@@ -279,9 +279,9 @@ impl TryFrom<proto::primitives::MerkleStore> for MerkleStore {
 impl From<&AdviceInputs> for proto::primitives::AdviceInputs {
     fn from(value: &AdviceInputs) -> Self {
         Self {
-            advice_stack: Some((&value.advice_stack()).into()),
-            advice_map: Some((&value.map).into()),
-            merkle_store: Some((&value.store).into()),
+            advice_stack: Some((&value.stack()).into()),
+            advice_map: Some(value.map().into()),
+            merkle_store: Some(value.store().into()),
         }
     }
 }
@@ -295,11 +295,7 @@ impl TryFrom<proto::primitives::AdviceInputs> for AdviceInputs {
         let advice_map: AdviceMap = required!(decoder, value.advice_map)?;
         let merkle_store: MerkleStore = required!(decoder, value.merkle_store)?;
 
-        let mut advice_inputs = AdviceInputs::default()
-            .with_advice_stack(advice_stack)
-            .with_merkle_store(merkle_store);
-        advice_inputs.map = advice_map;
-        Ok(advice_inputs)
+        Ok(AdviceInputs::new(advice_stack, advice_map, merkle_store))
     }
 }
 

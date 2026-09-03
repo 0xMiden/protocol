@@ -85,7 +85,7 @@ fn dummy_secondary_account_code() -> AccountCode {
 }
 
 fn dummy_advice_inputs(stack_values: [u32; 2], map_key: u32, node_value: u32) -> AdviceInputs {
-    let mut stack = AdviceInputs::default().advice_stack();
+    let mut stack = AdviceInputs::default().stack();
     stack.append_elements(stack_values.map(Felt::from));
     let mut store = MerkleStore::new();
     store.extend([InnerNodeInfo {
@@ -95,7 +95,7 @@ fn dummy_advice_inputs(stack_values: [u32; 2], map_key: u32, node_value: u32) ->
     }]);
 
     AdviceInputs::default()
-        .with_advice_stack(stack)
+        .with_stack(stack)
         .with_map([(dummy_word(map_key), vec![Felt::from(map_key + 1)])])
         .with_merkle_store(store)
 }

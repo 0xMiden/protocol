@@ -178,9 +178,6 @@ fn transaction_inputs_reject_an_inconsistent_protocol_config() {
 fn transaction_inputs_reject_an_inconsistent_chain_length() {
     let mut message = common::dummy_transaction_inputs_message();
     let header = common::transaction_inputs_v1_mut(&mut message).block_header.as_mut().unwrap();
-    let Some(proto::blockchain::block_header::Version::V1(header)) = header.version.as_mut() else {
-        panic!("block header should encode as v1");
-    };
     header.block_num = Some(BlockNumber::from(1_u32).into());
 
     let error = TransactionInputs::try_from(message).unwrap_err();
@@ -194,9 +191,6 @@ fn transaction_inputs_reject_an_inconsistent_chain_length() {
 fn transaction_inputs_reject_an_inconsistent_chain_commitment() {
     let mut message = common::dummy_transaction_inputs_message();
     let header = common::transaction_inputs_v1_mut(&mut message).block_header.as_mut().unwrap();
-    let Some(proto::blockchain::block_header::Version::V1(header)) = header.version.as_mut() else {
-        panic!("block header should encode as v1");
-    };
     header.chain_commitment = Some(common::dummy_word(100).into());
 
     let error = TransactionInputs::try_from(message).unwrap_err();

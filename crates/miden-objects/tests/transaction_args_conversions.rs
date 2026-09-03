@@ -28,8 +28,8 @@ fn advice_inputs_roundtrip_preserves_stack_order_and_normalizes_map_order() {
         right: dummy_word(11),
     }]);
     let advice_inputs = AdviceInputs::default()
-        .with_advice_stack({
-            let mut stack = AdviceInputs::default().advice_stack();
+        .with_stack({
+            let mut stack = AdviceInputs::default().stack();
             stack.append_elements([Felt::from(1_u32), Felt::from(2_u32)]);
             stack
         })
