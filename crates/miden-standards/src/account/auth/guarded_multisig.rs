@@ -203,6 +203,24 @@ impl AuthGuardedMultisigConfig {
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
 ///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_guarded_multisig` pays the transaction fee by creating a public
+/// TX_FEE note (see [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, in the
+/// asset and at the rate of the auth args' [`FeeConversionInfo`](super::FeeConversionInfo). On
+/// chains with a zero verification base fee no note is created. The fee note is created before the
+/// transaction summary, so the approver and guardian signatures cover it.
+///
+/// Guardian key rotation authenticates without a guardian signature and can be thresholded below
+/// the account's spending quorum, while the conversion rate is host-supplied. The payment is
+/// therefore bounded (`fee::assert_fee_bound`): it must be in the native fee asset and at most
+/// twice the computed fee, so a rotation can at most overpay the fee, not move arbitrary value out
+/// of the account.
+///
+/// Rotation forbids input notes and any output notes beyond the ones the fee payment creates, so
+/// the vault must already hold enough of the native fee asset to fund the fee: a lost guardian key
+/// combined with an unfunded vault cannot be recovered.
+///
 /// # Privacy
 ///
 /// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public

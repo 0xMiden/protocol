@@ -38,7 +38,7 @@ use super::{
 // ================================================================================================
 
 /// The fee a network account's fee policy charges for a sponsored feature note.
-const FEE_AMOUNT: u64 = 500;
+pub(super) const FEE_AMOUNT: u64 = 500;
 
 // HELPERS
 // ================================================================================================
@@ -49,7 +49,7 @@ fn fee_faucet_id() -> anyhow::Result<AccountId> {
 }
 
 /// A fungible asset of `amount` units of the native fee asset.
-fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
+pub(super) fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?.into())
 }
 
@@ -57,7 +57,7 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
 /// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
 /// through its active `BasicConstantFeePolicy`, holds `assets` in its vault, and bounds its
 /// sponsorship spending by `sponsorship_policy`.
-fn network_account(
+pub(super) fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
@@ -94,7 +94,7 @@ fn native_conversion_info() -> (Word, Vec<miden_protocol::Felt>) {
 
 /// Builds a public P2ID network note (a P2ID note carrying a `NetworkAccountTarget` attachment)
 /// sent by `sender`, targeting and routed to `target`, and carrying `asset`.
-fn p2id_network_note(
+pub(super) fn p2id_network_note(
     sender: AccountId,
     target: AccountId,
     asset: Asset,

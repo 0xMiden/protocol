@@ -4,7 +4,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, TransactionSummary};
 use miden_protocol::{Word, ZERO};
 use miden_standards::account::auth::{Approver, ApproverSet, FeeConversionInfo, MultisigAuthArgs};
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, MockTransactionBuilder};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
@@ -24,13 +24,13 @@ use super::{
 /// The cycle estimate the multisig auth component passes to `pay_fee` for the given number of
 /// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
 /// procedure cycles.
-fn multisig_auth_estimate(num_signers: usize) -> usize {
+pub(super) fn multisig_auth_estimate(num_signers: usize) -> usize {
     num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
 }
 
 /// Builds an [`ApproverSet`] of `num_approvers` signers of the given scheme with the given
 /// threshold, along with the (public key, authenticator) pairs of the first `threshold` signers.
-fn multisig_fixture(
+pub(super) fn multisig_fixture(
     num_approvers: usize,
     threshold: usize,
     auth_scheme: AuthScheme,
@@ -61,11 +61,41 @@ fn assert_salt_bound_as_user_params(tx_summary: &TransactionSummary, salt: Word)
 
 /// Builds the auth args of a fee-paying multisig transaction: the given salt and a one-to-one
 /// conversion of the fee asset, bound to the chain's latest block.
-fn fee_paying_auth_args(mock_chain: &MockChain, salt: Word) -> anyhow::Result<MultisigAuthArgs> {
+pub(super) fn fee_paying_auth_args(
+    mock_chain: &MockChain,
+    salt: Word,
+) -> anyhow::Result<MultisigAuthArgs> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
 
     Ok(MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt)
         .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id)))
+}
+
+/// Executes the transaction once unsigned to obtain the summary the signers must sign, then adds
+/// every signer's signature over it to the builder.
+pub(super) async fn sign_with_all<'a, 's>(
+    mock_tx_builder: MockTransactionBuilder<'a>,
+    signers: impl IntoIterator<Item = &'s (PublicKey, BasicAuthenticator)>,
+) -> anyhow::Result<MockTransactionBuilder<'a>> {
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let mut signed_builder = mock_tx_builder;
+    for (public_key, authenticator) in signers {
+        let signature =
+            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
+        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
+    }
+
+    Ok(signed_builder)
 }
 
 /// Executes an empty transaction against a wallet with the multisig auth component on a

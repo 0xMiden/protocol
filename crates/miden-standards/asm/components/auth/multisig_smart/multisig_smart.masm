@@ -2,8 +2,12 @@
 #
 # See the `AuthMultisigSmart` Rust type's documentation for more details.
 
+use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::multisig_smart
+use miden::standards::auth::signature
+use miden::standards::fee
+use miden::standards::fees
 
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
 pub use {get_signer_at} from miden::standards::auth::multisig
@@ -11,7 +15,28 @@ pub use {is_signer} from miden::standards::auth::multisig
 pub use {set_procedure_policy} from miden::standards::auth::multisig_smart
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig_smart
 
-#! Authenticate a transaction using multisig smart-policy rules.
+# CONSTANTS
+# =================================================================================================
+
+# The largest fee payment this component accepts, as the fraction FEE_BOUND_NUM / FEE_BOUND_DEN of
+# the computed fee. A per-procedure policy can authorize a transaction below the account's default
+# threshold, so an unbounded host-supplied rate would let such a transaction drain the vault
+# through the fee note. The margin covers a fee rising while signatures are collected.
+const FEE_BOUND_NUM = 2
+const FEE_BOUND_DEN = 1
+
+#! Authenticate a transaction using multisig smart-policy rules, paying the transaction fee in the
+#! process.
+#!
+#! The fee is paid by creating and funding a public TX_FEE note in the asset and at the rate of
+#! the CONVERSION_INFO committed to by the AUTH_ARGS. The payment is bounded to at most
+#! FEE_BOUND_NUM / FEE_BOUND_DEN of the computed fee and pinned to the native fee asset (see
+#! fee::assert_fee_bound). On chains with a zero verification base fee no note is created. The fee
+#! is paid before the transaction summary is created, so the fee note and the vault withdrawal
+#! funding it are covered by the approver signatures.
+#!
+#! The notes this procedure creates to pay the fee are excluded from the procedure policies' note
+#! restrictions, so a policy forbidding output notes stays satisfiable on a fee-charging chain.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -20,19 +45,66 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig_sma
 #!   Operand stack: []
 #!
 #! Panics if:
-#! - insufficient number of valid signatures (below threshold).
+#! - the auth args cannot be resolved, see `multisig::resolve_auth_args`.
+#! - the fee payment is not in the native fee asset, exceeds the bound, or cannot be funded.
+#! - a called procedure's policy forbids the transaction's input or output notes, or the number of
+#!   valid signatures is below the threshold, see `multisig_smart::auth_tx`.
 #! - the approval window ended at or before the transaction reference block, see
 #!   `multisig_smart::auth_tx`.
 #!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_multisig_smart(auth_args: word)
-    exec.multisig::resolve_auth_args
-    # => [CONVERSION_INFO, block_number, SALT]
+    # read the output-note count before the fee payment so the notes it creates can be counted
+    exec.tx::get_num_output_notes movdn.4
+    # => [AUTH_ARGS, num_output_notes_before_fee]
 
-    # this component does not pay the transaction fee yet, so the conversion info is unused
-    dropw
-    # => [block_number, SALT]
+    exec.multisig::resolve_auth_args
+    # => [CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+
+    # Pay the transaction fee before the summary is created so that the TX_FEE note and the vault
+    # withdrawal funding it are covered by the approver signatures.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+
+    exec.signature::estimate_multisig_authentication_cycles
+    # => [num_extra_cycles, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+
+    exec.fee::estimate_fee
+    # => [fee_amount, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+
+    # settle the sponsorship obligation first, in pay_fee's order; the bound below guards the
+    # host-supplied rate, which the sponsorship amounts do not depend on
+    exec.tx::get_fee_asset_id exec.fees::create_network_note_sponsorships drop
+    # => [fee_amount, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+
+    dup movdn.5
+    # => [fee_amount, CONVERSION_INFO, fee_amount, block_number, SALT, num_output_notes_before_fee]
+
+    exec.fee::resolve_payment_info
+    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, fee_amount,
+    #     block_number, SALT, num_output_notes_before_fee]
+
+    push.FEE_BOUND_DEN push.FEE_BOUND_NUM
+    # => [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
+    #     fee_amount, block_number, SALT, num_output_notes_before_fee]
+
+    exec.fee::assert_fee_bound
+    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, block_number, SALT,
+    #     num_output_notes_before_fee]
+
+    exec.fee::pay_estimated_fee
+    # => [block_number, SALT, num_output_notes_before_fee]
+
+    # the notes the fee payment created: the TX_FEE note and one FEE_SPONSORSHIP note per network
+    # output note. The procedure policies' note restrictions exclude them.
+    exec.tx::get_num_output_notes movup.6 sub
+    # => [num_own_output_notes, block_number, SALT]
+
+    # Authenticate the transaction and record it for replay protection.
+    # ---------------------------------------------------------------------------------------------
 
     exec.multisig_smart::auth_tx
     # => [TX_SUMMARY_COMMITMENT]

@@ -93,7 +93,7 @@ fn setup_keys_and_authenticators_with_scheme(
 /// Builds the source for a tx-script that calls `update_guardian_public_key`. When `output_note`
 /// is `Some`, the script also creates that note before the guardian update so a single call
 /// exercises both `assert_no_input_notes` and `assert_no_output_notes` paths.
-fn build_update_guardian_script_source(
+pub(super) fn build_update_guardian_script_source(
     new_guardian_key_word: Word,
     new_guardian_scheme_id: u32,
     output_note: Option<&Note>,

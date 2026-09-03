@@ -22,6 +22,11 @@ pub enum ProcedurePolicyExecutionMode {
 
 /// Note Restrictions on whether transactions that call a procedure may consume input notes
 /// or create output notes.
+///
+/// The output note restrictions count only the transaction's own notes; the notes the
+/// authentication procedure creates to pay the transaction fee are exempt, so a restriction stays
+/// satisfiable on a fee-charging chain. See the `# Fees` section on
+/// [`AuthMultisigSmart`](super::AuthMultisigSmart).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum ProcedurePolicyNoteRestriction {
@@ -39,7 +44,8 @@ pub enum ProcedurePolicyNoteRestriction {
 /// - an execution mode, which determines whether the procedure can be executed immediately only, or
 ///   immediately and after a delay
 /// - note restrictions, which limit whether a transaction invoking the procedure may consume input
-///   notes or create output notes
+///   notes or create output notes of its own; the notes the authentication procedure creates to pay
+///   the fee are exempt, see [`ProcedurePolicyNoteRestriction`]
 ///
 /// Execution modes:
 /// - Immediate execution: the action is authorized and executed within the current transaction.

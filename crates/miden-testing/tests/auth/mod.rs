@@ -1,5 +1,7 @@
 mod fee_payment;
 
+mod tx_policy;
+
 mod singlesig;
 
 mod multisig;

@@ -135,27 +135,37 @@ end
 
 #! Conditionally verifies a guardian signature.
 #!
-#! Inputs:  [MSG]
+#! Inputs:  [num_own_output_notes, MSG]
 #! Outputs: []
+#!
+#! Where:
+#! - num_own_output_notes is the number of output notes the caller itself created, e.g. to pay the
+#!   transaction fee (see `tx_policy::assert_no_output_notes`). It is only consulted on the
+#!   guardian key rotation path.
+#! - MSG is the message the guardian signs, i.e. the transaction summary commitment.
 #!
 #! Panics if:
 #! - `update_guardian_public_key` is called together with another non-auth account procedure.
+#! - `update_guardian_public_key` was called and the transaction consumes input notes or created
+#!   output notes the caller did not create itself.
 #! - `update_guardian_public_key` was not called and a valid guardian signature is missing or
 #!   invalid.
 #!
 #! Invocation: exec
-pub proc verify_signature(msg: word)
+pub proc verify_signature(num_own_output_notes: u16, msg: word)
     procref.update_guardian_public_key
-    # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT, MSG]
-    
+    # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT, num_own_output_notes, MSG]
+
     exec.native_account::was_procedure_called
-    # => [was_update_guardian_public_key_called, MSG]
+    # => [was_update_guardian_public_key_called, num_own_output_notes, MSG]
 
     if.true
         # Check the notes first: creating an output note requires calling `create_note`, which
         # would also trip `assert_only_one_non_auth_procedure_called`. Running that check last lets
         # the more specific input/output-note errors surface when notes are present.
         exec.tx_policy::assert_no_input_notes
+        # => [num_own_output_notes, MSG]
+
         exec.tx_policy::assert_no_output_notes
         # => [MSG]
 
@@ -165,6 +175,9 @@ pub proc verify_signature(msg: word)
         dropw
         # => []
     else
+        drop
+        # => [MSG]
+
         push.1
         # => [1, MSG]
 
