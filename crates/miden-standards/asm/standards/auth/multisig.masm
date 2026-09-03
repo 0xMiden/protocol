@@ -5,8 +5,11 @@
 use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
+use miden::protocol::tx
 use miden::standards::auth
 use miden::standards::auth::signature
+use miden::standards::fee
+use {ConversionInfo} from miden::standards::fee
 use miden::core::word
 use {ONE_WORD} from miden::standards::utils
 
@@ -66,6 +69,11 @@ const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_trans
 # The slot in this component's storage layout where procedure thresholds are stored.
 # Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
 const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
+
+# The largest fee payment `pay_bounded_fee` accepts, as the fraction FEE_BOUND_NUM / FEE_BOUND_DEN
+# of the computed fee. The margin covers a fee rising while signatures are collected.
+const FEE_BOUND_NUM = 2
+const FEE_BOUND_DEN = 1
 
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = ONE_WORD
@@ -652,6 +660,72 @@ pub proc get_initial_threshold_and_num_approvers
 
     movup.2 drop movup.2 drop
     # => [default_threshold, num_approvers]
+end
+
+#! Pays the transaction fee, bounded, and returns the number of output notes it created.
+#!
+#! Estimates the fee, settles the sponsorship notes of the network output notes, resolves the
+#! payment from the conversion info, asserts it is in the native fee asset and at most
+#! FEE_BOUND_NUM / FEE_BOUND_DEN of the computed fee, and funds the TX_FEE note. The bound holds
+#! whatever quorum signs: a per-procedure threshold override or a guardian key rotation can
+#! authorize a transaction below the account's default quorum, and the conversion rate is
+#! host-supplied, so an unbounded payment would let such a transaction drain the vault through the
+#! fee note.
+#!
+#! Must be invoked before the transaction summary is created, so that the fee note and the vault
+#! withdrawal funding it are covered by the signatures.
+#!
+#! Inputs:  [num_of_signers, CONVERSION_INFO]
+#! Outputs: [num_own_output_notes]
+#!
+#! Where:
+#! - num_of_signers is the maximum number of signature verifications the authentication flow can
+#!   perform, see signature::estimate_multisig_authentication_cycles.
+#! - CONVERSION_INFO is the fee conversion info, see fee::load_conversion_info.
+#! - num_own_output_notes is the number of output notes this procedure created: the TX_FEE note
+#!   and one FEE_SPONSORSHIP note per sponsored network output note.
+#!
+#! Panics if:
+#! - the fee payment is not in the native fee asset, or exceeds the bound.
+#! - the fee cannot be paid, see fee::pay_network_note_sponsorships and fee::pay_estimated_fee.
+#!
+#! Invocation: exec
+pub proc pay_bounded_fee(num_of_signers: u32, conversion_info: ConversionInfo) -> u16
+    # the output notes that exist before the payment
+    exec.tx::get_num_output_notes movdn.5
+    # => [num_of_signers, CONVERSION_INFO, num_output_notes_before_fee]
+
+    exec.signature::estimate_multisig_authentication_cycles
+    # => [num_extra_cycles, CONVERSION_INFO, num_output_notes_before_fee]
+
+    exec.fee::estimate_fee
+    # => [fee_amount, CONVERSION_INFO, num_output_notes_before_fee]
+
+    # settle the sponsorship obligation first
+    exec.fee::pay_network_note_sponsorships drop
+    # => [fee_amount, CONVERSION_INFO, num_output_notes_before_fee]
+
+    dup movdn.5
+    # => [fee_amount, CONVERSION_INFO, fee_amount, num_output_notes_before_fee]
+
+    exec.fee::resolve_payment_info
+    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, fee_amount,
+    #     num_output_notes_before_fee]
+
+    push.FEE_BOUND_DEN push.FEE_BOUND_NUM
+    # => [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
+    #     fee_amount, num_output_notes_before_fee]
+
+    exec.fee::assert_fee_bound
+    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
+    #     num_output_notes_before_fee]
+
+    exec.fee::pay_estimated_fee
+    # => [num_output_notes_before_fee]
+
+    # the notes the payment created
+    exec.tx::get_num_output_notes swap sub
+    # => [num_own_output_notes]
 end
 
 #! Records the transaction as executed and asserts it was not already executed, providing replay

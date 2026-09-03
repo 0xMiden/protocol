@@ -1,6 +1,9 @@
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_FEE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+};
 use miden_protocol::transaction::{ExecutedTransaction, TransactionSummary};
 use miden_protocol::{Word, ZERO};
 use miden_standards::account::auth::{
@@ -9,7 +12,11 @@ use miden_standards::account::auth::{
     FeeConversionInfo,
     commit_fee_conversion_info,
 };
-use miden_testing::{Auth, MockChain};
+use miden_standards::errors::standards::{
+    ERR_FEE_PAYMENT_EXCEEDS_BOUND,
+    ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE,
+};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
@@ -65,12 +72,14 @@ fn assert_auth_args_bound_as_salt(tx_summary: &TransactionSummary, auth_args: Wo
 }
 
 /// Executes an empty transaction against a wallet with the multisig auth component on a
-/// fee-charging mock chain: runs once without signatures to obtain the transaction summary,
-/// asserts the auth args are bound as the trailing word of the summary's user params, signs the
-/// summary with all provided signers, and executes the signed transaction.
+/// fee-charging mock chain, paying the fee with the given conversion info: runs once without
+/// signatures to obtain the transaction summary, asserts the auth args are bound as the trailing
+/// word of the summary's user params, signs the summary with all provided signers, and executes
+/// the signed transaction.
 async fn execute_fee_paying_multisig_tx(
     auth: Auth,
     signers: Vec<(PublicKey, BasicAuthenticator)>,
+    conversion_info: FeeConversionInfo,
 ) -> anyhow::Result<ExecutedTransaction> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
@@ -79,10 +88,8 @@ async fn execute_fee_paying_multisig_tx(
     let account = builder.add_existing_wallet_with_assets(auth, [fee_asset])?;
     let mock_chain = builder.build()?;
 
-    let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::one_to_one(fee_faucet_id),
-        Word::from([9u32, 10, 11, 12]),
-    );
+    let (args, advice_value) =
+        commit_fee_conversion_info(conversion_info, Word::from([9u32, 10, 11, 12]));
 
     let mock_tx_builder = mock_chain
         .build_transaction(account.id())
@@ -129,9 +136,11 @@ async fn execute_fee_paying_multisig_tx(
 async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     let (approver_set, signers) = multisig_fixture(2, 2, auth_scheme)?;
 
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let executed_transaction = execute_fee_paying_multisig_tx(
         Auth::Multisig { approver_set, proc_threshold_map: vec![] },
         signers,
+        FeeConversionInfo::one_to_one(fee_faucet_id),
     )
     .await?;
 
@@ -219,6 +228,81 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
     assert!(
         matches!(result, Err(TransactionExecutorError::Unauthorized(_))),
         "replayed multisig transaction should be rejected as unauthorized"
+    );
+
+    Ok(())
+}
+
+/// The multisig component bounds its fee payment like the guarded and smart components do: the
+/// conversion rate is host-supplied, and a per-procedure threshold override can authorize a
+/// transaction below the account's default quorum, so an unbounded payment would let such a
+/// transaction drain the vault through the fee note. The two cases are the two halves of
+/// `fee::assert_fee_bound`: an inflated rate in the native asset, and a foreign asset at a rate
+/// the arithmetic would accept.
+///
+/// Both abort before signature verification, since the fee is paid before the summary is created.
+#[tokio::test]
+async fn multisig_cannot_drain_the_vault_via_the_fee_payment() -> anyhow::Result<()> {
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let foreign_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
+    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
+
+    let (approver_set, _signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::Multisig { approver_set, proc_threshold_map: vec![] },
+        [fee_asset],
+    )?;
+    let mock_chain = builder.build()?;
+
+    for (conversion_info, salt, expected_error) in [
+        (
+            FeeConversionInfo::new(fee_faucet_id, 1_000_000, 1)?,
+            Word::from([81u32, 82, 83, 84]),
+            ERR_FEE_PAYMENT_EXCEEDS_BOUND,
+        ),
+        (
+            FeeConversionInfo::one_to_one(foreign_faucet_id),
+            Word::from([91u32, 92, 93, 94]),
+            ERR_FEE_PAYMENT_FAUCET_NOT_NATIVE,
+        ),
+    ] {
+        let (args, advice_value) = commit_fee_conversion_info(conversion_info, salt);
+
+        let result = mock_chain
+            .build_transaction(account.id())
+            .auth_args(args)
+            .add_advice_map_entry(args, advice_value)
+            .build()?
+            .execute()
+            .await;
+
+        assert_transaction_executor_error!(result, expected_error);
+    }
+
+    Ok(())
+}
+
+/// A rate exactly at the bound is accepted: the payment is twice the computed fee.
+#[tokio::test]
+async fn multisig_pays_fee_at_the_bound() -> anyhow::Result<()> {
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let (approver_set, signers) = multisig_fixture(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let executed_transaction = execute_fee_paying_multisig_tx(
+        Auth::Multisig { approver_set, proc_threshold_map: vec![] },
+        signers,
+        FeeConversionInfo::new(fee_faucet_id, 2, 1)?,
+    )
+    .await?;
+
+    let paid = assert_single_fee_note(&executed_transaction)?;
+    let required_fee = executed_transaction.compute_fee();
+    assert!(
+        u64::from(paid.amount()) >= 2 * u64::from(required_fee),
+        "paid fee {} should be twice the required fee {required_fee}",
+        paid.amount(),
     );
 
     Ok(())
