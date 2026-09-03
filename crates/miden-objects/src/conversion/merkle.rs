@@ -67,22 +67,14 @@ impl From<MmrDelta> for proto::primitives::MmrDelta {
     }
 }
 
-impl TryFrom<proto::primitives::MmrDelta> for MmrDelta {
-    type Error = ConversionError;
+pub(crate) fn decode_mmr_delta(
+    forest: u64,
+    update_data: Vec<Word>,
+) -> Result<MmrDelta, ConversionError> {
+    let forest_size = forest.try_into().context("forest size does not fit in usize")?;
+    let forest = Forest::new(forest_size).context("forest size out of range")?;
 
-    fn try_from(value: proto::primitives::MmrDelta) -> Result<Self, Self::Error> {
-        let data: Vec<_> = value
-            .update_data
-            .into_iter()
-            .map(Word::try_from)
-            .collect::<Result<_, _>>()
-            .context("update_data")?;
-
-        let forest_size = value.forest.try_into().context("forest size does not fit in usize")?;
-        let forest = Forest::new(forest_size).context("forest size out of range")?;
-
-        Ok(MmrDelta { forest, data })
-    }
+    Ok(MmrDelta { forest, data: update_data })
 }
 
 // SPARSE MERKLE TREE
@@ -335,6 +327,26 @@ mod tests {
     use prost::Message;
 
     use super::*;
+
+    #[test]
+    fn mmr_delta_roundtrips_and_reports_update_index() {
+        let data = vec![Word::from([1, 2, 3, 4_u32])];
+        let delta = MmrDelta {
+            forest: Forest::new(3).unwrap(),
+            data: data.clone(),
+        };
+        let message: proto::primitives::MmrDelta = delta.into();
+        let decoded = MmrDelta::try_from(message).unwrap();
+        assert_eq!(decoded.forest.num_leaves(), 3);
+        assert_eq!(decoded.data, data);
+
+        let invalid = proto::primitives::MmrDelta {
+            forest: 0,
+            update_data: vec![proto::primitives::Word { encoded: vec![0; 31] }],
+        };
+        let error = MmrDelta::try_from(invalid).unwrap_err();
+        assert!(error.to_string().starts_with("update_data[0]."));
+    }
 
     #[test]
     fn partial_smt_round_trip() {

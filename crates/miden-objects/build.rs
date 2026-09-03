@@ -74,6 +74,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 siblings,
             ),
         },
+        ".primitives.MmrDelta" => {
+            target: ::miden_protocol::crypto::merkle::mmr::MmrDelta,
+            try_constructor: crate::conversion::decode_mmr_delta(
+                forest,
+                update_data,
+            ),
+        },
         ".primitives.SmtOpening" => {
             target: ::miden_protocol::crypto::merkle::smt::SmtProof,
             try_constructor: ::miden_protocol::crypto::merkle::smt::SmtProof::new(
