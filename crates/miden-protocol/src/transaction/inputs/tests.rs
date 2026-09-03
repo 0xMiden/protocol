@@ -389,10 +389,8 @@ fn try_from_parts_preserves_all_transaction_input_components() {
         AdviceInputs::default(),
         Word::new([Felt::from(2_u32); 4]),
     );
-    let mut advice_inputs = AdviceInputs::default();
-    advice_inputs
-        .map
-        .insert(Word::new([Felt::from(3_u32); 4]), vec![Felt::from(4_u32)]);
+    let advice_inputs = AdviceInputs::default()
+        .with_map([(Word::new([Felt::from(3_u32); 4]), vec![Felt::from(4_u32)])]);
     let foreign_account_code = vec![code];
     let slot_name = StorageSlotName::new("test::slot::value".to_string()).unwrap();
     let foreign_account_slot_names = BTreeMap::from([(slot_name.id(), slot_name)]);
