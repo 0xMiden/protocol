@@ -24,7 +24,8 @@ use super::{
 };
 use crate::account::account_component_code;
 use crate::account::fees::FeePolicyManager;
-use crate::note::{FeeSponsorshipNote, NetworkAccountConfigNote};
+use crate::note::FeeSponsorshipNote;
+use crate::note::config::NetworkAccountConfigNote;
 use crate::procedure_root;
 use crate::tx_script::ExpirationTransactionScript;
 
@@ -119,11 +120,13 @@ procedure_root!(
 /// whose only legitimate inputs are a known, finite set of system-issued notes and scripts.
 ///
 /// The component exports a single auth procedure, `auth_network_transaction`, that rejects the
-/// transaction unless:
-/// - the transaction script root, if any, is present in the component's tx-script allowlist, and
-/// - every consumed input note has a script root present in the component's note-script allowlist.
+/// transaction unless all three of the following are true:
+/// - the transaction script root, if any, is present in the component's tx-script allowlist
+/// - every consumed input note has a script root present in the component's note-script allowlist
+/// - before fee collection and payment, it has consumed at least one input note, created at least
+///   one output note, or changed the account state.
 ///
-/// If both checks pass, the procedure pays the transaction fee by creating a public TX_FEE
+/// If these checks pass, the procedure pays the transaction fee by creating a public TX_FEE
 /// note funded from the account's vault in the native fee asset at rate 1/1 (see
 /// `miden::standards::fee::pay_fee` and `miden::standards::fee::native_conversion_info`). On
 /// chains with a zero verification base fee no note is created.
@@ -457,7 +460,7 @@ mod tests {
 
     use super::*;
     use crate::account::wallets::BasicWallet;
-    use crate::note::NetworkAccountConfigNote;
+    use crate::note::config::NetworkAccountConfigNote;
 
     #[test]
     fn auth_network_account_component_builds() {

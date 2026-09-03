@@ -157,9 +157,9 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
             # => []
         end
     "#,
-        key = &key,
-        value = &value,
-        expected_commitment = &expected_commitment,
+        key = key,
+        value = value,
+        expected_commitment = expected_commitment,
     );
 
     let mock_tx_builder = TestTransactionBuilder::new(account);
@@ -482,7 +482,7 @@ async fn test_get_item() -> anyhow::Result<()> {
             end
             "#,
             slot_name = storage_item.name(),
-            item_value = &storage_item.content().value(),
+            item_value = storage_item.content().value(),
         );
 
         mock_tx.execute_code(&code).await.unwrap();
@@ -970,8 +970,8 @@ async fn test_set_map_item() -> anyhow::Result<()> {
         end
         "#,
         slot_name = slot.name(),
-        new_key = &new_key,
-        new_value = &new_value,
+        new_key = new_key,
+        new_value = new_value,
     );
 
     let exec_output = &mock_tx.execute_code(&code).await?;
@@ -1033,7 +1033,7 @@ async fn test_get_initial_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="actual storage commitment is not equal to the expected one"
         end
         "#,
-        expected_storage_commitment = &mock_tx.account().storage().to_commitment(),
+        expected_storage_commitment = mock_tx.account().storage().to_commitment(),
     );
     mock_tx.execute_code(&code).await?;
 
@@ -1068,8 +1068,8 @@ async fn test_native_account_upgrade_stores_commitments() -> anyhow::Result<()> 
             dropw dropw dropw dropw
         end
         "#,
-        code_upgrade_commitment = &code_upgrade_commitment,
-        storage_upgrade_commitment = &storage_upgrade_commitment,
+        code_upgrade_commitment = code_upgrade_commitment,
+        storage_upgrade_commitment = storage_upgrade_commitment,
     );
 
     let exec_output = &mock_tx.execute_code(&code).await?;
@@ -1111,8 +1111,8 @@ async fn test_native_account_upgrade_from_tx_script_is_rejected() -> anyhow::Res
             exec.native_account::upgrade
         end
         "#,
-        code_upgrade_commitment = &code_upgrade_commitment,
-        storage_upgrade_commitment = &storage_upgrade_commitment,
+        code_upgrade_commitment = code_upgrade_commitment,
+        storage_upgrade_commitment = storage_upgrade_commitment,
     );
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_source)?;
 
@@ -1329,7 +1329,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             assert_eqw.err="initial vault root mismatch"
         end
         "#,
-        expected_vault_root = &account.vault().root(),
+        expected_vault_root = account.vault().root(),
     );
     mock_tx.execute_code(&code).await?;
 
@@ -1363,7 +1363,7 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
         "#,
         FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
         FUNGIBLE_ASSET_ID = fungible_asset.to_id_word(),
-        expected_vault_root = &account.vault().root(),
+        expected_vault_root = account.vault().root(),
     );
     mock_tx.execute_code(&code).await?;
 
@@ -1754,7 +1754,7 @@ async fn test_authenticate_procedure() -> anyhow::Result<()> {
                 dropw
             end
             ",
-            root = &root,
+            root = root,
         );
 
         // Execution of this code will return an EventError(UnknownAccountProcedure) for procs
@@ -1857,7 +1857,7 @@ async fn transaction_executor_account_code_using_custom_package() -> anyhow::Res
         exec.native_account::set_item
         dropw dropw
       end"#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
     );
 
     const ACCOUNT_COMPONENT_CODE: &str = "
@@ -2132,8 +2132,8 @@ async fn test_get_initial_item() -> anyhow::Result<()> {
             assert_eqw.err="initial value should remain unchanged"
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
-        expected_initial_value = &AccountStorage::mock_value_slot0().content().value(),
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
+        expected_initial_value = AccountStorage::mock_value_slot0().content().value(),
     );
 
     mock_tx.execute_code(&code).await?;
@@ -2209,10 +2209,10 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
             dropw dropw dropw
         end
         "#,
-        initial_key = &initial_key,
-        initial_value = &initial_value,
-        new_key = &new_key,
-        new_value = &new_value,
+        initial_key = initial_key,
+        initial_value = initial_value,
+        new_key = new_key,
+        new_value = new_value,
     );
 
     mock_tx.execute_code(&code).await.unwrap();
@@ -2343,7 +2343,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
                   swapw dropw
               end
             "#,
-            test_slot_name = &*TEST_SLOT_NAME
+            test_slot_name = *TEST_SLOT_NAME
         );
 
         let source_manager = Arc::new(DefaultSourceManager::default());
@@ -2378,7 +2378,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
                   swapw dropw
               end
             "#,
-            test_slot_name = &*TEST_SLOT_NAME
+            test_slot_name = *TEST_SLOT_NAME
         );
 
         let source_manager = Arc::new(DefaultSourceManager::default());

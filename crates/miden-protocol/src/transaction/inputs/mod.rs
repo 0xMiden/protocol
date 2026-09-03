@@ -1,5 +1,4 @@
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
@@ -7,6 +6,7 @@ use miden_crypto::merkle::NodeIndex;
 use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 
 use super::PartialBlockchain;
+use crate::Word;
 use crate::account::{
     AccountCode,
     AccountHeader,
@@ -34,7 +34,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word};
 
 #[cfg(test)]
 mod tests;
@@ -85,6 +84,60 @@ impl TransactionInputs {
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
     ) -> Result<Self, TransactionInputError> {
+        Self::try_from_parts(
+            account,
+            block_header,
+            protocol_config,
+            blockchain,
+            input_notes,
+            TransactionArgs::default(),
+            AdviceInputs::default(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+
+    /// Creates [`TransactionInputs`] from all transaction-input components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as [`Self::new`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_parts(
+        account: PartialAccount,
+        block_header: BlockHeader,
+        protocol_config: ProtocolConfig,
+        blockchain: PartialBlockchain,
+        input_notes: InputNotes<InputNote>,
+        tx_args: TransactionArgs,
+        advice_inputs: AdviceInputs,
+        foreign_account_code: Vec<AccountCode>,
+        foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+    ) -> Result<Self, TransactionInputError> {
+        Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
+
+        Ok(Self {
+            account,
+            block_header,
+            protocol_config,
+            blockchain,
+            input_notes,
+            tx_args,
+            advice_inputs,
+            foreign_account_code,
+            foreign_account_slot_names,
+        })
+    }
+
+    // VALIDATION
+    // --------------------------------------------------------------------------------------------
+
+    fn validate(
+        block_header: &BlockHeader,
+        protocol_config: &ProtocolConfig,
+        blockchain: &PartialBlockchain,
+        input_notes: &InputNotes<InputNote>,
+    ) -> Result<(), TransactionInputError> {
         // Check that the protocol config is the one the block header commits to.
         let protocol_config_commitment = protocol_config.to_commitment();
         if protocol_config_commitment != block_header.protocol_config_commitment() {
@@ -111,7 +164,7 @@ impl TransactionInputs {
             if let InputNote::Authenticated { note, proof } = note {
                 let note_block_num = proof.location().block_num();
                 let block_header = if note_block_num == block_header.block_num() {
-                    &block_header
+                    block_header
                 } else {
                     blockchain.get_block(note_block_num).ok_or(
                         TransactionInputError::InputNoteBlockNotInPartialBlockchain(note.id()),
@@ -121,28 +174,17 @@ impl TransactionInputs {
             }
         }
 
-        Ok(Self {
-            account,
-            block_header,
-            protocol_config,
-            blockchain,
-            input_notes,
-            tx_args: TransactionArgs::default(),
-            advice_inputs: AdviceInputs::default(),
-            foreign_account_code: Vec::new(),
-            foreign_account_slot_names: BTreeMap::new(),
-        })
+        Ok(())
     }
 
     /// Replaces the transaction inputs and assigns the given asset witnesses.
     pub fn with_asset_witnesses(mut self, witnesses: Vec<AssetWitness>) -> Self {
         for witness in witnesses {
-            self.advice_inputs.store.extend(witness.authenticated_nodes());
-            let smt_proof = SmtProof::from(witness);
-            self.advice_inputs.map.extend([(
-                smt_proof.leaf().hash(),
-                smt_proof.leaf().to_elements().collect::<Arc<[Felt]>>(),
-            )]);
+            let leaf = witness.proof().leaf();
+            let witness_inputs = AdviceInputs::default()
+                .with_merkle_store(witness.authenticated_nodes().collect())
+                .with_map([(leaf.hash(), leaf.to_elements().collect())]);
+            self.advice_inputs.extend(witness_inputs);
         }
 
         self
@@ -188,9 +230,7 @@ impl TransactionInputs {
     /// Note: the advice stack from the provided advice inputs is discarded.
     pub fn set_advice_inputs(&mut self, new_advice_inputs: AdviceInputs) {
         let (_stack, map, store) = new_advice_inputs.into_parts();
-        let mut advice_inputs = AdviceInputs::default().with_merkle_store(store);
-        advice_inputs.map = map;
-        self.advice_inputs = advice_inputs;
+        self.advice_inputs = AdviceInputs::from(map).with_merkle_store(store);
         self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
     }
 
@@ -287,14 +327,14 @@ impl TransactionInputs {
         let leaf_index = map_key.hash().to_leaf_index();
 
         // Construct sparse Merkle path.
-        let merkle_path = self.advice_inputs.store.get_path(map_root, leaf_index.into())?;
+        let merkle_path = self.advice_inputs.store().get_path(map_root, leaf_index.into())?;
         let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
 
         // Construct SMT leaf.
-        let merkle_node = self.advice_inputs.store.get_node(map_root, leaf_index.into())?;
+        let merkle_node = self.advice_inputs.store().get_node(map_root, leaf_index.into())?;
         let smt_leaf_elements = self
             .advice_inputs
-            .map
+            .map()
             .get(&merkle_node)
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
         let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, leaf_index)?;
@@ -322,14 +362,14 @@ impl TransactionInputs {
         for asset_id in asset_ids {
             let smt_index = asset_id.hash().to_leaf_index();
             // Construct sparse Merkle path.
-            let merkle_path = self.advice_inputs.store.get_path(vault_root, smt_index.into())?;
+            let merkle_path = self.advice_inputs.store().get_path(vault_root, smt_index.into())?;
             let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
 
             // Construct SMT leaf.
-            let merkle_node = self.advice_inputs.store.get_node(vault_root, smt_index.into())?;
+            let merkle_node = self.advice_inputs.store().get_node(vault_root, smt_index.into())?;
             let smt_leaf_elements = self
                 .advice_inputs
-                .map
+                .map()
                 .get(&merkle_node)
                 .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
             let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
@@ -350,13 +390,13 @@ impl TransactionInputs {
         let smt_index: NodeIndex = asset_id.hash().to_leaf_index().into();
 
         // make sure the path is in the Merkle store
-        if !self.advice_inputs.store.has_path(vault_root, smt_index) {
+        if !self.advice_inputs.store().has_path(vault_root, smt_index) {
             return false;
         }
 
         // make sure the node pre-image is in the Merkle store
-        match self.advice_inputs.store.get_node(vault_root, smt_index) {
-            Ok(node) => self.advice_inputs.map.contains_key(&node),
+        match self.advice_inputs.store().get_node(vault_root, smt_index) {
+            Ok(node) => self.advice_inputs.map().contains_key(&node),
             Err(_) => false,
         }
     }
@@ -402,7 +442,7 @@ impl TransactionInputs {
         let account_id_key = AccountIdKey::from(account_id);
         let header_elements = self
             .advice_inputs
-            .map
+            .map()
             .get(&account_id_key.as_word())
             .ok_or(TransactionInputsExtractionError::ForeignAccountNotFound(account_id))?;
 
@@ -435,7 +475,7 @@ impl TransactionInputs {
         // Try to get storage header from advice map using storage commitment as key.
         let storage_header_elements = self
             .advice_inputs
-            .map
+            .map()
             .get(&header.storage_commitment())
             .ok_or(TransactionInputsExtractionError::StorageHeaderNotFound(header.id()))?;
 
@@ -472,7 +512,7 @@ impl TransactionInputs {
         let leaf_index = AccountIdKey::from(header.id()).to_leaf_index().into();
 
         // Get the Merkle path from the merkle store.
-        let merkle_path = self.advice_inputs.store.get_path(account_tree_root, leaf_index)?;
+        let merkle_path = self.advice_inputs.store().get_path(account_tree_root, leaf_index)?;
 
         // Convert the Merkle path to SparseMerklePath.
         let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;

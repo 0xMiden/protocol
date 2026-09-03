@@ -4,6 +4,7 @@
 
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::protocol::tx
 use miden::core::word
 use miden::standards::assets::fungible_asset
 use miden::standards::auth::network_account
@@ -33,19 +34,64 @@ const NETWORK_POST_FEE_CYCLES = 1024
 
 const ERR_NETWORK_ACCOUNT_FEE_ASSET_NOT_NATIVE = "sponsoring at most the collected fees requires the account's fee asset to be the native fee asset"
 
+const ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT = "network account transactions must have an effect before fee payment by consuming an input note, creating an output note, or changing account state"
+
 const ERR_NETWORK_ACCOUNT_SPONSORED_FEES_EXCEED_COLLECTED = "the fees moved into sponsorship notes exceed the fees collected in this transaction"
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts that the transaction had an effect before fee collection and payment.
+#!
+#! Consuming an input note, creating an output note, or changing the account state counts as an
+#! effect. Transaction metadata changes do not affect the account commitment and do not count.
+#!
+#! This intentionally differs from the transaction epilogue's post-authentication non-empty check.
+#! The input notes commitment is checked in the same way, but the account's current commitment is
+#! compared with its initial commitment because its delta cannot be computed before the auth
+#! procedure increments the nonce. Output notes also count here because this auth procedure may
+#! sponsor them and change the account state after this pre-fee check.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+proc assert_tx_has_effect
+    exec.tx::get_input_notes_commitment
+    # => [INPUT_NOTES_COMMITMENT, pad(16)]
+
+    exec.word::eqz not
+    # => [has_input_notes, pad(16)]
+
+    exec.tx::get_num_output_notes neq.0
+    # => [has_output_notes, has_input_notes, pad(16)]
+
+    or
+    # => [has_note_effect, pad(16)]
+
+    exec.native_account::has_state_changed
+    # => [has_account_state_changed, has_note_effect, pad(16)]
+
+    or
+    # => [has_effect, pad(16)]
+
+    assert.err=ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT
+    # => [pad(16)]
+end
 
 # AUTH PROCEDURE
 # =================================================================================================
 
 #! Authenticates a transaction against an `AuthNetworkAccount` component.
 #!
-#! Enforces two invariants:
+#! Enforces three invariants:
 #! 1. The transaction script root, if any, must be present in the tx-script allowlist (a transaction
 #!    that executed no tx script is always allowed).
 #! 2. Every consumed input note must have a script root present in the note-script allowlist.
+#! 3. Before fee collection and payment, the transaction must have consumed at least one input note,
+#!    created at least one output note, or changed the account state.
 #!
-#! If both checks pass, the fees prepaid by any FEE_SPONSORSHIP input notes are collected into the
+#! If these checks pass, the fees prepaid by any FEE_SPONSORSHIP input notes are collected into the
 #! account's vault (see fees::collect_sponsored_fees). This requires the account to have an active
 #! fee policy and to allowlist the FEE_SPONSORSHIP script root so the sponsorship notes pass the
 #! input-note check above.
@@ -69,6 +115,8 @@ const ERR_NETWORK_ACCOUNT_SPONSORED_FEES_EXCEED_COLLECTED = "the fees moved into
 #!
 #! Panics if:
 #! - the transaction script root or a consumed input note's script root is not allowlisted.
+#! - before fee collection and payment, the transaction has not consumed an input note, created an
+#!   output note, or changed the account state.
 #! - the sponsorship setting is enabled, the transaction sponsored something and the configured fee
 #!   asset is not the native fee asset, which would make the two amounts incomparable.
 #! - the sponsorship setting is enabled and the sponsored fees exceed the collected fees.
@@ -80,6 +128,10 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     exec.network_account::assert_transaction_allowed
+    # => [pad(16)]
+
+    # ---- Reject transactions whose only account effect would be fee payment ----
+    exec.assert_tx_has_effect
     # => [pad(16)]
 
     # ---- Read the sponsorship policy ----
@@ -132,15 +184,11 @@ pub proc auth_network_transaction(auth_args: word)
     # => [pad(16)]
 
     # ---- Increment nonce iff the account state changed or the account is new ----
-    exec.native_account::get_initial_commitment
-    # => [INITIAL_COMMITMENT, pad(16)]
-
-    exec.active_account::compute_commitment
-    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
-
-    exec.word::eq not
+    exec.native_account::has_state_changed
     # => [has_account_state_changed, pad(16)]
 
+    # has_state_changed verifies that the active account is the native account, so reading the
+    # active account nonce here identifies whether that native account is new.
     exec.active_account::get_nonce eq.0
     # => [is_new_account, has_account_state_changed, pad(16)]
 

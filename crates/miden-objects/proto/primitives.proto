@@ -1,0 +1,152 @@
+syntax = "proto3";
+package primitives;
+
+message Felt {
+  fixed64 value = 1;
+}
+
+message Word {
+  // Exactly 32 bytes containing four canonically serialized field elements.
+  bytes encoded = 1;
+}
+
+message ExecutionProof {
+  // Canonically serialized protocol execution proof.
+  bytes encoded = 1;
+}
+
+message MastForest {
+  // Canonically serialized MAST forest.
+  bytes encoded = 1;
+}
+
+enum PublicKeyVariant {
+  PUBLIC_KEY_VARIANT_UNSPECIFIED = 0;
+  PUBLIC_KEY_VARIANT_ECDSA_K256_KECCAK = 1;
+}
+
+message PublicKey {
+  PublicKeyVariant variant = 1;
+  bytes encoded = 2;
+}
+
+enum SignatureVariant {
+  SIGNATURE_VARIANT_UNSPECIFIED = 0;
+  SIGNATURE_VARIANT_ECDSA_K256_KECCAK = 1;
+}
+
+message Signature {
+  SignatureVariant variant = 1;
+  bytes encoded = 2;
+}
+
+message MerklePath {
+  repeated Word siblings = 1;
+}
+
+message SparseMerklePath {
+  fixed64 empty_nodes_mask = 1;
+  repeated Word siblings = 2;
+}
+
+message MmrDelta {
+  uint64 forest = 1;
+  repeated Word update_data = 2;
+}
+
+message SmtLeafEntry {
+  Word key = 1;
+  Word value = 2;
+}
+
+message SmtLeafEntryList {
+  repeated SmtLeafEntry entries = 1;
+}
+
+message SmtLeaf {
+  oneof leaf {
+    uint64 empty_leaf_index = 1;
+    SmtLeafEntry single = 2;
+    SmtLeafEntryList multiple = 3;
+  }
+}
+
+message SmtOpening {
+  SparseMerklePath path = 1;
+  SmtLeaf leaf = 2;
+}
+
+// A compact representation of a partial SMT containing the nodes needed to reconstruct the
+// tracked openings.
+message PartialSmt {
+  // The root expected after reconstruction.
+  Word root = 1;
+
+  // Boundary nodes needed to reconstruct intermediate nodes, grouped by depth.
+  repeated PartialSmtNodeLevel node_levels = 2;
+
+  // Fully materialized, non-empty leaves.
+  repeated IndexedSmtLeaf leaves = 3;
+
+  // Leaves for which only the hash is known.
+  repeated IndexedDigest value_only_leaves = 4;
+}
+
+// Partial SMT boundary nodes at a single depth.
+message PartialSmtNodeLevel {
+  // Depth of all nodes in this group.
+  uint32 depth = 1;
+
+  // Boundary nodes at this depth.
+  repeated PartialSmtNode nodes = 2;
+}
+
+// A boundary node needed to reconstruct a partial SMT.
+message PartialSmtNode {
+  // Position of the node within its depth.
+  fixed64 index = 1;
+
+  // Hash of the boundary node.
+  Word digest = 2;
+}
+
+// A fully materialized SMT leaf together with its index.
+message IndexedSmtLeaf {
+  fixed64 index = 1;
+  SmtLeaf leaf = 2;
+}
+
+// A digest together with its SMT leaf index.
+message IndexedDigest {
+  fixed64 index = 1;
+  Word value = 2;
+}
+
+message AdviceStack {
+  repeated Felt values = 1;
+}
+
+message AdviceMapEntry {
+  Word key = 1;
+  repeated Felt values = 2;
+}
+
+message AdviceMap {
+  repeated AdviceMapEntry entries = 1;
+}
+
+message MerkleStoreNode {
+  Word value = 1;
+  Word left = 2;
+  Word right = 3;
+}
+
+message MerkleStore {
+  repeated MerkleStoreNode nodes = 1;
+}
+
+message AdviceInputs {
+  AdviceStack advice_stack = 1;
+  AdviceMap advice_map = 2;
+  MerkleStore merkle_store = 3;
+}

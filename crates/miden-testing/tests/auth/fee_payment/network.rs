@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
 
+use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
-use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
+use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::account::auth::AuthNetworkAccount;
@@ -20,7 +21,9 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{NetworkAccountConfigNote, TxFeeNote};
+use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT;
+use miden_standards::note::config::NetworkAccountConfigNote;
+use miden_standards::note::{MintNote, MintNoteStorage, TxFeeNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -34,8 +37,7 @@ use super::VERIFICATION_BASE_FEE;
 /// result.
 ///
 /// When `input_note` is given, its script root is allowlisted and the note is consumed by the
-/// transaction (needed on zero-fee chains, where a note-less transaction would be rejected as a
-/// no-op); otherwise the transaction is empty and a placeholder root is allowlisted.
+/// transaction. Otherwise the transaction consumes no notes and a placeholder root is allowlisted.
 async fn execute_network_account_tx(
     verification_base_fee: u32,
     assets: impl IntoIterator<Item = Asset>,
@@ -98,9 +100,10 @@ async fn execute_network_account_tx(
 async fn network_account_pays_fee_note() -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
+    let input_note = NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rand::rng()).build()?;
 
     let (account, result) =
-        execute_network_account_tx(VERIFICATION_BASE_FEE, [fee_asset], None).await?;
+        execute_network_account_tx(VERIFICATION_BASE_FEE, [fee_asset], Some(input_note)).await?;
     let executed_transaction = result?;
 
     // exactly one output note is created: the fee note
@@ -156,7 +159,8 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
         .name(TokenName::new("Native fee asset")?)
         .symbol(TokenSymbol::new("NFA")?)
         .decimals(6)
-        .max_supply(AssetAmount::new(1_000_000)?)
+        .max_supply(AssetAmount::new(1_000_001)?)
+        .token_supply(AssetAmount::new(1_000_000)?)
         .build()?;
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
@@ -169,23 +173,40 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
         faucet,
         ACCOUNT_ID_SENDER.try_into()?,
         token_policy_manager,
-        BasicConstantFeePolicy::new(),
+        BasicConstantFeePolicy::new().with_fee(MintNote::script_root(), AssetAmount::ZERO),
     )?;
     let fee_faucet_id = faucet_account.id();
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
     faucet_account.vault_mut().add_asset(fee_asset)?;
 
+    let mint_asset = FungibleAsset::new(fee_faucet_id, 1)?;
+    let mint_note: Note = MintNote::builder()
+        .sender(ACCOUNT_ID_SENDER.try_into()?)
+        .mint_storage(MintNoteStorage::new_private(
+            Word::from([5, 6, 7, 8u32]),
+            mint_asset,
+            NoteTag::default(),
+        ))
+        .serial_number(Word::from([1, 2, 3, 4u32]))
+        .build()?
+        .into();
+
     let mut builder = MockChain::builder()
         .fee_faucet_id(fee_faucet_id)
         .verification_base_fee(VERIFICATION_BASE_FEE);
     builder.add_account(faucet_account)?;
+    builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
     let mock_chain = builder.build()?;
 
-    let executed_transaction =
-        mock_chain.build_transaction(fee_faucet_id).build()?.execute().await?;
-    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
+    let executed_transaction = mock_chain
+        .build_transaction(fee_faucet_id)
+        .unauthenticated_input_note(mint_note)
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(executed_transaction.output_notes().num_notes(), 2);
 
-    let output_note = executed_transaction.output_notes().get_note(0);
+    let output_note = executed_transaction.output_notes().get_note(1);
     assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
     assert_eq!(output_note.assets().num_assets(), 1);
@@ -222,12 +243,28 @@ async fn network_account_no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
 /// specific vault error.
 #[tokio::test]
 async fn network_account_fee_payment_fails_without_funds() -> anyhow::Result<()> {
-    let (_, result) = execute_network_account_tx(VERIFICATION_BASE_FEE, [], None).await?;
+    let input_note = NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rand::rng()).build()?;
+    let (_, result) =
+        execute_network_account_tx(VERIFICATION_BASE_FEE, [], Some(input_note)).await?;
 
     assert_transaction_executor_error!(
         result,
         ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
     );
+
+    Ok(())
+}
+
+/// A fee-charging network account rejects a transaction with no input notes, output notes, or
+/// account changes before the account can fund a TX_FEE note from its vault.
+#[tokio::test]
+async fn network_account_rejects_empty_fee_only_transaction() -> anyhow::Result<()> {
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
+
+    let (_, result) = execute_network_account_tx(VERIFICATION_BASE_FEE, [fee_asset], None).await?;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT);
 
     Ok(())
 }

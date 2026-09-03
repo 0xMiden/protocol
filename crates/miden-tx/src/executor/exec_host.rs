@@ -229,7 +229,7 @@ where
         let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
-        Ok(vec![AdviceMutation::extend_advice_stack(signature.into())])
+        Ok(vec![AdviceMutation::extend_advice_stack_with(signature)])
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.

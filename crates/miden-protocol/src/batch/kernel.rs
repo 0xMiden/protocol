@@ -182,13 +182,13 @@ impl BatchKernel {
     /// non-erased input notes in nullifier order to reproduce
     /// `ProposedBatch::input_notes().commitment()`.
     fn build_advice_inputs(proposed_batch: &ProposedBatch) -> AdviceInputs {
-        let mut advice_inputs = AdviceInputs::default();
+        let mut map_entries: Vec<(Word, Vec<Felt>)> = Vec::new();
 
         // Layer 1: BATCH_ID -> [(tx_id, account_id) tuples].
         let layer1_data = OrderedTransactionHeaders::hash_input_elements(
             proposed_batch.transactions().iter().map(|tx| (tx.id(), tx.account_id())),
         );
-        advice_inputs.map.extend([(proposed_batch.id().as_word(), layer1_data)]);
+        map_entries.push((proposed_batch.id().as_word(), layer1_data));
 
         // Pre-erasure union of every transaction's notes, collected while walking the per-tx
         // layers and sorted below: input notes by nullifier, output notes by note id, matching
@@ -199,7 +199,7 @@ impl BatchKernel {
         for tx in proposed_batch.transactions().iter() {
             // Layer 2: tx_id -> the felt sequence TransactionId::new hashes.
             let header_data = TransactionCommitments::from(tx.as_ref()).elements();
-            advice_inputs.map.extend([(tx.id().as_word(), header_data.to_vec())]);
+            map_entries.push((tx.id().as_word(), header_data.to_vec()));
 
             // Layer 3a: per-tx INPUT_NOTES_COMMITMENT -> [NULLIFIER, NOTE_ID_OR_EMPTY] tuples.
             // This must reproduce `build_input_note_commitment` exactly.
@@ -215,7 +215,7 @@ impl BatchKernel {
                     preimage_data.extend_from_slice(note_id_or_empty.as_elements());
                     input_list.push((nullifier, note_id_or_empty));
                 }
-                advice_inputs.map.extend([(input_notes_commitment, preimage_data)]);
+                map_entries.push((input_notes_commitment, preimage_data));
             }
 
             // Layer 3b: per-tx OUTPUT_NOTES_COMMITMENT -> [DETAILS_COMMITMENT,
@@ -230,7 +230,7 @@ impl BatchKernel {
                     preimage_data.extend_from_slice(note.metadata().to_commitment().as_elements());
                     output_list.push(note.id());
                 }
-                advice_inputs.map.extend([(output_notes_commitment, preimage_data)]);
+                map_entries.push((output_notes_commitment, preimage_data));
             }
         }
 
@@ -247,7 +247,7 @@ impl BatchKernel {
             input_blob.extend_from_slice(nullifier.as_word().as_elements());
             input_blob.extend_from_slice(note_id_or_empty.as_elements());
         }
-        advice_inputs.map.extend([(*INPUT_NOTE_LIST_KEY, input_blob)]);
+        map_entries.push((*INPUT_NOTE_LIST_KEY, input_blob));
 
         // OUTPUT_NOTE_LIST_KEY -> [NOTE_ID, 0, 0, 0, 0] (8 felts per note; the VALUE word
         // is unused, present only so the entries fit `sorted_array`'s KEY+VALUE layout).
@@ -256,8 +256,8 @@ impl BatchKernel {
             output_blob.extend_from_slice(note_id.as_word().as_elements());
             output_blob.extend_from_slice(Word::empty().as_elements());
         }
-        advice_inputs.map.extend([(*OUTPUT_NOTE_LIST_KEY, output_blob)]);
+        map_entries.push((*OUTPUT_NOTE_LIST_KEY, output_blob));
 
-        advice_inputs
+        AdviceInputs::default().with_map(map_entries)
     }
 }

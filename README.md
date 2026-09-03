@@ -3,7 +3,7 @@
 [![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/protocol/blob/main/LICENSE)
 [![test](https://github.com/0xMiden/protocol/actions/workflows/test.yml/badge.svg)](https://github.com/0xMiden/protocol/actions/workflows/test.yml)
 [![build](https://github.com/0xMiden/protocol/actions/workflows/build.yml/badge.svg)](https://github.com/0xMiden/protocol/actions/workflows/build.yml)
-[![RUST_VERSION](https://img.shields.io/badge/rustc-1.96+-lightgray.svg)](https://www.rust-lang.org/tools/install)
+[![RUST_VERSION](https://img.shields.io/badge/rustc-1.98+-lightgray.svg)](https://www.rust-lang.org/tools/install)
 [![GitHub Release](https://img.shields.io/github/release/0xMiden/protocol)](https://github.com/0xMiden/protocol/releases/)
 
 Description and core structures for the Miden Rollup protocol.
@@ -50,6 +50,7 @@ We expect to keep making changes (including breaking changes) to all components.
 | [miden-agglayer](crates/miden-agglayer) | AggLayer components for the Miden protocol. |
 | [miden-block-prover](crates/miden-block-prover) | Block execution and proving tools. |
 | [miden-protocol](crates/miden-protocol) | Core protocol components, including the protocol kernels. |
+| [miden-objects](crates/miden-objects) | Canonical Protobuf representations for protocol objects exchanged by clients and nodes. |
 | [miden-protocol-build-utils](crates/miden-protocol-build-utils) | Build-time MASM helpers. |
 | [miden-standards](crates/miden-standards) | Standardized smart contracts. |
 | [miden-testing](crates/miden-testing) | Testing tools for Miden transactions, batches, and blocks. |

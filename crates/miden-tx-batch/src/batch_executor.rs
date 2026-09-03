@@ -84,12 +84,12 @@ impl BatchExecutor {
         host.load_library(&CoreLibrary::default())
             .expect("loading the core library into the host should succeed");
 
-        let trace_inputs = processor
-            .execute_trace_inputs_sync(&BatchKernel::main(), &mut host)
+        let witness = processor
+            .execute_for_proving_sync(&BatchKernel::main(), &mut host)
             .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
         // Parse and validate the output stack shape (zero padding, u32 expiration).
-        let batch_outputs = BatchOutputs::parse(trace_inputs.stack_outputs())
+        let batch_outputs = BatchOutputs::parse(witness.claim().stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
         // Reject if the kernel's outputs do not match the proposed batch, so drift is caught early.
@@ -105,6 +105,6 @@ impl BatchExecutor {
             });
         }
 
-        Ok(ExecutedBatch::new(proposed_batch, trace_inputs, batch_outputs))
+        Ok(ExecutedBatch::new(proposed_batch, witness, batch_outputs))
     }
 }

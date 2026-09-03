@@ -1,5 +1,10 @@
-use crate::account::AccountPatch;
-use crate::errors::AccountPatchError;
+use crate::account::{Account, AccountId, AccountPatch};
+use crate::errors::{
+    AccountPatchError,
+    AccountUpdateDetailsValidationError,
+    AccountUpdateSizeValidationError,
+    NewPublicAccountValidationError,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -7,6 +12,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{ACCOUNT_UPDATE_MAX_SIZE, Word};
 
 // ACCOUNT UPDATE DETAILS
 // ================================================================================================
@@ -44,6 +50,46 @@ impl AccountUpdateDetails {
         matches!(self, Self::Public(_))
     }
 
+    /// Validates that the serialized size of these details does not exceed the maximum account
+    /// update size.
+    pub(crate) fn validate_size(
+        &self,
+        account_id: AccountId,
+    ) -> Result<(), AccountUpdateSizeValidationError> {
+        let update_size = self.get_size_hint();
+        if update_size > ACCOUNT_UPDATE_MAX_SIZE as usize {
+            return Err(AccountUpdateSizeValidationError { account_id, update_size });
+        }
+
+        Ok(())
+    }
+
+    /// Validates that these details are compatible with `account_id`.
+    ///
+    /// Returns the account patch for a valid public account update and `None` for a valid private
+    /// account update.
+    pub(crate) fn validate_for_account(
+        &self,
+        account_id: AccountId,
+    ) -> Result<Option<&AccountPatch>, AccountUpdateDetailsValidationError> {
+        match (self, account_id.is_private()) {
+            (Self::Private, true) => Ok(None),
+            (Self::Public(_), true) => {
+                Err(AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id))
+            },
+            (Self::Private, false) => Err(
+                AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id),
+            ),
+            (Self::Public(patch), false) if patch.id() != account_id => {
+                Err(AccountUpdateDetailsValidationError::AccountIdMismatch {
+                    account_id,
+                    patch_account_id: patch.id(),
+                })
+            },
+            (Self::Public(patch), false) => Ok(Some(patch)),
+        }
+    }
+
     /// Merges the `other` update into this one.
     ///
     /// This account update (`self`) must come before `other`, i.e. `self.nonce + 1` must be equal
@@ -75,6 +121,26 @@ impl AccountUpdateDetails {
             AccountUpdateDetails::Public(_) => "public",
         }
     }
+}
+
+/// Validates that `patch` contains the complete state of a new public account and reconstructs to
+/// `final_state_commitment`.
+pub(crate) fn validate_new_public_account(
+    patch: &AccountPatch,
+    final_state_commitment: Word,
+) -> Result<(), NewPublicAccountValidationError> {
+    let account = Account::try_from(patch).map_err(|source| {
+        NewPublicAccountValidationError::RequiresFullStatePatch { id: patch.id(), source }
+    })?;
+    let account_commitment = account.to_commitment();
+    if account_commitment != final_state_commitment {
+        return Err(NewPublicAccountValidationError::FinalCommitmentMismatch {
+            final_state_commitment,
+            account_commitment,
+        });
+    }
+
+    Ok(())
 }
 
 // SERIALIZATION

@@ -84,7 +84,7 @@ pub(super) fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatc
 fn tampered_advice_for(batch: &ProposedBatch, key: Word) -> AdviceInputs {
     let (_, advice_inputs) = BatchKernel::prepare_inputs(batch);
     let mut tampered: Vec<Felt> = advice_inputs
-        .map
+        .map()
         .get(&key)
         .expect("advice-map entry for key")
         .iter()
@@ -183,7 +183,7 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let expected_id = batch.id();
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
-    let proven = LocalBatchProver::new().prove(executed).context("batch proving failed")?;
+    let proven = LocalBatchProver::default().prove(executed).context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
 

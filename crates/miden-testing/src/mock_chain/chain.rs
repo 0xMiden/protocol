@@ -4,17 +4,21 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_block_prover::LocalBlockProver;
 use miden_processor::serde::DeserializationError;
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{
+    BlockAccountUpdate,
+    BlockBody,
     BlockHeader,
     BlockInputs,
     BlockNumber,
     BlockSignatures,
     Blockchain,
+    OutputNoteBatch,
     ProposedBlock,
     ProvenBlock,
     ValidatorConfig,
@@ -26,12 +30,13 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
     InputNotes,
+    OrderedTransactionHeaders,
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
     TransactionInputs,
 };
-use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::vm::ExecutionProof;
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
@@ -199,12 +204,10 @@ pub struct MockChain {
     /// NoteID |-> MockChainNote mapping to simplify note retrieval.
     committed_notes: BTreeMap<NoteId, MockChainNote>,
 
-    /// AccountId |-> Account mapping to simplify transaction creation. Latest known account
-    /// state is maintained for each account here.
+    /// AccountId |-> Account mapping to simplify transaction creation.
     ///
-    /// The map always holds the most recent *public* state known for every account. For private
-    /// accounts, however, transactions do not emit the post-transaction state, so their entries
-    /// remain at the last observed state.
+    /// The map holds the latest known state for public accounts. Private accounts are represented
+    /// only by their commitments in the [`AccountTree`] and are not retained here.
     committed_accounts: BTreeMap<AccountId, Account>,
 
     /// AccountId |-> AccountAuthenticator mapping to store the authenticator for accounts to
@@ -286,7 +289,6 @@ impl MockChain {
         }
 
         debug_assert_eq!(chain.blocks.len(), 1);
-        debug_assert_eq!(chain.committed_accounts.len(), chain.account_tree.num_accounts());
 
         Ok(chain)
     }
@@ -516,9 +518,10 @@ impl MockChain {
         note.clone().try_into().ok()
     }
 
-    /// Returns a reference to the account identified by the given account ID.
+    /// Returns a reference to the public account identified by the given account ID.
     ///
-    /// The account is retrieved with the latest state known to the [`MockChain`].
+    /// The account is retrieved with the latest state known to the [`MockChain`]. Private account
+    /// states are not retained by the chain.
     pub fn committed_account(&self, account_id: AccountId) -> anyhow::Result<&Account> {
         self.committed_accounts
             .get(&account_id)
@@ -568,7 +571,7 @@ impl MockChain {
         &self,
         proposed_batch: ProposedBatch,
     ) -> anyhow::Result<ProvenBatch> {
-        let batch_prover = LocalBatchProver::new();
+        let batch_prover = LocalBatchProver::default();
         Ok(batch_prover.prove_dummy(proposed_batch)?)
     }
 
@@ -803,15 +806,20 @@ impl MockChain {
 
     /// Gets foreign account inputs to execute FPI transactions.
     ///
-    /// Used in tests to get foreign account inputs for FPI calls.
+    /// Pass an [`AccountId`] to resolve a public account from the chain, or pass an [`Account`]
+    /// directly for a private account whose state is retained by the caller.
     pub fn get_foreign_account_inputs(
         &self,
-        account_id: AccountId,
+        input: impl Into<MockTransactionInput>,
     ) -> anyhow::Result<(Account, AccountWitness)> {
-        let account = self.committed_account(account_id)?.clone();
+        let account = self.resolve_tx_account(input.into())?;
+        let account_id = account.id();
 
         let account_witness = self.account_tree().open(account_id);
-        assert_eq!(account_witness.state_commitment(), account.to_commitment());
+        anyhow::ensure!(
+            account_witness.state_commitment() == account.to_commitment(),
+            "account {account_id} does not match its witness"
+        );
 
         Ok((account, account_witness))
     }
@@ -1127,7 +1135,7 @@ impl MockChain {
     /// Proves proposed block alongside a corresponding list of batches.
     pub fn prove_block(&self, proposed_block: ProposedBlock) -> anyhow::Result<ProvenBlock> {
         let (header, body) = proposed_block.into_header_and_body()?;
-        let block_proof = LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL).prove_dummy();
+        let block_proof = LocalBlockProver::default().prove_dummy();
         let signatures = self.sign_block(header.commitment());
         Ok(ProvenBlock::new_unchecked(header, body, signatures, block_proof))
     }
@@ -1141,6 +1149,46 @@ impl Default for MockChain {
 
 // SERIALIZATION
 // ================================================================================================
+
+fn read_blocks_with_unchecked_genesis<R: ByteReader>(
+    source: &mut R,
+) -> Result<Vec<ProvenBlock>, DeserializationError> {
+    let block_count = source.read_usize()?;
+    if block_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut blocks = vec![read_genesis_block_unchecked(source)?];
+    let remaining_blocks = source
+        .read_many_iter(block_count - 1)?
+        .collect::<Result<Vec<ProvenBlock>, _>>()?;
+    blocks.extend(remaining_blocks);
+
+    Ok(blocks)
+}
+
+fn read_genesis_block_unchecked<R: ByteReader>(
+    source: &mut R,
+) -> Result<ProvenBlock, DeserializationError> {
+    let header = BlockHeader::read_from(source)?;
+    if header.block_num() != BlockNumber::GENESIS {
+        return Err(DeserializationError::InvalidValue(format!(
+            "first mock chain block must be genesis, got block {}",
+            header.block_num()
+        )));
+    }
+
+    let body = BlockBody::new_unchecked(
+        Vec::<BlockAccountUpdate>::read_from(source)?,
+        Vec::<OutputNoteBatch>::read_from(source)?,
+        Vec::<Nullifier>::read_from(source)?,
+        OrderedTransactionHeaders::read_from(source)?,
+    );
+    let signatures = BlockSignatures::read_from(source)?;
+    let proof = ExecutionProof::read_from(source)?;
+
+    Ok(ProvenBlock::new_unchecked(header, body, signatures, proof))
+}
 
 impl Serializable for MockChain {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
@@ -1160,7 +1208,7 @@ impl Serializable for MockChain {
 impl Deserializable for MockChain {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let chain = Blockchain::read_from(source)?;
-        let blocks = Vec::<ProvenBlock>::read_from(source)?;
+        let blocks = read_blocks_with_unchecked_genesis(source)?;
         let nullifier_tree = NullifierTree::read_from(source)?;
         let account_tree = AccountTree::read_from(source)?;
         let pending_transactions = Vec::<ProvenTransaction>::read_from(source)?;
@@ -1258,8 +1306,12 @@ impl Deserializable for AccountAuthenticator {
 // MOCK TRANSACTION INPUT
 // ================================================================================================
 
-/// Helper type to abstract over the account input to [`MockChain::build_transaction`]. See that
-/// method's docs for details.
+/// Account input accepted by [`MockChain::build_transaction`] and
+/// [`MockChain::get_foreign_account_inputs`].
+///
+/// [`MockTransactionInput::AccountId`] resolves a committed public account from the chain, while
+/// [`MockTransactionInput::Account`] supplies caller-owned account state directly, including the
+/// state of a private account.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum MockTransactionInput {
@@ -1305,6 +1357,7 @@ mod tests {
     };
     use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_standards::account::wallets::BasicWallet;
+    use miden_tx::utils::serde::SliceReader;
 
     use super::*;
     use crate::Auth;
@@ -1315,6 +1368,44 @@ mod tests {
         let block = chain.prove_until_block(5)?;
         assert_eq!(block.header().block_num(), 5u32.into());
         assert_eq!(chain.proven_blocks().len(), 6);
+
+        Ok(())
+    }
+
+    #[test]
+    fn genesis_private_account_is_not_retained() -> anyhow::Result<()> {
+        let account_builder = AccountBuilder::new([5; 32])
+            .account_type(AccountType::Private)
+            .with_component(BasicWallet);
+        let mut builder = MockChain::builder();
+        let account = builder.add_account_from_builder(
+            Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+            account_builder,
+            AccountState::Exists,
+        )?;
+
+        let chain = builder.build()?;
+        let update = &chain.blocks[0].body().updated_accounts()[0];
+
+        assert!(update.details().is_private());
+        assert!(chain.committed_account(account.id()).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn unchecked_genesis_deserialization_rejects_non_genesis_block() -> anyhow::Result<()> {
+        let mut chain = MockChain::new();
+        let block = chain.prove_next_block()?;
+        let bytes = vec![block].to_bytes();
+
+        let error = read_blocks_with_unchecked_genesis(&mut SliceReader::new(&bytes)).unwrap_err();
+
+        assert!(matches!(
+            error,
+            DeserializationError::InvalidValue(message)
+                if message == "first mock chain block must be genesis, got block 1"
+        ));
 
         Ok(())
     }

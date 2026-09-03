@@ -4,6 +4,7 @@
 #
 # A state guardian can help coordinate state availability for private accounts.
 
+use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth::tx_policy
@@ -111,6 +112,26 @@ end
 
 # PUBLIC HELPERS
 # =================================================================================================
+
+#! Returns the currently configured guardian public key.
+#!
+#! Reads the current account state, so the result reflects a rotation performed earlier in the same
+#! transaction.
+#!
+#! Inputs:  []
+#! Outputs: [GUARDIAN_PUBLIC_KEY]
+#!
+#! Invocation: exec
+pub proc get_guardian_public_key() -> word
+    push.GUARDIAN_MAP_KEY
+    # => [GUARDIAN_MAP_KEY]
+
+    push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
+    # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, GUARDIAN_MAP_KEY]
+
+    exec.active_account::get_map_item
+    # => [GUARDIAN_PUBLIC_KEY]
+end
 
 #! Conditionally verifies a guardian signature.
 #!
