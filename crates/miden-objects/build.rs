@@ -89,6 +89,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 merkle_store,
             ),
         },
+        ".note.NoteRecipient" => {
+            target: ::miden_protocol::note::NoteRecipient,
+            constructor: ::miden_protocol::note::NoteRecipient::new(
+                serial_num,
+                script,
+                storage,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(

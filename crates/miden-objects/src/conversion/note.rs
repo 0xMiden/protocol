@@ -195,19 +195,6 @@ impl From<&NoteRecipient> for proto::note::NoteRecipient {
     }
 }
 
-impl TryFrom<proto::note::NoteRecipient> for NoteRecipient {
-    type Error = ConversionError;
-
-    fn try_from(recipient: proto::note::NoteRecipient) -> Result<Self, Self::Error> {
-        let decoder = recipient.decoder();
-        let serial_num = required!(decoder, recipient.serial_num)?;
-        let script = required!(decoder, recipient.script)?;
-        let storage = required!(decoder, recipient.storage)?;
-
-        Ok(NoteRecipient::new(serial_num, script, storage))
-    }
-}
-
 impl From<NoteDetails> for proto::note::NoteDetails {
     fn from(details: NoteDetails) -> Self {
         Self::from(&details)
