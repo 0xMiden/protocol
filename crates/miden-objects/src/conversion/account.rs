@@ -205,26 +205,11 @@ impl From<PartialStorage> for proto::account::PartialStorage {
 // PARTIAL VAULT
 // ================================================================================================
 
-impl TryFrom<proto::account::PartialVault> for PartialVault {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::account::PartialVault) -> Result<Self, Self::Error> {
-        let decoder = message.decoder();
-        let smt = required!(decoder, message.smt)?;
-        let asset_ids = message
-            .asset_ids
-            .into_iter()
-            .enumerate()
-            .map(|(index, id)| {
-                let asset_id_context = format!("asset_ids[{index}]");
-                Word::try_from(id)
-                    .context(&asset_id_context)
-                    .and_then(|id| AssetId::try_from(id).context(asset_id_context))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        PartialVault::try_from_parts(smt, asset_ids).map_err(ConversionError::new)
-    }
+pub(crate) fn decode_partial_vault(
+    smt: miden_protocol::crypto::merkle::smt::PartialSmt,
+    asset_ids: Vec<AssetId>,
+) -> Result<PartialVault, ConversionError> {
+    PartialVault::try_from_parts(smt, asset_ids).map_err(ConversionError::new)
 }
 
 impl From<&PartialVault> for proto::account::PartialVault {

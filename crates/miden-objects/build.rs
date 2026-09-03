@@ -87,6 +87,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 maps,
             ),
         },
+        ".account.PartialVault" => {
+            target: ::miden_protocol::asset::PartialVault,
+            try_constructor: crate::conversion::decode_partial_vault(
+                smt,
+                asset_ids,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(

@@ -13,7 +13,12 @@ mod transaction_inputs;
 use core::error::Error;
 use core::marker::PhantomData;
 
-pub(crate) use account::{decode_account_id, decode_partial_storage, decode_partial_storage_map};
+pub(crate) use account::{
+    decode_account_id,
+    decode_partial_storage,
+    decode_partial_storage_map,
+    decode_partial_vault,
+};
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
 pub(crate) use merkle::decode_mmr_delta;
 pub(crate) use note::{decode_note_attachment, decode_note_storage, validate_note_attachments};
