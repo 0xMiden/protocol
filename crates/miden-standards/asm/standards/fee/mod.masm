@@ -36,14 +36,15 @@ const PAY_FEE_CYCLES = 8192
 # compute_fee call returns: a walk over every output note looking for network notes, then funding
 # a FEE_SPONSORSHIP note for each one priced above zero, which covers reading the target
 # attachment, the note creation and the vault withdrawal. The pricing itself runs during the
-# estimate, before compute_fee, and is measured by the kernel.
+# estimate, before compute_fee, and is measured by the kernel. Measured by diffing the auth
+# procedure cycles of transactions with one to three plain, zero-priced and sponsored network
+# notes: about 400 cycles per walked note and about 4300 per sponsorship note created.
 #
 # NOT covered by a regression test: zeroing both leaves the suite green, because the sponsoring
-# case lands exactly on an ilog2 boundary either way. They are margins over a measurement, so a
-# test would have to assert cycle counts rather than behaviour. SPONSORSHIP_NOTE_CYCLES was sized
-# while the payment still repeated the pricing call, so it is generous.
+# cases land inside the same ilog2 bucket either way. They are margins over a measurement, so a
+# test would have to assert cycle counts rather than behaviour. Re-measure if the payment changes.
 const SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES = 512
-const SPONSORSHIP_NOTE_CYCLES = 16384
+const SPONSORSHIP_NOTE_CYCLES = 8192
 
 # Local memory offset at which `pay_fee` keeps the sponsorship price table, sized for
 # fees::SPONSORSHIP_PRICE_TABLE_NUM_ELEMENTS elements.
