@@ -3,7 +3,6 @@
 # See the `AuthMultisig` Rust type's documentation for more details.
 
 use miden::standards::auth::multisig
-use miden::standards::auth::signature
 use miden::standards::fee
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
@@ -17,11 +16,10 @@ pub use {is_signer} from miden::standards::auth::multisig
 #!
 #! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
 #! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
-#! funding a public TX_FEE note (see miden::standards::fee::pay_fee). The payment asset and
-#! conversion rate are committed to via the AUTH_ARGS (native fee asset at rate 1/1 for plain
-#! native payment). On chains with a zero verification base fee no note is created. Because the
-#! fee is paid before the transaction summary is created, the fee note and the vault withdrawal
-#! funding it are covered by the approver signatures.
+#! funding a public TX_FEE note, bounded to the native fee asset at at most twice the computed fee
+#! (see miden::standards::auth::multisig::pay_bounded_fee). On chains with a zero verification base
+#! fee no note is created. Because the fee is paid before the transaction summary is created, the
+#! fee note and the vault withdrawal funding it are covered by the approver signatures.
 #!
 #! The AUTH_ARGS (= hash(CONVERSION_INFO || SALT)) then continue to serve as the transaction
 #! summary salt. The uniqueness that replay protection relies on originates from the
@@ -33,12 +31,18 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! Outputs:
 #!   Operand stack: []
 #!
+#! Panics if:
+#! - fee::load_conversion_info fails to verify.
+#! - the fee payment is not in the native fee asset, or exceeds the bound.
+#! - the fee cannot be paid.
+#! - multisig::auth_tx fails to verify.
+#! - the same transaction has already been executed.
+#!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_multisig(auth_args: word)
-    # Pay the transaction fee before the summary is created so that the TX_FEE note and the
-    # vault withdrawal funding it are covered by the approver signatures. load_conversion_info
-    # consumes the AUTH_ARGS, so keep a copy around to serve as the summary salt afterwards.
+    # Pay the transaction fee before the summary is created; load_conversion_info consumes the
+    # AUTH_ARGS, so keep a copy to serve as the summary salt.
     # ---------------------------------------------------------------------------------------------
 
     dupw
@@ -50,10 +54,7 @@ pub proc auth_tx_multisig(auth_args: word)
     exec.multisig::get_initial_threshold_and_num_approvers drop
     # => [num_of_approvers, CONVERSION_INFO, AUTH_ARGS]
 
-    exec.signature::estimate_multisig_authentication_cycles
-    # => [num_extra_cycles, CONVERSION_INFO, AUTH_ARGS]
-
-    exec.fee::pay_fee drop
+    exec.multisig::pay_bounded_fee drop
     # => [AUTH_ARGS]
 
     # Authenticate the transaction and record it for replay protection.
