@@ -41,14 +41,6 @@ impl TryFrom<&proto::primitives::MerklePath> for MerklePath {
     }
 }
 
-impl TryFrom<proto::primitives::MerklePath> for MerklePath {
-    type Error = ConversionError;
-
-    fn try_from(merkle_path: proto::primitives::MerklePath) -> Result<Self, Self::Error> {
-        (&merkle_path).try_into()
-    }
-}
-
 // SPARSE MERKLE PATH
 // ================================================================================================
 

@@ -42,6 +42,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 prefix,
             ),
         },
+        ".primitives.MerklePath" => {
+            target: ::miden_protocol::crypto::merkle::MerklePath,
+            constructor: ::miden_protocol::crypto::merkle::MerklePath::new(
+                siblings,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
