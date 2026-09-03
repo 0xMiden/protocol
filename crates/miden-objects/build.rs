@@ -104,6 +104,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recipient,
             ),
         },
+        ".note.NoteStorage" => {
+            target: ::miden_protocol::note::NoteStorage,
+            try_constructor: crate::conversion::decode_note_storage(
+                items,
+            ),
+        },
         ".blockchain.BlockAccountUpdate" => {
             target: ::miden_protocol::block::BlockAccountUpdate,
             try_constructor: ::miden_protocol::block::BlockAccountUpdate::new(

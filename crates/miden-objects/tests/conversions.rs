@@ -52,6 +52,7 @@ use miden_protocol::note::{
     NoteId,
     NoteInclusionProof,
     NoteMetadata,
+    NoteStorage,
     NoteType,
     PartialNoteMetadata,
 };
@@ -75,6 +76,19 @@ fn protobuf_descriptor_includes_structured_asset_schema() {
             .windows(b"asset.proto".len())
             .any(|window| window == b"asset.proto")
     );
+}
+
+#[test]
+fn note_storage_reports_item_and_invariant_paths() {
+    let invalid_item = proto::note::NoteStorage {
+        items: vec![proto::primitives::Felt { value: Felt::ORDER }],
+    };
+    let error = NoteStorage::try_from(invalid_item).unwrap_err();
+    assert!(error.to_string().starts_with("items[0]."));
+
+    let oversized = proto::note::NoteStorage { items: vec![Felt::ZERO.into(); 1025] };
+    let error = NoteStorage::try_from(oversized).unwrap_err();
+    assert!(error.to_string().starts_with("items:"));
 }
 
 #[test]

@@ -164,19 +164,8 @@ impl From<&NoteStorage> for proto::note::NoteStorage {
     }
 }
 
-impl TryFrom<proto::note::NoteStorage> for NoteStorage {
-    type Error = ConversionError;
-
-    fn try_from(storage: proto::note::NoteStorage) -> Result<Self, Self::Error> {
-        let items = storage
-            .items
-            .into_iter()
-            .map(Felt::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("items")?;
-
-        NoteStorage::new(items).map_err(ConversionError::new).context("items")
-    }
+pub(crate) fn decode_note_storage(items: Vec<Felt>) -> Result<NoteStorage, ConversionError> {
+    NoteStorage::new(items).map_err(ConversionError::new).context("items")
 }
 
 impl From<NoteRecipient> for proto::note::NoteRecipient {
