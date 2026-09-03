@@ -83,7 +83,7 @@ pub fn configure_proto_decodes(
             ));
         }
 
-        prost.type_attribute(config.message_name, config.derive_attribute());
+        prost.message_attribute(config.message_name, config.derive_attribute());
 
         for field_name in explicit_optional_message_fields(descriptors, config.message_name)? {
             prost.field_attribute(field_name, OPTIONAL_ATTRIBUTE);
@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn configure_proto_decodes_injects_the_marker_only_into_the_selected_message() {
+    fn configure_proto_decodes_only_configures_the_selected_message() {
         let descriptors = FileDescriptorSet {
             file: vec![FileDescriptorProto {
                 name: Some("optional.proto".to_owned()),
@@ -244,6 +244,7 @@ mod tests {
         let marker = generated.find(OPTIONAL_ATTRIBUTE).unwrap();
         assert!(selected < marker && marker < unselected);
         assert_eq!(generated.matches(OPTIONAL_ATTRIBUTE).count(), 1);
+        assert_eq!(generated.matches("::miden_protobuf::ProtoDecode").count(), 1);
 
         std::fs::remove_dir_all(out_dir).unwrap();
     }
@@ -291,20 +292,36 @@ mod tests {
     fn message_with_explicit_optional_field(name: &str) -> DescriptorProto {
         DescriptorProto {
             name: Some(name.to_owned()),
-            field: vec![FieldDescriptorProto {
-                name: Some("value".to_owned()),
-                number: Some(1),
-                label: Some(Label::Optional as i32),
-                r#type: Some(Type::Message as i32),
-                type_name: Some(".example.Value".to_owned()),
-                oneof_index: Some(0),
-                proto3_optional: Some(true),
-                ..Default::default()
-            }],
-            oneof_decl: vec![OneofDescriptorProto {
-                name: Some("_value".to_owned()),
-                ..Default::default()
-            }],
+            field: vec![
+                FieldDescriptorProto {
+                    name: Some("value".to_owned()),
+                    number: Some(1),
+                    label: Some(Label::Optional as i32),
+                    r#type: Some(Type::Message as i32),
+                    type_name: Some(".example.Value".to_owned()),
+                    oneof_index: Some(0),
+                    proto3_optional: Some(true),
+                    ..Default::default()
+                },
+                FieldDescriptorProto {
+                    name: Some("choice".to_owned()),
+                    number: Some(2),
+                    label: Some(Label::Optional as i32),
+                    r#type: Some(Type::Uint32 as i32),
+                    oneof_index: Some(1),
+                    ..Default::default()
+                },
+            ],
+            oneof_decl: vec![
+                OneofDescriptorProto {
+                    name: Some("_value".to_owned()),
+                    ..Default::default()
+                },
+                OneofDescriptorProto {
+                    name: Some("choice".to_owned()),
+                    ..Default::default()
+                },
+            ],
             ..Default::default()
         }
     }
