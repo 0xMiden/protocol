@@ -6,6 +6,6 @@ version = "0.16.0"
 
 [workspace.dependencies]
 miden-agglayer  = { linkage = "static", version = "0.16.0" }
-miden-core      = { linkage = "dynamic", version = "0.30" }
+miden-core      = { linkage = "dynamic", version = "0.31" }
 miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
 miden-standards = { linkage = "dynamic", version = "0.16.0" }

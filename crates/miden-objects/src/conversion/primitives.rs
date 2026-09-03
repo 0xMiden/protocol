@@ -528,6 +528,22 @@ mod tests {
     }
 
     #[test]
+    fn execution_proof_rejects_unversioned_wire_bytes() {
+        let proof = dummy_execution_proof();
+        let compatibility = proof.compatibility();
+        let compatibility_len = 1
+            + compatibility.vm_verifier_roots().to_vec().to_bytes().len()
+            + compatibility.pvm_verifier_roots().to_vec().to_bytes().len();
+        let unversioned = proof.to_bytes()[compatibility_len..].to_vec();
+
+        let error =
+            ExecutionProof::try_from(proto::primitives::ExecutionProof { encoded: unversioned })
+                .unwrap_err();
+
+        assert!(error.to_string().starts_with("encoded:"));
+    }
+
+    #[test]
     fn mast_forest_roundtrips() {
         let mast = MastForest::new();
         let encoded = proto::primitives::MastForest::from(&mast);

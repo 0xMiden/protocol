@@ -78,10 +78,7 @@ impl ProvenBatch {
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
-        if matches!(
-            proof,
-            ExecutionProof::Deferred { .. } | ExecutionProof::Complete { precompile: Some(_), .. }
-        ) {
+        if proof.has_precompiles() {
             return Err(ProvenBatchError::BatchProofContainsPrecompiles);
         }
 
