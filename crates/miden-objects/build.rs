@@ -73,6 +73,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 seed,
             ),
         },
+        ".account.PartialStorageMap" => {
+            target: ::miden_protocol::account::PartialStorageMap,
+            try_constructor: crate::conversion::decode_partial_storage_map(
+                smt,
+                keys,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(

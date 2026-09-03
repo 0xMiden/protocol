@@ -139,25 +139,19 @@ fn decode_account_version(version: i32) -> Result<(), ConversionError> {
 // PARTIAL STORAGE MAP
 // ================================================================================================
 
-impl TryFrom<proto::account::PartialStorageMap> for PartialStorageMap {
+impl TryFrom<proto::primitives::Word> for StorageMapKey {
     type Error = ConversionError;
 
-    fn try_from(message: proto::account::PartialStorageMap) -> Result<Self, Self::Error> {
-        let decoder = message.decoder();
-        let smt = required!(decoder, message.smt)?;
-        let keys = message
-            .keys
-            .into_iter()
-            .enumerate()
-            .map(|(index, key)| {
-                Word::try_from(key)
-                    .map(StorageMapKey::from_raw)
-                    .context(format!("keys[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        PartialStorageMap::try_from_parts(smt, keys).map_err(ConversionError::new)
+    fn try_from(value: proto::primitives::Word) -> Result<Self, Self::Error> {
+        Word::try_from(value).map(Self::from_raw)
     }
+}
+
+pub(crate) fn decode_partial_storage_map(
+    smt: miden_protocol::crypto::merkle::smt::PartialSmt,
+    keys: Vec<StorageMapKey>,
+) -> Result<PartialStorageMap, ConversionError> {
+    PartialStorageMap::try_from_parts(smt, keys).map_err(ConversionError::new)
 }
 
 impl From<&PartialStorageMap> for proto::account::PartialStorageMap {
