@@ -158,6 +158,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 attachments,
             ),
         },
+        ".transaction.TransactionId" => {
+            target: ::miden_protocol::transaction::TransactionId,
+            constructor: ::miden_protocol::transaction::TransactionId::from_raw(
+                id,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(

@@ -198,16 +198,6 @@ impl From<TransactionId> for proto::transaction::TransactionId {
 // INTO TRANSACTION ID
 // ================================================================================================
 
-impl TryFrom<proto::transaction::TransactionId> for TransactionId {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::transaction::TransactionId) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let id: Word = required!(decoder, value.id)?;
-        Ok(TransactionId::from_raw(id))
-    }
-}
-
 // INPUT NOTE COMMITMENT
 // ================================================================================================
 
