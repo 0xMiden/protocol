@@ -625,7 +625,7 @@ mod tests {
         }];
         assert_partial_smt_decode_error(
             encoded,
-            "failed to deserialize PartialSmt: invalid value: Node index 0 did not match the embedded leaf index depth=64, position=1",
+            "failed to deserialize PartialSmt: invalid value: Node index 0 did not match the embedded leaf index 1",
         );
     }
 
@@ -641,7 +641,7 @@ mod tests {
         }];
         assert_partial_smt_decode_error(
             encoded,
-            "failed to deserialize PartialSmt: invalid value: Node at depth=1, position=1 not found but is required",
+            "failed to deserialize PartialSmt: invalid value: inner node hash is inconsistent with parent",
         );
     }
 }
