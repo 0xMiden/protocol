@@ -342,17 +342,6 @@ impl From<PrivateOutputNote> for proto::transaction::PrivateOutputNote {
     }
 }
 
-impl TryFrom<proto::transaction::PrivateOutputNote> for PrivateOutputNote {
-    type Error = ConversionError;
-
-    fn try_from(note: proto::transaction::PrivateOutputNote) -> Result<Self, Self::Error> {
-        let decoder = note.decoder();
-        let header = required!(decoder, note.header)?;
-        let attachments = required!(decoder, note.attachments)?;
-        PrivateOutputNote::new(header, attachments).map_err(ConversionError::new)
-    }
-}
-
 impl From<&OutputNote> for proto::transaction::OutputNote {
     fn from(note: &OutputNote) -> Self {
         use proto::transaction::output_note::Note;

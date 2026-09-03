@@ -151,6 +151,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 note,
             ),
         },
+        ".transaction.PrivateOutputNote" => {
+            target: ::miden_protocol::transaction::PrivateOutputNote,
+            try_constructor: ::miden_protocol::transaction::PrivateOutputNote::new(
+                header,
+                attachments,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
