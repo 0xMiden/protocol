@@ -3,6 +3,7 @@ use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteHeader, NoteId};
 use miden_protocol::transaction::{
     InputNoteCommitment,
@@ -17,6 +18,7 @@ use miden_protocol::transaction::{
     TransactionScript,
     TxAccountUpdate,
 };
+use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{MastForest, MastNodeId, Word};
 
 use super::{MessageDecodeExt, required};
@@ -135,46 +137,25 @@ impl From<ProvenTransaction> for proto::transaction::ProvenTransaction {
     }
 }
 
-impl TryFrom<proto::transaction::ProvenTransaction> for ProvenTransaction {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::transaction::ProvenTransaction) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let account_update = required!(decoder, value.account_update)?;
-        let input_notes = value
-            .input_notes
-            .into_iter()
-            .enumerate()
-            .map(|(index, note)| {
-                InputNoteCommitment::try_from(note).context(format!("input_notes[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let output_notes = value
-            .output_notes
-            .into_iter()
-            .enumerate()
-            .map(|(index, note)| {
-                OutputNote::try_from(note).context(format!("output_notes[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let reference_block_commitment = required!(decoder, value.reference_block_commitment)?;
-        let reference_block_num =
-            required!(decoder, value.reference_block_num).context("reference_block_num")?;
-        let expiration_block_num =
-            required!(decoder, value.expiration_block_num).context("expiration_block_num")?;
-        let proof = required!(decoder, value.proof)?;
-
-        Self::new(
-            account_update,
-            input_notes,
-            output_notes,
-            reference_block_num,
-            reference_block_commitment,
-            expiration_block_num,
-            proof,
-        )
-        .map_err(ConversionError::new)
-    }
+pub(crate) fn decode_proven_transaction(
+    account_update: TxAccountUpdate,
+    input_notes: Vec<InputNoteCommitment>,
+    output_notes: Vec<OutputNote>,
+    reference_block_commitment: Word,
+    reference_block_num: BlockNumber,
+    expiration_block_num: BlockNumber,
+    proof: ExecutionProof,
+) -> Result<ProvenTransaction, ConversionError> {
+    ProvenTransaction::new(
+        account_update,
+        input_notes,
+        output_notes,
+        reference_block_num,
+        reference_block_commitment,
+        expiration_block_num,
+        proof,
+    )
+    .map_err(ConversionError::new)
 }
 
 // FROM TRANSACTION ID

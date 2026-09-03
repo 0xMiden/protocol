@@ -33,7 +33,7 @@ pub(crate) use note::{
     decode_note_storage,
     validate_note_attachments,
 };
-pub(crate) use transaction::decode_transaction_script;
+pub(crate) use transaction::{decode_proven_transaction, decode_transaction_script};
 
 use crate::ConversionError;
 

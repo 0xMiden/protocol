@@ -1050,12 +1050,18 @@ fn proven_transaction_rejects_missing_block_numbers() {
     let mut message = proven_transaction_data();
     message.reference_block_num = None;
     let error = ProvenTransaction::try_from(message).unwrap_err();
-    assert_missing_block_number(error, "reference_block_num");
+    assert_eq!(
+        error.to_string(),
+        "field miden_objects::proto::transaction::ProvenTransaction::reference_block_num is missing"
+    );
 
     let mut message = proven_transaction_data();
     message.expiration_block_num = None;
     let error = ProvenTransaction::try_from(message).unwrap_err();
-    assert_missing_block_number(error, "expiration_block_num");
+    assert_eq!(
+        error.to_string(),
+        "field miden_objects::proto::transaction::ProvenTransaction::expiration_block_num is missing"
+    );
 }
 
 #[test]

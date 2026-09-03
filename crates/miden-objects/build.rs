@@ -274,6 +274,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 header,
             ),
         },
+        ".transaction.ProvenTransaction" => {
+            target: ::miden_protocol::transaction::ProvenTransaction,
+            try_constructor: crate::conversion::decode_proven_transaction(
+                account_update,
+                input_notes,
+                output_notes,
+                reference_block_commitment,
+                reference_block_num,
+                expiration_block_num,
+                proof,
+            ),
+        },
         ".transaction.PublicOutputNote" => {
             target: ::miden_protocol::transaction::PublicOutputNote,
             try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(
