@@ -88,8 +88,7 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.fee::estimate_fee
     # => [fee_amount, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
 
-    # settle the sponsorship obligation first, in pay_fee's order; the bound below guards the
-    # host-supplied rate, which the sponsorship amounts do not depend on
+    # settle the sponsorship obligation first
     exec.tx::get_fee_asset_id exec.fees::create_network_note_sponsorships drop
     # => [fee_amount, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
 
