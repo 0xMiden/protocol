@@ -48,6 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 siblings,
             ),
         },
+        ".primitives.SparseMerklePath" => {
+            target: ::miden_protocol::crypto::merkle::SparseMerklePath,
+            try_constructor: ::miden_protocol::crypto::merkle::SparseMerklePath::from_parts(
+                empty_nodes_mask,
+                siblings,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(

@@ -54,23 +54,6 @@ impl From<SparseMerklePath> for proto::primitives::SparseMerklePath {
     }
 }
 
-impl TryFrom<proto::primitives::SparseMerklePath> for SparseMerklePath {
-    type Error = ConversionError;
-
-    fn try_from(merkle_path: proto::primitives::SparseMerklePath) -> Result<Self, Self::Error> {
-        SparseMerklePath::from_parts(
-            merkle_path.empty_nodes_mask,
-            merkle_path
-                .siblings
-                .into_iter()
-                .map(Word::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .context("siblings")?,
-        )
-        .map_err(ConversionError::new)
-    }
-}
-
 // MMR DELTA
 // ================================================================================================
 
