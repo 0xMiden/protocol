@@ -160,6 +160,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 values,
             ),
         },
+        ".primitives.AdviceMap" => {
+            target: ::miden_protocol::vm::AdviceMap,
+            try_constructor: crate::conversion::decode_advice_map(
+                entries,
+            ),
+        },
         ".primitives.AdviceInputs" => {
             target: ::miden_protocol::vm::AdviceInputs,
             constructor: ::miden_protocol::vm::AdviceInputs::new(

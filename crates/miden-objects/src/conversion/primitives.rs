@@ -188,31 +188,34 @@ impl From<&AdviceMap> for proto::primitives::AdviceMap {
     }
 }
 
-impl TryFrom<proto::primitives::AdviceMap> for AdviceMap {
+impl TryFrom<proto::primitives::AdviceMapEntry> for (Word, Vec<Felt>) {
     type Error = ConversionError;
 
-    fn try_from(value: proto::primitives::AdviceMap) -> Result<Self, Self::Error> {
-        let mut entries = BTreeMap::new();
-        for (index, entry) in value.entries.into_iter().enumerate() {
-            let decoder = entry.decoder();
-            let entry_context = format!("entries[{index}]");
-            let key = required!(decoder, entry.key).context(&entry_context)?;
-            let values = entry
-                .values
-                .into_iter()
-                .enumerate()
-                .map(|(value_index, value)| {
-                    Felt::try_from(value).context(format!("{entry_context}.values[{value_index}]"))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            if entries.insert(key, values).is_some() {
-                return Err(ConversionError::message("duplicate advice map key")
-                    .context(format!("{entry_context}.key")));
-            }
-        }
-
-        Ok(entries.into())
+    fn try_from(entry: proto::primitives::AdviceMapEntry) -> Result<Self, Self::Error> {
+        let decoder = entry.decoder();
+        let key = required!(decoder, entry.key)?;
+        let values = entry
+            .values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| Felt::try_from(value).context(format!("values[{index}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((key, values))
     }
+}
+
+pub(crate) fn decode_advice_map(
+    decoded_entries: Vec<(Word, Vec<Felt>)>,
+) -> Result<AdviceMap, ConversionError> {
+    let mut entries = BTreeMap::new();
+    for (index, (key, values)) in decoded_entries.into_iter().enumerate() {
+        if entries.insert(key, values).is_some() {
+            return Err(ConversionError::message("duplicate advice map key")
+                .context(format!("entries[{index}].key")));
+        }
+    }
+
+    Ok(entries.into())
 }
 
 impl From<&MerkleStore> for proto::primitives::MerkleStore {
