@@ -26,7 +26,12 @@ pub(crate) use account_patch::{
 };
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
 pub(crate) use merkle::decode_mmr_delta;
-pub(crate) use note::{decode_note_attachment, decode_note_storage, validate_note_attachments};
+pub(crate) use note::{
+    decode_note_attachment,
+    decode_note_script,
+    decode_note_storage,
+    validate_note_attachments,
+};
 
 use crate::ConversionError;
 

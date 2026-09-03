@@ -320,18 +320,14 @@ impl From<&NoteScript> for proto::note::NoteScript {
     }
 }
 
-impl TryFrom<proto::note::NoteScript> for NoteScript {
-    type Error = ConversionError;
+pub(crate) fn decode_note_script(
+    mast: miden_protocol::MastForest,
+    entrypoint: u32,
+) -> Result<NoteScript, ConversionError> {
+    let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)
+        .map_err(|err| ConversionError::deserialization("note_script.entrypoint", err))?;
 
-    fn try_from(value: proto::note::NoteScript) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let mast = required!(decoder, value.mast)?;
-        let entrypoint = value.entrypoint;
-        let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)
-            .map_err(|err| ConversionError::deserialization("note_script.entrypoint", err))?;
-
-        Self::from_parts(Arc::new(mast), entrypoint).map_err(ConversionError::new)
-    }
+    NoteScript::from_parts(Arc::new(mast), entrypoint).map_err(ConversionError::new)
 }
 
 // HELPERS

@@ -189,6 +189,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 metadata,
             ),
         },
+        ".note.NoteScript" => {
+            target: ::miden_protocol::note::NoteScript,
+            try_constructor: crate::conversion::decode_note_script(
+                mast,
+                entrypoint,
+            ),
+        },
         ".blockchain.BlockAccountUpdate" => {
             target: ::miden_protocol::block::BlockAccountUpdate,
             try_constructor: ::miden_protocol::block::BlockAccountUpdate::new(
