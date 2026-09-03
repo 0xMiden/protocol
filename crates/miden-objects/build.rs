@@ -41,6 +41,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 id,
             ),
         },
+        ".account.AccountCode" => {
+            target: ::miden_protocol::account::AccountCode,
+            try_constructor: crate::conversion::decode_account_code(
+                mast,
+                procedure_roots,
+            ),
+        },
         ".account.AccountStorageHeader" => {
             target: ::miden_protocol::account::AccountStorageHeader,
             try_constructor: ::miden_protocol::account::AccountStorageHeader::new(

@@ -43,25 +43,19 @@ impl From<AccountCode> for proto::account::AccountCode {
     }
 }
 
-impl TryFrom<proto::account::AccountCode> for AccountCode {
+impl TryFrom<proto::primitives::Word> for AccountProcedureRoot {
     type Error = ConversionError;
 
-    fn try_from(code: proto::account::AccountCode) -> Result<Self, Self::Error> {
-        let decoder = code.decoder();
-        let mast = required!(decoder, code.mast)?;
-        let procedure_roots = code
-            .procedure_roots
-            .into_iter()
-            .enumerate()
-            .map(|(index, root)| {
-                Word::try_from(root)
-                    .map(AccountProcedureRoot::from_raw)
-                    .context(format!("procedure_roots[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        AccountCode::from_parts(Arc::new(mast), procedure_roots).map_err(ConversionError::new)
+    fn try_from(root: proto::primitives::Word) -> Result<Self, Self::Error> {
+        Word::try_from(root).map(Self::from_raw)
     }
+}
+
+pub(crate) fn decode_account_code(
+    mast: miden_protocol::MastForest,
+    procedure_roots: Vec<AccountProcedureRoot>,
+) -> Result<AccountCode, ConversionError> {
+    AccountCode::from_parts(Arc::new(mast), procedure_roots).map_err(ConversionError::new)
 }
 
 // STORAGE PATCHES
