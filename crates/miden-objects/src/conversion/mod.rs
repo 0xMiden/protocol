@@ -19,7 +19,7 @@ pub(crate) use account::{
     decode_partial_storage_map,
     decode_partial_vault,
 };
-pub(crate) use account_patch::decode_account_code;
+pub(crate) use account_patch::{decode_account_code, decode_account_vault_patch};
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
 pub(crate) use merkle::decode_mmr_delta;
 pub(crate) use note::{decode_note_attachment, decode_note_storage, validate_note_attachments};

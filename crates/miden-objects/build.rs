@@ -101,6 +101,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 asset_ids,
             ),
         },
+        ".account.AccountVaultPatch" => {
+            target: ::miden_protocol::account::AccountVaultPatch,
+            try_constructor: crate::conversion::decode_account_vault_patch(
+                entries,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(
