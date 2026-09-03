@@ -5,7 +5,12 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta};
 use miden_protocol::crypto::merkle::smt::{
-    LeafIndex, PartialSmt, SMT_DEPTH, SmtLeaf, SmtProof, UniqueNodes,
+    LeafIndex,
+    PartialSmt,
+    SMT_DEPTH,
+    SmtLeaf,
+    SmtProof,
+    UniqueNodes,
 };
 use miden_protocol::crypto::merkle::{MerklePath, NodeIndex, SparseMerklePath};
 
