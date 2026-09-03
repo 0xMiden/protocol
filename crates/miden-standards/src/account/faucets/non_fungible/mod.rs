@@ -1,13 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -36,10 +29,10 @@ use super::{
     TokenName,
 };
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
-use crate::account::account_component_code;
 use crate::account::auth::{AuthSingleSig, NetworkAccount};
 use crate::account::fees::FeePolicyManager;
 use crate::account::policies::TokenPolicyManager;
+use crate::account::{account_component_code, package_metadata};
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -371,49 +364,9 @@ impl NonFungibleFaucet {
         AssetStatus::try_from(status_code)
     }
 
-    /// Returns the storage slot schema for the token symbol slot.
-    pub fn symbol_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::symbol_slot().clone(),
-            StorageSlotSchema::value(
-                "Token symbol",
-                [
-                    FeltSchema::felt("symbol"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the asset-status registry map.
-    pub fn asset_status_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::asset_status_slot().clone(),
-            StorageSlotSchema::map(
-                "Asset status registry. Key is the token ID padded to a word \
-                 `[token_id_suffix, token_id_prefix, 0, 0]`; value is the status (0 = not issued, \
-                 1 = issued, 2 = burned) padded to a word `[status, 0, 0, 0]`.",
-                SchemaType::native_word(),
-                SchemaType::native_felt(),
-            ),
-        )
-    }
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let mut schema_entries = vec![Self::symbol_slot_schema(), Self::asset_status_slot_schema()];
-        schema_entries.extend(TokenMetadata::storage_schema());
-
-        let storage_schema =
-            StorageSchema::new(schema_entries).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description(
-                "Non-fungible faucet component bundling minting, burning, status, and metadata",
-            )
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 
     /// Returns the storage slots produced by this faucet (token symbol word + empty asset-status

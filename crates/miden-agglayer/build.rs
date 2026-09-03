@@ -16,6 +16,7 @@ use miden_protocol::ProtocolLib;
 use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::utils::serde::Serializable;
 use miden_protocol_build_utils::{
     ErrorModule,
     PROJECT_MANIFEST,
@@ -85,6 +86,7 @@ fn main() -> Result<()> {
         source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
         &target_dir.join(ASM_COMPONENTS_DIR),
+        |metadata| Ok(AccountComponentMetadata::from_toml(metadata).into_diagnostic()?.to_bytes()),
     )?;
 
     // generate agglayer specific constants

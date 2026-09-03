@@ -11,3 +11,8 @@ path      = "manager.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Exposes the `upgrade` procedure for recording commitments to new account code and storage"
+name        = "miden::standards::upgrade::manager"
+version     = "1.0.0"

@@ -14,7 +14,7 @@ use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManag
 use miden_assembly::diagnostics::{IntoDiagnostic, Result};
 use miden_assembly::{Assembler, ProjectTargetSelector, Report};
 use miden_core::events::EventId;
-use miden_mast_package::Package;
+use miden_mast_package::{Package, Section, SectionId};
 use miden_package_registry::InMemoryPackageRegistry;
 use miden_project::Workspace;
 use regex::Regex;
@@ -31,6 +31,10 @@ pub const PROJECT_MANIFEST: &str = "miden-project.toml";
 /// Packages are assembled with the debug-info (`dev`) so published packages carry debug
 /// information; consumers can strip it as needed.
 pub const BUILD_PROFILE: &str = "dev";
+
+/// Name of the custom manifest table declaring the metadata of an account component, i.e.
+/// `[package.metadata.account-component]`.
+const COMPONENT_METADATA_TABLE: &str = "account-component";
 
 // PACKAGE ASSEMBLY HELPERS
 // ================================================================================================
@@ -57,10 +61,16 @@ pub fn assemble_project(
 /// library target into a library package, writes each package to `target_dir` as a `.masp` file,
 /// and returns the assembled packages. Members without a library target are skipped. Dependencies
 /// are resolved against `registry`.
+///
+/// If a member declares a `[package.metadata.account-component]` manifest table, the table is
+/// passed to `encode_account_component_metadata` as a TOML document and the returned bytes are
+/// embedded in the package as its [`SectionId::ACCOUNT_COMPONENT_METADATA`] section. Members
+/// without the table are assembled as-is.
 pub fn assemble_workspace(
     manifest_path: impl AsRef<Path>,
     registry: &mut InMemoryPackageRegistry,
     target_dir: &Path,
+    encode_account_component_metadata: fn(&str) -> Result<Vec<u8>>,
 ) -> Result<Vec<Arc<Package>>> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
     let manifest = source_manager.load_file(manifest_path.as_ref()).into_diagnostic()?;
@@ -76,15 +86,44 @@ pub fn assemble_workspace(
             continue;
         }
 
-        let package = assembler
+        let mut package = assembler
             .clone()
             .for_project(member.clone(), registry)?
             .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+
+        if let Some(metadata) = component_metadata_toml(member)? {
+            let section = Section::new(
+                SectionId::ACCOUNT_COMPONENT_METADATA,
+                encode_account_component_metadata(&metadata)?,
+            );
+            Arc::make_mut(&mut package).sections.push(section);
+        }
+
         package.write_masp_file(target_dir).into_diagnostic()?;
         packages.push(package);
     }
 
     Ok(packages)
+}
+
+/// Returns the `[package.metadata.account-component]` table of `package`'s manifest as a standalone
+/// TOML document, or `None` if the manifest does not declare one.
+fn component_metadata_toml(package: &miden_project::Package) -> Result<Option<String>> {
+    let table = package.metadata().iter().find_map(|(name, table)| {
+        let name: &str = name;
+        (name == COMPONENT_METADATA_TABLE).then_some(table)
+    });
+    let Some(table) = table else {
+        return Ok(None);
+    };
+
+    let mut document = toml::Table::new();
+    for (key, value) in table.iter() {
+        let key: &str = key;
+        document.insert(key.to_string(), (**value).clone());
+    }
+
+    toml::to_string(&document).into_diagnostic().map(Some)
 }
 
 // ERROR CONSTANTS EXTRACTION

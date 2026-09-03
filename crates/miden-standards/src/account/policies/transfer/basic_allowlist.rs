@@ -1,14 +1,10 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
-use crate::account::account_component_code;
 use crate::account::policies::transfer::allowlist::AllowlistStorage;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // BASIC ALLOWLIST TRANSFER POLICY
@@ -78,6 +74,11 @@ impl BasicAllowlist {
     pub fn root() -> AccountProcedureRoot {
         *BASIC_ALLOWLIST_TRANSFER_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        package_metadata(Self::code())
+    }
 }
 
 impl From<AllowlistStorage> for BasicAllowlist {
@@ -88,15 +89,7 @@ impl From<AllowlistStorage> for BasicAllowlist {
 
 impl From<BasicAllowlist> for AccountComponent {
     fn from(allowlist: BasicAllowlist) -> Self {
-        let storage_schema = StorageSchema::new([AllowlistStorage::allowed_accounts_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(BasicAllowlist::NAME)
-            .with_description(
-                "Basic allowlist transfer policy: predicate procedure plus the `allowed_accounts` \
-                 storage map it reads",
-            )
-            .with_storage_schema(storage_schema);
+        let metadata = BasicAllowlist::component_metadata();
 
         AccountComponent::new(BasicAllowlist::code().clone(), vec![allowlist.0.into_slot()], metadata)
             .expect(

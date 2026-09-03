@@ -1,13 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     StorageMap,
@@ -28,8 +22,8 @@ use super::super::multisig::{
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;
-use crate::account::account_component_code;
-use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
+use crate::account::auth::{Approver, ApproverSet};
+use crate::account::{account_component_code, package_metadata};
 
 account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
 
@@ -171,31 +165,9 @@ impl AuthMultisigSmart {
         &PROCEDURE_POLICIES_SLOT_NAME
     }
 
-    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::threshold_config_slot_schema()
-    }
-
-    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_public_keys_slot_schema()
-    }
-
-    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::approver_auth_scheme_slot_schema()
-    }
-
-    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        AuthMultisig::executed_transactions_slot_schema()
-    }
-
-    pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::procedure_policies_slot().clone(),
-            StorageSlotSchema::map(
-                "Procedure policies",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        package_metadata(Self::code())
     }
 }
 
@@ -249,18 +221,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
-        let storage_schema = StorageSchema::new(vec![
-            AuthMultisigSmart::threshold_config_slot_schema(),
-            AuthMultisigSmart::approver_public_keys_slot_schema(),
-            AuthMultisigSmart::approver_auth_scheme_slot_schema(),
-            AuthMultisigSmart::executed_transactions_slot_schema(),
-            AuthMultisigSmart::procedure_policies_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME)
-            .with_description("Multisig smart authentication component")
-            .with_storage_schema(storage_schema);
+        let metadata = AuthMultisigSmart::component_metadata();
 
         AccountComponent::new(AuthMultisigSmart::code().clone(), storage_slots, metadata).expect(
             "multisig smart component should satisfy the requirements of a valid account component",

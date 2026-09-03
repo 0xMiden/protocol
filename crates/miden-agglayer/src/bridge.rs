@@ -866,8 +866,8 @@ pub enum AgglayerBridgeError {
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let package = agglayer_bridge_component_package();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge")
-        .with_description("Bridge component for AggLayer");
+    let metadata = AccountComponentMetadata::try_from(&package)
+        .expect("shipped bridge package should declare account component metadata");
 
     AccountComponent::new(package, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")

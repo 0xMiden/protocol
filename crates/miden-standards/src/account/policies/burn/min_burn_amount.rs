@@ -1,10 +1,4 @@
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
@@ -16,7 +10,7 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // MIN-BURN-AMOUNT BURN POLICY
@@ -124,14 +118,6 @@ impl MinBurnAmount {
         self.min_burn_amount
     }
 
-    /// Returns the storage slot schema for the minimum burn amount slot.
-    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::slot_name().clone(),
-            StorageSlotSchema::value("Minimum burn amount", SchemaType::native_word()),
-        )
-    }
-
     /// Converts the configured minimum burn amount into its storage value word
     /// `[min_burn_amount, 0, 0, 0]`.
     fn to_word(self) -> Word {
@@ -145,12 +131,7 @@ impl MinBurnAmount {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema =
-            StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("`min_burn_amount` burn policy for fungible faucets")
-            .with_storage_schema(storage_schema)
+        package_metadata(Self::code())
     }
 }
 

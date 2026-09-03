@@ -1,7 +1,7 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 account_component_code!(
@@ -81,10 +81,7 @@ impl BlocklistManager {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME).with_description(
-            "Authority-gated blocklist admin: wraps `blocklist::block_account` / \
-             `unblock_account` with the account-wide Authority component.",
-        )
+        package_metadata(Self::code())
     }
 }
 

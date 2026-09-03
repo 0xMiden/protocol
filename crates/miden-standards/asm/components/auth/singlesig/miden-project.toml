@@ -11,3 +11,18 @@ path      = "singlesig.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Single-signature authentication using the ECDSA K256 Keccak or Falcon512 Poseidon2 scheme"
+name        = "miden::standards::auth::singlesig"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Scheme ID"
+name        = "miden::standards::auth::singlesig::scheme"
+type        = "miden::standards::auth::scheme"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Public key commitment"
+name        = "miden::standards::auth::singlesig::pub_key"
+type        = "miden::standards::auth::pub_key"

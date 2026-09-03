@@ -1,3 +1,10 @@
+use miden_protocol::account::StorageSlotName;
+use miden_protocol::account::component::{
+    AccountComponentCode,
+    AccountComponentMetadata,
+    StorageSchema,
+};
+
 pub mod access;
 pub mod auth;
 pub mod components;
@@ -91,3 +98,30 @@ macro_rules! account_component_code {
 }
 
 pub(crate) use account_component_code;
+
+/// Returns the [`AccountComponentMetadata`] embedded in a component package shipped by this crate.
+///
+/// The metadata is declared in the component's `miden-project.toml` manifest and embedded into
+/// the package by the build script.
+pub(crate) fn package_metadata(code: &AccountComponentCode) -> AccountComponentMetadata {
+    AccountComponentMetadata::try_from(code.as_package())
+        .expect("shipped component package should declare account component metadata")
+}
+
+/// Returns `metadata` with the given slots removed from its storage schema.
+///
+/// Used by components whose manifest declares the superset of all possible slots while a
+/// particular configuration installs only a subset.
+pub(crate) fn metadata_without_slots(
+    metadata: AccountComponentMetadata,
+    excluded: &[&StorageSlotName],
+) -> AccountComponentMetadata {
+    let slots = metadata
+        .storage_schema()
+        .iter()
+        .filter(|(slot_name, _)| !excluded.contains(slot_name))
+        .map(|(slot_name, schema)| (slot_name.clone(), schema.clone()));
+    let storage_schema = StorageSchema::new(slots).expect("a subset of a valid schema is valid");
+
+    metadata.with_storage_schema(storage_schema)
+}

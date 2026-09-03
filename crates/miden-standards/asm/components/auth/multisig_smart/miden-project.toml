@@ -11,3 +11,47 @@ path      = "multisig_smart.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Multisig authentication with per-procedure smart policies"
+name        = "miden::standards::auth::multisig_smart"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Procedure policies"
+name        = "miden::standards::auth::multisig_smart::procedure_policies"
+type        = { key = "word", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Executed transactions"
+name        = "miden::standards::auth::multisig::executed_transactions"
+type        = { key = "word", value = "bool" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Approver public keys"
+name        = "miden::standards::auth::multisig::approver_public_keys"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Approver scheme IDs"
+name        = "miden::standards::auth::multisig::approver_schemes"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Threshold configuration"
+name        = "miden::standards::auth::multisig::threshold_config"
+
+# Word layout: [threshold, num_approvers, 0, 0]
+[[package.metadata.account-component.storage.slots.type]]
+name = "threshold"
+type = "u32"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "num_approvers"
+type = "u32"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"

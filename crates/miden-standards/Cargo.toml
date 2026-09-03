@@ -33,7 +33,7 @@ thiserror       = { workspace = true }
 miden-assembly             = { features = ["std"], workspace = true }
 miden-core-lib             = { workspace = true }
 miden-package-registry     = { features = ["resolver", "std"], workspace = true }
-miden-protocol             = { workspace = true }
+miden-protocol             = { features = ["std"], workspace = true }
 miden-protocol-build-utils = { workspace = true }
 
 [dev-dependencies]
