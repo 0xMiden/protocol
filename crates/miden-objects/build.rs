@@ -126,6 +126,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 quorum,
             ),
         },
+        ".transaction.BatchAccountUpdate" => {
+            target: ::miden_protocol::batch::BatchAccountUpdate,
+            try_constructor: ::miden_protocol::batch::BatchAccountUpdate::new(
+                account_id,
+                initial_state_commitment,
+                final_state_commitment,
+                details,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
