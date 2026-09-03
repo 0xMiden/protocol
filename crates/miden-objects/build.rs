@@ -307,6 +307,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 auth_args,
             ),
         },
+        ".transaction.InputNotes" => {
+            target: ::miden_protocol::transaction::InputNotes<
+                ::miden_protocol::transaction::InputNote
+            >,
+            try_constructor: crate::conversion::decode_input_notes(
+                notes,
+            ),
+        },
         ".transaction.PublicOutputNote" => {
             target: ::miden_protocol::transaction::PublicOutputNote,
             try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(

@@ -75,19 +75,10 @@ impl From<&InputNotes<InputNote>> for proto::transaction::InputNotes {
     }
 }
 
-impl TryFrom<proto::transaction::InputNotes> for InputNotes<InputNote> {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::transaction::InputNotes) -> Result<Self, Self::Error> {
-        let notes = value
-            .notes
-            .into_iter()
-            .enumerate()
-            .map(|(index, note)| InputNote::try_from(note).context(format!("notes[{index}]")))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Self::new(notes).map_err(ConversionError::new)
-    }
+pub(crate) fn decode_input_notes(
+    notes: Vec<InputNote>,
+) -> Result<InputNotes<InputNote>, ConversionError> {
+    InputNotes::new(notes).map_err(ConversionError::new)
 }
 
 impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
