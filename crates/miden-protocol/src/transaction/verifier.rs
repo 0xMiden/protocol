@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 
 use miden_core::deferred::{DeferredRoot, DeferredState, DeferredStateWire};
-use miden_verifier::{ExecutionClaim, ExecutionProof, VerificationOutcome, Verifier};
+use miden_verifier::{ExecutionClaim, PrecompileStatus, VerificationOutcome, Verifier};
 
 use crate::errors::TransactionVerifierError;
 use crate::transaction::{ProvenTransaction, TransactionKernel};
@@ -43,7 +43,7 @@ impl TransactionVerifier {
         &self,
         transaction: &ProvenTransaction,
     ) -> Result<VerificationOutcome, TransactionVerifierError> {
-        if matches!(transaction.proof(), ExecutionProof::Complete { precompile: Some(_), .. }) {
+        if matches!(transaction.proof().precompile(), PrecompileStatus::Proven(_)) {
             return Err(TransactionVerifierError::TransactionProofContainsPrecompiles);
         }
 
@@ -71,9 +71,9 @@ impl TransactionVerifier {
         let outcome = Verifier::new()
             .verify(&claim, transaction.proof())
             .map_err(TransactionVerifierError::TransactionVerificationFailed)?;
-        let proof_security_level = outcome.security_level();
+        let proof_security_level = outcome.vm_security_parameters().conjectured_security_level();
 
-        if let ExecutionProof::Deferred { precompile, .. } = transaction.proof() {
+        if let PrecompileStatus::Deferred(precompile) = transaction.proof().precompile() {
             let expected_root = outcome
                 .outstanding_precompile_root()
                 .expect("a verified deferred proof must have an outstanding precompile root");

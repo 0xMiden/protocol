@@ -244,10 +244,7 @@ impl ProvenBlock {
 
     /// Validates that the block proof has no outstanding or settled precompile work.
     fn validate_proof(&self) -> Result<(), ProvenBlockError> {
-        if matches!(
-            self.proof,
-            ExecutionProof::Deferred { .. } | ExecutionProof::Complete { precompile: Some(_), .. }
-        ) {
+        if self.proof.has_precompiles() {
             Err(ProvenBlockError::BlockProofContainsPrecompiles)
         } else {
             Ok(())

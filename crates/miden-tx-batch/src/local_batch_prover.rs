@@ -6,7 +6,7 @@ use miden_protocol::errors::ProvenBatchError;
 use miden_prover::HashFunction::Poseidon2;
 use miden_prover::{ExecutionProof, Prover};
 
-use crate::{ExecutedBatch, proof_has_precompiles};
+use crate::ExecutedBatch;
 
 // LOCAL BATCH PROVER
 // ================================================================================================
@@ -45,16 +45,15 @@ impl LocalBatchProver {
     /// Returns an error if proof generation fails or the batch execution used a precompile.
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
         let (proposed_batch, witness) = executed_batch.into_parts();
+        if witness.has_precompiles() {
+            return Err(ProvenBatchError::BatchProofContainsPrecompiles);
+        }
 
         let proof = self
             .prover
             .prove(witness)
             .map_err(|error| ExecutionError::ProvingError(error.to_string()))
             .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
-
-        if proof_has_precompiles(&proof) {
-            return Err(ProvenBatchError::BatchProofContainsPrecompiles);
-        }
 
         Self::build_proven_batch(proposed_batch, proof)
     }
