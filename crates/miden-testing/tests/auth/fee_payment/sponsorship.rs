@@ -28,7 +28,11 @@ use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChain};
 
-use super::VERIFICATION_BASE_FEE;
+use super::{
+    SPONSORSHIP_NOTE_CYCLES,
+    SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES,
+    VERIFICATION_BASE_FEE,
+};
 
 // CONSTANTS
 // ================================================================================================
@@ -125,16 +129,37 @@ async fn send_network_note(
     Ok((executed, network_note, target_id))
 }
 
+/// How a P2ID note sent by [`send_notes`] is targeted.
+#[derive(Clone, Copy)]
+enum NoteTarget {
+    /// A plain note to a network account, carrying no network account target attachment, so the
+    /// fee flow never prices it.
+    Plain,
+    /// A network note, priced by its target at the given fee.
+    Network(u64),
+}
+
 /// Has a signing wallet send one P2ID network note per entry of `target_fees`, each to its own
 /// network account pricing the P2ID script root at that fee, paying its fee through `pay_fee`.
 /// Returns the executed transaction and, in creation order, each network note with its target's ID.
 async fn send_network_notes(
     target_fees: &[u64],
 ) -> anyhow::Result<(ExecutedTransaction, Vec<(Note, AccountId)>)> {
+    let targets: Vec<NoteTarget> =
+        target_fees.iter().map(|fee| NoteTarget::Network(*fee)).collect();
+    send_notes(&targets).await
+}
+
+/// Has a signing wallet send one P2ID note per entry of `note_targets`, each to its own network
+/// account, paying its fee through `pay_fee`. Returns the executed transaction and, in creation
+/// order, each note with its target's ID.
+async fn send_notes(
+    note_targets: &[NoteTarget],
+) -> anyhow::Result<(ExecutedTransaction, Vec<(Note, AccountId)>)> {
     let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
-    // a payload asset issued by a faucet other than the fee faucet, carried by each network note
+    // a payload asset issued by a faucet other than the fee faucet, carried by each note
     let payload_asset: Asset = FungibleAsset::mock(50);
-    let payload_total: Asset = FungibleAsset::mock(50 * target_fees.len() as u64);
+    let payload_total: Asset = FungibleAsset::mock(50 * note_targets.len() as u64);
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
 
@@ -147,11 +172,15 @@ async fn send_network_notes(
 
     // each target network account prices the P2ID script root at its own fee
     let mut targets = Vec::new();
-    for (i, target_fee) in target_fees.iter().enumerate() {
+    for (i, note_target) in note_targets.iter().enumerate() {
+        let target_fee = match note_target {
+            NoteTarget::Plain => 0,
+            NoteTarget::Network(fee) => *fee,
+        };
         let target = network_account(
             [2 + i as u8; 32],
             [P2idNote::script_root(), FeeSponsorshipNote::script_root()],
-            &[(P2idNote::script_root(), *target_fee)],
+            &[(P2idNote::script_root(), target_fee)],
             [],
             SponsorshipPolicy::default(),
         )?;
@@ -162,11 +191,24 @@ async fn send_network_notes(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // the sponsor creates the P2ID network notes via a send-notes transaction script
+    // the sponsor creates the P2ID notes via a send-notes transaction script
     let network_notes = targets
         .iter()
-        .map(|target| p2id_network_note(sponsor.id(), target.id(), payload_asset, &mut rng))
-        .collect::<anyhow::Result<Vec<_>>>()?;
+        .zip(note_targets)
+        .map(|(target, note_target)| match note_target {
+            NoteTarget::Plain => Ok(P2idNote::builder()
+                .sender(sponsor.id())
+                .target(target.id())
+                .asset(payload_asset)
+                .note_type(NoteType::Public)
+                .serial_number(rng.draw_word())
+                .build()?
+                .into()),
+            NoteTarget::Network(_) => {
+                p2id_network_note(sponsor.id(), target.id(), payload_asset, &mut rng)
+            },
+        })
+        .collect::<anyhow::Result<Vec<Note>>>()?;
     let partial_notes: Vec<PartialNote> =
         network_notes.iter().cloned().map(PartialNote::from).collect();
     let tx_script =
@@ -319,6 +361,37 @@ async fn pay_fee_sponsors_each_network_note_at_its_own_price() -> anyhow::Result
         "paid fee {} should cover the required fee {}",
         paid.amount(),
         executed.compute_fee(),
+    );
+
+    Ok(())
+}
+
+/// The sponsorship cycle margins are upper bounds of the measured cost of the payment pass, which
+/// runs after `compute_fee` and so is estimated rather than charged by the kernel.
+///
+/// A sponsored and a zero-priced network note are priced alike, so their difference isolates the
+/// creation of one sponsorship note. One more plain output note costs the walk of both passes, of
+/// which only the payment's is budgeted, so its bound is conservative.
+#[tokio::test]
+async fn sponsorship_cycle_margins_are_upper_bounds() -> anyhow::Result<()> {
+    let (zero_priced, _) = send_notes(&[NoteTarget::Network(0)]).await?;
+    let (sponsored, _) = send_notes(&[NoteTarget::Network(FEE_AMOUNT)]).await?;
+    let sponsorship_note_cycles =
+        sponsored.measurements().auth_procedure - zero_priced.measurements().auth_procedure;
+    assert!(
+        sponsorship_note_cycles <= SPONSORSHIP_NOTE_CYCLES,
+        "creating a sponsorship note took {sponsorship_note_cycles} cycles, exceeding the margin \
+         of {SPONSORSHIP_NOTE_CYCLES}",
+    );
+
+    let (one_plain, _) = send_notes(&[NoteTarget::Plain]).await?;
+    let (two_plain, _) = send_notes(&[NoteTarget::Plain, NoteTarget::Plain]).await?;
+    let walk_cycles =
+        two_plain.measurements().auth_procedure - one_plain.measurements().auth_procedure;
+    assert!(
+        walk_cycles <= 2 * SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES,
+        "walking one more output note took {walk_cycles} cycles over both passes, exceeding twice \
+         the margin of {SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES}",
     );
 
     Ok(())

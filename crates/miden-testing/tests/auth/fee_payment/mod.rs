@@ -25,12 +25,14 @@ const VERIFICATION_BASE_FEE: u32 = 500;
 // that matters.
 //
 // Must be kept in sync with `miden::standards::auth::signature` (per-scheme estimates and
-// `MULTISIG_AUTH_BASE_CYCLES`) and `miden::standards::fee` (`PAY_FEE_CYCLES` and the epilogue
-// margins).
+// `MULTISIG_AUTH_BASE_CYCLES`) and `miden::standards::fee` (`PAY_FEE_CYCLES`, the sponsorship
+// margins and the epilogue margins).
 const ECDSA_K256_KECCAK_AUTH_CYCLES: usize = 8000;
 const FALCON_512_POSEIDON2_AUTH_CYCLES: usize = 80000;
 const MULTISIG_AUTH_BASE_CYCLES: usize = 8192;
 const PAY_FEE_CYCLES: usize = 8192;
+const SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES: usize = 512;
+const SPONSORSHIP_NOTE_CYCLES: usize = 8192;
 const POST_AUTH_EPILOGUE_BASE_CYCLES: usize = 4096;
 const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 

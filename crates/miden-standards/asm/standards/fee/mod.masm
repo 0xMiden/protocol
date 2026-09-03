@@ -36,13 +36,10 @@ const PAY_FEE_CYCLES = 8192
 # compute_fee call returns: a walk over every output note looking for network notes, then funding
 # a FEE_SPONSORSHIP note for each one priced above zero, which covers reading the target
 # attachment, the note creation and the vault withdrawal. The pricing itself runs during the
-# estimate, before compute_fee, and is measured by the kernel. Measured by diffing the auth
+# estimate, before compute_fee, and is charged by the kernel. Measured by diffing the auth
 # procedure cycles of transactions with one to three plain, zero-priced and sponsored network
-# notes: about 400 cycles per walked note and about 4300 per sponsorship note created.
-#
-# NOT covered by a regression test: zeroing both leaves the suite green, because the sponsoring
-# cases land inside the same ilog2 bucket either way. They are margins over a measurement, so a
-# test would have to assert cycle counts rather than behaviour. Re-measure if the payment changes.
+# notes: about 800 cycles per walked note over both passes, of which the payment's walk is about
+# half, and about 4300 per sponsorship note created. Guarded by the fee-payment regression tests.
 const SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES = 512
 const SPONSORSHIP_NOTE_CYCLES = 8192
 
