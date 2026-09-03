@@ -107,6 +107,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entries,
             ),
         },
+        ".account.AccountStoragePatch" => {
+            target: ::miden_protocol::account::AccountStoragePatch,
+            try_constructor: crate::conversion::decode_account_storage_patch(
+                slots,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(

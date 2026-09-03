@@ -203,44 +203,36 @@ impl From<&AccountStoragePatch> for proto::account::AccountStoragePatch {
     }
 }
 
-impl TryFrom<proto::account::AccountStoragePatch> for AccountStoragePatch {
+impl TryFrom<proto::account::StorageSlotPatch> for (StorageSlotName, StorageSlotPatch) {
     type Error = ConversionError;
 
-    fn try_from(patch: proto::account::AccountStoragePatch) -> Result<Self, Self::Error> {
+    fn try_from(slot: proto::account::StorageSlotPatch) -> Result<Self, Self::Error> {
         use proto::account::storage_slot_patch::Patch;
 
-        let slots = patch
-            .slots
-            .into_iter()
-            .enumerate()
-            .map(|(index, slot)| {
-                let slot_path = format!("slots[{index}]");
-                let slot_name = StorageSlotName::new(slot.slot_name)
-                    .map_err(ConversionError::new)
-                    .context("slot_name")
-                    .context(slot_path.clone())?;
-                let patch = match slot.patch {
-                    Some(Patch::Value(value)) => StorageSlotPatch::Value(
-                        value.try_into().context("patch").context(slot_path.clone())?,
-                    ),
-                    Some(Patch::Map(map)) => StorageSlotPatch::Map(
-                        map.try_into().context("patch").context(slot_path.clone())?,
-                    ),
-                    None => {
-                        return Err(ConversionError::missing_field::<
-                            proto::account::StorageSlotPatch,
-                        >("patch")
-                        .context(slot_path));
-                    },
-                };
-                Ok((slot_name, patch))
-            })
-            .collect::<Result<Vec<_>, ConversionError>>()?;
-
-        AccountStoragePatch::from_entries(slots)
+        let slot_name = StorageSlotName::new(slot.slot_name)
             .map_err(ConversionError::new)
-            .context("slots")
+            .context("slot_name")?;
+        let patch = match slot.patch {
+            Some(Patch::Value(value)) => {
+                StorageSlotPatch::Value(value.try_into().context("patch")?)
+            },
+            Some(Patch::Map(map)) => StorageSlotPatch::Map(map.try_into().context("patch")?),
+            None => {
+                return Err(ConversionError::missing_field::<proto::account::StorageSlotPatch>(
+                    "patch",
+                ));
+            },
+        };
+        Ok((slot_name, patch))
     }
+}
+
+pub(crate) fn decode_account_storage_patch(
+    slots: Vec<(StorageSlotName, StorageSlotPatch)>,
+) -> Result<AccountStoragePatch, ConversionError> {
+    AccountStoragePatch::from_entries(slots)
+        .map_err(ConversionError::new)
+        .context("slots")
 }
 
 // VAULT AND ACCOUNT PATCHES
