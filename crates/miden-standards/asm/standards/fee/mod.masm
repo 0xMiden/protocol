@@ -33,15 +33,21 @@ pub type ConversionInfo = word
 const PAY_FEE_CYCLES = 8192
 
 # Estimated upper bounds on the number of cycles the sponsorship payment spends after the
-# compute_fee call returns: a walk over every output note looking for network notes, then pricing
-# and funding a FEE_SPONSORSHIP note for each one found, which covers the foreign procedure call
-# into the target's fee policy, the note creation and the vault withdrawal.
+# compute_fee call returns: a walk over every output note looking for network notes, then funding
+# a FEE_SPONSORSHIP note for each one priced above zero, which covers reading the target
+# attachment, the note creation and the vault withdrawal. The pricing itself runs during the
+# estimate, before compute_fee, and is measured by the kernel.
 #
 # NOT covered by a regression test: zeroing both leaves the suite green, because the sponsoring
 # case lands exactly on an ilog2 boundary either way. They are margins over a measurement, so a
-# test would have to assert cycle counts rather than behaviour. Re-measure if the payment changes.
+# test would have to assert cycle counts rather than behaviour. SPONSORSHIP_NOTE_CYCLES was sized
+# while the payment still repeated the pricing call, so it is generous.
 const SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES = 512
 const SPONSORSHIP_NOTE_CYCLES = 16384
+
+# Local memory offset at which `pay_fee` keeps the sponsorship price table, sized for
+# fees::SPONSORSHIP_PRICE_TABLE_NUM_ENTRIES elements.
+const SPONSORSHIP_PRICE_TABLE_LOC = 0
 
 # Estimated upper bounds on the number of kernel epilogue cycles spent after the auth procedure
 # returns: output vault build, output notes commitment, account patch and final account
@@ -354,12 +360,14 @@ end
 #! signature::estimate_authentication_cycles); this procedure adds the payment cycles and the
 #! post-authentication kernel epilogue cycles internally.
 #!
-#! Inputs:  [FEE_ASSET_ID, num_extra_cycles]
+#! Inputs:  [FEE_ASSET_ID, price_table_ptr, num_extra_cycles]
 #! Outputs: [fee_amount]
 #!
 #! Where:
 #! - FEE_ASSET_ID is the ID of the native fee asset (see tx::get_fee_asset_id), which funds the
 #!   sponsorship notes.
+#! - price_table_ptr is the address of the sponsorship price table the estimate fills and the
+#!   payment reads back (see fees::estimate_network_note_sponsorships).
 #! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
 #!   the end of the authentication procedure.
 #! - fee_amount is the computed fee of the transaction, denominated in the native fee asset.
@@ -371,7 +379,7 @@ end
 #!   maximum cycle count.
 #!
 #! Invocation: exec
-pub proc estimate_fee(fee_asset_id: AssetId, num_extra_cycles: felt) -> felt
+pub proc estimate_fee(fee_asset_id: AssetId, price_table_ptr: u32, num_extra_cycles: felt) -> felt
     # only the note counts are needed: the fee prices the notes, not the amounts they carry
     exec.fees::estimate_network_note_sponsorships
     # => [num_sponsorship_notes, num_output_notes, num_extra_cycles]
@@ -401,10 +409,11 @@ end
 #! and obtain the conversion info via native_conversion_info, which needs no commitment since
 #! it is read from the reference block.
 #!
-#! The fee is computed by estimate_fee. The payment then settles both of the transaction's fee
-#! obligations, in order: the sponsorship notes of its network output notes, then the TX_FEE note
-#! carrying ceil(fee_amount * rate_num / rate_den) of the asset issued by the faucet in the
-#! conversion info.
+#! The fee is computed by estimate_fee, which prices the network output notes once and records the
+#! prices in this procedure's local memory. The payment then settles both of the transaction's fee
+#! obligations, in order: the sponsorship notes of its network output notes, funded from those
+#! prices, then the TX_FEE note carrying ceil(fee_amount * rate_num / rate_den) of the asset issued
+#! by the faucet in the conversion info.
 #!
 #! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
 #! fee note is created and no conversion info is required (the empty word is accepted). The
@@ -428,18 +437,28 @@ end
 #! - the maximum number of output notes is exceeded.
 #!
 #! Invocation: exec
+@locals(1024)
 pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> felt
+    # the estimate fills the price table and the payment reads it back
+    locaddr.SPONSORSHIP_PRICE_TABLE_LOC dup
+    # => [price_table_ptr, price_table_ptr, num_extra_cycles, CONVERSION_INFO]
+
     # the native fee asset funds the sponsorship notes, and is read once for both passes
     exec.tx::get_fee_asset_id
-    # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO]
+    # => [FEE_ASSET_ID, price_table_ptr, price_table_ptr, num_extra_cycles, CONVERSION_INFO]
 
     dupw movup.8 movdn.4
-    # => [FEE_ASSET_ID, num_extra_cycles, FEE_ASSET_ID, CONVERSION_INFO]
+    # => [FEE_ASSET_ID, price_table_ptr, FEE_ASSET_ID, price_table_ptr, num_extra_cycles,
+    #     CONVERSION_INFO]
+
+    movup.10 movdn.5
+    # => [FEE_ASSET_ID, price_table_ptr, num_extra_cycles, FEE_ASSET_ID, price_table_ptr,
+    #     CONVERSION_INFO]
 
     exec.estimate_fee
-    # => [fee_amount, FEE_ASSET_ID, CONVERSION_INFO]
+    # => [fee_amount, FEE_ASSET_ID, price_table_ptr, CONVERSION_INFO]
 
-    movdn.4 exec.fees::create_network_note_sponsorships
+    movdn.5 exec.fees::create_network_note_sponsorships
     # => [total_sponsored_fee_amount, fee_amount, CONVERSION_INFO]
 
     movdn.5
