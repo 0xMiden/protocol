@@ -221,16 +221,17 @@ impl From<UniqueNodes> for proto::primitives::PartialSmt {
         let mut nodes = nodes.into_iter().peekable();
         while let Some((index, _)) = nodes.peek() {
             let depth = index.depth();
-            let nodes = nodes
-                .by_ref()
-                .take_while(|(index, _)| index.depth() == depth)
-                .map(|(index, digest)| proto::primitives::PartialSmtNode {
+            let mut level_nodes = Vec::new();
+            while let Some((index, digest)) = nodes.next_if(|(index, _)| index.depth() == depth) {
+                level_nodes.push(proto::primitives::PartialSmtNode {
                     index: index.position(),
                     digest: Some(digest.into()),
-                })
-                .collect();
-            node_levels
-                .push(proto::primitives::PartialSmtNodeLevel { depth: u32::from(depth), nodes });
+                });
+            }
+            node_levels.push(proto::primitives::PartialSmtNodeLevel {
+                depth: u32::from(depth),
+                nodes: level_nodes,
+            });
         }
         let leaves = leaves
             .into_iter()
@@ -423,6 +424,28 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(first.encode_to_vec(), second.encode_to_vec());
+    }
+
+    #[test]
+    fn partial_smt_encoding_preserves_nodes_at_every_depth() {
+        let expected_nodes = BTreeMap::from([
+            (NodeIndex::new(1, 0).unwrap(), Word::from([1, 2, 3, 4u32])),
+            (NodeIndex::new(1, 1).unwrap(), Word::from([5, 6, 7, 8u32])),
+            (NodeIndex::new(2, 0).unwrap(), Word::from([9, 10, 11, 12u32])),
+            (NodeIndex::new(2, 3).unwrap(), Word::from([13, 14, 15, 16u32])),
+            (NodeIndex::new(3, 5).unwrap(), Word::from([17, 18, 19, 20u32])),
+        ]);
+        let mut unique_nodes = UniqueNodes::empty();
+        unique_nodes.nodes = expected_nodes.clone();
+
+        let encoded: proto::primitives::PartialSmt = unique_nodes.into();
+
+        assert_eq!(
+            encoded.node_levels.iter().map(|level| level.depth).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        let decoded = UniqueNodes::try_from(encoded).unwrap();
+        assert_eq!(decoded.nodes, expected_nodes);
     }
 
     fn empty_partial_smt_message() -> proto::primitives::PartialSmt {
