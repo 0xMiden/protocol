@@ -483,7 +483,7 @@ end
 #! - num_extra_cycles and fee_amount are as described in `estimate_fee`.
 #!
 #! Panics if:
-#! - `estimate_fee` panics.
+#! - `fees::estimate_network_note_sponsorships` or `tx::compute_fee` panics.
 #!
 #! Invocation: exec
 proc estimate_fee_for_asset(fee_asset_id: AssetId, num_extra_cycles: felt) -> felt
