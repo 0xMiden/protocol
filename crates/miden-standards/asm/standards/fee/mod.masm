@@ -367,7 +367,8 @@ end
 #! - FEE_ASSET_ID is the ID of the native fee asset (see tx::get_fee_asset_id), which funds the
 #!   sponsorship notes.
 #! - price_table_ptr is the address of the sponsorship price table the estimate fills and the
-#!   payment reads back (see fees::estimate_network_note_sponsorships).
+#!   payment reads back: fees::SPONSORSHIP_PRICE_TABLE_NUM_ENTRIES elements of the caller's local
+#!   memory (see fees::estimate_network_note_sponsorships).
 #! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
 #!   the end of the authentication procedure.
 #! - fee_amount is the computed fee of the transaction, denominated in the native fee asset.

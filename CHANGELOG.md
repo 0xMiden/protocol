@@ -13,7 +13,7 @@
 
 ### Changes
 
-- [BREAKING] Split `fee::estimate_fee` out of `fee::pay_fee`, pricing the FEE_SPONSORSHIP notes via the new `fees::estimate_network_note_sponsorships` without creating them, and `fee::apply_cycle_margins` now also takes the sponsorship-note and output-note counts ([#3784](https://github.com/0xMiden/protocol/pull/3784)).
+- [BREAKING] Split `fee::estimate_fee` out of `fee::pay_fee`, pricing the FEE_SPONSORSHIP notes via the new `fees::estimate_network_note_sponsorships` without creating them, `fee::apply_cycle_margins` now also takes the sponsorship-note and output-note counts, and `fee::estimate_fee` and the `fees` sponsorship walks take the address of a 1024-element price table in the caller's local memory ([#3784](https://github.com/0xMiden/protocol/pull/3784)).
 - Added a check that the guardian public key is not one of the approver public keys ([#3764](https://github.com/0xMiden/protocol/pull/3764)).
 - [BREAKING] Incremented the MSRV to 1.98.
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.30.0 and `midenc-hir-type` to v0.12.0. `LocalTransactionProver::new` now takes `miden_prover::Prover`, `CoreLibrary` exposes one merged package, and `TransactionVerifier::verify` now returns `VerificationOutcome` so callers can handle outstanding precompile work ([#3782](https://github.com/0xMiden/protocol/pull/3782)).
