@@ -825,7 +825,7 @@ fn account_storage_header_rejects_invalid_slot_types() {
         };
 
         let error = AccountStorageHeader::try_from(message).unwrap_err();
-        assert_eq!(error.to_string(), format!("slots.slot_type: {expected_message}"));
+        assert_eq!(error.to_string(), format!("slots[0].slot_type: {expected_message}"));
     }
 }
 

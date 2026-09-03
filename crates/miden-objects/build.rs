@@ -41,6 +41,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 id,
             ),
         },
+        ".account.AccountStorageHeader" => {
+            target: ::miden_protocol::account::AccountStorageHeader,
+            try_constructor: ::miden_protocol::account::AccountStorageHeader::new(
+                slots,
+            ),
+        },
         ".account.StorageSlotId" => {
             target: ::miden_protocol::account::StorageSlotId,
             constructor: ::miden_protocol::account::StorageSlotId::new(

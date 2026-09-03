@@ -86,23 +86,19 @@ fn encode_storage_slot_type(slot_type: StorageSlotType) -> i32 {
     }
 }
 
-impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
+impl TryFrom<proto::account::account_storage_header::StorageSlot> for StorageSlotHeader {
     type Error = ConversionError;
 
-    fn try_from(message: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
-        let slots = message
-            .slots
-            .into_iter()
-            .map(|slot| {
-                let decoder = slot.decoder();
-                let name = StorageSlotName::new(slot.slot_name).map_err(ConversionError::new)?;
-                let slot_type = decode_storage_slot_type(slot.slot_type).context("slot_type")?;
-                let commitment = required!(decoder, slot.commitment)?;
-                Ok(StorageSlotHeader::new(name, slot_type, commitment))
-            })
-            .collect::<Result<Vec<_>, ConversionError>>()
-            .context("slots")?;
-        AccountStorageHeader::new(slots).map_err(ConversionError::new)
+    fn try_from(
+        slot: proto::account::account_storage_header::StorageSlot,
+    ) -> Result<Self, Self::Error> {
+        let decoder = slot.decoder();
+        let name = StorageSlotName::new(slot.slot_name)
+            .map_err(ConversionError::new)
+            .context("slot_name")?;
+        let slot_type = decode_storage_slot_type(slot.slot_type).context("slot_type")?;
+        let commitment = required!(decoder, slot.commitment)?;
+        Ok(Self::new(name, slot_type, commitment))
     }
 }
 
