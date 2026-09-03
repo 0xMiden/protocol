@@ -112,6 +112,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 details,
             ),
         },
+        ".blockchain.NextProtocolConfig" => {
+            target: ::miden_protocol::protocol_config::NextProtocolConfig,
+            try_constructor: ::miden_protocol::protocol_config::NextProtocolConfig::new(
+                effective_from,
+                protocol_config,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(

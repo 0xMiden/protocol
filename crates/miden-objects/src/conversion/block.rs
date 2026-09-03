@@ -456,18 +456,6 @@ impl From<ValidatorConfig> for proto::blockchain::ValidatorConfig {
     }
 }
 
-impl TryFrom<proto::blockchain::NextProtocolConfig> for NextProtocolConfig {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::NextProtocolConfig) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let effective_from = required!(decoder, value.effective_from)?;
-        let protocol_config = required!(decoder, value.protocol_config)?;
-
-        Self::new(effective_from, protocol_config).map_err(ConversionError::new)
-    }
-}
-
 impl From<&NextProtocolConfig> for proto::blockchain::NextProtocolConfig {
     fn from(value: &NextProtocolConfig) -> Self {
         Self {
