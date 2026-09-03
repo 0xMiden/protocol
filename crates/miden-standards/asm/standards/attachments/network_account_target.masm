@@ -197,7 +197,7 @@ end
 #! the blocks left until the expiration block, which keeps the transaction from being included past
 #! that block. The delta is deliberately not widened to the note's full remaining lifetime: a wider
 #! inclusion window would let the note take effect against a more outdated view of the account, and
-#! [`tx::update_expiration_block_delta`] accepts a delta of at most 0xFFFF blocks anyway.
+#! [`tx::update_expiration_block_delta`] accepts a delta of at most 65535 blocks anyway.
 #!
 #! The attachment is loaded with [`load_attachment`].
 #!
