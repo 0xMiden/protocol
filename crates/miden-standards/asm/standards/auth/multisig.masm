@@ -33,6 +33,10 @@ const DEFAULT_THRESHOLD_LOC=0
 const UNIQUE_OUTER_INDEX_LOC=0
 const UNIQUE_INNER_INDEX_LOC=1
 
+# pay_bounded_fee locals: the sponsorship price table, fees::SPONSORSHIP_PRICE_TABLE_NUM_ENTRIES
+# entries indexed by output note index.
+const PAY_BOUNDED_FEE_PRICE_TABLE_LOC=0
+
 # CONSTANTS
 # =================================================================================================
 
@@ -844,6 +848,8 @@ end
 #! created. Must run before the transaction summary is created, so the signatures cover the fee
 #! note and the vault withdrawal funding it.
 #!
+#! The estimate records the sponsorship prices in local memory and the payment reuses them.
+#!
 #! Inputs:  [num_of_signers, CONVERSION_INFO]
 #! Outputs: [num_own_output_notes]
 #!
@@ -859,6 +865,7 @@ end
 #! - fee::estimate_fee or fees::create_network_note_sponsorships panics.
 #!
 #! Invocation: exec
+@locals(1024)
 pub proc pay_bounded_fee(num_of_signers: u32, conversion_info: ConversionInfo) -> u16
     # read the output-note count before the payment so the notes it creates can be counted
     exec.tx::get_num_output_notes movdn.5
@@ -867,18 +874,29 @@ pub proc pay_bounded_fee(num_of_signers: u32, conversion_info: ConversionInfo) -
     exec.signature::estimate_multisig_authentication_cycles
     # => [num_extra_cycles, CONVERSION_INFO, num_output_notes_before_fee]
 
+    # the price table the estimate fills and the payment reads back
+    locaddr.PAY_BOUNDED_FEE_PRICE_TABLE_LOC dup
+    # => [price_table_ptr, price_table_ptr, num_extra_cycles, CONVERSION_INFO,
+    #     num_output_notes_before_fee]
+
     # the native fee asset funds the sponsorship notes, and is read once for both passes
     exec.tx::get_fee_asset_id
-    # => [FEE_ASSET_ID, num_extra_cycles, CONVERSION_INFO, num_output_notes_before_fee]
+    # => [FEE_ASSET_ID, price_table_ptr, price_table_ptr, num_extra_cycles, CONVERSION_INFO,
+    #     num_output_notes_before_fee]
 
     dupw movup.8 movdn.4
-    # => [FEE_ASSET_ID, num_extra_cycles, FEE_ASSET_ID, CONVERSION_INFO, num_output_notes_before_fee]
+    # => [FEE_ASSET_ID, price_table_ptr, FEE_ASSET_ID, price_table_ptr, num_extra_cycles,
+    #     CONVERSION_INFO, num_output_notes_before_fee]
+
+    movup.10 movdn.5
+    # => [FEE_ASSET_ID, price_table_ptr, num_extra_cycles, FEE_ASSET_ID, price_table_ptr,
+    #     CONVERSION_INFO, num_output_notes_before_fee]
 
     exec.fee::estimate_fee
-    # => [fee_amount, FEE_ASSET_ID, CONVERSION_INFO, num_output_notes_before_fee]
+    # => [fee_amount, FEE_ASSET_ID, price_table_ptr, CONVERSION_INFO, num_output_notes_before_fee]
 
     # settle the sponsorship obligation first
-    movdn.4 exec.fees::create_network_note_sponsorships drop
+    movdn.5 exec.fees::create_network_note_sponsorships drop
     # => [fee_amount, CONVERSION_INFO, num_output_notes_before_fee]
 
     dup movdn.5
