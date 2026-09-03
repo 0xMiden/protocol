@@ -50,6 +50,7 @@ We expect to keep making changes (including breaking changes) to all components.
 | [miden-agglayer](crates/miden-agglayer) | AggLayer components for the Miden protocol. |
 | [miden-block-prover](crates/miden-block-prover) | Block execution and proving tools. |
 | [miden-protocol](crates/miden-protocol) | Core protocol components, including the protocol kernels. |
+| [miden-objects](crates/miden-objects) | Canonical Protobuf representations for protocol objects exchanged by clients and nodes. |
 | [miden-protocol-build-utils](crates/miden-protocol-build-utils) | Build-time MASM helpers. |
 | [miden-standards](crates/miden-standards) | Standardized smart contracts. |
 | [miden-testing](crates/miden-testing) | Testing tools for Miden transactions, batches, and blocks. |

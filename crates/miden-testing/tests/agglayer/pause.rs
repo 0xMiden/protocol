@@ -25,7 +25,8 @@ use miden_standards::errors::standards::{
     ERR_SENDER_LACKS_ROLE,
 };
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt, PauseConfig};
+use miden_standards::note::config::PauseConfig;
+use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt};
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 
 use super::test_utils::{

@@ -5,6 +5,7 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::deferred::IntegrityError;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -843,6 +844,8 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
+    #[error("duplicate asset ID {0} in partial vault")]
+    DuplicateAssetId(AssetId),
     #[error("partial vault contains invalid asset value {value} at ID {id}")]
     InvalidAssetForId {
         id: AssetId,
@@ -1348,6 +1351,9 @@ pub enum ProposedBatchError {
         source: TransactionVerifierError,
     },
 
+    #[error("transaction {transaction_id} has an outstanding precompile obligation")]
+    IncompleteTransactionProof { transaction_id: TransactionId },
+
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
     )]
@@ -1525,6 +1531,10 @@ pub enum ProvenBatchError {
     },
     #[error("batch kernel execution failed")]
     BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel proving failed")]
+    BatchKernelProvingFailed(#[source] ExecutionError),
+    #[error("batch proof contains precompiles")]
+    BatchProofContainsPrecompiles,
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
 }
@@ -1805,6 +1815,14 @@ pub enum AuthSchemeError {
 pub enum TransactionVerifierError {
     #[error("failed to verify transaction")]
     TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof contains settled precompile work")]
+    TransactionProofContainsPrecompiles,
+    #[error("transaction precompile witness is invalid")]
+    InvalidTransactionPrecompileWitness(#[source] IntegrityError),
+    #[error(
+        "transaction precompile witness root ({actual}) does not match the VM proof root ({expected})"
+    )]
+    TransactionPrecompileRootMismatch { expected: Word, actual: Word },
     #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

@@ -228,17 +228,13 @@ mod tests {
     use miden_protocol::MAX_TX_EXECUTION_CYCLES;
     use miden_protocol::account::AccountId;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use miden_standards::note::config::ConstantFeePolicyConfigNote;
     use miden_standards::note::costs::{
         MINT_CONSUMPTION_CYCLES,
         P2ID_CONSUMPTION_CYCLES,
         SWAP_CONSUMPTION_CYCLES,
     };
-    use miden_standards::note::{
-        ConstantFeePolicyConfigNote,
-        FeeSponsorshipNote,
-        P2idNote,
-        SwapNote,
-    };
+    use miden_standards::note::{FeeSponsorshipNote, P2idNote, SwapNote};
 
     use super::*;
 

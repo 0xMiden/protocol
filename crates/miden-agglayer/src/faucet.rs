@@ -6,7 +6,8 @@ use miden_protocol::account::{AccountProcedureRoot, RoleSymbol};
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::fees::ConstantFeeManager;
-use miden_standards::note::{BurnNote, ConstantFeePolicyConfigNote, MintNote, RbacConfigNote};
+use miden_standards::note::config::{ConstantFeePolicyConfigNote, RbacConfigNote};
+use miden_standards::note::{BurnNote, MintNote};
 use miden_utils_sync::LazyLock;
 
 // FAUCET RBAC ROLES

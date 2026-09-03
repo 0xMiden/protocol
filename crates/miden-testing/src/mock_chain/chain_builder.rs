@@ -53,7 +53,6 @@ use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
-use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::SponsorshipPolicy;
@@ -67,15 +66,8 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{
-    BurnNote,
-    MintNote,
-    NetworkAccountConfigNote,
-    P2idNote,
-    P2ideNote,
-    SwapNote,
-    TxFeeNote,
-};
+use miden_standards::note::config::NetworkAccountConfigNote;
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
 
@@ -306,7 +298,7 @@ impl MockChainBuilder {
                 .collect(),
         )
         .expect("signature count same as validator key count");
-        let block_proof = ExecutionProof::new_dummy();
+        let block_proof = miden_protocol::testing::dummy_execution_proof();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
         MockChain::from_genesis_block(

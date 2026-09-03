@@ -120,6 +120,8 @@ const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval window ended at or 
 
 const ERR_MULTISIG_EXPIRATION_DELTAS_NOT_U32 = "the expiration delta and the reference block delta must be u32 values"
 
+const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -633,11 +635,7 @@ pub proc assert_unique_approver_public_keys(num_approvers: u32)
         # => [i]
 
         # read PK_i from the current state
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        exec.active_account::get_map_item
+        dup exec.get_approver_pub_key
         # => [PK_I, i]
 
         movup.4
@@ -650,11 +648,7 @@ pub proc assert_unique_approver_public_keys(num_approvers: u32)
             # => [j, PK_I]
 
             dup loc_store.UNIQUE_INNER_INDEX_LOC
-            exec.signature::create_approver_map_key
-            # => [APPROVER_MAP_KEY, PK_I]
-
-            push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-            exec.active_account::get_map_item
+            exec.get_approver_pub_key
             # => [PK_J, PK_I]
 
             # assert PK_I != PK_J
@@ -683,6 +677,57 @@ pub proc assert_unique_approver_public_keys(num_approvers: u32)
     end
 
     drop
+    # => []
+end
+
+#! Asserts that PUB_KEY is not one of the account's approver public keys.
+#!
+#! Reads the current account state, so the check covers approver-set updates made earlier in the
+#! same transaction.
+#!
+#! Inputs:  [PUB_KEY]
+#! Outputs: []
+#!
+#! Panics if:
+#! - PUB_KEY equals one of the approver public keys.
+#!
+#! Invocation: exec
+pub proc assert_not_approver_public_key(pub_key: word)
+    exec.get_current_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, PUB_KEY]
+
+    drop
+    # => [i = num_approvers, PUB_KEY]
+
+    dup neq.0
+    # => [should_loop, i, PUB_KEY]
+
+    while.true
+        sub.1
+        # => [i, PUB_KEY]
+
+        # keep the loop index below PUB_KEY while the map key is built from its copy
+        dup movdn.5
+        # => [i, PUB_KEY, i]
+
+        exec.get_approver_pub_key
+        # => [APPROVER_PUBLIC_KEY, PUB_KEY, i]
+
+        dupw.1 exec.word::eq
+        # => [is_match, PUB_KEY, i]
+
+        assertz.err=ERR_PUBLIC_KEY_IS_APPROVER
+        # => [PUB_KEY, i]
+
+        movup.4
+        # => [i, PUB_KEY]
+
+        dup neq.0
+        # => [should_loop, i, PUB_KEY]
+    end
+    # => [0, PUB_KEY]
+
+    drop dropw
     # => []
 end
 
@@ -941,6 +986,26 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Returns the approver public key stored at `index` in APPROVER_PUBLIC_KEYS_SLOT.
+#!
+#! Reads the current account state, so the result reflects approver-set updates made earlier in the
+#! same transaction.
+#!
+#! Inputs:  [index]
+#! Outputs: [APPROVER_PUBLIC_KEY]
+#!
+#! Invocation: exec
+proc get_approver_pub_key(index: u32) -> word
+    exec.signature::create_approver_map_key
+    # => [APPROVER_MAP_KEY]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_keys_slot_suffix, pub_keys_slot_prefix, APPROVER_MAP_KEY]
+
+    exec.active_account::get_map_item
+    # => [APPROVER_PUBLIC_KEY]
+end
 
 #! Asserts that all configured per-procedure threshold overrides are less than or equal to
 #! number of approvers.
