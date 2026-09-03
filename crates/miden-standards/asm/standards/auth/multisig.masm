@@ -5,14 +5,23 @@
 use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
+use miden::protocol::tx
+use {BlockNumber} from miden::protocol::types
 use miden::standards::auth
 use miden::standards::auth::signature
+use {ConversionInfo} from miden::standards::fee
+use miden::core::mem
 use miden::core::word
 use {ONE_WORD} from miden::standards::utils
 
 # Local Memory Addresses
 const IS_SIGNER_FOUND_LOC=0
 const CURRENT_SIGNER_INDEX_LOC=1
+
+# resolve_auth_args locals: the three words of the auth args preimage in hashing order.
+const AUTH_ARGS_BLOCK_LOC=0
+const AUTH_ARGS_SALT_LOC=4
+const AUTH_ARGS_CONVERSION_INFO_LOC=8
 
 const NEW_NUM_OF_APPROVERS_LOC=0
 const INIT_NUM_OF_APPROVERS_LOC=1
@@ -73,6 +82,9 @@ const IS_EXECUTED_FLAG = ONE_WORD
 # The maximum number of approvers the signer set may contain.
 const MAX_NUM_APPROVERS = 64
 
+# Number of words in the auth args preimage.
+const AUTH_ARGS_NUM_WORDS = 3
+
 # ERRORS
 # =================================================================================================
 
@@ -99,6 +111,16 @@ const ERR_PROC_ROOT_NOT_IN_ACCOUNT = "procedure root is not one of the account's
 const ERR_DUPLICATE_APPROVER_PUBLIC_KEY = "duplicate approver public keys are not allowed"
 
 const ERR_TOO_MANY_APPROVERS = "number of approvers exceeds the maximum supported signer set size"
+
+const ERR_AUTH_ARGS_PREIMAGE_MISSING = "the advice map holds no preimage for the multisig auth args"
+
+const ERR_AUTH_ARGS_BLOCK_NUMBER_NOT_U32 = "the block number in the multisig auth args must be a u32"
+
+const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval window ended at or before the transaction reference block"
+
+const ERR_MULTISIG_EXPIRATION_DELTAS_NOT_U32 = "the expiration delta and the reference block delta must be u32 values"
+
+const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -613,11 +635,7 @@ pub proc assert_unique_approver_public_keys(num_approvers: u32)
         # => [i]
 
         # read PK_i from the current state
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        exec.active_account::get_map_item
+        dup exec.get_approver_pub_key
         # => [PK_I, i]
 
         movup.4
@@ -630,11 +648,7 @@ pub proc assert_unique_approver_public_keys(num_approvers: u32)
             # => [j, PK_I]
 
             dup loc_store.UNIQUE_INNER_INDEX_LOC
-            exec.signature::create_approver_map_key
-            # => [APPROVER_MAP_KEY, PK_I]
-
-            push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-            exec.active_account::get_map_item
+            exec.get_approver_pub_key
             # => [PK_J, PK_I]
 
             # assert PK_I != PK_J
@@ -663,6 +677,57 @@ pub proc assert_unique_approver_public_keys(num_approvers: u32)
     end
 
     drop
+    # => []
+end
+
+#! Asserts that PUB_KEY is not one of the account's approver public keys.
+#!
+#! Reads the current account state, so the check covers approver-set updates made earlier in the
+#! same transaction.
+#!
+#! Inputs:  [PUB_KEY]
+#! Outputs: []
+#!
+#! Panics if:
+#! - PUB_KEY equals one of the approver public keys.
+#!
+#! Invocation: exec
+pub proc assert_not_approver_public_key(pub_key: word)
+    exec.get_current_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, PUB_KEY]
+
+    drop
+    # => [i = num_approvers, PUB_KEY]
+
+    dup neq.0
+    # => [should_loop, i, PUB_KEY]
+
+    while.true
+        sub.1
+        # => [i, PUB_KEY]
+
+        # keep the loop index below PUB_KEY while the map key is built from its copy
+        dup movdn.5
+        # => [i, PUB_KEY, i]
+
+        exec.get_approver_pub_key
+        # => [APPROVER_PUBLIC_KEY, PUB_KEY, i]
+
+        dupw.1 exec.word::eq
+        # => [is_match, PUB_KEY, i]
+
+        assertz.err=ERR_PUBLIC_KEY_IS_APPROVER
+        # => [PUB_KEY, i]
+
+        movup.4
+        # => [i, PUB_KEY]
+
+        dup neq.0
+        # => [should_loop, i, PUB_KEY]
+    end
+    # => [0, PUB_KEY]
+
+    drop dropw
     # => []
 end
 
@@ -715,7 +780,111 @@ pub proc record_and_assert_new_tx(msg: word)
     # => []
 end
 
-#! Authenticate a transaction using the signature scheme specified by scheme_id 
+#! Resolves the transaction's auth args into the inputs of the multisig authentication procedures.
+#!
+#! Inputs:
+#!   Operand stack: [AUTH_ARGS]
+#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
+#! Outputs:
+#!   Operand stack: [CONVERSION_INFO, block_number, SALT]
+#!
+#! Where:
+#! - AUTH_ARGS is the sequential hash of the three preimage words.
+#! - BLOCK_WORD is [block_number, 0, 0, 0].
+#! - block_number is the number of the block the transaction summary binds.
+#! - SALT is a unique nonce bound into the transaction summary for replay protection.
+#! - CONVERSION_INFO tells miden::standards::fee::pay_fee which asset to pay the transaction fee
+#!   in. It is the empty word if the caller committed no conversion info.
+#!
+#! Panics if:
+#! - the advice map holds no preimage for the auth args.
+#! - the preimage does not hash to the auth args.
+#! - block_number is not a u32.
+#!
+#! Invocation: exec
+@locals(12)
+pub proc resolve_auth_args(auth_args: word) -> (ConversionInfo, BlockNumber, word)
+    adv.has_mapkey adv_push assert.err=ERR_AUTH_ARGS_PREIMAGE_MISSING
+    # => [AUTH_ARGS]
+
+    adv.push_mapval
+    # OS => [AUTH_ARGS]
+    # AS => [BLOCK_WORD, SALT, CONVERSION_INFO]
+
+    locaddr.AUTH_ARGS_BLOCK_LOC push.AUTH_ARGS_NUM_WORDS
+    # => [num_words, write_ptr, AUTH_ARGS]
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => []
+
+    padw loc_loadw_le.AUTH_ARGS_SALT_LOC
+    # => [SALT]
+
+    loc_load.AUTH_ARGS_BLOCK_LOC u32assert.err=ERR_AUTH_ARGS_BLOCK_NUMBER_NOT_U32
+    # => [block_number, SALT]
+
+    padw loc_loadw_le.AUTH_ARGS_CONVERSION_INFO_LOC
+    # => [CONVERSION_INFO, block_number, SALT]
+end
+
+#! Rebases the transaction's expiration to the block bound by the transaction summary.
+#!
+#! The kernel computes the expiration block based on the transaction's reference block. Since
+#! multisigs allow execution and proposal reference blocks to differ, the signatures never expire
+#! since execution could always pick the chain tip.
+#!
+#! Rebasing the expiration onto the `proposal_ref_block`, the reference block at which the tx was
+#! proposed, makes the approval cover inclusion until the intended
+#! `proposal_ref_block + expiration_delta`, no matter when the transaction is _executed_.
+#!
+#! This procedure is a no-op if the transaction set no expiration delta.
+#!
+#! Inputs:  [bound_block]
+#! Outputs: []
+#!
+#! Where:
+#! - bound_block is the number of the block the transaction summary binds.
+#!
+#! Panics if:
+#! - the approval window ended at or before the transaction reference block.
+#! - bound_block exceeds the transaction reference block number.
+#!
+#! Invocation: exec
+pub proc rebase_expiration_delta(bound_block: BlockNumber)
+    exec.tx::get_expiration_block_delta
+    # => [expiration_delta, bound_block]
+
+    dup neq.0
+    if.true
+        exec.tx::get_reference_block_number movup.2
+        # => [bound_block, reference_block, expiration_delta]
+
+        # compute the delta between the original ref block (bound_block) and the current ref block
+        # this cannot underflow because the summary creation read the commitment of bound_block,
+        # which implies reference_block >= bound_block
+        sub
+        # => [ref_block_delta, expiration_delta]
+
+        # assert expiration_delta > ref_block_delta to ensure subtraction will not underflow and
+        # result in at least 1 (0 would be rejected by update_expiration_block_delta)
+        # a delta equal to the reference block delta means the reference block is already the last
+        # block that could have included the transaction, so the approval expired
+        dup.1 dup.1 u32assert2.err=ERR_MULTISIG_EXPIRATION_DELTAS_NOT_U32
+        u32gt assert.err=ERR_MULTISIG_APPROVAL_EXPIRED
+        # => [ref_block_delta, expiration_delta]
+
+        sub
+        # => [bound_block_expiration_delta]
+
+        exec.tx::update_expiration_block_delta
+        # => []
+    else
+        drop drop
+        # => []
+    end
+end
+
+#! Authenticate a transaction using the signature scheme specified by scheme_id
 #! with multi-signature support
 #!
 #! Supported schemes:
@@ -728,7 +897,7 @@ end
 #! 3. Ensuring the minimum threshold of valid signatures is met
 #!
 #! Inputs:
-#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5]
+#!   Operand stack: [block_number, SALT]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -738,34 +907,42 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - user_param0 through user_param5 are arbitrary, user-defined inputs folded into the signed
-#!   message, and thus into the TX_SUMMARY_COMMITMENT. Binding them enforces no meaning, so any
-#!   semantics must be implemented by the calling component.
-#! - Replay protection relies on the uniqueness of the TX_SUMMARY_COMMITMENT, which is what
-#!   `record_and_assert_new_tx` records and checks. The components calling this procedure pass a
-#!   cryptographically random salt in user_param2 through user_param5 so that otherwise-identical
-#!   transactions produce distinct commitments and can run concurrently. `auth_tx` itself records
-#!   nothing, so a wrapper must call `record_and_assert_new_tx` for replay protection to hold.
+#! - block_number is the number of the block the transaction summary binds.
+#! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
 #! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
 #!
 #! Panics if:
 #! - insufficient number of valid signatures (below threshold).
+#! - the approval window ended at or before the transaction reference block, see
+#!   `rebase_expiration_delta`.
 #!
 #! Invocation: exec
-pub proc auth_tx(user_params: [felt; 6])
+pub proc auth_tx(block_number: BlockNumber, salt: word)
     exec.native_account::incr_nonce drop
-    # => [user_params(6)]
+    # => [block_number, SALT]
 
     # ------ Computing transaction summary ------
 
-    exec.auth::create_tx_summary
-    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+    # the leading user params have no meaning, leave them zeroed
+    push.0.0 movup.2
+    # => [block_number, 0, 0, SALT]
+
+    dup movdn.7
+    # => [block_number, 0, 0, SALT, block_number]
+
+    exec.auth::create_tx_summary_with_block
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, block_number]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted
     # into the advice map for extraction by the host
     exec.auth::hash_and_insert_tx_summary
+    # => [TX_SUMMARY_COMMITMENT, block_number]
+
+    # this must run after the summary was created since rebasing the expiration before would bind a
+    # reference-block-dependent delta and so change the summary with every new reference block.
+    movup.4 exec.rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------
@@ -809,6 +986,26 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Returns the approver public key stored at `index` in APPROVER_PUBLIC_KEYS_SLOT.
+#!
+#! Reads the current account state, so the result reflects approver-set updates made earlier in the
+#! same transaction.
+#!
+#! Inputs:  [index]
+#! Outputs: [APPROVER_PUBLIC_KEY]
+#!
+#! Invocation: exec
+proc get_approver_pub_key(index: u32) -> word
+    exec.signature::create_approver_map_key
+    # => [APPROVER_MAP_KEY]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_keys_slot_suffix, pub_keys_slot_prefix, APPROVER_MAP_KEY]
+
+    exec.active_account::get_map_item
+    # => [APPROVER_PUBLIC_KEY]
+end
 
 #! Asserts that all configured per-procedure threshold overrides are less than or equal to
 #! number of approvers.

@@ -1,5 +1,4 @@
 use alloc::string::ToString;
-use alloc::sync::Arc;
 use alloc::vec;
 use std::collections::BTreeMap;
 use std::vec::Vec;
@@ -16,14 +15,17 @@ use crate::account::{
     StorageSlotType,
 };
 use crate::asset::PartialVault;
+use crate::block::BlockHeader;
 use crate::block::account_tree::AccountIdKey;
 use crate::errors::TransactionInputsExtractionError;
+use crate::protocol_config::ProtocolConfig;
 use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
-use crate::transaction::TransactionInputs;
+use crate::transaction::{InputNotes, PartialBlockchain, TransactionArgs, TransactionInputs};
 use crate::utils::serde::{Deserializable, Serializable};
+use crate::vm::AdviceInputs;
 use crate::{Felt, Word};
 
 #[test]
@@ -50,11 +52,12 @@ fn test_read_foreign_account_inputs_missing_data() {
 
     let tx_inputs = TransactionInputs {
         account: partial_account,
-        block_header: crate::block::BlockHeader::mock(0, None, None, &[], Word::default()),
-        blockchain: crate::transaction::PartialBlockchain::default(),
-        input_notes: crate::transaction::InputNotes::new(vec![]).unwrap(),
-        tx_args: crate::transaction::TransactionArgs::default(),
-        advice_inputs: crate::vm::AdviceInputs::default(),
+        block_header: BlockHeader::mock(0, None, None, &[]),
+        blockchain: PartialBlockchain::default(),
+        input_notes: InputNotes::new(vec![]).unwrap(),
+        protocol_config: ProtocolConfig::mock(),
+        tx_args: TransactionArgs::default(),
+        advice_inputs: AdviceInputs::default(),
         foreign_account_code: Vec::new(),
         foreign_account_slot_names: BTreeMap::new(),
     };
@@ -119,14 +122,11 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     let foreign_storage_header = AccountStorageHeader::new(slots.clone()).unwrap();
 
     // Create advice inputs with both account header and storage header.
-    let mut advice_inputs = crate::vm::AdviceInputs::default();
     let account_id_key = AccountIdKey::from(foreign_account_id);
-    advice_inputs
-        .map
-        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
-    advice_inputs
-        .map
-        .insert(foreign_header.storage_commitment(), foreign_storage_header.to_elements());
+    let advice_inputs = AdviceInputs::default().with_map([
+        (account_id_key.as_word(), foreign_header.to_elements().to_vec()),
+        (foreign_header.storage_commitment(), foreign_storage_header.to_elements()),
+    ]);
 
     let foreign_account_slot_names = BTreeMap::from([
         (slots[0].id(), slots[0].name().clone()),
@@ -134,10 +134,11 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     ]);
     let tx_inputs = TransactionInputs {
         account: partial_account,
-        block_header: crate::block::BlockHeader::mock(0, None, None, &[], Word::default()),
-        blockchain: crate::transaction::PartialBlockchain::default(),
-        input_notes: crate::transaction::InputNotes::new(vec![]).unwrap(),
-        tx_args: crate::transaction::TransactionArgs::default(),
+        block_header: BlockHeader::mock(0, None, None, &[]),
+        blockchain: PartialBlockchain::default(),
+        input_notes: InputNotes::new(vec![]).unwrap(),
+        protocol_config: ProtocolConfig::mock(),
+        tx_args: TransactionArgs::default(),
         advice_inputs,
         foreign_account_code: vec![code],
         foreign_account_slot_names,
@@ -226,41 +227,28 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     .unwrap();
     account_tree.insert(foreign_account_id, foreign_header.to_commitment()).unwrap();
 
-    // Get the account tree root and create witness.
-    let account_tree_root = account_tree.root();
     let foreign_witness = account_tree.open(foreign_account_id);
 
-    // Create advice inputs with proper Merkle store data.
-    let mut advice_inputs = crate::vm::AdviceInputs::default();
-
-    // Add account header to advice map.
+    // Add account and storage headers to the advice map.
     let account_id_key = AccountIdKey::from(foreign_account_id);
-    advice_inputs
-        .map
-        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
-    // Add storage header to advice map.
-    advice_inputs
-        .map
-        .insert(foreign_header.storage_commitment(), foreign_storage_header.to_elements());
-
-    // Add authenticated nodes from the witness to the Merkle store.
-    advice_inputs.store.extend(foreign_witness.authenticated_nodes());
-
-    // Add the account leaf to the advice map (needed for witness verification).
     let leaf = foreign_witness.leaf();
-    advice_inputs
-        .map
-        .insert(leaf.hash(), leaf.to_elements().collect::<Arc<[Felt]>>());
+    let advice_inputs = AdviceInputs::default()
+        .with_map([
+            (account_id_key.as_word(), foreign_header.to_elements().to_vec()),
+            (foreign_header.storage_commitment(), foreign_storage_header.to_elements()),
+            (leaf.hash(), leaf.to_elements().collect()),
+        ])
+        .with_merkle_store(foreign_witness.authenticated_nodes().collect());
 
-    // Create block header with the account tree root.
-    let block_header = crate::block::BlockHeader::mock(0, None, None, &[], account_tree_root);
+    let block_header = BlockHeader::mock(0, None, None, &[]);
 
     let tx_inputs = TransactionInputs {
         account: native_account,
         block_header,
-        blockchain: crate::transaction::PartialBlockchain::default(),
-        input_notes: crate::transaction::InputNotes::new(vec![]).unwrap(),
-        tx_args: crate::transaction::TransactionArgs::default(),
+        blockchain: PartialBlockchain::default(),
+        input_notes: InputNotes::new(vec![]).unwrap(),
+        protocol_config: ProtocolConfig::mock(),
+        tx_args: TransactionArgs::default(),
         advice_inputs,
         foreign_account_code: vec![code],
         foreign_account_slot_names: BTreeMap::new(),
@@ -343,11 +331,12 @@ fn test_transaction_inputs_serialization_with_foreign_slot_names() {
 
     let original_tx_inputs = TransactionInputs {
         account: partial_account,
-        block_header: crate::block::BlockHeader::mock(0, None, None, &[], Word::default()),
-        blockchain: crate::transaction::PartialBlockchain::default(),
-        input_notes: crate::transaction::InputNotes::new(vec![]).unwrap(),
-        tx_args: crate::transaction::TransactionArgs::default(),
-        advice_inputs: crate::vm::AdviceInputs::default(),
+        block_header: BlockHeader::mock(0, None, None, &[]),
+        blockchain: PartialBlockchain::default(),
+        input_notes: InputNotes::new(vec![]).unwrap(),
+        protocol_config: ProtocolConfig::mock(),
+        tx_args: TransactionArgs::default(),
+        advice_inputs: AdviceInputs::default(),
         foreign_account_code: Vec::new(),
         foreign_account_slot_names,
     };

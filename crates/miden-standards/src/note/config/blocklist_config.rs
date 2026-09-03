@@ -117,6 +117,9 @@ impl From<BlocklistConfig> for NoteStorage {
 /// that the consuming account matches that target before dispatching, so the note cannot be
 /// consumed by a third-party account that merely accepts its sender.
 ///
+/// The note must be public: the script rejects a non-public note. See
+/// [the module docs](crate::note::config#note-type) for the layers that enforce it.
+///
 /// Construct one with the [builder](BlocklistConfigNote::builder); convert it into a protocol
 /// [`Note`] infallibly via `Note::from`.
 #[derive(Debug, Clone)]

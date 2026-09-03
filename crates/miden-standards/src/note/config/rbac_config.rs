@@ -139,6 +139,9 @@ impl From<RbacConfig> for NoteStorage {
 /// makes the note a valid [`AccountTargetNetworkNote`], routing it to `account` for network
 /// execution.
 ///
+/// The note must be public: the script rejects a non-public note. See
+/// [the module docs](crate::note::config#note-type) for the layers that enforce it.
+///
 /// Construct one with the [builder](RbacConfigNote::builder); convert it into a protocol [`Note`]
 /// infallibly via `Note::from`.
 ///

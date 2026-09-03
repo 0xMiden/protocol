@@ -6,13 +6,8 @@ use crate::account::PartialAccount;
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::transaction::{
-    AccountInputs,
-    InputNote,
-    PartialBlockchain,
-    TransactionInputs,
-    TransactionKernel,
-};
+use crate::protocol_config::ProtocolConfig;
+use crate::transaction::{AccountInputs, InputNote, PartialBlockchain, TransactionInputs};
 use crate::vm::AdviceInputs;
 use crate::{EMPTY_WORD, Felt, Word, ZERO};
 
@@ -33,7 +28,7 @@ impl TransactionAdviceInputs {
         let mut inputs = TransactionAdviceInputs(tx_inputs.advice_inputs().clone());
 
         inputs.build_stack(tx_inputs);
-        inputs.add_kernel_commitment();
+        inputs.add_protocol_config(tx_inputs.protocol_config());
         inputs.add_partial_blockchain(tx_inputs.blockchain());
         inputs.add_input_notes(tx_inputs);
 
@@ -92,9 +87,9 @@ impl TransactionAdviceInputs {
     pub fn into_advice_mutations(self) -> impl Iterator<Item = AdviceMutation> {
         let (stack, map, store) = self.0.into_parts();
         [
-            AdviceMutation::ExtendMap { other: map },
-            AdviceMutation::ExtendMerkleStore { infos: store.inner_nodes().collect() },
-            AdviceMutation::ExtendStack { stack },
+            AdviceMutation::extend_map(map),
+            AdviceMutation::extend_merkle_store(store.inner_nodes()),
+            AdviceMutation::extend_advice_stack(stack),
         ]
         .into_iter()
     }
@@ -133,16 +128,16 @@ impl TransactionAdviceInputs {
     /// The following data is pushed to the advice stack (words shown in memory-order):
     ///
     /// [
-    ///     PARENT_BLOCK_COMMITMENT,
-    ///     PARTIAL_BLOCKCHAIN_COMMITMENT,
+    ///     [version, block_num, timestamp, 0],
+    ///     PREV_BLOCK_COMMITMENT,
+    ///     CHAIN_COMMITMENT,
     ///     ACCOUNT_ROOT,
     ///     NULLIFIER_ROOT,
     ///     TX_COMMITMENT,
-    ///     TX_KERNEL_COMMITMENT
-    ///     VALIDATOR_KEY_COMMITMENT,
-    ///     [block_num, version, timestamp, 0],
-    ///     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
-    ///     [0, 0, 0, 0]
+    ///     PROTOCOL_CONFIG_COMMITMENT,
+    ///     VALIDATOR_CONFIG_COMMITMENT,
+    ///     NEXT_PROTOCOL_CONFIG_COMMITMENT,
+    ///     [verification_base_fee, 0, 0, 0],
     ///     NOTE_ROOT,
     ///     [account_version, account_nonce, account_id_suffix, account_id_prefix],
     ///     ACCOUNT_VAULT_ROOT,
@@ -154,30 +149,8 @@ impl TransactionAdviceInputs {
     ///     AUTH_ARGS,
     /// ]
     fn build_stack(&mut self, tx_inputs: &TransactionInputs) {
-        let header = tx_inputs.block_header();
-
         // --- block header data (keep in sync with kernel's process_block_data) --
-        self.extend_stack(header.prev_block_commitment());
-        self.extend_stack(header.chain_commitment());
-        self.extend_stack(header.account_root());
-        self.extend_stack(header.nullifier_root());
-        self.extend_stack(header.tx_commitment());
-        self.extend_stack(header.tx_kernel_commitment());
-        self.extend_stack(header.validator_keys().commitment());
-        self.extend_stack([
-            header.block_num().into(),
-            Felt::from(header.version()),
-            Felt::from(header.timestamp()),
-            ZERO,
-        ]);
-        self.extend_stack([
-            ZERO,
-            Felt::from(header.fee_parameters().verification_base_fee()),
-            header.fee_parameters().fee_faucet_id().suffix(),
-            header.fee_parameters().fee_faucet_id().prefix().as_felt(),
-        ]);
-        self.extend_stack([ZERO, ZERO, ZERO, ZERO]);
-        self.extend_stack(header.note_root());
+        self.extend_stack(tx_inputs.block_header().to_elements());
 
         // --- core account items (keep in sync with process_account_data) ----
         self.extend_stack(tx_inputs.account().to_elements());
@@ -224,16 +197,28 @@ impl TransactionAdviceInputs {
         self.add_map_entry(peaks.hash_peaks(), elements);
     }
 
-    // KERNEL INJECTIONS
+    // PROTOCOL CONFIG INJECTIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Inserts the kernel commitment and its procedure roots into the advice map.
+    /// Inserts the protocol configuration into the advice map.
     ///
-    /// Inserts the following entries into the advice map:
-    /// - The commitment of the kernel |-> array of the kernel's procedure roots.
-    fn add_kernel_commitment(&mut self) {
-        // insert the kernel commitment with its procedure roots into the advice map
-        self.add_map_entry(TransactionKernel.to_commitment(), TransactionKernel.to_elements());
+    /// The block header only commits to the configuration, so the kernel resolves these commitments
+    /// to their preimage:
+    /// - PROTOCOL_CONFIG_COMMITMENT |-> the protocol config elements.
+    /// - TX_KERNEL_CONFIG_COMMITMENT |-> the transaction kernel config elements.
+    /// - TX_KERNEL_PROCS_COMMITMENT |-> the array of the transaction kernel's procedure roots.
+    ///
+    /// NOTE: keep this in sync with the `process_protocol_config` and `process_kernel_data` kernel
+    /// procedures.
+    fn add_protocol_config(&mut self, protocol_config: &ProtocolConfig) {
+        let tx_kernel = protocol_config.tx_kernel();
+
+        self.add_map_entry(protocol_config.to_commitment(), protocol_config.to_elements());
+        self.add_map_entry(tx_kernel.to_commitment(), tx_kernel.to_elements());
+        self.add_map_entry(
+            tx_kernel.kernel_procs_commitment(),
+            tx_kernel.kernel_procs_elements().to_vec(),
+        );
     }
 
     // ACCOUNT INJECTION
@@ -401,25 +386,24 @@ impl TransactionAdviceInputs {
 
     /// Extends the map of values with the given argument, replacing previously inserted items.
     fn extend_map(&mut self, iter: impl IntoIterator<Item = (Word, Vec<Felt>)>) {
-        self.0.map.extend(iter);
+        self.0.extend(AdviceInputs::default().with_map(iter));
     }
 
     fn add_map_entry(&mut self, key: Word, values: Vec<Felt>) {
-        self.0.map.extend([(key, values)]);
+        self.0.extend(AdviceInputs::default().with_map([(key, values)]));
     }
 
     /// Extends the stack with the given elements.
     fn extend_stack(&mut self, iter: impl IntoIterator<Item = Felt>) {
         // `AdviceInputs` exposes its stack only as a typed `AdviceStack`, so appending goes
         // through `extend`, which appends the other instance's stack elements to ours.
-        self.0
-            .extend(AdviceInputs::default().with_advice_stack(iter.into_iter().collect()));
+        self.0.extend(AdviceInputs::default().with_stack(iter.into_iter().collect()));
     }
 
     /// Extends the [`MerkleStore`](crate::crypto::merkle::MerkleStore) with the given
     /// nodes.
     fn extend_merkle_store(&mut self, iter: impl Iterator<Item = InnerNodeInfo>) {
-        self.0.store.extend(iter);
+        self.0.extend(AdviceInputs::default().with_merkle_store(iter.collect()));
     }
 }
 

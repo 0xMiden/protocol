@@ -8,13 +8,18 @@ use miden::protocol_utils::account_id
 use miden::protocol_utils::mem as mem_utils
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::asset
-use {ASSET_SIZE} from miden::tx_kernel_core::asset
+use {WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
+use {ASSET_SIZE, COMPOSITION_FUNGIBLE} from miden::tx_kernel_core::asset
 use {ACCOUNT_VERSION_1} from miden::tx_kernel_core::account
+use {ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT, ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT}
+    from miden::tx_kernel_core::callbacks
 use {EMPTY_SMT_ROOT, MAX_ASSETS_PER_NOTE, MAX_INPUT_NOTES_PER_TX, MAX_NOTE_STORAGE_ITEMS, NOTE_TREE_DEPTH}
     from miden::tx_kernel_core::constants
 use miden::tx_kernel_core::memory
-use {BLOCK_DATA_SECTION_OFFSET, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR}
+use {BLOCK_METADATA_PTR, INPUT_VAULT_ROOT_PTR, KERNEL_PROCEDURES_PTR, PARTIAL_BLOCKCHAIN_PTR,
+     PROTOCOL_CONFIG_SECTION_OFFSET}
     from miden::tx_kernel_core::memory
+use miden::tx_kernel_core::note
 
 # CONSTS
 # =================================================================================================
@@ -35,6 +40,14 @@ const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_NUMBER_COMMITMENT =
     "the provided global inputs do not match the block number commitment"
 
 const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32 = "verification base fee must fit into a u32"
+
+const ERR_PROLOGUE_PROTOCOL_CONFIG_COMMITMENT_MISMATCH =
+    "provided protocol config does not match the reference block's protocol config commitment"
+
+const ERR_PROLOGUE_FEE_ASSET_MUST_BE_FUNGIBLE = "the protocol config's fee asset must be fungible"
+
+const ERR_PROLOGUE_KERNEL_CONFIG_COMMITMENT_MISMATCH =
+    "provided transaction kernel config does not match the protocol config's commitment"
 
 const ERR_PROLOGUE_NEW_ACCOUNT_VAULT_MUST_BE_EMPTY = "new account must have an empty vault"
 
@@ -67,6 +80,9 @@ const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO = "new account must have a zer
 const ERR_PROLOGUE_NEW_ACCOUNT_UNSUPPORTED_VERSION =
     "new account metadata has an unsupported version"
 
+const ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG =
+    "an account whose storage contains an asset callback slot must have the asset callback flag enabled"
+
 const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT =
     "number of note storage items exceeded the maximum limit of 1024"
 
@@ -79,7 +95,7 @@ const ERR_PROLOGUE_NOTE_STORAGE_DOES_NOT_MATCH_COMMITMENT =
 const ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED = "failed to authenticate note inclusion in block"
 
 const ERR_PROLOGUE_KERNEL_PROCEDURE_COMMITMENT_MISMATCH =
-    "sequential hash over kernel procedures does not match kernel commitment from block"
+    "sequential hash over kernel procedures does not match the tx kernel's config commitment"
 
 # PUBLIC INPUTS
 # =================================================================================================
@@ -110,65 +126,135 @@ proc process_global_inputs
     exec.memory::set_global_account_id
 end
 
-# KERNEL DATA
+# PROTOCOL CONFIG
 # =================================================================================================
 
-#! Saves the kernel procedure roots to the memory. Verifies that the kernel commitment match the
-#! sequential hash of kernel procedures.
+#! Saves the chain's protocol config to memory and verifies that it matches the commitment in the
+#! reference block header.
 #!
 #! Inputs:
 #!   Operand stack: []
 #!   Advice map: {
-#!     TX_KERNEL_COMMITMENT: [KERNEL_PROCEDURE_ROOTS]
+#!     PROTOCOL_CONFIG_COMMITMENT: [PROTOCOL_CONFIG_ELEMENTS]
 #!   }
 #! Outputs:
 #!   Operand stack: []
 #!   Advice stack:  []
 #!
 #! Where:
-#! - TX_KERNEL_COMMITMENT is the sequential hash of the kernel procedures.
-#! - [KERNEL_PROCEDURE_ROOTS] is the array of the kernel procedure roots.
-proc process_kernel_data
-    # load the transaction kernel commitment from memory
-    exec.memory::get_tx_kernel_commitment
-    # OS => [TX_KERNEL_COMMITMENT]
+#! - PROTOCOL_CONFIG_COMMITMENT is the commitment to the chain's protocol config.
+#! - [PROTOCOL_CONFIG_ELEMENTS] is the protocol config as a sequence of field elements, see
+#!   `ProtocolConfig::to_elements`.
+#!
+#! Panics if:
+#! - the provided protocol config does not match the commitment in the reference block header.
+#! - the fee asset ID is not a fungible asset ID.
+proc process_protocol_config
+    # move the protocol config elements from the advice map to the advice stack
+    exec.memory::get_protocol_config_commitment
+    adv.push_mapval
+    # OS => [PROTOCOL_CONFIG_COMMITMENT]
+    # AS => [PROTOCOL_CONFIG_ELEMENTS]
+
+    push.PROTOCOL_CONFIG_SECTION_OFFSET
+    # OS => [protocol_config_ptr, PROTOCOL_CONFIG_COMMITMENT]
+
+    # read the protocol config and compute its commitment
+    exec.poseidon2::init_no_padding
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
+    # OS => [COMPUTED_COMMITMENT, protocol_config_ptr', PROTOCOL_CONFIG_COMMITMENT]
     # AS => []
+
+    # assert that the provided protocol config is the one the block header commits to
+    movup.4 drop assert_eqw.err=ERR_PROLOGUE_PROTOCOL_CONFIG_COMMITMENT_MISMATCH
+    # OS => []
+
+    # assert that fees are paid in a fungible asset
+    exec.memory::get_fee_asset_id exec.asset::id_into_composition
+    eq.COMPOSITION_FUNGIBLE assert.err=ERR_PROLOGUE_FEE_ASSET_MUST_BE_FUNGIBLE
+    # OS => []
+end
+
+# KERNEL DATA
+# =================================================================================================
+
+#! Saves the kernel procedure roots to the memory. Verifies that they match the transaction kernel
+#! config committed to by the chain's protocol config.
+#!
+#! Inputs:
+#!   Operand stack: []
+#!   Advice map: {
+#!     TX_KERNEL_CONFIG_COMMITMENT: [TX_KERNEL_MAIN_PROC, TX_KERNEL_PROCS_COMMITMENT],
+#!     TX_KERNEL_PROCS_COMMITMENT: [KERNEL_PROCEDURE_ROOTS]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!   Advice stack:  []
+#!
+#! Where:
+#! - TX_KERNEL_CONFIG_COMMITMENT is the commitment to the transaction kernel's configuration.
+#! - TX_KERNEL_MAIN_PROC is the root of the transaction kernel's main procedure.
+#! - TX_KERNEL_PROCS_COMMITMENT is the sequential hash of the kernel procedures.
+#! - [KERNEL_PROCEDURE_ROOTS] is the array of the kernel procedure roots.
+#!
+#! Panics if:
+#! - the provided kernel config does not match the commitment in the protocol config.
+#! - the provided kernel procedures do not match the commitment in the kernel config.
+proc process_kernel_data
+    # move the kernel config elements from the advice map to the advice stack
+    exec.memory::get_tx_kernel_config_commitment
+    adv.push_mapval
+    # OS => [TX_KERNEL_CONFIG_COMMITMENT]
+    # AS => [TX_KERNEL_MAIN_PROC, TX_KERNEL_PROCS_COMMITMENT]
+
+    padw adv_loadw padw adv_loadw
+    # OS => [TX_KERNEL_PROCS_COMMITMENT, TX_KERNEL_MAIN_PROC, TX_KERNEL_CONFIG_COMMITMENT]
+    # AS => []
+
+    dupw movdnw.3 swapw
+    # OS => [TX_KERNEL_MAIN_PROC, TX_KERNEL_PROCS_COMMITMENT, TX_KERNEL_CONFIG_COMMITMENT,
+    #        TX_KERNEL_PROCS_COMMITMENT]
+
+    # assert that the provided kernel config is the one the protocol config commits to
+    exec.poseidon2::merge
+    # OS => [COMPUTED_COMMITMENT, TX_KERNEL_CONFIG_COMMITMENT, TX_KERNEL_PROCS_COMMITMENT]
+
+    assert_eqw.err=ERR_PROLOGUE_KERNEL_CONFIG_COMMITMENT_MISMATCH
+    # OS => [TX_KERNEL_PROCS_COMMITMENT]
 
     # push the procedure roots of the transaction kernel from the advice map to the advice stack
     adv.push_mapvaln
-    # OS => [TX_KERNEL_COMMITMENT]
-    # AS => [len_felts, [KERNEL_PROCEDURE_ROOTS]]
+    # OS => [TX_KERNEL_PROCS_COMMITMENT]
+    # AS => [num_elements, [KERNEL_PROCEDURE_ROOTS]]
 
-    # move the number of felt elements in the [KERNEL_PROCEDURE_ROOTS] array to the stack and get
-    # the number of procedures from it (which is essentially the number of words)
-    adv_push div.4
-    # OS => [num_kernel_procedures, TX_KERNEL_COMMITMENT]
+    # move the number of elements in the array to the stack and get the number of procedures from
+    # it (which is the number of words)
+    adv_push div.WORD_NUM_ELEMENTS
+    # OS => [num_kernel_procedures, TX_KERNEL_PROCS_COMMITMENT]
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
     # store the number of the procedures of the chosen kernel to the memory
     dup exec.memory::set_num_kernel_procedures
-    # OS => [num_kernel_procedures, TX_KERNEL_COMMITMENT]
+    # OS => [num_kernel_procedures, TX_KERNEL_PROCS_COMMITMENT]
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
     # get the pointer to the memory where hashes of the kernel procedures will be stored
     push.KERNEL_PROCEDURES_PTR swap
-    # OS => [num_kernel_procedures, kernel_procs_ptr, TX_KERNEL_COMMITMENT]
+    # OS => [num_kernel_procedures, kernel_procs_ptr, TX_KERNEL_PROCS_COMMITMENT]
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
-    # store the kernel procedures to the memory
+    # store the kernel procedures to memory and extract the commitment
     exec.mem::pipe_words_to_memory
-    # OS => [C, B, A, kernel_procs_ptr', TX_KERNEL_COMMITMENT]
-    # AS => []
-
-    # extract the resulting hash
     exec.poseidon2::squeeze_digest
-    # OS => [SEQ_KERNEL_PROC_HASH, kernel_procs_ptr', TX_KERNEL_COMMITMENT]
+    # OS => [COMPUTED_COMMITMENT, kernel_procs_ptr', TX_KERNEL_PROCS_COMMITMENT]
     # AS => []
 
-    # assert that the precomputed hash matches the computed one
+    # assert that the provided commitment matches the computed one
     movup.4 drop assert_eqw.err=ERR_PROLOGUE_KERNEL_PROCEDURE_COMMITMENT_MISMATCH
     # OS => []
-    # AS => []
 end
 
 # BLOCK DATA
@@ -179,44 +265,43 @@ end
 #! Inputs:
 #!   Operand stack: [block_num]
 #!   Advice stack: [
+#!     [version, block_num, timestamp, 0],
 #!     PREV_BLOCK_COMMITMENT,
 #!     PARTIAL_BLOCKCHAIN_COMMITMENT,
 #!     ACCOUNT_ROOT,
 #!     NULLIFIER_ROOT,
 #!     TX_COMMITMENT,
-#!     TX_KERNEL_COMMITMENT
-#!     VALIDATOR_KEY_COMMITMENT,
-#!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix],
-#!     [0, 0, 0, 0],
+#!     PROTOCOL_CONFIG_COMMITMENT,
+#!     VALIDATOR_CONFIG_COMMITMENT,
+#!     NEXT_PROTOCOL_CONFIG_COMMITMENT,
+#!     [verification_base_fee, 0, 0, 0],
 #!     NOTE_ROOT,
-#!   ]
+#!  ]
 #! Outputs:
 #!   Operand stack: []
 #!   Advice stack: []
 #!
 #! Where:
+#! - version is the block version.
+#! - block_num is the reference block number.
+#! - timestamp is the current timestamp.
 #! - PREV_BLOCK_COMMITMENT is the commitment to the previous block.
 #! - PARTIAL_BLOCKCHAIN_COMMITMENT is the sequential hash of the reference MMR.
 #! - ACCOUNT_ROOT is the root of the tree with latest account states for all accounts.
 #! - NULLIFIER_ROOT is the root of the tree with nullifiers of all notes that have ever been
 #!   consumed.
 #! - TX_COMMITMENT is a commitment to the set of transaction IDs which affected accounts in the block.
-#! - TX_KERNEL_COMMITMENT is the sequential hash of the kernel procedures.
-#! - VALIDATOR_KEY_COMMITMENT is the commitment to the validator's public key.
-#! - block_num is the reference block number.
-#! - version is the current protocol version.
-#! - timestamp is the current timestamp.
-#! - fee_faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the fee asset.
+#! - PROTOCOL_CONFIG_COMMITMENT is the commitment to the protocol config.
+#! - VALIDATOR_CONFIG_COMMITMENT is the commitment to the validator config.
+#! - NEXT_PROTOCOL_CONFIG_COMMITMENT is the the commitment to the next protocol config.
 #! - verification_base_fee is the base fee capturing the cost for the verification of a
 #!   transaction.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
 proc process_block_data
-    push.BLOCK_DATA_SECTION_OFFSET
+    push.BLOCK_METADATA_PTR
     # => [block_data_ptr, block_num]
 
-    # read block data and compute its sub commitment
+    # read the block header and compute its sub commitment
     # see `Advice stack` above for details.
     exec.poseidon2::init_no_padding
     adv_pipe exec.poseidon2::permute
@@ -250,6 +335,11 @@ proc process_block_data
 
     exec.memory::get_blk_num
     assert_eq.err=ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_NUMBER_COMMITMENT
+    # => []
+
+    # assert the verification base fee is a u32, which the fee computation assumes
+    exec.memory::get_verification_base_fee
+    u32assert.err=ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32 drop
     # => []
 end
 
@@ -307,6 +397,7 @@ end
 #! - assert that the account nonce is set to 0.
 #! - read the account seed from the advice provider and assert it satisfies seed requirements.
 #! - assert that the storage slots and the account procedures are sorted and unique.
+#! - assert that the asset callback flag is enabled if an asset callback slot is present.
 #!
 #! Validating storage and procedures for new accounts is sufficient because the storage and code
 #! commitments of an existing account are bound to its committed state, which was produced by the
@@ -356,6 +447,51 @@ proc validate_new_account
     # Assert the account procedures are sorted and unique.
     # ---------------------------------------------------------------------------------------------
     exec.account::validate_procedures
+    # => []
+
+    # Assert the asset callback flag is consistent with the installed asset callback slots.
+    # ---------------------------------------------------------------------------------------------
+    exec.validate_asset_callbacks
+    # => []
+end
+
+#! Validates that an account whose storage contains an asset callback slot has the asset callback
+#! flag of its account ID enabled.
+#!
+#! The kernel decides whether to invoke an account's asset callbacks solely from the asset callback
+#! flag encoded in its account ID, and that flag is immutable once the ID is ground. A callback slot
+#! installed on an account whose flag is disabled would therefore look correctly configured while
+#! never being invoked, silently and permanently disabling whatever the callback enforces.
+#!
+#! `has_callback_slot` must imply `has_callbacks`, but not vice versa. That is, the callback flag
+#! can be enabled without callback slots present. This is allowed so that an account retains the
+#! ability to add a callback slot via an account upgrade later, which is particularly useful if new
+#! types of callbacks are introduced.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the account's storage contains an asset callback slot but its asset callback flag is disabled.
+proc validate_asset_callbacks
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2] exec.account::has_storage_slot
+    # => [has_account_callback_slot]
+
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2] exec.account::has_storage_slot
+    # => [has_note_callback_slot, has_account_callback_slot]
+
+    or
+    # => [has_callback_slot]
+
+    exec.memory::get_native_account_id drop exec.account_id::asset_callback_flag
+    # => [has_callbacks, has_callback_slot]
+
+    # the flag must be enabled if a callback slot is present, so reject the case where a slot is
+    # present but the flag is disabled
+    not and
+    # => [is_inconsistent]
+
+    assertz.err=ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG
     # => []
 end
 
@@ -631,7 +767,8 @@ proc process_note_args
     # => [note_ptr]
 end
 
-#! Computes the note metadata commitment from metadata word and attachments commitment.
+#! Validates the note metadata and computes its commitment from the metadata word and the
+#! attachments commitment.
 #!
 #! Inputs:  [note_ptr]
 #! Outputs: [NOTE_METADATA_COMMITMENT]
@@ -640,13 +777,21 @@ end
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_METADATA_COMMITMENT is the commitment to the note metadata computed as
 #!   `hash(NOTE_METADATA || NOTE_ATTACHMENTS_COMMITMENT)`.
-proc compute_note_metadata_commitment
+#!
+#! Panics if:
+#! - the metadata encodes an unknown version.
+#! - the metadata has its reserved bit set.
+proc process_note_metadata
     # load the attachments commitment onto the stack
     dup exec.memory::get_input_note_attachments_commitment
     # => [NOTE_ATTACHMENTS_COMMITMENT, note_ptr]
 
     # load the metadata onto the stack
     movup.4 exec.memory::get_input_note_metadata
+    # => [NOTE_METADATA, NOTE_ATTACHMENTS_COMMITMENT]
+
+    # the version defines how the metadata is decoded, so assert it before anything reads it
+    dupw exec.note::validate_metadata
     # => [NOTE_METADATA, NOTE_ATTACHMENTS_COMMITMENT]
 
     exec.poseidon2::merge
@@ -943,11 +1088,11 @@ proc process_input_note
     dup exec.add_input_note_assets_to_vault
     # => [note_ptr, NULLIFIER, CAPACITY]
 
-    # note metadata commitment
+    # note metadata
     # ---------------------------------------------------------------------------------------------
 
-    # compute NOTE_METADATA_COMMITMENT
-    dup exec.compute_note_metadata_commitment
+    # validate the metadata and compute NOTE_METADATA_COMMITMENT
+    dup exec.process_note_metadata
     # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
     # note details commitment
@@ -1178,17 +1323,7 @@ end
 #!     account_id_prefix, account_id_suffix, block_num,
 #!   ]
 #!   Advice stack: [
-#!     PREV_BLOCK_COMMITMENT,
-#!     PARTIAL_BLOCKCHAIN_COMMITMENT,
-#!     ACCOUNT_ROOT,
-#!     NULLIFIER_ROOT,
-#!     TX_COMMITMENT,
-#!     TX_KERNEL_COMMITMENT
-#!     VALIDATOR_KEY_COMMITMENT,
-#!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
-#!     [0, 0, 0, 0]
-#!     NOTE_ROOT,
+#!     BLOCK_HEADER_ELEMENTS,
 #!     [account_version, account_nonce, account_id_suffix, account_id_prefix]
 #!     ACCOUNT_VAULT_ROOT,
 #!     ACCOUNT_STORAGE_COMMITMENT,
@@ -1201,7 +1336,9 @@ end
 #!   Advice map: {
 #!      PARTIAL_BLOCKCHAIN_COMMITMENT: [MMR_PEAKS],
 #!      INPUT_NOTES_COMMITMENT: [NOTE_DATA],
-#!      TX_KERNEL_COMMITMENT: [KERNEL_PROCEDURE_ROOTS],
+#!      PROTOCOL_CONFIG_COMMITMENT: [PROTOCOL_CONFIG_ELEMENTS],
+#!      TX_KERNEL_CONFIG_COMMITMENT: [TX_KERNEL_MAIN_PROC, TX_KERNEL_PROCS_COMMITMENT],
+#!      TX_KERNEL_PROCS_COMMITMENT: [KERNEL_PROCEDURE_ROOTS],
 #!      ACCOUNT_CODE_COMMITMENT: [ACCOUNT_PROCEDURE_DATA],
 #!      ACCOUNT_STORAGE_COMMITMENT: [ACCOUNT_STORAGE_SLOT_DATA],
 #!   }
@@ -1216,20 +1353,12 @@ end
 #! - INITIAL_ACCOUNT_COMMITMENT is the account state prior to the transaction, EMPTY_WORD for new
 #!   accounts.
 #! - INPUT_NOTES_COMMITMENT, see `transaction::api::get_input_notes_commitment`.
-#! - TX_KERNEL_COMMITMENT is the sequential hash of the kernel procedures.
-#! - PREV_BLOCK_COMMITMENT is the commitment to the previous block.
+#! - BLOCK_HEADER_ELEMENTS is the reference block header, see process_block_data.
 #! - PARTIAL_BLOCKCHAIN_COMMITMENT is the sequential hash of the reference MMR.
-#! - ACCOUNT_ROOT is the root of the tree with latest account states for all accounts.
-#! - NULLIFIER_ROOT is the root of the tree with nullifiers of all notes that have ever been
-#!   consumed.
-#! - TX_COMMITMENT is a commitment to the set of transaction IDs which affected accounts in the block.
-#! - VALIDATOR_KEY_COMMITMENT is the commitment to the validator's public key.
+#! - PROTOCOL_CONFIG_ELEMENTS is the chain's protocol config, see process_protocol_config.
+#! - TX_KERNEL_MAIN_PROC and TX_KERNEL_PROCS_COMMITMENT describe the transaction kernel, see
+#!   process_kernel_data.
 #! - block_num is the reference block number.
-#! - version is the current protocol version.
-#! - timestamp is the current timestamp.
-#! - NOTE_ROOT is the root of the tree with all notes created in the block.
-#! - verification_base_fee is the base fee capturing the cost for the verification of a
-#!   transaction.
 #! - account_nonce is the account's nonce.
 #! - ACCOUNT_VAULT_ROOT is the account's vault root.
 #! - ACCOUNT_STORAGE_COMMITMENT is the account's storage commitment.
@@ -1252,6 +1381,7 @@ pub proc prepare_transaction
     # => [block_num]
 
     exec.process_block_data
+    exec.process_protocol_config
     exec.process_kernel_data
     exec.process_chain_data
     exec.process_account_data

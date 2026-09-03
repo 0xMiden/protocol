@@ -17,8 +17,13 @@ bench   = false
 doctest = false
 
 [features]
-testing = []
+testing = ["miden-processor/testing", "miden-protocol/testing"]
 
 [dependencies]
-miden-protocol = { workspace = true }
-thiserror      = { workspace = true }
+miden-processor = { workspace = true }
+miden-protocol  = { workspace = true }
+miden-prover    = { workspace = true }
+thiserror       = { workspace = true }
+
+[dev-dependencies]
+miden-protocol = { features = ["testing"], workspace = true }

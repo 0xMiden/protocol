@@ -42,6 +42,8 @@ const ERR_RBAC_CONFIG_UNKNOWN_SELECTOR = "rbac config note selector does not mat
 
 const ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "rbac config note storage item count does not match the selected action"
 
+const ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC = "rbac config note must be public"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -66,6 +68,7 @@ const ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "rbac config note sto
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
@@ -74,6 +77,10 @@ const ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "rbac config note sto
 @note_script
 pub proc main
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's

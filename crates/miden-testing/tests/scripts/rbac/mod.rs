@@ -19,6 +19,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, RoleBasedAccessControl, RoleConfig};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
+    ERR_INVALID_ROLE_SYMBOL,
     ERR_ROLE_SYMBOL_ZERO,
     ERR_SENDER_NOT_ROLE_ADMIN,
 };
@@ -326,6 +327,26 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
             dropw dropw dropw dropw
         end
         "#,
+    )
+}
+
+fn grant_role_raw_script(role: Felt, account_id: AccountId) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{account_prefix}
+            push.{account_suffix}
+            push.{role}
+            call.rbac::grant_role
+            dropw dropw dropw dropw
+        end
+        "#,
+        account_prefix = account_id.prefix().as_felt(),
+        account_suffix = account_id.suffix(),
     )
 }
 
@@ -691,6 +712,75 @@ async fn test_rbac_non_admin_cannot_set_role_admin() -> anyhow::Result<()> {
     let tx = mock_chain.build_transaction(account).unauthenticated_input_note(note).build()?;
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    Ok(())
+}
+
+/// On-chain a role is only ever a felt, so the entrypoints enforce the encoding the Rust
+/// `RoleSymbol` accepts: without that, a role could be granted and authorized on-chain under a felt
+/// that no reader can decode back into a symbol.
+///
+/// `27` announces a length of zero (it is the first multiple of the alphabet size), and
+/// `MAX_ENCODED_VALUE + 1` runs past the longest encodable symbol, and `ALPHABET_LEN^13 + 12`
+/// announces the longest encodable length while carrying a digit past it; none names a role.
+#[rstest]
+#[case::announces_no_characters(Felt::new(27).unwrap())]
+#[case::past_the_longest_symbol(Felt::new(4052555153018976253).unwrap())]
+#[case::a_digit_past_the_announced_length(Felt::new(4052555153018976279).unwrap())]
+#[tokio::test]
+async fn test_rbac_grant_role_rejects_non_canonical_role_symbol(
+    #[case] role_symbol: Felt,
+) -> anyhow::Result<()> {
+    let admin = test_account_id(130);
+    let member = test_account_id(131);
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let note = build_note(admin, grant_role_raw_script(role_symbol, member))?;
+    let tx = mock_chain.build_transaction(account).unauthenticated_input_note(note).build()?;
+    let result = tx.execute().await;
+    assert_transaction_executor_error!(result, ERR_INVALID_ROLE_SYMBOL);
+
+    Ok(())
+}
+
+/// The shortest and the longest encodable symbols stay grantable: the encoding check must not
+/// narrow the role space the `RoleSymbol` type allows.
+#[rstest]
+#[case::shortest("A")]
+#[case::longest("____________")]
+#[tokio::test]
+async fn test_rbac_grant_role_accepts_the_encoding_extremes(
+    #[case] symbol: &str,
+) -> anyhow::Result<()> {
+    let admin = test_account_id(132);
+    let member = test_account_id(133);
+
+    let edge_role = role(symbol);
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let note = build_note(admin, grant_role_script(&edge_role, member))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &note).await?;
+    assert!(is_role_member(&updated, &edge_role, member)?);
+
+    Ok(())
+}
+
+/// A delegated admin is a role like any other, so `set_role_admin` holds its symbol to the same
+/// encoding. Zero stays accepted: it clears the delegation.
+#[tokio::test]
+async fn test_rbac_set_role_admin_rejects_non_canonical_admin_role_symbol() -> anyhow::Result<()> {
+    let admin = test_account_id(134);
+
+    let minter = role("MINTER");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let note =
+        build_note(admin, set_role_admin_raw_script(Felt::from(&minter), Felt::new(27).unwrap()))?;
+    let tx = mock_chain.build_transaction(account).unauthenticated_input_note(note).build()?;
+    let result = tx.execute().await;
+    assert_transaction_executor_error!(result, ERR_INVALID_ROLE_SYMBOL);
 
     Ok(())
 }

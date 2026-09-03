@@ -103,8 +103,8 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Input notes consumed by the transaction.
     input_notes: InputNotes<InputNote>,
 
-    /// The commitment to the reference block of the transaction.
-    ref_block_commitment: Word,
+    /// The commitments of the blocks the transaction authenticates, keyed by block number.
+    block_commitments: BTreeMap<BlockNumber, Word>,
 
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
@@ -122,7 +122,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
-        ref_block_commitment: Word,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -147,7 +147,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
-            ref_block_commitment,
+            block_commitments,
             core_lib_handlers,
         }
     }
@@ -290,7 +290,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         let is_found = Felt::from(note_idx.is_some() as u8);
         let note_idx = Felt::from(note_idx.unwrap_or(0));
 
-        vec![AdviceMutation::extend_advice_stack([note_idx, is_found].into_iter().collect())]
+        vec![AdviceMutation::extend_advice_stack_with([note_idx, is_found])]
     }
 
     /// Handles the event if the core lib event handler registry contains a handler with the emitted
@@ -326,7 +326,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
-        vec![AdviceMutation::extend_advice_stack(signature.into())]
+        vec![AdviceMutation::extend_advice_stack_with(signature)]
     }
 
     /// Adds an asset to the output note identified by the note index.
@@ -368,9 +368,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_advice_stack(
-            [Felt::from(proc_idx)].into_iter().collect(),
-        )])
+        Ok(vec![AdviceMutation::extend_advice_stack_with([Felt::from(proc_idx)])])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.
@@ -504,8 +502,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        let expected_block_commitment = self.ref_block_commitment;
-        if expected_block_commitment != block_commitment {
+        let expected_block_commitment = self
+            .block_commitments
+            .get(&block_number)
+            .ok_or(TransactionKernelError::TransactionSummaryUnknownBlockNumber(block_number))?;
+        if *expected_block_commitment != block_commitment {
             return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
                 format!(
                     "expected block commitment to be {expected_block_commitment} but was {block_commitment}"

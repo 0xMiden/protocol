@@ -11,7 +11,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
@@ -27,12 +27,16 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::errors::standards::{
+    ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
 };
-use miden_standards::note::{MinBurnAmountConfigNote, NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::note::config::MinBurnAmountConfigNote;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+
+use crate::into_private_note;
 
 // HELPERS
 // ================================================================================================
@@ -62,7 +66,6 @@ fn create_faucet_with_min_burn_amount(owner: AccountId) -> anyhow::Result<Accoun
         .with_components(Auth::IncrNonce)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(faucet)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .build_existing()?;
 
@@ -222,5 +225,29 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .await;
 
     assert_transaction_executor_error!(result, ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before the threshold changes.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let account = create_faucet_with_min_burn_amount(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let note = min_burn_amount_config_note(owner, account.id(), 5, &mut rng)?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC);
     Ok(())
 }
