@@ -331,19 +331,8 @@ impl From<&OutputNoteBatch> for proto::blockchain::OutputNoteBatch {
     }
 }
 
-impl TryFrom<proto::blockchain::OutputNoteBatch> for OutputNoteBatch {
-    type Error = ConversionError;
-
-    fn try_from(batch: proto::blockchain::OutputNoteBatch) -> Result<Self, Self::Error> {
-        batch
-            .notes
-            .into_iter()
-            .enumerate()
-            .map(|(position, note)| {
-                <(usize, OutputNote)>::try_from(note).context(format!("notes[{position}]"))
-            })
-            .collect()
-    }
+pub(crate) fn decode_output_note_batch(notes: Vec<(usize, OutputNote)>) -> OutputNoteBatch {
+    notes.into_iter().collect()
 }
 
 // SIGNED BLOCK

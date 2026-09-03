@@ -213,6 +213,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 transactions,
             ),
         },
+        ".blockchain.OutputNoteBatch" => {
+            target: ::miden_protocol::block::OutputNoteBatch,
+            constructor: crate::conversion::decode_output_note_batch(
+                notes,
+            ),
+        },
         ".blockchain.SignedBlock" => {
             target: ::miden_protocol::block::SignedBlock,
             try_constructor: crate::conversion::decode_signed_block(
