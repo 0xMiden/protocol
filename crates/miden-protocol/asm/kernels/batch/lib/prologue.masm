@@ -260,6 +260,7 @@ pub proc prepare_batch
     # Pipe the tuples into memory, asserting their poseidon2 hash equals BATCH_ID.
     exec.mem::pipe_preimage_to_memory
     # => [end_ptr]
+
     drop
 
     # Layer 2: for each transaction, pipe + verify its header.
@@ -295,6 +296,7 @@ pub proc prepare_batch
         # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
+
         drop
 
         dup neq.0

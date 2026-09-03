@@ -45,6 +45,7 @@ proc assert_all_output_notes_created
 
         dup exec.memory::get_output_note_is_created
         # => [is_created, output_note_idx]
+
         assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
 
         dup neq.0
@@ -114,14 +115,19 @@ proc absorb_input_entry
     # The entry occupies one double word [entry_ptr, entry_ptr + NOTE_ENTRY_FELT_LEN).
     exec.memory::get_input_note_entry_ptr
     # => [entry_ptr, hasher_state_ptr]
+
     dup add.NOTE_ENTRY_FELT_LEN swap
     # => [entry_ptr, end_ptr, hasher_state_ptr]
+
     dup.2 exec.load_hasher_state
     # => [RATE0, RATE1, CAPACITY, entry_ptr, end_ptr, hasher_state_ptr]
+
     exec.poseidon2::absorb_double_words_from_memory
     # => [RATE0', RATE1', CAPACITY', end_ptr, end_ptr, hasher_state_ptr]
+
     movup.12 drop movup.12 drop
     # => [RATE0', RATE1', CAPACITY', hasher_state_ptr]
+
     exec.store_hasher_state
 end
 
@@ -142,14 +148,17 @@ end
 proc process_input_entry
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx, hasher_state_ptr]
+
     assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
     # => [input_note_idx, hasher_state_ptr]
 
     # Absorb the entry unless it was erased (created-and-consumed in this batch).
     dup exec.memory::get_input_note_erasure_state
     # => [erasure_state, input_note_idx, hasher_state_ptr]
+
     eq.UNERASED
     # => [is_unerased, input_note_idx, hasher_state_ptr]
+
     if.true
         dup.1 dup.1 exec.absorb_input_entry
     end
@@ -183,6 +192,7 @@ proc compute_input_notes_commitment
     exec.poseidon2::init_no_padding
     locaddr.0 movdn.12
     # => [RATE0, RATE1, CAPACITY, hasher_state_ptr]
+
     exec.store_hasher_state
 
     exec.memory::get_num_input_notes
@@ -191,13 +201,16 @@ proc compute_input_notes_commitment
 
     dup dup.3 neq
     # => [should_loop, input_note_idx, hasher_state_ptr, num_input_notes]
+
     while.true
         exec.process_input_entry
         # => [input_note_idx+1, hasher_state_ptr, num_input_notes]
+
         dup dup.3 neq
         # => [should_loop, input_note_idx+1, hasher_state_ptr, num_input_notes]
     end
     # => [input_note_idx, hasher_state_ptr, num_input_notes]
+
     drop swap drop
     # => [hasher_state_ptr]
 
@@ -238,6 +251,7 @@ pub proc finalize
     exec.assert_all_output_notes_created
     exec.compute_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT]
+
     exec.compute_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]
 end

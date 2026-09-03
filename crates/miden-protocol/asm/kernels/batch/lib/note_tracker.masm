@@ -118,20 +118,26 @@ end
 proc cross_reference_one_input
     dup exec.memory::get_input_note_entry_ptr add.NOTE_ENTRY_VALUE_OFFSET
     # => [note_id_ptr, input_note_idx]
+
     padw movup.4 mem_loadw_le
     # => [NOTE_ID, input_note_idx]
+
     exec.word::testz
     # => [is_empty, NOTE_ID, input_note_idx]
+
     if.true
         dropw drop
     else
         exec.find_output_note
         # => [is_found, output_note_ptr, input_note_idx]
+
         if.true
             exec.memory::get_output_note_idx_from_ptr
             # => [output_note_idx, input_note_idx]
+
             dup.1 exec.set_input_erasure_expected
             # => [output_note_idx, input_note_idx]
+
             exec.set_output_erases_input
             # => []
         else
@@ -173,6 +179,7 @@ end
 proc mark_output_note_created
     dup exec.memory::get_output_note_is_created
     # => [is_created, output_note_idx]
+
     assertz.err=ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE
     # => [output_note_idx]
 
@@ -211,22 +218,29 @@ proc bind_one_output_note
     # Derive the output note's id as merge(details_commitment, metadata_commitment).
     dup padw movup.4 mem_loadw_le
     # => [DETAILS, verified_output_note_ptr]
+
     dup.4 add.NOTE_ENTRY_VALUE_OFFSET padw movup.4 mem_loadw_le
     # => [METADATA, DETAILS, verified_output_note_ptr]
+
     swapw
     # => [DETAILS, METADATA, verified_output_note_ptr]
+
     exec.poseidon2::merge
     # => [NOTE_ID, verified_output_note_ptr]   (NoteId = merge(details, metadata))
+
     movup.4 drop
     # => [NOTE_ID]
 
     # Look the note id up in the note-id-sorted output-note list and mark the entry created.
     exec.find_output_note
     # => [is_found, claimed_output_note_ptr]
+
     assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST
     # => [claimed_output_note_ptr]
+
     exec.memory::get_output_note_idx_from_ptr
     # => [output_note_idx]
+
     dup exec.mark_output_note_created
     # => [output_note_idx]
 
@@ -234,6 +248,7 @@ proc bind_one_output_note
     # erasure state from expected to erased.
     exec.memory::get_output_note_erasure
     # => [will_be_erased, erased_by_input_note_idx]
+
     if.true
         exec.mark_input_note_erased
     else
@@ -280,6 +295,7 @@ end
 proc process_tx_output_notes
     dup exec.memory::get_tx_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
+
     exec.word::testz
     if.true
         # Empty commitment: the transaction has no output notes, so there is nothing to bind.
@@ -306,10 +322,13 @@ proc process_tx_output_notes
         # num_notes = (end_ptr - scratch base) / felts-per-entry.
         locaddr.0 sub div.NOTE_ENTRY_FELT_LEN
         # => [num_output_notes, tx_index]
+
         swap drop
         # => [num_output_notes]
+
         locaddr.0 swap
         # => [num_output_notes, scratch_ptr]
+
         exec.bind_scratch_output_notes
     end
 end
@@ -324,6 +343,7 @@ end
 proc mark_input_note_consumed
     dup exec.memory::get_input_note_is_consumed
     # => [is_consumed, input_note_idx]
+
     assertz.err=ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE
     # => [input_note_idx]
 
@@ -361,8 +381,10 @@ proc bind_one_input_note
     # Look the per-transaction note up in the nullifier-sorted input-note list by its nullifier.
     dup padw movup.4 mem_loadw_le
     # => [NULLIFIER, verified_input_note_ptr]
+
     exec.find_input_note
     # => [is_found, claimed_input_note_ptr, verified_input_note_ptr]
+
     assert.err=ERR_BATCH_INPUT_NOTE_NOT_IN_LIST
     # => [claimed_input_note_ptr, verified_input_note_ptr]
 
@@ -370,8 +392,10 @@ proc bind_one_input_note
     # the nullifier (so an unauthenticated note cannot be matched to the wrong list entry).
     dup add.NOTE_ENTRY_VALUE_OFFSET padw movup.4 mem_loadw_le
     # => [CLAIMED_NOTE_ID, claimed_input_note_ptr, verified_input_note_ptr]
+
     dup.5 add.NOTE_ENTRY_VALUE_OFFSET padw movup.4 mem_loadw_le
     # => [VERIFIED_NOTE_ID, CLAIMED_NOTE_ID, claimed_input_note_ptr, verified_input_note_ptr]
+
     assert_eqw.err=ERR_BATCH_INPUT_NOTE_ID_MISMATCH
     # => [claimed_input_note_ptr, verified_input_note_ptr]
 
@@ -379,8 +403,10 @@ proc bind_one_input_note
     # consumed.
     swap drop
     # => [claimed_input_note_ptr]
+
     exec.memory::get_input_note_idx_from_ptr
     # => [input_note_idx]
+
     dup exec.assert_input_not_consumed_before_created
     exec.mark_input_note_consumed
 end
@@ -427,6 +453,7 @@ end
 proc process_tx_input_notes
     dup exec.memory::get_tx_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
+
     exec.word::testz
     if.true
         # Empty commitment: the transaction has no input notes, so there is nothing to bind.
@@ -454,10 +481,13 @@ proc process_tx_input_notes
         # num_notes = (end_ptr - scratch base) / felts-per-entry.
         locaddr.0 sub div.NOTE_ENTRY_FELT_LEN
         # => [num_input_notes, tx_index]
+
         swap drop
         # => [num_input_notes]
+
         locaddr.0 swap
         # => [num_input_notes, scratch_ptr]
+
         exec.bind_scratch_input_notes
     end
 end
@@ -483,6 +513,7 @@ proc bind_per_tx_notes
 
     dup.1 dup.1 neq
     # => [should_loop, tx_index, num_transactions]
+
     while.true
         dup exec.process_tx_input_notes
         dup exec.process_tx_output_notes

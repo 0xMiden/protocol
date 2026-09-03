@@ -191,11 +191,7 @@ end
 #! Outputs: [TX_ID]
 pub proc get_tx_id
     exec.get_tx_tuple_ptr
-    # => [tx_tuple_ptr]
-    padw movup.4
-    # => [PAD, tx_tuple_ptr]
-    mem_loadw_le
-    # => [TX_ID]
+    padw movup.4 mem_loadw_le
 end
 
 #! Returns a pointer to transaction `tx_index`'s entry in TX_HEADERS_PTR.
@@ -212,11 +208,7 @@ end
 #! Outputs: [INPUT_NOTES_COMMITMENT_idx]
 pub proc get_tx_input_notes_commitment
     exec.get_tx_header_ptr add.TX_HEADER_INPUT_NOTES_OFFSET
-    # => [input_notes_commitment_ptr]
-    padw movup.4
-    # => [PAD, input_notes_commitment_ptr]
-    mem_loadw_le
-    # => [INPUT_NOTES_COMMITMENT]
+    padw movup.4 mem_loadw_le
 end
 
 #! Returns the verified per-transaction OUTPUT_NOTES_COMMITMENT for transaction `tx_index`.
@@ -225,11 +217,7 @@ end
 #! Outputs: [OUTPUT_NOTES_COMMITMENT_idx]
 pub proc get_tx_output_notes_commitment
     exec.get_tx_header_ptr add.TX_HEADER_OUTPUT_NOTES_OFFSET
-    # => [output_notes_commitment_ptr]
-    padw movup.4
-    # => [PAD, output_notes_commitment_ptr]
-    mem_loadw_le
-    # => [OUTPUT_NOTES_COMMITMENT]
+    padw movup.4 mem_loadw_le
 end
 
 # SORTED NOTE LIST ACCESSORS
