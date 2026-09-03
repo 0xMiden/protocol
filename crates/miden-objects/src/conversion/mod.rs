@@ -33,6 +33,7 @@ pub(crate) use note::{
     decode_note_storage,
     validate_note_attachments,
 };
+pub(crate) use primitives::decode_advice_stack;
 pub(crate) use transaction::{
     decode_proven_transaction,
     decode_transaction_args,

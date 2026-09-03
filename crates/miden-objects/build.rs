@@ -154,6 +154,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 leaf,
             ),
         },
+        ".primitives.AdviceStack" => {
+            target: ::miden_protocol::vm::AdviceStack,
+            constructor: crate::conversion::decode_advice_stack(
+                values,
+            ),
+        },
         ".primitives.AdviceInputs" => {
             target: ::miden_protocol::vm::AdviceInputs,
             constructor: ::miden_protocol::vm::AdviceInputs::new(

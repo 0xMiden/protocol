@@ -170,17 +170,8 @@ impl From<&AdviceStack> for proto::primitives::AdviceStack {
     }
 }
 
-impl TryFrom<proto::primitives::AdviceStack> for AdviceStack {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::AdviceStack) -> Result<Self, Self::Error> {
-        value
-            .values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| Felt::try_from(value).context(format!("values[{index}]")))
-            .collect::<Result<AdviceStack, _>>()
-    }
+pub(crate) fn decode_advice_stack(values: Vec<Felt>) -> AdviceStack {
+    values.into_iter().collect()
 }
 
 impl From<&AdviceMap> for proto::primitives::AdviceMap {
