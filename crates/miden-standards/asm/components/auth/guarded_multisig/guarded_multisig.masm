@@ -2,8 +2,8 @@
 #
 # See the `AuthGuardedMultisig` Rust type's documentation for more details.
 
-use miden::standards::auth::multisig
 use miden::standards::auth::guardian
+use miden::standards::auth::multisig
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -13,7 +13,16 @@ pub use {is_signer} from miden::standards::auth::multisig
 
 pub use {update_guardian_public_key} from miden::standards::auth::guardian
 
-#! Authenticate a transaction with multi-signature support and optional guardian verification.
+#! Authenticate a transaction with multi-signature support and guardian verification, paying the
+#! transaction fee in the process.
+#!
+#! The fee is paid before the transaction summary is created, bounded and in the native fee asset
+#! (see multisig::pay_bounded_fee), so the fee note and the vault withdrawal funding it are covered
+#! by the approver and guardian signatures.
+#!
+#! The guardian signature is verified in addition to the approvers' (see
+#! guardian::verify_signature), except on the guardian key rotation path, which instead requires
+#! that the transaction create no notes beyond the ones the fee payment creates.
 #!
 #! The guardian must not be an approver, otherwise a single signature would satisfy both the
 #! multisig and the guardian check, so this procedure re-checks the invariant that
@@ -28,6 +37,8 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #!   Operand stack: []
 #!
 #! Panics if:
+#! - the auth args cannot be resolved, see `multisig::resolve_auth_args`.
+#! - the fee payment fails, see `multisig::pay_bounded_fee`.
 #! - insufficient number of valid approver or guardian signatures.
 #! - the approval window ended at or before the transaction reference block, see
 #!   `multisig::auth_tx`.
@@ -39,15 +50,35 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.multisig::resolve_auth_args
     # => [CONVERSION_INFO, block_number, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info is unused
-    dropw
-    # => [block_number, SALT]
+    # Pay the transaction fee before the summary is created so that the TX_FEE note and the vault
+    # withdrawal funding it are covered by the approver and guardian signatures.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT]
+
+    # one slot beyond the approvers, for the guardian signature.
+    add.1
+    # => [num_of_signers, CONVERSION_INFO, block_number, SALT]
+
+    exec.multisig::pay_bounded_fee
+    # => [num_own_output_notes, block_number, SALT]
+
+    # the rotation path excludes the notes the payment created from its no-output-notes check
+    movdn.5
+    # => [block_number, SALT, num_own_output_notes]
+
+    # Authenticate the transaction and record it for replay protection.
+    # ---------------------------------------------------------------------------------------------
 
     exec.multisig::auth_tx
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, num_own_output_notes]
 
     dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, num_own_output_notes]
+
+    movup.8
+    # => [num_own_output_notes, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
 
     exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT]

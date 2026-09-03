@@ -14,7 +14,7 @@
       "core_rows": 81445,
       "chiplets_rows": 11504,
       "poseidon2_permutation_rows": 55392,
-      "range_rows": 20645,
+      "range_rows": 20537,
       "chiplets_shape": {
         "hasher_rows": 8656,
         "bitwise_rows": 656,
@@ -39,7 +39,7 @@
       "core_rows": 13682,
       "chiplets_rows": 5872,
       "poseidon2_permutation_rows": 19888,
-      "range_rows": 1969,
+      "range_rows": 1989,
       "chiplets_shape": {
         "hasher_rows": 4224,
         "bitwise_rows": 848,
@@ -65,7 +65,7 @@
       "core_rows": 84045,
       "chiplets_rows": 13403,
       "poseidon2_permutation_rows": 55648,
-      "range_rows": 20515,
+      "range_rows": 20265,
       "chiplets_shape": {
         "hasher_rows": 10072,
         "bitwise_rows": 1032,
@@ -91,7 +91,7 @@
       "core_rows": 16282,
       "chiplets_rows": 7771,
       "poseidon2_permutation_rows": 20144,
-      "range_rows": 1413,
+      "range_rows": 1427,
       "chiplets_shape": {
         "hasher_rows": 5640,
         "bitwise_rows": 1224,
@@ -114,7 +114,7 @@
       "core_rows": 79635,
       "chiplets_rows": 10916,
       "poseidon2_permutation_rows": 53280,
-      "range_rows": 20351,
+      "range_rows": 20457,
       "chiplets_shape": {
         "hasher_rows": 8240,
         "bitwise_rows": 616,
@@ -137,7 +137,7 @@
       "core_rows": 11872,
       "chiplets_rows": 5284,
       "poseidon2_permutation_rows": 17728,
-      "range_rows": 1237,
+      "range_rows": 1217,
       "chiplets_shape": {
         "hasher_rows": 3808,
         "bitwise_rows": 808,
@@ -863,7 +863,7 @@
       "core_rows": 17359,
       "chiplets_rows": 7868,
       "poseidon2_permutation_rows": 23776,
-      "range_rows": 1517,
+      "range_rows": 1529,
       "chiplets_shape": {
         "hasher_rows": 5824,
         "bitwise_rows": 1160,

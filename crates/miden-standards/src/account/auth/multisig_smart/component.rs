@@ -147,6 +147,25 @@ fn validate_proc_policies(
 ///
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
+///
+/// # Fees
+///
+/// Before authenticating, `auth_tx_multisig_smart` pays the transaction fee by creating a public
+/// TX_FEE note (see [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, in the
+/// asset and at the rate of the auth args'
+/// [`FeeConversionInfo`](crate::account::auth::FeeConversionInfo). On chains with a zero
+/// verification base fee no note is created. The fee note is created before the transaction
+/// summary, so the approver signatures cover it. Every network output note is also sponsored
+/// through its target's fee policy, which requires that target to be provisioned as a foreign
+/// account.
+///
+/// The notes the authentication procedure creates to pay the fee do not count against a
+/// [`ProcedurePolicyNoteRestriction`](super::ProcedurePolicyNoteRestriction), so
+/// [`NoOutputNotes`](super::ProcedurePolicyNoteRestriction::NoOutputNotes) stays satisfiable on a
+/// fee-charging chain. Because a per-procedure policy can authorize a transaction below the
+/// account's default threshold while the conversion rate is host-supplied, the payment is bounded
+/// (`fee::assert_fee_bound`): it must be in the native fee asset and at most twice the computed
+/// fee.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,

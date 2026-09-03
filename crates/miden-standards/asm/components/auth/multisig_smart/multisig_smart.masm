@@ -11,7 +11,14 @@ pub use {is_signer} from miden::standards::auth::multisig
 pub use {set_procedure_policy} from miden::standards::auth::multisig_smart
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig_smart
 
-#! Authenticate a transaction using multisig smart-policy rules.
+#! Authenticate a transaction using multisig smart-policy rules, paying the transaction fee in the
+#! process.
+#!
+#! The fee is paid before the transaction summary is created, bounded and in the native fee asset
+#! (see multisig::pay_bounded_fee), so the fee note and the vault withdrawal funding it are covered
+#! by the approver signatures. The notes the payment creates are excluded from the procedure
+#! policies' note restrictions, so a policy forbidding output notes stays satisfiable on a
+#! fee-charging chain.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -20,7 +27,10 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig_sma
 #!   Operand stack: []
 #!
 #! Panics if:
-#! - insufficient number of valid signatures (below threshold).
+#! - the auth args cannot be resolved, see `multisig::resolve_auth_args`.
+#! - the fee payment fails, see `multisig::pay_bounded_fee`.
+#! - a called procedure's policy forbids the transaction's input or output notes, or the number of
+#!   valid signatures is below the threshold, see `multisig_smart::auth_tx`.
 #! - the approval window ended at or before the transaction reference block, see
 #!   `multisig_smart::auth_tx`.
 #!
@@ -30,9 +40,18 @@ pub proc auth_tx_multisig_smart(auth_args: word)
     exec.multisig::resolve_auth_args
     # => [CONVERSION_INFO, block_number, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info is unused
-    dropw
-    # => [block_number, SALT]
+    # Pay the transaction fee before the summary is created so that the TX_FEE note and the vault
+    # withdrawal funding it are covered by the approver signatures.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT]
+
+    exec.multisig::pay_bounded_fee
+    # => [num_own_output_notes, block_number, SALT]
+
+    # Authenticate the transaction and record it for replay protection.
+    # ---------------------------------------------------------------------------------------------
 
     exec.multisig_smart::auth_tx
     # => [TX_SUMMARY_COMMITMENT]

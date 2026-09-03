@@ -4,6 +4,8 @@
 
 ### Features
 
+- [BREAKING] `AuthMultisig` now bounds its fee payment via `fee::assert_fee_bound` to the native fee asset at at most twice the computed fee, closing the fee drain of [#3763](https://github.com/0xMiden/protocol/issues/3763); its code commitment changes.
+- [BREAKING] The `AuthGuardedMultisig` and `AuthMultisigSmart` components now pay the transaction fee, bounded via `fee::assert_fee_bound` to the native fee asset at at most twice the computed fee; `tx_policy::assert_no_output_notes` takes the number of output notes the caller created itself ([#3786](https://github.com/0xMiden/protocol/pull/3786)).
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
