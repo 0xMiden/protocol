@@ -115,7 +115,7 @@ exec.fees::create_network_note_sponsorships drop
 # one slot beyond the approvers, for the guardian signature
 add.1
 
-# settle the sponsorship obligation first
+# settle the sponsorship obligation
 exec.fees::create_network_note_sponsorships drop
 ```
 
