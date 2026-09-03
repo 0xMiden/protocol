@@ -3,7 +3,6 @@ use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountId, AccountUpdateDetails};
 use miden_protocol::note::{NoteHeader, NoteId, Nullifier};
 use miden_protocol::transaction::{
     InputNoteCommitment,
@@ -113,27 +112,6 @@ impl From<&TxAccountUpdate> for proto::transaction::TxAccountUpdate {
             account_patch_commitment: Some(value.account_patch_commitment().into()),
             details: Some(value.details().into()),
         }
-    }
-}
-
-impl TryFrom<proto::transaction::TxAccountUpdate> for TxAccountUpdate {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::transaction::TxAccountUpdate) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let account_id: AccountId = required!(decoder, value.account_id)?;
-        let initial_state_commitment = required!(decoder, value.initial_state_commitment)?;
-        let final_state_commitment = required!(decoder, value.final_state_commitment)?;
-        let account_patch_commitment = required!(decoder, value.account_patch_commitment)?;
-        let details: AccountUpdateDetails = required!(decoder, value.details)?;
-        Self::new(
-            account_id,
-            initial_state_commitment,
-            final_state_commitment,
-            account_patch_commitment,
-            details,
-        )
-        .map_err(ConversionError::new)
     }
 }
 

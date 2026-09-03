@@ -135,6 +135,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 details,
             ),
         },
+        ".transaction.TxAccountUpdate" => {
+            target: ::miden_protocol::transaction::TxAccountUpdate,
+            try_constructor: ::miden_protocol::transaction::TxAccountUpdate::new(
+                account_id,
+                initial_state_commitment,
+                final_state_commitment,
+                account_patch_commitment,
+                details,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
