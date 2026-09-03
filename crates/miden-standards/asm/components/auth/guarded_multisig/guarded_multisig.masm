@@ -2,12 +2,8 @@
 #
 # See the `AuthGuardedMultisig` Rust type's documentation for more details.
 
-use miden::protocol::tx
 use miden::standards::auth::guardian
 use miden::standards::auth::multisig
-use miden::standards::auth::signature
-use miden::standards::fee
-use miden::standards::fees
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -17,25 +13,12 @@ pub use {is_signer} from miden::standards::auth::multisig
 
 pub use {update_guardian_public_key} from miden::standards::auth::guardian
 
-# CONSTANTS
-# =================================================================================================
-
-# The largest fee payment this component accepts, as the fraction FEE_BOUND_NUM / FEE_BOUND_DEN of
-# the computed fee. Guardian key rotation authenticates without a guardian signature and can be
-# thresholded below the account's spending quorum, so an unbounded host-supplied rate would drain
-# the vault through the fee note. The margin covers a fee rising while signatures are collected.
-const FEE_BOUND_NUM = 2
-const FEE_BOUND_DEN = 1
-
 #! Authenticate a transaction with multi-signature support and guardian verification, paying the
 #! transaction fee in the process.
 #!
-#! The fee is paid by creating and funding a public TX_FEE note in the asset and at the rate of
-#! the CONVERSION_INFO committed to by the AUTH_ARGS. The payment is bounded to at most
-#! FEE_BOUND_NUM / FEE_BOUND_DEN of the computed fee and pinned to the native fee asset (see
-#! fee::assert_fee_bound). On chains with a zero verification base fee no note is created. The fee
-#! is paid before the transaction summary is created, so the fee note and the vault withdrawal
-#! funding it are covered by the approver and guardian signatures.
+#! The fee is paid before the transaction summary is created, bounded and in the native fee asset
+#! (see multisig::pay_bounded_fee), so the fee note and the vault withdrawal funding it are covered
+#! by the approver and guardian signatures.
 #!
 #! The guardian signature is verified in addition to the approvers' (see
 #! guardian::verify_signature), except on the guardian key rotation path, which instead requires
@@ -55,7 +38,7 @@ const FEE_BOUND_DEN = 1
 #!
 #! Panics if:
 #! - the auth args cannot be resolved, see `multisig::resolve_auth_args`.
-#! - the fee payment is not in the native fee asset, exceeds the bound, or cannot be funded.
+#! - the fee payment fails, see `multisig::pay_bounded_fee`.
 #! - insufficient number of valid approver or guardian signatures.
 #! - the approval window ended at or before the transaction reference block, see
 #!   `multisig::auth_tx`.
@@ -64,55 +47,25 @@ const FEE_BOUND_DEN = 1
 #! Invocation: call
 @auth_script
 pub proc auth_tx_guarded_multisig(auth_args: word)
-    # read the output-note count before the fee payment so the notes it creates can be counted
-    exec.tx::get_num_output_notes movdn.4
-    # => [AUTH_ARGS, num_output_notes_before_fee]
-
     exec.multisig::resolve_auth_args
-    # => [CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+    # => [CONVERSION_INFO, block_number, SALT]
 
     # Pay the transaction fee before the summary is created so that the TX_FEE note and the vault
     # withdrawal funding it are covered by the approver and guardian signatures.
     # ---------------------------------------------------------------------------------------------
 
     exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+    # => [num_of_approvers, CONVERSION_INFO, block_number, SALT]
 
     # one slot beyond the approvers, for the guardian signature.
     add.1
-    # => [num_of_signers, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+    # => [num_of_signers, CONVERSION_INFO, block_number, SALT]
 
-    exec.signature::estimate_multisig_authentication_cycles
-    # => [num_extra_cycles, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
+    exec.multisig::pay_bounded_fee
+    # => [num_own_output_notes, block_number, SALT]
 
-    exec.fee::estimate_fee
-    # => [fee_amount, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
-
-    # settle the sponsorship obligation first
-    exec.tx::get_fee_asset_id exec.fees::create_network_note_sponsorships drop
-    # => [fee_amount, CONVERSION_INFO, block_number, SALT, num_output_notes_before_fee]
-
-    dup movdn.5
-    # => [fee_amount, CONVERSION_INFO, fee_amount, block_number, SALT, num_output_notes_before_fee]
-
-    exec.fee::resolve_payment_info
-    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, fee_amount,
-    #     block_number, SALT, num_output_notes_before_fee]
-
-    push.FEE_BOUND_DEN push.FEE_BOUND_NUM
-    # => [bound_num, bound_den, payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount,
-    #     fee_amount, block_number, SALT, num_output_notes_before_fee]
-
-    exec.fee::assert_fee_bound
-    # => [payment_faucet_id_suffix, payment_faucet_id_prefix, payment_amount, block_number, SALT,
-    #     num_output_notes_before_fee]
-
-    exec.fee::pay_estimated_fee
-    # => [block_number, SALT, num_output_notes_before_fee]
-
-    # the notes the fee payment created: the TX_FEE note and one FEE_SPONSORSHIP note per network
-    # output note. The rotation path excludes them from its no-output-notes check.
-    exec.tx::get_num_output_notes movup.6 sub movdn.5
+    # the rotation path excludes the notes the payment created from its no-output-notes check
+    movdn.5
     # => [block_number, SALT, num_own_output_notes]
 
     # Authenticate the transaction and record it for replay protection.
