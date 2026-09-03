@@ -49,6 +49,7 @@ use miden_protocol::errors::{
 };
 use miden_protocol::note::{
     Note,
+    NoteAttachment,
     NoteId,
     NoteInclusionProof,
     NoteMetadata,
@@ -89,6 +90,24 @@ fn note_storage_reports_item_and_invariant_paths() {
     let oversized = proto::note::NoteStorage { items: vec![Felt::ZERO.into(); 1025] };
     let error = NoteStorage::try_from(oversized).unwrap_err();
     assert!(error.to_string().starts_with("items:"));
+}
+
+#[test]
+fn note_attachment_reports_semantic_and_item_paths() {
+    let invalid_scheme = proto::note::NoteAttachment { scheme: u32::MAX, words: vec![] };
+    let error = NoteAttachment::try_from(invalid_scheme).unwrap_err();
+    assert!(error.to_string().starts_with("scheme:"));
+
+    let invalid_word = proto::note::NoteAttachment {
+        scheme: 1,
+        words: vec![proto::primitives::Word { encoded: vec![0; 31] }],
+    };
+    let error = NoteAttachment::try_from(invalid_word).unwrap_err();
+    assert!(error.to_string().starts_with("words[0]."));
+
+    let empty = proto::note::NoteAttachment { scheme: 1, words: vec![] };
+    let error = NoteAttachment::try_from(empty).unwrap_err();
+    assert!(error.to_string().starts_with("words:"));
 }
 
 #[test]

@@ -14,7 +14,7 @@ use core::error::Error;
 use core::marker::PhantomData;
 
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
-pub(crate) use note::decode_note_storage;
+pub(crate) use note::{decode_note_attachment, decode_note_storage};
 
 use crate::ConversionError;
 
