@@ -2,7 +2,6 @@ use alloc::format;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::AccountUpdateDetails;
 use miden_protocol::block::{
     BlockAccountUpdate,
     BlockBody,
@@ -326,19 +325,6 @@ impl From<&BlockAccountUpdate> for proto::blockchain::BlockAccountUpdate {
             final_state_commitment: Some(update.final_state_commitment().into()),
             details: Some(update.details().into()),
         }
-    }
-}
-
-impl TryFrom<proto::blockchain::BlockAccountUpdate> for BlockAccountUpdate {
-    type Error = ConversionError;
-
-    fn try_from(update: proto::blockchain::BlockAccountUpdate) -> Result<Self, Self::Error> {
-        let decoder = update.decoder();
-        let account_id = required!(decoder, update.account_id)?;
-        let final_state_commitment = required!(decoder, update.final_state_commitment)?;
-        let details: AccountUpdateDetails = required!(decoder, update.details)?;
-        BlockAccountUpdate::new(account_id, final_state_commitment, details)
-            .map_err(ConversionError::new)
     }
 }
 

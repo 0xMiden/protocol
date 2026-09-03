@@ -104,6 +104,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recipient,
             ),
         },
+        ".blockchain.BlockAccountUpdate" => {
+            target: ::miden_protocol::block::BlockAccountUpdate,
+            try_constructor: ::miden_protocol::block::BlockAccountUpdate::new(
+                account_id,
+                final_state_commitment,
+                details,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
