@@ -1,0 +1,59 @@
+syntax = "proto3";
+package transaction;
+
+import "account.proto";
+import "block_number.proto";
+import "note.proto";
+import "primitives.proto";
+
+message TransactionId {
+  primitives.Word id = 1;
+}
+
+message InputNoteCommitment {
+  primitives.Word nullifier = 1;
+  optional note.NoteHeader header = 2;
+}
+
+message TransactionHeader {
+  TransactionId transaction_id = 1;
+  account.AccountId account_id = 2;
+  primitives.Word initial_state_commitment = 3;
+  primitives.Word final_state_commitment = 4;
+  repeated InputNoteCommitment input_notes = 5;
+  repeated note.NoteHeader output_notes = 6;
+}
+
+message PublicOutputNote {
+  note.Note note = 1;
+}
+
+message PrivateOutputNote {
+  note.NoteHeader header = 1;
+  note.NoteAttachments attachments = 2;
+}
+
+message OutputNote {
+  oneof note {
+    PublicOutputNote public = 1;
+    PrivateOutputNote private = 2;
+  }
+}
+
+message TxAccountUpdate {
+  account.AccountId account_id = 1;
+  primitives.Word initial_state_commitment = 2;
+  primitives.Word final_state_commitment = 3;
+  primitives.Word account_patch_commitment = 4;
+  account.AccountUpdateDetails details = 5;
+}
+
+message ProvenTransaction {
+  TxAccountUpdate account_update = 1;
+  repeated InputNoteCommitment input_notes = 2;
+  repeated OutputNote output_notes = 3;
+  blockchain.BlockNumber reference_block_num = 4;
+  primitives.Word reference_block_commitment = 5;
+  blockchain.BlockNumber expiration_block_num = 6;
+  primitives.ExecutionProof proof = 7;
+}
