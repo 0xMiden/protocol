@@ -97,6 +97,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 storage,
             ),
         },
+        ".note.NoteDetails" => {
+            target: ::miden_protocol::note::NoteDetails,
+            constructor: ::miden_protocol::note::NoteDetails::new(
+                assets,
+                recipient,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
