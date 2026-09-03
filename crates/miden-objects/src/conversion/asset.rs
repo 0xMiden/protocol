@@ -102,15 +102,3 @@ impl From<Asset> for proto::asset::Asset {
         Self::from(&asset)
     }
 }
-
-impl TryFrom<proto::asset::Asset> for Asset {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::asset::Asset) -> Result<Self, Self::Error> {
-        let decoder = message.decoder();
-        let asset_id = required!(decoder, message.asset_id)?;
-        let value = required!(decoder, message.value)?;
-
-        Self::new(asset_id, value).map_err(ConversionError::new)
-    }
-}

@@ -120,6 +120,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 prefix,
             ),
         },
+        ".asset.Asset" => {
+            target: ::miden_protocol::asset::Asset,
+            try_constructor: ::miden_protocol::asset::Asset::new(
+                asset_id,
+                value,
+            ),
+        },
         ".primitives.MerklePath" => {
             target: ::miden_protocol::crypto::merkle::MerklePath,
             constructor: ::miden_protocol::crypto::merkle::MerklePath::new(
