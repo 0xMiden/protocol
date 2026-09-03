@@ -327,16 +327,6 @@ impl From<PublicOutputNote> for proto::transaction::PublicOutputNote {
     }
 }
 
-impl TryFrom<proto::transaction::PublicOutputNote> for PublicOutputNote {
-    type Error = ConversionError;
-
-    fn try_from(note: proto::transaction::PublicOutputNote) -> Result<Self, Self::Error> {
-        let decoder = note.decoder();
-        let domain_note = required!(decoder, note.note)?;
-        PublicOutputNote::new(domain_note).map_err(ConversionError::new)
-    }
-}
-
 impl From<&PrivateOutputNote> for proto::transaction::PrivateOutputNote {
     fn from(note: &PrivateOutputNote) -> Self {
         Self {

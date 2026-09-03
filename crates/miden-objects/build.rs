@@ -145,6 +145,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 details,
             ),
         },
+        ".transaction.PublicOutputNote" => {
+            target: ::miden_protocol::transaction::PublicOutputNote,
+            try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(
+                note,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
