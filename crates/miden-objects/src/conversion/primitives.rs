@@ -286,19 +286,6 @@ impl From<&AdviceInputs> for proto::primitives::AdviceInputs {
     }
 }
 
-impl TryFrom<proto::primitives::AdviceInputs> for AdviceInputs {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::AdviceInputs) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let advice_stack = required!(decoder, value.advice_stack)?;
-        let advice_map: AdviceMap = required!(decoder, value.advice_map)?;
-        let merkle_store: MerkleStore = required!(decoder, value.merkle_store)?;
-
-        Ok(AdviceInputs::new(advice_stack, advice_map, merkle_store))
-    }
-}
-
 // PUBLIC KEY
 // ================================================================================================
 

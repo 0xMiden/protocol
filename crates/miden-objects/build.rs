@@ -81,6 +81,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 leaf,
             ),
         },
+        ".primitives.AdviceInputs" => {
+            target: ::miden_protocol::vm::AdviceInputs,
+            constructor: ::miden_protocol::vm::AdviceInputs::new(
+                advice_stack,
+                advice_map,
+                merkle_store,
+            ),
+        },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
