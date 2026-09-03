@@ -213,6 +213,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 transactions,
             ),
         },
+        ".blockchain.SignedBlock" => {
+            target: ::miden_protocol::block::SignedBlock,
+            try_constructor: crate::conversion::decode_signed_block(
+                header,
+                body,
+                signatures,
+            ),
+        },
         ".blockchain.NextProtocolConfig" => {
             target: ::miden_protocol::protocol_config::NextProtocolConfig,
             try_constructor: ::miden_protocol::protocol_config::NextProtocolConfig::new(

@@ -1,6 +1,7 @@
 use alloc::format;
 use alloc::vec::Vec;
 
+use miden_protobuf::{DecodeRepeated, RepeatedField};
 use miden_protocol::Word;
 use miden_protocol::block::{
     BlockAccountUpdate,
@@ -13,7 +14,6 @@ use miden_protocol::block::{
     SignedBlock,
     ValidatorConfig,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_protocol::crypto::merkle::MerklePath;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::Nullifier;
@@ -365,27 +365,24 @@ impl From<SignedBlock> for proto::blockchain::SignedBlock {
     }
 }
 
-impl TryFrom<proto::blockchain::SignedBlock> for SignedBlock {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::SignedBlock) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let header = required!(decoder, value.header)?;
-        let body = required!(decoder, value.body)?;
-        let signatures = value
-            .signatures
-            .into_iter()
-            .map(Signature::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("signatures")?;
-        let signatures = BlockSignatures::new(signatures)
-            .map_err(ConversionError::new)
-            .context("signatures")?;
-
-        SignedBlock::new(header, body, signatures)
-            .map_err(ConversionError::new)
-            .context("body")
+impl DecodeRepeated<proto::primitives::Signature> for BlockSignatures {
+    fn decode_repeated(
+        field: RepeatedField<proto::primitives::Signature>,
+    ) -> Result<Self, ConversionError> {
+        let name = field.name();
+        let signatures = field.decode_items()?;
+        Self::new(signatures).map_err(ConversionError::new).context(name)
     }
+}
+
+pub(crate) fn decode_signed_block(
+    header: BlockHeader,
+    body: BlockBody,
+    signatures: BlockSignatures,
+) -> Result<SignedBlock, ConversionError> {
+    SignedBlock::new(header, body, signatures)
+        .map_err(ConversionError::new)
+        .context("body")
 }
 
 impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
