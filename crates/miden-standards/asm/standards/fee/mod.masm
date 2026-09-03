@@ -46,7 +46,7 @@ const SPONSORSHIP_WALK_PER_OUTPUT_NOTE_CYCLES = 512
 const SPONSORSHIP_NOTE_CYCLES = 16384
 
 # Local memory offset at which `pay_fee` keeps the sponsorship price table, sized for
-# fees::SPONSORSHIP_PRICE_TABLE_NUM_ENTRIES elements.
+# fees::SPONSORSHIP_PRICE_TABLE_NUM_ELEMENTS elements.
 const SPONSORSHIP_PRICE_TABLE_LOC = 0
 
 # Estimated upper bounds on the number of kernel epilogue cycles spent after the auth procedure
@@ -366,9 +366,9 @@ end
 #! Where:
 #! - FEE_ASSET_ID is the ID of the native fee asset (see tx::get_fee_asset_id), which funds the
 #!   sponsorship notes.
-#! - price_table_ptr is the address of the sponsorship price table the estimate fills and the
-#!   payment reads back: fees::SPONSORSHIP_PRICE_TABLE_NUM_ENTRIES elements of the caller's local
-#!   memory (see fees::estimate_network_note_sponsorships).
+#! - price_table_ptr is the word-aligned address of the sponsorship price table the estimate fills
+#!   and the payment reads back: fees::SPONSORSHIP_PRICE_TABLE_NUM_ELEMENTS elements of the caller's
+#!   local memory (see fees::estimate_network_note_sponsorships).
 #! - num_extra_cycles is the estimated number of cycles the caller spends after this call until
 #!   the end of the authentication procedure.
 #! - fee_amount is the computed fee of the transaction, denominated in the native fee asset.
@@ -438,7 +438,7 @@ end
 #! - the maximum number of output notes is exceeded.
 #!
 #! Invocation: exec
-@locals(1024)
+@locals(4096)
 pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> felt
     # the estimate fills the price table and the payment reads it back
     locaddr.SPONSORSHIP_PRICE_TABLE_LOC dup

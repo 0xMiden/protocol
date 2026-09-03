@@ -2,11 +2,11 @@
 // Values are maxima across the benchmarked paths; see `miden_standards::note::costs` for the
 // caveats on what they do and do not cover.
 
-/// Cycles of consuming a CLAIM note: L1 origin 55238, L2 origin 65208 (maximum).
-pub const CLAIM_CONSUMPTION_CYCLES: u32 = 65208;
+/// Cycles of consuming a CLAIM note: L1 origin 55253, L2 origin 65223 (maximum).
+pub const CLAIM_CONSUMPTION_CYCLES: u32 = 65223;
 
-/// Cycles of consuming a B2AGG note: empty frontier 155794 (maximum), 2^31-1 leaves 91006.
-pub const B2AGG_CONSUMPTION_CYCLES: u32 = 155794;
+/// Cycles of consuming a B2AGG note: empty frontier 155809 (maximum), 2^31-1 leaves 91021.
+pub const B2AGG_CONSUMPTION_CYCLES: u32 = 155809;
 
 /// Cycles of consuming a CONFIG_AGG_BRIDGE note (single benchmarked path).
 pub const CONFIG_AGG_BRIDGE_CONSUMPTION_CYCLES: u32 = 35352;
