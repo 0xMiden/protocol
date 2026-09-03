@@ -34,18 +34,15 @@ impl From<&TransactionScript> for proto::transaction::TransactionScript {
     }
 }
 
-impl TryFrom<proto::transaction::TransactionScript> for TransactionScript {
-    type Error = ConversionError;
+pub(crate) fn decode_transaction_script(
+    mast: MastForest,
+    entrypoint: u32,
+) -> Result<TransactionScript, ConversionError> {
+    let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast).map_err(|error| {
+        ConversionError::deserialization("transaction_script.entrypoint", error)
+    })?;
 
-    fn try_from(value: proto::transaction::TransactionScript) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let mast: MastForest = required!(decoder, value.mast)?;
-        let entrypoint = MastNodeId::from_u32_safe(value.entrypoint, &mast).map_err(|error| {
-            ConversionError::deserialization("transaction_script.entrypoint", error)
-        })?;
-
-        Self::from_parts(Arc::new(mast), entrypoint).map_err(ConversionError::new)
-    }
+    TransactionScript::from_parts(Arc::new(mast), entrypoint).map_err(ConversionError::new)
 }
 
 impl From<&TransactionArgs> for proto::transaction::TransactionArgs {

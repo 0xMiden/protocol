@@ -260,6 +260,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 details,
             ),
         },
+        ".transaction.TransactionScript" => {
+            target: ::miden_protocol::transaction::TransactionScript,
+            try_constructor: crate::conversion::decode_transaction_script(
+                mast,
+                entrypoint,
+            ),
+        },
         ".transaction.PublicOutputNote" => {
             target: ::miden_protocol::transaction::PublicOutputNote,
             try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(
