@@ -35,6 +35,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     miden_protobuf::configure_proto_decodes! {
         prost: &mut prost,
         descriptors: &descriptors,
+        ".account.AccountId" => {
+            target: ::miden_protocol::account::AccountId,
+            try_constructor: crate::conversion::decode_account_id(
+                id,
+            ),
+        },
         ".account.StorageSlotId" => {
             target: ::miden_protocol::account::StorageSlotId,
             constructor: ::miden_protocol::account::StorageSlotId::new(

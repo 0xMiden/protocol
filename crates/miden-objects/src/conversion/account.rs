@@ -23,15 +23,10 @@ use miden_protocol::{Felt, Word};
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
-impl TryFrom<proto::account::AccountId> for AccountId {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::account::AccountId) -> Result<Self, Self::Error> {
-        let bytes: [u8; AccountId::SERIALIZED_SIZE] =
-            message.id.as_slice().try_into().map_err(ConversionError::new)?;
-
-        AccountId::try_from(bytes).map_err(ConversionError::new)
-    }
+pub(crate) fn decode_account_id(id: Vec<u8>) -> Result<AccountId, ConversionError> {
+    let bytes: [u8; AccountId::SERIALIZED_SIZE] =
+        id.as_slice().try_into().map_err(ConversionError::new)?;
+    AccountId::try_from(bytes).map_err(ConversionError::new)
 }
 
 impl From<&AccountId> for proto::account::AccountId {
