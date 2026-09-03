@@ -10,6 +10,7 @@
 - Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` that runs it ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
 - Added the `miden-objects` crate with canonical, `no_std`-compatible Protobuf representations and validated conversions for protocol objects exchanged between clients and nodes ([#3707](https://github.com/0xMiden/protocol/pull/3707)).
 - Added canonical Protobuf representations and validated conversions for `TransactionInputs` ([#3776](https://github.com/0xMiden/protocol/pull/3776)).
+- Added `fee::assert_fee_bound`, an opt-in helper invoked between `fee::estimate_fee` and the payment to cap the payment at `num / den` times the computed fee and pin the payment asset to the native fee asset ([#3785](https://github.com/0xMiden/protocol/pull/3785)).
 
 ### Changes
 
