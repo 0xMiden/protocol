@@ -8,6 +8,8 @@
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
 - Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` that runs it ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
+- Added the `miden-objects` crate with canonical, `no_std`-compatible Protobuf representations and validated conversions for protocol objects exchanged between clients and nodes ([#3707](https://github.com/0xMiden/protocol/pull/3707)).
+- Added canonical Protobuf representations and validated conversions for `TransactionInputs` ([#3776](https://github.com/0xMiden/protocol/pull/3776)).
 
 ### Changes
 
@@ -90,6 +92,7 @@
 - [BREAKING] Bounded transfer policy dispatch to the reference block ([#3748](https://github.com/0xMiden/protocol/pull/3748)).
 - [BREAKING] Bounded the multisig approver set to 64 signers, enforced both by `ApproverSet::MAX_APPROVERS` at account creation and by `MAX_NUM_APPROVERS` in the `multisig` and `multisig_smart` `update_signers_and_threshold` procedures ([#3723](https://github.com/0xMiden/protocol/pull/3723)).
 - The PSWAP note script now rejects a `PswapAttachment` that does not consist of exactly one word, instead of letting the attachment write past the four locals of `get_current_depth` ([#3761](https://github.com/0xMiden/protocol/pull/3761)).
+- [BREAKING] `multisig_smart` now rejects delay-only procedure policies ([#3781](https://github.com/0xMiden/protocol/pull/3781)).
 - The standard config note scripts now reject a non-public note [#3779](https://github.com/0xMiden/protocol/pull/3779).
 - Role symbol validation now computes its upper bound with `exp.u4`, whose unique exponent decomposition stops a prover from widening the bound and slipping a non-canonical symbol through ([#3774](https://github.com/0xMiden/protocol/pull/3774)).
 

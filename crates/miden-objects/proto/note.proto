@@ -1,0 +1,78 @@
+syntax = "proto3";
+package note;
+
+import "account.proto";
+import "asset.proto";
+import "block_number.proto";
+import "primitives.proto";
+
+enum NoteType {
+  NOTE_TYPE_UNSPECIFIED = 0;
+  NOTE_TYPE_PRIVATE = 1;
+  NOTE_TYPE_PUBLIC = 2;
+}
+
+enum NoteVersion {
+  NOTE_VERSION_UNSPECIFIED = 0;
+  NOTE_VERSION_V1 = 1;
+}
+
+message NoteId {
+  primitives.Word id = 1;
+}
+
+message NoteMetadata {
+  NoteVersion version = 1;
+  account.AccountId sender = 2;
+  NoteType note_type = 3;
+  fixed32 tag = 4;
+  repeated fixed32 attachment_schemes = 5;
+  primitives.Word attachments_commitment = 6;
+}
+
+message NoteAttachment {
+  uint32 scheme = 1;
+  repeated primitives.Word words = 2;
+}
+
+message NoteAttachments {
+  repeated NoteAttachment attachments = 1;
+}
+
+message NoteStorage {
+  repeated primitives.Felt items = 1;
+}
+
+message NoteRecipient {
+  primitives.Word serial_num = 1;
+  NoteScript script = 2;
+  NoteStorage storage = 3;
+}
+
+message NoteDetails {
+  repeated asset.Asset assets = 1;
+  NoteRecipient recipient = 2;
+}
+
+message Note {
+  NoteMetadata metadata = 1;
+  NoteDetails note_details = 2;
+  NoteAttachments note_attachments = 3;
+}
+
+message NoteInclusionProof {
+  NoteId note_id = 1;
+  blockchain.BlockNumber block_num = 2;
+  uint32 note_index_in_block = 3;
+  primitives.SparseMerklePath inclusion_path = 4;
+}
+
+message NoteHeader {
+  NoteMetadata metadata = 1;
+  primitives.Word details_commitment = 2;
+}
+
+message NoteScript {
+  uint32 entrypoint = 1;
+  primitives.MastForest mast = 2;
+}
