@@ -1,5 +1,6 @@
 use core::error::Error;
 
+use assert_matches::assert_matches;
 use miden_objects::conversion::decode_standalone_proven_batch;
 use miden_objects::{ConversionError, proto};
 use miden_protocol::account::{
@@ -199,10 +200,10 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
         faucet_id,
     })
     .unwrap_err();
-    assert!(matches!(
+    assert_matches!(
         custom.source().and_then(|source| source.downcast_ref::<AssetError>()),
         Some(AssetError::UnsupportedAssetComposition(ProtocolAssetComposition::Custom))
-    ));
+    );
 }
 
 #[test]
@@ -218,10 +219,10 @@ fn structured_asset_conversion_rejects_nonzero_fungible_class() {
     })
     .unwrap_err();
 
-    assert!(matches!(
+    assert_matches!(
         error.source().and_then(|source| source.downcast_ref::<AssetError>()),
         Some(AssetError::FungibleAssetClassMustBeZero(_))
-    ));
+    );
 }
 
 #[test]
@@ -240,10 +241,10 @@ fn structured_asset_conversion_rejects_invalid_fungible_values() {
     })
     .unwrap_err();
 
-    assert!(matches!(
+    assert_matches!(
         error.source().and_then(|source| source.downcast_ref::<AssetError>()),
         Some(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_))
-    ));
+    );
 }
 
 #[test]
@@ -264,13 +265,13 @@ fn asset_id_protobuf_preserves_unknown_version_error_sources() {
             AssetId::try_from(proto::asset::AssetId { version, ..Default::default() }).unwrap_err();
 
         assert_eq!(error.to_string(), format!("version: unknown asset id version {version}"));
-        assert!(matches!(
+        assert_matches!(
             error
                 .source()
                 .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
-        ));
+        );
     }
 }
 
@@ -287,13 +288,13 @@ fn conversion_error_preserves_deserialization_error_source() {
         error.to_string(),
         "failed to deserialize AccountId: invalid value: invalid account id"
     );
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(Error::source)
             .and_then(|source| source.downcast_ref::<DeserializationError>()),
         Some(DeserializationError::InvalidValue(message)) if message == "invalid account id"
-    ));
+    );
 }
 
 fn private_account_id() -> AccountId {
@@ -366,14 +367,14 @@ fn account_witness_conversion_preserves_account_tree_error_source() {
     })
     .unwrap_err();
 
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(|source| source.downcast_ref::<miden_protocol::errors::AccountTreeError>()),
         Some(
             miden_protocol::errors::AccountTreeError::WitnessMerklePathDepthDoesNotMatchAccountTreeDepth(0)
         )
-    ));
+    );
 }
 
 #[test]
@@ -397,10 +398,10 @@ fn account_id_protobuf_rejects_invalid_metadata() {
 
     let error = AccountId::try_from(proto::account::AccountId { id: id.into() }).unwrap_err();
 
-    assert!(matches!(
+    assert_matches!(
         error.source().and_then(|source| source.downcast_ref::<AccountIdError>()),
         Some(AccountIdError::UnknownAccountIdVersion(0))
-    ));
+    );
 }
 
 #[test]
@@ -435,13 +436,13 @@ fn account_header_protobuf_preserves_unknown_version_error_sources() {
         .unwrap_err();
 
         assert_eq!(error.to_string(), format!("version: unknown account header version {version}"));
-        assert!(matches!(
+        assert_matches!(
             error
                 .source()
                 .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
-        ));
+        );
     }
 }
 
@@ -458,12 +459,12 @@ fn account_header_protobuf_preserves_invalid_nonce_source() {
     .unwrap_err();
 
     assert!(error.to_string().starts_with("nonce: "));
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(|source| source.downcast_ref::<<Felt as TryFrom<u64>>::Error>()),
         Some(source) if source.as_u64() == Felt::ORDER
-    ));
+    );
 }
 
 #[test]
@@ -496,13 +497,13 @@ fn account_patch_protobuf_preserves_unknown_version_error_sources() {
                 .unwrap_err();
 
         assert_eq!(error.to_string(), format!("version: unknown account patch version {version}"));
-        assert!(matches!(
+        assert_matches!(
             error
                 .source()
                 .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
-        ));
+        );
     }
 }
 
@@ -572,13 +573,13 @@ fn note_metadata_protobuf_preserves_unknown_version_error_sources() {
                 .unwrap_err();
 
         assert_eq!(error.to_string(), format!("version: unknown note metadata version {version}"));
-        assert!(matches!(
+        assert_matches!(
             error
                 .source()
                 .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
-        ));
+        );
     }
 }
 
@@ -689,12 +690,12 @@ fn public_output_note_protobuf_rejects_private_note() {
     })
     .unwrap_err();
 
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(|source| source.downcast_ref::<OutputNoteError>()),
         Some(OutputNoteError::NoteIsPrivate(note_id)) if *note_id == note.id()
-    ));
+    );
 }
 
 fn proven_batch_data() -> proto::transaction::ProvenBatch {
@@ -785,13 +786,13 @@ fn account_storage_header_preserves_unknown_enum_value_source() {
     })
     .unwrap_err();
 
-    assert!(matches!(
+    assert_matches!(
         error
             .source()
             .and_then(Error::source)
             .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
         Some(prost::UnknownEnumValue(value)) if *value == i32::MAX
-    ));
+    );
 }
 
 #[test]
@@ -890,13 +891,13 @@ fn block_header_protobuf_preserves_unknown_version_error_sources() {
                 .unwrap_err();
 
         assert_eq!(error.to_string(), format!("version: unknown block header version {version}"));
-        assert!(matches!(
+        assert_matches!(
             error
                 .source()
                 .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
-        ));
+        );
     }
 }
 
@@ -943,10 +944,10 @@ fn block_header_protobuf_rejects_invalid_validator_quorum() {
     let source = error.source().unwrap().downcast_ref::<ValidatorConfigError>().unwrap();
 
     assert!(error.to_string().starts_with("validator_config: "));
-    assert!(matches!(
+    assert_matches!(
         source,
         ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: 0, count: 3 }
-    ));
+    );
 }
 
 #[test]
@@ -971,7 +972,7 @@ fn block_header_protobuf_rejects_upgrade_effective_at_genesis() {
     let source = error.source().unwrap().downcast_ref::<ProtocolConfigError>().unwrap();
 
     assert!(error.to_string().starts_with("next_protocol_config: "));
-    assert!(matches!(source, ProtocolConfigError::NextConfigEffectiveAtGenesis));
+    assert_matches!(source, ProtocolConfigError::NextConfigEffectiveAtGenesis);
 }
 
 #[test]
@@ -1033,8 +1034,8 @@ fn transaction_header_conversion_preserves_validation_error_source() {
     let error = TransactionHeader::try_from(message).unwrap_err();
     let source = error.source().unwrap().downcast_ref::<TransactionHeaderError>().unwrap();
 
-    assert!(matches!(
+    assert_matches!(
         source,
         TransactionHeaderError::DuplicateOutputNote(note_id) if *note_id == note.id()
-    ));
+    );
 }

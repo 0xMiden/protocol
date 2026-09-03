@@ -1,17 +1,24 @@
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_protocol::Felt;
 use miden_protocol::account::{
     AccountHeader,
     AccountId,
     AccountStorageHeader,
+    PartialAccount,
+    PartialStorage,
+    PartialStorageMap,
+    StorageMapKey,
     StorageSlotHeader,
+    StorageSlotId,
     StorageSlotName,
     StorageSlotType,
 };
+use miden_protocol::asset::{AssetId, PartialVault};
 use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::{Felt, Word};
 
 use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
@@ -37,6 +44,35 @@ impl From<&AccountId> for proto::account::AccountId {
 impl From<AccountId> for proto::account::AccountId {
     fn from(account_id: AccountId) -> Self {
         (&account_id).into()
+    }
+}
+
+// STORAGE SLOT ID
+// ================================================================================================
+
+impl TryFrom<proto::account::StorageSlotId> for StorageSlotId {
+    type Error = ConversionError;
+
+    fn try_from(message: proto::account::StorageSlotId) -> Result<Self, Self::Error> {
+        let decoder = message.decoder();
+        let suffix = required!(decoder, message.suffix)?;
+        let prefix = required!(decoder, message.prefix)?;
+        Ok(Self::new(suffix, prefix))
+    }
+}
+
+impl From<StorageSlotId> for proto::account::StorageSlotId {
+    fn from(id: StorageSlotId) -> Self {
+        Self {
+            suffix: Some(id.suffix().into()),
+            prefix: Some(id.prefix().into()),
+        }
+    }
+}
+
+impl From<&StorageSlotId> for proto::account::StorageSlotId {
+    fn from(id: &StorageSlotId) -> Self {
+        (*id).into()
     }
 }
 
@@ -117,6 +153,168 @@ fn decode_account_version(version: i32) -> Result<(), ConversionError> {
             format!("unknown account header version {version}"),
             error,
         )),
+    }
+}
+
+// PARTIAL STORAGE MAP
+// ================================================================================================
+
+impl TryFrom<proto::account::PartialStorageMap> for PartialStorageMap {
+    type Error = ConversionError;
+
+    fn try_from(message: proto::account::PartialStorageMap) -> Result<Self, Self::Error> {
+        let decoder = message.decoder();
+        let smt = required!(decoder, message.smt)?;
+        let keys = message
+            .keys
+            .into_iter()
+            .enumerate()
+            .map(|(index, key)| {
+                Word::try_from(key)
+                    .map(StorageMapKey::from_raw)
+                    .context(format!("keys[{index}]"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        PartialStorageMap::try_from_parts(smt, keys).map_err(ConversionError::new)
+    }
+}
+
+impl From<&PartialStorageMap> for proto::account::PartialStorageMap {
+    fn from(map: &PartialStorageMap) -> Self {
+        Self {
+            smt: Some(map.partial_smt().clone().into()),
+            keys: map.entries().map(|(key, _)| Word::from(*key).into()).collect(),
+        }
+    }
+}
+
+impl From<PartialStorageMap> for proto::account::PartialStorageMap {
+    fn from(map: PartialStorageMap) -> Self {
+        (&map).into()
+    }
+}
+
+// PARTIAL STORAGE
+// ================================================================================================
+
+impl TryFrom<proto::account::PartialStorage> for PartialStorage {
+    type Error = ConversionError;
+
+    fn try_from(message: proto::account::PartialStorage) -> Result<Self, Self::Error> {
+        let decoder = message.decoder();
+        let header = required!(decoder, message.header)?;
+        let mut roots = BTreeSet::new();
+        let maps = message
+            .maps
+            .into_iter()
+            .enumerate()
+            .map(|(index, map)| {
+                let map_context = format!("maps[{index}]");
+                let map = PartialStorageMap::try_from(map).context(&map_context)?;
+                if !roots.insert(map.root()) {
+                    return Err(ConversionError::message("duplicate partial storage map root")
+                        .context(map_context));
+                }
+                Ok(map)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        PartialStorage::new(header, maps).map_err(ConversionError::new)
+    }
+}
+
+impl From<&PartialStorage> for proto::account::PartialStorage {
+    fn from(storage: &PartialStorage) -> Self {
+        Self {
+            header: Some(storage.header().into()),
+            maps: storage.maps().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<PartialStorage> for proto::account::PartialStorage {
+    fn from(storage: PartialStorage) -> Self {
+        (&storage).into()
+    }
+}
+
+// PARTIAL VAULT
+// ================================================================================================
+
+impl TryFrom<proto::account::PartialVault> for PartialVault {
+    type Error = ConversionError;
+
+    fn try_from(message: proto::account::PartialVault) -> Result<Self, Self::Error> {
+        let decoder = message.decoder();
+        let smt = required!(decoder, message.smt)?;
+        let asset_ids = message
+            .asset_ids
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| {
+                let asset_id_context = format!("asset_ids[{index}]");
+                Word::try_from(id)
+                    .context(&asset_id_context)
+                    .and_then(|id| AssetId::try_from(id).context(asset_id_context))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        PartialVault::try_from_parts(smt, asset_ids).map_err(ConversionError::new)
+    }
+}
+
+impl From<&PartialVault> for proto::account::PartialVault {
+    fn from(vault: &PartialVault) -> Self {
+        Self {
+            smt: Some(vault.partial_smt().clone().into()),
+            asset_ids: vault.asset_ids().map(|id| Word::from(id).into()).collect(),
+        }
+    }
+}
+
+impl From<PartialVault> for proto::account::PartialVault {
+    fn from(vault: PartialVault) -> Self {
+        (&vault).into()
+    }
+}
+
+// PARTIAL ACCOUNT
+// ================================================================================================
+
+impl TryFrom<proto::account::PartialAccount> for PartialAccount {
+    type Error = ConversionError;
+
+    fn try_from(message: proto::account::PartialAccount) -> Result<Self, Self::Error> {
+        let decoder = message.decoder();
+        let account_id = required!(decoder, message.account_id)?;
+        let nonce = required!(decoder, message.nonce)?;
+        let code = required!(decoder, message.code)?;
+        let storage = required!(decoder, message.storage)?;
+        let vault = required!(decoder, message.vault)?;
+        let seed = message.seed.map(Word::try_from).transpose().context("seed")?;
+
+        PartialAccount::new(account_id, nonce, code, storage, vault, seed)
+            .map_err(ConversionError::new)
+    }
+}
+
+impl From<&PartialAccount> for proto::account::PartialAccount {
+    fn from(account: &PartialAccount) -> Self {
+        Self {
+            account_id: Some(account.id().into()),
+            nonce: Some(account.nonce().into()),
+            code: Some(account.code().into()),
+            storage: Some(account.storage().into()),
+            vault: Some(account.vault().into()),
+            seed: account.seed().map(Into::into),
+        }
+    }
+}
+
+impl From<PartialAccount> for proto::account::PartialAccount {
+    fn from(account: PartialAccount) -> Self {
+        (&account).into()
     }
 }
 
