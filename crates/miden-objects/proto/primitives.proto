@@ -106,13 +106,8 @@ message PartialSmtNode {
   // Position of the node within its depth.
   fixed64 index = 1;
 
-  oneof value {
-    // Hash of a non-empty boundary node.
-    Word digest = 2;
-
-    // Indicates the canonical empty subtree root for the containing depth.
-    bool empty_subtree_root = 3;
-  }
+  // Hash of the boundary node.
+  Word digest = 2;
 }
 
 // A fully materialized SMT leaf together with its index.
