@@ -62,7 +62,12 @@ pub(crate) use transaction::{
     decode_transaction_header,
     decode_transaction_script,
 };
-pub(crate) use transaction_inputs::{decode_input_notes, decode_transaction_inputs_v1};
+pub(crate) use transaction_inputs::{
+    decode_authenticated_input_note,
+    decode_foreign_account_slot_name,
+    decode_input_notes,
+    decode_transaction_inputs_v1,
+};
 
 use crate::ConversionError;
 

@@ -608,6 +608,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 auth_args,
             ),
         },
+        ".transaction.AuthenticatedInputNote" => {
+            target: ::miden_protocol::transaction::InputNote,
+            try_constructor: crate::conversion::decode_authenticated_input_note(
+                note,
+                proof,
+            ),
+        },
         ".transaction.InputNote" => {
             target: ::miden_protocol::transaction::InputNote,
             oneof: {
@@ -626,6 +633,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             >,
             try_constructor: crate::conversion::decode_input_notes(
                 notes,
+            ),
+        },
+        ".transaction.ForeignAccountSlotName" => {
+            target: (
+                ::miden_protocol::account::StorageSlotId,
+                ::miden_protocol::account::StorageSlotName
+            ),
+            try_constructor: crate::conversion::decode_foreign_account_slot_name(
+                slot_id,
+                slot_name,
             ),
         },
         ".transaction.TransactionInputsV1" => {

@@ -16,7 +16,6 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::vm::AdviceInputs;
 
-use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 impl From<&InputNote> for proto::transaction::InputNote {
@@ -39,28 +38,19 @@ impl From<&InputNote> for proto::transaction::InputNote {
     }
 }
 
-impl TryFrom<proto::transaction::AuthenticatedInputNote> for InputNote {
-    type Error = ConversionError;
-
-    fn try_from(
-        authenticated: proto::transaction::AuthenticatedInputNote,
-    ) -> Result<Self, Self::Error> {
-        let decoder = authenticated.decoder();
-        let note: Note = required!(decoder, authenticated.note)?;
-        let proof_message: proto::note::NoteInclusionProof =
-            required!(decoder, authenticated.proof)?;
-        let (proof_note_id, proof): (NoteId, NoteInclusionProof) =
-            (&proof_message).try_into().context("proof")?;
-        if proof_note_id != note.id() {
-            return Err(ConversionError::message(format!(
-                "note ID mismatch: transmitted {proof_note_id}, decoded {}",
-                note.id()
-            ))
-            .context("proof.note_id"));
-        }
-
-        Ok(InputNote::authenticated(note, proof))
+pub(crate) fn decode_authenticated_input_note(
+    note: Note,
+    (proof_note_id, proof): (NoteId, NoteInclusionProof),
+) -> Result<InputNote, ConversionError> {
+    if proof_note_id != note.id() {
+        return Err(ConversionError::message(format!(
+            "note ID mismatch: transmitted {proof_note_id}, decoded {}",
+            note.id()
+        ))
+        .context("proof.note_id"));
     }
+
+    Ok(InputNote::authenticated(note, proof))
 }
 
 impl From<&InputNotes<InputNote>> for proto::transaction::InputNotes {
@@ -114,21 +104,19 @@ impl From<TransactionInputs> for proto::transaction::TransactionInputs {
     }
 }
 
-impl TryFrom<proto::transaction::ForeignAccountSlotName> for (StorageSlotId, StorageSlotName) {
-    type Error = ConversionError;
-
-    fn try_from(entry: proto::transaction::ForeignAccountSlotName) -> Result<Self, Self::Error> {
-        let decoder = entry.decoder();
-        let slot_id = required!(decoder, entry.slot_id)?;
-        let slot_name = StorageSlotName::new(entry.slot_name)
-            .map_err(ConversionError::new)
-            .context("slot_name")?;
-        if slot_name.id() != slot_id {
-            return Err(ConversionError::message("storage slot ID does not match slot name")
-                .context("slot_id"));
-        }
-        Ok((slot_id, slot_name))
+pub(crate) fn decode_foreign_account_slot_name(
+    slot_id: StorageSlotId,
+    slot_name: String,
+) -> Result<(StorageSlotId, StorageSlotName), ConversionError> {
+    let slot_name = StorageSlotName::new(slot_name)
+        .map_err(ConversionError::new)
+        .context("slot_name")?;
+    if slot_name.id() != slot_id {
+        return Err(
+            ConversionError::message("storage slot ID does not match slot name").context("slot_id")
+        );
     }
+    Ok((slot_id, slot_name))
 }
 
 #[allow(clippy::too_many_arguments)]

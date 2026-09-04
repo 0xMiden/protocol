@@ -70,22 +70,20 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
     let mut message = common::dummy_transaction_inputs_message();
     common::authenticated_input_note_mut(&mut message).note = None;
     let error = TransactionInputs::try_from(message).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .starts_with("version.v1.input_notes.notes[0].note.authenticated: field ")
+    assert_eq!(
+        error.to_string(),
+        "version.v1.input_notes.notes[0].note.authenticated.note: field \
+         miden_objects::proto::transaction::AuthenticatedInputNote::note is missing"
     );
-    assert!(error.to_string().ends_with("::note is missing"));
 
     let mut message = common::dummy_transaction_inputs_message();
     common::authenticated_input_note_mut(&mut message).proof = None;
     let error = TransactionInputs::try_from(message).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .starts_with("version.v1.input_notes.notes[0].note.authenticated: field ")
+    assert_eq!(
+        error.to_string(),
+        "version.v1.input_notes.notes[0].note.authenticated.proof: field \
+         miden_objects::proto::transaction::AuthenticatedInputNote::proof is missing"
     );
-    assert!(error.to_string().ends_with("::proof is missing"));
 }
 
 #[test]
@@ -127,6 +125,16 @@ fn input_notes_reject_duplicate_nullifiers_and_preserve_the_domain_source() {
 
 #[test]
 fn foreign_slot_names_reject_invalid_names_and_preserve_the_domain_source() {
+    let mut message = common::dummy_transaction_inputs_message();
+    common::transaction_inputs_v1_mut(&mut message).foreign_account_slot_names[0].slot_id = None;
+
+    let error = TransactionInputs::try_from(message).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "version.v1.foreign_account_slot_names[0].slot_id: field \
+         miden_objects::proto::transaction::ForeignAccountSlotName::slot_id is missing"
+    );
+
     let mut message = common::dummy_transaction_inputs_message();
     common::transaction_inputs_v1_mut(&mut message).foreign_account_slot_names[0].slot_name =
         "invalid".into();
