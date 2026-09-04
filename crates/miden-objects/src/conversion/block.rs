@@ -349,12 +349,6 @@ impl From<NextProtocolConfig> for proto::blockchain::NextProtocolConfig {
     }
 }
 
-impl From<proto::blockchain::FeeParameters> for FeeParameters {
-    fn from(value: proto::blockchain::FeeParameters) -> Self {
-        Self::new(value.verification_base_fee)
-    }
-}
-
 impl From<&FeeParameters> for proto::blockchain::FeeParameters {
     fn from(value: &FeeParameters) -> Self {
         Self {

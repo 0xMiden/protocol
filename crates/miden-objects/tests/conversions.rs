@@ -37,6 +37,7 @@ use miden_protocol::block::{
     BlockBody,
     BlockHeader,
     BlockNumber,
+    FeeParameters,
     SignedBlockError,
     UnverifiedSignedBlock,
     ValidatorConfig,
@@ -1319,6 +1320,14 @@ fn block_header_rejects_missing_block_number() {
         error.to_string(),
         "block_num: field miden_objects::proto::blockchain::BlockHeader::block_num is missing"
     );
+}
+
+#[test]
+fn fee_parameters_roundtrip_through_protobuf() {
+    let expected = FeeParameters::new(42);
+    let message = proto::blockchain::FeeParameters::from(&expected);
+
+    assert_eq!(FeeParameters::try_from(message).unwrap(), expected);
 }
 
 #[test]

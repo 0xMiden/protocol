@@ -568,6 +568,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 block_headers,
             ),
         },
+        ".blockchain.FeeParameters" => {
+            target: ::miden_protocol::block::FeeParameters,
+            constructor: ::miden_protocol::block::FeeParameters::new(
+                verification_base_fee,
+            ),
+        },
         ".blockchain.BlockHeader" => {
             target: ::miden_protocol::block::BlockHeader,
             enumeration: {
