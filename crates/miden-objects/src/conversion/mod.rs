@@ -40,7 +40,7 @@ pub(crate) use block::{
     decode_partial_blockchain,
     decode_signed_block,
 };
-pub(crate) use merkle::{decode_empty_smt_leaf, decode_mmr_delta, decode_unique_nodes};
+pub(crate) use merkle::{decode_empty_smt_leaf, decode_mmr_delta, decode_partial_smt};
 pub(crate) use note::{
     decode_note,
     decode_note_attachment,

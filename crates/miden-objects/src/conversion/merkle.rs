@@ -175,12 +175,12 @@ impl From<UniqueNodes> for proto::primitives::PartialSmt {
     }
 }
 
-pub(crate) fn decode_unique_nodes(
+pub(crate) fn decode_partial_smt(
     root: Word,
     node_levels: Vec<(u32, Vec<(u64, Word)>)>,
     leaves: Vec<(u64, SmtLeaf)>,
     value_only_leaves: Vec<(u64, Word)>,
-) -> Result<UniqueNodes, ConversionError> {
+) -> Result<PartialSmt, ConversionError> {
     let mut seen_depths = BTreeSet::new();
     let mut decoded_nodes = BTreeMap::new();
     for (level_offset, (depth, nodes)) in node_levels.into_iter().enumerate() {
@@ -243,27 +243,20 @@ pub(crate) fn decode_unique_nodes(
         decoded_value_only_leaves.insert(index, value);
     }
 
-    Ok(UniqueNodes {
+    let unique_nodes = UniqueNodes {
         root,
         nodes: decoded_nodes,
         leaves: decoded_leaves,
         value_only_leaves: decoded_value_only_leaves,
-    })
+    };
+
+    PartialSmt::from_unique_nodes(unique_nodes)
+        .map_err(|err| ConversionError::deserialization("PartialSmt", err))
 }
 
 impl From<PartialSmt> for proto::primitives::PartialSmt {
     fn from(partial_smt: PartialSmt) -> Self {
         partial_smt.to_unique_nodes().into()
-    }
-}
-
-impl TryFrom<proto::primitives::PartialSmt> for PartialSmt {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::PartialSmt) -> Result<Self, Self::Error> {
-        let unique_nodes = UniqueNodes::try_from(value)?;
-        PartialSmt::from_unique_nodes(unique_nodes)
-            .map_err(|err| ConversionError::deserialization("PartialSmt", err))
     }
 }
 
@@ -431,8 +424,15 @@ mod tests {
             encoded.node_levels.iter().map(|level| level.depth).collect::<Vec<_>>(),
             vec![1, 2, 3]
         );
-        let decoded = UniqueNodes::try_from(encoded).unwrap();
-        assert_eq!(decoded.nodes, expected_nodes);
+        let mut encoded_nodes = BTreeMap::new();
+        for level in encoded.node_levels {
+            for node in level.nodes {
+                let index = NodeIndex::new(u8::try_from(level.depth).unwrap(), node.index).unwrap();
+                let digest = Word::try_from(node.digest.unwrap()).unwrap();
+                assert!(encoded_nodes.insert(index, digest).is_none());
+            }
+        }
+        assert_eq!(encoded_nodes, expected_nodes);
     }
 
     fn empty_partial_smt_message() -> proto::primitives::PartialSmt {

@@ -304,8 +304,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             constructor: (index, value),
         },
         ".primitives.PartialSmt" => {
-            target: ::miden_protocol::crypto::merkle::smt::UniqueNodes,
-            try_constructor: crate::conversion::decode_unique_nodes(
+            target: ::miden_protocol::crypto::merkle::smt::PartialSmt,
+            try_constructor: crate::conversion::decode_partial_smt(
                 root,
                 node_levels,
                 leaves,
