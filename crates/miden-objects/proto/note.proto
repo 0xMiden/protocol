@@ -21,6 +21,13 @@ message NoteId {
   primitives.Word id = 1;
 }
 
+message PartialNoteMetadata {
+  NoteVersion version = 1;
+  account.AccountId sender = 2;
+  NoteType note_type = 3;
+  fixed32 tag = 4;
+}
+
 message NoteMetadata {
   NoteVersion version = 1;
   account.AccountId sender = 2;
@@ -55,7 +62,7 @@ message NoteDetails {
 }
 
 message Note {
-  NoteMetadata metadata = 1;
+  PartialNoteMetadata metadata = 1;
   NoteDetails note_details = 2;
   NoteAttachments note_attachments = 3;
 }

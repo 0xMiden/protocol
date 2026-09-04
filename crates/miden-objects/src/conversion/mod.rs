@@ -10,9 +10,67 @@ mod protocol_config;
 mod transaction;
 mod transaction_inputs;
 
+use core::error::Error;
 use core::marker::PhantomData;
 
+pub(crate) use account::{
+    decode_account_header,
+    decode_account_id,
+    decode_partial_storage,
+    decode_partial_storage_map,
+    decode_partial_vault,
+};
+pub(crate) use account_patch::{
+    decode_account_code,
+    decode_account_storage_patch,
+    decode_account_vault_patch,
+    decode_private_account_update,
+    decode_storage_map_patch_create,
+    decode_storage_map_patch_entries,
+    decode_storage_map_patch_update,
+    decode_storage_slot_name,
+    decode_storage_value_patch_create,
+    decode_storage_value_patch_update,
+};
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
+pub(crate) use block::{
+    decode_block_body,
+    decode_block_header,
+    decode_output_note_batch,
+    decode_partial_blockchain,
+    decode_signed_block,
+};
+pub(crate) use merkle::{decode_empty_smt_leaf, decode_mmr_delta, decode_partial_smt};
+pub(crate) use note::{
+    decode_note,
+    decode_note_attachment,
+    decode_note_attachment_schemes,
+    decode_note_inclusion_proof,
+    decode_note_metadata,
+    decode_note_script,
+    decode_note_storage,
+    decode_partial_note_metadata,
+    validate_note_attachments,
+};
+pub(crate) use primitives::{
+    decode_advice_map,
+    decode_advice_stack,
+    decode_merkle_store,
+    decode_public_key,
+    decode_signature,
+};
+pub(crate) use transaction::{
+    decode_proven_transaction,
+    decode_transaction_args,
+    decode_transaction_header,
+    decode_transaction_script,
+};
+pub(crate) use transaction_inputs::{
+    decode_authenticated_input_note,
+    decode_foreign_account_slot_name,
+    decode_input_notes,
+    decode_transaction_inputs_v1,
+};
 
 use crate::ConversionError;
 
@@ -32,12 +90,12 @@ impl<M: prost::Message> MessageDecoder<M> {
     ) -> Result<U, ConversionError>
     where
         T: TryInto<U>,
-        T::Error: Into<ConversionError>,
+        T::Error: Error + Send + Sync + 'static,
     {
         value
             .ok_or_else(|| ConversionError::missing_field::<M>(name))?
             .try_into()
-            .map_err(Into::into)
+            .map_err(ConversionError::new)
             .map_err(|error: ConversionError| error.context(name))
     }
 }

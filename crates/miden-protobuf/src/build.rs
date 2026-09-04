@@ -1,0 +1,663 @@
+use std::borrow::ToOwned;
+use std::collections::BTreeSet;
+use std::string::String;
+use std::vec::Vec;
+use std::{format, io};
+
+use prost_types::field_descriptor_proto::Type;
+use prost_types::{DescriptorProto, FileDescriptorSet};
+
+const OPTIONAL_ATTRIBUTE: &str = "#[proto_decode(optional)]";
+
+/// Structured configuration for a generated `ProtoDecode` implementation.
+#[doc(hidden)]
+pub struct ProtoDecodeConfig<'a> {
+    message_name: &'static str,
+    target: &'static str,
+    validators: &'a [(&'static str, &'static str)],
+    field_decoders: &'a [(&'static str, &'static str)],
+    enumerations: &'a [ProtoDecodeEnumerationConfig<'a>],
+    oneofs: &'a [ProtoDecodeOneofConfig<'a>],
+    constructor: &'static str,
+    constructor_kind: ConstructorKind,
+}
+
+impl<'a> ProtoDecodeConfig<'a> {
+    #[doc(hidden)]
+    pub const fn constructor(
+        message_name: &'static str,
+        target: &'static str,
+        validators: &'a [(&'static str, &'static str)],
+        constructor: &'static str,
+    ) -> Self {
+        Self {
+            message_name,
+            target,
+            validators,
+            field_decoders: &[],
+            enumerations: &[],
+            oneofs: &[],
+            constructor,
+            constructor_kind: ConstructorKind::Infallible,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn try_constructor(
+        message_name: &'static str,
+        target: &'static str,
+        validators: &'a [(&'static str, &'static str)],
+        constructor: &'static str,
+    ) -> Self {
+        Self {
+            message_name,
+            target,
+            validators,
+            field_decoders: &[],
+            enumerations: &[],
+            oneofs: &[],
+            constructor,
+            constructor_kind: ConstructorKind::Fallible,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn with_field_decoders(
+        mut self,
+        field_decoders: &'a [(&'static str, &'static str)],
+    ) -> Self {
+        self.field_decoders = field_decoders;
+        self
+    }
+
+    #[doc(hidden)]
+    pub const fn with_enumerations(
+        mut self,
+        enumerations: &'a [ProtoDecodeEnumerationConfig<'a>],
+    ) -> Self {
+        self.enumerations = enumerations;
+        self
+    }
+
+    #[doc(hidden)]
+    pub const fn with_oneofs(mut self, oneofs: &'a [ProtoDecodeOneofConfig<'a>]) -> Self {
+        self.oneofs = oneofs;
+        self
+    }
+
+    fn derive_attribute(&self) -> String {
+        let constructor = match self.constructor_kind {
+            ConstructorKind::Infallible => "constructor",
+            ConstructorKind::Fallible => "try_constructor",
+        };
+        let validators = self
+            .validators
+            .iter()
+            .map(|(field, validator)| format!(", validate({field}, {validator})"))
+            .collect::<Vec<_>>()
+            .join("");
+        let field_decoders = self
+            .field_decoders
+            .iter()
+            .map(|(field, decoder)| format!(", decode({field}, {decoder})"))
+            .collect::<Vec<_>>()
+            .join("");
+        let enumerations = self
+            .enumerations
+            .iter()
+            .map(ProtoDecodeEnumerationConfig::derive_setting)
+            .collect::<Vec<_>>()
+            .join("");
+        let oneofs = self
+            .oneofs
+            .iter()
+            .map(ProtoDecodeOneofConfig::derive_setting)
+            .collect::<Vec<_>>()
+            .join("");
+
+        format!(
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target({}){}{}{}{}, {}({}))]",
+            self.target,
+            validators,
+            field_decoders,
+            enumerations,
+            oneofs,
+            constructor,
+            self.constructor
+        )
+    }
+}
+
+/// Structured configuration for a generated Protobuf enumeration field.
+#[doc(hidden)]
+pub struct ProtoDecodeEnumerationConfig<'a> {
+    field: &'static str,
+    variants: &'a [ProtoDecodeEnumerationVariantConfig],
+}
+
+impl<'a> ProtoDecodeEnumerationConfig<'a> {
+    #[doc(hidden)]
+    pub const fn new(
+        field: &'static str,
+        variants: &'a [ProtoDecodeEnumerationVariantConfig],
+    ) -> Self {
+        Self { field, variants }
+    }
+
+    fn derive_setting(&self) -> String {
+        let variants = self
+            .variants
+            .iter()
+            .map(ProtoDecodeEnumerationVariantConfig::derive_setting)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(", enumeration({}, {variants})", self.field)
+    }
+}
+
+/// Structured configuration for a generated Protobuf enumeration variant.
+#[doc(hidden)]
+pub struct ProtoDecodeEnumerationVariantConfig {
+    variant: &'static str,
+    value: Option<&'static str>,
+    kind: EnumerationVariantKind,
+}
+
+impl ProtoDecodeEnumerationVariantConfig {
+    #[doc(hidden)]
+    pub const fn map(variant: &'static str, target: &'static str) -> Self {
+        Self {
+            variant,
+            value: Some(target),
+            kind: EnumerationVariantKind::Map,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn accept(variant: &'static str) -> Self {
+        Self {
+            variant,
+            value: None,
+            kind: EnumerationVariantKind::Accept,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn reject(variant: &'static str, message: &'static str) -> Self {
+        Self {
+            variant,
+            value: Some(message),
+            kind: EnumerationVariantKind::Reject,
+        }
+    }
+
+    fn derive_setting(&self) -> String {
+        match (self.kind, self.value) {
+            (EnumerationVariantKind::Map, Some(value)) => {
+                format!("{} => map({value})", self.variant)
+            },
+            (EnumerationVariantKind::Accept, None) => format!("{} => accept", self.variant),
+            (EnumerationVariantKind::Reject, Some(value)) => {
+                format!("{} => reject({value})", self.variant)
+            },
+            _ => unreachable!("enumeration action and value are inconsistent"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum EnumerationVariantKind {
+    Map,
+    Accept,
+    Reject,
+}
+
+/// Structured configuration for a generated Protobuf oneof field.
+#[doc(hidden)]
+pub struct ProtoDecodeOneofConfig<'a> {
+    field: &'static str,
+    variants: &'a [ProtoDecodeOneofVariantConfig],
+}
+
+impl<'a> ProtoDecodeOneofConfig<'a> {
+    #[doc(hidden)]
+    pub const fn new(field: &'static str, variants: &'a [ProtoDecodeOneofVariantConfig]) -> Self {
+        Self { field, variants }
+    }
+
+    fn derive_setting(&self) -> String {
+        let variants = self
+            .variants
+            .iter()
+            .map(ProtoDecodeOneofVariantConfig::derive_setting)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(", oneof({}, {variants})", self.field)
+    }
+}
+
+/// Structured configuration for a generated Protobuf oneof variant.
+#[doc(hidden)]
+pub struct ProtoDecodeOneofVariantConfig {
+    variant: &'static str,
+    value: &'static str,
+    kind: OneofVariantKind,
+}
+
+impl ProtoDecodeOneofVariantConfig {
+    #[doc(hidden)]
+    pub const fn constructor(variant: &'static str, constructor: &'static str) -> Self {
+        Self {
+            variant,
+            value: constructor,
+            kind: OneofVariantKind::Constructor,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn try_constructor(variant: &'static str, constructor: &'static str) -> Self {
+        Self {
+            variant,
+            value: constructor,
+            kind: OneofVariantKind::TryConstructor,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn constant(variant: &'static str, value: &'static str) -> Self {
+        Self {
+            variant,
+            value,
+            kind: OneofVariantKind::Constant,
+        }
+    }
+
+    fn derive_setting(&self) -> String {
+        let action = match self.kind {
+            OneofVariantKind::Constructor => "constructor",
+            OneofVariantKind::TryConstructor => "try_constructor",
+            OneofVariantKind::Constant => "constant",
+        };
+        format!("{} => {action}({})", self.variant, self.value)
+    }
+}
+
+enum OneofVariantKind {
+    Constructor,
+    TryConstructor,
+    Constant,
+}
+
+enum ConstructorKind {
+    Infallible,
+    Fallible,
+}
+
+/// Configures generated messages for `ProtoDecode` and preserves explicitly optional message
+/// fields that Prost's Rust attributes cannot distinguish from unlabelled message fields.
+pub fn configure_proto_decodes<'a>(
+    prost: &mut prost_build::Config,
+    descriptors: &FileDescriptorSet,
+    configs: impl IntoIterator<Item = ProtoDecodeConfig<'a>>,
+) -> Result<(), io::Error> {
+    let mut configured = BTreeSet::new();
+    for config in configs {
+        let canonical_name = config.message_name.strip_prefix('.').unwrap_or(config.message_name);
+        if !configured.insert(canonical_name) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("duplicate ProtoDecode message `{canonical_name}`"),
+            ));
+        }
+
+        prost.message_attribute(canonical_name, config.derive_attribute());
+
+        for field_name in explicit_optional_message_fields(descriptors, config.message_name)? {
+            prost.field_attribute(field_name, OPTIONAL_ATTRIBUTE);
+        }
+    }
+
+    Ok(())
+}
+
+fn explicit_optional_message_fields(
+    descriptors: &FileDescriptorSet,
+    message_name: &str,
+) -> Result<Vec<String>, io::Error> {
+    let message_name = message_name.strip_prefix('.').unwrap_or(message_name);
+
+    for file in &descriptors.file {
+        let package = file.package.as_deref().unwrap_or_default();
+        for message in &file.message_type {
+            if let Some(fields) = find_message(message, package, message_name) {
+                return Ok(fields);
+            }
+        }
+    }
+
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("ProtoDecode message `{message_name}` is missing from the descriptor set"),
+    ))
+}
+
+fn find_message(
+    message: &DescriptorProto,
+    parent_name: &str,
+    target_name: &str,
+) -> Option<Vec<String>> {
+    let name = message.name.as_deref()?;
+    let message_name = if parent_name.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{parent_name}.{name}")
+    };
+
+    if message_name == target_name {
+        let fields = message
+            .field
+            .iter()
+            .filter(|field| {
+                field.proto3_optional == Some(true) && field.r#type == Some(Type::Message as i32)
+            })
+            .filter_map(|field| field.name.as_deref())
+            .map(|field_name| format!(".{message_name}.{field_name}"))
+            .collect();
+        return Some(fields);
+    }
+
+    message
+        .nested_type
+        .iter()
+        .find_map(|nested| find_message(nested, &message_name, target_name))
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+    use std::{format, vec};
+
+    use prost_types::field_descriptor_proto::Label;
+    use prost_types::{FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto};
+
+    use super::*;
+
+    #[test]
+    fn finds_only_explicitly_optional_message_fields() {
+        let descriptors = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                package: Some("example".to_owned()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Container".to_owned()),
+                    field: vec![
+                        field("implicit_message", Type::Message, false),
+                        field("explicit_message", Type::Message, true),
+                        field("explicit_scalar", Type::Uint32, true),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+
+        assert_eq!(
+            explicit_optional_message_fields(&descriptors, ".example.Container").unwrap(),
+            [".example.Container.explicit_message"]
+        );
+    }
+
+    #[test]
+    fn finds_nested_messages_by_fully_qualified_name() {
+        let descriptors = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                package: Some("example".to_owned()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Outer".to_owned()),
+                    nested_type: vec![DescriptorProto {
+                        name: Some("Inner".to_owned()),
+                        field: vec![field("value", Type::Message, true)],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+
+        assert_eq!(
+            explicit_optional_message_fields(&descriptors, ".example.Outer.Inner").unwrap(),
+            [".example.Outer.Inner.value"]
+        );
+    }
+
+    #[test]
+    fn configure_proto_decodes_only_configures_the_selected_message() {
+        let descriptors = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("optional.proto".to_owned()),
+                package: Some("example".to_owned()),
+                syntax: Some("proto3".to_owned()),
+                message_type: vec![
+                    DescriptorProto {
+                        name: Some("Value".to_owned()),
+                        ..Default::default()
+                    },
+                    message_with_explicit_optional_field("Selected"),
+                    message_with_explicit_optional_field("Unselected"),
+                ],
+                ..Default::default()
+            }],
+        };
+        let out_dir =
+            std::env::temp_dir().join(format!("miden-protobuf-build-test-{}", std::process::id()));
+        std::fs::create_dir_all(&out_dir).unwrap();
+
+        let mut prost = prost_build::Config::new();
+        prost.out_dir(&out_dir);
+        crate::configure_proto_decodes! {
+            prost: &mut prost,
+            descriptors: &descriptors,
+            ".example.Selected" => {
+                target: SelectedTarget,
+                constructor: SelectedTarget::new(value),
+            },
+        }
+        .unwrap();
+        prost.compile_fds(descriptors).unwrap();
+
+        let generated = std::fs::read_to_string(out_dir.join("example.rs")).unwrap();
+        let selected = generated.find("pub struct Selected").unwrap();
+        let unselected = generated.find("pub struct Unselected").unwrap();
+        let marker = generated.find(OPTIONAL_ATTRIBUTE).unwrap();
+        assert!(selected < marker && marker < unselected);
+        assert_eq!(generated.matches(OPTIONAL_ATTRIBUTE).count(), 1);
+        assert_eq!(generated.matches("::miden_protobuf::ProtoDecode").count(), 1);
+
+        std::fs::remove_dir_all(out_dir).unwrap();
+    }
+
+    #[test]
+    fn configure_proto_decodes_rejects_duplicate_messages() {
+        let descriptors = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                package: Some("example".to_owned()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Selected".to_owned()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+        let mut prost = prost_build::Config::new();
+
+        let error = crate::configure_proto_decodes! {
+            prost: &mut prost,
+            descriptors: &descriptors,
+            ".example.Selected" => {
+                target: SelectedTarget,
+                constructor: SelectedTarget::new(),
+            },
+            "example.Selected" => {
+                target: SelectedTarget,
+                constructor: SelectedTarget::new(),
+            },
+        }
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "duplicate ProtoDecode message `example.Selected`");
+    }
+
+    #[test]
+    fn renders_ordered_field_validators() {
+        let config = ProtoDecodeConfig::try_constructor(
+            ".example.Selected",
+            "SelectedTarget",
+            &[("version", "crate::validate_version"), ("kind", "crate::validate_kind")],
+            "SelectedTarget::new(value)",
+        );
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), validate(version, crate::validate_version), \
+             validate(kind, crate::validate_kind), \
+             try_constructor(SelectedTarget::new(value)))]"
+        );
+    }
+
+    #[test]
+    fn renders_oneof_variant_mappings() {
+        let variants = [
+            ProtoDecodeOneofVariantConfig::constructor("First", "SelectedTarget::First"),
+            ProtoDecodeOneofVariantConfig::try_constructor("Second", "SelectedTarget::try_second"),
+            ProtoDecodeOneofVariantConfig::constant("Empty", "SelectedTarget::Empty"),
+        ];
+        let oneofs = [ProtoDecodeOneofConfig::new("choice", &variants)];
+        let config =
+            ProtoDecodeConfig::constructor(".example.Selected", "SelectedTarget", &[], "choice")
+                .with_oneofs(&oneofs);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), oneof(choice, First => \
+             constructor(SelectedTarget::First), Second => \
+             try_constructor(SelectedTarget::try_second), Empty => \
+             constant(SelectedTarget::Empty)), constructor(choice))]"
+        );
+    }
+
+    #[test]
+    fn renders_enumeration_variant_mappings() {
+        let variants = [
+            ProtoDecodeEnumerationVariantConfig::reject("Unspecified", "\"kind is unspecified\""),
+            ProtoDecodeEnumerationVariantConfig::map("First", "SelectedKind::First"),
+        ];
+        let enumerations = [ProtoDecodeEnumerationConfig::new("kind", &variants)];
+        let config = ProtoDecodeConfig::constructor(
+            ".example.Selected",
+            "SelectedTarget",
+            &[],
+            "SelectedTarget::new(kind)",
+        )
+        .with_enumerations(&enumerations);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), enumeration(kind, Unspecified => \
+             reject(\"kind is unspecified\"), First => map(SelectedKind::First)), \
+             constructor(SelectedTarget::new(kind)))]"
+        );
+    }
+
+    #[test]
+    fn renders_validation_only_enumeration_variants() {
+        let variants = [
+            ProtoDecodeEnumerationVariantConfig::reject("Unspecified", "\"kind is unspecified\""),
+            ProtoDecodeEnumerationVariantConfig::accept("First"),
+        ];
+        let enumerations = [ProtoDecodeEnumerationConfig::new("kind", &variants)];
+        let config = ProtoDecodeConfig::constructor(
+            ".example.Selected",
+            "SelectedTarget",
+            &[],
+            "SelectedTarget::new()",
+        )
+        .with_enumerations(&enumerations);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), enumeration(kind, Unspecified => \
+             reject(\"kind is unspecified\"), First => accept), \
+             constructor(SelectedTarget::new()))]"
+        );
+    }
+
+    #[test]
+    fn renders_fallible_field_decoders() {
+        let decoders = [("count", "crate::decode_count")];
+        let config =
+            ProtoDecodeConfig::constructor(".example.Selected", "SelectedTarget", &[], "count")
+                .with_field_decoders(&decoders);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), decode(count, crate::decode_count), \
+             constructor(count))]"
+        );
+    }
+
+    fn field(name: &str, field_type: Type, proto3_optional: bool) -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            name: Some(name.to_owned()),
+            r#type: Some(field_type as i32),
+            proto3_optional: Some(proto3_optional),
+            ..Default::default()
+        }
+    }
+
+    fn message_with_explicit_optional_field(name: &str) -> DescriptorProto {
+        DescriptorProto {
+            name: Some(name.to_owned()),
+            nested_type: vec![DescriptorProto {
+                name: Some("Nested".to_owned()),
+                ..Default::default()
+            }],
+            field: vec![
+                FieldDescriptorProto {
+                    name: Some("value".to_owned()),
+                    number: Some(1),
+                    label: Some(Label::Optional as i32),
+                    r#type: Some(Type::Message as i32),
+                    type_name: Some(".example.Value".to_owned()),
+                    oneof_index: Some(0),
+                    proto3_optional: Some(true),
+                    ..Default::default()
+                },
+                FieldDescriptorProto {
+                    name: Some("choice".to_owned()),
+                    number: Some(2),
+                    label: Some(Label::Optional as i32),
+                    r#type: Some(Type::Uint32 as i32),
+                    oneof_index: Some(1),
+                    ..Default::default()
+                },
+            ],
+            oneof_decl: vec![
+                OneofDescriptorProto {
+                    name: Some("_value".to_owned()),
+                    ..Default::default()
+                },
+                OneofDescriptorProto {
+                    name: Some("choice".to_owned()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }
+    }
+}

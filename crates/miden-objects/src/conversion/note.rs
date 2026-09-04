@@ -1,8 +1,10 @@
-use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_protocol::asset::Asset;
+use miden_protobuf::{DecodeRepeated, RepeatedField};
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -25,7 +27,6 @@ use miden_protocol::note::{
 };
 use miden_protocol::{Felt, MastNodeId, Word};
 
-use super::{MessageDecodeExt, MessageDecoder, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // NOTE TYPE
@@ -57,6 +58,17 @@ impl TryFrom<proto::note::NoteType> for NoteType {
 // NOTE METADATA
 // ================================================================================================
 
+impl From<PartialNoteMetadata> for proto::note::PartialNoteMetadata {
+    fn from(metadata: PartialNoteMetadata) -> Self {
+        Self {
+            version: proto::note::NoteVersion::V1 as i32,
+            sender: Some(metadata.sender().into()),
+            note_type: proto::note::NoteType::from(metadata.note_type()) as i32,
+            tag: metadata.tag().as_u32(),
+        }
+    }
+}
+
 impl From<NoteMetadata> for proto::note::NoteMetadata {
     fn from(metadata: NoteMetadata) -> Self {
         Self {
@@ -74,15 +86,6 @@ impl From<NoteMetadata> for proto::note::NoteMetadata {
     }
 }
 
-impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
-    type Error = ConversionError;
-
-    fn try_from(metadata: proto::note::NoteMetadata) -> Result<Self, Self::Error> {
-        decode_note_version(metadata.version).context("version")?;
-        decode_note_metadata(metadata)
-    }
-}
-
 // NOTE ATTACHMENTS
 // ================================================================================================
 
@@ -95,25 +98,18 @@ impl From<&NoteAttachment> for proto::note::NoteAttachment {
     }
 }
 
-impl TryFrom<proto::note::NoteAttachment> for NoteAttachment {
-    type Error = ConversionError;
+pub(crate) fn decode_note_attachment(
+    scheme: u32,
+    words: Vec<Word>,
+) -> Result<NoteAttachment, ConversionError> {
+    let scheme = u16::try_from(scheme).context("scheme")?;
+    let scheme = NoteAttachmentScheme::new(scheme)
+        .map_err(ConversionError::new)
+        .context("scheme")?;
 
-    fn try_from(attachment: proto::note::NoteAttachment) -> Result<Self, Self::Error> {
-        let scheme = u16::try_from(attachment.scheme).context("scheme")?;
-        let scheme = NoteAttachmentScheme::new(scheme)
-            .map_err(ConversionError::from)
-            .context("scheme")?;
-        let words = attachment
-            .words
-            .into_iter()
-            .map(Word::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("words")?;
-
-        NoteAttachment::with_words(scheme, words)
-            .map_err(ConversionError::from)
-            .context("words")
-    }
+    NoteAttachment::with_words(scheme, words)
+        .map_err(ConversionError::new)
+        .context("words")
 }
 
 impl From<NoteAttachments> for proto::note::NoteAttachments {
@@ -130,21 +126,12 @@ impl From<&NoteAttachments> for proto::note::NoteAttachments {
     }
 }
 
-impl TryFrom<proto::note::NoteAttachments> for NoteAttachments {
-    type Error = ConversionError;
-
-    fn try_from(attachments: proto::note::NoteAttachments) -> Result<Self, Self::Error> {
-        let attachments = attachments
-            .attachments
-            .into_iter()
-            .map(NoteAttachment::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("attachments")?;
-
-        NoteAttachments::new(attachments)
-            .map_err(ConversionError::from)
-            .context("attachments")
-    }
+pub(crate) fn validate_note_attachments(
+    attachments: Vec<NoteAttachment>,
+) -> Result<NoteAttachments, ConversionError> {
+    NoteAttachments::new(attachments)
+        .map_err(ConversionError::new)
+        .context("attachments")
 }
 
 // NOTE DETAILS
@@ -164,19 +151,8 @@ impl From<&NoteStorage> for proto::note::NoteStorage {
     }
 }
 
-impl TryFrom<proto::note::NoteStorage> for NoteStorage {
-    type Error = ConversionError;
-
-    fn try_from(storage: proto::note::NoteStorage) -> Result<Self, Self::Error> {
-        let items = storage
-            .items
-            .into_iter()
-            .map(Felt::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("items")?;
-
-        NoteStorage::new(items).map_err(ConversionError::from).context("items")
-    }
+pub(crate) fn decode_note_storage(items: Vec<Felt>) -> Result<NoteStorage, ConversionError> {
+    NoteStorage::new(items).map_err(ConversionError::new).context("items")
 }
 
 impl From<NoteRecipient> for proto::note::NoteRecipient {
@@ -195,19 +171,6 @@ impl From<&NoteRecipient> for proto::note::NoteRecipient {
     }
 }
 
-impl TryFrom<proto::note::NoteRecipient> for NoteRecipient {
-    type Error = ConversionError;
-
-    fn try_from(recipient: proto::note::NoteRecipient) -> Result<Self, Self::Error> {
-        let decoder = recipient.decoder();
-        let serial_num = required!(decoder, recipient.serial_num)?;
-        let script = required!(decoder, recipient.script)?;
-        let storage = required!(decoder, recipient.storage)?;
-
-        Ok(NoteRecipient::new(serial_num, script, storage))
-    }
-}
-
 impl From<NoteDetails> for proto::note::NoteDetails {
     fn from(details: NoteDetails) -> Self {
         Self::from(&details)
@@ -223,21 +186,11 @@ impl From<&NoteDetails> for proto::note::NoteDetails {
     }
 }
 
-impl TryFrom<proto::note::NoteDetails> for NoteDetails {
-    type Error = ConversionError;
-
-    fn try_from(details: proto::note::NoteDetails) -> Result<Self, Self::Error> {
-        let decoder = details.decoder();
-        let assets = details
-            .assets
-            .into_iter()
-            .map(Asset::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("assets")?;
-        let assets = NoteAssets::new(assets).map_err(ConversionError::from).context("assets")?;
-        let recipient = required!(decoder, details.recipient)?;
-
-        Ok(NoteDetails::new(assets, recipient))
+impl DecodeRepeated<proto::asset::Asset> for NoteAssets {
+    fn decode_repeated(field: RepeatedField<proto::asset::Asset>) -> Result<Self, ConversionError> {
+        let name = field.name();
+        let assets = field.decode_items()?;
+        Self::new(assets).map_err(ConversionError::new).context(name)
     }
 }
 
@@ -248,29 +201,20 @@ impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
         let (assets, metadata, recipient, attachments) = note.into_parts();
         Self {
-            metadata: Some(metadata.into()),
+            metadata: Some(metadata.into_partial_metadata().into()),
             note_details: Some(NoteDetails::new(assets, recipient).into()),
             note_attachments: Some(attachments.into()),
         }
     }
 }
 
-impl TryFrom<proto::note::Note> for Note {
-    type Error = ConversionError;
-
-    fn try_from(proto_note: proto::note::Note) -> Result<Self, Self::Error> {
-        let decoder = proto_note.decoder();
-        let proto::note::Note { metadata, note_details, note_attachments } = proto_note;
-
-        let metadata = required!(decoder, metadata)?;
-        let partial_metadata = partial_note_metadata_from_proto(metadata)?;
-
-        let note_details: NoteDetails = required!(decoder, note_details)?;
-        let (assets, recipient) = note_details.into_parts();
-        let attachments = decode_note_attachments::<proto::note::Note>(note_attachments)?;
-
-        Ok(Note::with_attachments(assets, partial_metadata, recipient, attachments))
-    }
+pub(crate) fn decode_note(
+    metadata: PartialNoteMetadata,
+    note_details: NoteDetails,
+    note_attachments: NoteAttachments,
+) -> Note {
+    let (assets, recipient) = note_details.into_parts();
+    Note::with_attachments(assets, metadata, recipient, note_attachments)
 }
 
 // NOTE ID
@@ -279,15 +223,6 @@ impl TryFrom<proto::note::Note> for Note {
 impl From<Word> for proto::note::NoteId {
     fn from(digest: Word) -> Self {
         Self { id: Some(digest.into()) }
-    }
-}
-
-impl TryFrom<proto::note::NoteId> for Word {
-    type Error = ConversionError;
-
-    fn try_from(note_id: proto::note::NoteId) -> Result<Self, Self::Error> {
-        let decoder = note_id.decoder();
-        required!(decoder, note_id.id)
     }
 }
 
@@ -314,21 +249,22 @@ impl TryFrom<&proto::note::NoteInclusionProof> for (NoteId, NoteInclusionProof) 
     fn try_from(
         proof: &proto::note::NoteInclusionProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
-        let proof = proof.clone();
-        let decoder = proof.decoder();
-        let inclusion_path = required!(decoder, proof.inclusion_path)?;
-        let note_id = required!(decoder, proof.note_id)?;
-        let block_num = required!(decoder, proof.block_num).context("block_num")?;
-
-        Ok((
-            NoteId::from_raw(note_id),
-            NoteInclusionProof::new(
-                block_num,
-                proof.note_index_in_block.try_into().context("note_index_in_block")?,
-                inclusion_path,
-            )?,
-        ))
+        proof.clone().try_into()
     }
+}
+
+pub(crate) fn decode_note_inclusion_proof(
+    note_id: NoteId,
+    block_num: BlockNumber,
+    note_index_in_block: u32,
+    inclusion_path: SparseMerklePath,
+) -> Result<(NoteId, NoteInclusionProof), ConversionError> {
+    let note_index_in_block = note_index_in_block.try_into().context("note_index_in_block")?;
+    let proof = NoteInclusionProof::new(block_num, note_index_in_block, inclusion_path)
+        .map_err(ConversionError::new)
+        .context("note_index_in_block")?;
+
+    Ok((note_id, proof))
 }
 
 // NOTE HEADER
@@ -343,18 +279,11 @@ impl From<NoteHeader> for proto::note::NoteHeader {
     }
 }
 
-impl TryFrom<proto::note::NoteHeader> for NoteHeader {
+impl TryFrom<proto::primitives::Word> for NoteDetailsCommitment {
     type Error = ConversionError;
 
-    fn try_from(value: proto::note::NoteHeader) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let details_commitment_word = required!(decoder, value.details_commitment)?;
-        let metadata: NoteMetadata = required!(decoder, value.metadata)?;
-
-        Ok(NoteHeader::new(
-            NoteDetailsCommitment::from_raw(details_commitment_word),
-            metadata,
-        ))
+    fn try_from(value: proto::primitives::Word) -> Result<Self, Self::Error> {
+        Word::try_from(value).map(Self::from_raw)
     }
 }
 
@@ -376,63 +305,22 @@ impl From<&NoteScript> for proto::note::NoteScript {
     }
 }
 
-impl TryFrom<proto::note::NoteScript> for NoteScript {
-    type Error = ConversionError;
+pub(crate) fn decode_note_script(
+    mast: miden_protocol::MastForest,
+    entrypoint: u32,
+) -> Result<NoteScript, ConversionError> {
+    let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)
+        .map_err(|err| ConversionError::deserialization("note_script.entrypoint", err))?;
 
-    fn try_from(value: proto::note::NoteScript) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let mast = required!(decoder, value.mast)?;
-        let entrypoint = value.entrypoint;
-        let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)
-            .map_err(|err| ConversionError::deserialization("note_script.entrypoint", err))?;
-
-        Self::from_parts(Arc::new(mast), entrypoint).map_err(ConversionError::new)
-    }
+    NoteScript::from_parts(Arc::new(mast), entrypoint).map_err(ConversionError::new)
 }
 
 // HELPERS
 // ================================================================================================
 
-/// Decodes the `(sender, note_type, tag)` triple from a proto `NoteMetadata` into a
-/// [`PartialNoteMetadata`]. The attachment-related fields on the proto are ignored — when full
-/// attachments are also transmitted, the receiver derives the canonical headers and commitment from
-/// those instead.
-fn partial_note_metadata_from_proto(
-    value: proto::note::NoteMetadata,
-) -> Result<PartialNoteMetadata, ConversionError> {
-    decode_note_version(value.version).context("version")?;
-    decode_partial_note_metadata(value.sender, value.note_type, value.tag)
-}
-
-fn decode_note_version(version: i32) -> Result<(), ConversionError> {
-    match proto::note::NoteVersion::try_from(version) {
-        Ok(proto::note::NoteVersion::V1) => Ok(()),
-        Ok(proto::note::NoteVersion::Unspecified) => {
-            Err(ConversionError::message("note metadata version is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown note metadata version {version}"),
-            error,
-        )),
-    }
-}
-
-fn decode_note_metadata(
-    metadata: proto::note::NoteMetadata,
-) -> Result<NoteMetadata, ConversionError> {
-    let proto::note::NoteMetadata {
-        sender,
-        note_type,
-        tag,
-        attachment_schemes,
-        attachments_commitment,
-        ..
-    } = metadata;
-
-    let partial = decode_partial_note_metadata(sender, note_type, tag)?;
-    let decoder = MessageDecoder::<proto::note::NoteMetadata>::default();
-    let attachments_commitment = required!(decoder, attachments_commitment)?;
-
+pub(crate) fn decode_note_attachment_schemes(
+    attachment_schemes: Vec<u32>,
+) -> Result<[NoteAttachmentHeader; NoteAttachments::MAX_COUNT], ConversionError> {
     if attachment_schemes.len() > NoteAttachments::MAX_COUNT {
         return Err(ConversionError::message("too many attachment schemes"));
     }
@@ -443,32 +331,29 @@ fn decode_note_metadata(
         *slot = if raw == 0 {
             NoteAttachmentHeader::absent()
         } else {
-            NoteAttachmentHeader::new(NoteAttachmentScheme::new(raw)?)
+            NoteAttachmentHeader::new(NoteAttachmentScheme::new(raw).map_err(ConversionError::new)?)
         };
     }
 
-    Ok(NoteMetadata::from_parts(partial, attachment_headers, attachments_commitment))
+    Ok(attachment_headers)
 }
 
-fn decode_partial_note_metadata(
-    sender: Option<proto::account::AccountId>,
-    note_type: i32,
+pub(crate) fn decode_note_metadata(
+    sender: AccountId,
+    note_type: NoteType,
     tag: u32,
-) -> Result<PartialNoteMetadata, ConversionError> {
-    let decoder = MessageDecoder::<proto::note::NoteMetadata>::default();
-    let sender = required!(decoder, sender)?;
-    let note_type = proto::note::NoteType::try_from(note_type)
-        .map_err(|_| ConversionError::message("enum variant discriminant out of range"))?
-        .try_into()
-        .context("note_type")?;
-    let tag = NoteTag::new(tag);
-    Ok(PartialNoteMetadata::new(sender, note_type).with_tag(tag))
+    attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
+    attachments_commitment: Word,
+) -> NoteMetadata {
+    let partial = decode_partial_note_metadata(sender, note_type, tag);
+    NoteMetadata::from_parts(partial, attachment_headers, attachments_commitment)
 }
 
-/// Requires and decodes the structured attachments carried by a note message.
-fn decode_note_attachments<M: prost::Message>(
-    note_attachments: Option<proto::note::NoteAttachments>,
-) -> Result<NoteAttachments, ConversionError> {
-    let decoder = MessageDecoder::<M>::default();
-    required!(decoder, note_attachments)
+pub(crate) fn decode_partial_note_metadata(
+    sender: AccountId,
+    note_type: NoteType,
+    tag: u32,
+) -> PartialNoteMetadata {
+    let tag = NoteTag::new(tag);
+    PartialNoteMetadata::new(sender, note_type).with_tag(tag)
 }

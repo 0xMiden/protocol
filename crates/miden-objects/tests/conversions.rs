@@ -14,7 +14,9 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AccountVaultPatch,
     AssetCallbackFlag,
+    StorageMapKey,
     StorageMapPatch,
+    StorageMapPatchEntries,
     StorageSlotHeader,
     StorageSlotName,
     StorageSlotPatch,
@@ -49,9 +51,13 @@ use miden_protocol::errors::{
 };
 use miden_protocol::note::{
     Note,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
     NoteId,
     NoteInclusionProof,
     NoteMetadata,
+    NoteStorage,
     NoteType,
     PartialNoteMetadata,
 };
@@ -60,6 +66,9 @@ use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
+    OutputNote,
+    PartialBlockchain,
+    PrivateOutputNote,
     ProvenTransaction,
     PublicOutputNote,
     TransactionHeader,
@@ -75,6 +84,57 @@ fn protobuf_descriptor_includes_structured_asset_schema() {
             .windows(b"asset.proto".len())
             .any(|window| window == b"asset.proto")
     );
+}
+
+#[test]
+fn note_storage_reports_item_and_invariant_paths() {
+    let invalid_item = proto::note::NoteStorage {
+        items: vec![proto::primitives::Felt { value: Felt::ORDER }],
+    };
+    let error = NoteStorage::try_from(invalid_item).unwrap_err();
+    assert!(error.to_string().starts_with("items[0]."));
+
+    let oversized = proto::note::NoteStorage { items: vec![Felt::ZERO.into(); 1025] };
+    let error = NoteStorage::try_from(oversized).unwrap_err();
+    assert!(error.to_string().starts_with("items:"));
+}
+
+#[test]
+fn note_attachment_reports_semantic_and_item_paths() {
+    let invalid_scheme = proto::note::NoteAttachment { scheme: u32::MAX, words: vec![] };
+    let error = NoteAttachment::try_from(invalid_scheme).unwrap_err();
+    assert!(error.to_string().starts_with("scheme:"));
+
+    let invalid_word = proto::note::NoteAttachment {
+        scheme: 1,
+        words: vec![proto::primitives::Word { encoded: vec![0; 31] }],
+    };
+    let error = NoteAttachment::try_from(invalid_word).unwrap_err();
+    assert!(error.to_string().starts_with("words[0]."));
+
+    let empty = proto::note::NoteAttachment { scheme: 1, words: vec![] };
+    let error = NoteAttachment::try_from(empty).unwrap_err();
+    assert!(error.to_string().starts_with("words:"));
+}
+
+#[test]
+fn note_attachments_reports_item_and_invariant_paths() {
+    let valid = proto::note::NoteAttachment {
+        scheme: 1,
+        words: vec![Word::empty().into()],
+    };
+    let invalid = proto::note::NoteAttachment { scheme: u32::MAX, words: vec![] };
+    let error = NoteAttachments::try_from(proto::note::NoteAttachments {
+        attachments: vec![valid.clone(), invalid],
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("attachments[1].scheme:"));
+
+    let error = NoteAttachments::try_from(proto::note::NoteAttachments {
+        attachments: vec![valid; NoteAttachments::MAX_COUNT + 1],
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("attachments:"));
 }
 
 #[test]
@@ -116,7 +176,7 @@ fn structured_asset_conversion_requires_message_fields() {
     .unwrap_err();
     assert_eq!(
         suffix_error.to_string(),
-        "field miden_objects::proto::asset::AssetClass::suffix is missing"
+        "suffix: field miden_objects::proto::asset::AssetClass::suffix is missing"
     );
 
     let prefix_error = AssetClass::try_from(proto::asset::AssetClass {
@@ -126,7 +186,7 @@ fn structured_asset_conversion_requires_message_fields() {
     .unwrap_err();
     assert_eq!(
         prefix_error.to_string(),
-        "field miden_objects::proto::asset::AssetClass::prefix is missing"
+        "prefix: field miden_objects::proto::asset::AssetClass::prefix is missing"
     );
 
     let asset_id_error = AssetId::try_from(proto::asset::AssetId {
@@ -191,7 +251,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
         faucet_id: faucet_id.clone(),
     })
     .unwrap_err();
-    assert_eq!(unknown.to_string(), "composition: unknown asset composition 4");
+    assert_eq!(unknown.to_string(), "composition: unknown enumeration value 4");
 
     let custom = AssetId::try_from(proto::asset::AssetId {
         version: proto::asset::AssetVersion::V1 as i32,
@@ -264,11 +324,10 @@ fn asset_id_protobuf_preserves_unknown_version_error_sources() {
         let error =
             AssetId::try_from(proto::asset::AssetId { version, ..Default::default() }).unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown asset id version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );
@@ -435,11 +494,10 @@ fn account_header_protobuf_preserves_unknown_version_error_sources() {
         })
         .unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown account header version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );
@@ -496,15 +554,40 @@ fn account_patch_protobuf_preserves_unknown_version_error_sources() {
             AccountPatch::try_from(proto::account::AccountPatch { version, ..Default::default() })
                 .unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown account patch version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );
     }
+}
+
+#[test]
+fn account_update_details_oneof_variants_roundtrip_through_protobuf() {
+    for details in [AccountUpdateDetails::Private, AccountUpdateDetails::Public(account_patch())] {
+        let message = proto::account::AccountUpdateDetails::from(&details);
+        assert_eq!(AccountUpdateDetails::try_from(message).unwrap(), details);
+    }
+}
+
+#[test]
+fn account_update_details_oneof_reports_missing_and_variant_paths() {
+    let error = AccountUpdateDetails::try_from(proto::account::AccountUpdateDetails::default())
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "update: field miden_objects::proto::account::AccountUpdateDetails::update is missing"
+    );
+
+    let error = AccountUpdateDetails::try_from(proto::account::AccountUpdateDetails {
+        update: Some(proto::account::account_update_details::Update::Public(
+            proto::account::AccountPatch::default(),
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(error.to_string(), "update.public.version: account patch version is unspecified");
 }
 
 #[test]
@@ -519,7 +602,18 @@ fn note_metadata_roundtrips_through_flat_v1_protobuf_bytes() {
 }
 
 #[test]
-fn note_protobuf_roundtrips_through_versioned_note_metadata() {
+fn partial_note_metadata_roundtrips_through_protobuf() {
+    let metadata = *Note::mock_noop(Word::empty()).metadata().partial_metadata();
+
+    let encoded = proto::note::PartialNoteMetadata::from(metadata).encode_to_vec();
+    let message = proto::note::PartialNoteMetadata::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(message.version, proto::note::NoteVersion::V1 as i32);
+    assert_eq!(PartialNoteMetadata::try_from(message).unwrap(), metadata);
+}
+
+#[test]
+fn note_protobuf_roundtrips_through_partial_metadata() {
     let note = Note::mock_noop(Word::empty());
 
     let encoded = proto::note::Note::from(note.clone()).encode_to_vec();
@@ -537,7 +631,7 @@ fn note_protobuf_requires_note_attachments() {
 
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::note::Note::note_attachments is missing"
+        "note_attachments: field miden_objects::proto::note::Note::note_attachments is missing"
     );
 }
 
@@ -550,7 +644,7 @@ fn note_protobuf_requires_note_details() {
 
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::note::Note::note_details is missing"
+        "note_details: field miden_objects::proto::note::Note::note_details is missing"
     );
 }
 
@@ -572,11 +666,10 @@ fn note_metadata_protobuf_preserves_unknown_version_error_sources() {
             NoteMetadata::try_from(proto::note::NoteMetadata { version, ..Default::default() })
                 .unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown note metadata version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );
@@ -586,7 +679,7 @@ fn note_metadata_protobuf_preserves_unknown_version_error_sources() {
 #[test]
 fn note_protobuf_rejects_unspecified_metadata_version_before_payload_fields() {
     let error = Note::try_from(proto::note::Note {
-        metadata: Some(proto::note::NoteMetadata {
+        metadata: Some(proto::note::PartialNoteMetadata {
             version: proto::note::NoteVersion::Unspecified as i32,
             ..Default::default()
         }),
@@ -594,16 +687,21 @@ fn note_protobuf_rejects_unspecified_metadata_version_before_payload_fields() {
     })
     .unwrap_err();
 
-    assert_eq!(error.to_string(), "version: note metadata version is unspecified");
+    assert_eq!(error.to_string(), "metadata.version: note metadata version is unspecified");
 }
 
 #[test]
-fn note_protobuf_reconstructs_attachment_metadata_from_structured_attachments() {
-    let note = Note::mock_noop(Word::empty());
-    let mut message = proto::note::Note::from(note.clone());
-    let metadata = message.metadata.as_mut().unwrap();
-    metadata.attachment_schemes = vec![42];
-    metadata.attachments_commitment = Some(Word::empty().into());
+fn note_protobuf_derives_full_metadata_from_structured_attachments() {
+    let (assets, metadata, recipient, _) = Note::mock_noop(Word::empty()).into_parts();
+    let attachment = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(42).unwrap(),
+        vec![Word::from([1_u32, 2, 3, 4])],
+    )
+    .unwrap();
+    let attachments = NoteAttachments::new(vec![attachment]).unwrap();
+    let note =
+        Note::with_attachments(assets, metadata.into_partial_metadata(), recipient, attachments);
+    let message = proto::note::Note::from(note.clone());
 
     assert_eq!(Note::try_from(message).unwrap(), note);
 }
@@ -678,7 +776,7 @@ fn public_output_note_protobuf_requires_nested_note() {
 
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::transaction::PublicOutputNote::note is missing"
+        "note: field miden_objects::proto::transaction::PublicOutputNote::note is missing"
     );
 }
 
@@ -696,6 +794,37 @@ fn public_output_note_protobuf_rejects_private_note() {
             .and_then(|source| source.downcast_ref::<OutputNoteError>()),
         Some(OutputNoteError::NoteIsPrivate(note_id)) if *note_id == note.id()
     );
+}
+
+#[test]
+fn output_note_oneof_variants_roundtrip_through_protobuf() {
+    let public = OutputNote::Public(PublicOutputNote::new(public_note()).unwrap());
+    let private_note = Note::mock_noop(Word::empty());
+    let private = OutputNote::Private(
+        PrivateOutputNote::new(*private_note.header(), private_note.attachments().clone()).unwrap(),
+    );
+
+    for note in [public, private] {
+        let message = proto::transaction::OutputNote::from(&note);
+        assert_eq!(OutputNote::try_from(message).unwrap(), note);
+    }
+}
+
+#[test]
+fn output_note_oneof_reports_missing_and_variant_paths() {
+    let error = OutputNote::try_from(proto::transaction::OutputNote::default()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "note: field miden_objects::proto::transaction::OutputNote::note is missing"
+    );
+
+    let error = OutputNote::try_from(proto::transaction::OutputNote {
+        note: Some(proto::transaction::output_note::Note::Public(
+            proto::transaction::PublicOutputNote::default(),
+        )),
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("note.public.note: "));
 }
 
 fn proven_batch_data() -> proto::transaction::ProvenBatch {
@@ -724,6 +853,51 @@ fn account_update_roundtrips_through_protobuf_bytes() {
     let encoded = proto::transaction::BatchAccountUpdate::from(&update).encode_to_vec();
     let message = proto::transaction::BatchAccountUpdate::decode(encoded.as_slice()).unwrap();
     assert_eq!(BatchAccountUpdate::try_from(message).unwrap(), update);
+}
+
+#[test]
+fn partial_blockchain_reports_structural_and_semantic_paths() {
+    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+        tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf::default()],
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "tracked_leaves[0].leaf: field miden_objects::proto::blockchain::TrackedMmrLeaf::leaf is missing"
+    );
+
+    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+        forest: 1,
+        peaks: vec![Word::empty().into()],
+        tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf {
+            position: 0,
+            leaf: Some(Word::empty().into()),
+            path: vec![proto::primitives::Word { encoded: vec![0; 31] }],
+        }],
+        block_headers: vec![],
+    })
+    .unwrap_err();
+    assert!(
+        error.to_string().starts_with("tracked_leaves[0].path[0].word.encoded: "),
+        "{error}"
+    );
+
+    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+        forest: 1,
+        peaks: vec![Word::empty().into()],
+        tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf {
+            position: 1,
+            leaf: Some(Word::empty().into()),
+            path: vec![],
+        }],
+        block_headers: vec![],
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "tracked_leaves[0].position: tracked leaf position 1 is outside forest of size 1"
+    );
 }
 
 #[test]
@@ -760,7 +934,7 @@ fn block_body_and_transaction_header_roundtrip() {
 fn account_storage_header_rejects_invalid_slot_types() {
     for (slot_type, expected_message) in [
         (Default::default(), "storage slot type is unspecified"),
-        (i32::MAX, "unknown storage slot type 2147483647"),
+        (i32::MAX, "unknown enumeration value 2147483647"),
     ] {
         let message = proto::account::AccountStorageHeader {
             slots: vec![proto::account::account_storage_header::StorageSlot {
@@ -771,7 +945,7 @@ fn account_storage_header_rejects_invalid_slot_types() {
         };
 
         let error = AccountStorageHeader::try_from(message).unwrap_err();
-        assert_eq!(error.to_string(), format!("slots.slot_type: {expected_message}"));
+        assert_eq!(error.to_string(), format!("slots[0].slot_type: {expected_message}"));
     }
 }
 
@@ -787,10 +961,7 @@ fn account_storage_header_preserves_unknown_enum_value_source() {
     .unwrap_err();
 
     assert_matches!(
-        error
-            .source()
-            .and_then(Error::source)
-            .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
+        error.source().and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
         Some(prost::UnknownEnumValue(value)) if *value == i32::MAX
     );
 }
@@ -851,6 +1022,130 @@ fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
 }
 
 #[test]
+fn storage_slot_patch_oneof_variants_decode() {
+    let create_value = Word::from([1, 2, 3, 4_u32]);
+    let update_value = Word::from([5, 6, 7, 8_u32]);
+    let map_key = StorageMapKey::from_index(9);
+    let map_value = Word::from([10, 11, 12, 13_u32]);
+    let map_entries =
+        StorageMapPatchEntries::from_raw([(map_key, map_value)].into_iter().collect());
+    let proto_map_entries = proto::account::storage_map_patch::Entries {
+        entries: vec![proto::account::StorageMapEntry {
+            key: Some(Word::from(map_key).into()),
+            value: Some(map_value.into()),
+        }],
+    };
+    for (patch, expected) in [
+        (
+            proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
+                patch: Some(proto::account::storage_value_patch::Patch::Create(
+                    create_value.into(),
+                )),
+            }),
+            StorageSlotPatch::Value(StorageValuePatch::Create { value: create_value }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
+                patch: Some(proto::account::storage_value_patch::Patch::Update(
+                    update_value.into(),
+                )),
+            }),
+            StorageSlotPatch::Value(StorageValuePatch::Update { value: update_value }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
+                patch: Some(proto::account::storage_value_patch::Patch::Remove(())),
+            }),
+            StorageSlotPatch::Value(StorageValuePatch::Remove),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
+                patch: Some(proto::account::storage_map_patch::Patch::Create(
+                    proto_map_entries.clone(),
+                )),
+            }),
+            StorageSlotPatch::Map(StorageMapPatch::Create { entries: map_entries.clone() }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
+                patch: Some(proto::account::storage_map_patch::Patch::Update(proto_map_entries)),
+            }),
+            StorageSlotPatch::Map(StorageMapPatch::Update { entries: map_entries }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
+                patch: Some(proto::account::storage_map_patch::Patch::Remove(())),
+            }),
+            StorageSlotPatch::Map(StorageMapPatch::Remove),
+        ),
+    ] {
+        let (slot_name, patch) =
+            <(StorageSlotName, StorageSlotPatch)>::try_from(proto::account::StorageSlotPatch {
+                slot_name: "miden::test::slot".into(),
+                patch: Some(patch),
+            })
+            .unwrap();
+
+        assert_eq!(slot_name, StorageSlotName::new("miden::test::slot").unwrap());
+        assert_eq!(patch, expected);
+    }
+}
+
+#[test]
+fn storage_slot_patch_reports_field_and_variant_paths() {
+    let error = <(StorageSlotName, StorageSlotPatch)>::try_from(proto::account::StorageSlotPatch {
+        slot_name: "invalid".into(),
+        patch: None,
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("slot_name: "));
+
+    let error = <(StorageSlotName, StorageSlotPatch)>::try_from(proto::account::StorageSlotPatch {
+        slot_name: "miden::test::slot".into(),
+        patch: Some(proto::account::storage_slot_patch::Patch::Value(
+            proto::account::StorageValuePatch::default(),
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "patch.value.patch: field miden_objects::proto::account::StorageValuePatch::patch is missing"
+    );
+}
+
+#[test]
+fn storage_map_patch_reports_oneof_and_entry_paths() {
+    let error = StorageMapPatch::try_from(proto::account::StorageMapPatch::default()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "patch: field miden_objects::proto::account::StorageMapPatch::patch is missing"
+    );
+
+    let error = StorageMapPatch::try_from(proto::account::StorageMapPatch {
+        patch: Some(proto::account::storage_map_patch::Patch::Update(
+            proto::account::storage_map_patch::Entries::default(),
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "patch.update.entries: entries must be non-empty for an update operation"
+    );
+
+    let entry = proto::account::StorageMapEntry {
+        key: Some(Word::empty().into()),
+        value: Some(Word::empty().into()),
+    };
+    let error = StorageMapPatch::try_from(proto::account::StorageMapPatch {
+        patch: Some(proto::account::storage_map_patch::Patch::Create(
+            proto::account::storage_map_patch::Entries { entries: vec![entry.clone(), entry] },
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(error.to_string(), "patch.create.entries[1].key: duplicate storage map key");
+}
+
+#[test]
 fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
     let expected =
         BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))
@@ -890,11 +1185,10 @@ fn block_header_protobuf_preserves_unknown_version_error_sources() {
             BlockHeader::try_from(proto::blockchain::BlockHeader { version, ..Default::default() })
                 .unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown block header version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );
@@ -976,8 +1270,8 @@ fn block_header_protobuf_rejects_upgrade_effective_at_genesis() {
 }
 
 #[test]
-fn note_inclusion_proof_rejects_missing_block_number() {
-    let message = proto::note::NoteInclusionProof {
+fn note_inclusion_proof_reports_generated_and_semantic_paths() {
+    let mut message = proto::note::NoteInclusionProof {
         note_id: Some(Word::empty().into()),
         block_num: None,
         note_index_in_block: 0,
@@ -989,6 +1283,19 @@ fn note_inclusion_proof_rejects_missing_block_number() {
 
     let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
     assert_missing_block_number(error, "block_num");
+
+    message.block_num = Some(BlockNumber::GENESIS.into());
+    message.note_id = None;
+    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "note_id: field miden_objects::proto::note::NoteInclusionProof::note_id is missing"
+    );
+
+    message.note_id = Some(Word::empty().into());
+    message.note_index_in_block = u32::MAX;
+    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    assert!(error.to_string().starts_with("note_index_in_block: "));
 }
 
 #[test]
@@ -996,12 +1303,20 @@ fn proven_transaction_rejects_missing_block_numbers() {
     let mut message = proven_transaction_data();
     message.reference_block_num = None;
     let error = ProvenTransaction::try_from(message).unwrap_err();
-    assert_missing_block_number(error, "reference_block_num");
+    assert_eq!(
+        error.to_string(),
+        "reference_block_num: field \
+         miden_objects::proto::transaction::ProvenTransaction::reference_block_num is missing"
+    );
 
     let mut message = proven_transaction_data();
     message.expiration_block_num = None;
     let error = ProvenTransaction::try_from(message).unwrap_err();
-    assert_missing_block_number(error, "expiration_block_num");
+    assert_eq!(
+        error.to_string(),
+        "expiration_block_num: field \
+         miden_objects::proto::transaction::ProvenTransaction::expiration_block_num is missing"
+    );
 }
 
 #[test]

@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::{AccountId, AccountUpdateDetails};
+use miden_protocol::account::AccountId;
 use miden_protocol::batch::{BatchAccountUpdate, ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteId, NoteInclusionProof};
@@ -29,20 +29,6 @@ impl From<&BatchAccountUpdate> for proto::transaction::BatchAccountUpdate {
             final_state_commitment: Some(value.final_state_commitment().into()),
             details: Some(value.details().into()),
         }
-    }
-}
-
-impl TryFrom<proto::transaction::BatchAccountUpdate> for BatchAccountUpdate {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::transaction::BatchAccountUpdate) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let account_id = required!(decoder, value.account_id)?;
-        let initial_state_commitment = required!(decoder, value.initial_state_commitment)?;
-        let final_state_commitment = required!(decoder, value.final_state_commitment)?;
-        let details: AccountUpdateDetails = required!(decoder, value.details)?;
-        Self::new(account_id, initial_state_commitment, final_state_commitment, details)
-            .map_err(ConversionError::new)
     }
 }
 

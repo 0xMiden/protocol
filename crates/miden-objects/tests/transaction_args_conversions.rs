@@ -133,7 +133,7 @@ fn transaction_args_roundtrip_normalizes_note_args_order() {
         message
             .note_args
             .iter()
-            .map(|entry| NoteId::from_raw(Word::try_from(entry.note_id.clone().unwrap()).unwrap()))
+            .map(|entry| NoteId::try_from(entry.note_id.clone().unwrap()).unwrap())
             .collect::<Vec<_>>(),
         vec![first, second]
     );
@@ -170,7 +170,7 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
         proto::transaction::TransactionArgs::from(&args)
             .note_args
             .iter()
-            .map(|entry| NoteId::from_raw(Word::try_from(entry.note_id.clone().unwrap()).unwrap()))
+            .map(|entry| NoteId::try_from(entry.note_id.clone().unwrap()).unwrap())
             .collect::<Vec<_>>(),
         vec![first, second]
     );
@@ -219,6 +219,19 @@ fn advice_stack_rejects_invalid_felts() {
 
 #[test]
 fn merkle_store_rejects_duplicate_parents_and_preserves_invalid_word_source() {
+    let missing = proto::primitives::MerkleStore {
+        nodes: vec![proto::primitives::MerkleStoreNode {
+            value: Some(dummy_word(1).into()),
+            left: None,
+            right: Some(dummy_word(3).into()),
+        }],
+    };
+    let error = MerkleStore::try_from(missing).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "nodes[0].left: field miden_objects::proto::primitives::MerkleStoreNode::left is missing"
+    );
+
     let node = proto::primitives::MerkleStoreNode {
         value: Some(dummy_word(1).into()),
         left: Some(dummy_word(2).into()),

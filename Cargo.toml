@@ -5,6 +5,8 @@ members = [
   "crates/miden-agglayer",
   "crates/miden-block-prover",
   "crates/miden-objects",
+  "crates/miden-protobuf",
+  "crates/miden-protobuf-derive",
   "crates/miden-protocol",
   "crates/miden-protocol-build-utils",
   "crates/miden-standards",
@@ -40,6 +42,8 @@ lto           = true
 # Workspace crates
 miden-agglayer             = { default-features = false, path = "crates/miden-agglayer", version = "0.17" }
 miden-block-prover         = { default-features = false, path = "crates/miden-block-prover", version = "0.17" }
+miden-protobuf             = { default-features = false, path = "crates/miden-protobuf", version = "0.17" }
+miden-protobuf-derive      = { path = "crates/miden-protobuf-derive", version = "0.17" }
 miden-protocol             = { default-features = false, path = "crates/miden-protocol", version = "0.17" }
 miden-protocol-build-utils = { default-features = false, path = "crates/miden-protocol-build-utils", version = "0.17" }
 miden-standards            = { default-features = false, path = "crates/miden-standards", version = "0.17" }
@@ -64,22 +68,28 @@ miden-utils-sync       = { default-features = false, version = "0.31.0" }
 miden-verifier         = { default-features = false, version = "0.31.0" }
 
 # External dependencies
-alloy-sol-types = { default-features = false, version = "1.5" }
-anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
-assert_matches  = { default-features = false, version = "1.5" }
-bon             = { default-features = false, version = "3" }
-criterion       = { default-features = false, version = "0.5" }
-fs-err          = { default-features = false, version = "3" }
-primitive-types = { default-features = false, version = "0.14" }
-prost           = { default-features = false, version = "0.14" }
-prost-build     = { default-features = false, version = "0.14" }
-protox          = { default-features = false, version = "0.9" }
-rand            = { default-features = false, version = "0.10" }
-rand_chacha     = { default-features = false, version = "0.10" }
-regex           = { version = "1.11" }
-rstest          = { version = "0.26" }
-serde           = { default-features = false, version = "1.0" }
-serde_json      = { default-features = false, version = "1.0" }
-thiserror       = { default-features = false, version = "2.0" }
-tokio           = { default-features = false, features = ["sync"], version = "1" }
-walkdir         = { version = "2.5" }
+alloy-sol-types  = { default-features = false, version = "1.5" }
+anyhow           = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
+assert_matches   = { default-features = false, version = "1.5" }
+bon              = { default-features = false, version = "3" }
+criterion        = { default-features = false, version = "0.5" }
+fs-err           = { default-features = false, version = "3" }
+heck             = { version = "0.5" }
+primitive-types  = { default-features = false, version = "0.14" }
+proc-macro-crate = { version = "3" }
+proc-macro2      = { version = "1" }
+prost            = { default-features = false, version = "0.14" }
+prost-build      = { default-features = false, version = "0.14" }
+prost-types      = { default-features = false, version = "0.14" }
+protox           = { default-features = false, version = "0.9" }
+quote            = { version = "1" }
+rand             = { default-features = false, version = "0.10" }
+rand_chacha      = { default-features = false, version = "0.10" }
+regex            = { version = "1.11" }
+rstest           = { version = "0.26" }
+serde            = { default-features = false, version = "1.0" }
+serde_json       = { default-features = false, version = "1.0" }
+syn              = { features = ["full"], version = "2" }
+thiserror        = { default-features = false, version = "2.0" }
+tokio            = { default-features = false, features = ["sync"], version = "1" }
+walkdir          = { version = "2.5" }

@@ -1,8 +1,8 @@
 use alloc::format;
 use alloc::vec::Vec;
 
+use miden_protobuf::{DecodeRepeated, RepeatedField};
 use miden_protocol::Word;
-use miden_protocol::account::AccountUpdateDetails;
 use miden_protocol::block::{
     BlockAccountUpdate,
     BlockBody,
@@ -14,7 +14,6 @@ use miden_protocol::block::{
     SignedBlock,
     ValidatorConfig,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::crypto::merkle::MerklePath;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::Nullifier;
@@ -26,7 +25,6 @@ use miden_protocol::transaction::{
     TransactionHeader,
 };
 
-use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // BLOCK NUMBER
@@ -73,76 +71,52 @@ impl From<&PartialBlockchain> for proto::blockchain::PartialBlockchain {
     }
 }
 
-impl TryFrom<proto::blockchain::PartialBlockchain> for PartialBlockchain {
-    type Error = ConversionError;
+pub(crate) fn decode_partial_blockchain(
+    forest: u64,
+    peaks: Vec<Word>,
+    tracked_leaves: Vec<(u64, Word, Vec<Word>)>,
+    block_headers: Vec<BlockHeader>,
+) -> Result<PartialBlockchain, ConversionError> {
+    let forest_size = usize::try_from(forest).context("forest")?;
+    let forest = Forest::new(forest_size).map_err(ConversionError::new).context("forest")?;
+    let peaks = MmrPeaks::new(forest, peaks).map_err(ConversionError::new).context("peaks")?;
+    let mut mmr = PartialMmr::from_peaks(peaks);
 
-    fn try_from(value: proto::blockchain::PartialBlockchain) -> Result<Self, Self::Error> {
-        let forest_size = usize::try_from(value.forest).context("forest")?;
-        let forest = Forest::new(forest_size).map_err(ConversionError::new).context("forest")?;
-        let peaks = value
-            .peaks
-            .into_iter()
-            .enumerate()
-            .map(|(index, peak)| Word::try_from(peak).context(format!("peaks[{index}]")))
-            .collect::<Result<Vec<_>, _>>()?;
-        let peaks = MmrPeaks::new(forest, peaks).map_err(ConversionError::new).context("peaks")?;
-        let mut mmr = PartialMmr::from_peaks(peaks);
-
-        let mut previous_position = None;
-        for (index, tracked) in value.tracked_leaves.into_iter().enumerate() {
-            let position = usize::try_from(tracked.position)
-                .context(format!("tracked_leaves[{index}].position"))?;
-            if position >= forest_size {
-                return Err(ConversionError::message(format!(
-                    "tracked leaf position {position} is outside forest of size {forest_size}"
-                ))
-                .context(format!("tracked_leaves[{index}].position")));
-            }
-            if previous_position.is_some_and(|previous| position <= previous) {
-                return Err(ConversionError::message(
-                    "tracked leaf positions must be unique and strictly increasing",
-                )
-                .context(format!("tracked_leaves[{index}].position")));
-            }
-            previous_position = Some(position);
-
-            let decoder = tracked.decoder();
-            let leaf = required!(decoder, tracked.leaf)?;
-            let path = tracked
-                .path
-                .into_iter()
-                .enumerate()
-                .map(|(path_index, node)| {
-                    Word::try_from(node)
-                        .context(format!("tracked_leaves[{index}].path[{path_index}]"))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            mmr.track(position, leaf, &MerklePath::new(path))
-                .map_err(ConversionError::new)
-                .context(format!("tracked_leaves[{index}]"))?;
+    let mut previous_position = None;
+    for (index, (position, leaf, path)) in tracked_leaves.into_iter().enumerate() {
+        let position_path = format!("tracked_leaves[{index}].position");
+        let position = usize::try_from(position).context(position_path.clone())?;
+        if position >= forest_size {
+            return Err(ConversionError::message(format!(
+                "tracked leaf position {position} is outside forest of size {forest_size}"
+            ))
+            .context(position_path));
         }
+        if previous_position.is_some_and(|previous| position <= previous) {
+            return Err(ConversionError::message(
+                "tracked leaf positions must be unique and strictly increasing",
+            )
+            .context(position_path));
+        }
+        previous_position = Some(position);
 
-        let mut previous_block_num = None;
-        let block_headers = value
-            .block_headers
-            .into_iter()
-            .enumerate()
-            .map(|(index, header)| {
-                let header =
-                    BlockHeader::try_from(header).context(format!("block_headers[{index}]"))?;
-                if previous_block_num.is_some_and(|previous| header.block_num() <= previous) {
-                    return Err(ConversionError::message(
-                        "block headers must be unique and ordered by ascending block number",
-                    )
-                    .context(format!("block_headers[{index}].block_num")));
-                }
-                previous_block_num = Some(header.block_num());
-                Ok(header)
-            })
-            .collect::<Result<Vec<_>, ConversionError>>()?;
-
-        Self::new(mmr, block_headers).map_err(ConversionError::new)
+        mmr.track(position, leaf, &MerklePath::new(path))
+            .map_err(ConversionError::new)
+            .context(format!("tracked_leaves[{index}]"))?;
     }
+
+    let mut previous_block_num = None;
+    for (index, header) in block_headers.iter().enumerate() {
+        if previous_block_num.is_some_and(|previous| header.block_num() <= previous) {
+            return Err(ConversionError::message(
+                "block headers must be unique and ordered by ascending block number",
+            )
+            .context(format!("block_headers[{index}].block_num")));
+        }
+        previous_block_num = Some(header.block_num());
+    }
+
+    PartialBlockchain::new(mmr, block_headers).map_err(ConversionError::new)
 }
 
 // BLOCK HEADER
@@ -182,57 +156,35 @@ impl TryFrom<&proto::blockchain::BlockHeader> for BlockHeader {
     }
 }
 
-impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
-    type Error = ConversionError;
-
-    fn try_from(header: proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
-        decode_block_version(header.version).context("version")?;
-
-        let decoder = header.decoder();
-        let block_num = required!(decoder, header.block_num).context("block_num")?;
-        let prev_block_commitment = required!(decoder, header.prev_block_commitment)?;
-        let chain_commitment = required!(decoder, header.chain_commitment)?;
-        let account_root = required!(decoder, header.account_root)?;
-        let nullifier_root = required!(decoder, header.nullifier_root)?;
-        let note_root = required!(decoder, header.note_root)?;
-        let tx_commitment = required!(decoder, header.tx_commitment)?;
-        let validator_config = required!(decoder, header.validator_config)?;
-        let fee_parameters = required!(decoder, header.fee_parameters)?;
-        let protocol_config_commitment = required!(decoder, header.protocol_config_commitment)?;
-        let next_protocol_config = header
-            .next_protocol_config
-            .map(TryInto::try_into)
-            .transpose()
-            .context("next_protocol_config")?;
-
-        Ok(BlockHeader::new(
-            prev_block_commitment,
-            block_num,
-            chain_commitment,
-            account_root,
-            nullifier_root,
-            note_root,
-            tx_commitment,
-            validator_config,
-            fee_parameters,
-            protocol_config_commitment,
-            next_protocol_config,
-            header.timestamp,
-        ))
-    }
-}
-
-fn decode_block_version(version: i32) -> Result<(), ConversionError> {
-    match proto::blockchain::BlockVersion::try_from(version) {
-        Ok(proto::blockchain::BlockVersion::V1) => Ok(()),
-        Ok(proto::blockchain::BlockVersion::Unspecified) => {
-            Err(ConversionError::message("block header version is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown block header version {version}"),
-            error,
-        )),
-    }
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn decode_block_header(
+    block_num: BlockNumber,
+    prev_block_commitment: Word,
+    chain_commitment: Word,
+    account_root: Word,
+    nullifier_root: Word,
+    note_root: Word,
+    tx_commitment: Word,
+    validator_config: ValidatorConfig,
+    fee_parameters: FeeParameters,
+    protocol_config_commitment: Word,
+    next_protocol_config: Option<NextProtocolConfig>,
+    timestamp: u32,
+) -> BlockHeader {
+    BlockHeader::new(
+        prev_block_commitment,
+        block_num,
+        chain_commitment,
+        account_root,
+        nullifier_root,
+        note_root,
+        tx_commitment,
+        validator_config,
+        fee_parameters,
+        protocol_config_commitment,
+        next_protocol_config,
+        timestamp,
+    )
 }
 
 // BLOCK BODY
@@ -259,53 +211,27 @@ impl From<BlockBody> for proto::blockchain::BlockBody {
     }
 }
 
-impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
+impl TryFrom<proto::primitives::Word> for Nullifier {
     type Error = ConversionError;
 
-    fn try_from(value: proto::blockchain::BlockBody) -> Result<Self, Self::Error> {
-        let updated_accounts = value
-            .updated_accounts
-            .into_iter()
-            .enumerate()
-            .map(|(index, update)| {
-                BlockAccountUpdate::try_from(update).context(format!("updated_accounts[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let output_note_batches = value
-            .output_note_batches
-            .into_iter()
-            .enumerate()
-            .map(|(index, batch)| {
-                OutputNoteBatch::try_from(batch).context(format!("output_note_batches[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let created_nullifiers = value
-            .created_nullifiers
-            .into_iter()
-            .enumerate()
-            .map(|(index, nullifier)| {
-                Word::try_from(nullifier)
-                    .map(Nullifier::from_raw)
-                    .context(format!("created_nullifiers[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let transactions = value
-            .transactions
-            .into_iter()
-            .enumerate()
-            .map(|(index, transaction)| {
-                TransactionHeader::try_from(transaction).context(format!("transactions[{index}]"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        BlockBody::new(
-            updated_accounts,
-            output_note_batches,
-            created_nullifiers,
-            OrderedTransactionHeaders::new_unchecked(transactions),
-        )
-        .map_err(ConversionError::new)
+    fn try_from(nullifier: proto::primitives::Word) -> Result<Self, Self::Error> {
+        Word::try_from(nullifier).map(Self::from_raw)
     }
+}
+
+pub(crate) fn decode_block_body(
+    updated_accounts: Vec<BlockAccountUpdate>,
+    output_note_batches: Vec<OutputNoteBatch>,
+    created_nullifiers: Vec<Nullifier>,
+    transactions: Vec<TransactionHeader>,
+) -> Result<BlockBody, ConversionError> {
+    BlockBody::new(
+        updated_accounts,
+        output_note_batches,
+        created_nullifiers,
+        OrderedTransactionHeaders::new_unchecked(transactions),
+    )
+    .map_err(ConversionError::new)
 }
 
 impl TryFrom<&proto::blockchain::BlockBody> for BlockBody {
@@ -329,19 +255,6 @@ impl From<&BlockAccountUpdate> for proto::blockchain::BlockAccountUpdate {
     }
 }
 
-impl TryFrom<proto::blockchain::BlockAccountUpdate> for BlockAccountUpdate {
-    type Error = ConversionError;
-
-    fn try_from(update: proto::blockchain::BlockAccountUpdate) -> Result<Self, Self::Error> {
-        let decoder = update.decoder();
-        let account_id = required!(decoder, update.account_id)?;
-        let final_state_commitment = required!(decoder, update.final_state_commitment)?;
-        let details: AccountUpdateDetails = required!(decoder, update.details)?;
-        BlockAccountUpdate::new(account_id, final_state_commitment, details)
-            .map_err(ConversionError::new)
-    }
-}
-
 impl From<&(usize, OutputNote)> for proto::blockchain::IndexedOutputNote {
     fn from((index, note): &(usize, OutputNote)) -> Self {
         Self {
@@ -349,17 +262,6 @@ impl From<&(usize, OutputNote)> for proto::blockchain::IndexedOutputNote {
                 .expect("valid output note indices fit into u32"),
             note: Some(note.into()),
         }
-    }
-}
-
-impl TryFrom<proto::blockchain::IndexedOutputNote> for (usize, OutputNote) {
-    type Error = ConversionError;
-
-    fn try_from(note: proto::blockchain::IndexedOutputNote) -> Result<Self, Self::Error> {
-        let decoder = note.decoder();
-        let index = usize::try_from(note.note_index_in_batch).context("note_index_in_batch")?;
-        let output_note = required!(decoder, note.note)?;
-        Ok((index, output_note))
     }
 }
 
@@ -371,19 +273,8 @@ impl From<&OutputNoteBatch> for proto::blockchain::OutputNoteBatch {
     }
 }
 
-impl TryFrom<proto::blockchain::OutputNoteBatch> for OutputNoteBatch {
-    type Error = ConversionError;
-
-    fn try_from(batch: proto::blockchain::OutputNoteBatch) -> Result<Self, Self::Error> {
-        batch
-            .notes
-            .into_iter()
-            .enumerate()
-            .map(|(position, note)| {
-                <(usize, OutputNote)>::try_from(note).context(format!("notes[{position}]"))
-            })
-            .collect()
-    }
+pub(crate) fn decode_output_note_batch(notes: Vec<(usize, OutputNote)>) -> OutputNoteBatch {
+    notes.into_iter().collect()
 }
 
 // SIGNED BLOCK
@@ -405,27 +296,24 @@ impl From<SignedBlock> for proto::blockchain::SignedBlock {
     }
 }
 
-impl TryFrom<proto::blockchain::SignedBlock> for SignedBlock {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::SignedBlock) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let header = required!(decoder, value.header)?;
-        let body = required!(decoder, value.body)?;
-        let signatures = value
-            .signatures
-            .into_iter()
-            .map(Signature::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .context("signatures")?;
-        let signatures = BlockSignatures::new(signatures)
-            .map_err(ConversionError::new)
-            .context("signatures")?;
-
-        SignedBlock::new(header, body, signatures)
-            .map_err(ConversionError::new)
-            .context("body")
+impl DecodeRepeated<proto::primitives::Signature> for BlockSignatures {
+    fn decode_repeated(
+        field: RepeatedField<proto::primitives::Signature>,
+    ) -> Result<Self, ConversionError> {
+        let name = field.name();
+        let signatures = field.decode_items()?;
+        Self::new(signatures).map_err(ConversionError::new).context(name)
     }
+}
+
+pub(crate) fn decode_signed_block(
+    header: BlockHeader,
+    body: BlockBody,
+    signatures: BlockSignatures,
+) -> Result<SignedBlock, ConversionError> {
+    SignedBlock::new(header, body, signatures)
+        .map_err(ConversionError::new)
+        .context("body")
 }
 
 impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
@@ -439,22 +327,6 @@ impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
 // VALIDATOR AND PROTOCOL CONFIGURATION
 // ================================================================================================
 
-impl TryFrom<proto::blockchain::ValidatorConfig> for ValidatorConfig {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::ValidatorConfig) -> Result<Self, Self::Error> {
-        let keys = value
-            .keys
-            .into_iter()
-            .enumerate()
-            .map(|(index, key)| PublicKey::try_from(key).context(format!("keys[{index}]")))
-            .collect::<Result<Vec<_>, _>>()?;
-        let quorum = u16::try_from(value.quorum).context("quorum")?;
-
-        Self::new(keys, quorum).map_err(ConversionError::new)
-    }
-}
-
 impl From<&ValidatorConfig> for proto::blockchain::ValidatorConfig {
     fn from(value: &ValidatorConfig) -> Self {
         Self {
@@ -467,18 +339,6 @@ impl From<&ValidatorConfig> for proto::blockchain::ValidatorConfig {
 impl From<ValidatorConfig> for proto::blockchain::ValidatorConfig {
     fn from(value: ValidatorConfig) -> Self {
         (&value).into()
-    }
-}
-
-impl TryFrom<proto::blockchain::NextProtocolConfig> for NextProtocolConfig {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::NextProtocolConfig) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let effective_from = required!(decoder, value.effective_from)?;
-        let protocol_config = required!(decoder, value.protocol_config)?;
-
-        Self::new(effective_from, protocol_config).map_err(ConversionError::new)
     }
 }
 

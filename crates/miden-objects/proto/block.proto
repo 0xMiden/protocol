@@ -38,7 +38,7 @@ message BlockHeader {
   ValidatorConfig validator_config = 10;
   FeeParameters fee_parameters = 11;
   primitives.Word protocol_config_commitment = 12;
-  NextProtocolConfig next_protocol_config = 13;
+  optional NextProtocolConfig next_protocol_config = 13;
 }
 
 message BlockAccountUpdate {

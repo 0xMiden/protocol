@@ -9,7 +9,6 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::{AdviceInputs, AdviceMap, AdviceStack, ExecutionProof};
 use miden_protocol::{Felt, MastForest, Word};
 
-use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 const WORD_SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
@@ -170,17 +169,8 @@ impl From<&AdviceStack> for proto::primitives::AdviceStack {
     }
 }
 
-impl TryFrom<proto::primitives::AdviceStack> for AdviceStack {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::AdviceStack) -> Result<Self, Self::Error> {
-        value
-            .values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| Felt::try_from(value).context(format!("values[{index}]")))
-            .collect::<Result<AdviceStack, _>>()
-    }
+pub(crate) fn decode_advice_stack(values: Vec<Felt>) -> AdviceStack {
+    values.into_iter().collect()
 }
 
 impl From<&AdviceMap> for proto::primitives::AdviceMap {
@@ -197,31 +187,18 @@ impl From<&AdviceMap> for proto::primitives::AdviceMap {
     }
 }
 
-impl TryFrom<proto::primitives::AdviceMap> for AdviceMap {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::AdviceMap) -> Result<Self, Self::Error> {
-        let mut entries = BTreeMap::new();
-        for (index, entry) in value.entries.into_iter().enumerate() {
-            let decoder = entry.decoder();
-            let entry_context = format!("entries[{index}]");
-            let key = required!(decoder, entry.key).context(&entry_context)?;
-            let values = entry
-                .values
-                .into_iter()
-                .enumerate()
-                .map(|(value_index, value)| {
-                    Felt::try_from(value).context(format!("{entry_context}.values[{value_index}]"))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            if entries.insert(key, values).is_some() {
-                return Err(ConversionError::message("duplicate advice map key")
-                    .context(format!("{entry_context}.key")));
-            }
+pub(crate) fn decode_advice_map(
+    decoded_entries: Vec<(Word, Vec<Felt>)>,
+) -> Result<AdviceMap, ConversionError> {
+    let mut entries = BTreeMap::new();
+    for (index, (key, values)) in decoded_entries.into_iter().enumerate() {
+        if entries.insert(key, values).is_some() {
+            return Err(ConversionError::message("duplicate advice map key")
+                .context(format!("entries[{index}].key")));
         }
-
-        Ok(entries.into())
     }
+
+    Ok(entries.into())
 }
 
 impl From<&MerkleStore> for proto::primitives::MerkleStore {
@@ -249,31 +226,24 @@ impl From<&MerkleStore> for proto::primitives::MerkleStore {
     }
 }
 
-impl TryFrom<proto::primitives::MerkleStore> for MerkleStore {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::MerkleStore) -> Result<Self, Self::Error> {
-        let mut nodes = BTreeMap::new();
-        for (index, node) in value.nodes.into_iter().enumerate() {
-            let decoder = node.decoder();
-            let node_context = format!("nodes[{index}]");
-            let parent = required!(decoder, node.value).context(&node_context)?;
-            let left = required!(decoder, node.left).context(&node_context)?;
-            let right = required!(decoder, node.right).context(&node_context)?;
-            if nodes.insert(parent, (left, right)).is_some() {
-                return Err(ConversionError::message("duplicate Merkle store parent")
-                    .context(format!("{node_context}.value")));
-            }
+pub(crate) fn decode_merkle_store(
+    decoded_nodes: Vec<InnerNodeInfo>,
+) -> Result<MerkleStore, ConversionError> {
+    let mut nodes = BTreeMap::new();
+    for (index, node) in decoded_nodes.into_iter().enumerate() {
+        if nodes.insert(node.value, (node.left, node.right)).is_some() {
+            return Err(ConversionError::message("duplicate Merkle store parent")
+                .context(format!("nodes[{index}].value")));
         }
-
-        let mut store = MerkleStore::new();
-        store.extend(nodes.into_iter().map(|(value, (left, right))| InnerNodeInfo {
-            value,
-            left,
-            right,
-        }));
-        Ok(store)
     }
+
+    let mut store = MerkleStore::new();
+    store.extend(nodes.into_iter().map(|(value, (left, right))| InnerNodeInfo {
+        value,
+        left,
+        right,
+    }));
+    Ok(store)
 }
 
 impl From<&AdviceInputs> for proto::primitives::AdviceInputs {
@@ -286,34 +256,8 @@ impl From<&AdviceInputs> for proto::primitives::AdviceInputs {
     }
 }
 
-impl TryFrom<proto::primitives::AdviceInputs> for AdviceInputs {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::AdviceInputs) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let advice_stack = required!(decoder, value.advice_stack)?;
-        let advice_map: AdviceMap = required!(decoder, value.advice_map)?;
-        let merkle_store: MerkleStore = required!(decoder, value.merkle_store)?;
-
-        Ok(AdviceInputs::new(advice_stack, advice_map, merkle_store))
-    }
-}
-
 // PUBLIC KEY
 // ================================================================================================
-
-fn decode_public_key_variant(variant: i32) -> Result<(), ConversionError> {
-    match proto::primitives::PublicKeyVariant::try_from(variant) {
-        Ok(proto::primitives::PublicKeyVariant::EcdsaK256Keccak) => Ok(()),
-        Ok(proto::primitives::PublicKeyVariant::Unspecified) => {
-            Err(ConversionError::message("public key variant is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown public key variant {variant}"),
-            error,
-        )),
-    }
-}
 
 impl From<&PublicKey> for proto::primitives::PublicKey {
     fn from(value: &PublicKey) -> Self {
@@ -330,40 +274,21 @@ impl From<PublicKey> for proto::primitives::PublicKey {
     }
 }
 
-impl TryFrom<proto::primitives::PublicKey> for PublicKey {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::PublicKey) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
+pub(crate) fn decode_public_key(encoded: Vec<u8>) -> Result<PublicKey, ConversionError> {
+    PublicKey::read_from_bytes(&encoded)
+        .map_err(|error| ConversionError::deserialization("PublicKey", error))
 }
 
 impl TryFrom<&proto::primitives::PublicKey> for PublicKey {
     type Error = ConversionError;
 
     fn try_from(value: &proto::primitives::PublicKey) -> Result<Self, Self::Error> {
-        decode_public_key_variant(value.variant).context("variant")?;
-        Self::read_from_bytes(&value.encoded)
-            .map_err(|error| ConversionError::deserialization("PublicKey", error))
-            .map_err(|error| error.context("encoded"))
+        value.clone().try_into()
     }
 }
 
 // SIGNATURE
 // ================================================================================================
-
-fn decode_signature_variant(variant: i32) -> Result<(), ConversionError> {
-    match proto::primitives::SignatureVariant::try_from(variant) {
-        Ok(proto::primitives::SignatureVariant::EcdsaK256Keccak) => Ok(()),
-        Ok(proto::primitives::SignatureVariant::Unspecified) => {
-            Err(ConversionError::message("signature variant is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown signature variant {variant}"),
-            error,
-        )),
-    }
-}
 
 impl From<&Signature> for proto::primitives::Signature {
     fn from(value: &Signature) -> Self {
@@ -380,22 +305,16 @@ impl From<Signature> for proto::primitives::Signature {
     }
 }
 
-impl TryFrom<proto::primitives::Signature> for Signature {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::Signature) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
+pub(crate) fn decode_signature(encoded: Vec<u8>) -> Result<Signature, ConversionError> {
+    Signature::read_from_bytes(&encoded)
+        .map_err(|error| ConversionError::deserialization("Signature", error))
 }
 
 impl TryFrom<&proto::primitives::Signature> for Signature {
     type Error = ConversionError;
 
     fn try_from(value: &proto::primitives::Signature) -> Result<Self, Self::Error> {
-        decode_signature_variant(value.variant).context("variant")?;
-        Self::read_from_bytes(&value.encoded)
-            .map_err(|error| ConversionError::deserialization("Signature", error))
-            .map_err(|error| error.context("encoded"))
+        value.clone().try_into()
     }
 }
 
@@ -510,14 +429,14 @@ mod tests {
             encoded: vec![],
         })
         .unwrap_err();
-        assert_eq!(public_key_error.to_string(), "variant: unknown public key variant 2147483647");
+        assert_eq!(public_key_error.to_string(), "variant: unknown enumeration value 2147483647");
 
         let signature_error = Signature::try_from(proto::primitives::Signature {
             variant: i32::MAX,
             encoded: vec![],
         })
         .unwrap_err();
-        assert_eq!(signature_error.to_string(), "variant: unknown signature variant 2147483647");
+        assert_eq!(signature_error.to_string(), "variant: unknown enumeration value 2147483647");
     }
 
     #[test]
