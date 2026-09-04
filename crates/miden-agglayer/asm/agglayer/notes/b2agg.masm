@@ -3,7 +3,7 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
-use miden::standards::attachments::network_account_target
+use miden::standards::note::consumer
 use miden::standards::wallets::basic as basic_wallet
 
 # CONSTANTS
@@ -19,7 +19,6 @@ const B2AGG_NOTE_NUM_STORAGE_ITEMS = 6
 # =================================================================================================
 const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS="B2AGG script requires exactly 1 note asset"
 const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="B2AGG script expects exactly 6 note storage items"
-const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account does not match consuming account"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -31,6 +30,8 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #!   consuming account.
 #! - If the consuming account is the Agglayer Bridge: the note's assets are moved to a BURN note,
 #!   and the note details are hashed into a leaf and appended to the Local Exit Tree.
+#!
+#! Consumers: committed accounts (sender reclaim or attachment target)
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -73,8 +74,7 @@ pub proc main
         # => [pad(16)]
     else
         # Ensure note attachment targets the consuming bridge account.
-        exec.network_account_target::active_account_matches_target_account
-        assert.err=ERR_B2AGG_TARGET_ACCOUNT_MISMATCH
+        exec.consumer::assert_target_account_attachment
         # => [pad(16)]
 
         # Store note storage -> mem[8..14]

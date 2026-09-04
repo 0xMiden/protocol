@@ -1,6 +1,6 @@
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::faucets::policies::policy_manager
+use miden::standards::note::consumer
 
 # CONSTANTS
 # =================================================================================================
@@ -26,8 +26,6 @@ const NUM_ITEMS_SET_POLICY = 5
 
 # ERRORS
 # =================================================================================================
-
-const ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH = "faucet policy config note attachment target account does not match the consuming account"
 
 const ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR = "faucet policy config note selector does not match a known action"
 
@@ -55,6 +53,8 @@ const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet poli
 #!   set_send_policy, set_receive_policy}` (the `TokenPolicyManager` component), backed by the
 #!   `Authority` companion component.
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -72,8 +72,7 @@ pub proc main
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.consumer::assert_target_account_attachment
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR

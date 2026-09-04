@@ -55,6 +55,7 @@ use miden_standards::errors::standards::{
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
+    ERR_NOTE_CONSUMER_NOT_STORAGE_TARGET,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{
@@ -1843,10 +1844,10 @@ async fn network_faucet_burn_rejects_asset_mismatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the BURN script rejects a stored faucet ID that differs from the carried asset's
-/// faucet ID even when their values are identical.
+/// Tests that the BURN script rejects a consuming faucet that is not the one named by the stored
+/// asset, even when the carried asset is the consuming faucet's own and the values are identical.
 #[tokio::test]
-async fn network_faucet_burn_rejects_faucet_id_mismatch() -> anyhow::Result<()> {
+async fn network_faucet_burn_rejects_non_issuing_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
     let faucet = builder.add_existing_network_faucet(
@@ -1884,7 +1885,7 @@ async fn network_faucet_burn_rejects_faucet_id_mismatch() -> anyhow::Result<()> 
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_BURN_ASSET_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_STORAGE_TARGET);
 
     Ok(())
 }

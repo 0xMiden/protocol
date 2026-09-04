@@ -113,6 +113,10 @@ end
 #! The reclaim path requires that the consuming account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
 #!
+#! Consumers: unrestricted - the note pays for one feature note and may only be consumed alongside
+#!   it, so consumption rights are inherited from that note; the reclaim path is restricted to the
+#!   reclaimer named in the note storage
+#!
 #! Inputs:  [NOTE_ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!

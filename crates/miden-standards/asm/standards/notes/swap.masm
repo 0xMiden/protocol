@@ -54,6 +54,9 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
 #! - `miden::standards::note::note_creator::create_note` procedure.
 #!
+#! Consumers: unrestricted - any account may take the offered asset in exchange for the requested
+#!   one, which is the point of a swap note
+#!
 #! Inputs:  [ARGS]
 #! Outputs: []
 #!

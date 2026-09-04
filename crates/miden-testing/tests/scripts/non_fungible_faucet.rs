@@ -28,9 +28,9 @@ use miden_standards::account::policies::{
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
-    ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET,
     ERR_NFT_ALREADY_ISSUED,
     ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE,
+    ERR_NOTE_CONSUMER_NOT_STORAGE_TARGET,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage};
@@ -449,8 +449,8 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
 /// stored alongside the commitment supplies that bind instead.
 ///
 /// The decoy carries the same components and an allow-all mint policy, so nothing else would reject
-/// it: it aborts at the faucet check. Because the transaction aborts, the note's nullifier is not
-/// spent and the note remains available to the faucet it was created for.
+/// it: it aborts at the note script's consumer check. Because the transaction aborts, the note's
+/// nullifier is not spent and the note remains available to the faucet it was created for.
 #[tokio::test]
 async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -490,7 +490,7 @@ async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_STORAGE_TARGET);
 
     Ok(())
 }

@@ -14,8 +14,8 @@ use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_NETWORK_ACCOUNT_INVALID_SPONSORSHIP_POLICY,
+    ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET,
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
@@ -693,7 +693,7 @@ async fn test_config_note_rejects_non_target_account() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET);
 
     Ok(())
 }

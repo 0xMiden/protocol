@@ -106,6 +106,8 @@ end
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
 #!
+#! Consumers: committed accounts (storage)
+#!
 #! Inputs:  []
 #! Outputs: []
 #!

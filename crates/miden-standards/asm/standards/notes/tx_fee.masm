@@ -32,6 +32,9 @@ const TX_FEE_NOTE_TAG = 0xFEE
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
 #!
+#! Consumers: unrestricted - the fee is claimed by whichever batch builder includes the transaction,
+#!   which is not known when the note is created
+#!
 #! Inputs:  []
 #! Outputs: []
 #!

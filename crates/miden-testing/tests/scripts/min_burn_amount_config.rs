@@ -27,8 +27,8 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::errors::standards::{
-    ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET,
 };
 use miden_standards::note::{MinBurnAmountConfigNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
@@ -220,6 +220,6 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET);
     Ok(())
 }

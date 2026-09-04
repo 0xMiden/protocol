@@ -1,6 +1,7 @@
 use miden::standards::faucets::fungible as fungible
 use miden::standards::faucets::non_fungible as non_fungible
 use miden::standards::inspection::code_inspection
+use miden::standards::note::consumer
 use miden::protocol::active_note
 use miden::protocol::asset
 
@@ -37,6 +38,8 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #! - either `miden::standards::faucets::fungible::receive_and_burn` or
 #!   `miden::standards::faucets::non_fungible::receive_and_burn`.
 #!
+#! Consumers: target account (storage)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -44,6 +47,7 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #! - the account does not expose the `has_procedure` procedure.
 #! - the account exposes neither faucet's `receive_and_burn` procedure.
 #! - the note storage does not contain exactly one asset.
+#! - the consuming account is not the faucet named by the stored asset ID.
 #! - the note does not carry exactly one asset, or that asset differs from the stored asset.
 #! - any of the validations in the `receive_and_burn` procedure fail.
 @note_script
@@ -65,6 +69,15 @@ pub proc main
     # the amount handed to the faucet is exactly the amount carried by the note.
     push.NOTE_ASSET_PTR exec.asset::load
     push.STORAGE_PTR exec.asset::load
+    # => [STORED_ASSET_ID, STORED_ASSET_VALUE, NOTE_ASSET_ID, NOTE_ASSET_VALUE, pad(16)]
+
+    # Bind consumption to the faucet that issued the asset. `receive_and_burn` also rejects a
+    # foreign asset, but stating the binding here keeps it a property of the note script rather
+    # than a side effect of how burns happen to be validated.
+    dupw exec.asset::id_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, STORED_ASSET_ID, STORED_ASSET_VALUE, NOTE_ASSET_ID, NOTE_ASSET_VALUE, pad(16)]
+
+    exec.consumer::assert_target_account_id
     # => [STORED_ASSET_ID, STORED_ASSET_VALUE, NOTE_ASSET_ID, NOTE_ASSET_VALUE, pad(16)]
 
     movupw.2 assert_eqw.err=ERR_BURN_ASSET_MISMATCH

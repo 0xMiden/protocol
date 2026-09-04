@@ -13,7 +13,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_P2ID_TARGET_ACCT_MISMATCH;
+use miden_standards::errors::standards::ERR_NOTE_CONSUMER_NOT_STORAGE_TARGET;
 use miden_standards::note::{P2idNote, P2idNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -88,7 +88,10 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
         .await;
 
     // Check that we got the expected result - TransactionExecutorError
-    assert_transaction_executor_error!(executed_transaction_2, ERR_P2ID_TARGET_ACCT_MISMATCH);
+    assert_transaction_executor_error!(
+        executed_transaction_2,
+        ERR_NOTE_CONSUMER_NOT_STORAGE_TARGET
+    );
     Ok(())
 }
 

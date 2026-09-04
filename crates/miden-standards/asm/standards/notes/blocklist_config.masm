@@ -1,6 +1,6 @@
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::faucets::policies::transfer::blocklist::manager
+use miden::standards::note::consumer
 
 # CONSTANTS
 # =================================================================================================
@@ -29,8 +29,6 @@ const MAX_NUM_ITEMS = NUM_ITEMS_BLOCK_ACCOUNT
 # ERRORS
 # =================================================================================================
 
-const ERR_BLOCKLIST_CONFIG_TARGET_ACCOUNT_MISMATCH = "blocklist config note attachment target account does not match the consuming account"
-
 const ERR_BLOCKLIST_CONFIG_UNKNOWN_SELECTOR = "blocklist config note selector does not match a known action"
 
 const ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "blocklist config note storage item count does not match the selected action"
@@ -55,6 +53,8 @@ const ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "blocklist confi
 #!   unblock_account}` (the `BlocklistManager` component), backed by the `Authority` component and
 #!   a component that installs the `blocked_accounts` storage slot (typically `BasicBlocklist`).
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -71,8 +71,7 @@ pub proc main
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_BLOCKLIST_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.consumer::assert_target_account_attachment
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR

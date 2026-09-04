@@ -11,7 +11,7 @@ use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::errors::standards::{
-    ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET,
     ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_PAUSE_CONFIG_UNKNOWN_SELECTOR,
 };
@@ -219,6 +219,6 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET);
     Ok(())
 }

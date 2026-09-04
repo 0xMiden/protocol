@@ -13,9 +13,9 @@ use miden_protocol::asset::AssetAmount;
 use miden_protocol::note::Note;
 use miden_standards::account::faucets::{Description, ExternalLink, FungibleFaucet, LogoURI};
 use miden_standards::errors::standards::{
-    ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR,
+    ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET,
 };
 use miden_standards::note::{
     FaucetMetadataConfig,
@@ -268,7 +268,7 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET);
 
     Ok(())
 }

@@ -7,7 +7,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::note::Note;
 use miden_standards::errors::standards::{
-    ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET,
     ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_RBAC_CONFIG_UNKNOWN_SELECTOR,
     ERR_SENDER_NOT_ROLE_ADMIN,
@@ -265,6 +265,6 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET);
     Ok(())
 }

@@ -2,6 +2,7 @@ use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
 use miden::standards::faucets::non_fungible as non_fungible
+use miden::standards::note::consumer
 
 # CONSTANTS
 # =================================================================================================
@@ -13,8 +14,8 @@ use {NOTE_TYPE_PRIVATE} from miden::protocol::note
 const STORAGE_PTR = 0
 
 # Non-fungible MINT note storage item counts. The layout matches the fungible one: the note
-# carries the full asset (ID and value), and the faucet binding is the component's comparison of
-# the stored ASSET_ID against the asset derived for the active faucet.
+# carries the full asset (ID and value), so the stored ASSET_ID names the faucet the note is for,
+# which `mint` asserts against the consuming account.
 const NFT_NUM_STORAGE_ITEMS_PRIVATE = 13
 const NFT_MIN_NUM_STORAGE_ITEMS_PUBLIC = 20
 
@@ -114,6 +115,7 @@ end
 #! Panics if:
 #! - the number of storage items is not exactly 13 for private or less than 20 for public output
 #!   notes.
+#! - the consuming account is not the faucet named by the stored asset ID.
 #! - the asset stored in the note does not belong to the consuming faucet.
 #!
 #! Invocation: exec
@@ -133,6 +135,14 @@ pub proc mint
     else
         exec.mint_private
     end
+    # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+
+    # bind consumption to the faucet the note was written for: the stored asset ID names that
+    # faucet, so a MINT note cannot be consumed by any other faucet
+    dupw exec.asset::id_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
+
+    exec.consumer::assert_target_account_id
     # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 
     call.non_fungible::mint_and_send

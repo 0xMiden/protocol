@@ -20,8 +20,8 @@ use miden_protocol::note::{Note, NoteAssets};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::{
+    ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET,
     ERR_PAUSABLE_IS_PAUSED,
-    ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_SENDER_LACKS_ROLE,
 };
 use miden_standards::interop::eth::EthAddress;
@@ -205,7 +205,7 @@ async fn pause_note_targeting_another_account_is_rejected() -> anyhow::Result<()
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(result, ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET);
     assert!(!is_bridge_paused(&mock_chain, setup.bridge.id())?);
     Ok(())
 }

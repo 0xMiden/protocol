@@ -1,6 +1,6 @@
 use agglayer::bridge::bridge_config
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
+use miden::standards::note::consumer
 
 # CONSTANTS
 # =================================================================================================
@@ -15,7 +15,6 @@ const FAUCET_ID_PREFIX = 1
 # =================================================================================================
 
 const ERR_DEREGISTER_AGG_FAUCET_UNEXPECTED_STORAGE_ITEMS = "DEREGISTER_AGG_FAUCET expects exactly 2 note storage items"
-const ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_FAUCET note attachment target account does not match consuming account"
 
 #! Agglayer Bridge DEREGISTER_AGG_FAUCET script: deregisters the faucet with the given ID,
 #! clearing every registry/metadata entry the bridge holds for it.
@@ -25,6 +24,8 @@ const ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_FAUCET
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::deregister_faucet procedure.
+#!
+#! Consumers: target account (attachment)
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -44,8 +45,7 @@ pub proc main
     # => [pad(16)]
 
     # Ensure note attachment targets the consuming bridge account.
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_DEREGISTER_AGG_FAUCET_TARGET_ACCOUNT_MISMATCH
+    exec.consumer::assert_target_account_attachment
     # => [pad(16)]
 
     # Load note storage to memory

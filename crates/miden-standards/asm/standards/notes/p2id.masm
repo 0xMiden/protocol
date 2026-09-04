@@ -1,15 +1,12 @@
-use miden::protocol::active_account
-use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::note
+use miden::standards::note::consumer
 use miden::standards::wallets::basic as basic_wallet
 
 # ERRORS
 # =================================================================================================
 
 const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2ID note expects exactly 2 note storage items"
-
-const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transaction address do not match"
 
 # CONSTANTS
 # =================================================================================================
@@ -29,6 +26,8 @@ const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
+#!
+#! Consumers: target account (storage)
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -57,11 +56,8 @@ pub proc main
     mem_load.TARGET_ACCOUNT_ID_SUFFIX_PTR
     # => [target_account_id_suffix, target_account_id_prefix]
 
-    exec.active_account::get_id
-    # => [account_id_suffix, account_id_prefix, target_account_id_suffix, target_account_id_prefix]
-
-    # ensure account_id = target_account_id, fails otherwise
-    exec.account_id::eq assert.err=ERR_P2ID_TARGET_ACCT_MISMATCH
+    # ensure the consuming account is the target account, fails otherwise
+    exec.consumer::assert_target_account_id
     # => []
 
     exec.basic_wallet::move_note_assets_to_account
