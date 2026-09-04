@@ -388,6 +388,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recipient,
             ),
         },
+        ".note.NoteId" => {
+            target: ::miden_protocol::note::NoteId,
+            constructor: ::miden_protocol::note::NoteId::from_raw(
+                id,
+            ),
+        },
+        ".note.NoteInclusionProof" => {
+            target: (
+                ::miden_protocol::note::NoteId,
+                ::miden_protocol::note::NoteInclusionProof
+            ),
+            try_constructor: crate::conversion::decode_note_inclusion_proof(
+                note_id,
+                block_num,
+                note_index_in_block,
+                inclusion_path,
+            ),
+        },
         ".note.NoteMetadata" => {
             target: ::miden_protocol::note::NoteMetadata,
             decode: {
@@ -542,6 +560,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 mast,
                 entrypoint,
             ),
+        },
+        ".transaction.NoteArgument" => {
+            target: (
+                ::miden_protocol::note::NoteId,
+                ::miden_protocol::Word
+            ),
+            constructor: (note_id, args),
         },
         ".transaction.InputNoteCommitment" => {
             target: ::miden_protocol::transaction::InputNoteCommitment,

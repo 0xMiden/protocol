@@ -133,7 +133,7 @@ fn transaction_args_roundtrip_normalizes_note_args_order() {
         message
             .note_args
             .iter()
-            .map(|entry| NoteId::from_raw(Word::try_from(entry.note_id.clone().unwrap()).unwrap()))
+            .map(|entry| NoteId::try_from(entry.note_id.clone().unwrap()).unwrap())
             .collect::<Vec<_>>(),
         vec![first, second]
     );
@@ -170,7 +170,7 @@ fn note_argument_decoding_normalizes_arbitrary_entry_order() {
         proto::transaction::TransactionArgs::from(&args)
             .note_args
             .iter()
-            .map(|entry| NoteId::from_raw(Word::try_from(entry.note_id.clone().unwrap()).unwrap()))
+            .map(|entry| NoteId::try_from(entry.note_id.clone().unwrap()).unwrap())
             .collect::<Vec<_>>(),
         vec![first, second]
     );

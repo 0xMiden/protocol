@@ -4,6 +4,8 @@ use alloc::vec::Vec;
 
 use miden_protobuf::{DecodeRepeated, RepeatedField};
 use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -224,15 +226,6 @@ impl From<Word> for proto::note::NoteId {
     }
 }
 
-impl TryFrom<proto::note::NoteId> for Word {
-    type Error = ConversionError;
-
-    fn try_from(note_id: proto::note::NoteId) -> Result<Self, Self::Error> {
-        let decoder = note_id.decoder();
-        required!(decoder, note_id.id)
-    }
-}
-
 impl From<&NoteId> for proto::note::NoteId {
     fn from(note_id: &NoteId) -> Self {
         Self { id: Some(note_id.as_word().into()) }
@@ -256,22 +249,22 @@ impl TryFrom<&proto::note::NoteInclusionProof> for (NoteId, NoteInclusionProof) 
     fn try_from(
         proof: &proto::note::NoteInclusionProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
-        let proof = proof.clone();
-        let decoder = proof.decoder();
-        let inclusion_path = required!(decoder, proof.inclusion_path)?;
-        let note_id = required!(decoder, proof.note_id)?;
-        let block_num = required!(decoder, proof.block_num).context("block_num")?;
-
-        Ok((
-            NoteId::from_raw(note_id),
-            NoteInclusionProof::new(
-                block_num,
-                proof.note_index_in_block.try_into().context("note_index_in_block")?,
-                inclusion_path,
-            )
-            .map_err(ConversionError::new)?,
-        ))
+        proof.clone().try_into()
     }
+}
+
+pub(crate) fn decode_note_inclusion_proof(
+    note_id: NoteId,
+    block_num: BlockNumber,
+    note_index_in_block: u32,
+    inclusion_path: SparseMerklePath,
+) -> Result<(NoteId, NoteInclusionProof), ConversionError> {
+    let note_index_in_block = note_index_in_block.try_into().context("note_index_in_block")?;
+    let proof = NoteInclusionProof::new(block_num, note_index_in_block, inclusion_path)
+        .map_err(ConversionError::new)
+        .context("note_index_in_block")?;
+
+    Ok((note_id, proof))
 }
 
 // NOTE HEADER

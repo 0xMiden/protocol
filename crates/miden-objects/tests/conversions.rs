@@ -1214,8 +1214,8 @@ fn block_header_protobuf_rejects_upgrade_effective_at_genesis() {
 }
 
 #[test]
-fn note_inclusion_proof_rejects_missing_block_number() {
-    let message = proto::note::NoteInclusionProof {
+fn note_inclusion_proof_reports_generated_and_semantic_paths() {
+    let mut message = proto::note::NoteInclusionProof {
         note_id: Some(Word::empty().into()),
         block_num: None,
         note_index_in_block: 0,
@@ -1227,6 +1227,19 @@ fn note_inclusion_proof_rejects_missing_block_number() {
 
     let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
     assert_missing_block_number(error, "block_num");
+
+    message.block_num = Some(BlockNumber::GENESIS.into());
+    message.note_id = None;
+    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "note_id: field miden_objects::proto::note::NoteInclusionProof::note_id is missing"
+    );
+
+    message.note_id = Some(Word::empty().into());
+    message.note_index_in_block = u32::MAX;
+    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    assert!(error.to_string().starts_with("note_index_in_block: "));
 }
 
 #[test]

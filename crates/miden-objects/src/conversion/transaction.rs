@@ -21,7 +21,6 @@ use miden_protocol::transaction::{
 use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{MastForest, MastNodeId, Word};
 
-use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // TRANSACTION ARGUMENTS
@@ -69,17 +68,6 @@ impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
 impl From<TransactionArgs> for proto::transaction::TransactionArgs {
     fn from(value: TransactionArgs) -> Self {
         (&value).into()
-    }
-}
-
-impl TryFrom<proto::transaction::NoteArgument> for (NoteId, Word) {
-    type Error = ConversionError;
-
-    fn try_from(note_arg: proto::transaction::NoteArgument) -> Result<Self, Self::Error> {
-        let decoder = note_arg.decoder();
-        let note_id = NoteId::from_raw(required!(decoder, note_arg.note_id)?);
-        let args = required!(decoder, note_arg.args)?;
-        Ok((note_id, args))
     }
 }
 
