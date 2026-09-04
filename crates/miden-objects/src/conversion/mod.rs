@@ -31,7 +31,6 @@ pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_pr
 pub(crate) use block::{
     decode_block_body,
     decode_block_header,
-    decode_block_version,
     decode_output_note_batch,
     decode_signed_block,
 };

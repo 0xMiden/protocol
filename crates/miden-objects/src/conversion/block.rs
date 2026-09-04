@@ -181,19 +181,6 @@ impl TryFrom<&proto::blockchain::BlockHeader> for BlockHeader {
     }
 }
 
-pub(crate) fn decode_block_version(version: i32) -> Result<(), ConversionError> {
-    match proto::blockchain::BlockVersion::try_from(version) {
-        Ok(proto::blockchain::BlockVersion::V1) => Ok(()),
-        Ok(proto::blockchain::BlockVersion::Unspecified) => {
-            Err(ConversionError::message("block header version is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown block header version {version}"),
-            error,
-        )),
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn decode_block_header(
     block_num: BlockNumber,

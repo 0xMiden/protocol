@@ -362,8 +362,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         ".blockchain.BlockHeader" => {
             target: ::miden_protocol::block::BlockHeader,
-            validate: {
-                version: crate::conversion::decode_block_version,
+            enumeration: {
+                version: {
+                    Unspecified: reject("block header version is unspecified"),
+                    V1: accept,
+                },
             },
             constructor: crate::conversion::decode_block_header(
                 block_num,
