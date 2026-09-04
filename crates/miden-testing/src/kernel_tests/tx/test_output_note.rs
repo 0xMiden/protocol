@@ -1569,7 +1569,7 @@ async fn test_network_note() -> anyhow::Result<()> {
     let expected_note_type = note.metadata().note_type();
     let network_note = note.into_account_target_network_note()?;
     assert_eq!(network_note.target_account_id(), target_id);
-    assert_eq!(network_note.execution_hint(), NoteExecutionHint::Always);
+    assert_eq!(network_note.execution_hint(), Some(NoteExecutionHint::Always));
     assert_eq!(network_note.note_type(), expected_note_type);
 
     // TryFrom<Note> succeeds for a valid network note.
@@ -1579,6 +1579,26 @@ async fn test_network_note() -> anyhow::Result<()> {
         .build()?;
     let try_from_note = AccountTargetNetworkNote::try_from(valid_note)?;
     assert_eq!(try_from_note.target_account_id(), target_id);
+
+    // --- Unrecognized execution hint: still a network note ---
+    // The on-chain targeting path discards the hint felt, so a hint encoding this version does not
+    // recognize must not hide the note from routing.
+    let mut unknown_hint_word = Word::empty();
+    unknown_hint_word[0] = target_id.suffix();
+    unknown_hint_word[1] = target_id.prefix().as_felt();
+    unknown_hint_word[2] = Felt::new(7)?;
+    let unknown_hint_note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .attachment(NoteAttachment::with_word(
+            NetworkAccountTarget::ATTACHMENT_SCHEME,
+            unknown_hint_word,
+        ))
+        .build()?;
+
+    assert!(unknown_hint_note.is_network_note());
+    let unknown_hint_note = unknown_hint_note.into_account_target_network_note()?;
+    assert_eq!(unknown_hint_note.target_account_id(), target_id);
+    assert_eq!(unknown_hint_note.execution_hint(), None);
 
     // --- Invalid: note with default (empty) attachment ---
     let non_network_note =

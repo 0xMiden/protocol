@@ -58,8 +58,9 @@ impl AccountTargetNetworkNote {
             .expect("AccountTargetNetworkNote guarantees valid NetworkAccountTarget attachment")
     }
 
-    /// Returns the [`NoteExecutionHint`] from the decoded [`NetworkAccountTarget`] attachment.
-    pub fn execution_hint(&self) -> NoteExecutionHint {
+    /// Returns the [`NoteExecutionHint`] from the decoded [`NetworkAccountTarget`] attachment, or
+    /// `None` if that attachment carries an encoding this version does not recognize.
+    pub fn execution_hint(&self) -> Option<NoteExecutionHint> {
         self.target().execution_hint()
     }
 
