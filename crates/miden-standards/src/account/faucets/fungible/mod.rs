@@ -567,6 +567,13 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// Caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter on the faucet
 /// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
 /// signature.
+///
+/// # Errors
+///
+/// Returns an error if `account_type` is [`AccountType::Private`] while `token_policy_manager`
+/// registers a transfer policy. Such a policy enables asset callbacks, whose dispatch makes the
+/// faucet's state a required input of every transaction that moves one of its assets, and a private
+/// account never publishes that state.
 pub fn create_singlesig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -587,6 +594,11 @@ pub fn create_singlesig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a multisig approver set.
+///
+/// # Errors
+///
+/// Returns an error if `account_type` is [`AccountType::Private`] while `token_policy_manager`
+/// registers a transfer policy; see [`create_singlesig_user_fungible_faucet`] for why.
 pub fn create_multisig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -607,6 +619,11 @@ pub fn create_multisig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a guardian-backed multisig.
+///
+/// # Errors
+///
+/// Returns an error if `account_type` is [`AccountType::Private`] while `token_policy_manager`
+/// registers a transfer policy; see [`create_singlesig_user_fungible_faucet`] for why.
 pub fn create_guarded_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,

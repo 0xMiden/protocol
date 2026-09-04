@@ -215,7 +215,10 @@ struct PolicyConfig {
 /// the flag is an immutable property of the account ID, it applies for the faucet's entire
 /// lifetime, so promoting a reserved policy later via `set_send_policy` / `set_receive_policy`
 /// enforces it against the whole circulating supply rather than only assets minted after the
-/// switch.
+/// switch. Because an enabled flag makes the faucet's state a required input of every holder's
+/// transaction, a faucet that registers a transfer policy must be created as
+/// [`AccountType::Public`][miden_protocol::account::AccountType::Public]; the faucet factories
+/// return an error otherwise.
 ///
 /// The slots are omitted only when no send or receive policy of any kind is registered, in which
 /// case the faucet's account ID is created with

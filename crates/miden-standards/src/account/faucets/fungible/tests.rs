@@ -8,6 +8,7 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::errors::AccountError;
 use miden_protocol::{Felt, Word};
 
 use super::{
@@ -70,7 +71,7 @@ fn user_fungible_faucet_with_single_sig() {
         sample_faucet(),
         auth_component,
         allow_all_policy_manager(),
-        AccountType::Private,
+        AccountType::Public,
     )
     .unwrap();
 
@@ -129,7 +130,7 @@ fn user_fungible_faucet_with_multisig() {
         sample_faucet(),
         auth_component,
         allow_all_policy_manager(),
-        AccountType::Private,
+        AccountType::Public,
     )
     .unwrap();
 
@@ -166,7 +167,7 @@ fn user_fungible_faucet_with_guarded_multisig() {
         sample_faucet(),
         auth_component,
         allow_all_policy_manager(),
-        AccountType::Private,
+        AccountType::Public,
     )
     .unwrap();
 
@@ -276,12 +277,23 @@ fn faucet_create_from_account() {
 }
 
 /// Every fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID when
-/// the policy manager registers a transfer policy, and `Disabled` when it does not.
+/// the policy manager registers a transfer policy, and `Disabled` when it does not. A faucet with a
+/// transfer policy must be public, since its state is a required input of every holder's
+/// transaction.
 #[rstest::rstest]
-#[case::with_transfer_policy(allow_all_policy_manager(), AssetCallbackFlag::Enabled)]
-#[case::without_transfer_policy(mint_burn_only_policy_manager(), AssetCallbackFlag::Disabled)]
+#[case::with_transfer_policy(
+    allow_all_policy_manager(),
+    AccountType::Public,
+    AssetCallbackFlag::Enabled
+)]
+#[case::without_transfer_policy(
+    mint_burn_only_policy_manager(),
+    AccountType::Private,
+    AssetCallbackFlag::Disabled
+)]
 fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
     #[case] token_policy_manager: TokenPolicyManager,
+    #[case] account_type: AccountType,
     #[case] expected_flag: AssetCallbackFlag,
 ) {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
@@ -296,7 +308,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
         sample_faucet(),
         AuthSingleSig::new(approver),
         token_policy_manager.clone(),
-        AccountType::Private,
+        account_type,
     )
     .unwrap();
     assert_eq!(singlesig.id().asset_callback_flag(), expected_flag);
@@ -306,7 +318,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
         sample_faucet(),
         user_faucet_multisig(sample_approvers(3), 2).unwrap(),
         token_policy_manager.clone(),
-        AccountType::Private,
+        account_type,
     )
     .unwrap();
     assert_eq!(multisig.id().asset_callback_flag(), expected_flag);
@@ -316,7 +328,7 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
         sample_faucet(),
         user_faucet_guarded(sample_approvers(3), 2, GuardianConfig::new(approver)).unwrap(),
         token_policy_manager.clone(),
-        AccountType::Private,
+        account_type,
     )
     .unwrap();
     assert_eq!(guarded.id().asset_callback_flag(), expected_flag);
@@ -331,6 +343,31 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
     )
     .unwrap();
     assert_eq!(network.id().asset_callback_flag(), expected_flag);
+}
+
+/// A transfer policy enables asset callbacks, whose dispatch requires the faucet's state as an
+/// input of every holder's transaction. Since a private faucet never publishes that state, the user
+/// faucet factories must reject the combination instead of creating a faucet whose assets no holder
+/// can move.
+#[test]
+fn private_fungible_faucet_with_transfer_policy_is_rejected() {
+    let approver = Approver::new(
+        PublicKeyCommitment::from(Word::new([Felt::from(11_u32); 4])),
+        AuthScheme::Falcon512Poseidon2,
+    );
+
+    let err = create_singlesig_user_fungible_faucet(
+        [21u8; 32],
+        sample_faucet(),
+        AuthSingleSig::new(approver),
+        allow_all_policy_manager(),
+        AccountType::Private,
+    )
+    .expect_err("private faucet with a transfer policy should be rejected");
+    assert_matches!(
+        err,
+        FungibleFaucetError::AccountError(AccountError::AssetCallbacksOnPrivateAccount)
+    );
 }
 
 /// Check that the obtaining of the fungible faucet procedure roots does not panic.
