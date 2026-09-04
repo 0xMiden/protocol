@@ -303,19 +303,6 @@ impl TryFrom<&proto::primitives::PublicKey> for PublicKey {
 // SIGNATURE
 // ================================================================================================
 
-fn decode_signature_variant(variant: i32) -> Result<(), ConversionError> {
-    match proto::primitives::SignatureVariant::try_from(variant) {
-        Ok(proto::primitives::SignatureVariant::EcdsaK256Keccak) => Ok(()),
-        Ok(proto::primitives::SignatureVariant::Unspecified) => {
-            Err(ConversionError::message("signature variant is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown signature variant {variant}"),
-            error,
-        )),
-    }
-}
-
 impl From<&Signature> for proto::primitives::Signature {
     fn from(value: &Signature) -> Self {
         Self {
@@ -331,22 +318,16 @@ impl From<Signature> for proto::primitives::Signature {
     }
 }
 
-impl TryFrom<proto::primitives::Signature> for Signature {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::Signature) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
+pub(crate) fn decode_signature(encoded: Vec<u8>) -> Result<Signature, ConversionError> {
+    Signature::read_from_bytes(&encoded)
+        .map_err(|error| ConversionError::deserialization("Signature", error))
 }
 
 impl TryFrom<&proto::primitives::Signature> for Signature {
     type Error = ConversionError;
 
     fn try_from(value: &proto::primitives::Signature) -> Result<Self, Self::Error> {
-        decode_signature_variant(value.variant).context("variant")?;
-        Self::read_from_bytes(&value.encoded)
-            .map_err(|error| ConversionError::deserialization("Signature", error))
-            .map_err(|error| error.context("encoded"))
+        value.clone().try_into()
     }
 }
 
@@ -468,7 +449,7 @@ mod tests {
             encoded: vec![],
         })
         .unwrap_err();
-        assert_eq!(signature_error.to_string(), "variant: unknown signature variant 2147483647");
+        assert_eq!(signature_error.to_string(), "variant: unknown enumeration value 2147483647");
     }
 
     #[test]

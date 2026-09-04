@@ -325,6 +325,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             constructor: encoded,
         },
+        ".primitives.Signature" => {
+            target: ::miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature,
+            decode: {
+                encoded: crate::conversion::decode_signature,
+            },
+            enumeration: {
+                variant: {
+                    Unspecified: reject("signature variant is unspecified"),
+                    EcdsaK256Keccak: accept,
+                },
+            },
+            constructor: encoded,
+        },
         ".note.NoteRecipient" => {
             target: ::miden_protocol::note::NoteRecipient,
             constructor: ::miden_protocol::note::NoteRecipient::new(
