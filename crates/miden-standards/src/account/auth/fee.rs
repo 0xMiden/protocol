@@ -26,8 +26,8 @@ impl FeeConversionInfo {
     /// Creates new fee conversion info paying the fee in the asset issued by `faucet_id` at the
     /// rate `rate_num / rate_den`.
     ///
-    /// Any faucet or rate other than the native fee asset at 1/1 aborts in-VM; prefer
-    /// [`Self::one_to_one`].
+    /// Any faucet or rate other than the native fee asset at 1/1 aborts until multi-asset
+    /// fee payments are supported.
     ///
     /// # Errors
     ///
@@ -51,7 +51,7 @@ impl FeeConversionInfo {
     }
 
     /// Creates fee conversion info paying the fee in the asset issued by `faucet_id` at the
-    /// rate 1/1, the only info `pay_fee` accepts for the reference block's fee faucet.
+    /// rate 1/1.
     pub fn one_to_one(faucet_id: AccountId) -> Self {
         Self {
             faucet_id,

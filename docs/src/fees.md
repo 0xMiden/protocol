@@ -17,9 +17,9 @@ Miden transactions pay a fee by creating a public TX_FEE note (see the [note doc
 There are two distinct quantities involved in paying a fee:
 
 - **The computed fee**: what the `compute_fee` kernel procedure returns. It is always denominated in the chain’s native fee asset, defined by the protocol config that the current reference block commits to. The native asset is chosen once as part of the genesis block and then copied to every newly created block, which means it stays consistent for a given network.
-- **The paid amount**: what actually ends up in the TX_FEE note. The standard `pay_fee` procedure requires it to be the computed fee itself: the payment asset is the native fee asset and the conversion rate is 1/1. The payment asset and rate still travel as conversion info committed to via the transaction’s auth args (the auth args are the hash of the conversion info - a fungible faucet ID and a rate - together with a salt, with the preimage in the advice map), so a signature covers them, but `pay_fee` asserts that the committed info matches the reference block’s fee asset at rate 1/1.
+- **The paid amount**: what actually ends up in the TX_FEE note. The standard `pay_fee` procedure requires it to be the computed fee itself: the payment asset is the native fee asset and the conversion rate is 1/1. The payment asset and rate are committed as part of the conversion info via the transaction’s auth args (the auth args are the hash of the conversion info - a fungible faucet ID and a rate - together with a salt, with the preimage in the advice map), so a signature covers them, but `pay_fee` asserts that the committed info matches the reference block’s fee asset at rate 1/1.
 
-Nothing at the protocol level validates the fee note: neither the transaction epilogue nor the batch or block kernel inspects it. The authentication procedure is therefore the only place the paid amount is decided, which is why it pins that amount to the computed fee rather than trusting a host-supplied conversion.
+Nothing at the protocol level validates the fee note. The authentication procedure (via `pay_fee`) is currently the only place the paid amount is checked against the computed fee.
 
 ## How fees are paid
 

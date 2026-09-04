@@ -335,7 +335,7 @@ end
 #! post-authentication kernel epilogue cycles internally.
 #!
 #! The conversion info must equal native_conversion_info, so the paid amount is the computed
-#! fee. Nothing bounds it from above otherwise: the batch builder rejects only underpayment.
+#! fee.
 #!
 #! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
 #! fee note is created and no conversion info is required (the empty word is accepted). Note that
@@ -405,7 +405,7 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> fel
         exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
         # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 
-        # pin the payment to the native fee asset at par; nothing downstream bounds it
+        # pin the payment to the native fee asset at 1-to-1 rate
         dupw exec.native_conversion_info assert_eqw.err=ERR_FEE_CONVERSION_INFO_NOT_NATIVE
         # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 

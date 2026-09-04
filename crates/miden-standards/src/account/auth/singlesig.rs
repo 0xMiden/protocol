@@ -46,8 +46,7 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
 /// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
 /// conversion info committed via the transaction's auth args must name the reference block's fee
-/// asset at rate 1/1 (see
-/// [`FeeConversionInfo::one_to_one`](crate::account::auth::FeeConversionInfo::one_to_one)). On
+/// asset at rate 1/1. On
 /// chains with a zero verification base fee no note is created. The fee note is created before
 /// the transaction summary, so it is covered by the signature.
 ///
