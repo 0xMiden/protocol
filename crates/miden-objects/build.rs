@@ -560,8 +560,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             constructor: (position, leaf, path),
         },
         ".blockchain.PartialBlockchain" => {
-            target: ::miden_protocol::transaction::PartialBlockchain,
-            try_constructor: crate::conversion::decode_partial_blockchain(
+            target: ::miden_protocol::transaction::UnverifiedPartialBlockchain,
+            try_constructor: crate::conversion::construct_unverified_partial_blockchain(
                 forest,
                 peaks,
                 tracked_leaves,

@@ -18,6 +18,7 @@ use crate::transaction::{
     ProvenTransaction,
     TransactionHeader,
     TransactionVerifier,
+    UnverifiedPartialBlockchain,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -34,7 +35,7 @@ use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_
 pub struct UnverifiedProposedBatch {
     transactions: Vec<Arc<ProvenTransaction>>,
     reference_block_header: BlockHeader,
-    partial_blockchain: PartialBlockchain,
+    partial_blockchain: UnverifiedPartialBlockchain,
     unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
 }
 
@@ -43,7 +44,7 @@ impl UnverifiedProposedBatch {
     pub fn new(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
-        partial_blockchain: PartialBlockchain,
+        partial_blockchain: UnverifiedPartialBlockchain,
         unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
     ) -> Self {
         Self {
@@ -65,7 +66,7 @@ impl UnverifiedProposedBatch {
     }
 
     /// Returns the decoded partial blockchain.
-    pub fn partial_blockchain(&self) -> &PartialBlockchain {
+    pub fn partial_blockchain(&self) -> &UnverifiedPartialBlockchain {
         &self.partial_blockchain
     }
 
@@ -78,12 +79,18 @@ impl UnverifiedProposedBatch {
     ///
     /// # Errors
     ///
-    /// Returns an error if a batch invariant fails or a transaction proof is invalid.
+    /// Returns an error if partial-blockchain authentication or a batch invariant fails, or if a
+    /// transaction proof is invalid.
     pub fn verify(self, security_level: u32) -> Result<ProposedBatch, ProposedBatchError> {
+        let partial_blockchain = self
+            .partial_blockchain
+            .verify()
+            .map_err(ProposedBatchError::PartialBlockchainVerificationFailed)?;
+
         ProposedBatch::new(
             self.transactions,
             self.reference_block_header,
-            self.partial_blockchain,
+            partial_blockchain,
             self.unauthenticated_note_proofs,
             security_level,
         )

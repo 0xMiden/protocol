@@ -10,9 +10,9 @@ use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
-    PartialBlockchain,
     TransactionArgs,
     TransactionInputs,
+    UnverifiedPartialBlockchain,
 };
 use miden_protocol::vm::AdviceInputs;
 
@@ -124,13 +124,18 @@ pub(crate) fn decode_transaction_inputs_v1(
     account: PartialAccount,
     block_header: BlockHeader,
     protocol_config: ProtocolConfig,
-    partial_blockchain: PartialBlockchain,
+    partial_blockchain: UnverifiedPartialBlockchain,
     input_notes: InputNotes<InputNote>,
     tx_args: TransactionArgs,
     advice_inputs: AdviceInputs,
     foreign_account_code: Vec<AccountCode>,
     decoded_slot_names: Vec<(StorageSlotId, StorageSlotName)>,
 ) -> Result<TransactionInputs, ConversionError> {
+    let partial_blockchain = partial_blockchain
+        .verify()
+        .map_err(ConversionError::new)
+        .context("partial_blockchain")?;
+
     let mut foreign_account_slot_names = BTreeMap::new();
     for (index, (slot_id, slot_name)) in decoded_slot_names.into_iter().enumerate() {
         if foreign_account_slot_names.insert(slot_id, slot_name).is_some() {

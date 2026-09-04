@@ -42,10 +42,12 @@ use miden_protocol::block::{
     ValidatorConfig,
 };
 use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::crypto::merkle::mmr::{Mmr, PartialMmr};
 use miden_protocol::errors::{
     AccountIdError,
     AssetError,
     OutputNoteError,
+    PartialBlockchainError,
     ProposedBatchError,
     ProtocolConfigError,
     TransactionHeaderError,
@@ -75,6 +77,7 @@ use miden_protocol::transaction::{
     PublicOutputNote,
     TransactionHeader,
     TxAccountUpdate,
+    UnverifiedPartialBlockchain,
 };
 use miden_protocol::{Felt, Word};
 use prost::Message;
@@ -897,7 +900,8 @@ fn proposed_batch_decodes_before_verification() {
 
     assert!(decoded.transactions().is_empty());
     assert_eq!(decoded.reference_block_header(), &reference_block_header);
-    assert_eq!(decoded.partial_blockchain(), &partial_blockchain);
+    assert_eq!(decoded.partial_blockchain().mmr(), partial_blockchain.mmr());
+    assert_eq!(decoded.partial_blockchain().block_headers().count(), 0);
     assert!(decoded.unauthenticated_note_proofs().is_empty());
 
     assert_matches!(decoded.verify(96), Err(ProposedBatchError::EmptyTransactionBatch));
@@ -935,8 +939,8 @@ fn proven_batch_roundtrips_and_reports_noncanonical_account_order() {
 }
 
 #[test]
-fn partial_blockchain_reports_structural_and_semantic_paths() {
-    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+fn partial_blockchain_reports_structural_paths() {
+    let error = UnverifiedPartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
         tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf::default()],
         ..Default::default()
     })
@@ -946,7 +950,7 @@ fn partial_blockchain_reports_structural_and_semantic_paths() {
         "tracked_leaves[0].leaf: field miden_objects::proto::blockchain::TrackedMmrLeaf::leaf is missing"
     );
 
-    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+    let error = UnverifiedPartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
         forest: 1,
         peaks: vec![Word::empty().into()],
         tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf {
@@ -959,7 +963,7 @@ fn partial_blockchain_reports_structural_and_semantic_paths() {
     .unwrap_err();
     assert!(error.to_string().starts_with("tracked_leaves[0].path[0].encoded: "), "{error}");
 
-    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+    let error = UnverifiedPartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
         forest: 1,
         peaks: vec![Word::empty().into()],
         tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf {
@@ -973,6 +977,36 @@ fn partial_blockchain_reports_structural_and_semantic_paths() {
     assert_eq!(
         error.to_string(),
         "tracked_leaves[0].position: tracked leaf position 1 is outside forest of size 1"
+    );
+}
+
+#[test]
+fn partial_blockchain_decoding_defers_header_authentication() {
+    let authenticated_header = BlockHeader::mock(0, None, None, &[]);
+    let forged_header = BlockHeader::mock(0, None, None, &[]);
+    assert_ne!(authenticated_header.commitment(), forged_header.commitment());
+
+    let mut mmr = Mmr::default();
+    mmr.add(authenticated_header.commitment()).unwrap();
+    let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
+    partial_mmr
+        .track(0, mmr.get(0).unwrap(), mmr.open(0).unwrap().merkle_path())
+        .unwrap();
+    let forged = PartialBlockchain::new_unchecked(partial_mmr, [forged_header.clone()]).unwrap();
+
+    let decoded =
+        UnverifiedPartialBlockchain::try_from(proto::blockchain::PartialBlockchain::from(&forged))
+            .unwrap();
+    let error = decoded.verify().unwrap_err();
+
+    assert_matches!(
+        error,
+        PartialBlockchainError::BlockHeaderCommitmentMismatch {
+            block_num,
+            block_commitment,
+            ..
+        } if block_num == forged_header.block_num()
+            && block_commitment == forged_header.commitment()
     );
 }
 

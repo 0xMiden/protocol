@@ -24,6 +24,7 @@ use miden_protocol::transaction::{
     OutputNote,
     PartialBlockchain,
     TransactionHeader,
+    UnverifiedPartialBlockchain,
 };
 
 use crate::{ConversionError, ConversionResultExt, proto};
@@ -72,12 +73,12 @@ impl From<&PartialBlockchain> for proto::blockchain::PartialBlockchain {
     }
 }
 
-pub(crate) fn decode_partial_blockchain(
+pub(crate) fn construct_unverified_partial_blockchain(
     forest: u64,
     peaks: Vec<Word>,
     tracked_leaves: Vec<(u64, Word, Vec<Word>)>,
     block_headers: Vec<BlockHeader>,
-) -> Result<PartialBlockchain, ConversionError> {
+) -> Result<UnverifiedPartialBlockchain, ConversionError> {
     let forest_size = usize::try_from(forest).context("forest")?;
     let forest = Forest::new(forest_size).map_err(ConversionError::new).context("forest")?;
     let peaks = MmrPeaks::new(forest, peaks).map_err(ConversionError::new).context("peaks")?;
@@ -117,7 +118,7 @@ pub(crate) fn decode_partial_blockchain(
         previous_block_num = Some(header.block_num());
     }
 
-    PartialBlockchain::new(mmr, block_headers).map_err(ConversionError::new)
+    UnverifiedPartialBlockchain::new(mmr, block_headers).map_err(ConversionError::new)
 }
 
 // BLOCK HEADER

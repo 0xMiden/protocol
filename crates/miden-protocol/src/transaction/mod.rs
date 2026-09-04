@@ -33,7 +33,7 @@ pub use outputs::{
     RawOutputNotes,
     TransactionOutputs,
 };
-pub use partial_blockchain::PartialBlockchain;
+pub use partial_blockchain::{PartialBlockchain, UnverifiedPartialBlockchain};
 pub use proven_tx::{InputNoteCommitment, ProvenTransaction, TxAccountUpdate};
 pub use script::{TRANSACTION_SCRIPT_ATTRIBUTE, TransactionScript, TransactionScriptRoot};
 pub use transaction_id::TransactionId;

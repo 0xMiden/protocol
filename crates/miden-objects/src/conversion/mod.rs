@@ -31,10 +31,10 @@ pub(crate) use account_patch::{
 };
 pub(crate) use batch::{construct_proven_batch, construct_unverified_proposed_batch};
 pub(crate) use block::{
+    construct_unverified_partial_blockchain,
     decode_block_body,
     decode_block_header,
     decode_output_note_batch,
-    decode_partial_blockchain,
 };
 pub(crate) use merkle::{decode_empty_smt_leaf, decode_mmr_delta, decode_partial_smt};
 pub(crate) use note::{

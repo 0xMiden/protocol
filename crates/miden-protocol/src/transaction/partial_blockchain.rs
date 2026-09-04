@@ -9,6 +9,65 @@ use crate::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
 use crate::errors::PartialBlockchainError;
 use crate::utils::serde::{Deserializable, Serializable};
 
+// UNVERIFIED PARTIAL BLOCKCHAIN
+// ================================================================================================
+
+/// A structurally valid partial blockchain whose tracked block headers have not been authenticated
+/// against its MMR.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnverifiedPartialBlockchain(PartialBlockchain);
+
+impl UnverifiedPartialBlockchain {
+    /// Creates an unverified partial blockchain from its decoded components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a block is outside the MMR, duplicated, or not tracked by it.
+    pub fn new(
+        mmr: PartialMmr,
+        blocks: impl IntoIterator<Item = BlockHeader>,
+    ) -> Result<Self, PartialBlockchainError> {
+        PartialBlockchain::new_unchecked(mmr, blocks).map(Self)
+    }
+
+    /// Returns the underlying partial MMR.
+    pub fn mmr(&self) -> &PartialMmr {
+        self.0.mmr()
+    }
+
+    /// Returns an iterator over the block headers in this partial blockchain.
+    pub fn block_headers(&self) -> impl Iterator<Item = &BlockHeader> {
+        self.0.block_headers()
+    }
+
+    /// Verifies that every block header is authenticated by the partial MMR.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a block header's commitment is not authenticated at its block number.
+    pub fn verify(self) -> Result<PartialBlockchain, PartialBlockchainError> {
+        for (block_num, block) in self.0.blocks.iter() {
+            // SAFETY: construction rejects blocks outside or untracked by the MMR.
+            let proof = self
+                .0
+                .mmr
+                .open(block_num.as_usize())
+                .expect("block should not exceed chain length")
+                .expect("block should be tracked in the partial MMR");
+
+            self.0.mmr.peaks().verify(block.commitment(), proof).map_err(|source| {
+                PartialBlockchainError::BlockHeaderCommitmentMismatch {
+                    block_num: *block_num,
+                    block_commitment: block.commitment(),
+                    source,
+                }
+            })?;
+        }
+
+        Ok(self.0)
+    }
+}
+
 // PARTIAL BLOCKCHAIN
 // ================================================================================================
 
@@ -62,28 +121,7 @@ impl PartialBlockchain {
         mmr: PartialMmr,
         blocks: impl IntoIterator<Item = BlockHeader>,
     ) -> Result<Self, PartialBlockchainError> {
-        let partial_chain = Self::new_unchecked(mmr, blocks)?;
-
-        // Verify inclusion of all provided blocks in the partial MMR.
-        for (block_num, block) in partial_chain.blocks.iter() {
-            // SAFETY: new_unchecked returns an error if a block is not tracked in the MMR, so
-            // retrieving a proof here should succeed.
-            let proof = partial_chain
-                .mmr
-                .open(block_num.as_usize())
-                .expect("block should not exceed chain length")
-                .expect("block should be tracked in the partial MMR");
-
-            partial_chain.mmr.peaks().verify(block.commitment(), proof).map_err(|source| {
-                PartialBlockchainError::BlockHeaderCommitmentMismatch {
-                    block_num: *block_num,
-                    block_commitment: block.commitment(),
-                    source,
-                }
-            })?;
-        }
-
-        Ok(partial_chain)
+        UnverifiedPartialBlockchain::new(mmr, blocks)?.verify()
     }
 
     /// Returns a new [PartialBlockchain] instantiated from the provided partial MMR and a list of
@@ -291,7 +329,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
-    use super::PartialBlockchain;
+    use super::{PartialBlockchain, UnverifiedPartialBlockchain};
     use crate::Word;
     use crate::alloc::vec::Vec;
     use crate::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorConfig};
@@ -350,7 +388,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_blockchain_new_on_invalid_header_fails() {
+    fn unverified_partial_blockchain_defers_header_authentication() {
         let block_header0 = int_to_block_header(0);
         let block_header1 = int_to_block_header(1);
         let block_header2 = int_to_block_header(2);
@@ -371,12 +409,13 @@ mod tests {
 
         assert_ne!(block_header2.commitment(), fake_block_header2.commitment());
 
-        // Construct a PartialBlockchain with an invalid block header.
-        let error = PartialBlockchain::new(
+        let unverified = UnverifiedPartialBlockchain::new(
             partial_mmr,
             vec![block_header0, block_header1, fake_block_header2.clone()],
         )
-        .unwrap_err();
+        .unwrap();
+
+        let error = unverified.verify().unwrap_err();
 
         assert_matches!(
             error,

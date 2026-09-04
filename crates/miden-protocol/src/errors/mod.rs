@@ -1345,6 +1345,9 @@ impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    #[error("failed to verify the partial blockchain")]
+    PartialBlockchainVerificationFailed(#[source] PartialBlockchainError),
+
     #[error("failed to verify transaction {transaction_id} in transaction batch")]
     TransactionVerificationFailed {
         transaction_id: TransactionId,

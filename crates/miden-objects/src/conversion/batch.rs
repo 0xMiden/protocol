@@ -17,9 +17,9 @@ use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
     OutputNote,
-    PartialBlockchain,
     ProvenTransaction,
     TransactionHeader,
+    UnverifiedPartialBlockchain,
 };
 use miden_protocol::vm::ExecutionProof;
 
@@ -58,7 +58,7 @@ impl From<ProposedBatch> for proto::transaction::ProposedBatch {
 pub(crate) fn construct_unverified_proposed_batch(
     transactions: Vec<ProvenTransaction>,
     reference_block_header: BlockHeader,
-    partial_blockchain: PartialBlockchain,
+    partial_blockchain: UnverifiedPartialBlockchain,
     unauthenticated_note_proofs: Vec<(NoteId, NoteInclusionProof)>,
 ) -> Result<UnverifiedProposedBatch, ConversionError> {
     let mut note_proofs = BTreeMap::new();
