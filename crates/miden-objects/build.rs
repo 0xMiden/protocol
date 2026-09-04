@@ -205,6 +205,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 update_data,
             ),
         },
+        ".primitives.SmtLeafEntryList" => {
+            target: ::alloc::vec::Vec<(
+                ::miden_protocol::Word,
+                ::miden_protocol::Word
+            )>,
+            constructor: entries,
+        },
+        ".primitives.SmtLeaf" => {
+            target: ::miden_protocol::crypto::merkle::smt::SmtLeaf,
+            oneof: {
+                leaf: {
+                    EmptyLeafIndex: constructor(crate::conversion::decode_empty_smt_leaf),
+                    Single: constructor(
+                        ::miden_protocol::crypto::merkle::smt::SmtLeaf::Single
+                    ),
+                    Multiple: try_constructor(
+                        ::miden_protocol::crypto::merkle::smt::SmtLeaf::new_multiple
+                    ),
+                },
+            },
+            constructor: leaf,
+        },
         ".primitives.SmtOpening" => {
             target: ::miden_protocol::crypto::merkle::smt::SmtProof,
             try_constructor: ::miden_protocol::crypto::merkle::smt::SmtProof::new(

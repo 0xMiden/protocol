@@ -83,34 +83,8 @@ pub(crate) fn decode_mmr_delta(
 // SMT LEAF
 // ------------------------------------------------------------------------------------------------
 
-impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::SmtLeaf) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
-        let leaf = required!(decoder, value.leaf)?;
-
-        match leaf {
-            proto::primitives::smt_leaf::Leaf::EmptyLeafIndex(leaf_index) => {
-                Ok(Self::new_empty(LeafIndex::new_max_depth(leaf_index)))
-            },
-            proto::primitives::smt_leaf::Leaf::Single(entry) => {
-                let (key, value) = entry.try_into().context("entry")?;
-
-                Ok(SmtLeaf::new_single(key, value))
-            },
-            proto::primitives::smt_leaf::Leaf::Multiple(entries) => {
-                let domain_entries = entries
-                    .entries
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()
-                    .context("entries")?;
-
-                Ok(SmtLeaf::new_multiple(domain_entries).map_err(ConversionError::new)?)
-            },
-        }
-    }
+pub(crate) fn decode_empty_smt_leaf(leaf_index: u64) -> SmtLeaf {
+    SmtLeaf::new_empty(LeafIndex::new_max_depth(leaf_index))
 }
 
 impl From<SmtLeaf> for proto::primitives::SmtLeaf {
@@ -355,6 +329,67 @@ mod tests {
         assert_eq!(decoded, partial_smt);
         assert_eq!(decoded.get_value(&key0).unwrap(), value0);
         assert_eq!(decoded.get_value(&missing_key).unwrap(), Word::empty());
+    }
+
+    #[test]
+    fn smt_leaf_roundtrips_all_variants() {
+        let entries = vec![
+            (Word::from([1, 2, 3, 4_u32]), Word::from([5, 6, 7, 8_u32])),
+            (Word::from([9, 10, 11, 4_u32]), Word::from([12, 13, 14, 15_u32])),
+        ];
+        let leaves = [
+            SmtLeaf::new_empty(LeafIndex::new_max_depth(7)),
+            SmtLeaf::new_single(entries[0].0, entries[0].1),
+            SmtLeaf::new_multiple(entries).unwrap(),
+        ];
+
+        for leaf in leaves {
+            let encoded: proto::primitives::SmtLeaf = leaf.clone().into();
+            assert_eq!(SmtLeaf::try_from(encoded).unwrap(), leaf);
+        }
+    }
+
+    #[test]
+    fn smt_leaf_reports_nested_entry_paths() {
+        use proto::primitives::smt_leaf::Leaf;
+
+        let encoded = proto::primitives::SmtLeaf {
+            leaf: Some(Leaf::Multiple(proto::primitives::SmtLeafEntryList {
+                entries: vec![
+                    proto::primitives::SmtLeafEntry {
+                        key: Some(Word::empty().into()),
+                        value: Some(Word::empty().into()),
+                    },
+                    proto::primitives::SmtLeafEntry {
+                        key: Some(Word::empty().into()),
+                        value: Some(proto::primitives::Word { encoded: vec![0; 31] }),
+                    },
+                ],
+            })),
+        };
+
+        let error = SmtLeaf::try_from(encoded).unwrap_err();
+        assert!(
+            error.to_string().starts_with("leaf.multiple.entries[1].value.word.encoded:"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn smt_leaf_reports_multiple_leaf_invariants_at_the_variant() {
+        use proto::primitives::smt_leaf::Leaf;
+
+        let encoded = proto::primitives::SmtLeaf {
+            leaf: Some(Leaf::Multiple(proto::primitives::SmtLeafEntryList {
+                entries: vec![proto::primitives::SmtLeafEntry {
+                    key: Some(Word::empty().into()),
+                    value: Some(Word::empty().into()),
+                }],
+            })),
+        };
+
+        let error = SmtLeaf::try_from(encoded).unwrap_err();
+        assert!(error.to_string().starts_with("leaf.multiple:"));
     }
 
     #[test]
