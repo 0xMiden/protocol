@@ -564,6 +564,32 @@ fn account_patch_protobuf_preserves_unknown_version_error_sources() {
 }
 
 #[test]
+fn account_update_details_oneof_variants_roundtrip_through_protobuf() {
+    for details in [AccountUpdateDetails::Private, AccountUpdateDetails::Public(account_patch())] {
+        let message = proto::account::AccountUpdateDetails::from(&details);
+        assert_eq!(AccountUpdateDetails::try_from(message).unwrap(), details);
+    }
+}
+
+#[test]
+fn account_update_details_oneof_reports_missing_and_variant_paths() {
+    let error = AccountUpdateDetails::try_from(proto::account::AccountUpdateDetails::default())
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "update: field miden_objects::proto::account::AccountUpdateDetails::update is missing"
+    );
+
+    let error = AccountUpdateDetails::try_from(proto::account::AccountUpdateDetails {
+        update: Some(proto::account::account_update_details::Update::Public(
+            proto::account::AccountPatch::default(),
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(error.to_string(), "update.public.version: account patch version is unspecified");
+}
+
+#[test]
 fn note_metadata_roundtrips_through_flat_v1_protobuf_bytes() {
     let metadata = *Note::mock_noop(Word::empty()).metadata();
 

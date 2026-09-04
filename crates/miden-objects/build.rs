@@ -143,6 +143,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 final_nonce,
             ),
         },
+        ".account.AccountUpdateDetails" => {
+            target: ::miden_protocol::account::AccountUpdateDetails,
+            oneof: {
+                update: {
+                    Private: crate::conversion::decode_private_account_update,
+                    Public: ::miden_protocol::account::AccountUpdateDetails::Public,
+                },
+            },
+            constructor: update,
+        },
         ".asset.AssetClass" => {
             target: ::miden_protocol::asset::AssetClass,
             constructor: ::miden_protocol::asset::AssetClass::new(
