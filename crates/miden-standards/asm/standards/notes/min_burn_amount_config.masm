@@ -21,6 +21,8 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "min burn amount conf
 
 const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn amount config note storage item count is not the expected count"
 
+const ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "min burn amount config note must be public"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -47,6 +49,7 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn 
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the note is consumed past the expiration block of its target attachment.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
@@ -55,6 +58,10 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn 
 pub proc main
     # drop the note script args
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # load the note's target attachment once, so both checks below share the single lookup and

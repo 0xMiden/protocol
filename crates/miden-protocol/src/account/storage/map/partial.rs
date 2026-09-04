@@ -85,6 +85,34 @@ impl PartialStorageMap {
         Self::new(storage_map.root())
     }
 
+    /// Creates a [`PartialStorageMap`] from a [`PartialSmt`] and the raw keys whose values are
+    /// looked up from the SMT.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - a key is supplied more than once.
+    /// - a key's hashed form is not tracked by the partial SMT.
+    pub fn try_from_parts(
+        partial_smt: PartialSmt,
+        keys: impl IntoIterator<Item = StorageMapKey>,
+    ) -> Result<Self, MerkleError> {
+        let mut entries = BTreeMap::new();
+
+        for key in keys {
+            if entries.contains_key(&key) {
+                return Err(MerkleError::DuplicateValuesForIndex(
+                    key.hash().to_leaf_index().position(),
+                ));
+            }
+
+            let value = partial_smt.get_value(&key.hash().as_word())?;
+            entries.insert(key, value);
+        }
+
+        Ok(Self { partial_smt, entries })
+    }
+
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -163,22 +191,78 @@ impl Serializable for PartialStorageMap {
 
 impl Deserializable for PartialStorageMap {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mut map = BTreeMap::new();
-
         let partial_smt: PartialSmt = source.read()?;
         let num_entries: usize = source.read()?;
+        let keys = source
+            .read_many_iter::<StorageMapKey>(num_entries)?
+            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
 
-        for _ in 0..num_entries {
-            let key: StorageMapKey = source.read()?;
-            let hashed_map_key: Word = key.hash().into();
-            let value = partial_smt.get_value(&hashed_map_key).map_err(|err| {
-                DeserializationError::InvalidValue(format!(
-                    "failed to find map key {key} in partial SMT: {err}"
-                ))
-            })?;
-            map.insert(key, value);
-        }
+        Self::try_from_parts(partial_smt, keys).map_err(|err| {
+            DeserializationError::InvalidValue(format!(
+                "failed to construct partial storage map from supplied keys: {err}"
+            ))
+        })
+    }
+}
 
-        Ok(PartialStorageMap { partial_smt, entries: map })
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use assert_matches::assert_matches;
+    use miden_crypto::merkle::MerkleError;
+    use miden_crypto::merkle::smt::PartialSmt;
+
+    use super::PartialStorageMap;
+    use crate::Word;
+    use crate::account::{StorageMap, StorageMapKey};
+
+    #[test]
+    fn try_from_parts_preserves_unrelated_partial_smt_material() -> anyhow::Result<()> {
+        let tracked_key = StorageMapKey::from_index(1);
+        let extra_key = StorageMapKey::from_index(2);
+        let tracked_value = Word::from([1_u32, 0, 0, 0]);
+        let extra_value = Word::from([2_u32, 0, 0, 0]);
+        let storage_map =
+            StorageMap::with_entries([(tracked_key, tracked_value), (extra_key, extra_value)])?;
+        let partial_smt = PartialSmt::from_proofs([
+            storage_map.open(&tracked_key).into(),
+            storage_map.open(&extra_key).into(),
+        ])?;
+
+        let partial_map = PartialStorageMap::try_from_parts(partial_smt, [tracked_key])?;
+
+        assert_eq!(partial_map.entries().collect::<Vec<_>>(), [(&tracked_key, &tracked_value)]);
+        assert_eq!(partial_map.get(&extra_key), Some(extra_value));
+
+        Ok(())
+    }
+
+    #[test]
+    fn try_from_parts_rejects_duplicate_keys() -> anyhow::Result<()> {
+        let key = StorageMapKey::from_index(1);
+        let storage_map = StorageMap::with_entries([(key, Word::from([1_u32, 0, 0, 0]))])?;
+        let partial_smt = PartialSmt::from_proofs([storage_map.open(&key).into()])?;
+
+        let result = PartialStorageMap::try_from_parts(partial_smt, [key, key]);
+
+        assert_matches!(
+            result,
+            Err(MerkleError::DuplicateValuesForIndex(position))
+                if position == key.hash().to_leaf_index().position()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn try_from_parts_rejects_untracked_keys() {
+        let key = StorageMapKey::from_index(1);
+        let result = PartialStorageMap::try_from_parts(PartialSmt::new(Word::empty()), [key]);
+
+        assert_matches!(
+            result,
+            Err(MerkleError::UntrackedKey(hashed_key)) if hashed_key == key.hash().as_word()
+        );
     }
 }

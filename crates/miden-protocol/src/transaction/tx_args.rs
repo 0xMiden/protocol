@@ -54,12 +54,29 @@ impl TransactionArgs {
     /// Returns new [TransactionArgs] instantiated with the provided transaction script, advice
     /// map and foreign account inputs.
     pub fn new(advice_map: AdviceMap) -> Self {
+        Self::from_parts(
+            None,
+            EMPTY_WORD,
+            BTreeMap::new(),
+            AdviceInputs::from(advice_map),
+            EMPTY_WORD,
+        )
+    }
+
+    /// Creates [`TransactionArgs`] from all of its components.
+    pub fn from_parts(
+        tx_script: Option<TransactionScript>,
+        tx_script_args: Word,
+        note_args: BTreeMap<NoteId, Word>,
+        advice_inputs: AdviceInputs,
+        auth_args: Word,
+    ) -> Self {
         Self {
-            tx_script: None,
-            tx_script_args: EMPTY_WORD,
-            note_args: Default::default(),
-            advice_inputs: AdviceInputs::from(advice_map),
-            auth_args: EMPTY_WORD,
+            tx_script,
+            tx_script_args,
+            note_args,
+            advice_inputs,
+            auth_args,
         }
     }
 
@@ -128,6 +145,11 @@ impl TransactionArgs {
     /// Returns a reference to a specific note argument.
     pub fn get_note_args(&self, note_id: NoteId) -> Option<&Word> {
         self.note_args.get(&note_id)
+    }
+
+    /// Returns the note arguments keyed by note ID.
+    pub fn note_args(&self) -> &BTreeMap<NoteId, Word> {
+        &self.note_args
     }
 
     /// Returns a reference to the internal [AdviceInputs].
@@ -255,10 +277,15 @@ impl Deserializable for TransactionArgs {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use miden_core::advice::AdviceMap;
 
+    use crate::note::Note;
     use crate::transaction::TransactionArgs;
     use crate::utils::serde::{Deserializable, Serializable};
+    use crate::vm::AdviceInputs;
+    use crate::{Felt, Word};
 
     #[test]
     fn test_tx_args_serialization() {
@@ -267,5 +294,26 @@ mod tests {
         let decoded = TransactionArgs::read_from_bytes(&bytes).unwrap();
 
         assert_eq!(tx_args, decoded);
+    }
+
+    #[test]
+    fn from_parts_preserves_note_args_and_advice_inputs() {
+        let note_id = Note::mock_noop(Word::empty()).id();
+        let note_args = BTreeMap::from([(note_id, Word::new([Felt::from(1_u32); 4]))]);
+        let advice_inputs = AdviceInputs::default()
+            .with_map([(Word::new([Felt::from(2_u32); 4]), vec![Felt::from(3_u32)])]);
+
+        let tx_args = TransactionArgs::from_parts(
+            None,
+            Word::new([Felt::from(4_u32); 4]),
+            note_args.clone(),
+            advice_inputs.clone(),
+            Word::new([Felt::from(5_u32); 4]),
+        );
+
+        assert_eq!(tx_args.note_args(), &note_args);
+        assert_eq!(tx_args.advice_inputs(), &advice_inputs);
+        assert_eq!(tx_args.tx_script_args(), Word::new([Felt::from(4_u32); 4]));
+        assert_eq!(tx_args.auth_args(), Word::new([Felt::from(5_u32); 4]));
     }
 }

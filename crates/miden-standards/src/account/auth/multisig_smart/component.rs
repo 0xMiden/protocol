@@ -10,6 +10,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -30,8 +31,25 @@ use super::super::multisig::{
 use super::ProcedurePolicy;
 use crate::account::account_component_code;
 use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
+use crate::procedure_root;
 
 account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`AuthMultisigSmart::NAME`], which mirrors the standards-side MASM module path.
+const MULTISIG_SMART_LIBRARY_PATH: &str = "miden::standards::components::auth::multisig_smart";
+
+// Initialize the procedure root of the `set_procedure_policy` procedure only once. It is the only
+// procedure that writes the policy map, so callers configuring policies commonly need its root.
+procedure_root!(
+    MULTISIG_SMART_SET_PROCEDURE_POLICY,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::SET_PROCEDURE_POLICY_PROC_NAME,
+    AuthMultisigSmart::code()
+);
 
 // CONSTANTS
 // ================================================================================================
@@ -106,9 +124,7 @@ fn validate_proc_policies(
     }
 
     for (_, policy) in proc_policies {
-        if let Some(immediate_threshold) = policy.immediate_threshold()
-            && immediate_threshold > num_approvers
-        {
+        if policy.immediate_threshold() > num_approvers {
             return Err(AccountError::other(
                 "procedure policy immediate threshold cannot exceed number of approvers",
             ));
@@ -140,9 +156,17 @@ impl AuthMultisigSmart {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::multisig_smart";
 
+    /// The name of the procedure that edits per-procedure policies.
+    const SET_PROCEDURE_POLICY_PROC_NAME: &'static str = "set_procedure_policy";
+
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &MULTISIG_SMART_CODE
+    }
+
+    /// Returns the procedure root of the `set_procedure_policy` account procedure.
+    pub fn set_procedure_policy_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_SET_PROCEDURE_POLICY
     }
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.

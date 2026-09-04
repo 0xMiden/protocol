@@ -14,16 +14,13 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::policies::AllowlistStorage;
 use miden_standards::errors::standards::{
+    ERR_ALLOWLIST_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_ALLOWLIST_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_ALLOWLIST_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{
-    AllowlistConfig,
-    AllowlistConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::config::{AllowlistConfig, AllowlistConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -32,8 +29,8 @@ use super::{
     add_rbac_faucet_with_allowlist,
     dummy_owner,
 };
-use crate::consume_note;
 use crate::scripts::rbac::{build_grant_role_note, role, test_account_id};
+use crate::{consume_note, into_private_note};
 
 // HELPERS
 // ================================================================================================
@@ -259,5 +256,35 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         .await;
 
     assert_transaction_executor_error!(result, ERR_ALLOWLIST_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before the list changes.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
+
+    let note = allowlist_config_note(
+        owner_id,
+        faucet.id(),
+        AllowlistConfig::AllowAccount { account: target_account.id() },
+        9,
+    )?;
+
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ALLOWLIST_CONFIG_NOTE_IS_NOT_PUBLIC);
+
     Ok(())
 }

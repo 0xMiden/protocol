@@ -35,6 +35,8 @@ const ERR_ALLOWLIST_CONFIG_UNKNOWN_SELECTOR = "allowlist config note selector do
 
 const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist config note storage item count does not match the selected action"
 
+const ERR_ALLOWLIST_CONFIG_NOTE_IS_NOT_PUBLIC = "allowlist config note must be public"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -59,6 +61,7 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the note is consumed past the expiration block of its target attachment.
 #! - the number of storage items exceeds MAX_NUM_ITEMS.
@@ -68,6 +71,10 @@ const ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "allowlist confi
 @note_script
 pub proc main
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_ALLOWLIST_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # load the note's target attachment once, so both checks below share the single lookup and

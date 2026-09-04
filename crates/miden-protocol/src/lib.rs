@@ -67,7 +67,7 @@ pub mod utils;
 
 pub mod vm {
     pub use miden_assembly_syntax::ast::{AttributeSet, QualifiedProcedureName};
-    pub use miden_core::advice::{AdviceInputs, AdviceMap};
+    pub use miden_core::advice::{AdviceInputs, AdviceMap, AdviceStack};
     pub use miden_core::events::{EventId, EventName, SystemEvent};
     pub use miden_core::program::{Program, ProgramInfo};
     pub use miden_mast_package::debug_info::{DebugSourceNodeId, PackageDebugInfo};
@@ -83,5 +83,11 @@ pub mod vm {
     };
     pub use miden_processor::trace::RowIndex;
     pub use miden_processor::{FutureMaybeSend, MIN_STACK_DEPTH, StackInputs, StackOutputs};
-    pub use miden_verifier::{ExecutionProof, VerificationOutcome};
+    pub use miden_verifier::{
+        ExecutionProof,
+        ExecutionProofCompatibility,
+        PrecompileStatus,
+        ProofSecurityParameters,
+        VerificationOutcome,
+    };
 }

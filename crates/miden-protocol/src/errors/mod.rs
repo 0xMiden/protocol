@@ -844,6 +844,8 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
+    #[error("duplicate asset ID {0} in partial vault")]
+    DuplicateAssetId(AssetId),
     #[error("partial vault contains invalid asset value {value} at ID {id}")]
     InvalidAssetForId {
         id: AssetId,

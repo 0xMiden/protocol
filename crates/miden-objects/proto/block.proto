@@ -1,0 +1,70 @@
+syntax = "proto3";
+package blockchain;
+
+import "account.proto";
+import "block_number.proto";
+import "primitives.proto";
+import "transaction.proto";
+
+message FeeParameters {
+  fixed32 verification_base_fee = 1;
+}
+
+message ValidatorConfig {
+  repeated primitives.PublicKey keys = 1;
+  uint32 quorum = 2;
+}
+
+message NextProtocolConfig {
+  blockchain.BlockNumber effective_from = 1;
+  primitives.Word protocol_config = 2;
+}
+
+enum BlockVersion {
+  BLOCK_VERSION_UNSPECIFIED = 0;
+  BLOCK_VERSION_V1 = 1;
+}
+
+message BlockHeader {
+  BlockVersion version = 1;
+  fixed32 timestamp = 2;
+  blockchain.BlockNumber block_num = 3;
+  primitives.Word prev_block_commitment = 4;
+  primitives.Word chain_commitment = 5;
+  primitives.Word account_root = 6;
+  primitives.Word nullifier_root = 7;
+  primitives.Word note_root = 8;
+  primitives.Word tx_commitment = 9;
+  ValidatorConfig validator_config = 10;
+  FeeParameters fee_parameters = 11;
+  primitives.Word protocol_config_commitment = 12;
+  NextProtocolConfig next_protocol_config = 13;
+}
+
+message BlockAccountUpdate {
+  account.AccountId account_id = 1;
+  primitives.Word final_state_commitment = 2;
+  account.AccountUpdateDetails details = 3;
+}
+
+message IndexedOutputNote {
+  uint32 note_index_in_batch = 1;
+  transaction.OutputNote note = 2;
+}
+
+message OutputNoteBatch {
+  repeated IndexedOutputNote notes = 1;
+}
+
+message BlockBody {
+  repeated BlockAccountUpdate updated_accounts = 1;
+  repeated OutputNoteBatch output_note_batches = 2;
+  repeated primitives.Word created_nullifiers = 3;
+  repeated transaction.TransactionHeader transactions = 4;
+}
+
+message SignedBlock {
+  BlockHeader header = 1;
+  BlockBody body = 2;
+  repeated primitives.Signature signatures = 3;
+}

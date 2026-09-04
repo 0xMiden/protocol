@@ -29,15 +29,15 @@ pub fn dummy_execution_proof() -> crate::vm::ExecutionProof {
     use alloc::vec::Vec;
 
     use miden_core::deferred::TRUE_DIGEST;
-    use miden_verifier::{HashFunction, StarkProof, VmProof};
+    use miden_verifier::{HashFunction, PrecompileStatus, StarkProof, VmProof};
 
-    crate::vm::ExecutionProof::Complete {
-        vm: VmProof {
+    crate::vm::ExecutionProof::new(
+        VmProof {
             proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
             precompile_root: TRUE_DIGEST,
         },
-        precompile: None,
-    }
+        PrecompileStatus::Empty,
+    )
 }
 
 /// Returns a structurally incomplete placeholder execution proof for verifier tests.
@@ -45,32 +45,30 @@ pub fn dummy_deferred_execution_proof() -> crate::vm::ExecutionProof {
     use alloc::vec::Vec;
 
     use miden_core::deferred::{DeferredStateWire, TRUE_DIGEST};
-    use miden_verifier::{HashFunction, StarkProof, VmProof};
+    use miden_verifier::{HashFunction, PrecompileStatus, StarkProof, VmProof};
 
-    crate::vm::ExecutionProof::Deferred {
-        vm: VmProof {
+    crate::vm::ExecutionProof::new(
+        VmProof {
             proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
             precompile_root: TRUE_DIGEST,
         },
-        precompile: DeferredStateWire::default(),
-    }
+        PrecompileStatus::Deferred(DeferredStateWire::default()),
+    )
 }
 
 /// Returns a structurally complete placeholder proof containing precompile work.
 pub fn dummy_precompile_execution_proof() -> crate::vm::ExecutionProof {
     use alloc::vec::Vec;
 
-    use miden_verifier::{HashFunction, PrecompileProof, StarkProof};
+    use miden_verifier::{HashFunction, PrecompileProof, PrecompileStatus, StarkProof};
 
-    let crate::vm::ExecutionProof::Complete { vm, .. } = dummy_execution_proof() else {
-        unreachable!("dummy execution proof must be complete");
-    };
+    let vm = dummy_execution_proof().vm().clone();
 
-    crate::vm::ExecutionProof::Complete {
+    crate::vm::ExecutionProof::new(
         vm,
-        precompile: Some(PrecompileProof {
+        PrecompileStatus::Proven(PrecompileProof {
             proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
             roots: Vec::new(),
         }),
-    }
+    )
 }
