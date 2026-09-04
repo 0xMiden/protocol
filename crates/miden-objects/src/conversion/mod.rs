@@ -58,6 +58,7 @@ pub(crate) use primitives::{
     decode_merkle_store,
     decode_public_key,
     decode_signature,
+    decode_word,
 };
 pub(crate) use transaction::{
     decode_proven_transaction,

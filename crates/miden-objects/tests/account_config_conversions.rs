@@ -376,7 +376,7 @@ fn protocol_config_reports_the_full_nested_repeated_field_path() {
     let error = ProtocolConfig::try_from(message).unwrap_err();
 
     assert!(
-        error.to_string().starts_with("tx_kernel.kernel_procs[1].word.encoded:"),
+        error.to_string().starts_with("tx_kernel.kernel_procs[1].encoded:"),
         "unexpected error path: {error}"
     );
 }

@@ -249,7 +249,7 @@ fn merkle_store_rejects_duplicate_parents_and_preserves_invalid_word_source() {
         }],
     };
     let error = MerkleStore::try_from(invalid).unwrap_err();
-    assert!(error.to_string().starts_with("nodes[0].value.word.encoded: "), "{error}");
+    assert!(error.to_string().starts_with("nodes[0].value.encoded: "), "{error}");
     assert!(error.source().is_some());
 }
 

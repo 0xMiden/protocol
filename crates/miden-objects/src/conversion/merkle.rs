@@ -351,7 +351,7 @@ mod tests {
 
         let error = SmtLeaf::try_from(encoded).unwrap_err();
         assert!(
-            error.to_string().starts_with("leaf.multiple.entries[1].value.word.encoded:"),
+            error.to_string().starts_with("leaf.multiple.entries[1].value.encoded:"),
             "{error}"
         );
     }

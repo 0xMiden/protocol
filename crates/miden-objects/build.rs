@@ -39,6 +39,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target: ::miden_protocol::Felt,
             constructor: value,
         },
+        ".primitives.Word" => {
+            target: ::miden_protocol::Word,
+            decode: {
+                encoded: crate::conversion::decode_word,
+            },
+            constructor: encoded,
+        },
         ".account.AccountId" => {
             target: ::miden_protocol::account::AccountId,
             try_constructor: crate::conversion::decode_account_id(

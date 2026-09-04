@@ -13,17 +13,12 @@ use crate::{ConversionError, proto};
 
 const WORD_SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
 
-fn ensure_exact_length(
-    encoded: &[u8],
-    expected: usize,
-    field: &'static str,
-) -> Result<(), ConversionError> {
+fn ensure_exact_length(encoded: &[u8], expected: usize) -> Result<(), ConversionError> {
     if encoded.len() != expected {
         return Err(ConversionError::message(format!(
             "expected exactly {expected} bytes, got {}",
             encoded.len()
-        ))
-        .context(field));
+        )));
     }
     Ok(())
 }
@@ -58,21 +53,20 @@ impl From<&Word> for proto::primitives::Word {
     }
 }
 
-impl TryFrom<proto::primitives::Word> for Word {
-    type Error = ConversionError;
+fn decode_word_bytes(encoded: &[u8]) -> Result<Word, ConversionError> {
+    ensure_exact_length(encoded, WORD_SERIALIZED_SIZE)?;
+    Word::read_from_bytes(encoded).map_err(|error| ConversionError::deserialization("Word", error))
+}
 
-    fn try_from(value: proto::primitives::Word) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
+pub(crate) fn decode_word(encoded: Vec<u8>) -> Result<Word, ConversionError> {
+    decode_word_bytes(&encoded)
 }
 
 impl TryFrom<&proto::primitives::Word> for Word {
     type Error = ConversionError;
 
     fn try_from(value: &proto::primitives::Word) -> Result<Self, Self::Error> {
-        ensure_exact_length(&value.encoded, WORD_SERIALIZED_SIZE, "word.encoded")?;
-        Self::read_from_bytes(&value.encoded)
-            .map_err(|error| ConversionError::deserialization("word.encoded", error))
+        decode_word_bytes(&value.encoded).map_err(|error| error.context("encoded"))
     }
 }
 
@@ -341,7 +335,7 @@ mod tests {
         assert_eq!(Word::try_from(proto::primitives::Word::from(word)).unwrap(), word);
 
         let error = Word::try_from(proto::primitives::Word { encoded: vec![0; 31] }).unwrap_err();
-        assert_eq!(error.to_string(), "word.encoded: expected exactly 32 bytes, got 31");
+        assert_eq!(error.to_string(), "encoded: expected exactly 32 bytes, got 31");
     }
 
     #[test]

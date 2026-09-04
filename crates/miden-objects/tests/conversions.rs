@@ -878,10 +878,7 @@ fn partial_blockchain_reports_structural_and_semantic_paths() {
         block_headers: vec![],
     })
     .unwrap_err();
-    assert!(
-        error.to_string().starts_with("tracked_leaves[0].path[0].word.encoded: "),
-        "{error}"
-    );
+    assert!(error.to_string().starts_with("tracked_leaves[0].path[0].encoded: "), "{error}");
 
     let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
         forest: 1,
