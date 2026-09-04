@@ -20,7 +20,14 @@ mod verifier;
 
 pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};
-pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
+pub use inputs::{
+    AccountInputs,
+    InputNote,
+    InputNotes,
+    ToInputNoteCommitments,
+    TransactionInputs,
+    UnverifiedTransactionInputs,
+};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use ordered_transactions::OrderedTransactionHeaders;
 pub use outputs::{

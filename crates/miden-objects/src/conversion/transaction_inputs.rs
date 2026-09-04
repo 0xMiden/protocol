@@ -13,6 +13,7 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionInputs,
     UnverifiedPartialBlockchain,
+    UnverifiedTransactionInputs,
 };
 use miden_protocol::vm::AdviceInputs;
 
@@ -120,7 +121,7 @@ pub(crate) fn decode_foreign_account_slot_name(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn decode_transaction_inputs_v1(
+pub(crate) fn construct_unverified_transaction_inputs_v1(
     account: PartialAccount,
     block_header: BlockHeader,
     protocol_config: ProtocolConfig,
@@ -130,12 +131,7 @@ pub(crate) fn decode_transaction_inputs_v1(
     advice_inputs: AdviceInputs,
     foreign_account_code: Vec<AccountCode>,
     decoded_slot_names: Vec<(StorageSlotId, StorageSlotName)>,
-) -> Result<TransactionInputs, ConversionError> {
-    let partial_blockchain = partial_blockchain
-        .verify()
-        .map_err(ConversionError::new)
-        .context("partial_blockchain")?;
-
+) -> Result<UnverifiedTransactionInputs, ConversionError> {
     let mut foreign_account_slot_names = BTreeMap::new();
     for (index, (slot_id, slot_name)) in decoded_slot_names.into_iter().enumerate() {
         if foreign_account_slot_names.insert(slot_id, slot_name).is_some() {
@@ -144,7 +140,7 @@ pub(crate) fn decode_transaction_inputs_v1(
         }
     }
 
-    TransactionInputs::try_from_parts(
+    Ok(UnverifiedTransactionInputs::new(
         account,
         block_header,
         protocol_config,
@@ -154,6 +150,5 @@ pub(crate) fn decode_transaction_inputs_v1(
         advice_inputs,
         foreign_account_code,
         foreign_account_slot_names,
-    )
-    .map_err(ConversionError::new)
+    ))
 }

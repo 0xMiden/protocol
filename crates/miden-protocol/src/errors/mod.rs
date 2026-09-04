@@ -1009,6 +1009,8 @@ impl PartialBlockchainError {
 pub enum TransactionInputError {
     #[error("transaction input note with nullifier {0} is a duplicate")]
     DuplicateInputNote(Nullifier),
+    #[error("failed to verify the partial blockchain")]
+    PartialBlockchainVerificationFailed(#[source] PartialBlockchainError),
     #[error("partial blockchain has length {actual} which does not match block number {expected}")]
     InconsistentChainLength {
         expected: BlockNumber,

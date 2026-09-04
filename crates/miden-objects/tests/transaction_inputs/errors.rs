@@ -3,10 +3,10 @@ use core::error::Error;
 use assert_matches::assert_matches;
 use miden_objects::{ConversionError, proto};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::errors::{StorageSlotNameError, TransactionInputError};
+use miden_protocol::errors::{PartialBlockchainError, StorageSlotNameError, TransactionInputError};
 use miden_protocol::note::Note;
 use miden_protocol::protocol_config::ProtocolConfig;
-use miden_protocol::transaction::TransactionInputs;
+use miden_protocol::transaction::UnverifiedTransactionInputs;
 
 use super::common;
 
@@ -20,7 +20,8 @@ fn transaction_input_error(error: &ConversionError) -> &TransactionInputError {
 #[test]
 fn transaction_inputs_requires_a_version() {
     let error =
-        TransactionInputs::try_from(proto::transaction::TransactionInputs::default()).unwrap_err();
+        UnverifiedTransactionInputs::try_from(proto::transaction::TransactionInputs::default())
+            .unwrap_err();
 
     assert!(error.to_string().ends_with("::version is missing"));
 }
@@ -42,7 +43,7 @@ fn transaction_inputs_v1_requires_every_singular_message() {
     for (field, remove) in fields {
         let mut message = common::dummy_transaction_inputs_message();
         remove(common::transaction_inputs_v1_mut(&mut message));
-        let error = TransactionInputs::try_from(message).unwrap_err();
+        let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
 
         assert!(
             error.to_string().starts_with(&format!("version.v1.{field}: field ")),
@@ -61,7 +62,7 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
         .unwrap()
         .notes[0]
         .note = None;
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
     assert!(error.to_string().ends_with(
         "input_notes.notes[0].note: field \
          miden_objects::proto::transaction::InputNote::note is missing"
@@ -69,7 +70,7 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
 
     let mut message = common::dummy_transaction_inputs_message();
     common::authenticated_input_note_mut(&mut message).note = None;
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
     assert_eq!(
         error.to_string(),
         "version.v1.input_notes.notes[0].note.authenticated.note: field \
@@ -78,7 +79,7 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
 
     let mut message = common::dummy_transaction_inputs_message();
     common::authenticated_input_note_mut(&mut message).proof = None;
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
     assert_eq!(
         error.to_string(),
         "version.v1.input_notes.notes[0].note.authenticated.proof: field \
@@ -95,7 +96,7 @@ fn authenticated_input_note_rejects_a_proof_for_a_different_note() {
         .unwrap()
         .note_id = Some((&Note::mock_noop(common::dummy_word(99)).id()).into());
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
 
     assert!(
         error.to_string().starts_with(
@@ -112,7 +113,7 @@ fn input_notes_reject_duplicate_nullifiers_and_preserve_the_domain_source() {
     let duplicate = v1.input_notes.as_ref().unwrap().notes[0].clone();
     v1.input_notes.as_mut().unwrap().notes.push(duplicate);
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
 
     assert!(
         error
@@ -128,7 +129,7 @@ fn foreign_slot_names_reject_invalid_names_and_preserve_the_domain_source() {
     let mut message = common::dummy_transaction_inputs_message();
     common::transaction_inputs_v1_mut(&mut message).foreign_account_slot_names[0].slot_id = None;
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
     assert_eq!(
         error.to_string(),
         "version.v1.foreign_account_slot_names[0].slot_id: field \
@@ -139,7 +140,7 @@ fn foreign_slot_names_reject_invalid_names_and_preserve_the_domain_source() {
     common::transaction_inputs_v1_mut(&mut message).foreign_account_slot_names[0].slot_name =
         "invalid".into();
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
 
     assert!(
         error
@@ -158,7 +159,7 @@ fn foreign_slot_names_reject_id_name_mismatches() {
     let v1 = common::transaction_inputs_v1_mut(&mut message);
     v1.foreign_account_slot_names[0].slot_id = v1.foreign_account_slot_names[1].slot_id;
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -174,11 +175,32 @@ fn foreign_slot_names_reject_duplicate_ids() {
     duplicate.slot_name = v1.foreign_account_slot_names[0].slot_name.clone();
     v1.foreign_account_slot_names.push(duplicate);
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap_err();
 
     assert_eq!(
         error.to_string(),
         "version.v1.foreign_account_slot_names[2].slot_id: duplicate foreign account storage slot ID"
+    );
+}
+
+#[test]
+fn transaction_inputs_defer_partial_blockchain_authentication() {
+    let mut message = common::dummy_transaction_inputs_message();
+    let partial_blockchain = common::transaction_inputs_v1_mut(&mut message)
+        .partial_blockchain
+        .as_mut()
+        .unwrap();
+    partial_blockchain.block_headers[0].timestamp += 1;
+
+    let decoded = UnverifiedTransactionInputs::try_from(message).unwrap();
+    assert_eq!(decoded.blockchain().block_headers().count(), 1);
+
+    let error = decoded.verify().unwrap_err();
+    assert_matches!(
+        error,
+        TransactionInputError::PartialBlockchainVerificationFailed(
+            PartialBlockchainError::BlockHeaderCommitmentMismatch { .. }
+        )
     );
 }
 
@@ -188,11 +210,8 @@ fn transaction_inputs_reject_an_inconsistent_protocol_config() {
     common::transaction_inputs_v1_mut(&mut message).protocol_config =
         Some(proto::protocol_config::ProtocolConfig::from(ProtocolConfig::mock()));
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
-    assert_matches!(
-        transaction_input_error(&error),
-        TransactionInputError::InconsistentProtocolConfig { .. }
-    );
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap().verify().unwrap_err();
+    assert_matches!(error, TransactionInputError::InconsistentProtocolConfig { .. });
 }
 
 #[test]
@@ -201,11 +220,8 @@ fn transaction_inputs_reject_an_inconsistent_chain_length() {
     let header = common::transaction_inputs_v1_mut(&mut message).block_header.as_mut().unwrap();
     header.block_num = Some(BlockNumber::from(1_u32).into());
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
-    assert_matches!(
-        transaction_input_error(&error),
-        TransactionInputError::InconsistentChainLength { .. }
-    );
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap().verify().unwrap_err();
+    assert_matches!(error, TransactionInputError::InconsistentChainLength { .. });
 }
 
 #[test]
@@ -214,11 +230,8 @@ fn transaction_inputs_reject_an_inconsistent_chain_commitment() {
     let header = common::transaction_inputs_v1_mut(&mut message).block_header.as_mut().unwrap();
     header.chain_commitment = Some(common::dummy_word(100).into());
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
-    assert_matches!(
-        transaction_input_error(&error),
-        TransactionInputError::InconsistentChainCommitment { .. }
-    );
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap().verify().unwrap_err();
+    assert_matches!(error, TransactionInputError::InconsistentChainCommitment { .. });
 }
 
 #[test]
@@ -230,11 +243,8 @@ fn transaction_inputs_reject_an_authenticated_note_from_an_untracked_block() {
         .unwrap()
         .block_num = Some(BlockNumber::from(1_u32).into());
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
-    assert_matches!(
-        transaction_input_error(&error),
-        TransactionInputError::InputNoteBlockNotInPartialBlockchain(_)
-    );
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap().verify().unwrap_err();
+    assert_matches!(error, TransactionInputError::InputNoteBlockNotInPartialBlockchain(_));
 }
 
 #[test]
@@ -245,9 +255,9 @@ fn transaction_inputs_reject_an_invalid_authenticated_note_path() {
     authenticated.note = Some(replacement.clone().into());
     authenticated.proof.as_mut().unwrap().note_id = Some((&replacement.id()).into());
 
-    let error = TransactionInputs::try_from(message).unwrap_err();
+    let error = UnverifiedTransactionInputs::try_from(message).unwrap().verify().unwrap_err();
     assert_matches!(
-        transaction_input_error(&error),
-        TransactionInputError::InputNoteNotInBlock(note_id, _) if *note_id == replacement.id()
+        error,
+        TransactionInputError::InputNoteNotInBlock(note_id, _) if note_id == replacement.id()
     );
 }

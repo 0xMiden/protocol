@@ -773,8 +773,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         },
         ".transaction.TransactionInputsV1" => {
-            target: ::miden_protocol::transaction::TransactionInputs,
-            try_constructor: crate::conversion::decode_transaction_inputs_v1(
+            target: ::miden_protocol::transaction::UnverifiedTransactionInputs,
+            try_constructor: crate::conversion::construct_unverified_transaction_inputs_v1(
                 account,
                 block_header,
                 protocol_config,
@@ -787,7 +787,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         },
         ".transaction.TransactionInputs" => {
-            target: ::miden_protocol::transaction::TransactionInputs,
+            target: ::miden_protocol::transaction::UnverifiedTransactionInputs,
             oneof: {
                 version: {
                     V1: constructor(::core::convert::identity),

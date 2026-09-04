@@ -1,6 +1,6 @@
 use miden_objects::proto;
 use miden_protocol::note::Note;
-use miden_protocol::transaction::TransactionInputs;
+use miden_protocol::transaction::UnverifiedTransactionInputs;
 use prost::Message;
 
 use super::common;
@@ -35,7 +35,10 @@ fn transaction_inputs_roundtrip_preserves_all_nested_fields_and_ordered_collecti
     let encoded = message.encode_to_vec();
     let decoded_message =
         proto::transaction::TransactionInputs::decode(encoded.as_slice()).unwrap();
-    let actual = TransactionInputs::try_from(decoded_message).unwrap();
+    let actual = UnverifiedTransactionInputs::try_from(decoded_message)
+        .unwrap()
+        .verify()
+        .unwrap();
 
     assert_eq!(actual, expected);
     assert_eq!(actual.foreign_account_code(), expected.foreign_account_code());

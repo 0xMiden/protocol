@@ -5,7 +5,7 @@ use core::fmt::Debug;
 use miden_crypto::merkle::NodeIndex;
 use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 
-use super::PartialBlockchain;
+use super::{PartialBlockchain, UnverifiedPartialBlockchain};
 use crate::Word;
 use crate::account::{
     AccountCode,
@@ -51,18 +51,132 @@ use crate::vm::AdviceInputs;
 
 /// Contains the data required to execute a transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransactionInputs {
+pub struct TransactionInputs<Blockchain = PartialBlockchain> {
     account: PartialAccount,
     block_header: BlockHeader,
     /// The chain's protocol configuration, which `block_header` only commits to.
     protocol_config: ProtocolConfig,
-    blockchain: PartialBlockchain,
+    blockchain: Blockchain,
     input_notes: InputNotes<InputNote>,
     tx_args: TransactionArgs,
     advice_inputs: AdviceInputs,
     foreign_account_code: Vec<AccountCode>,
     /// Storage slot names for foreign accounts.
     foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+}
+
+/// Decoded transaction inputs whose partial blockchain and cross-field invariants have not been
+/// verified.
+pub type UnverifiedTransactionInputs = TransactionInputs<UnverifiedPartialBlockchain>;
+
+impl<Blockchain> TransactionInputs<Blockchain> {
+    /// Returns the account against which the transaction is executed.
+    pub fn account(&self) -> &PartialAccount {
+        &self.account
+    }
+
+    /// Returns the block header referenced by the transaction.
+    pub fn block_header(&self) -> &BlockHeader {
+        &self.block_header
+    }
+
+    /// Returns the protocol configuration committed to by the referenced block header.
+    pub fn protocol_config(&self) -> &ProtocolConfig {
+        &self.protocol_config
+    }
+
+    /// Returns the partial blockchain decoded for the transaction.
+    pub fn blockchain(&self) -> &Blockchain {
+        &self.blockchain
+    }
+
+    /// Returns the notes to be consumed in the transaction.
+    pub fn input_notes(&self) -> &InputNotes<InputNote> {
+        &self.input_notes
+    }
+
+    /// Returns the block number referenced by the inputs.
+    pub fn ref_block(&self) -> BlockNumber {
+        self.block_header.block_num()
+    }
+
+    /// Returns the transaction script to be executed.
+    pub fn tx_script(&self) -> Option<&TransactionScript> {
+        self.tx_args.tx_script()
+    }
+
+    /// Returns the foreign account code to be executed.
+    pub fn foreign_account_code(&self) -> &[AccountCode] {
+        &self.foreign_account_code
+    }
+
+    /// Returns the foreign account storage slot names.
+    pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
+        &self.foreign_account_slot_names
+    }
+
+    /// Returns the advice inputs to be consumed in the transaction.
+    pub fn advice_inputs(&self) -> &AdviceInputs {
+        &self.advice_inputs
+    }
+
+    /// Returns the transaction arguments to be consumed in the transaction.
+    pub fn tx_args(&self) -> &TransactionArgs {
+        &self.tx_args
+    }
+}
+
+impl TransactionInputs<UnverifiedPartialBlockchain> {
+    /// Creates unverified transaction inputs from their decoded components.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        account: PartialAccount,
+        block_header: BlockHeader,
+        protocol_config: ProtocolConfig,
+        blockchain: UnverifiedPartialBlockchain,
+        input_notes: InputNotes<InputNote>,
+        tx_args: TransactionArgs,
+        advice_inputs: AdviceInputs,
+        foreign_account_code: Vec<AccountCode>,
+        foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+    ) -> Self {
+        Self {
+            account,
+            block_header,
+            protocol_config,
+            blockchain,
+            input_notes,
+            tx_args,
+            advice_inputs,
+            foreign_account_code,
+            foreign_account_slot_names,
+        }
+    }
+
+    /// Verifies the partial blockchain and all transaction-input invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if partial-blockchain authentication or a transaction-input invariant
+    /// fails.
+    pub fn verify(self) -> Result<TransactionInputs, TransactionInputError> {
+        let blockchain = self
+            .blockchain
+            .verify()
+            .map_err(TransactionInputError::PartialBlockchainVerificationFailed)?;
+
+        TransactionInputs::try_from_parts(
+            self.account,
+            self.block_header,
+            self.protocol_config,
+            blockchain,
+            self.input_notes,
+            self.tx_args,
+            self.advice_inputs,
+            self.foreign_account_code,
+            self.foreign_account_slot_names,
+        )
+    }
 }
 
 impl TransactionInputs {
@@ -243,37 +357,6 @@ impl TransactionInputs {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the account against which the transaction is executed.
-    pub fn account(&self) -> &PartialAccount {
-        &self.account
-    }
-
-    /// Returns block header for the block referenced by the transaction.
-    pub fn block_header(&self) -> &BlockHeader {
-        &self.block_header
-    }
-
-    /// Returns the protocol configuration committed to by the referenced block header.
-    pub fn protocol_config(&self) -> &ProtocolConfig {
-        &self.protocol_config
-    }
-
-    /// Returns partial blockchain containing authentication paths for all notes consumed by the
-    /// transaction.
-    pub fn blockchain(&self) -> &PartialBlockchain {
-        &self.blockchain
-    }
-
-    /// Returns the notes to be consumed in the transaction.
-    pub fn input_notes(&self) -> &InputNotes<InputNote> {
-        &self.input_notes
-    }
-
-    /// Returns the block number referenced by the inputs.
-    pub fn ref_block(&self) -> BlockNumber {
-        self.block_header.block_num()
-    }
-
     /// Returns the commitments of the blocks the transaction authenticates, keyed by block number.
     ///
     /// These are the reference block and the blocks tracked by the partial blockchain, i.e.
@@ -287,31 +370,6 @@ impl TransactionInputs {
         commitments.insert(self.ref_block(), self.block_header.commitment());
 
         commitments
-    }
-
-    /// Returns the transaction script to be executed.
-    pub fn tx_script(&self) -> Option<&TransactionScript> {
-        self.tx_args.tx_script()
-    }
-
-    /// Returns the foreign account code to be executed.
-    pub fn foreign_account_code(&self) -> &[AccountCode] {
-        &self.foreign_account_code
-    }
-
-    /// Returns the foreign account storage slot names.
-    pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
-        &self.foreign_account_slot_names
-    }
-
-    /// Returns the advice inputs to be consumed in the transaction.
-    pub fn advice_inputs(&self) -> &AdviceInputs {
-        &self.advice_inputs
-    }
-
-    /// Returns the transaction arguments to be consumed in the transaction.
-    pub fn tx_args(&self) -> &TransactionArgs {
-        &self.tx_args
     }
 
     // DATA EXTRACTORS

@@ -65,8 +65,8 @@ pub(crate) use transaction::{
     decode_transaction_script,
 };
 pub(crate) use transaction_inputs::{
+    construct_unverified_transaction_inputs_v1,
     decode_authenticated_input_note,
     decode_foreign_account_slot_name,
     decode_input_notes,
-    decode_transaction_inputs_v1,
 };
