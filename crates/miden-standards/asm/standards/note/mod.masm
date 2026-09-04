@@ -11,6 +11,7 @@ use miden::protocol::output_note
 
 use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
 
+pub mod consumer
 pub mod execution_hint
 pub mod note_creator
 pub mod note_tag
