@@ -526,6 +526,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entrypoint,
             ),
         },
+        ".blockchain.TrackedMmrLeaf" => {
+            target: (
+                u64,
+                ::miden_protocol::Word,
+                ::alloc::vec::Vec<::miden_protocol::Word>
+            ),
+            constructor: (position, leaf, path),
+        },
+        ".blockchain.PartialBlockchain" => {
+            target: ::miden_protocol::transaction::PartialBlockchain,
+            try_constructor: crate::conversion::decode_partial_blockchain(
+                forest,
+                peaks,
+                tracked_leaves,
+                block_headers,
+            ),
+        },
         ".blockchain.BlockHeader" => {
             target: ::miden_protocol::block::BlockHeader,
             enumeration: {

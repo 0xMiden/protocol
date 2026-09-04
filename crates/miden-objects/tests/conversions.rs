@@ -67,6 +67,7 @@ use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
     OutputNote,
+    PartialBlockchain,
     PrivateOutputNote,
     ProvenTransaction,
     PublicOutputNote,
@@ -852,6 +853,51 @@ fn account_update_roundtrips_through_protobuf_bytes() {
     let encoded = proto::transaction::BatchAccountUpdate::from(&update).encode_to_vec();
     let message = proto::transaction::BatchAccountUpdate::decode(encoded.as_slice()).unwrap();
     assert_eq!(BatchAccountUpdate::try_from(message).unwrap(), update);
+}
+
+#[test]
+fn partial_blockchain_reports_structural_and_semantic_paths() {
+    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+        tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf::default()],
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "tracked_leaves[0].leaf: field miden_objects::proto::blockchain::TrackedMmrLeaf::leaf is missing"
+    );
+
+    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+        forest: 1,
+        peaks: vec![Word::empty().into()],
+        tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf {
+            position: 0,
+            leaf: Some(Word::empty().into()),
+            path: vec![proto::primitives::Word { encoded: vec![0; 31] }],
+        }],
+        block_headers: vec![],
+    })
+    .unwrap_err();
+    assert!(
+        error.to_string().starts_with("tracked_leaves[0].path[0].word.encoded: "),
+        "{error}"
+    );
+
+    let error = PartialBlockchain::try_from(proto::blockchain::PartialBlockchain {
+        forest: 1,
+        peaks: vec![Word::empty().into()],
+        tracked_leaves: vec![proto::blockchain::TrackedMmrLeaf {
+            position: 1,
+            leaf: Some(Word::empty().into()),
+            path: vec![],
+        }],
+        block_headers: vec![],
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "tracked_leaves[0].position: tracked leaf position 1 is outside forest of size 1"
+    );
 }
 
 #[test]
