@@ -41,12 +41,14 @@ pub(crate) use block::{
 };
 pub(crate) use merkle::{decode_empty_smt_leaf, decode_mmr_delta};
 pub(crate) use note::{
+    decode_note,
     decode_note_attachment,
     decode_note_attachment_schemes,
     decode_note_inclusion_proof,
     decode_note_metadata,
     decode_note_script,
     decode_note_storage,
+    decode_partial_note_metadata,
     validate_note_attachments,
 };
 pub(crate) use primitives::{

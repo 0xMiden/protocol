@@ -406,6 +406,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 inclusion_path,
             ),
         },
+        ".note.PartialNoteMetadata" => {
+            target: ::miden_protocol::note::PartialNoteMetadata,
+            enumeration: {
+                version: {
+                    Unspecified: reject("note metadata version is unspecified"),
+                    V1: accept,
+                },
+                note_type: {
+                    Unspecified: reject("enum variant discriminant out of range"),
+                    Private: map(::miden_protocol::note::NoteType::Private),
+                    Public: map(::miden_protocol::note::NoteType::Public),
+                },
+            },
+            constructor: crate::conversion::decode_partial_note_metadata(
+                sender,
+                note_type,
+                tag,
+            ),
+        },
         ".note.NoteMetadata" => {
             target: ::miden_protocol::note::NoteMetadata,
             decode: {
@@ -447,6 +466,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target: ::miden_protocol::note::NoteAttachments,
             try_constructor: crate::conversion::validate_note_attachments(
                 attachments,
+            ),
+        },
+        ".note.Note" => {
+            target: ::miden_protocol::note::Note,
+            constructor: crate::conversion::decode_note(
+                metadata,
+                note_details,
+                note_attachments,
             ),
         },
         ".note.NoteHeader" => {

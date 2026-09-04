@@ -1,4 +1,3 @@
-use alloc::format;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -28,7 +27,6 @@ use miden_protocol::note::{
 };
 use miden_protocol::{Felt, MastNodeId, Word};
 
-use super::{MessageDecodeExt, MessageDecoder, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // NOTE TYPE
@@ -59,6 +57,17 @@ impl TryFrom<proto::note::NoteType> for NoteType {
 
 // NOTE METADATA
 // ================================================================================================
+
+impl From<PartialNoteMetadata> for proto::note::PartialNoteMetadata {
+    fn from(metadata: PartialNoteMetadata) -> Self {
+        Self {
+            version: proto::note::NoteVersion::V1 as i32,
+            sender: Some(metadata.sender().into()),
+            note_type: proto::note::NoteType::from(metadata.note_type()) as i32,
+            tag: metadata.tag().as_u32(),
+        }
+    }
+}
 
 impl From<NoteMetadata> for proto::note::NoteMetadata {
     fn from(metadata: NoteMetadata) -> Self {
@@ -192,29 +201,20 @@ impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
         let (assets, metadata, recipient, attachments) = note.into_parts();
         Self {
-            metadata: Some(metadata.into()),
+            metadata: Some(metadata.into_partial_metadata().into()),
             note_details: Some(NoteDetails::new(assets, recipient).into()),
             note_attachments: Some(attachments.into()),
         }
     }
 }
 
-impl TryFrom<proto::note::Note> for Note {
-    type Error = ConversionError;
-
-    fn try_from(proto_note: proto::note::Note) -> Result<Self, Self::Error> {
-        let decoder = proto_note.decoder();
-        let proto::note::Note { metadata, note_details, note_attachments } = proto_note;
-
-        let metadata = required!(decoder, metadata)?;
-        let partial_metadata = partial_note_metadata_from_proto(metadata)?;
-
-        let note_details: NoteDetails = required!(decoder, note_details)?;
-        let (assets, recipient) = note_details.into_parts();
-        let attachments = decode_note_attachments::<proto::note::Note>(note_attachments)?;
-
-        Ok(Note::with_attachments(assets, partial_metadata, recipient, attachments))
-    }
+pub(crate) fn decode_note(
+    metadata: PartialNoteMetadata,
+    note_details: NoteDetails,
+    note_attachments: NoteAttachments,
+) -> Note {
+    let (assets, recipient) = note_details.into_parts();
+    Note::with_attachments(assets, metadata, recipient, note_attachments)
 }
 
 // NOTE ID
@@ -318,30 +318,6 @@ pub(crate) fn decode_note_script(
 // HELPERS
 // ================================================================================================
 
-/// Decodes the `(sender, note_type, tag)` triple from a proto `NoteMetadata` into a
-/// [`PartialNoteMetadata`]. The attachment-related fields on the proto are ignored — when full
-/// attachments are also transmitted, the receiver derives the canonical headers and commitment from
-/// those instead.
-fn partial_note_metadata_from_proto(
-    value: proto::note::NoteMetadata,
-) -> Result<PartialNoteMetadata, ConversionError> {
-    decode_note_version(value.version).context("version")?;
-    decode_partial_note_metadata(value.sender, value.note_type, value.tag)
-}
-
-fn decode_note_version(version: i32) -> Result<(), ConversionError> {
-    match proto::note::NoteVersion::try_from(version) {
-        Ok(proto::note::NoteVersion::V1) => Ok(()),
-        Ok(proto::note::NoteVersion::Unspecified) => {
-            Err(ConversionError::message("note metadata version is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown note metadata version {version}"),
-            error,
-        )),
-    }
-}
-
 pub(crate) fn decode_note_attachment_schemes(
     attachment_schemes: Vec<u32>,
 ) -> Result<[NoteAttachmentHeader; NoteAttachments::MAX_COUNT], ConversionError> {
@@ -369,29 +345,15 @@ pub(crate) fn decode_note_metadata(
     attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
     attachments_commitment: Word,
 ) -> NoteMetadata {
-    let partial = PartialNoteMetadata::new(sender, note_type).with_tag(NoteTag::new(tag));
+    let partial = decode_partial_note_metadata(sender, note_type, tag);
     NoteMetadata::from_parts(partial, attachment_headers, attachments_commitment)
 }
 
-fn decode_partial_note_metadata(
-    sender: Option<proto::account::AccountId>,
-    note_type: i32,
+pub(crate) fn decode_partial_note_metadata(
+    sender: AccountId,
+    note_type: NoteType,
     tag: u32,
-) -> Result<PartialNoteMetadata, ConversionError> {
-    let decoder = MessageDecoder::<proto::note::NoteMetadata>::default();
-    let sender = required!(decoder, sender)?;
-    let note_type = proto::note::NoteType::try_from(note_type)
-        .map_err(|_| ConversionError::message("enum variant discriminant out of range"))?
-        .try_into()
-        .context("note_type")?;
+) -> PartialNoteMetadata {
     let tag = NoteTag::new(tag);
-    Ok(PartialNoteMetadata::new(sender, note_type).with_tag(tag))
-}
-
-/// Requires and decodes the structured attachments carried by a note message.
-fn decode_note_attachments<M: prost::Message>(
-    note_attachments: Option<proto::note::NoteAttachments>,
-) -> Result<NoteAttachments, ConversionError> {
-    let decoder = MessageDecoder::<M>::default();
-    required!(decoder, note_attachments)
+    PartialNoteMetadata::new(sender, note_type).with_tag(tag)
 }

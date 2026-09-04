@@ -52,6 +52,7 @@ use miden_protocol::errors::{
 use miden_protocol::note::{
     Note,
     NoteAttachment,
+    NoteAttachmentScheme,
     NoteAttachments,
     NoteId,
     NoteInclusionProof,
@@ -600,7 +601,18 @@ fn note_metadata_roundtrips_through_flat_v1_protobuf_bytes() {
 }
 
 #[test]
-fn note_protobuf_roundtrips_through_versioned_note_metadata() {
+fn partial_note_metadata_roundtrips_through_protobuf() {
+    let metadata = *Note::mock_noop(Word::empty()).metadata().partial_metadata();
+
+    let encoded = proto::note::PartialNoteMetadata::from(metadata).encode_to_vec();
+    let message = proto::note::PartialNoteMetadata::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(message.version, proto::note::NoteVersion::V1 as i32);
+    assert_eq!(PartialNoteMetadata::try_from(message).unwrap(), metadata);
+}
+
+#[test]
+fn note_protobuf_roundtrips_through_partial_metadata() {
     let note = Note::mock_noop(Word::empty());
 
     let encoded = proto::note::Note::from(note.clone()).encode_to_vec();
@@ -618,7 +630,7 @@ fn note_protobuf_requires_note_attachments() {
 
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::note::Note::note_attachments is missing"
+        "note_attachments: field miden_objects::proto::note::Note::note_attachments is missing"
     );
 }
 
@@ -631,7 +643,7 @@ fn note_protobuf_requires_note_details() {
 
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::note::Note::note_details is missing"
+        "note_details: field miden_objects::proto::note::Note::note_details is missing"
     );
 }
 
@@ -666,7 +678,7 @@ fn note_metadata_protobuf_preserves_unknown_version_error_sources() {
 #[test]
 fn note_protobuf_rejects_unspecified_metadata_version_before_payload_fields() {
     let error = Note::try_from(proto::note::Note {
-        metadata: Some(proto::note::NoteMetadata {
+        metadata: Some(proto::note::PartialNoteMetadata {
             version: proto::note::NoteVersion::Unspecified as i32,
             ..Default::default()
         }),
@@ -674,16 +686,21 @@ fn note_protobuf_rejects_unspecified_metadata_version_before_payload_fields() {
     })
     .unwrap_err();
 
-    assert_eq!(error.to_string(), "version: note metadata version is unspecified");
+    assert_eq!(error.to_string(), "metadata.version: note metadata version is unspecified");
 }
 
 #[test]
-fn note_protobuf_reconstructs_attachment_metadata_from_structured_attachments() {
-    let note = Note::mock_noop(Word::empty());
-    let mut message = proto::note::Note::from(note.clone());
-    let metadata = message.metadata.as_mut().unwrap();
-    metadata.attachment_schemes = vec![42];
-    metadata.attachments_commitment = Some(Word::empty().into());
+fn note_protobuf_derives_full_metadata_from_structured_attachments() {
+    let (assets, metadata, recipient, _) = Note::mock_noop(Word::empty()).into_parts();
+    let attachment = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(42).unwrap(),
+        vec![Word::from([1_u32, 2, 3, 4])],
+    )
+    .unwrap();
+    let attachments = NoteAttachments::new(vec![attachment]).unwrap();
+    let note =
+        Note::with_attachments(assets, metadata.into_partial_metadata(), recipient, attachments);
+    let message = proto::note::Note::from(note.clone());
 
     assert_eq!(Note::try_from(message).unwrap(), note);
 }
