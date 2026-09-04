@@ -75,69 +75,107 @@ macro_rules! __proto_decode_config {
     (
         $message_name:literal,
         $target:ty,
+        $($settings:tt)*
+    ) => {
+        $crate::__proto_decode_config!(
+            @parse
+            $message_name,
+            $target,
+            [],
+            [];
+            $($settings)*
+        )
+    };
+    (
+        @parse
+        $message_name:literal,
+        $target:ty,
+        [$($validators:expr,)*],
+        [$($oneofs:expr,)*];
+        validate: {
+            $($field:ident: $validator:path),+ $(,)?
+        },
+        $($remaining:tt)*
+    ) => {
+        $crate::__proto_decode_config!(
+            @parse
+            $message_name,
+            $target,
+            [
+                $($validators,)*
+                $((::core::stringify!($field), ::core::stringify!($validator)),)+
+            ],
+            [$($oneofs,)*];
+            $($remaining)*
+        )
+    };
+    (
+        @parse
+        $message_name:literal,
+        $target:ty,
+        [$($validators:expr,)*],
+        [$($oneofs:expr,)*];
+        oneof: {
+            $(
+                $field:ident: {
+                    $($variant:ident: $variant_constructor:path),+ $(,)?
+                }
+            ),+ $(,)?
+        },
+        $($remaining:tt)*
+    ) => {
+        $crate::__proto_decode_config!(
+            @parse
+            $message_name,
+            $target,
+            [$($validators,)*],
+            [
+                $($oneofs,)*
+                $(
+                    $crate::build::ProtoDecodeOneofConfig::new(
+                        ::core::stringify!($field),
+                        &[
+                            $((
+                                ::core::stringify!($variant),
+                                ::core::stringify!($variant_constructor),
+                            ),)+
+                        ],
+                    ),
+                )+
+            ];
+            $($remaining)*
+        )
+    };
+    (
+        @parse
+        $message_name:literal,
+        $target:ty,
+        [$($validators:expr,)*],
+        [$($oneofs:expr,)*];
         constructor: $constructor:expr $(,)?
     ) => {
         $crate::build::ProtoDecodeConfig::constructor(
             $message_name,
             ::core::stringify!($target),
-            &[],
+            &[$($validators,)*],
             ::core::stringify!($constructor),
         )
+        .with_oneofs(&[$($oneofs,)*])
     };
     (
+        @parse
         $message_name:literal,
         $target:ty,
+        [$($validators:expr,)*],
+        [$($oneofs:expr,)*];
         try_constructor: $constructor:expr $(,)?
     ) => {
         $crate::build::ProtoDecodeConfig::try_constructor(
             $message_name,
             ::core::stringify!($target),
-            &[],
+            &[$($validators,)*],
             ::core::stringify!($constructor),
         )
-    };
-    (
-        $message_name:literal,
-        $target:ty,
-        validate: {
-            $($validated_field:ident: $validator:path),+ $(,)?
-        },
-        constructor: $constructor:expr $(,)?
-    ) => {
-        $crate::build::ProtoDecodeConfig::constructor(
-            $message_name,
-            ::core::stringify!($target),
-            &[
-                $(
-                    (
-                        ::core::stringify!($validated_field),
-                        ::core::stringify!($validator),
-                    ),
-                )+
-            ],
-            ::core::stringify!($constructor),
-        )
-    };
-    (
-        $message_name:literal,
-        $target:ty,
-        validate: {
-            $($validated_field:ident: $validator:path),+ $(,)?
-        },
-        try_constructor: $constructor:expr $(,)?
-    ) => {
-        $crate::build::ProtoDecodeConfig::try_constructor(
-            $message_name,
-            ::core::stringify!($target),
-            &[
-                $(
-                    (
-                        ::core::stringify!($validated_field),
-                        ::core::stringify!($validator),
-                    ),
-                )+
-            ],
-            ::core::stringify!($constructor),
-        )
+        .with_oneofs(&[$($oneofs,)*])
     };
 }

@@ -11,26 +11,28 @@ const OPTIONAL_ATTRIBUTE: &str = "#[proto_decode(optional)]";
 
 /// Structured configuration for a generated `ProtoDecode` implementation.
 #[doc(hidden)]
-pub struct ProtoDecodeConfig {
+pub struct ProtoDecodeConfig<'a> {
     message_name: &'static str,
     target: &'static str,
-    validators: &'static [(&'static str, &'static str)],
+    validators: &'a [(&'static str, &'static str)],
+    oneofs: &'a [ProtoDecodeOneofConfig<'a>],
     constructor: &'static str,
     constructor_kind: ConstructorKind,
 }
 
-impl ProtoDecodeConfig {
+impl<'a> ProtoDecodeConfig<'a> {
     #[doc(hidden)]
     pub const fn constructor(
         message_name: &'static str,
         target: &'static str,
-        validators: &'static [(&'static str, &'static str)],
+        validators: &'a [(&'static str, &'static str)],
         constructor: &'static str,
     ) -> Self {
         Self {
             message_name,
             target,
             validators,
+            oneofs: &[],
             constructor,
             constructor_kind: ConstructorKind::Infallible,
         }
@@ -40,16 +42,23 @@ impl ProtoDecodeConfig {
     pub const fn try_constructor(
         message_name: &'static str,
         target: &'static str,
-        validators: &'static [(&'static str, &'static str)],
+        validators: &'a [(&'static str, &'static str)],
         constructor: &'static str,
     ) -> Self {
         Self {
             message_name,
             target,
             validators,
+            oneofs: &[],
             constructor,
             constructor_kind: ConstructorKind::Fallible,
         }
+    }
+
+    #[doc(hidden)]
+    pub const fn with_oneofs(mut self, oneofs: &'a [ProtoDecodeOneofConfig<'a>]) -> Self {
+        self.oneofs = oneofs;
+        self
     }
 
     fn derive_attribute(&self) -> String {
@@ -63,12 +72,42 @@ impl ProtoDecodeConfig {
             .map(|(field, validator)| format!(", validate({field}, {validator})"))
             .collect::<Vec<_>>()
             .join("");
+        let oneofs = self
+            .oneofs
+            .iter()
+            .map(ProtoDecodeOneofConfig::derive_setting)
+            .collect::<Vec<_>>()
+            .join("");
 
         format!(
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
-             #[proto_decode(target({}){}, {}({}))]",
-            self.target, validators, constructor, self.constructor
+             #[proto_decode(target({}){}{}, {}({}))]",
+            self.target, validators, oneofs, constructor, self.constructor
         )
+    }
+}
+
+/// Structured configuration for a generated Protobuf oneof field.
+#[doc(hidden)]
+pub struct ProtoDecodeOneofConfig<'a> {
+    field: &'static str,
+    variants: &'a [(&'static str, &'static str)],
+}
+
+impl<'a> ProtoDecodeOneofConfig<'a> {
+    #[doc(hidden)]
+    pub const fn new(field: &'static str, variants: &'a [(&'static str, &'static str)]) -> Self {
+        Self { field, variants }
+    }
+
+    fn derive_setting(&self) -> String {
+        let variants = self
+            .variants
+            .iter()
+            .map(|(variant, constructor)| format!("{variant} => {constructor}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(", oneof({}, {variants})", self.field)
     }
 }
 
@@ -79,10 +118,10 @@ enum ConstructorKind {
 
 /// Configures generated messages for `ProtoDecode` and preserves explicitly optional message
 /// fields that Prost's Rust attributes cannot distinguish from unlabelled message fields.
-pub fn configure_proto_decodes(
+pub fn configure_proto_decodes<'a>(
     prost: &mut prost_build::Config,
     descriptors: &FileDescriptorSet,
-    configs: impl IntoIterator<Item = ProtoDecodeConfig>,
+    configs: impl IntoIterator<Item = ProtoDecodeConfig<'a>>,
 ) -> Result<(), io::Error> {
     let mut configured = BTreeSet::new();
     for config in configs {
@@ -306,6 +345,22 @@ mod tests {
              #[proto_decode(target(SelectedTarget), validate(version, crate::validate_version), \
              validate(kind, crate::validate_kind), \
              try_constructor(SelectedTarget::new(value)))]"
+        );
+    }
+
+    #[test]
+    fn renders_oneof_variant_mappings() {
+        let variants = [("First", "SelectedTarget::First"), ("Second", "SelectedTarget::Second")];
+        let oneofs = [ProtoDecodeOneofConfig::new("choice", &variants)];
+        let config =
+            ProtoDecodeConfig::constructor(".example.Selected", "SelectedTarget", &[], "choice")
+                .with_oneofs(&oneofs);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), oneof(choice, First => \
+             SelectedTarget::First, Second => SelectedTarget::Second), constructor(choice))]"
         );
     }
 

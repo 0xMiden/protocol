@@ -2660,6 +2660,7 @@ dependencies = [
 name = "miden-protobuf-derive"
 version = "0.17.0"
 dependencies = [
+ "heck",
  "proc-macro-crate",
  "proc-macro2",
  "quote",

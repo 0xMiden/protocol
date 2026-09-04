@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use heck::ToSnakeCase;
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -31,7 +32,8 @@ use syn::{
 /// The derive reads cardinality and presence information from Prost's field attributes. The
 /// `proto_decode` attribute supplies the foreign target type and an explicit constructor call or
 /// tuple expression whose fields define the conversion order. Optional field validators consume
-/// fields before constructor arguments are decoded and must return `Result<(), E>`.
+/// fields before constructor arguments are decoded and must return `Result<(), E>`. Oneof fields
+/// require explicit mappings from generated variants to infallible target constructors.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -74,16 +76,20 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
         &constructor_fields,
         config.constructor.span(),
     )?;
+    validate_oneof_mappings(&fields, &config.oneofs, &constructor_fields)?;
 
     let source = &input.ident;
     let target = &config.target;
     let validate_fields = config.validators.iter().map(|validator| validator.expression(&runtime));
-    let decode_fields = constructor_fields.iter().map(|field_name| {
-        let field = fields
-            .get(&ident_name(field_name))
-            .expect("validated constructor field must exist");
-        field.decoder(source, &runtime)
-    });
+    let decode_fields = constructor_fields
+        .iter()
+        .map(|field_name| {
+            let name = ident_name(field_name);
+            let field = fields.get(&name).expect("validated constructor field must exist");
+            let oneof = config.oneofs.iter().find(|oneof| ident_name(&oneof.field) == name);
+            field.decoder(source, &runtime, oneof)
+        })
+        .collect::<Result<Vec<_>>>()?;
     let construct = config.constructor.expression(&runtime);
 
     Ok(quote! {
@@ -102,6 +108,7 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
 struct DecodeConfig {
     target: Type,
     validators: Vec<FieldValidator>,
+    oneofs: Vec<OneofMapping>,
     constructor: Constructor,
 }
 
@@ -109,6 +116,7 @@ impl DecodeConfig {
     fn parse(attributes: &[Attribute], span: Span) -> Result<Self> {
         let mut target = None;
         let mut validators = Vec::new();
+        let mut oneofs = Vec::new();
         let mut constructor = None;
         let mut found_attribute = false;
 
@@ -147,13 +155,38 @@ impl DecodeConfig {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("oneof") {
+                    let content;
+                    parenthesized!(content in meta.input);
+                    let field = content.call(Ident::parse_any)?;
+                    content.parse::<Token![,]>()?;
+
+                    let mut variants = Vec::new();
+                    while !content.is_empty() {
+                        let variant = content.call(Ident::parse_any)?;
+                        content.parse::<Token![=>]>()?;
+                        let constructor = content.parse()?;
+                        variants.push(OneofVariantMapping { variant, constructor });
+
+                        if !content.is_empty() {
+                            content.parse::<Token![,]>()?;
+                        }
+                    }
+                    if variants.is_empty() {
+                        return Err(content.error("configure at least one oneof variant"));
+                    }
+                    oneofs.push(OneofMapping { field, variants });
+                    return Ok(());
+                }
+
                 let kind = if meta.path.is_ident("constructor") {
                     ConstructorKind::Infallible
                 } else if meta.path.is_ident("try_constructor") {
                     ConstructorKind::Fallible
                 } else {
                     return Err(meta.error(
-                        "expected `target`, `validate`, `constructor`, or `try_constructor`",
+                        "expected `target`, `validate`, `oneof`, `constructor`, or \
+                         `try_constructor`",
                     ));
                 };
                 if constructor.is_some() {
@@ -173,10 +206,53 @@ impl DecodeConfig {
         Ok(Self {
             target: target.ok_or_else(|| syn::Error::new(span, "missing `target` setting"))?,
             validators,
+            oneofs,
             constructor: constructor
                 .ok_or_else(|| syn::Error::new(span, "missing constructor setting"))?,
         })
     }
+}
+
+struct OneofMapping {
+    field: Ident,
+    variants: Vec<OneofVariantMapping>,
+}
+
+impl OneofMapping {
+    fn decoder(&self, source: &Ident, source_path: &Path, runtime: &TokenStream2) -> TokenStream2 {
+        let field = &self.field;
+        let field_name = LitStr::new(&ident_name(field), field.span());
+        let arms = self.variants.iter().map(|mapping| {
+            let variant = &mapping.variant;
+            let variant_name =
+                LitStr::new(&ident_name(variant).to_snake_case(), mapping.variant.span());
+            let constructor = &mapping.constructor;
+
+            quote! {
+                #source_path::#variant(value) => {
+                    let value = #runtime::decode(
+                        #runtime::ValueField::new(#variant_name, value),
+                    )
+                    .map_err(|error| error.context(#field_name))?;
+                    #constructor(value)
+                }
+            }
+        });
+
+        quote! {
+            let #field = match message.#field
+                .ok_or_else(|| #runtime::ConversionError::missing_field::<#source>(#field_name))
+                .map_err(|error| error.context(#field_name))?
+            {
+                #(#arms),*
+            };
+        }
+    }
+}
+
+struct OneofVariantMapping {
+    variant: Ident,
+    constructor: Path,
 }
 
 struct FieldValidator {
@@ -205,6 +281,21 @@ struct Constructor {
 
 impl Constructor {
     fn fields(&self) -> Result<Vec<Ident>> {
+        if let Expr::Path(path) = &self.expression {
+            if matches!(self.kind, ConstructorKind::Fallible) {
+                return Err(syn::Error::new(
+                    path.span(),
+                    "`try_constructor` requires a function call",
+                ));
+            }
+            if path.qself.is_none()
+                && path.path.leading_colon.is_none()
+                && path.path.segments.len() == 1
+            {
+                return Ok(vec![path.path.segments[0].ident.clone()]);
+            }
+        }
+
         let arguments = match &self.expression {
             Expr::Call(call) => &call.args,
             Expr::Tuple(tuple) if matches!(self.kind, ConstructorKind::Infallible) => &tuple.elems,
@@ -217,7 +308,8 @@ impl Constructor {
             expression => {
                 return Err(syn::Error::new(
                     expression.span(),
-                    "constructor must be a function call or tuple expression",
+                    "constructor must be a function call, tuple expression, or bare Protobuf \
+                     field name",
                 ));
             },
         };
@@ -327,6 +419,67 @@ fn validate_handled_fields(
     Ok(())
 }
 
+fn validate_oneof_mappings(
+    fields: &BTreeMap<String, ProtoField>,
+    mappings: &[OneofMapping],
+    constructor_fields: &[Ident],
+) -> Result<()> {
+    let constructor_fields: BTreeSet<_> = constructor_fields.iter().map(ident_name).collect();
+    let mut configured = BTreeSet::new();
+
+    for mapping in mappings {
+        let name = ident_name(&mapping.field);
+        if !configured.insert(name.clone()) {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("oneof field `{name}` is configured twice"),
+            ));
+        }
+
+        let Some(field) = fields.get(&name) else {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("oneof mapping references unknown field `{name}`"),
+            ));
+        };
+        if !matches!(&field.kind, FieldKind::Oneof(_)) {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("field `{name}` is not a oneof"),
+            ));
+        }
+        if !constructor_fields.contains(&name) {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("oneof field `{name}` is not used by the constructor"),
+            ));
+        }
+
+        let mut variants = BTreeSet::new();
+        for variant in &mapping.variants {
+            let name = ident_name(&variant.variant);
+            if !variants.insert(name.clone()) {
+                return Err(syn::Error::new(
+                    variant.variant.span(),
+                    format!("oneof variant `{name}` is configured twice"),
+                ));
+            }
+        }
+    }
+
+    for name in constructor_fields {
+        let field = fields.get(&name).expect("validated constructor field must exist");
+        if matches!(&field.kind, FieldKind::Oneof(_)) && !configured.contains(&name) {
+            return Err(syn::Error::new(
+                field.ident.span(),
+                format!("oneof field `{name}` requires an explicit variant mapping"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 struct ProtoField {
     ident: Ident,
     kind: FieldKind,
@@ -342,22 +495,19 @@ impl ProtoField {
         let override_kind = FieldKindOverride::parse(&field.attrs)?;
         let kind = override_kind.map(FieldKind::from).unwrap_or_else(|| prost.kind());
 
-        if matches!(kind, FieldKind::Oneof) {
-            let name = ident_name(&ident);
-            return Err(syn::Error::new(
-                ident.span(),
-                format!("oneof field `{name}` requires a manual conversion"),
-            ));
-        }
-
         Ok(Self { ident, kind })
     }
 
-    fn decoder(&self, source: &Ident, runtime: &TokenStream2) -> TokenStream2 {
+    fn decoder(
+        &self,
+        source: &Ident,
+        runtime: &TokenStream2,
+        oneof: Option<&OneofMapping>,
+    ) -> Result<TokenStream2> {
         let ident = &self.ident;
         let name = LitStr::new(&ident_name(ident), ident.span());
 
-        match self.kind {
+        let tokens = match &self.kind {
             FieldKind::Required => quote! {
                 let #ident = #runtime::decode(
                     #runtime::RequiredField::<#source, _>::new(#name, message.#ident),
@@ -378,8 +528,11 @@ impl ProtoField {
                     #runtime::ValueField::new(#name, message.#ident),
                 )?;
             },
-            FieldKind::Oneof => unreachable!("oneof fields are rejected during parsing"),
-        }
+            FieldKind::Oneof(source_path) => oneof
+                .expect("validated oneof field must have a mapping")
+                .decoder(source, source_path, runtime),
+        };
+        Ok(tokens)
     }
 }
 
@@ -387,20 +540,19 @@ fn ident_name(ident: &Ident) -> String {
     ident.unraw().to_string()
 }
 
-#[derive(Clone, Copy)]
 enum FieldKind {
     Required,
     Optional,
     Repeated,
     Value,
-    Oneof,
+    Oneof(Path),
 }
 
 struct ProstField {
     message: bool,
     optional: bool,
     repeated: bool,
-    oneof: bool,
+    oneof: Option<Path>,
 }
 
 impl ProstField {
@@ -409,17 +561,26 @@ impl ProstField {
             message: false,
             optional: false,
             repeated: false,
-            oneof: false,
+            oneof: None,
         };
         let mut found = false;
 
         for attribute in field.attrs.iter().filter(|attribute| attribute.path().is_ident("prost")) {
             found = true;
             attribute.parse_nested_meta(|meta| {
+                if meta.path.is_ident("oneof") {
+                    if parsed.oneof.is_some() {
+                        return Err(meta.error("duplicate Prost oneof setting"));
+                    }
+                    let value = meta.value()?;
+                    let path: LitStr = value.parse()?;
+                    parsed.oneof = Some(path.parse()?);
+                    return Ok(());
+                }
+
                 parsed.message |= meta.path.is_ident("message");
                 parsed.optional |= meta.path.is_ident("optional");
                 parsed.repeated |= meta.path.is_ident("repeated");
-                parsed.oneof |= meta.path.is_ident("oneof");
 
                 consume_meta_value(meta.input)
             })?;
@@ -436,8 +597,8 @@ impl ProstField {
     }
 
     fn kind(&self) -> FieldKind {
-        if self.oneof {
-            FieldKind::Oneof
+        if let Some(path) = &self.oneof {
+            FieldKind::Oneof(path.clone())
         } else if self.repeated {
             FieldKind::Repeated
         } else if self.message {
@@ -614,6 +775,34 @@ mod tests {
     }
 
     #[test]
+    fn generates_exhaustive_oneof_variant_mappings() {
+        let generated = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Choice),
+                oneof(
+                    choice,
+                    First => ::domain::Choice::First,
+                    Second => ::domain::Choice::Second
+                ),
+                constructor(choice)
+            )]
+            struct ExampleMessage {
+                #[prost(oneof = "choice::Value", tags = "1, 2")]
+                choice: Option<choice::Value>,
+            }
+        })
+        .unwrap();
+
+        assert!(generated.contains("choice :: Value :: First (value)"));
+        assert!(generated.contains("domain :: Choice :: First (value)"));
+        assert!(generated.contains("choice :: Value :: Second (value)"));
+        assert!(generated.contains("domain :: Choice :: Second (value)"));
+        assert!(generated.contains("error . context (\"choice\")"));
+        assert!(generated.contains("ValueField :: new (\"first"));
+        assert!(generated.contains("Result :: Ok (choice)"));
+    }
+
+    #[test]
     fn rejects_fallible_tuple_constructors() {
         let error = expand_input(quote! {
             #[proto_decode(
@@ -652,7 +841,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_oneof_fields() {
+    fn rejects_oneof_fields_without_variant_mappings() {
         let error = expand_input(quote! {
             #[proto_decode(
                 target(::domain::Example),
@@ -665,7 +854,29 @@ mod tests {
         })
         .unwrap_err();
 
-        assert_eq!(error.to_string(), "oneof field `choice` requires a manual conversion");
+        assert_eq!(error.to_string(), "oneof field `choice` requires an explicit variant mapping");
+    }
+
+    #[test]
+    fn rejects_duplicate_oneof_variant_mappings() {
+        let error = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Choice),
+                oneof(
+                    choice,
+                    First => ::domain::Choice::First,
+                    First => ::domain::Choice::OtherFirst
+                ),
+                constructor(choice)
+            )]
+            struct ExampleMessage {
+                #[prost(oneof = "choice::Value", tags = "1")]
+                choice: Option<choice::Value>,
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "oneof variant `First` is configured twice");
     }
 
     #[test]
