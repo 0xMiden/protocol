@@ -129,7 +129,7 @@ impl<Blockchain> TransactionInputs<Blockchain> {
 impl TransactionInputs<UnverifiedPartialBlockchain> {
     /// Creates unverified transaction inputs from their decoded components.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn from_parts(
         account: PartialAccount,
         block_header: BlockHeader,
         protocol_config: ProtocolConfig,

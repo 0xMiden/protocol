@@ -140,7 +140,7 @@ pub(crate) fn construct_unverified_transaction_inputs_v1(
         }
     }
 
-    Ok(UnverifiedTransactionInputs::new(
+    Ok(UnverifiedTransactionInputs::from_parts(
         account,
         block_header,
         protocol_config,
