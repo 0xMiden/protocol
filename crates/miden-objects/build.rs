@@ -204,10 +204,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         ".asset.AssetId" => {
             target: ::miden_protocol::asset::AssetId,
-            validate: {
-                version: crate::conversion::decode_asset_version,
-            },
             enumeration: {
+                version: {
+                    Unspecified: reject("asset id version is unspecified"),
+                    V1: accept,
+                },
                 composition: {
                     Unspecified: reject("asset composition is unspecified"),
                     None: map(::miden_protocol::asset::AssetComposition::None),

@@ -1,8 +1,6 @@
-use alloc::format;
-
 use miden_protocol::asset::{Asset, AssetClass, AssetComposition, AssetId};
 
-use crate::{ConversionError, proto};
+use crate::proto;
 
 impl From<&AssetClass> for proto::asset::AssetClass {
     fn from(asset_class: &AssetClass) -> Self {
@@ -16,19 +14,6 @@ impl From<&AssetClass> for proto::asset::AssetClass {
 impl From<AssetClass> for proto::asset::AssetClass {
     fn from(asset_class: AssetClass) -> Self {
         Self::from(&asset_class)
-    }
-}
-
-pub(crate) fn decode_asset_version(version: i32) -> Result<(), ConversionError> {
-    match proto::asset::AssetVersion::try_from(version) {
-        Ok(proto::asset::AssetVersion::V1) => Ok(()),
-        Ok(proto::asset::AssetVersion::Unspecified) => {
-            Err(ConversionError::message("asset id version is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown asset id version {version}"),
-            error,
-        )),
     }
 }
 

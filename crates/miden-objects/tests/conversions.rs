@@ -320,11 +320,10 @@ fn asset_id_protobuf_preserves_unknown_version_error_sources() {
         let error =
             AssetId::try_from(proto::asset::AssetId { version, ..Default::default() }).unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown asset id version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );
