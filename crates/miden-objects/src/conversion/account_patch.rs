@@ -238,7 +238,7 @@ pub(crate) fn decode_account_storage_patch(
 // VAULT AND ACCOUNT PATCHES
 // ================================================================================================
 
-fn decode_account_patch_version(version: i32) -> Result<(), ConversionError> {
+pub(crate) fn decode_account_patch_version(version: i32) -> Result<(), ConversionError> {
     match proto::account::AccountPatchVersion::try_from(version) {
         Ok(proto::account::AccountPatchVersion::V1) => Ok(()),
         Ok(proto::account::AccountPatchVersion::Unspecified) => {
@@ -295,25 +295,6 @@ impl From<&AccountPatch> for proto::account::AccountPatch {
 impl From<AccountPatch> for proto::account::AccountPatch {
     fn from(patch: AccountPatch) -> Self {
         Self::from(&patch)
-    }
-}
-
-impl TryFrom<proto::account::AccountPatch> for AccountPatch {
-    type Error = ConversionError;
-
-    fn try_from(patch: proto::account::AccountPatch) -> Result<Self, Self::Error> {
-        decode_account_patch_version(patch.version).context("version")?;
-
-        let decoder = patch.decoder();
-        let account_id = required!(decoder, patch.account_id)?;
-        let storage = required!(decoder, patch.storage)?;
-        let vault = required!(decoder, patch.vault)?;
-        let code = patch.code.map(TryInto::try_into).transpose().context("code")?;
-        let final_nonce =
-            patch.final_nonce.map(TryInto::try_into).transpose().context("final_nonce")?;
-
-        AccountPatch::new(account_id, storage, vault, code, final_nonce)
-            .map_err(ConversionError::new)
     }
 }
 

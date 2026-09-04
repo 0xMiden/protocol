@@ -130,6 +130,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 slots,
             ),
         },
+        ".account.AccountPatch" => {
+            target: ::miden_protocol::account::AccountPatch,
+            validate: {
+                version: crate::conversion::decode_account_patch_version,
+            },
+            try_constructor: ::miden_protocol::account::AccountPatch::new(
+                account_id,
+                storage,
+                vault,
+                code,
+                final_nonce,
+            ),
+        },
         ".asset.AssetClass" => {
             target: ::miden_protocol::asset::AssetClass,
             constructor: ::miden_protocol::asset::AssetClass::new(

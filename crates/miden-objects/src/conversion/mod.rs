@@ -23,6 +23,7 @@ pub(crate) use account::{
 };
 pub(crate) use account_patch::{
     decode_account_code,
+    decode_account_patch_version,
     decode_account_storage_patch,
     decode_account_vault_patch,
 };
