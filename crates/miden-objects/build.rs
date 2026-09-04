@@ -35,6 +35,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     miden_protobuf::configure_proto_decodes! {
         prost: &mut prost,
         descriptors: &descriptors,
+        ".primitives.Felt" => {
+            target: ::miden_protocol::Felt,
+            constructor: value,
+        },
         ".account.AccountId" => {
             target: ::miden_protocol::account::AccountId,
             try_constructor: crate::conversion::decode_account_id(

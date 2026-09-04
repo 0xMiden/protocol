@@ -9,7 +9,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::{AdviceInputs, AdviceMap, AdviceStack, ExecutionProof};
 use miden_protocol::{Felt, MastForest, Word};
 
-use crate::{ConversionError, ConversionResultExt, proto};
+use crate::{ConversionError, proto};
 
 const WORD_SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
 
@@ -40,22 +40,6 @@ impl From<Felt> for proto::primitives::Felt {
 impl From<&Felt> for proto::primitives::Felt {
     fn from(value: &Felt) -> Self {
         Self { value: value.as_canonical_u64() }
-    }
-}
-
-impl TryFrom<proto::primitives::Felt> for Felt {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::Felt) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
-}
-
-impl TryFrom<&proto::primitives::Felt> for Felt {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::primitives::Felt) -> Result<Self, Self::Error> {
-        Self::try_from(value.value).map_err(ConversionError::new).context("felt.value")
     }
 }
 
@@ -340,6 +324,7 @@ mod tests {
         }
 
         let error = Felt::try_from(proto::primitives::Felt { value: Felt::ORDER }).unwrap_err();
+        assert!(error.to_string().starts_with("value: "));
         assert_matches!(
             error
                 .source()
