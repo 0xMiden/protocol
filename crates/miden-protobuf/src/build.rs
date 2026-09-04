@@ -109,12 +109,12 @@ impl<'a> ProtoDecodeConfig<'a> {
 #[doc(hidden)]
 pub struct ProtoDecodeOneofConfig<'a> {
     field: &'static str,
-    variants: &'a [(&'static str, &'static str)],
+    variants: &'a [ProtoDecodeOneofVariantConfig],
 }
 
 impl<'a> ProtoDecodeOneofConfig<'a> {
     #[doc(hidden)]
-    pub const fn new(field: &'static str, variants: &'a [(&'static str, &'static str)]) -> Self {
+    pub const fn new(field: &'static str, variants: &'a [ProtoDecodeOneofVariantConfig]) -> Self {
         Self { field, variants }
     }
 
@@ -122,10 +122,46 @@ impl<'a> ProtoDecodeOneofConfig<'a> {
         let variants = self
             .variants
             .iter()
-            .map(|(variant, constructor)| format!("{variant} => {constructor}"))
+            .map(ProtoDecodeOneofVariantConfig::derive_setting)
             .collect::<Vec<_>>()
             .join(", ");
         format!(", oneof({}, {variants})", self.field)
+    }
+}
+
+/// Structured configuration for a generated Protobuf oneof variant.
+#[doc(hidden)]
+pub struct ProtoDecodeOneofVariantConfig {
+    variant: &'static str,
+    constructor: &'static str,
+    constructor_kind: ConstructorKind,
+}
+
+impl ProtoDecodeOneofVariantConfig {
+    #[doc(hidden)]
+    pub const fn constructor(variant: &'static str, constructor: &'static str) -> Self {
+        Self {
+            variant,
+            constructor,
+            constructor_kind: ConstructorKind::Infallible,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn try_constructor(variant: &'static str, constructor: &'static str) -> Self {
+        Self {
+            variant,
+            constructor,
+            constructor_kind: ConstructorKind::Fallible,
+        }
+    }
+
+    fn derive_setting(&self) -> String {
+        let constructor = match self.constructor_kind {
+            ConstructorKind::Infallible => "constructor",
+            ConstructorKind::Fallible => "try_constructor",
+        };
+        format!("{} => {constructor}({})", self.variant, self.constructor)
     }
 }
 
@@ -368,7 +404,10 @@ mod tests {
 
     #[test]
     fn renders_oneof_variant_mappings() {
-        let variants = [("First", "SelectedTarget::First"), ("Second", "SelectedTarget::Second")];
+        let variants = [
+            ProtoDecodeOneofVariantConfig::constructor("First", "SelectedTarget::First"),
+            ProtoDecodeOneofVariantConfig::try_constructor("Second", "SelectedTarget::try_second"),
+        ];
         let oneofs = [ProtoDecodeOneofConfig::new("choice", &variants)];
         let config =
             ProtoDecodeConfig::constructor(".example.Selected", "SelectedTarget", &[], "choice")
@@ -378,7 +417,8 @@ mod tests {
             config.derive_attribute(),
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
              #[proto_decode(target(SelectedTarget), oneof(choice, First => \
-             SelectedTarget::First, Second => SelectedTarget::Second), constructor(choice))]"
+             constructor(SelectedTarget::First), Second => \
+             try_constructor(SelectedTarget::try_second)), constructor(choice))]"
         );
     }
 

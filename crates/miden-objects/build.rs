@@ -134,8 +134,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             oneof: {
                 patch: {
-                    Value: ::miden_protocol::account::StorageSlotPatch::Value,
-                    Map: ::miden_protocol::account::StorageSlotPatch::Map,
+                    Value: constructor(::miden_protocol::account::StorageSlotPatch::Value),
+                    Map: constructor(::miden_protocol::account::StorageSlotPatch::Map),
                 },
             },
             constructor: (slot_name, patch),
@@ -163,8 +163,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target: ::miden_protocol::account::AccountUpdateDetails,
             oneof: {
                 update: {
-                    Private: crate::conversion::decode_private_account_update,
-                    Public: ::miden_protocol::account::AccountUpdateDetails::Public,
+                    Private: constructor(crate::conversion::decode_private_account_update),
+                    Public: constructor(
+                        ::miden_protocol::account::AccountUpdateDetails::Public
+                    ),
                 },
             },
             constructor: update,
@@ -431,8 +433,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target: ::miden_protocol::transaction::InputNote,
             oneof: {
                 note: {
-                    Authenticated: ::core::convert::identity,
-                    Unauthenticated: ::miden_protocol::transaction::InputNote::unauthenticated,
+                    Authenticated: constructor(::core::convert::identity),
+                    Unauthenticated: constructor(
+                        ::miden_protocol::transaction::InputNote::unauthenticated
+                    ),
                 },
             },
             constructor: note,
@@ -463,7 +467,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target: ::miden_protocol::transaction::TransactionInputs,
             oneof: {
                 version: {
-                    V1: ::core::convert::identity,
+                    V1: constructor(::core::convert::identity),
                 },
             },
             constructor: version,
@@ -485,8 +489,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target: ::miden_protocol::transaction::OutputNote,
             oneof: {
                 note: {
-                    Public: ::miden_protocol::transaction::OutputNote::Public,
-                    Private: ::miden_protocol::transaction::OutputNote::Private,
+                    Public: constructor(::miden_protocol::transaction::OutputNote::Public),
+                    Private: constructor(::miden_protocol::transaction::OutputNote::Private),
                 },
             },
             constructor: note,

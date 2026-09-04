@@ -33,8 +33,8 @@ use syn::{
 /// `proto_decode` attribute supplies the foreign target type and an explicit constructor call or
 /// tuple expression whose fields define the conversion order. Optional field validators consume
 /// fields before constructor arguments are decoded and must return `Result<(), E>`. Oneof fields
-/// require explicit mappings from generated variants to infallible target constructors. Fallible
-/// field decoders run after the field's cardinality-aware conversion.
+/// require explicit mappings from generated variants to infallible or fallible target
+/// constructors. Fallible field decoders run after the field's cardinality-aware conversion.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -186,8 +186,25 @@ impl DecodeConfig {
                     while !content.is_empty() {
                         let variant = content.call(Ident::parse_any)?;
                         content.parse::<Token![=>]>()?;
-                        let constructor = content.parse()?;
-                        variants.push(OneofVariantMapping { variant, constructor });
+                        let constructor_kind = content.call(Ident::parse_any)?;
+                        let kind = if constructor_kind == "constructor" {
+                            ConstructorKind::Infallible
+                        } else if constructor_kind == "try_constructor" {
+                            ConstructorKind::Fallible
+                        } else {
+                            return Err(syn::Error::new(
+                                constructor_kind.span(),
+                                "expected `constructor` or `try_constructor`",
+                            ));
+                        };
+                        let constructor_content;
+                        parenthesized!(constructor_content in content);
+                        let constructor = constructor_content.parse()?;
+                        if !constructor_content.is_empty() {
+                            return Err(constructor_content
+                                .error("unexpected tokens after oneof variant constructor path"));
+                        }
+                        variants.push(OneofVariantMapping { variant, constructor, kind });
 
                         if !content.is_empty() {
                             content.parse::<Token![,]>()?;
@@ -254,6 +271,17 @@ impl OneofMapping {
             let variant_name =
                 LitStr::new(&ident_name(variant).to_snake_case(), mapping.variant.span());
             let constructor = &mapping.constructor;
+            let construct = match mapping.kind {
+                ConstructorKind::Infallible => quote! {
+                    #constructor(value)
+                },
+                ConstructorKind::Fallible => quote! {
+                    #constructor(value)
+                        .map_err(#runtime::ConversionError::new)
+                        .map_err(|error| error.context(#variant_name))
+                        .map_err(|error| error.context(#field_name))?
+                },
+            };
 
             quote! {
                 #source_path::#variant(value) => {
@@ -261,7 +289,7 @@ impl OneofMapping {
                         #runtime::ValueField::new(#variant_name, value),
                     )
                     .map_err(|error| error.context(#field_name))?;
-                    #constructor(value)
+                    #construct
                 }
             }
         });
@@ -280,6 +308,7 @@ impl OneofMapping {
 struct OneofVariantMapping {
     variant: Ident,
     constructor: Path,
+    kind: ConstructorKind,
 }
 
 struct FieldValidator {
@@ -904,8 +933,8 @@ mod tests {
                 target(::domain::Choice),
                 oneof(
                     choice,
-                    First => ::domain::Choice::First,
-                    Second => ::domain::Choice::Second
+                    First => constructor(::domain::Choice::First),
+                    Second => try_constructor(::domain::Choice::try_second)
                 ),
                 constructor(choice)
             )]
@@ -919,8 +948,9 @@ mod tests {
         assert!(generated.contains("choice :: Value :: First (value)"));
         assert!(generated.contains("domain :: Choice :: First (value)"));
         assert!(generated.contains("choice :: Value :: Second (value)"));
-        assert!(generated.contains("domain :: Choice :: Second (value)"));
+        assert!(generated.contains("domain :: Choice :: try_second"));
         assert!(generated.contains("error . context (\"choice\")"));
+        assert!(generated.contains("error . context (\"second\")"));
         assert!(generated.contains("ValueField :: new (\"first"));
         assert!(generated.contains("Result :: Ok (choice)"));
     }
@@ -987,8 +1017,8 @@ mod tests {
                 target(::domain::Choice),
                 oneof(
                     choice,
-                    First => ::domain::Choice::First,
-                    First => ::domain::Choice::OtherFirst
+                    First => constructor(::domain::Choice::First),
+                    First => constructor(::domain::Choice::OtherFirst)
                 ),
                 constructor(choice)
             )]
