@@ -266,6 +266,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entrypoint,
             ),
         },
+        ".blockchain.BlockHeader" => {
+            target: ::miden_protocol::block::BlockHeader,
+            validate: {
+                version: crate::conversion::decode_block_version,
+            },
+            constructor: crate::conversion::decode_block_header(
+                block_num,
+                prev_block_commitment,
+                chain_commitment,
+                account_root,
+                nullifier_root,
+                note_root,
+                tx_commitment,
+                validator_config,
+                fee_parameters,
+                protocol_config_commitment,
+                next_protocol_config,
+                timestamp,
+            ),
+        },
         ".blockchain.BlockAccountUpdate" => {
             target: ::miden_protocol::block::BlockAccountUpdate,
             try_constructor: ::miden_protocol::block::BlockAccountUpdate::new(

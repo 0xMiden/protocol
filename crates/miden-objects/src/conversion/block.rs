@@ -181,47 +181,7 @@ impl TryFrom<&proto::blockchain::BlockHeader> for BlockHeader {
     }
 }
 
-impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
-    type Error = ConversionError;
-
-    fn try_from(header: proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
-        decode_block_version(header.version).context("version")?;
-
-        let decoder = header.decoder();
-        let block_num = required!(decoder, header.block_num).context("block_num")?;
-        let prev_block_commitment = required!(decoder, header.prev_block_commitment)?;
-        let chain_commitment = required!(decoder, header.chain_commitment)?;
-        let account_root = required!(decoder, header.account_root)?;
-        let nullifier_root = required!(decoder, header.nullifier_root)?;
-        let note_root = required!(decoder, header.note_root)?;
-        let tx_commitment = required!(decoder, header.tx_commitment)?;
-        let validator_config = required!(decoder, header.validator_config)?;
-        let fee_parameters = required!(decoder, header.fee_parameters)?;
-        let protocol_config_commitment = required!(decoder, header.protocol_config_commitment)?;
-        let next_protocol_config = header
-            .next_protocol_config
-            .map(TryInto::try_into)
-            .transpose()
-            .context("next_protocol_config")?;
-
-        Ok(BlockHeader::new(
-            prev_block_commitment,
-            block_num,
-            chain_commitment,
-            account_root,
-            nullifier_root,
-            note_root,
-            tx_commitment,
-            validator_config,
-            fee_parameters,
-            protocol_config_commitment,
-            next_protocol_config,
-            header.timestamp,
-        ))
-    }
-}
-
-fn decode_block_version(version: i32) -> Result<(), ConversionError> {
+pub(crate) fn decode_block_version(version: i32) -> Result<(), ConversionError> {
     match proto::blockchain::BlockVersion::try_from(version) {
         Ok(proto::blockchain::BlockVersion::V1) => Ok(()),
         Ok(proto::blockchain::BlockVersion::Unspecified) => {
@@ -232,6 +192,37 @@ fn decode_block_version(version: i32) -> Result<(), ConversionError> {
             error,
         )),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn decode_block_header(
+    block_num: BlockNumber,
+    prev_block_commitment: Word,
+    chain_commitment: Word,
+    account_root: Word,
+    nullifier_root: Word,
+    note_root: Word,
+    tx_commitment: Word,
+    validator_config: ValidatorConfig,
+    fee_parameters: FeeParameters,
+    protocol_config_commitment: Word,
+    next_protocol_config: Option<NextProtocolConfig>,
+    timestamp: u32,
+) -> BlockHeader {
+    BlockHeader::new(
+        prev_block_commitment,
+        block_num,
+        chain_commitment,
+        account_root,
+        nullifier_root,
+        note_root,
+        tx_commitment,
+        validator_config,
+        fee_parameters,
+        protocol_config_commitment,
+        next_protocol_config,
+        timestamp,
+    )
 }
 
 // BLOCK BODY
