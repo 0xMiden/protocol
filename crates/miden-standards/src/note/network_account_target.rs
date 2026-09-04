@@ -21,18 +21,11 @@ use crate::note::{NoteExecutionHint, StandardNoteAttachment};
 /// - 3rd felt: [64 zero bits]
 /// ```
 ///
-/// Only the target ID is validated on decoding, matching the on-chain targeting path, which
-/// discards the execution hint felt. An execution hint encoding this version does not recognize is
-/// preserved as-is and reported as `None` by [`NetworkAccountTarget::execution_hint`].
+/// Decoding validates only the target ID, matching the on-chain targeting path, which discards
+/// the execution hint felt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NetworkAccountTarget {
     target_id: AccountId,
-    /// The raw felt occupying the execution hint slot.
-    ///
-    /// Stored raw rather than as a decoded [`NoteExecutionHint`] because the on-chain targeting
-    /// path ignores this slot entirely, so rejecting an encoding this version does not recognize
-    /// would hide a note that its target account can still consume. Keeping the felt also makes
-    /// re-encoding lossless, so a decoded target re-encodes to the word it was committed as.
     exec_hint: Felt,
 }
 
@@ -173,9 +166,6 @@ impl NetworkAccountTarget {
 
     /// Returns the [`NoteExecutionHint`] of the note, or `None` if the attachment carries an
     /// encoding this version does not recognize.
-    ///
-    /// The hint is advisory and does not affect whether the target account can consume the note,
-    /// which is why an unrecognized encoding surfaces here instead of failing decoding.
     pub fn execution_hint(&self) -> Option<NoteExecutionHint> {
         NoteExecutionHint::try_from(self.exec_hint.as_canonical_u64()).ok()
     }
@@ -230,10 +220,6 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
         let target_id = AccountId::try_from_elements(id_suffix, id_prefix)
             .map_err(NetworkAccountTargetError::DecodeTargetId)?;
 
-        // The execution hint is deliberately not validated here. The on-chain targeting path
-        // (`network_account_target::active_account_matches_target_account`) discards this felt, so
-        // rejecting it would classify the note as not network-targeted - hiding it from routing -
-        // while its target account can still consume it.
         NetworkAccountTarget::from_raw_parts(target_id, exec_hint)
     }
 }
