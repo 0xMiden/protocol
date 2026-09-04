@@ -189,13 +189,6 @@ impl StandardNote {
 
     /// Returns `true` if `num_storage_items` is a valid number of storage items for this kind of
     /// note.
-    ///
-    /// Several note kinds accept more than one storage size, so no single expected size can be
-    /// derived from the script root alone: a MINT note holds exactly
-    /// [`MintNote::NUM_STORAGE_ITEMS_PRIVATE`] items when it creates a private output note and at
-    /// least [`MintNote::MIN_NUM_STORAGE_ITEMS_PUBLIC`] when it creates a public one, and the
-    /// config notes size their storage per action. This predicate mirrors the sizes each note
-    /// script accepts, and should be used instead of comparing against a single constant.
     pub fn accepts_num_storage_items(&self, num_storage_items: usize) -> bool {
         match self {
             Self::P2ID => num_storage_items == P2idNote::NUM_STORAGE_ITEMS,
