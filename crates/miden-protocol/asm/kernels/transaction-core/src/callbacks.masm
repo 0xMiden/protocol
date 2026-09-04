@@ -102,7 +102,10 @@ end
 #! procedure root from the provided slot ID in the faucet's storage, and invoking it via `dyncall`.
 #!
 #! If the faucet does not have the callback storage slot, or if the slot contains the empty word,
-#! the callback is skipped and its inputs are consumed.
+#! the callback is skipped and its inputs are consumed. Both conditions are evaluated only after
+#! the foreign context has been started, so a faucet whose account ID has the asset
+#! callback flag enabled is loaded as a foreign account on every movement of its assets, even when
+#! it registers no callback procedure root.
 #!
 #! custom_data should be set to 0 for the account callback and to note_idx for the note callback.
 #!
