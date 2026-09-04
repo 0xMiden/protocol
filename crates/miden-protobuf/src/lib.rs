@@ -154,7 +154,7 @@ macro_rules! __proto_decode_config {
             $(
                 $field:ident: {
                     $(
-                        $variant:ident: $variant_kind:ident($variant_value:expr)
+                        $variant:ident: $variant_kind:ident $(($variant_value:expr))?
                     ),+ $(,)?
                 }
             ),+ $(,)?
@@ -174,9 +174,9 @@ macro_rules! __proto_decode_config {
                         ::core::stringify!($field),
                         &[
                             $(
-                                $crate::build::ProtoDecodeEnumerationVariantConfig::$variant_kind(
-                                    ::core::stringify!($variant),
-                                    ::core::stringify!($variant_value),
+                                $crate::__proto_decode_enumeration_variant!(
+                                    $variant,
+                                    $variant_kind $(($variant_value))?
                                 ),
                             )+
                         ],
@@ -273,6 +273,28 @@ macro_rules! __proto_decode_config {
         .with_field_decoders(&[$($field_decoders,)*])
         .with_enumerations(&[$($enumerations,)*])
         .with_oneofs(&[$($oneofs,)*])
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __proto_decode_enumeration_variant {
+    ($variant:ident, map($target:expr)) => {
+        $crate::build::ProtoDecodeEnumerationVariantConfig::map(
+            ::core::stringify!($variant),
+            ::core::stringify!($target),
+        )
+    };
+    ($variant:ident, accept) => {
+        $crate::build::ProtoDecodeEnumerationVariantConfig::accept(
+            ::core::stringify!($variant),
+        )
+    };
+    ($variant:ident, reject($message:expr)) => {
+        $crate::build::ProtoDecodeEnumerationVariantConfig::reject(
+            ::core::stringify!($variant),
+            ::core::stringify!($message),
+        )
     };
 }
 

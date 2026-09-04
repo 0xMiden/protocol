@@ -160,7 +160,7 @@ impl<'a> ProtoDecodeEnumerationConfig<'a> {
 #[doc(hidden)]
 pub struct ProtoDecodeEnumerationVariantConfig {
     variant: &'static str,
-    value: &'static str,
+    value: Option<&'static str>,
     kind: EnumerationVariantKind,
 }
 
@@ -169,8 +169,17 @@ impl ProtoDecodeEnumerationVariantConfig {
     pub const fn map(variant: &'static str, target: &'static str) -> Self {
         Self {
             variant,
-            value: target,
+            value: Some(target),
             kind: EnumerationVariantKind::Map,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn accept(variant: &'static str) -> Self {
+        Self {
+            variant,
+            value: None,
+            kind: EnumerationVariantKind::Accept,
         }
     }
 
@@ -178,22 +187,29 @@ impl ProtoDecodeEnumerationVariantConfig {
     pub const fn reject(variant: &'static str, message: &'static str) -> Self {
         Self {
             variant,
-            value: message,
+            value: Some(message),
             kind: EnumerationVariantKind::Reject,
         }
     }
 
     fn derive_setting(&self) -> String {
-        let kind = match self.kind {
-            EnumerationVariantKind::Map => "map",
-            EnumerationVariantKind::Reject => "reject",
-        };
-        format!("{} => {kind}({})", self.variant, self.value)
+        match (self.kind, self.value) {
+            (EnumerationVariantKind::Map, Some(value)) => {
+                format!("{} => map({value})", self.variant)
+            },
+            (EnumerationVariantKind::Accept, None) => format!("{} => accept", self.variant),
+            (EnumerationVariantKind::Reject, Some(value)) => {
+                format!("{} => reject({value})", self.variant)
+            },
+            _ => unreachable!("enumeration action and value are inconsistent"),
+        }
     }
 }
 
+#[derive(Clone, Copy)]
 enum EnumerationVariantKind {
     Map,
+    Accept,
     Reject,
 }
 
@@ -535,6 +551,30 @@ mod tests {
              #[proto_decode(target(SelectedTarget), enumeration(kind, Unspecified => \
              reject(\"kind is unspecified\"), First => map(SelectedKind::First)), \
              constructor(SelectedTarget::new(kind)))]"
+        );
+    }
+
+    #[test]
+    fn renders_validation_only_enumeration_variants() {
+        let variants = [
+            ProtoDecodeEnumerationVariantConfig::reject("Unspecified", "\"kind is unspecified\""),
+            ProtoDecodeEnumerationVariantConfig::accept("First"),
+        ];
+        let enumerations = [ProtoDecodeEnumerationConfig::new("kind", &variants)];
+        let config = ProtoDecodeConfig::constructor(
+            ".example.Selected",
+            "SelectedTarget",
+            &[],
+            "SelectedTarget::new()",
+        )
+        .with_enumerations(&enumerations);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), enumeration(kind, Unspecified => \
+             reject(\"kind is unspecified\"), First => accept), \
+             constructor(SelectedTarget::new()))]"
         );
     }
 

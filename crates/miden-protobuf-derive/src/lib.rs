@@ -32,8 +32,9 @@ use syn::{
 /// The derive reads cardinality and presence information from Prost's field attributes. The
 /// `proto_decode` attribute supplies the foreign target type and an explicit constructor call or
 /// tuple expression whose fields define the conversion order. Optional field validators consume
-/// fields before constructor arguments are decoded and must return `Result<(), E>`. Oneof fields
-/// require explicit mappings from generated variants to infallible or fallible target
+/// fields before constructor arguments are decoded and must return `Result<(), E>`. Enumeration
+/// fields explicitly map variants to domain values or accept them for validation-only fields.
+/// Oneof fields require explicit mappings from generated variants to infallible or fallible target
 /// constructors. Fallible field decoders run after the field's cardinality-aware conversion.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
@@ -74,6 +75,7 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
     validate_handled_fields(
         &fields,
         &config.validators,
+        &config.enumerations,
         &constructor_fields,
         config.constructor.span(),
     )?;
@@ -89,6 +91,18 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
     let source = &input.ident;
     let target = &config.target;
     let validate_fields = config.validators.iter().map(|validator| validator.expression(&runtime));
+    let validate_enumerations = config
+        .enumerations
+        .iter()
+        .filter(|enumeration| enumeration.is_validation_only())
+        .map(|enumeration| {
+            let name = ident_name(&enumeration.field);
+            let field = fields.get(&name).expect("validated enumeration field must exist");
+            let FieldKind::Enumeration(source_path) = &field.kind else {
+                unreachable!("validated enumeration mapping must target an enumeration field");
+            };
+            enumeration.decoder(source_path, &runtime)
+        });
     let decode_fields = constructor_fields
         .iter()
         .map(|field_name| {
@@ -114,6 +128,7 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
 
             fn try_from(message: #source) -> ::core::result::Result<Self, Self::Error> {
                 #(#validate_fields)*
+                #(#validate_enumerations)*
                 #(#decode_fields)*
                 #construct
             }
@@ -240,22 +255,32 @@ impl DecodeConfig {
                         let variant = content.call(Ident::parse_any)?;
                         content.parse::<Token![=>]>()?;
                         let action = content.call(Ident::parse_any)?;
-                        let action_content;
-                        parenthesized!(action_content in content);
                         let action = if action == "map" {
-                            EnumerationVariantAction::Map(action_content.parse()?)
+                            let action_content;
+                            parenthesized!(action_content in content);
+                            let target = action_content.parse()?;
+                            if !action_content.is_empty() {
+                                return Err(action_content
+                                    .error("unexpected tokens after enumeration variant action"));
+                            }
+                            EnumerationVariantAction::Map(target)
+                        } else if action == "accept" {
+                            EnumerationVariantAction::Accept
                         } else if action == "reject" {
-                            EnumerationVariantAction::Reject(action_content.parse()?)
+                            let action_content;
+                            parenthesized!(action_content in content);
+                            let message = action_content.parse()?;
+                            if !action_content.is_empty() {
+                                return Err(action_content
+                                    .error("unexpected tokens after enumeration variant action"));
+                            }
+                            EnumerationVariantAction::Reject(message)
                         } else {
                             return Err(syn::Error::new(
                                 action.span(),
-                                "expected `map` or `reject`",
+                                "expected `map`, `accept`, or `reject`",
                             ));
                         };
-                        if !action_content.is_empty() {
-                            return Err(action_content
-                                .error("unexpected tokens after enumeration variant action"));
-                        }
                         variants.push(EnumerationVariantMapping { variant, action });
 
                         if !content.is_empty() {
@@ -316,6 +341,12 @@ struct EnumerationMapping {
 }
 
 impl EnumerationMapping {
+    fn is_validation_only(&self) -> bool {
+        self.variants
+            .iter()
+            .any(|mapping| matches!(mapping.action, EnumerationVariantAction::Accept))
+    }
+
     fn decoder(&self, source_path: &Path, runtime: &TokenStream2) -> TokenStream2 {
         let field = &self.field;
         let field_name = LitStr::new(&ident_name(field), field.span());
@@ -324,6 +355,9 @@ impl EnumerationMapping {
             match &mapping.action {
                 EnumerationVariantAction::Map(target) => quote! {
                     #source_path::#variant => #target
+                },
+                EnumerationVariantAction::Accept => quote! {
+                    #source_path::#variant => ()
                 },
                 EnumerationVariantAction::Reject(message) => quote! {
                     #source_path::#variant => {
@@ -335,13 +369,25 @@ impl EnumerationMapping {
             }
         });
 
-        quote! {
+        let decode = quote! {
             let #field: #source_path = #runtime::decode(
                 #runtime::ValueField::new(#field_name, message.#field),
             )?;
-            let #field = match #field {
-                #(#arms),*
-            };
+        };
+        if self.is_validation_only() {
+            quote! {
+                #decode
+                match #field {
+                    #(#arms),*
+                };
+            }
+        } else {
+            quote! {
+                #decode
+                let #field = match #field {
+                    #(#arms),*
+                };
+            }
         }
     }
 }
@@ -353,6 +399,7 @@ struct EnumerationVariantMapping {
 
 enum EnumerationVariantAction {
     Map(Path),
+    Accept,
     Reject(LitStr),
 }
 
@@ -529,6 +576,7 @@ fn parse_fields(input: &DeriveInput) -> Result<BTreeMap<String, ProtoField>> {
 fn validate_handled_fields(
     fields: &BTreeMap<String, ProtoField>,
     validators: &[FieldValidator],
+    enumerations: &[EnumerationMapping],
     constructor_fields: &[Ident],
     span: Span,
 ) -> Result<()> {
@@ -545,6 +593,16 @@ fn validate_handled_fields(
             return Err(syn::Error::new(
                 validator.field.span(),
                 format!("validator references unknown field `{name}`"),
+            ));
+        }
+    }
+
+    for enumeration in enumerations.iter().filter(|mapping| mapping.is_validation_only()) {
+        let name = ident_name(&enumeration.field);
+        if !configured.insert(name.clone()) {
+            return Err(syn::Error::new(
+                enumeration.field.span(),
+                format!("field `{name}` is used twice"),
             ));
         }
     }
@@ -667,10 +725,30 @@ fn validate_enumeration_mappings(
                 format!("field `{name}` is not a singular enumeration"),
             ));
         }
-        if !constructor_fields.contains(&name) {
+        let has_map = mapping
+            .variants
+            .iter()
+            .any(|variant| matches!(variant.action, EnumerationVariantAction::Map(_)));
+        let has_accept = mapping
+            .variants
+            .iter()
+            .any(|variant| matches!(variant.action, EnumerationVariantAction::Accept));
+        if has_map && has_accept {
             return Err(syn::Error::new(
                 mapping.field.span(),
-                format!("enumeration field `{name}` is not used by the constructor"),
+                format!("enumeration field `{name}` cannot mix `map` and `accept` actions"),
+            ));
+        }
+        if constructor_fields.contains(&name) && !has_map {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("constructor enumeration field `{name}` requires a `map` action"),
+            ));
+        }
+        if !constructor_fields.contains(&name) && !has_accept {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("validation-only enumeration field `{name}` requires an `accept` action"),
             ));
         }
         if decoded_fields.contains(&name) {
@@ -1179,6 +1257,61 @@ mod tests {
         assert!(generated.contains("ProtoKind :: Second => :: domain :: Kind :: Second"));
         assert!(generated.contains("ConversionError :: message (\"kind is unspecified\")"));
         assert!(generated.contains("context (\"kind\")"));
+    }
+
+    #[test]
+    fn generates_validation_only_enumeration_mappings() {
+        let generated = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                enumeration(
+                    version,
+                    Unspecified => reject("version is unspecified"),
+                    V1 => accept
+                ),
+                constructor(::domain::Example::new(value))
+            )]
+            struct ExampleMessage {
+                #[prost(enumeration = "ProtoVersion", tag = "1")]
+                version: i32,
+                #[prost(uint32, tag = "2")]
+                value: u32,
+            }
+        })
+        .unwrap();
+
+        assert!(generated.contains("let version : ProtoVersion ="));
+        assert!(generated.contains("ProtoVersion :: V1 => ()"));
+        assert!(generated.contains("ConversionError :: message (\"version is unspecified\")"));
+        assert!(generated.contains("context (\"version\")"));
+        assert!(generated.contains("domain :: Example :: new (value)"));
+    }
+
+    #[test]
+    fn rejects_mixed_enumeration_mapping_modes() {
+        let error = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                enumeration(
+                    kind,
+                    First => map(::domain::Kind::First),
+                    Second => accept
+                ),
+                constructor(::domain::Example::new(value))
+            )]
+            struct ExampleMessage {
+                #[prost(enumeration = "ProtoKind", tag = "1")]
+                kind: i32,
+                #[prost(uint32, tag = "2")]
+                value: u32,
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "enumeration field `kind` cannot mix `map` and `accept` actions"
+        );
     }
 
     #[test]
