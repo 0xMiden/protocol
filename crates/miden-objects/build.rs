@@ -411,6 +411,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 auth_args,
             ),
         },
+        ".transaction.InputNote" => {
+            target: ::miden_protocol::transaction::InputNote,
+            oneof: {
+                note: {
+                    Authenticated: ::core::convert::identity,
+                    Unauthenticated: ::miden_protocol::transaction::InputNote::unauthenticated,
+                },
+            },
+            constructor: note,
+        },
         ".transaction.InputNotes" => {
             target: ::miden_protocol::transaction::InputNotes<
                 ::miden_protocol::transaction::InputNote

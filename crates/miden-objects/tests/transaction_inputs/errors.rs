@@ -63,7 +63,8 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
         .note = None;
     let error = TransactionInputs::try_from(message).unwrap_err();
     assert!(error.to_string().ends_with(
-        "input_notes.notes[0]: field miden_objects::proto::transaction::InputNote::note is missing"
+        "input_notes.notes[0].note: field \
+         miden_objects::proto::transaction::InputNote::note is missing"
     ));
 
     let mut message = common::dummy_transaction_inputs_message();
@@ -72,7 +73,7 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
     assert!(
         error
             .to_string()
-            .starts_with("version.v1.input_notes.notes[0].authenticated: field ")
+            .starts_with("version.v1.input_notes.notes[0].note.authenticated: field ")
     );
     assert!(error.to_string().ends_with("::note is missing"));
 
@@ -82,7 +83,7 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
     assert!(
         error
             .to_string()
-            .starts_with("version.v1.input_notes.notes[0].authenticated: field ")
+            .starts_with("version.v1.input_notes.notes[0].note.authenticated: field ")
     );
     assert!(error.to_string().ends_with("::proof is missing"));
 }
@@ -100,7 +101,7 @@ fn authenticated_input_note_rejects_a_proof_for_a_different_note() {
 
     assert!(
         error.to_string().starts_with(
-            "version.v1.input_notes.notes[0].authenticated.proof.note_id: note ID mismatch:"
+            "version.v1.input_notes.notes[0].note.authenticated.proof.note_id: note ID mismatch:"
         ),
         "unexpected error: {error}"
     );

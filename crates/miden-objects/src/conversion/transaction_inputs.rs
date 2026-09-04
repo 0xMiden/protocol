@@ -39,41 +39,28 @@ impl From<&InputNote> for proto::transaction::InputNote {
     }
 }
 
-impl TryFrom<proto::transaction::InputNote> for InputNote {
+impl TryFrom<proto::transaction::AuthenticatedInputNote> for InputNote {
     type Error = ConversionError;
 
-    fn try_from(value: proto::transaction::InputNote) -> Result<Self, Self::Error> {
-        use proto::transaction::input_note::Note as ProtoInputNote;
-
-        match value.note {
-            Some(ProtoInputNote::Authenticated(authenticated)) => {
-                decode_authenticated_input_note(authenticated).context("authenticated")
-            },
-            Some(ProtoInputNote::Unauthenticated(note)) => {
-                Note::try_from(note).map(InputNote::unauthenticated).context("unauthenticated")
-            },
-            None => Err(ConversionError::missing_field::<proto::transaction::InputNote>("note")),
+    fn try_from(
+        authenticated: proto::transaction::AuthenticatedInputNote,
+    ) -> Result<Self, Self::Error> {
+        let decoder = authenticated.decoder();
+        let note: Note = required!(decoder, authenticated.note)?;
+        let proof_message: proto::note::NoteInclusionProof =
+            required!(decoder, authenticated.proof)?;
+        let (proof_note_id, proof): (NoteId, NoteInclusionProof) =
+            (&proof_message).try_into().context("proof")?;
+        if proof_note_id != note.id() {
+            return Err(ConversionError::message(format!(
+                "note ID mismatch: transmitted {proof_note_id}, decoded {}",
+                note.id()
+            ))
+            .context("proof.note_id"));
         }
-    }
-}
 
-fn decode_authenticated_input_note(
-    authenticated: proto::transaction::AuthenticatedInputNote,
-) -> Result<InputNote, ConversionError> {
-    let decoder = authenticated.decoder();
-    let note: Note = required!(decoder, authenticated.note)?;
-    let proof_message: proto::note::NoteInclusionProof = required!(decoder, authenticated.proof)?;
-    let (proof_note_id, proof): (NoteId, NoteInclusionProof) =
-        (&proof_message).try_into().context("proof")?;
-    if proof_note_id != note.id() {
-        return Err(ConversionError::message(format!(
-            "note ID mismatch: transmitted {proof_note_id}, decoded {}",
-            note.id()
-        ))
-        .context("proof.note_id"));
+        Ok(InputNote::authenticated(note, proof))
     }
-
-    Ok(InputNote::authenticated(note, proof))
 }
 
 impl From<&InputNotes<InputNote>> for proto::transaction::InputNotes {
