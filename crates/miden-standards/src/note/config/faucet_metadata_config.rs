@@ -229,6 +229,13 @@ impl FaucetMetadataConfigNote {
     /// the three string actions use 32 (`[selector, 0, 0, 0, value(28)]`).
     pub const MAX_NUM_STORAGE_ITEMS: usize = 4 + STRING_NUM_ELEMENTS;
 
+    /// Lower bound on the number of storage items of a FaucetMetadataConfig note.
+    ///
+    /// `SetMaxSupply` uses this size; no size between it and [`Self::MAX_NUM_STORAGE_ITEMS`]
+    /// is valid. Keep in sync with `NUM_ITEMS_SET_MAX_SUPPLY` in
+    /// `faucet_metadata_config.masm`.
+    pub const MIN_NUM_STORAGE_ITEMS: usize = 2;
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 

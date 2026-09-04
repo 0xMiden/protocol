@@ -189,6 +189,13 @@ impl OwnerConfigNote {
     /// new_owner_prefix]`), while `AcceptOwnership` / `RenounceOwnership` use 1 (`[selector]`).
     pub const MAX_NUM_STORAGE_ITEMS: usize = 3;
 
+    /// Lower bound on the number of storage items of an OwnerConfig note.
+    ///
+    /// `AcceptOwnership` / `RenounceOwnership` use this size; no size between it and
+    /// [`Self::MAX_NUM_STORAGE_ITEMS`] is valid. Keep in sync with `NUM_ITEMS_*` in
+    /// `owner_config.masm`.
+    pub const MIN_NUM_STORAGE_ITEMS: usize = 1;
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
