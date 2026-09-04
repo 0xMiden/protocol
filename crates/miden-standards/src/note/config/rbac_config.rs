@@ -390,7 +390,7 @@ mod tests {
 
         let network_note = AccountTargetNetworkNote::from(note);
         assert_eq!(network_note.target_account_id(), managed);
-        assert_eq!(network_note.execution_hint(), NoteExecutionHint::Always);
+        assert_eq!(network_note.execution_hint(), Some(NoteExecutionHint::Always));
         assert!(network_note.as_note().is_network_note());
     }
 

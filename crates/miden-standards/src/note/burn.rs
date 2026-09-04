@@ -268,7 +268,7 @@ mod tests {
 
         let target = NetworkAccountTarget::try_from(note.attachments()).unwrap();
         assert_eq!(target.target_id(), faucet());
-        assert_eq!(target.execution_hint(), NoteExecutionHint::Always);
+        assert_eq!(target.execution_hint(), Some(NoteExecutionHint::Always));
     }
 
     /// A private faucet is never a network account, so no target is derived for it. The note stays
