@@ -31,12 +31,12 @@ use syn::{
 ///
 /// The derive reads cardinality and presence information from Prost's field attributes. The
 /// `proto_decode` attribute supplies the foreign target type and an explicit constructor call or
-/// tuple expression whose fields define the conversion order. Optional field validators consume
-/// fields before constructor arguments are decoded and must return `Result<(), E>`. Enumeration
-/// fields explicitly map variants to domain values or accept them for validation-only fields.
-/// Oneof fields require explicit mappings from generated variants to infallible or fallible target
-/// constructors, or to constants when the source variant contains a unit payload. Fallible field
-/// decoders run after the field's cardinality-aware conversion.
+/// tuple expression, or struct literal whose fields define the conversion order. Optional field
+/// validators consume fields before constructor arguments are decoded and must return `Result<(),
+/// E>`. Enumeration fields explicitly map variants to domain values or accept them for
+/// validation-only fields. Oneof fields require explicit mappings from generated variants to
+/// infallible or fallible target constructors, or to constants when the source variant contains a
+/// unit payload. Fallible field decoders run after the field's cardinality-aware conversion.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -517,25 +517,42 @@ impl Constructor {
         }
 
         let arguments = match &self.expression {
-            Expr::Call(call) => &call.args,
-            Expr::Tuple(tuple) if matches!(self.kind, ConstructorKind::Infallible) => &tuple.elems,
+            Expr::Call(call) => call.args.iter().collect::<Vec<_>>(),
+            Expr::Tuple(tuple) if matches!(self.kind, ConstructorKind::Infallible) => {
+                tuple.elems.iter().collect()
+            },
             Expr::Tuple(tuple) => {
                 return Err(syn::Error::new(
                     tuple.span(),
                     "`try_constructor` requires a function call",
                 ));
             },
+            Expr::Struct(structure) if matches!(self.kind, ConstructorKind::Infallible) => {
+                if let Some(rest) = &structure.rest {
+                    return Err(syn::Error::new(
+                        rest.span(),
+                        "constructor struct literals cannot use update syntax",
+                    ));
+                }
+                structure.fields.iter().map(|field| &field.expr).collect()
+            },
+            Expr::Struct(structure) => {
+                return Err(syn::Error::new(
+                    structure.span(),
+                    "`try_constructor` requires a function call",
+                ));
+            },
             expression => {
                 return Err(syn::Error::new(
                     expression.span(),
-                    "constructor must be a function call, tuple expression, or bare Protobuf \
-                     field name",
+                    "constructor must be a function call, tuple expression, struct literal, or \
+                     bare Protobuf field name",
                 ));
             },
         };
 
         arguments
-            .iter()
+            .into_iter()
             .map(|argument| match argument {
                 Expr::Path(path)
                     if path.qself.is_none()
@@ -1218,6 +1235,55 @@ mod tests {
         let required = generated.find("let required_message").unwrap();
         assert!(count < required);
         assert!(generated.contains("Result :: Ok ((count , required_message))"));
+    }
+
+    #[test]
+    fn generates_struct_literal_constructors_in_field_order() {
+        let generated = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                constructor(::domain::Example {
+                    count,
+                    message: required_message,
+                })
+            )]
+            struct ExampleMessage {
+                #[prost(message, optional, tag = "1")]
+                required_message: Option<Message>,
+                #[prost(uint32, tag = "2")]
+                count: u32,
+            }
+        })
+        .unwrap();
+
+        let count = generated.find("let count").unwrap();
+        let required = generated.find("let required_message").unwrap();
+        assert!(count < required);
+        assert!(
+            generated.contains(
+                "Result :: Ok (:: domain :: Example { count , message : required_message"
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_struct_literal_update_syntax() {
+        let error = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                constructor(::domain::Example {
+                    first,
+                    ..::core::default::Default::default()
+                })
+            )]
+            struct ExampleMessage {
+                #[prost(uint32, tag = "1")]
+                first: u32,
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "constructor struct literals cannot use update syntax");
     }
 
     #[test]
