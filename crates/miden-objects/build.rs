@@ -619,8 +619,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         },
         ".blockchain.SignedBlock" => {
-            target: ::miden_protocol::block::SignedBlock,
-            try_constructor: crate::conversion::decode_signed_block(
+            target: ::miden_protocol::block::UnverifiedSignedBlock,
+            constructor: ::miden_protocol::block::UnverifiedSignedBlock::new(
                 header,
                 body,
                 signatures,

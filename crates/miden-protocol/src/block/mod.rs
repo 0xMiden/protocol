@@ -23,7 +23,7 @@ mod block_signatures;
 pub use block_signatures::{BlockSignatures, SignatureVerificationError};
 
 mod signed_block;
-pub use signed_block::SignedBlock;
+pub use signed_block::{SignedBlock, SignedBlockError, UnverifiedSignedBlock};
 
 mod proven_block;
 pub use proven_block::ProvenBlock;

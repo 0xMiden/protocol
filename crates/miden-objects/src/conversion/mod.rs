@@ -35,7 +35,6 @@ pub(crate) use block::{
     decode_block_header,
     decode_output_note_batch,
     decode_partial_blockchain,
-    decode_signed_block,
 };
 pub(crate) use merkle::{decode_empty_smt_leaf, decode_mmr_delta, decode_partial_smt};
 pub(crate) use note::{

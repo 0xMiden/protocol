@@ -12,6 +12,7 @@ use miden_protocol::block::{
     FeeParameters,
     OutputNoteBatch,
     SignedBlock,
+    UnverifiedSignedBlock,
     ValidatorConfig,
 };
 use miden_protocol::crypto::merkle::MerklePath;
@@ -306,17 +307,7 @@ impl DecodeRepeated<proto::primitives::Signature> for BlockSignatures {
     }
 }
 
-pub(crate) fn decode_signed_block(
-    header: BlockHeader,
-    body: BlockBody,
-    signatures: BlockSignatures,
-) -> Result<SignedBlock, ConversionError> {
-    SignedBlock::new(header, body, signatures)
-        .map_err(ConversionError::new)
-        .context("body")
-}
-
-impl TryFrom<&proto::blockchain::SignedBlock> for SignedBlock {
+impl TryFrom<&proto::blockchain::SignedBlock> for UnverifiedSignedBlock {
     type Error = ConversionError;
 
     fn try_from(value: &proto::blockchain::SignedBlock) -> Result<Self, Self::Error> {

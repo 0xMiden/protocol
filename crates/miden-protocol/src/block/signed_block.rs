@@ -69,6 +69,54 @@ impl From<ParentValidationError> for SignedBlockError {
     }
 }
 
+// UNVERIFIED SIGNED BLOCK
+// ================================================================================================
+
+/// The decoded components of a signed block before they have been verified against a trusted
+/// parent block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnverifiedSignedBlock {
+    header: BlockHeader,
+    body: BlockBody,
+    signatures: BlockSignatures,
+}
+
+impl UnverifiedSignedBlock {
+    /// Creates an unverified signed block from its decoded components.
+    pub fn new(header: BlockHeader, body: BlockBody, signatures: BlockSignatures) -> Self {
+        Self { header, body, signatures }
+    }
+
+    /// Returns the header of the block.
+    pub fn header(&self) -> &BlockHeader {
+        &self.header
+    }
+
+    /// Returns the body of the block.
+    pub fn body(&self) -> &BlockBody {
+        &self.body
+    }
+
+    /// Returns the validators' positional signatures over the block header.
+    pub fn signatures(&self) -> &BlockSignatures {
+        &self.signatures
+    }
+
+    /// Verifies the block's internal consistency and authenticates it against `parent`.
+    ///
+    /// `parent` must come from already-trusted chain state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block header and body are inconsistent, the parent is not the
+    /// header's parent, or the signatures do not verify against the parent's validator keys.
+    pub fn verify(self, parent: &BlockHeader) -> Result<SignedBlock, SignedBlockError> {
+        let block = SignedBlock::new_unchecked(self.header, self.body, self.signatures);
+        block.validate(Some(parent))?;
+        Ok(block)
+    }
+}
+
 // SIGNED BLOCK
 // ================================================================================================
 
@@ -273,6 +321,17 @@ mod tests {
         let (signers, keys) = ValidatorConfig::random_with_signers(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         block_one(&parent, &keys, &signers).validate(Some(&parent)).unwrap();
+    }
+
+    #[test]
+    fn unverified_signed_block_verifies_against_parent() {
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let expected = block_one(&parent, &keys, &signers);
+        let (header, body, signatures) = expected.clone().into_parts();
+        let unverified = UnverifiedSignedBlock::new(header, body, signatures);
+
+        assert_eq!(unverified.verify(&parent).unwrap(), expected);
     }
 
     #[test]

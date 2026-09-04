@@ -37,6 +37,8 @@ use miden_protocol::block::{
     BlockBody,
     BlockHeader,
     BlockNumber,
+    SignedBlockError,
+    UnverifiedSignedBlock,
     ValidatorConfig,
 };
 use miden_protocol::crypto::merkle::SparseMerklePath;
@@ -1226,6 +1228,50 @@ fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
             .unwrap();
 
     assert_eq!(BlockBody::try_from(proto::blockchain::BlockBody::default()).unwrap(), expected);
+}
+
+#[test]
+fn signed_block_decodes_before_verification() {
+    let error =
+        UnverifiedSignedBlock::try_from(proto::blockchain::SignedBlock::default()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "header: field miden_objects::proto::blockchain::SignedBlock::header is missing"
+    );
+
+    let body =
+        BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))
+            .unwrap();
+    let parent = BlockHeader::mock(0, None, None, &[]);
+    let template = BlockHeader::mock(1, None, None, &[]);
+    let header = BlockHeader::new(
+        parent.commitment(),
+        1_u32.into(),
+        template.chain_commitment(),
+        template.account_root(),
+        template.nullifier_root(),
+        body.compute_block_note_tree().root(),
+        body.transactions().commitment(),
+        template.validator_config().clone(),
+        template.fee_parameters().clone(),
+        template.protocol_config_commitment(),
+        None,
+        template.timestamp(),
+    );
+    let decoded = UnverifiedSignedBlock::try_from(proto::blockchain::SignedBlock {
+        header: Some((&header).into()),
+        body: Some((&body).into()),
+        signatures: vec![],
+    })
+    .unwrap();
+
+    assert_eq!(decoded.header(), &header);
+    assert_eq!(decoded.body(), &body);
+    assert!(decoded.signatures().is_empty());
+    assert_matches!(
+        decoded.verify(&parent),
+        Err(SignedBlockError::SignatureCountMismatch { expected: 1, actual: 0 })
+    );
 }
 
 #[test]
