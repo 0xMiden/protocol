@@ -1,7 +1,8 @@
-use miden_protobuf::{ConversionError, DecodeRepeated, ProtoDecode, RepeatedField};
+use miden_protobuf::{ConversionError, DecodeRepeated, ProtoDecode, ProtoEncode, RepeatedField};
 
-#[derive(Clone, PartialEq, prost::Message, ProtoDecode)]
+#[derive(Clone, PartialEq, prost::Message, ProtoDecode, ProtoEncode)]
 #[proto_decode(target(DownstreamValue), constructor(DownstreamValue::new(value)))]
+#[proto_encode(source(DownstreamValue), encode(value, DownstreamValue::value))]
 struct DownstreamMessage {
     #[prost(uint32, tag = "1")]
     value: u32,
@@ -13,6 +14,10 @@ struct DownstreamValue(u16);
 impl DownstreamValue {
     const fn new(value: u16) -> Self {
         Self(value)
+    }
+
+    const fn value(&self) -> u16 {
+        self.0
     }
 }
 
@@ -47,6 +52,13 @@ fn reexported_derive_expands_in_a_downstream_crate() {
         DownstreamValue::try_from(DownstreamMessage { value: 7 }).unwrap(),
         DownstreamValue(7)
     );
+}
+
+#[test]
+fn reexported_encode_derive_borrows_the_domain_value() {
+    let message = DownstreamMessage::from(&DownstreamValue(7));
+
+    assert_eq!(message.value, 7);
 }
 
 #[test]

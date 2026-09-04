@@ -1,4 +1,5 @@
-//! Shared runtime, derive, and Prost build support for Protobuf-to-domain conversions.
+//! Shared runtime, derive, and Prost build support for conversions between Protobuf and domain
+//! types.
 
 #![no_std]
 
@@ -23,7 +24,7 @@ pub use decode::{
 };
 pub use error::{ConversionError, ConversionResultExt};
 #[cfg(feature = "derive")]
-pub use miden_protobuf_derive::ProtoDecode;
+pub use miden_protobuf_derive::{ProtoDecode, ProtoEncode};
 pub use prost;
 
 #[doc(hidden)]
@@ -39,7 +40,7 @@ pub mod __private {
     };
 }
 
-/// Configures Prost messages to derive `ProtoDecode`.
+/// Configures Prost messages to derive `ProtoDecode` and, when requested, `ProtoEncode`.
 #[cfg(feature = "build")]
 #[macro_export]
 macro_rules! configure_proto_decodes {
@@ -84,6 +85,7 @@ macro_rules! __proto_decode_config {
             [],
             [],
             [],
+            [],
             [];
             $($settings)*
         )
@@ -94,6 +96,7 @@ macro_rules! __proto_decode_config {
         $target:ty,
         [$($validators:expr,)*],
         [$($field_decoders:expr,)*],
+        [$($field_encoders:expr,)*],
         [$($enumerations:expr,)*],
         [$($oneofs:expr,)*];
         validate: {
@@ -110,6 +113,7 @@ macro_rules! __proto_decode_config {
                 $((::core::stringify!($field), ::core::stringify!($validator)),)+
             ],
             [$($field_decoders,)*],
+            [$($field_encoders,)*],
             [$($enumerations,)*],
             [$($oneofs,)*];
             $($remaining)*
@@ -121,6 +125,7 @@ macro_rules! __proto_decode_config {
         $target:ty,
         [$($validators:expr,)*],
         [$($field_decoders:expr,)*],
+        [$($field_encoders:expr,)*],
         [$($enumerations:expr,)*],
         [$($oneofs:expr,)*];
         decode: {
@@ -137,6 +142,7 @@ macro_rules! __proto_decode_config {
                 $($field_decoders,)*
                 $((::core::stringify!($field), ::core::stringify!($decoder)),)+
             ],
+            [$($field_encoders,)*],
             [$($enumerations,)*],
             [$($oneofs,)*];
             $($remaining)*
@@ -148,6 +154,36 @@ macro_rules! __proto_decode_config {
         $target:ty,
         [$($validators:expr,)*],
         [$($field_decoders:expr,)*],
+        [$($field_encoders:expr,)*],
+        [$($enumerations:expr,)*],
+        [$($oneofs:expr,)*];
+        encode: {
+            $($field:ident: $accessor:path),+ $(,)?
+        },
+        $($remaining:tt)*
+    ) => {
+        $crate::__proto_decode_config!(
+            @parse
+            $message_name,
+            $target,
+            [$($validators,)*],
+            [$($field_decoders,)*],
+            [
+                $($field_encoders,)*
+                $((::core::stringify!($field), ::core::stringify!($accessor)),)+
+            ],
+            [$($enumerations,)*],
+            [$($oneofs,)*];
+            $($remaining)*
+        )
+    };
+    (
+        @parse
+        $message_name:literal,
+        $target:ty,
+        [$($validators:expr,)*],
+        [$($field_decoders:expr,)*],
+        [$($field_encoders:expr,)*],
         [$($enumerations:expr,)*],
         [$($oneofs:expr,)*];
         enumeration: {
@@ -167,6 +203,7 @@ macro_rules! __proto_decode_config {
             $target,
             [$($validators,)*],
             [$($field_decoders,)*],
+            [$($field_encoders,)*],
             [
                 $($enumerations,)*
                 $(
@@ -193,6 +230,7 @@ macro_rules! __proto_decode_config {
         $target:ty,
         [$($validators:expr,)*],
         [$($field_decoders:expr,)*],
+        [$($field_encoders:expr,)*],
         [$($enumerations:expr,)*],
         [$($oneofs:expr,)*];
         oneof: {
@@ -214,6 +252,7 @@ macro_rules! __proto_decode_config {
             $target,
             [$($validators,)*],
             [$($field_decoders,)*],
+            [$($field_encoders,)*],
             [$($enumerations,)*],
             [
                 $($oneofs,)*
@@ -240,6 +279,7 @@ macro_rules! __proto_decode_config {
         $target:ty,
         [$($validators:expr,)*],
         [$($field_decoders:expr,)*],
+        [$($field_encoders:expr,)*],
         [$($enumerations:expr,)*],
         [$($oneofs:expr,)*];
         constructor: $constructor:expr $(,)?
@@ -251,6 +291,7 @@ macro_rules! __proto_decode_config {
             ::core::stringify!($constructor),
         )
         .with_field_decoders(&[$($field_decoders,)*])
+        .with_field_encoders(&[$($field_encoders,)*])
         .with_enumerations(&[$($enumerations,)*])
         .with_oneofs(&[$($oneofs,)*])
     };
@@ -260,6 +301,7 @@ macro_rules! __proto_decode_config {
         $target:ty,
         [$($validators:expr,)*],
         [$($field_decoders:expr,)*],
+        [$($field_encoders:expr,)*],
         [$($enumerations:expr,)*],
         [$($oneofs:expr,)*];
         try_constructor: $constructor:expr $(,)?
@@ -271,6 +313,7 @@ macro_rules! __proto_decode_config {
             ::core::stringify!($constructor),
         )
         .with_field_decoders(&[$($field_decoders,)*])
+        .with_field_encoders(&[$($field_encoders,)*])
         .with_enumerations(&[$($enumerations,)*])
         .with_oneofs(&[$($oneofs,)*])
     };
