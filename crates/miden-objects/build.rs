@@ -196,6 +196,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 prefix,
             ),
         },
+        ".asset.AssetId" => {
+            target: ::miden_protocol::asset::AssetId,
+            validate: {
+                version: crate::conversion::decode_asset_version,
+            },
+            enumeration: {
+                composition: {
+                    Unspecified: reject("asset composition is unspecified"),
+                    None: map(::miden_protocol::asset::AssetComposition::None),
+                    Fungible: map(::miden_protocol::asset::AssetComposition::Fungible),
+                    Custom: map(::miden_protocol::asset::AssetComposition::Custom),
+                },
+            },
+            try_constructor: ::miden_protocol::asset::AssetId::new(
+                asset_class,
+                faucet_id,
+                composition,
+            ),
+        },
         ".asset.Asset" => {
             target: ::miden_protocol::asset::Asset,
             try_constructor: ::miden_protocol::asset::Asset::new(

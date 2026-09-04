@@ -247,7 +247,7 @@ fn structured_asset_conversion_rejects_unspecified_unknown_and_custom_compositio
         faucet_id: faucet_id.clone(),
     })
     .unwrap_err();
-    assert_eq!(unknown.to_string(), "composition: unknown asset composition 4");
+    assert_eq!(unknown.to_string(), "composition: unknown enumeration value 4");
 
     let custom = AssetId::try_from(proto::asset::AssetId {
         version: proto::asset::AssetVersion::V1 as i32,
