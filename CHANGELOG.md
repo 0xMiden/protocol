@@ -14,7 +14,6 @@
 ### Changes
 
 - Added a check that the guardian public key is not one of the approver public keys ([#3764](https://github.com/0xMiden/protocol/pull/3764)).
-- [BREAKING] Incremented the MSRV to 1.98.
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.31.0 and `midenc-hir-type` to v0.13.0. Execution proofs now include a format version and compatible VM and PVM verifier roots, and protocol deserialization rejects unversioned proof bytes from earlier releases. Verifier outcomes now report separate VM and precompile security parameters ([#3806](https://github.com/0xMiden/protocol/pull/3806)).
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.30.0 and `midenc-hir-type` to v0.12.0. `LocalTransactionProver::new` now takes `miden_prover::Prover`, `CoreLibrary` exposes one merged package, and `TransactionVerifier::verify` now returns `VerificationOutcome` so callers can handle outstanding precompile work ([#3782](https://github.com/0xMiden/protocol/pull/3782)).
 - [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
@@ -59,6 +58,7 @@
 - [BREAKING] Moved the MINT note scripts under a single `miden::standards::notes::mint` module, replacing `notes::mint_fungible` and `notes::mint_non_fungible` with the private `mint::fungible` and `mint::non_fungible` submodules ([#3751](https://github.com/0xMiden/protocol/pull/3751)).
 - [BREAKING] `FeeSponsorshipNote` is now parsed back from a `Note` with `TryFrom<&Note>`, carries a fungible fee asset, and replaces its `target_id` accessor with `tag` ([#3746](https://github.com/0xMiden/protocol/pull/3746)).
 - [BREAKING] Moved the config note types into the `note::config` module, so `miden_standards::note::PauseConfigNote` and its siblings are now `miden_standards::note::config::PauseConfigNote` ([#3779](https://github.com/0xMiden/protocol/pull/3779)).
+- [BREAKING] Incremented the MSRV to 1.98.1.
 
 ### Fixes
 
