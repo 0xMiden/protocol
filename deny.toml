@@ -49,13 +49,6 @@ skip = [
   { name = "itertools" },
   { name = "num-bigint" },
   { name = "sha3" },
-  # Miden VM 0.31 mixes Plonky3 0.6.3 with p3-security's 0.7.0 release candidates.
-  # See https://github.com/0xMiden/miden-vm/issues/3773.
-  { name = "p3-air", version = "=0.7.0-rc.1" },
-  { name = "p3-field", version = "=0.7.0-rc.1" },
-  { name = "p3-matrix", version = "=0.7.0-rc.1" },
-  { name = "p3-maybe-rayon", version = "=0.7.0-rc.1" },
-  { name = "p3-util", version = "=0.7.0-rc.1" },
   # Allow duplicate rand versions - miden-field uses 0.10, proptest uses 0.9.
   { name = "getrandom" },
   { name = "rand" },
