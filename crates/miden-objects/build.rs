@@ -46,6 +46,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             constructor: encoded,
         },
+        ".primitives.ExecutionProof" => {
+            target: ::miden_protocol::vm::ExecutionProof,
+            decode: {
+                encoded: crate::conversion::decode_execution_proof,
+            },
+            constructor: encoded,
+        },
         ".account.AccountId" => {
             target: ::miden_protocol::account::AccountId,
             try_constructor: crate::conversion::decode_account_id(

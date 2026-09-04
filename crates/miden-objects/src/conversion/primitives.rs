@@ -85,21 +85,20 @@ impl From<ExecutionProof> for proto::primitives::ExecutionProof {
     }
 }
 
-impl TryFrom<proto::primitives::ExecutionProof> for ExecutionProof {
-    type Error = ConversionError;
+fn decode_execution_proof_bytes(encoded: &[u8]) -> Result<ExecutionProof, ConversionError> {
+    ExecutionProof::read_from_bytes(encoded)
+        .map_err(|error| ConversionError::deserialization("ExecutionProof", error))
+}
 
-    fn try_from(value: proto::primitives::ExecutionProof) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
+pub(crate) fn decode_execution_proof(encoded: Vec<u8>) -> Result<ExecutionProof, ConversionError> {
+    decode_execution_proof_bytes(&encoded)
 }
 
 impl TryFrom<&proto::primitives::ExecutionProof> for ExecutionProof {
     type Error = ConversionError;
 
     fn try_from(value: &proto::primitives::ExecutionProof) -> Result<Self, Self::Error> {
-        Self::read_from_bytes(&value.encoded)
-            .map_err(|error| ConversionError::deserialization("ExecutionProof", error))
-            .map_err(|error| error.context("encoded"))
+        decode_execution_proof_bytes(&value.encoded).map_err(|error| error.context("encoded"))
     }
 }
 
@@ -419,10 +418,17 @@ mod tests {
     }
 
     #[test]
-    fn execution_proof_roundtrips() {
+    fn execution_proof_roundtrips_and_reports_the_encoded_path() {
         let proof = dummy_execution_proof();
         let encoded = proto::primitives::ExecutionProof::from(&proof);
         assert_eq!(ExecutionProof::try_from(encoded).unwrap(), proof);
+
+        let error = ExecutionProof::try_from(proto::primitives::ExecutionProof { encoded: vec![] })
+            .unwrap_err();
+        assert!(
+            error.to_string().starts_with("encoded: failed to deserialize ExecutionProof: "),
+            "{error}"
+        );
     }
 
     #[test]
