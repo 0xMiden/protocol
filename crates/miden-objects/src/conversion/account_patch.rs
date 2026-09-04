@@ -265,19 +265,6 @@ impl From<&AccountVaultPatch> for proto::account::AccountVaultPatch {
     }
 }
 
-impl TryFrom<proto::account::AccountVaultPatchEntry> for (AssetId, Word) {
-    type Error = ConversionError;
-
-    fn try_from(entry: proto::account::AccountVaultPatchEntry) -> Result<Self, Self::Error> {
-        let decoder = entry.decoder();
-        let asset_id: Word = required!(decoder, entry.asset_id)?;
-        let asset_id =
-            AssetId::try_from(asset_id).map_err(ConversionError::new).context("asset_id")?;
-        let value = required!(decoder, entry.value)?;
-        Ok((asset_id, value))
-    }
-}
-
 pub(crate) fn decode_account_vault_patch(
     decoded_entries: Vec<(AssetId, Word)>,
 ) -> Result<AccountVaultPatch, ConversionError> {

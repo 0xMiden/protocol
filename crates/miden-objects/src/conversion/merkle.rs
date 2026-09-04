@@ -132,18 +132,6 @@ impl From<SmtLeaf> for proto::primitives::SmtLeaf {
 // SMT LEAF ENTRY
 // ------------------------------------------------------------------------------------------------
 
-impl TryFrom<proto::primitives::SmtLeafEntry> for (Word, Word) {
-    type Error = ConversionError;
-
-    fn try_from(entry: proto::primitives::SmtLeafEntry) -> Result<Self, Self::Error> {
-        let decoder = entry.decoder();
-        let key = required!(decoder, entry.key)?;
-        let value = required!(decoder, entry.value)?;
-
-        Ok((key, value))
-    }
-}
-
 impl From<(Word, Word)> for proto::primitives::SmtLeafEntry {
     fn from((key, value): (Word, Word)) -> Self {
         Self {

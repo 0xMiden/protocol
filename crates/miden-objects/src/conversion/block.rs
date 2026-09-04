@@ -312,17 +312,6 @@ impl From<&(usize, OutputNote)> for proto::blockchain::IndexedOutputNote {
     }
 }
 
-impl TryFrom<proto::blockchain::IndexedOutputNote> for (usize, OutputNote) {
-    type Error = ConversionError;
-
-    fn try_from(note: proto::blockchain::IndexedOutputNote) -> Result<Self, Self::Error> {
-        let decoder = note.decoder();
-        let index = usize::try_from(note.note_index_in_batch).context("note_index_in_batch")?;
-        let output_note = required!(decoder, note.note)?;
-        Ok((index, output_note))
-    }
-}
-
 impl From<&OutputNoteBatch> for proto::blockchain::OutputNoteBatch {
     fn from(batch: &OutputNoteBatch) -> Self {
         Self {

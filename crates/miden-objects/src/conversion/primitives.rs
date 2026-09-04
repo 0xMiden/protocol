@@ -188,22 +188,6 @@ impl From<&AdviceMap> for proto::primitives::AdviceMap {
     }
 }
 
-impl TryFrom<proto::primitives::AdviceMapEntry> for (Word, Vec<Felt>) {
-    type Error = ConversionError;
-
-    fn try_from(entry: proto::primitives::AdviceMapEntry) -> Result<Self, Self::Error> {
-        let decoder = entry.decoder();
-        let key = required!(decoder, entry.key)?;
-        let values = entry
-            .values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| Felt::try_from(value).context(format!("values[{index}]")))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok((key, values))
-    }
-}
-
 pub(crate) fn decode_advice_map(
     decoded_entries: Vec<(Word, Vec<Felt>)>,
 ) -> Result<AdviceMap, ConversionError> {

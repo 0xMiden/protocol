@@ -14,7 +14,6 @@ use syn::{
     Data,
     DeriveInput,
     Expr,
-    ExprCall,
     Field,
     Fields,
     Ident,
@@ -29,8 +28,8 @@ use syn::{
 /// Generates `TryFrom<ProtoMessage>` for a configured domain type.
 ///
 /// The derive reads cardinality and presence information from Prost's field attributes. The
-/// `proto_decode` attribute supplies the foreign target type and an explicit constructor
-/// expression whose arguments define the conversion order.
+/// `proto_decode` attribute supplies the foreign target type and an explicit constructor call or
+/// tuple expression whose fields define the conversion order.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -138,7 +137,7 @@ impl DecodeConfig {
                 }
                 let content;
                 parenthesized!(content in meta.input);
-                constructor = Some(Constructor { call: content.parse()?, kind });
+                constructor = Some(Constructor { expression: content.parse()?, kind });
                 Ok(())
             })?;
         }
@@ -156,14 +155,30 @@ impl DecodeConfig {
 }
 
 struct Constructor {
-    call: ExprCall,
+    expression: Expr,
     kind: ConstructorKind,
 }
 
 impl Constructor {
     fn fields(&self) -> Result<Vec<Ident>> {
-        self.call
-            .args
+        let arguments = match &self.expression {
+            Expr::Call(call) => &call.args,
+            Expr::Tuple(tuple) if matches!(self.kind, ConstructorKind::Infallible) => &tuple.elems,
+            Expr::Tuple(tuple) => {
+                return Err(syn::Error::new(
+                    tuple.span(),
+                    "`try_constructor` requires a function call",
+                ));
+            },
+            expression => {
+                return Err(syn::Error::new(
+                    expression.span(),
+                    "constructor must be a function call or tuple expression",
+                ));
+            },
+        };
+
+        arguments
             .iter()
             .map(|argument| match argument {
                 Expr::Path(path)
@@ -182,17 +197,17 @@ impl Constructor {
     }
 
     fn expression(&self, runtime: &TokenStream2) -> TokenStream2 {
-        let call = &self.call;
+        let expression = &self.expression;
         match self.kind {
-            ConstructorKind::Infallible => quote!(::core::result::Result::Ok(#call)),
+            ConstructorKind::Infallible => quote!(::core::result::Result::Ok(#expression)),
             ConstructorKind::Fallible => {
-                quote!((#call).map_err(#runtime::ConversionError::new))
+                quote!((#expression).map_err(#runtime::ConversionError::new))
             },
         }
     }
 
     fn span(&self) -> Span {
-        self.call.span()
+        self.expression.span()
     }
 }
 
@@ -471,6 +486,47 @@ mod tests {
         assert!(generated.contains("RequiredField :: < ExampleMessage , _ > :: new"));
         assert!(generated.contains("OptionalField :: new (\"optional_value\""));
         assert!(generated.contains("RepeatedField :: new (\"items\""));
+    }
+
+    #[test]
+    fn generates_tuple_constructors_in_element_order() {
+        let generated = expand_input(quote! {
+            #[proto_decode(
+                target((u16, ::domain::Message)),
+                constructor((count, required_message))
+            )]
+            struct ExampleMessage {
+                #[prost(message, optional, tag = "1")]
+                required_message: Option<Message>,
+                #[prost(uint32, tag = "2")]
+                count: u32,
+            }
+        })
+        .unwrap();
+
+        let count = generated.find("let count").unwrap();
+        let required = generated.find("let required_message").unwrap();
+        assert!(count < required);
+        assert!(generated.contains("Result :: Ok ((count , required_message))"));
+    }
+
+    #[test]
+    fn rejects_fallible_tuple_constructors() {
+        let error = expand_input(quote! {
+            #[proto_decode(
+                target((u16, u16)),
+                try_constructor((first, second))
+            )]
+            struct ExampleMessage {
+                #[prost(uint32, tag = "1")]
+                first: u32,
+                #[prost(uint32, tag = "2")]
+                second: u32,
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "`try_constructor` requires a function call");
     }
 
     #[test]

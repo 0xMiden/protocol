@@ -101,6 +101,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 asset_ids,
             ),
         },
+        ".account.AccountVaultPatchEntry" => {
+            target: (::miden_protocol::asset::AssetId, ::miden_protocol::Word),
+            constructor: (asset_id, value),
+        },
         ".account.AccountVaultPatch" => {
             target: ::miden_protocol::account::AccountVaultPatch,
             try_constructor: crate::conversion::decode_account_vault_patch(
@@ -154,11 +158,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 leaf,
             ),
         },
+        ".primitives.SmtLeafEntry" => {
+            target: (::miden_protocol::Word, ::miden_protocol::Word),
+            constructor: (key, value),
+        },
         ".primitives.AdviceStack" => {
             target: ::miden_protocol::vm::AdviceStack,
             constructor: crate::conversion::decode_advice_stack(
                 values,
             ),
+        },
+        ".primitives.AdviceMapEntry" => {
+            target: (::miden_protocol::Word, ::alloc::vec::Vec<::miden_protocol::Felt>),
+            constructor: (key, values),
         },
         ".primitives.AdviceMap" => {
             target: ::miden_protocol::vm::AdviceMap,
@@ -244,6 +256,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 created_nullifiers,
                 transactions,
             ),
+        },
+        ".blockchain.IndexedOutputNote" => {
+            target: (usize, ::miden_protocol::transaction::OutputNote),
+            constructor: (note_index_in_batch, note),
         },
         ".blockchain.OutputNoteBatch" => {
             target: ::miden_protocol::block::OutputNoteBatch,
