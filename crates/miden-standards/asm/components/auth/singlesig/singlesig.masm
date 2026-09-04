@@ -24,9 +24,10 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #!
 #! It first decodes the fee conversion info committed to by the AUTH_ARGS (see
 #! miden::standards::fee::load_conversion_info) and pays the transaction fee by creating and
-#! funding a public TX_FEE note (see miden::standards::fee::pay_fee). The
-#! payment asset and conversion rate are committed to via the AUTH_ARGS (native fee asset at rate
-#! 1/1 for plain native payment). On chains with a zero verification base fee no note is created.
+#! funding a public TX_FEE note (see miden::standards::fee::pay_fee). The payment asset and
+#! conversion rate are committed to via the AUTH_ARGS and must name the reference block's fee
+#! asset at rate 1/1; any other value aborts. On chains with a zero verification base fee no note
+#! is created.
 #! Because the fee is paid before the transaction summary is created, the fee note and the vault
 #! withdrawal funding it are covered by the signature.
 #!

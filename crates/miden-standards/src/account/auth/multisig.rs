@@ -155,10 +155,11 @@ impl AuthMultisigConfig {
 /// Before authenticating, `auth_tx_multisig` pays the transaction fee via
 /// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
-/// fee-charging chains the account must hold a sufficient balance of the payment asset. The
-/// payment asset and conversion rate come from the auth args (see
-/// [`FeeConversionInfo`](super::FeeConversionInfo); native fee asset at rate 1/1 for plain native
-/// payment). On chains with a zero verification base fee no note is created. The fee note is
+/// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
+/// payment asset and conversion rate come from the auth args and must name the reference block's
+/// fee asset at rate 1/1 (see
+/// [`FeeConversionInfo::one_to_one`](super::FeeConversionInfo::one_to_one)); any other value
+/// aborts. On chains with a zero verification base fee no note is created. The fee note is
 /// created before the transaction summary, so it is covered by the approver signatures.
 ///
 /// # Expiration
@@ -500,11 +501,12 @@ impl MultisigAuthArgs {
         }
     }
 
-    /// Returns new multisig auth args instructing the component which asset to pay the transaction
-    /// fee in.
+    /// Returns new multisig auth args carrying the conversion info the fee payment needs.
     ///
-    /// Without conversion info the fee payment aborts on chains that charge a non-zero
-    /// verification base fee.
+    /// The fee is payable only in the native fee asset at rate 1/1, so this must be
+    /// [`FeeConversionInfo::one_to_one`] built with the reference block's fee faucet. Without
+    /// conversion info, or with any other value, the fee payment aborts on chains that charge a
+    /// non-zero verification base fee.
     #[must_use]
     pub fn with_conversion_info(mut self, conversion_info: FeeConversionInfo) -> Self {
         self.conversion_info = Some(conversion_info);
@@ -524,7 +526,8 @@ impl MultisigAuthArgs {
         self.salt
     }
 
-    /// Returns the fee conversion info, or `None` if the fee is not paid in a converted asset.
+    /// Returns the fee conversion info, or `None` if none was committed - in which case the fee
+    /// payment aborts on chains that charge a non-zero verification base fee.
     pub fn conversion_info(&self) -> Option<FeeConversionInfo> {
         self.conversion_info
     }
