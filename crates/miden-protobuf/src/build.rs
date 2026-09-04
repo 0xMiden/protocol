@@ -16,6 +16,7 @@ pub struct ProtoDecodeConfig<'a> {
     target: &'static str,
     validators: &'a [(&'static str, &'static str)],
     field_decoders: &'a [(&'static str, &'static str)],
+    enumerations: &'a [ProtoDecodeEnumerationConfig<'a>],
     oneofs: &'a [ProtoDecodeOneofConfig<'a>],
     constructor: &'static str,
     constructor_kind: ConstructorKind,
@@ -34,6 +35,7 @@ impl<'a> ProtoDecodeConfig<'a> {
             target,
             validators,
             field_decoders: &[],
+            enumerations: &[],
             oneofs: &[],
             constructor,
             constructor_kind: ConstructorKind::Infallible,
@@ -52,6 +54,7 @@ impl<'a> ProtoDecodeConfig<'a> {
             target,
             validators,
             field_decoders: &[],
+            enumerations: &[],
             oneofs: &[],
             constructor,
             constructor_kind: ConstructorKind::Fallible,
@@ -64,6 +67,15 @@ impl<'a> ProtoDecodeConfig<'a> {
         field_decoders: &'a [(&'static str, &'static str)],
     ) -> Self {
         self.field_decoders = field_decoders;
+        self
+    }
+
+    #[doc(hidden)]
+    pub const fn with_enumerations(
+        mut self,
+        enumerations: &'a [ProtoDecodeEnumerationConfig<'a>],
+    ) -> Self {
+        self.enumerations = enumerations;
         self
     }
 
@@ -90,6 +102,12 @@ impl<'a> ProtoDecodeConfig<'a> {
             .map(|(field, decoder)| format!(", decode({field}, {decoder})"))
             .collect::<Vec<_>>()
             .join("");
+        let enumerations = self
+            .enumerations
+            .iter()
+            .map(ProtoDecodeEnumerationConfig::derive_setting)
+            .collect::<Vec<_>>()
+            .join("");
         let oneofs = self
             .oneofs
             .iter()
@@ -99,10 +117,84 @@ impl<'a> ProtoDecodeConfig<'a> {
 
         format!(
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
-             #[proto_decode(target({}){}{}{}, {}({}))]",
-            self.target, validators, field_decoders, oneofs, constructor, self.constructor
+             #[proto_decode(target({}){}{}{}{}, {}({}))]",
+            self.target,
+            validators,
+            field_decoders,
+            enumerations,
+            oneofs,
+            constructor,
+            self.constructor
         )
     }
+}
+
+/// Structured configuration for a generated Protobuf enumeration field.
+#[doc(hidden)]
+pub struct ProtoDecodeEnumerationConfig<'a> {
+    field: &'static str,
+    variants: &'a [ProtoDecodeEnumerationVariantConfig],
+}
+
+impl<'a> ProtoDecodeEnumerationConfig<'a> {
+    #[doc(hidden)]
+    pub const fn new(
+        field: &'static str,
+        variants: &'a [ProtoDecodeEnumerationVariantConfig],
+    ) -> Self {
+        Self { field, variants }
+    }
+
+    fn derive_setting(&self) -> String {
+        let variants = self
+            .variants
+            .iter()
+            .map(ProtoDecodeEnumerationVariantConfig::derive_setting)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(", enumeration({}, {variants})", self.field)
+    }
+}
+
+/// Structured configuration for a generated Protobuf enumeration variant.
+#[doc(hidden)]
+pub struct ProtoDecodeEnumerationVariantConfig {
+    variant: &'static str,
+    value: &'static str,
+    kind: EnumerationVariantKind,
+}
+
+impl ProtoDecodeEnumerationVariantConfig {
+    #[doc(hidden)]
+    pub const fn map(variant: &'static str, target: &'static str) -> Self {
+        Self {
+            variant,
+            value: target,
+            kind: EnumerationVariantKind::Map,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn reject(variant: &'static str, message: &'static str) -> Self {
+        Self {
+            variant,
+            value: message,
+            kind: EnumerationVariantKind::Reject,
+        }
+    }
+
+    fn derive_setting(&self) -> String {
+        let kind = match self.kind {
+            EnumerationVariantKind::Map => "map",
+            EnumerationVariantKind::Reject => "reject",
+        };
+        format!("{} => {kind}({})", self.variant, self.value)
+    }
+}
+
+enum EnumerationVariantKind {
+    Map,
+    Reject,
 }
 
 /// Structured configuration for a generated Protobuf oneof field.
@@ -419,6 +511,30 @@ mod tests {
              #[proto_decode(target(SelectedTarget), oneof(choice, First => \
              constructor(SelectedTarget::First), Second => \
              try_constructor(SelectedTarget::try_second)), constructor(choice))]"
+        );
+    }
+
+    #[test]
+    fn renders_enumeration_variant_mappings() {
+        let variants = [
+            ProtoDecodeEnumerationVariantConfig::reject("Unspecified", "\"kind is unspecified\""),
+            ProtoDecodeEnumerationVariantConfig::map("First", "SelectedKind::First"),
+        ];
+        let enumerations = [ProtoDecodeEnumerationConfig::new("kind", &variants)];
+        let config = ProtoDecodeConfig::constructor(
+            ".example.Selected",
+            "SelectedTarget",
+            &[],
+            "SelectedTarget::new(kind)",
+        )
+        .with_enumerations(&enumerations);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), enumeration(kind, Unspecified => \
+             reject(\"kind is unspecified\"), First => map(SelectedKind::First)), \
+             constructor(SelectedTarget::new(kind)))]"
         );
     }
 

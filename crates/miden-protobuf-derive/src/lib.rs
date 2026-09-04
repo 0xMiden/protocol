@@ -78,6 +78,12 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
         config.constructor.span(),
     )?;
     validate_field_decoders(&fields, &config.field_decoders, &constructor_fields)?;
+    validate_enumeration_mappings(
+        &fields,
+        &config.enumerations,
+        &config.field_decoders,
+        &constructor_fields,
+    )?;
     validate_oneof_mappings(&fields, &config.oneofs, &constructor_fields)?;
 
     let source = &input.ident;
@@ -92,8 +98,12 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
                 .field_decoders
                 .iter()
                 .find(|field_decoder| ident_name(&field_decoder.field) == name);
+            let enumeration = config
+                .enumerations
+                .iter()
+                .find(|enumeration| ident_name(&enumeration.field) == name);
             let oneof = config.oneofs.iter().find(|oneof| ident_name(&oneof.field) == name);
-            field.decoder(source, &runtime, field_decoder, oneof)
+            field.decoder(source, &runtime, field_decoder, enumeration, oneof)
         })
         .collect::<Result<Vec<_>>>()?;
     let construct = config.constructor.expression(&runtime);
@@ -115,6 +125,7 @@ struct DecodeConfig {
     target: Type,
     validators: Vec<FieldValidator>,
     field_decoders: Vec<FieldDecoder>,
+    enumerations: Vec<EnumerationMapping>,
     oneofs: Vec<OneofMapping>,
     constructor: Constructor,
 }
@@ -124,6 +135,7 @@ impl DecodeConfig {
         let mut target = None;
         let mut validators = Vec::new();
         let mut field_decoders = Vec::new();
+        let mut enumerations = Vec::new();
         let mut oneofs = Vec::new();
         let mut constructor = None;
         let mut found_attribute = false;
@@ -217,14 +229,54 @@ impl DecodeConfig {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("enumeration") {
+                    let content;
+                    parenthesized!(content in meta.input);
+                    let field = content.call(Ident::parse_any)?;
+                    content.parse::<Token![,]>()?;
+
+                    let mut variants = Vec::new();
+                    while !content.is_empty() {
+                        let variant = content.call(Ident::parse_any)?;
+                        content.parse::<Token![=>]>()?;
+                        let action = content.call(Ident::parse_any)?;
+                        let action_content;
+                        parenthesized!(action_content in content);
+                        let action = if action == "map" {
+                            EnumerationVariantAction::Map(action_content.parse()?)
+                        } else if action == "reject" {
+                            EnumerationVariantAction::Reject(action_content.parse()?)
+                        } else {
+                            return Err(syn::Error::new(
+                                action.span(),
+                                "expected `map` or `reject`",
+                            ));
+                        };
+                        if !action_content.is_empty() {
+                            return Err(action_content
+                                .error("unexpected tokens after enumeration variant action"));
+                        }
+                        variants.push(EnumerationVariantMapping { variant, action });
+
+                        if !content.is_empty() {
+                            content.parse::<Token![,]>()?;
+                        }
+                    }
+                    if variants.is_empty() {
+                        return Err(content.error("configure at least one enumeration variant"));
+                    }
+                    enumerations.push(EnumerationMapping { field, variants });
+                    return Ok(());
+                }
+
                 let kind = if meta.path.is_ident("constructor") {
                     ConstructorKind::Infallible
                 } else if meta.path.is_ident("try_constructor") {
                     ConstructorKind::Fallible
                 } else {
                     return Err(meta.error(
-                        "expected `target`, `validate`, `decode`, `oneof`, `constructor`, or \
-                         `try_constructor`",
+                        "expected `target`, `validate`, `decode`, `enumeration`, `oneof`, \
+                         `constructor`, or `try_constructor`",
                     ));
                 };
                 if constructor.is_some() {
@@ -245,6 +297,7 @@ impl DecodeConfig {
             target: target.ok_or_else(|| syn::Error::new(span, "missing `target` setting"))?,
             validators,
             field_decoders,
+            enumerations,
             oneofs,
             constructor: constructor
                 .ok_or_else(|| syn::Error::new(span, "missing constructor setting"))?,
@@ -255,6 +308,52 @@ impl DecodeConfig {
 struct FieldDecoder {
     field: Ident,
     decoder: Path,
+}
+
+struct EnumerationMapping {
+    field: Ident,
+    variants: Vec<EnumerationVariantMapping>,
+}
+
+impl EnumerationMapping {
+    fn decoder(&self, source_path: &Path, runtime: &TokenStream2) -> TokenStream2 {
+        let field = &self.field;
+        let field_name = LitStr::new(&ident_name(field), field.span());
+        let arms = self.variants.iter().map(|mapping| {
+            let variant = &mapping.variant;
+            match &mapping.action {
+                EnumerationVariantAction::Map(target) => quote! {
+                    #source_path::#variant => #target
+                },
+                EnumerationVariantAction::Reject(message) => quote! {
+                    #source_path::#variant => {
+                        return ::core::result::Result::Err(
+                            #runtime::ConversionError::message(#message).context(#field_name),
+                        );
+                    }
+                },
+            }
+        });
+
+        quote! {
+            let #field: #source_path = #runtime::decode(
+                #runtime::ValueField::new(#field_name, message.#field),
+            )?;
+            let #field = match #field {
+                #(#arms),*
+            };
+        }
+    }
+}
+
+struct EnumerationVariantMapping {
+    variant: Ident,
+    action: EnumerationVariantAction,
+}
+
+enum EnumerationVariantAction {
+    Map(Path),
+    Reject(LitStr),
 }
 
 struct OneofMapping {
@@ -536,6 +635,79 @@ fn validate_oneof_mappings(
     Ok(())
 }
 
+fn validate_enumeration_mappings(
+    fields: &BTreeMap<String, ProtoField>,
+    mappings: &[EnumerationMapping],
+    field_decoders: &[FieldDecoder],
+    constructor_fields: &[Ident],
+) -> Result<()> {
+    let constructor_fields: BTreeSet<_> = constructor_fields.iter().map(ident_name).collect();
+    let decoded_fields: BTreeSet<_> =
+        field_decoders.iter().map(|decoder| ident_name(&decoder.field)).collect();
+    let mut configured = BTreeSet::new();
+
+    for mapping in mappings {
+        let name = ident_name(&mapping.field);
+        if !configured.insert(name.clone()) {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("enumeration field `{name}` is configured twice"),
+            ));
+        }
+
+        let Some(field) = fields.get(&name) else {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("enumeration mapping references unknown field `{name}`"),
+            ));
+        };
+        if !matches!(&field.kind, FieldKind::Enumeration(_)) {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("field `{name}` is not a singular enumeration"),
+            ));
+        }
+        if !constructor_fields.contains(&name) {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("enumeration field `{name}` is not used by the constructor"),
+            ));
+        }
+        if decoded_fields.contains(&name) {
+            return Err(syn::Error::new(
+                mapping.field.span(),
+                format!("enumeration field `{name}` cannot also use a field decoder"),
+            ));
+        }
+
+        let mut variants = BTreeSet::new();
+        for variant in &mapping.variants {
+            let name = ident_name(&variant.variant);
+            if !variants.insert(name.clone()) {
+                return Err(syn::Error::new(
+                    variant.variant.span(),
+                    format!("enumeration variant `{name}` is configured twice"),
+                ));
+            }
+        }
+    }
+
+    for name in constructor_fields {
+        let field = fields.get(&name).expect("validated constructor field must exist");
+        if matches!(&field.kind, FieldKind::Enumeration(_))
+            && !configured.contains(&name)
+            && !decoded_fields.contains(&name)
+        {
+            return Err(syn::Error::new(
+                field.ident.span(),
+                format!("enumeration field `{name}` requires an explicit variant mapping"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_field_decoders(
     fields: &BTreeMap<String, ProtoField>,
     decoders: &[FieldDecoder],
@@ -599,6 +771,7 @@ impl ProtoField {
         source: &Ident,
         runtime: &TokenStream2,
         field_decoder: Option<&FieldDecoder>,
+        enumeration: Option<&EnumerationMapping>,
         oneof: Option<&OneofMapping>,
     ) -> Result<TokenStream2> {
         let ident = &self.ident;
@@ -624,6 +797,16 @@ impl ProtoField {
                 #runtime::decode(
                     #runtime::ValueField::new(#name, message.#ident),
                 )
+            },
+            FieldKind::Enumeration(source_path) => {
+                if let Some(enumeration) = enumeration {
+                    return Ok(enumeration.decoder(source_path, runtime));
+                }
+                quote! {
+                    #runtime::decode(
+                        #runtime::ValueField::new(#name, message.#ident),
+                    )
+                }
             },
             FieldKind::Oneof(source_path) => {
                 return Ok(oneof.expect("validated oneof field must have a mapping").decoder(
@@ -658,6 +841,7 @@ enum FieldKind {
     Optional,
     Repeated,
     Value,
+    Enumeration(Path),
     Oneof(Path),
 }
 
@@ -665,6 +849,7 @@ struct ProstField {
     message: bool,
     optional: bool,
     repeated: bool,
+    enumeration: Option<Path>,
     oneof: Option<Path>,
 }
 
@@ -674,6 +859,7 @@ impl ProstField {
             message: false,
             optional: false,
             repeated: false,
+            enumeration: None,
             oneof: None,
         };
         let mut found = false;
@@ -688,6 +874,16 @@ impl ProstField {
                     let value = meta.value()?;
                     let path: LitStr = value.parse()?;
                     parsed.oneof = Some(path.parse()?);
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("enumeration") {
+                    if parsed.enumeration.is_some() {
+                        return Err(meta.error("duplicate Prost enumeration setting"));
+                    }
+                    let value = meta.value()?;
+                    let path: LitStr = value.parse()?;
+                    parsed.enumeration = Some(path.parse()?);
                     return Ok(());
                 }
 
@@ -718,6 +914,8 @@ impl ProstField {
             FieldKind::Required
         } else if self.optional {
             FieldKind::Optional
+        } else if let Some(path) = &self.enumeration {
+            FieldKind::Enumeration(path.clone())
         } else {
             FieldKind::Value
         }
@@ -956,6 +1154,34 @@ mod tests {
     }
 
     #[test]
+    fn generates_enumeration_variant_mappings() {
+        let generated = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                enumeration(
+                    kind,
+                    Unspecified => reject("kind is unspecified"),
+                    First => map(::domain::Kind::First),
+                    Second => map(::domain::Kind::Second)
+                ),
+                constructor(::domain::Example::new(kind))
+            )]
+            struct ExampleMessage {
+                #[prost(enumeration = "ProtoKind", tag = "1")]
+                kind: i32,
+            }
+        })
+        .unwrap();
+
+        assert!(generated.contains("let kind : ProtoKind ="));
+        assert!(generated.contains("ValueField :: new (\"kind\" , message . kind)"));
+        assert!(generated.contains("ProtoKind :: First => :: domain :: Kind :: First"));
+        assert!(generated.contains("ProtoKind :: Second => :: domain :: Kind :: Second"));
+        assert!(generated.contains("ConversionError :: message (\"kind is unspecified\")"));
+        assert!(generated.contains("context (\"kind\")"));
+    }
+
+    #[test]
     fn rejects_fallible_tuple_constructors() {
         let error = expand_input(quote! {
             #[proto_decode(
@@ -1008,6 +1234,26 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error.to_string(), "oneof field `choice` requires an explicit variant mapping");
+    }
+
+    #[test]
+    fn rejects_enumeration_fields_without_variant_mappings() {
+        let error = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                constructor(::domain::Example::new(kind))
+            )]
+            struct ExampleMessage {
+                #[prost(enumeration = "ProtoKind", tag = "1")]
+                kind: i32,
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "enumeration field `kind` requires an explicit variant mapping"
+        );
     }
 
     #[test]
