@@ -26,6 +26,8 @@ pub(crate) use account_patch::{
     decode_account_vault_patch,
     decode_private_account_update,
     decode_storage_slot_name,
+    decode_storage_value_patch_create,
+    decode_storage_value_patch_update,
 };
 pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
 pub(crate) use block::{

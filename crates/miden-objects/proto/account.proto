@@ -1,6 +1,7 @@
 syntax = "proto3";
 package account;
 
+import "google/protobuf/empty.proto";
 import "primitives.proto";
 
 message AccountId {
@@ -86,8 +87,11 @@ enum StoragePatchOperation {
 }
 
 message StorageValuePatch {
-  StoragePatchOperation operation = 1;
-  primitives.Word value = 2;
+  oneof patch {
+    primitives.Word create = 1;
+    primitives.Word update = 2;
+    google.protobuf.Empty remove = 3;
+  }
 }
 
 message StorageMapEntry {

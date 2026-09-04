@@ -85,39 +85,23 @@ fn decode_storage_operation(operation: i32) -> Result<StoragePatchOperation, Con
 
 impl From<&StorageValuePatch> for proto::account::StorageValuePatch {
     fn from(patch: &StorageValuePatch) -> Self {
-        Self {
-            operation: encode_storage_operation(patch.patch_op()),
-            value: patch.value().map(Into::into),
-        }
+        use proto::account::storage_value_patch::Patch;
+
+        let patch = match patch {
+            StorageValuePatch::Create { value } => Patch::Create((*value).into()),
+            StorageValuePatch::Update { value } => Patch::Update((*value).into()),
+            StorageValuePatch::Remove => Patch::Remove(()),
+        };
+        Self { patch: Some(patch) }
     }
 }
 
-impl TryFrom<proto::account::StorageValuePatch> for StorageValuePatch {
-    type Error = ConversionError;
+pub(crate) fn decode_storage_value_patch_create(value: Word) -> StorageValuePatch {
+    StorageValuePatch::Create { value }
+}
 
-    fn try_from(patch: proto::account::StorageValuePatch) -> Result<Self, Self::Error> {
-        let operation = decode_storage_operation(patch.operation).context("operation")?;
-        match operation {
-            StoragePatchOperation::Create | StoragePatchOperation::Update => {
-                let decoder = patch.decoder();
-                let value = required!(decoder, patch.value)?;
-                Ok(if operation.is_create() {
-                    StorageValuePatch::Create { value }
-                } else {
-                    StorageValuePatch::Update { value }
-                })
-            },
-            StoragePatchOperation::Remove => {
-                if patch.value.is_some() {
-                    return Err(ConversionError::message(
-                        "value must be absent for a remove operation",
-                    )
-                    .context("value"));
-                }
-                Ok(StorageValuePatch::Remove)
-            },
-        }
-    }
+pub(crate) fn decode_storage_value_patch_update(value: Word) -> StorageValuePatch {
+    StorageValuePatch::Update { value }
 }
 
 impl From<&StorageMapPatch> for proto::account::StorageMapPatch {

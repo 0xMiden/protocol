@@ -958,11 +958,28 @@ fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
 
 #[test]
 fn storage_slot_patch_oneof_variants_decode() {
+    let create_value = Word::from([1, 2, 3, 4_u32]);
+    let update_value = Word::from([5, 6, 7, 8_u32]);
     for (patch, expected) in [
         (
             proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
-                operation: proto::account::StoragePatchOperation::Remove as i32,
-                value: None,
+                patch: Some(proto::account::storage_value_patch::Patch::Create(
+                    create_value.into(),
+                )),
+            }),
+            StorageSlotPatch::Value(StorageValuePatch::Create { value: create_value }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
+                patch: Some(proto::account::storage_value_patch::Patch::Update(
+                    update_value.into(),
+                )),
+            }),
+            StorageSlotPatch::Value(StorageValuePatch::Update { value: update_value }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
+                patch: Some(proto::account::storage_value_patch::Patch::Remove(())),
             }),
             StorageSlotPatch::Value(StorageValuePatch::Remove),
         ),
@@ -1004,7 +1021,7 @@ fn storage_slot_patch_reports_field_and_variant_paths() {
     .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "patch.value.operation: storage patch operation is unspecified"
+        "patch.value.patch: field miden_objects::proto::account::StorageValuePatch::patch is missing"
     );
 }
 
