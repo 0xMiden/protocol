@@ -14,7 +14,9 @@ use core::error::Error;
 use core::marker::PhantomData;
 
 pub(crate) use account::{
+    decode_account_header,
     decode_account_id,
+    decode_account_version,
     decode_partial_storage,
     decode_partial_storage_map,
     decode_partial_vault,

@@ -41,6 +41,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 id,
             ),
         },
+        ".account.AccountHeader" => {
+            target: ::miden_protocol::account::AccountHeader,
+            validate: {
+                version: crate::conversion::decode_account_version,
+            },
+            try_constructor: crate::conversion::decode_account_header(
+                account_id,
+                vault_root,
+                storage_commitment,
+                code_commitment,
+                nonce,
+            ),
+        },
         ".account.AccountCode" => {
             target: ::miden_protocol::account::AccountCode,
             try_constructor: crate::conversion::decode_account_code(

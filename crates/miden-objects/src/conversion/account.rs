@@ -123,7 +123,7 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
-fn decode_account_version(version: i32) -> Result<(), ConversionError> {
+pub(crate) fn decode_account_version(version: i32) -> Result<(), ConversionError> {
     match proto::account::AccountVersion::try_from(version) {
         Ok(proto::account::AccountVersion::V1) => Ok(()),
         Ok(proto::account::AccountVersion::Unspecified) => {
@@ -134,6 +134,23 @@ fn decode_account_version(version: i32) -> Result<(), ConversionError> {
             error,
         )),
     }
+}
+
+pub(crate) fn decode_account_header(
+    account_id: AccountId,
+    vault_root: Word,
+    storage_commitment: Word,
+    code_commitment: Word,
+    nonce: u64,
+) -> Result<AccountHeader, ConversionError> {
+    let nonce = Felt::try_from(nonce).map_err(ConversionError::new).context("nonce")?;
+    Ok(AccountHeader::new(
+        account_id,
+        nonce,
+        vault_root,
+        storage_commitment,
+        code_commitment,
+    ))
 }
 
 // PARTIAL STORAGE MAP
@@ -246,28 +263,6 @@ impl From<&PartialAccount> for proto::account::PartialAccount {
 impl From<PartialAccount> for proto::account::PartialAccount {
     fn from(account: PartialAccount) -> Self {
         (&account).into()
-    }
-}
-
-impl TryFrom<proto::account::AccountHeader> for AccountHeader {
-    type Error = ConversionError;
-
-    fn try_from(message: proto::account::AccountHeader) -> Result<Self, Self::Error> {
-        decode_account_version(message.version).context("version")?;
-
-        let decoder = message.decoder();
-        let account_id = required!(decoder, message.account_id)?;
-        let vault_root = required!(decoder, message.vault_root)?;
-        let storage_commitment = required!(decoder, message.storage_commitment)?;
-        let code_commitment = required!(decoder, message.code_commitment)?;
-        let nonce = Felt::try_from(message.nonce).map_err(ConversionError::new).context("nonce")?;
-        Ok(AccountHeader::new(
-            account_id,
-            nonce,
-            vault_root,
-            storage_commitment,
-            code_commitment,
-        ))
     }
 }
 
