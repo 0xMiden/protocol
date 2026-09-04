@@ -651,11 +651,10 @@ fn note_metadata_protobuf_preserves_unknown_version_error_sources() {
             NoteMetadata::try_from(proto::note::NoteMetadata { version, ..Default::default() })
                 .unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown note metadata version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );

@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_protobuf::{DecodeRepeated, RepeatedField};
+use miden_protocol::account::AccountId;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -71,15 +72,6 @@ impl From<NoteMetadata> for proto::note::NoteMetadata {
                 .collect(),
             attachments_commitment: Some(metadata.attachments_commitment().into()),
         }
-    }
-}
-
-impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
-    type Error = ConversionError;
-
-    fn try_from(metadata: proto::note::NoteMetadata) -> Result<Self, Self::Error> {
-        decode_note_version(metadata.version).context("version")?;
-        decode_note_metadata(metadata)
     }
 }
 
@@ -357,22 +349,9 @@ fn decode_note_version(version: i32) -> Result<(), ConversionError> {
     }
 }
 
-fn decode_note_metadata(
-    metadata: proto::note::NoteMetadata,
-) -> Result<NoteMetadata, ConversionError> {
-    let proto::note::NoteMetadata {
-        sender,
-        note_type,
-        tag,
-        attachment_schemes,
-        attachments_commitment,
-        ..
-    } = metadata;
-
-    let partial = decode_partial_note_metadata(sender, note_type, tag)?;
-    let decoder = MessageDecoder::<proto::note::NoteMetadata>::default();
-    let attachments_commitment = required!(decoder, attachments_commitment)?;
-
+pub(crate) fn decode_note_attachment_schemes(
+    attachment_schemes: Vec<u32>,
+) -> Result<[NoteAttachmentHeader; NoteAttachments::MAX_COUNT], ConversionError> {
     if attachment_schemes.len() > NoteAttachments::MAX_COUNT {
         return Err(ConversionError::message("too many attachment schemes"));
     }
@@ -387,7 +366,18 @@ fn decode_note_metadata(
         };
     }
 
-    Ok(NoteMetadata::from_parts(partial, attachment_headers, attachments_commitment))
+    Ok(attachment_headers)
+}
+
+pub(crate) fn decode_note_metadata(
+    sender: AccountId,
+    note_type: NoteType,
+    tag: u32,
+    attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
+    attachments_commitment: Word,
+) -> NoteMetadata {
+    let partial = PartialNoteMetadata::new(sender, note_type).with_tag(NoteTag::new(tag));
+    NoteMetadata::from_parts(partial, attachment_headers, attachments_commitment)
 }
 
 fn decode_partial_note_metadata(

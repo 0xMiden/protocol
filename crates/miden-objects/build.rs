@@ -353,6 +353,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recipient,
             ),
         },
+        ".note.NoteMetadata" => {
+            target: ::miden_protocol::note::NoteMetadata,
+            decode: {
+                attachment_schemes: crate::conversion::decode_note_attachment_schemes,
+            },
+            enumeration: {
+                version: {
+                    Unspecified: reject("note metadata version is unspecified"),
+                    V1: accept,
+                },
+                note_type: {
+                    Unspecified: reject("enum variant discriminant out of range"),
+                    Private: map(::miden_protocol::note::NoteType::Private),
+                    Public: map(::miden_protocol::note::NoteType::Public),
+                },
+            },
+            constructor: crate::conversion::decode_note_metadata(
+                sender,
+                note_type,
+                tag,
+                attachment_schemes,
+                attachments_commitment,
+            ),
+        },
         ".note.NoteStorage" => {
             target: ::miden_protocol::note::NoteStorage,
             try_constructor: crate::conversion::decode_note_storage(
