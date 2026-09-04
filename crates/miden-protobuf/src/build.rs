@@ -15,6 +15,7 @@ pub struct ProtoDecodeConfig<'a> {
     message_name: &'static str,
     target: &'static str,
     validators: &'a [(&'static str, &'static str)],
+    field_decoders: &'a [(&'static str, &'static str)],
     oneofs: &'a [ProtoDecodeOneofConfig<'a>],
     constructor: &'static str,
     constructor_kind: ConstructorKind,
@@ -32,6 +33,7 @@ impl<'a> ProtoDecodeConfig<'a> {
             message_name,
             target,
             validators,
+            field_decoders: &[],
             oneofs: &[],
             constructor,
             constructor_kind: ConstructorKind::Infallible,
@@ -49,10 +51,20 @@ impl<'a> ProtoDecodeConfig<'a> {
             message_name,
             target,
             validators,
+            field_decoders: &[],
             oneofs: &[],
             constructor,
             constructor_kind: ConstructorKind::Fallible,
         }
+    }
+
+    #[doc(hidden)]
+    pub const fn with_field_decoders(
+        mut self,
+        field_decoders: &'a [(&'static str, &'static str)],
+    ) -> Self {
+        self.field_decoders = field_decoders;
+        self
     }
 
     #[doc(hidden)]
@@ -72,6 +84,12 @@ impl<'a> ProtoDecodeConfig<'a> {
             .map(|(field, validator)| format!(", validate({field}, {validator})"))
             .collect::<Vec<_>>()
             .join("");
+        let field_decoders = self
+            .field_decoders
+            .iter()
+            .map(|(field, decoder)| format!(", decode({field}, {decoder})"))
+            .collect::<Vec<_>>()
+            .join("");
         let oneofs = self
             .oneofs
             .iter()
@@ -81,8 +99,8 @@ impl<'a> ProtoDecodeConfig<'a> {
 
         format!(
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
-             #[proto_decode(target({}){}{}, {}({}))]",
-            self.target, validators, oneofs, constructor, self.constructor
+             #[proto_decode(target({}){}{}{}, {}({}))]",
+            self.target, validators, field_decoders, oneofs, constructor, self.constructor
         )
     }
 }
@@ -361,6 +379,21 @@ mod tests {
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
              #[proto_decode(target(SelectedTarget), oneof(choice, First => \
              SelectedTarget::First, Second => SelectedTarget::Second), constructor(choice))]"
+        );
+    }
+
+    #[test]
+    fn renders_fallible_field_decoders() {
+        let decoders = [("count", "crate::decode_count")];
+        let config =
+            ProtoDecodeConfig::constructor(".example.Selected", "SelectedTarget", &[], "count")
+                .with_field_decoders(&decoders);
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), decode(count, crate::decode_count), \
+             constructor(count))]"
         );
     }
 

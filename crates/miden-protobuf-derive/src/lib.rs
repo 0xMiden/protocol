@@ -33,7 +33,8 @@ use syn::{
 /// `proto_decode` attribute supplies the foreign target type and an explicit constructor call or
 /// tuple expression whose fields define the conversion order. Optional field validators consume
 /// fields before constructor arguments are decoded and must return `Result<(), E>`. Oneof fields
-/// require explicit mappings from generated variants to infallible target constructors.
+/// require explicit mappings from generated variants to infallible target constructors. Fallible
+/// field decoders run after the field's cardinality-aware conversion.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -76,6 +77,7 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
         &constructor_fields,
         config.constructor.span(),
     )?;
+    validate_field_decoders(&fields, &config.field_decoders, &constructor_fields)?;
     validate_oneof_mappings(&fields, &config.oneofs, &constructor_fields)?;
 
     let source = &input.ident;
@@ -86,8 +88,12 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
         .map(|field_name| {
             let name = ident_name(field_name);
             let field = fields.get(&name).expect("validated constructor field must exist");
+            let field_decoder = config
+                .field_decoders
+                .iter()
+                .find(|field_decoder| ident_name(&field_decoder.field) == name);
             let oneof = config.oneofs.iter().find(|oneof| ident_name(&oneof.field) == name);
-            field.decoder(source, &runtime, oneof)
+            field.decoder(source, &runtime, field_decoder, oneof)
         })
         .collect::<Result<Vec<_>>>()?;
     let construct = config.constructor.expression(&runtime);
@@ -108,6 +114,7 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
 struct DecodeConfig {
     target: Type,
     validators: Vec<FieldValidator>,
+    field_decoders: Vec<FieldDecoder>,
     oneofs: Vec<OneofMapping>,
     constructor: Constructor,
 }
@@ -116,6 +123,7 @@ impl DecodeConfig {
     fn parse(attributes: &[Attribute], span: Span) -> Result<Self> {
         let mut target = None;
         let mut validators = Vec::new();
+        let mut field_decoders = Vec::new();
         let mut oneofs = Vec::new();
         let mut constructor = None;
         let mut found_attribute = false;
@@ -139,6 +147,19 @@ impl DecodeConfig {
                     let content;
                     parenthesized!(content in meta.input);
                     target = Some(content.parse()?);
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("decode") {
+                    let content;
+                    parenthesized!(content in meta.input);
+                    let field = content.call(Ident::parse_any)?;
+                    content.parse::<Token![,]>()?;
+                    let decoder = content.parse()?;
+                    if !content.is_empty() {
+                        return Err(content.error("unexpected tokens after field decoder path"));
+                    }
+                    field_decoders.push(FieldDecoder { field, decoder });
                     return Ok(());
                 }
 
@@ -185,7 +206,7 @@ impl DecodeConfig {
                     ConstructorKind::Fallible
                 } else {
                     return Err(meta.error(
-                        "expected `target`, `validate`, `oneof`, `constructor`, or \
+                        "expected `target`, `validate`, `decode`, `oneof`, `constructor`, or \
                          `try_constructor`",
                     ));
                 };
@@ -206,11 +227,17 @@ impl DecodeConfig {
         Ok(Self {
             target: target.ok_or_else(|| syn::Error::new(span, "missing `target` setting"))?,
             validators,
+            field_decoders,
             oneofs,
             constructor: constructor
                 .ok_or_else(|| syn::Error::new(span, "missing constructor setting"))?,
         })
     }
+}
+
+struct FieldDecoder {
+    field: Ident,
+    decoder: Path,
 }
 
 struct OneofMapping {
@@ -480,6 +507,46 @@ fn validate_oneof_mappings(
     Ok(())
 }
 
+fn validate_field_decoders(
+    fields: &BTreeMap<String, ProtoField>,
+    decoders: &[FieldDecoder],
+    constructor_fields: &[Ident],
+) -> Result<()> {
+    let constructor_fields: BTreeSet<_> = constructor_fields.iter().map(ident_name).collect();
+    let mut configured = BTreeSet::new();
+
+    for decoder in decoders {
+        let name = ident_name(&decoder.field);
+        if !configured.insert(name.clone()) {
+            return Err(syn::Error::new(
+                decoder.field.span(),
+                format!("field `{name}` has multiple decoders"),
+            ));
+        }
+
+        let Some(field) = fields.get(&name) else {
+            return Err(syn::Error::new(
+                decoder.field.span(),
+                format!("decoder references unknown field `{name}`"),
+            ));
+        };
+        if matches!(&field.kind, FieldKind::Oneof(_)) {
+            return Err(syn::Error::new(
+                decoder.field.span(),
+                format!("oneof field `{name}` must use a variant mapping"),
+            ));
+        }
+        if !constructor_fields.contains(&name) {
+            return Err(syn::Error::new(
+                decoder.field.span(),
+                format!("decoded field `{name}` is not used by the constructor"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 struct ProtoField {
     ident: Ident,
     kind: FieldKind,
@@ -502,37 +569,54 @@ impl ProtoField {
         &self,
         source: &Ident,
         runtime: &TokenStream2,
+        field_decoder: Option<&FieldDecoder>,
         oneof: Option<&OneofMapping>,
     ) -> Result<TokenStream2> {
         let ident = &self.ident;
         let name = LitStr::new(&ident_name(ident), ident.span());
 
-        let tokens = match &self.kind {
+        let decode = match &self.kind {
             FieldKind::Required => quote! {
-                let #ident = #runtime::decode(
+                #runtime::decode(
                     #runtime::RequiredField::<#source, _>::new(#name, message.#ident),
-                )?;
+                )
             },
             FieldKind::Optional => quote! {
-                let #ident = #runtime::decode(
+                #runtime::decode(
                     #runtime::OptionalField::new(#name, message.#ident),
-                )?;
+                )
             },
             FieldKind::Repeated => quote! {
-                let #ident = #runtime::decode(
+                #runtime::decode(
                     #runtime::RepeatedField::new(#name, message.#ident),
-                )?;
+                )
             },
             FieldKind::Value => quote! {
-                let #ident = #runtime::decode(
+                #runtime::decode(
                     #runtime::ValueField::new(#name, message.#ident),
-                )?;
+                )
             },
-            FieldKind::Oneof(source_path) => oneof
-                .expect("validated oneof field must have a mapping")
-                .decoder(source, source_path, runtime),
+            FieldKind::Oneof(source_path) => {
+                return Ok(oneof.expect("validated oneof field must have a mapping").decoder(
+                    source,
+                    source_path,
+                    runtime,
+                ));
+            },
         };
-        Ok(tokens)
+
+        if let Some(field_decoder) = field_decoder {
+            let decoder = &field_decoder.decoder;
+            Ok(quote! {
+                let #ident = (#decoder)(#decode?)
+                    .map_err(#runtime::ConversionError::new)
+                    .map_err(|error| error.context(#name))?;
+            })
+        } else {
+            Ok(quote! {
+                let #ident = #decode?;
+            })
+        }
     }
 }
 
@@ -732,6 +816,45 @@ mod tests {
         assert!(validator < decoder);
         assert!(generated.contains("message . version"));
         assert!(generated.contains("error . context (\"version\")"));
+    }
+
+    #[test]
+    fn generates_fallible_field_decoders_after_cardinality_decoding() {
+        let generated = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                decode(count, ::domain::decode_count),
+                constructor(::domain::Example::new(count))
+            )]
+            struct ExampleMessage {
+                #[prost(uint32, tag = "1")]
+                count: u32,
+            }
+        })
+        .unwrap();
+
+        assert!(generated.contains("domain :: decode_count"));
+        assert!(generated.contains("ValueField :: new (\"count\" , message . count)"));
+        assert!(generated.contains("error . context (\"count\")"));
+    }
+
+    #[test]
+    fn rejects_duplicate_field_decoders() {
+        let error = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                decode(count, ::domain::decode_count),
+                decode(count, ::domain::decode_count_again),
+                constructor(::domain::Example::new(count))
+            )]
+            struct ExampleMessage {
+                #[prost(uint32, tag = "1")]
+                count: u32,
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "field `count` has multiple decoders");
     }
 
     #[test]

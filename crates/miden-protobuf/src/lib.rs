@@ -82,6 +82,7 @@ macro_rules! __proto_decode_config {
             $message_name,
             $target,
             [],
+            [],
             [];
             $($settings)*
         )
@@ -91,6 +92,7 @@ macro_rules! __proto_decode_config {
         $message_name:literal,
         $target:ty,
         [$($validators:expr,)*],
+        [$($field_decoders:expr,)*],
         [$($oneofs:expr,)*];
         validate: {
             $($field:ident: $validator:path),+ $(,)?
@@ -105,6 +107,7 @@ macro_rules! __proto_decode_config {
                 $($validators,)*
                 $((::core::stringify!($field), ::core::stringify!($validator)),)+
             ],
+            [$($field_decoders,)*],
             [$($oneofs,)*];
             $($remaining)*
         )
@@ -114,6 +117,32 @@ macro_rules! __proto_decode_config {
         $message_name:literal,
         $target:ty,
         [$($validators:expr,)*],
+        [$($field_decoders:expr,)*],
+        [$($oneofs:expr,)*];
+        decode: {
+            $($field:ident: $decoder:path),+ $(,)?
+        },
+        $($remaining:tt)*
+    ) => {
+        $crate::__proto_decode_config!(
+            @parse
+            $message_name,
+            $target,
+            [$($validators,)*],
+            [
+                $($field_decoders,)*
+                $((::core::stringify!($field), ::core::stringify!($decoder)),)+
+            ],
+            [$($oneofs,)*];
+            $($remaining)*
+        )
+    };
+    (
+        @parse
+        $message_name:literal,
+        $target:ty,
+        [$($validators:expr,)*],
+        [$($field_decoders:expr,)*],
         [$($oneofs:expr,)*];
         oneof: {
             $(
@@ -129,6 +158,7 @@ macro_rules! __proto_decode_config {
             $message_name,
             $target,
             [$($validators,)*],
+            [$($field_decoders,)*],
             [
                 $($oneofs,)*
                 $(
@@ -151,6 +181,7 @@ macro_rules! __proto_decode_config {
         $message_name:literal,
         $target:ty,
         [$($validators:expr,)*],
+        [$($field_decoders:expr,)*],
         [$($oneofs:expr,)*];
         constructor: $constructor:expr $(,)?
     ) => {
@@ -160,6 +191,7 @@ macro_rules! __proto_decode_config {
             &[$($validators,)*],
             ::core::stringify!($constructor),
         )
+        .with_field_decoders(&[$($field_decoders,)*])
         .with_oneofs(&[$($oneofs,)*])
     };
     (
@@ -167,6 +199,7 @@ macro_rules! __proto_decode_config {
         $message_name:literal,
         $target:ty,
         [$($validators:expr,)*],
+        [$($field_decoders:expr,)*],
         [$($oneofs:expr,)*];
         try_constructor: $constructor:expr $(,)?
     ) => {
@@ -176,6 +209,7 @@ macro_rules! __proto_decode_config {
             &[$($validators,)*],
             ::core::stringify!($constructor),
         )
+        .with_field_decoders(&[$($field_decoders,)*])
         .with_oneofs(&[$($oneofs,)*])
     };
 }
