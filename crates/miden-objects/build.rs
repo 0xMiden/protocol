@@ -312,6 +312,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 merkle_store,
             ),
         },
+        ".primitives.PublicKey" => {
+            target: ::miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey,
+            decode: {
+                encoded: crate::conversion::decode_public_key,
+            },
+            enumeration: {
+                variant: {
+                    Unspecified: reject("public key variant is unspecified"),
+                    EcdsaK256Keccak: accept,
+                },
+            },
+            constructor: encoded,
+        },
         ".note.NoteRecipient" => {
             target: ::miden_protocol::note::NoteRecipient,
             constructor: ::miden_protocol::note::NoteRecipient::new(

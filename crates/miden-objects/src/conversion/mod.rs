@@ -41,7 +41,12 @@ pub(crate) use note::{
     decode_note_storage,
     validate_note_attachments,
 };
-pub(crate) use primitives::{decode_advice_map, decode_advice_stack, decode_merkle_store};
+pub(crate) use primitives::{
+    decode_advice_map,
+    decode_advice_stack,
+    decode_merkle_store,
+    decode_public_key,
+};
 pub(crate) use transaction::{
     decode_proven_transaction,
     decode_transaction_args,

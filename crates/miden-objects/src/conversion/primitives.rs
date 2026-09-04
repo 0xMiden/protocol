@@ -272,19 +272,6 @@ impl From<&AdviceInputs> for proto::primitives::AdviceInputs {
 // PUBLIC KEY
 // ================================================================================================
 
-fn decode_public_key_variant(variant: i32) -> Result<(), ConversionError> {
-    match proto::primitives::PublicKeyVariant::try_from(variant) {
-        Ok(proto::primitives::PublicKeyVariant::EcdsaK256Keccak) => Ok(()),
-        Ok(proto::primitives::PublicKeyVariant::Unspecified) => {
-            Err(ConversionError::message("public key variant is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown public key variant {variant}"),
-            error,
-        )),
-    }
-}
-
 impl From<&PublicKey> for proto::primitives::PublicKey {
     fn from(value: &PublicKey) -> Self {
         Self {
@@ -300,22 +287,16 @@ impl From<PublicKey> for proto::primitives::PublicKey {
     }
 }
 
-impl TryFrom<proto::primitives::PublicKey> for PublicKey {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::primitives::PublicKey) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
+pub(crate) fn decode_public_key(encoded: Vec<u8>) -> Result<PublicKey, ConversionError> {
+    PublicKey::read_from_bytes(&encoded)
+        .map_err(|error| ConversionError::deserialization("PublicKey", error))
 }
 
 impl TryFrom<&proto::primitives::PublicKey> for PublicKey {
     type Error = ConversionError;
 
     fn try_from(value: &proto::primitives::PublicKey) -> Result<Self, Self::Error> {
-        decode_public_key_variant(value.variant).context("variant")?;
-        Self::read_from_bytes(&value.encoded)
-            .map_err(|error| ConversionError::deserialization("PublicKey", error))
-            .map_err(|error| error.context("encoded"))
+        value.clone().try_into()
     }
 }
 
@@ -480,7 +461,7 @@ mod tests {
             encoded: vec![],
         })
         .unwrap_err();
-        assert_eq!(public_key_error.to_string(), "variant: unknown public key variant 2147483647");
+        assert_eq!(public_key_error.to_string(), "variant: unknown enumeration value 2147483647");
 
         let signature_error = Signature::try_from(proto::primitives::Signature {
             variant: i32::MAX,
