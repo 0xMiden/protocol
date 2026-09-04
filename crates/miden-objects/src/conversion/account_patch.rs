@@ -220,19 +220,6 @@ pub(crate) fn decode_account_storage_patch(
 // VAULT AND ACCOUNT PATCHES
 // ================================================================================================
 
-pub(crate) fn decode_account_patch_version(version: i32) -> Result<(), ConversionError> {
-    match proto::account::AccountPatchVersion::try_from(version) {
-        Ok(proto::account::AccountPatchVersion::V1) => Ok(()),
-        Ok(proto::account::AccountPatchVersion::Unspecified) => {
-            Err(ConversionError::message("account patch version is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown account patch version {version}"),
-            error,
-        )),
-    }
-}
-
 impl From<&AccountVaultPatch> for proto::account::AccountVaultPatch {
     fn from(patch: &AccountVaultPatch) -> Self {
         Self {

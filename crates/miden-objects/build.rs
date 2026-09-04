@@ -169,8 +169,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         ".account.AccountPatch" => {
             target: ::miden_protocol::account::AccountPatch,
-            validate: {
-                version: crate::conversion::decode_account_patch_version,
+            enumeration: {
+                version: {
+                    Unspecified: reject("account patch version is unspecified"),
+                    V1: accept,
+                },
             },
             try_constructor: ::miden_protocol::account::AccountPatch::new(
                 account_id,
