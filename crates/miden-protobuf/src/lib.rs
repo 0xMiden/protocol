@@ -49,7 +49,7 @@ macro_rules! configure_proto_decodes {
         $(
             $message_name:literal => {
                 target: $target:ty,
-                $constructor_kind:ident: $constructor:expr $(,)?
+                $($settings:tt)*
             }
         ),+ $(,)?
     ) => {
@@ -58,13 +58,86 @@ macro_rules! configure_proto_decodes {
             $descriptors,
             [
                 $(
-                    $crate::build::ProtoDecodeConfig::$constructor_kind(
+                    $crate::__proto_decode_config!(
                         $message_name,
-                        ::core::stringify!($target),
-                        ::core::stringify!($constructor),
+                        $target,
+                        $($settings)*
                     )
                 ),+
             ],
+        )
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __proto_decode_config {
+    (
+        $message_name:literal,
+        $target:ty,
+        constructor: $constructor:expr $(,)?
+    ) => {
+        $crate::build::ProtoDecodeConfig::constructor(
+            $message_name,
+            ::core::stringify!($target),
+            &[],
+            ::core::stringify!($constructor),
+        )
+    };
+    (
+        $message_name:literal,
+        $target:ty,
+        try_constructor: $constructor:expr $(,)?
+    ) => {
+        $crate::build::ProtoDecodeConfig::try_constructor(
+            $message_name,
+            ::core::stringify!($target),
+            &[],
+            ::core::stringify!($constructor),
+        )
+    };
+    (
+        $message_name:literal,
+        $target:ty,
+        validate: {
+            $($validated_field:ident: $validator:path),+ $(,)?
+        },
+        constructor: $constructor:expr $(,)?
+    ) => {
+        $crate::build::ProtoDecodeConfig::constructor(
+            $message_name,
+            ::core::stringify!($target),
+            &[
+                $(
+                    (
+                        ::core::stringify!($validated_field),
+                        ::core::stringify!($validator),
+                    ),
+                )+
+            ],
+            ::core::stringify!($constructor),
+        )
+    };
+    (
+        $message_name:literal,
+        $target:ty,
+        validate: {
+            $($validated_field:ident: $validator:path),+ $(,)?
+        },
+        try_constructor: $constructor:expr $(,)?
+    ) => {
+        $crate::build::ProtoDecodeConfig::try_constructor(
+            $message_name,
+            ::core::stringify!($target),
+            &[
+                $(
+                    (
+                        ::core::stringify!($validated_field),
+                        ::core::stringify!($validator),
+                    ),
+                )+
+            ],
+            ::core::stringify!($constructor),
         )
     };
 }

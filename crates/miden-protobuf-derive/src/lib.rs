@@ -18,6 +18,7 @@ use syn::{
     Fields,
     Ident,
     LitStr,
+    Path,
     Result,
     Token,
     Type,
@@ -29,7 +30,8 @@ use syn::{
 ///
 /// The derive reads cardinality and presence information from Prost's field attributes. The
 /// `proto_decode` attribute supplies the foreign target type and an explicit constructor call or
-/// tuple expression whose fields define the conversion order.
+/// tuple expression whose fields define the conversion order. Optional field validators consume
+/// fields before constructor arguments are decoded and must return `Result<(), E>`.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -66,10 +68,16 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
     let config = DecodeConfig::parse(&input.attrs, input.ident.span())?;
     let fields = parse_fields(&input)?;
     let constructor_fields = config.constructor.fields()?;
-    validate_constructor_fields(&fields, &constructor_fields, config.constructor.span())?;
+    validate_handled_fields(
+        &fields,
+        &config.validators,
+        &constructor_fields,
+        config.constructor.span(),
+    )?;
 
     let source = &input.ident;
     let target = &config.target;
+    let validate_fields = config.validators.iter().map(|validator| validator.expression(&runtime));
     let decode_fields = constructor_fields.iter().map(|field_name| {
         let field = fields
             .get(&ident_name(field_name))
@@ -83,6 +91,7 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
             type Error = #runtime::ConversionError;
 
             fn try_from(message: #source) -> ::core::result::Result<Self, Self::Error> {
+                #(#validate_fields)*
                 #(#decode_fields)*
                 #construct
             }
@@ -92,12 +101,14 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
 
 struct DecodeConfig {
     target: Type,
+    validators: Vec<FieldValidator>,
     constructor: Constructor,
 }
 
 impl DecodeConfig {
     fn parse(attributes: &[Attribute], span: Span) -> Result<Self> {
         let mut target = None;
+        let mut validators = Vec::new();
         let mut constructor = None;
         let mut found_attribute = false;
 
@@ -123,14 +134,27 @@ impl DecodeConfig {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("validate") {
+                    let content;
+                    parenthesized!(content in meta.input);
+                    let field = content.call(Ident::parse_any)?;
+                    content.parse::<Token![,]>()?;
+                    let validator = content.parse()?;
+                    if !content.is_empty() {
+                        return Err(content.error("unexpected tokens after validator path"));
+                    }
+                    validators.push(FieldValidator { field, validator });
+                    return Ok(());
+                }
+
                 let kind = if meta.path.is_ident("constructor") {
                     ConstructorKind::Infallible
                 } else if meta.path.is_ident("try_constructor") {
                     ConstructorKind::Fallible
                 } else {
-                    return Err(
-                        meta.error("expected `target`, `constructor`, or `try_constructor`")
-                    );
+                    return Err(meta.error(
+                        "expected `target`, `validate`, `constructor`, or `try_constructor`",
+                    ));
                 };
                 if constructor.is_some() {
                     return Err(meta.error("configure exactly one constructor"));
@@ -148,9 +172,29 @@ impl DecodeConfig {
 
         Ok(Self {
             target: target.ok_or_else(|| syn::Error::new(span, "missing `target` setting"))?,
+            validators,
             constructor: constructor
                 .ok_or_else(|| syn::Error::new(span, "missing constructor setting"))?,
         })
+    }
+}
+
+struct FieldValidator {
+    field: Ident,
+    validator: Path,
+}
+
+impl FieldValidator {
+    fn expression(&self, runtime: &TokenStream2) -> TokenStream2 {
+        let field = &self.field;
+        let name = LitStr::new(&ident_name(field), field.span());
+        let validator = &self.validator;
+
+        quote! {
+            let _: () = (#validator)(message.#field)
+                .map_err(#runtime::ConversionError::new)
+                .map_err(|error| error.context(#name))?;
+        }
     }
 }
 
@@ -235,12 +279,29 @@ fn parse_fields(input: &DeriveInput) -> Result<BTreeMap<String, ProtoField>> {
         .collect()
 }
 
-fn validate_constructor_fields(
+fn validate_handled_fields(
     fields: &BTreeMap<String, ProtoField>,
+    validators: &[FieldValidator],
     constructor_fields: &[Ident],
     span: Span,
 ) -> Result<()> {
     let mut configured = BTreeSet::new();
+    for validator in validators {
+        let name = ident_name(&validator.field);
+        if !configured.insert(name.clone()) {
+            return Err(syn::Error::new(
+                validator.field.span(),
+                format!("field `{name}` is used twice"),
+            ));
+        }
+        if !fields.contains_key(&name) {
+            return Err(syn::Error::new(
+                validator.field.span(),
+                format!("validator references unknown field `{name}`"),
+            ));
+        }
+    }
+
     for field in constructor_fields {
         let name = ident_name(field);
         if !configured.insert(name.clone()) {
@@ -486,6 +547,48 @@ mod tests {
         assert!(generated.contains("RequiredField :: < ExampleMessage , _ > :: new"));
         assert!(generated.contains("OptionalField :: new (\"optional_value\""));
         assert!(generated.contains("RepeatedField :: new (\"items\""));
+    }
+
+    #[test]
+    fn generates_validators_before_constructor_field_decoders() {
+        let generated = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                validate(version, ::domain::validate_version),
+                try_constructor(::domain::Example::new(required_message))
+            )]
+            struct ExampleMessage {
+                #[prost(uint32, tag = "1")]
+                version: u32,
+                #[prost(message, optional, tag = "2")]
+                required_message: Option<Message>,
+            }
+        })
+        .unwrap();
+
+        let validator = generated.find("validate_version").unwrap();
+        let decoder = generated.find("let required_message").unwrap();
+        assert!(validator < decoder);
+        assert!(generated.contains("message . version"));
+        assert!(generated.contains("error . context (\"version\")"));
+    }
+
+    #[test]
+    fn rejects_fields_used_by_both_validator_and_constructor() {
+        let error = expand_input(quote! {
+            #[proto_decode(
+                target(::domain::Example),
+                validate(version, ::domain::validate_version),
+                constructor(::domain::Example::new(version))
+            )]
+            struct ExampleMessage {
+                #[prost(uint32, tag = "1")]
+                version: u32,
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "field `version` is used twice");
     }
 
     #[test]

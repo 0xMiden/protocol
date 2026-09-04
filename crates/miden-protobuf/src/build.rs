@@ -14,6 +14,7 @@ const OPTIONAL_ATTRIBUTE: &str = "#[proto_decode(optional)]";
 pub struct ProtoDecodeConfig {
     message_name: &'static str,
     target: &'static str,
+    validators: &'static [(&'static str, &'static str)],
     constructor: &'static str,
     constructor_kind: ConstructorKind,
 }
@@ -23,11 +24,13 @@ impl ProtoDecodeConfig {
     pub const fn constructor(
         message_name: &'static str,
         target: &'static str,
+        validators: &'static [(&'static str, &'static str)],
         constructor: &'static str,
     ) -> Self {
         Self {
             message_name,
             target,
+            validators,
             constructor,
             constructor_kind: ConstructorKind::Infallible,
         }
@@ -37,11 +40,13 @@ impl ProtoDecodeConfig {
     pub const fn try_constructor(
         message_name: &'static str,
         target: &'static str,
+        validators: &'static [(&'static str, &'static str)],
         constructor: &'static str,
     ) -> Self {
         Self {
             message_name,
             target,
+            validators,
             constructor,
             constructor_kind: ConstructorKind::Fallible,
         }
@@ -52,11 +57,17 @@ impl ProtoDecodeConfig {
             ConstructorKind::Infallible => "constructor",
             ConstructorKind::Fallible => "try_constructor",
         };
+        let validators = self
+            .validators
+            .iter()
+            .map(|(field, validator)| format!(", validate({field}, {validator})"))
+            .collect::<Vec<_>>()
+            .join("");
 
         format!(
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
-             #[proto_decode(target({}), {}({}))]",
-            self.target, constructor, self.constructor
+             #[proto_decode(target({}){}, {}({}))]",
+            self.target, validators, constructor, self.constructor
         )
     }
 }
@@ -278,6 +289,24 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error.to_string(), "duplicate ProtoDecode message `example.Selected`");
+    }
+
+    #[test]
+    fn renders_ordered_field_validators() {
+        let config = ProtoDecodeConfig::try_constructor(
+            ".example.Selected",
+            "SelectedTarget",
+            &[("version", "crate::validate_version"), ("kind", "crate::validate_kind")],
+            "SelectedTarget::new(value)",
+        );
+
+        assert_eq!(
+            config.derive_attribute(),
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target(SelectedTarget), validate(version, crate::validate_version), \
+             validate(kind, crate::validate_kind), \
+             try_constructor(SelectedTarget::new(value)))]"
+        );
     }
 
     fn field(name: &str, field_type: Type, proto3_optional: bool) -> FieldDescriptorProto {
