@@ -7,8 +7,8 @@
 //! `invoke_send_policy` / `invoke_receive_policy` wrappers whose roots live in the
 //! protocol-reserved callback slots
 //! (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and `..._to_note`); the
-//! kernel `dyncall`s the wrapper, which applies the account-wide pause check and then dispatches to
-//! the active policy root.
+//! kernel `dyncall`s the wrapper, which limits the transaction's expiration, applies the
+//! account-wide pause check and then dispatches to the active policy root.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -193,8 +193,9 @@ struct PolicyConfig {
 /// The component exposes `set_*_policy` and `get_*_policy` for each kind, `execute_*_policy` for
 /// mint / burn, and `invoke_send_policy` / `invoke_receive_policy` for the transfer kinds. The
 /// transfer wrappers double as the protocol-level `on_before_asset_added_to_*` asset callbacks:
-/// the kernel `dyncall`s the wrapper, which applies the account-wide pause check and then
-/// dispatches to the active send / receive policy.
+/// the kernel `dyncall`s the wrapper, which limits the transaction's expiration to the standards
+/// default delta, applies the account-wide pause check and then dispatches to the active send /
+/// receive policy.
 /// Authorization for switching the active policies is delegated to the account-wide
 /// [`Authority`][crate::account::access::Authority] component, which must be installed alongside
 /// this manager.

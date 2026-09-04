@@ -1,5 +1,7 @@
+use miden_processor::ExecutionError;
 use miden_protocol::vm::ExecutionProof;
-use miden_prover::{ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
+use miden_prover::HashFunction::Poseidon2;
+use miden_prover::Prover;
 
 use crate::{BlockProverError, ExecutedBlock};
 
@@ -19,17 +21,23 @@ use crate::{BlockProverError, ExecutedBlock};
 /// block's account updates, notes or nullifiers, so a block whose contents were mutated would
 /// still carry a valid proof. This must therefore not be relied on at a trust boundary until the
 /// kernel verification logic that emits and binds the real commitments lands.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct LocalBlockProver {
-    proving_options: ProvingOptions,
+    prover: Prover,
+}
+
+impl Default for LocalBlockProver {
+    fn default() -> Self {
+        Self {
+            prover: Prover::new().with_hash_fn(Poseidon2),
+        }
+    }
 }
 
 impl LocalBlockProver {
     /// Creates a new [`LocalBlockProver`] instance.
-    pub fn new(_proof_security_level: u32) -> Self {
-        // TODO: This will eventually take the security level as a parameter, but until we verify
-        // blocks it is ignored.
-        Self::default()
+    pub fn new(prover: Prover) -> Self {
+        Self { prover }
     }
 
     /// Proves the [`ExecutedBlock`] into an [`ExecutionProof`].
@@ -38,26 +46,25 @@ impl LocalBlockProver {
     ///
     /// # Errors
     ///
-    /// Returns an error if proof generation fails.
+    /// Returns an error if proof generation fails or the block execution used a precompile.
     pub fn prove(&self, executed_block: ExecutedBlock) -> Result<ExecutionProof, BlockProverError> {
-        let trace_inputs = executed_block.into_trace_inputs();
+        let witness = executed_block.into_witness();
+        if witness.has_precompiles() {
+            return Err(BlockProverError::BlockProofContainsPrecompiles);
+        }
 
-        let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
-            trace_inputs,
-            self.proving_options.clone(),
-        ))
-        .map_err(BlockProverError::BlockKernelExecutionFailed)?;
+        let proof = self
+            .prover
+            .prove(witness)
+            .map_err(|error| ExecutionError::ProvingError(error.to_string()))
+            .map_err(BlockProverError::BlockKernelProvingFailed)?;
 
         Ok(proof)
     }
 
     /// Returns a dummy [`ExecutionProof`], without running the block kernel.
-    ///
-    /// This is exposed for testing purposes. It is gated on the `testing` feature alone rather
-    /// than also on `cfg(test)`, because [`ExecutionProof::new_dummy`] requires `miden-core`'s own
-    /// `testing` feature, which only this crate's `testing` feature turns on.
     #[cfg(feature = "testing")]
     pub fn prove_dummy(&self) -> ExecutionProof {
-        ExecutionProof::new_dummy()
+        miden_protocol::testing::dummy_execution_proof()
     }
 }

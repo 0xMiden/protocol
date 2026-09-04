@@ -181,7 +181,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
     ///
     /// To add multiple entries, call this repeatedly or use [`Self::extend_advice_inputs`].
     pub fn add_advice_map_entry(mut self, key: Word, value: Vec<Felt>) -> Self {
-        self.advice_inputs.map.insert(key, value);
+        self.advice_inputs = self.advice_inputs.with_map([(key, value)]);
         self
     }
 

@@ -23,8 +23,8 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::MockChain;
-use miden_tx::{LocalTransactionProver, ProvingOptions};
+use miden_testing::{Auth, MockChain};
+use miden_tx::{LocalTransactionProver, Prover};
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -39,8 +39,7 @@ pub async fn prove_and_verify_transaction(
     let executed_tx_header = TransactionHeader::from(&executed_transaction);
     // Prove the transaction
 
-    let proof_options = ProvingOptions::default();
-    let prover = LocalTransactionProver::new(proof_options);
+    let prover = LocalTransactionProver::new(Prover::default());
     let proven_transaction = prover.prove(executed_transaction).unwrap();
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
 
@@ -54,7 +53,63 @@ pub async fn prove_and_verify_transaction(
     // Verify that the generated proof is valid
     let verifier = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL);
 
-    verifier.verify(&proven_transaction)
+    let outcome = verifier.verify(&proven_transaction)?;
+    assert!(
+        outcome.is_complete(),
+        "the local transaction prover must settle precompile work"
+    );
+
+    Ok(())
+}
+
+/// Deferred transaction proofs are validated by the VM verifier rather than rejected by their
+/// lifecycle state alone.
+#[tokio::test]
+async fn transaction_verifier_delegates_deferred_proof_validation() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+    let proven = LocalTransactionProver::default().prove_dummy_deferred(executed)?;
+
+    let err = TransactionVerifier::new(0).verify(&proven).unwrap_err();
+    assert_matches::assert_matches!(
+        err,
+        TransactionVerifierError::TransactionVerificationFailed(_)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn transaction_verifier_rejects_settled_precompile_proofs() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+    let proven = LocalTransactionProver::default().prove_dummy_precompile(executed)?;
+
+    let error = TransactionVerifier::new(0).verify(&proven).unwrap_err();
+    assert_matches::assert_matches!(
+        error,
+        TransactionVerifierError::TransactionProofContainsPrecompiles
+    );
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -91,4 +146,22 @@ pub async fn consume_note(
     mock_chain.add_pending_executed_transaction(&executed)?;
     mock_chain.prove_next_block()?;
     Ok(())
+}
+
+/// Rebuilds `note` as a private note, keeping its script, storage, assets and attachments.
+///
+/// The typed note builders of the standard config notes fix the note type to
+/// [`NoteType::Public`], so this is how a sender would hand-craft a private note that is
+/// otherwise indistinguishable from a legitimate config note.
+#[cfg(test)]
+pub fn into_private_note(note: Note) -> Note {
+    let metadata = PartialNoteMetadata::new(note.metadata().sender(), NoteType::Private)
+        .with_tag(note.metadata().tag());
+
+    Note::with_attachments(
+        note.assets().clone(),
+        metadata,
+        note.recipient().clone(),
+        note.attachments().clone(),
+    )
 }

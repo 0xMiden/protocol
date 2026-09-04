@@ -1055,7 +1055,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             first_foreign_account.id().prefix().as_felt(),
             first_foreign_account.id().suffix(),
         ]);
-    let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
+    let advice_inputs = AdviceInputs::default().with_stack(advice_stack);
 
     let code = format!(
         r#"
@@ -1684,7 +1684,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     advice_stack
         .append_elements(*native_account.code().procedures()[3].mast_root())
         .append_elements([native_account.id().prefix().as_felt(), native_account.id().suffix()]);
-    let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
+    let advice_inputs = AdviceInputs::default().with_stack(advice_stack);
 
     let result = mock_chain
         .build_transaction(native_account.id())

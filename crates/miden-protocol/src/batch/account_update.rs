@@ -242,11 +242,11 @@ mod tests {
     use crate::errors::BatchAccountUpdateError;
     use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use crate::testing::add_component::AddComponent;
+    use crate::testing::dummy_execution_proof;
     use crate::testing::noop_auth_component::NoopAuthComponent;
     use crate::testing::storage::AccountStoragePatchBuilder;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
     use crate::utils::serde::Serializable;
-    use crate::vm::ExecutionProof;
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, Felt, Word};
 
     fn map_update_patch(
@@ -293,7 +293,7 @@ mod tests {
             BlockNumber::from(1),
             Word::empty(),
             BlockNumber::from(2),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap()
     }

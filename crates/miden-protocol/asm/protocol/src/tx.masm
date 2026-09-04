@@ -316,7 +316,7 @@ end
 #! Output: [...]
 #!
 #! Where:
-#! - block_height_delta is the desired expiration delta (1 to 0xFFFF).
+#! - block_height_delta is the desired expiration delta (1 to 65535).
 #!
 #! Annotation hint: is not used anywhere
 pub proc update_expiration_block_delta(block_height_delta: u16)
@@ -339,7 +339,7 @@ end
 #! Output: [block_height_delta, ...]
 #!
 #! Where:
-#! - block_height_delta is the stored expiration delta (1 to 0xFFFF).
+#! - block_height_delta is the stored expiration delta (1 to 65535).
 #!
 #! Annotation hint: is not used anywhere
 pub proc get_expiration_block_delta() -> u16
