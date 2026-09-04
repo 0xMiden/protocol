@@ -568,6 +568,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 block_headers,
             ),
         },
+        ".blockchain.BlockNumber" => {
+            target: ::miden_protocol::block::BlockNumber,
+            constructor: <::miden_protocol::block::BlockNumber as ::core::convert::From<u32>>::from(
+                block_num,
+            ),
+        },
         ".blockchain.FeeParameters" => {
             target: ::miden_protocol::block::FeeParameters,
             constructor: ::miden_protocol::block::FeeParameters::new(

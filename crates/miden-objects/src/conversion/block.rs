@@ -38,12 +38,6 @@ impl From<BlockNumber> for proto::blockchain::BlockNumber {
     }
 }
 
-impl From<proto::blockchain::BlockNumber> for BlockNumber {
-    fn from(value: proto::blockchain::BlockNumber) -> Self {
-        value.block_num.into()
-    }
-}
-
 // PARTIAL BLOCKCHAIN
 // ================================================================================================
 

@@ -1323,6 +1323,14 @@ fn block_header_rejects_missing_block_number() {
 }
 
 #[test]
+fn block_number_roundtrips_through_protobuf() {
+    let expected = BlockNumber::from(42_u32);
+    let message = proto::blockchain::BlockNumber::from(expected);
+
+    assert_eq!(BlockNumber::try_from(message).unwrap(), expected);
+}
+
+#[test]
 fn fee_parameters_roundtrip_through_protobuf() {
     let expected = FeeParameters::new(42);
     let message = proto::blockchain::FeeParameters::from(&expected);
