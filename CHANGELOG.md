@@ -13,6 +13,7 @@
 
 ### Changes
 
+- [BREAKING] Replaced `StandardNote::expected_num_storage_items` with `StandardNote::accepts_num_storage_items`, which reports every storage size a note kind accepts instead of a single value that was neither exact nor a bound for MINT and the config notes ([#3810](https://github.com/0xMiden/protocol/pull/3810)).
 - Added a check that the guardian public key is not one of the approver public keys ([#3764](https://github.com/0xMiden/protocol/pull/3764)).
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.31.0 and `midenc-hir-type` to v0.13.0. Execution proofs now include a format version and compatible VM and PVM verifier roots, and protocol deserialization rejects unversioned proof bytes from earlier releases. Verifier outcomes now report separate VM and precompile security parameters ([#3806](https://github.com/0xMiden/protocol/pull/3806)).
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.30.0 and `midenc-hir-type` to v0.12.0. `LocalTransactionProver::new` now takes `miden_prover::Prover`, `CoreLibrary` exposes one merged package, and `TransactionVerifier::verify` now returns `VerificationOutcome` so callers can handle outstanding precompile work ([#3782](https://github.com/0xMiden/protocol/pull/3782)).

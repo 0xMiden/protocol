@@ -214,6 +214,12 @@ impl RbacConfigNote {
     /// account_suffix, account_prefix]`), `SetRoleAdmin` uses 3, and `RenounceRole` uses 2.
     pub const MAX_NUM_STORAGE_ITEMS: usize = 4;
 
+    /// Lower bound on the number of storage items of an RbacConfig note.
+    ///
+    /// `RenounceRole` uses this size; every size up to [`Self::MAX_NUM_STORAGE_ITEMS`] is used
+    /// by one of the actions. Keep in sync with `NUM_ITEMS_*` in `rbac_config.masm`.
+    pub const MIN_NUM_STORAGE_ITEMS: usize = 2;
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 

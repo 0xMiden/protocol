@@ -378,6 +378,20 @@ mod tests {
         assert_eq!(target.execution_hint(), NoteExecutionHint::Always);
     }
 
+    /// The MINT script asserts these sizes itself, so the Rust constants must mirror the ones
+    /// the script is built with.
+    #[test]
+    fn storage_item_counts_match_the_masm_constants() {
+        // Must stay in sync with `FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE` /
+        // `NFT_NUM_STORAGE_ITEMS_PRIVATE` and `FUNGIBLE_MIN_NUM_STORAGE_ITEMS_PUBLIC` /
+        // `NFT_MIN_NUM_STORAGE_ITEMS_PUBLIC` in asm/standards/notes/mint/.
+        const MASM_NUM_STORAGE_ITEMS_PRIVATE: usize = 13;
+        const MASM_MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 20;
+
+        assert_eq!(MintNote::NUM_STORAGE_ITEMS_PRIVATE, MASM_NUM_STORAGE_ITEMS_PRIVATE);
+        assert_eq!(MintNote::MIN_NUM_STORAGE_ITEMS_PUBLIC, MASM_MIN_NUM_STORAGE_ITEMS_PUBLIC);
+    }
+
     /// A private faucet is never a network account, so no target is derived for it. The note is
     /// still tagged for the faucet and remains consumable by it.
     #[test]
