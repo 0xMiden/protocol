@@ -450,7 +450,7 @@ impl OneofMapping {
                 },
                 OneofVariantAction::Constant(value) => quote! {
                     #source_path::#variant(()) => #value
-                }
+                },
             }
         });
 
@@ -471,10 +471,7 @@ struct OneofVariantMapping {
 }
 
 enum OneofVariantAction {
-    Constructor {
-        constructor: Path,
-        kind: ConstructorKind,
-    },
+    Constructor { constructor: Path, kind: ConstructorKind },
     Constant(Expr),
 }
 

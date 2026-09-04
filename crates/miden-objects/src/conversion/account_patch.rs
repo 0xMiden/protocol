@@ -126,10 +126,8 @@ pub(crate) fn decode_storage_map_patch_update(
     entries: StorageMapPatchEntries,
 ) -> Result<StorageMapPatch, ConversionError> {
     if entries.is_empty() {
-        return Err(ConversionError::message(
-            "entries must be non-empty for an update operation",
-        )
-        .context("entries"));
+        return Err(ConversionError::message("entries must be non-empty for an update operation")
+            .context("entries"));
     }
 
     Ok(StorageMapPatch::Update { entries })

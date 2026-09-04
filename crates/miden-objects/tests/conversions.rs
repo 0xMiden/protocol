@@ -1001,9 +1001,7 @@ fn storage_slot_patch_oneof_variants_decode() {
                     proto_map_entries.clone(),
                 )),
             }),
-            StorageSlotPatch::Map(StorageMapPatch::Create {
-                entries: map_entries.clone(),
-            }),
+            StorageSlotPatch::Map(StorageMapPatch::Create { entries: map_entries.clone() }),
         ),
         (
             proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
@@ -1077,16 +1075,11 @@ fn storage_map_patch_reports_oneof_and_entry_paths() {
     };
     let error = StorageMapPatch::try_from(proto::account::StorageMapPatch {
         patch: Some(proto::account::storage_map_patch::Patch::Create(
-            proto::account::storage_map_patch::Entries {
-                entries: vec![entry.clone(), entry],
-            },
+            proto::account::storage_map_patch::Entries { entries: vec![entry.clone(), entry] },
         )),
     })
     .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "patch.create.entries[1].key: duplicate storage map key"
-    );
+    assert_eq!(error.to_string(), "patch.create.entries[1].key: duplicate storage map key");
 }
 
 #[test]

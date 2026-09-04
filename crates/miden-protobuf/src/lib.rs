@@ -279,18 +279,16 @@ macro_rules! __proto_decode_config {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __proto_decode_enumeration_variant {
-    ($variant:ident, map($target:expr)) => {
+    ($variant:ident,map($target:expr)) => {
         $crate::build::ProtoDecodeEnumerationVariantConfig::map(
             ::core::stringify!($variant),
             ::core::stringify!($target),
         )
     };
-    ($variant:ident, accept) => {
-        $crate::build::ProtoDecodeEnumerationVariantConfig::accept(
-            ::core::stringify!($variant),
-        )
+    ($variant:ident,accept) => {
+        $crate::build::ProtoDecodeEnumerationVariantConfig::accept(::core::stringify!($variant))
     };
-    ($variant:ident, reject($message:expr)) => {
+    ($variant:ident,reject($message:expr)) => {
         $crate::build::ProtoDecodeEnumerationVariantConfig::reject(
             ::core::stringify!($variant),
             ::core::stringify!($message),
