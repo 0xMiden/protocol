@@ -86,19 +86,6 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
-pub(crate) fn decode_account_version(version: i32) -> Result<(), ConversionError> {
-    match proto::account::AccountVersion::try_from(version) {
-        Ok(proto::account::AccountVersion::V1) => Ok(()),
-        Ok(proto::account::AccountVersion::Unspecified) => {
-            Err(ConversionError::message("account header version is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown account header version {version}"),
-            error,
-        )),
-    }
-}
-
 pub(crate) fn decode_account_header(
     account_id: AccountId,
     vault_root: Word,

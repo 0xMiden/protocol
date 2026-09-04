@@ -43,8 +43,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         ".account.AccountHeader" => {
             target: ::miden_protocol::account::AccountHeader,
-            validate: {
-                version: crate::conversion::decode_account_version,
+            enumeration: {
+                version: {
+                    Unspecified: reject("account header version is unspecified"),
+                    V1: accept,
+                },
             },
             try_constructor: crate::conversion::decode_account_header(
                 account_id,

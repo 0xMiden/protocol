@@ -491,11 +491,10 @@ fn account_header_protobuf_preserves_unknown_version_error_sources() {
         })
         .unwrap_err();
 
-        assert_eq!(error.to_string(), format!("version: unknown account header version {version}"));
+        assert_eq!(error.to_string(), format!("version: unknown enumeration value {version}"));
         assert_matches!(
             error
                 .source()
-                .and_then(Error::source)
                 .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
             Some(prost::UnknownEnumValue(value)) if *value == version
         );
