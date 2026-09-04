@@ -143,37 +143,6 @@ impl From<BlockHeader> for proto::blockchain::BlockHeader {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn decode_block_header(
-    block_num: BlockNumber,
-    prev_block_commitment: Word,
-    chain_commitment: Word,
-    account_root: Word,
-    nullifier_root: Word,
-    note_root: Word,
-    tx_commitment: Word,
-    validator_config: ValidatorConfig,
-    fee_parameters: FeeParameters,
-    protocol_config_commitment: Word,
-    next_protocol_config: Option<NextProtocolConfig>,
-    timestamp: u32,
-) -> BlockHeader {
-    BlockHeader::new(
-        prev_block_commitment,
-        block_num,
-        chain_commitment,
-        account_root,
-        nullifier_root,
-        note_root,
-        tx_commitment,
-        validator_config,
-        fee_parameters,
-        protocol_config_commitment,
-        next_protocol_config,
-        timestamp,
-    )
-}
-
 // BLOCK BODY
 // ================================================================================================
 

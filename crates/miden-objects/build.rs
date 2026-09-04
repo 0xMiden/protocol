@@ -588,9 +588,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     V1: accept,
                 },
             },
-            constructor: crate::conversion::decode_block_header(
-                block_num,
+            constructor: ::miden_protocol::block::BlockHeader::new(
                 prev_block_commitment,
+                block_num,
                 chain_commitment,
                 account_root,
                 nullifier_root,
