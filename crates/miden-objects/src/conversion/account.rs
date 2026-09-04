@@ -11,16 +11,13 @@ use miden_protocol::account::{
     PartialStorage,
     PartialStorageMap,
     StorageMapKey,
-    StorageSlotHeader,
     StorageSlotId,
-    StorageSlotName,
     StorageSlotType,
 };
 use miden_protocol::asset::{AssetId, PartialVault};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::{Felt, Word};
 
-use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 pub(crate) fn decode_account_id(id: Vec<u8>) -> Result<AccountId, ConversionError> {
@@ -60,45 +57,11 @@ impl From<&StorageSlotId> for proto::account::StorageSlotId {
     }
 }
 
-/// Decodes a protobuf storage slot type into its domain representation.
-///
-/// Protobuf reserves discriminant 0 for an unspecified value, while the domain
-/// enum uses discriminants 0 and 1 for `Value` and `Map`, respectively.
-fn decode_storage_slot_type(slot_type: i32) -> Result<StorageSlotType, ConversionError> {
-    match proto::account::StorageSlotType::try_from(slot_type) {
-        Ok(proto::account::StorageSlotType::Value) => Ok(StorageSlotType::Value),
-        Ok(proto::account::StorageSlotType::Map) => Ok(StorageSlotType::Map),
-        Ok(proto::account::StorageSlotType::Unspecified) => {
-            Err(ConversionError::message("storage slot type is unspecified"))
-        },
-        Err(error) => Err(ConversionError::with_source(
-            format!("unknown storage slot type {slot_type}"),
-            error,
-        )),
-    }
-}
-
 /// Encodes a domain storage slot type using its protobuf representation.
 fn encode_storage_slot_type(slot_type: StorageSlotType) -> i32 {
     match slot_type {
         StorageSlotType::Value => proto::account::StorageSlotType::Value as i32,
         StorageSlotType::Map => proto::account::StorageSlotType::Map as i32,
-    }
-}
-
-impl TryFrom<proto::account::account_storage_header::StorageSlot> for StorageSlotHeader {
-    type Error = ConversionError;
-
-    fn try_from(
-        slot: proto::account::account_storage_header::StorageSlot,
-    ) -> Result<Self, Self::Error> {
-        let decoder = slot.decoder();
-        let name = StorageSlotName::new(slot.slot_name)
-            .map_err(ConversionError::new)
-            .context("slot_name")?;
-        let slot_type = decode_storage_slot_type(slot.slot_type).context("slot_type")?;
-        let commitment = required!(decoder, slot.commitment)?;
-        Ok(Self::new(name, slot_type, commitment))
     }
 }
 

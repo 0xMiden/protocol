@@ -67,6 +67,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 slots,
             ),
         },
+        ".account.AccountStorageHeader.StorageSlot" => {
+            target: ::miden_protocol::account::StorageSlotHeader,
+            decode: {
+                slot_name: crate::conversion::decode_storage_slot_name,
+            },
+            enumeration: {
+                slot_type: {
+                    Unspecified: reject("storage slot type is unspecified"),
+                    Value: map(::miden_protocol::account::StorageSlotType::Value),
+                    Map: map(::miden_protocol::account::StorageSlotType::Map),
+                },
+            },
+            constructor: ::miden_protocol::account::StorageSlotHeader::new(
+                slot_name,
+                slot_type,
+                commitment,
+            ),
+        },
         ".account.StorageSlotId" => {
             target: ::miden_protocol::account::StorageSlotId,
             constructor: ::miden_protocol::account::StorageSlotId::new(

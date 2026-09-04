@@ -873,7 +873,7 @@ fn block_body_and_transaction_header_roundtrip() {
 fn account_storage_header_rejects_invalid_slot_types() {
     for (slot_type, expected_message) in [
         (Default::default(), "storage slot type is unspecified"),
-        (i32::MAX, "unknown storage slot type 2147483647"),
+        (i32::MAX, "unknown enumeration value 2147483647"),
     ] {
         let message = proto::account::AccountStorageHeader {
             slots: vec![proto::account::account_storage_header::StorageSlot {
@@ -900,10 +900,7 @@ fn account_storage_header_preserves_unknown_enum_value_source() {
     .unwrap_err();
 
     assert_matches!(
-        error
-            .source()
-            .and_then(Error::source)
-            .and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
+        error.source().and_then(|source| source.downcast_ref::<prost::UnknownEnumValue>()),
         Some(prost::UnknownEnumValue(value)) if *value == i32::MAX
     );
 }
