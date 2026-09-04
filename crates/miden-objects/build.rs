@@ -649,6 +649,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 details,
             ),
         },
+        ".transaction.ProposedBatch" => {
+            target: ::miden_protocol::batch::UnverifiedProposedBatch,
+            try_constructor: crate::conversion::construct_unverified_proposed_batch(
+                transactions,
+                reference_block_header,
+                partial_blockchain,
+                unauthenticated_note_proofs,
+            ),
+        },
         ".transaction.ProvenBatch" => {
             target: ::miden_protocol::batch::ProvenBatch,
             try_constructor: crate::conversion::construct_proven_batch(

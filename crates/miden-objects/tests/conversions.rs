@@ -30,7 +30,7 @@ use miden_protocol::asset::{
     FungibleAsset,
     NonFungibleAsset,
 };
-use miden_protocol::batch::{BatchAccountUpdate, ProvenBatch};
+use miden_protocol::batch::{BatchAccountUpdate, ProvenBatch, UnverifiedProposedBatch};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{
     BlockAccountUpdate,
@@ -44,6 +44,7 @@ use miden_protocol::errors::{
     AccountIdError,
     AssetError,
     OutputNoteError,
+    ProposedBatchError,
     ProtocolConfigError,
     TransactionHeaderError,
     ValidatorConfigError,
@@ -870,6 +871,34 @@ fn proven_batch() -> ProvenBatch {
         dummy_execution_proof(),
     )
     .unwrap()
+}
+
+#[test]
+fn proposed_batch_decodes_before_verification() {
+    let error = UnverifiedProposedBatch::try_from(proto::transaction::ProposedBatch::default())
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "reference_block_header: field miden_objects::proto::transaction::ProposedBatch::reference_block_header is missing"
+    );
+
+    let partial_blockchain = PartialBlockchain::default();
+    let reference_block_header =
+        BlockHeader::mock(0, Some(partial_blockchain.peaks().hash_peaks()), None, &[]);
+    let decoded = UnverifiedProposedBatch::try_from(proto::transaction::ProposedBatch {
+        transactions: vec![],
+        reference_block_header: Some(reference_block_header.clone().into()),
+        partial_blockchain: Some((&partial_blockchain).into()),
+        unauthenticated_note_proofs: vec![],
+    })
+    .unwrap();
+
+    assert!(decoded.transactions().is_empty());
+    assert_eq!(decoded.reference_block_header(), &reference_block_header);
+    assert_eq!(decoded.partial_blockchain(), &partial_blockchain);
+    assert!(decoded.unauthenticated_note_proofs().is_empty());
+
+    assert_matches!(decoded.verify(96), Err(ProposedBatchError::EmptyTransactionBatch));
 }
 
 #[test]

@@ -28,6 +28,68 @@ use crate::utils::serde::{
 };
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};
 
+/// The decoded inputs for a proposed batch before its invariants and transaction proofs have been
+/// verified.
+#[derive(Debug, Clone)]
+pub struct UnverifiedProposedBatch {
+    transactions: Vec<Arc<ProvenTransaction>>,
+    reference_block_header: BlockHeader,
+    partial_blockchain: PartialBlockchain,
+    unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+}
+
+impl UnverifiedProposedBatch {
+    /// Creates an unverified proposed batch from its decoded inputs.
+    pub fn new(
+        transactions: Vec<Arc<ProvenTransaction>>,
+        reference_block_header: BlockHeader,
+        partial_blockchain: PartialBlockchain,
+        unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+    ) -> Self {
+        Self {
+            transactions,
+            reference_block_header,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+        }
+    }
+
+    /// Returns the decoded transactions.
+    pub fn transactions(&self) -> &[Arc<ProvenTransaction>] {
+        &self.transactions
+    }
+
+    /// Returns the decoded reference block header.
+    pub fn reference_block_header(&self) -> &BlockHeader {
+        &self.reference_block_header
+    }
+
+    /// Returns the decoded partial blockchain.
+    pub fn partial_blockchain(&self) -> &PartialBlockchain {
+        &self.partial_blockchain
+    }
+
+    /// Returns the decoded unauthenticated note proofs.
+    pub fn unauthenticated_note_proofs(&self) -> &BTreeMap<NoteId, NoteInclusionProof> {
+        &self.unauthenticated_note_proofs
+    }
+
+    /// Verifies the batch invariants and transaction proofs at the requested security level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a batch invariant fails or a transaction proof is invalid.
+    pub fn verify(self, security_level: u32) -> Result<ProposedBatch, ProposedBatchError> {
+        ProposedBatch::new(
+            self.transactions,
+            self.reference_block_header,
+            self.partial_blockchain,
+            self.unauthenticated_note_proofs,
+            security_level,
+        )
+    }
+}
+
 /// A proposed batch of transactions with all necessary data to validate it.
 ///
 /// See [`ProposedBatch::new`] for what a proposed batch expects and guarantees.

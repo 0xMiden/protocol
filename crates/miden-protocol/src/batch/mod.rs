@@ -11,7 +11,7 @@ mod proven_batch;
 pub use proven_batch::ProvenBatch;
 
 mod proposed_batch;
-pub use proposed_batch::ProposedBatch;
+pub use proposed_batch::{ProposedBatch, UnverifiedProposedBatch};
 
 mod ordered_batches;
 pub use ordered_batches::OrderedBatches;

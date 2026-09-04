@@ -4,21 +4,26 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::batch::{BatchAccountUpdate, ProposedBatch, ProvenBatch};
-use miden_protocol::block::BlockNumber;
+use miden_protocol::batch::{
+    BatchAccountUpdate,
+    ProposedBatch,
+    ProvenBatch,
+    UnverifiedProposedBatch,
+};
+use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{NoteId, NoteInclusionProof};
 use miden_protocol::transaction::{
     InputNoteCommitment,
     InputNotes,
     OrderedTransactionHeaders,
     OutputNote,
+    PartialBlockchain,
     ProvenTransaction,
     TransactionHeader,
 };
 use miden_protocol::vm::ExecutionProof;
 
-use super::{MessageDecodeExt, required};
-use crate::{ConversionError, ConversionResultExt, proto};
+use crate::{ConversionError, proto};
 
 impl From<&BatchAccountUpdate> for proto::transaction::BatchAccountUpdate {
     fn from(value: &BatchAccountUpdate) -> Self {
@@ -50,32 +55,15 @@ impl From<ProposedBatch> for proto::transaction::ProposedBatch {
     }
 }
 
-/// Decodes and structurally validates a proposed batch, including transaction proof verification.
-///
-/// Callers handling untrusted requests should invoke this in a blocking task.
-pub fn decode_proposed_batch(
-    value: proto::transaction::ProposedBatch,
-    proof_security_level: u32,
-) -> Result<ProposedBatch, ConversionError> {
-    let decoder = value.decoder();
-    let transactions = value
-        .transactions
-        .into_iter()
-        .enumerate()
-        .map(|(index, tx)| {
-            ProvenTransaction::try_from(tx)
-                .map(Arc::new)
-                .context(format!("transactions[{index}]"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let reference_block_header = required!(decoder, value.reference_block_header)?;
-    let partial_blockchain = required!(decoder, value.partial_blockchain)?;
-
+pub(crate) fn construct_unverified_proposed_batch(
+    transactions: Vec<ProvenTransaction>,
+    reference_block_header: BlockHeader,
+    partial_blockchain: PartialBlockchain,
+    unauthenticated_note_proofs: Vec<(NoteId, NoteInclusionProof)>,
+) -> Result<UnverifiedProposedBatch, ConversionError> {
     let mut note_proofs = BTreeMap::new();
     let mut previous_note_id = None;
-    for (index, proof) in value.unauthenticated_note_proofs.into_iter().enumerate() {
-        let (note_id, proof) = <(NoteId, NoteInclusionProof)>::try_from(&proof)
-            .context(format!("unauthenticated_note_proofs[{index}]"))?;
+    for (index, (note_id, proof)) in unauthenticated_note_proofs.into_iter().enumerate() {
         if previous_note_id.is_some_and(|previous| note_id <= previous) {
             return Err(ConversionError::message(
                 "unauthenticated note proofs must have unique, ascending note IDs",
@@ -86,14 +74,12 @@ pub fn decode_proposed_batch(
         note_proofs.insert(note_id, proof);
     }
 
-    ProposedBatch::new(
-        transactions,
+    Ok(UnverifiedProposedBatch::new(
+        transactions.into_iter().map(Arc::new).collect(),
         reference_block_header,
         partial_blockchain,
         note_proofs,
-        proof_security_level,
-    )
-    .map_err(ConversionError::new)
+    ))
 }
 
 impl From<&ProvenBatch> for proto::transaction::ProvenBatch {
