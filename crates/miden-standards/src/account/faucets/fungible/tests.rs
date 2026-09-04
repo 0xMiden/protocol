@@ -278,8 +278,7 @@ fn faucet_create_from_account() {
 
 /// Every fungible faucet factory must grind `AssetCallbackFlag::Enabled` into the account ID when
 /// the policy manager registers a transfer policy, and `Disabled` when it does not. A faucet with a
-/// transfer policy must be public, since its state is a required input of every holder's
-/// transaction.
+/// transfer policy must be public.
 #[rstest::rstest]
 #[case::with_transfer_policy(
     allow_all_policy_manager(),
@@ -345,10 +344,8 @@ fn fungible_faucet_factories_encode_transfer_policy_callback_flag(
     assert_eq!(network.id().asset_callback_flag(), expected_flag);
 }
 
-/// A transfer policy enables asset callbacks, whose dispatch requires the faucet's state as an
-/// input of every holder's transaction. Since a private faucet never publishes that state, the user
-/// faucet factories must reject the combination instead of creating a faucet whose assets no holder
-/// can move.
+/// The user faucet factories must reject a private faucet with a transfer policy, rather than
+/// create a faucet whose assets no holder can move. See [`AccountBuilder`] for why.
 #[test]
 fn private_fungible_faucet_with_transfer_policy_is_rejected() {
     let approver = Approver::new(

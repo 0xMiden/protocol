@@ -131,8 +131,7 @@ impl AccountBuilder {
     /// Enables the immutable [`AssetCallbackFlag`] of the account even if none of its components
     /// install an asset callback slot.
     ///
-    /// The account type must be [`AccountType::Public`] for the account to be buildable with an
-    /// enabled flag. See the [type-level docs](AccountBuilder#asset-callbacks) for details.
+    /// See the [type-level docs](AccountBuilder#asset-callbacks) for details.
     pub fn enable_asset_callbacks(mut self) -> Self {
         self.asset_callbacks = AssetCallbackFlag::Enabled;
         self
@@ -208,8 +207,7 @@ impl AccountBuilder {
 
     /// Derives the account's [`AssetCallbackFlag`] and rejects enabling it on a private account.
     ///
-    /// See the [type-level docs](AccountBuilder#asset-callbacks) for why the combination is
-    /// rejected.
+    /// See the [type-level docs](AccountBuilder#asset-callbacks) for details.
     fn validated_asset_callbacks(
         &self,
         storage: &AccountStorage,
@@ -650,10 +648,10 @@ mod tests {
         }
     }
 
-    /// Dispatching an asset callback makes the issuing account's state a required input of every
-    /// transaction that moves one of its assets, and only a public account publishes that state.
-    /// Both bits are immutable parts of the account ID, so the combination must be rejected at
-    /// build time rather than left to be discovered by the account's asset holders.
+    /// An enabled [`AssetCallbackFlag`] on a private account is rejected at build time, whether it
+    /// comes from an installed callback slot or from [`Self::enable_asset_callbacks`].
+    ///
+    /// See the [type-level docs](AccountBuilder#asset-callbacks) for details.
     #[test]
     fn account_builder_rejects_asset_callbacks_on_private_account() {
         let callback_component = AccountComponent::new(
