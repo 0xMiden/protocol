@@ -333,6 +333,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entries,
             ),
         },
+        ".primitives.MerkleStoreNode" => {
+            target: ::miden_protocol::crypto::merkle::InnerNodeInfo,
+            constructor: ::miden_protocol::crypto::merkle::InnerNodeInfo {
+                value,
+                left,
+                right,
+            },
+        },
         ".primitives.MerkleStore" => {
             target: ::miden_protocol::crypto::merkle::store::MerkleStore,
             try_constructor: crate::conversion::decode_merkle_store(

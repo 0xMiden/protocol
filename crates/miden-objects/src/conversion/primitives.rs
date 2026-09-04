@@ -9,7 +9,6 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::{AdviceInputs, AdviceMap, AdviceStack, ExecutionProof};
 use miden_protocol::{Felt, MastForest, Word};
 
-use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 const WORD_SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
@@ -224,18 +223,6 @@ impl From<&MerkleStore> for proto::primitives::MerkleStore {
                 })
                 .collect(),
         }
-    }
-}
-
-impl TryFrom<proto::primitives::MerkleStoreNode> for InnerNodeInfo {
-    type Error = ConversionError;
-
-    fn try_from(node: proto::primitives::MerkleStoreNode) -> Result<Self, Self::Error> {
-        let decoder = node.decoder();
-        let value = required!(decoder, node.value)?;
-        let left = required!(decoder, node.left)?;
-        let right = required!(decoder, node.right)?;
-        Ok(Self { value, left, right })
     }
 }
 
