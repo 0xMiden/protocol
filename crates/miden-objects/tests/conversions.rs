@@ -1452,12 +1452,12 @@ fn note_inclusion_proof_reports_generated_and_semantic_paths() {
         }),
     };
 
-    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    let error = <(NoteId, NoteInclusionProof)>::try_from(message.clone()).unwrap_err();
     assert_missing_block_number(error, "block_num");
 
     message.block_num = Some(BlockNumber::GENESIS.into());
     message.note_id = None;
-    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    let error = <(NoteId, NoteInclusionProof)>::try_from(message.clone()).unwrap_err();
     assert_eq!(
         error.to_string(),
         "note_id: field miden_objects::proto::note::NoteInclusionProof::note_id is missing"
@@ -1465,7 +1465,7 @@ fn note_inclusion_proof_reports_generated_and_semantic_paths() {
 
     message.note_id = Some(Word::empty().into());
     message.note_index_in_block = u32::MAX;
-    let error = <(NoteId, NoteInclusionProof)>::try_from(&message).unwrap_err();
+    let error = <(NoteId, NoteInclusionProof)>::try_from(message).unwrap_err();
     assert!(error.to_string().starts_with("note_index_in_block: "));
 }
 

@@ -243,16 +243,6 @@ impl From<(&NoteId, &NoteInclusionProof)> for proto::note::NoteInclusionProof {
     }
 }
 
-impl TryFrom<&proto::note::NoteInclusionProof> for (NoteId, NoteInclusionProof) {
-    type Error = ConversionError;
-
-    fn try_from(
-        proof: &proto::note::NoteInclusionProof,
-    ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
-        proof.clone().try_into()
-    }
-}
-
 pub(crate) fn decode_note_inclusion_proof(
     note_id: NoteId,
     block_num: BlockNumber,

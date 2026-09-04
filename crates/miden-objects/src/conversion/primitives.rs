@@ -62,14 +62,6 @@ pub(crate) fn decode_word(encoded: Vec<u8>) -> Result<Word, ConversionError> {
     decode_word_bytes(&encoded)
 }
 
-impl TryFrom<&proto::primitives::Word> for Word {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::primitives::Word) -> Result<Self, Self::Error> {
-        decode_word_bytes(&value.encoded).map_err(|error| error.context("encoded"))
-    }
-}
-
 // EXECUTION PROOF
 // ================================================================================================
 
@@ -94,14 +86,6 @@ pub(crate) fn decode_execution_proof(encoded: Vec<u8>) -> Result<ExecutionProof,
     decode_execution_proof_bytes(&encoded)
 }
 
-impl TryFrom<&proto::primitives::ExecutionProof> for ExecutionProof {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::primitives::ExecutionProof) -> Result<Self, Self::Error> {
-        decode_execution_proof_bytes(&value.encoded).map_err(|error| error.context("encoded"))
-    }
-}
-
 // MAST FOREST
 // ================================================================================================
 
@@ -124,14 +108,6 @@ fn decode_mast_forest_bytes(encoded: &[u8]) -> Result<MastForest, ConversionErro
 
 pub(crate) fn decode_mast_forest(encoded: Vec<u8>) -> Result<MastForest, ConversionError> {
     decode_mast_forest_bytes(&encoded)
-}
-
-impl TryFrom<&proto::primitives::MastForest> for MastForest {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::primitives::MastForest) -> Result<Self, Self::Error> {
-        decode_mast_forest_bytes(&value.encoded).map_err(|error| error.context("encoded"))
-    }
 }
 
 // ADVICE INPUTS
@@ -255,14 +231,6 @@ pub(crate) fn decode_public_key(encoded: Vec<u8>) -> Result<PublicKey, Conversio
         .map_err(|error| ConversionError::deserialization("PublicKey", error))
 }
 
-impl TryFrom<&proto::primitives::PublicKey> for PublicKey {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::primitives::PublicKey) -> Result<Self, Self::Error> {
-        value.clone().try_into()
-    }
-}
-
 // SIGNATURE
 // ================================================================================================
 
@@ -284,14 +252,6 @@ impl From<Signature> for proto::primitives::Signature {
 pub(crate) fn decode_signature(encoded: Vec<u8>) -> Result<Signature, ConversionError> {
     Signature::read_from_bytes(&encoded)
         .map_err(|error| ConversionError::deserialization("Signature", error))
-}
-
-impl TryFrom<&proto::primitives::Signature> for Signature {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::primitives::Signature) -> Result<Self, Self::Error> {
-        value.clone().try_into()
-    }
 }
 
 #[cfg(test)]

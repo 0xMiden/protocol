@@ -12,7 +12,6 @@ use miden_protocol::block::{
     FeeParameters,
     OutputNoteBatch,
     SignedBlock,
-    UnverifiedSignedBlock,
     ValidatorConfig,
 };
 use miden_protocol::crypto::merkle::MerklePath;
@@ -144,14 +143,6 @@ impl From<BlockHeader> for proto::blockchain::BlockHeader {
     }
 }
 
-impl TryFrom<&proto::blockchain::BlockHeader> for BlockHeader {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
-        value.clone().try_into()
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn decode_block_header(
     block_num: BlockNumber,
@@ -230,14 +221,6 @@ pub(crate) fn decode_block_body(
     .map_err(ConversionError::new)
 }
 
-impl TryFrom<&proto::blockchain::BlockBody> for BlockBody {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::blockchain::BlockBody) -> Result<Self, Self::Error> {
-        value.clone().try_into()
-    }
-}
-
 // BLOCK BODY COMPONENTS
 // ================================================================================================
 
@@ -299,14 +282,6 @@ impl DecodeRepeated<proto::primitives::Signature> for BlockSignatures {
         let name = field.name();
         let signatures = field.decode_items()?;
         Self::new(signatures).map_err(ConversionError::new).context(name)
-    }
-}
-
-impl TryFrom<&proto::blockchain::SignedBlock> for UnverifiedSignedBlock {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::blockchain::SignedBlock) -> Result<Self, Self::Error> {
-        value.clone().try_into()
     }
 }
 
