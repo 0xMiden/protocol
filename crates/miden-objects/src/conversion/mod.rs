@@ -56,6 +56,7 @@ pub(crate) use primitives::{
     decode_advice_map,
     decode_advice_stack,
     decode_execution_proof,
+    decode_mast_forest,
     decode_merkle_store,
     decode_public_key,
     decode_signature,

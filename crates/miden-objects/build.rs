@@ -53,6 +53,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             constructor: encoded,
         },
+        ".primitives.MastForest" => {
+            target: ::miden_protocol::MastForest,
+            decode: {
+                encoded: crate::conversion::decode_mast_forest,
+            },
+            constructor: encoded,
+        },
         ".account.AccountId" => {
             target: ::miden_protocol::account::AccountId,
             try_constructor: crate::conversion::decode_account_id(

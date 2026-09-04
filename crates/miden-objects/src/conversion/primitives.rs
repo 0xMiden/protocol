@@ -117,21 +117,20 @@ impl From<MastForest> for proto::primitives::MastForest {
     }
 }
 
-impl TryFrom<proto::primitives::MastForest> for MastForest {
-    type Error = ConversionError;
+fn decode_mast_forest_bytes(encoded: &[u8]) -> Result<MastForest, ConversionError> {
+    MastForest::read_from_bytes(encoded)
+        .map_err(|error| ConversionError::deserialization("MastForest", error))
+}
 
-    fn try_from(value: proto::primitives::MastForest) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
+pub(crate) fn decode_mast_forest(encoded: Vec<u8>) -> Result<MastForest, ConversionError> {
+    decode_mast_forest_bytes(&encoded)
 }
 
 impl TryFrom<&proto::primitives::MastForest> for MastForest {
     type Error = ConversionError;
 
     fn try_from(value: &proto::primitives::MastForest) -> Result<Self, Self::Error> {
-        Self::read_from_bytes(&value.encoded)
-            .map_err(|error| ConversionError::deserialization("MastForest", error))
-            .map_err(|error| error.context("encoded"))
+        decode_mast_forest_bytes(&value.encoded).map_err(|error| error.context("encoded"))
     }
 }
 
@@ -432,9 +431,16 @@ mod tests {
     }
 
     #[test]
-    fn mast_forest_roundtrips() {
+    fn mast_forest_roundtrips_and_reports_the_encoded_path() {
         let mast = MastForest::new();
         let encoded = proto::primitives::MastForest::from(&mast);
         assert_eq!(MastForest::try_from(encoded).unwrap(), mast);
+
+        let error =
+            MastForest::try_from(proto::primitives::MastForest { encoded: vec![0] }).unwrap_err();
+        assert!(
+            error.to_string().starts_with("encoded: failed to deserialize MastForest: "),
+            "{error}"
+        );
     }
 }
