@@ -21,7 +21,6 @@ pub(crate) use account_patch::{
     decode_account_code,
     decode_account_storage_patch,
     decode_account_vault_patch,
-    decode_private_account_update,
     decode_storage_map_patch_create,
     decode_storage_map_patch_entries,
     decode_storage_map_patch_update,

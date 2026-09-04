@@ -224,9 +224,7 @@ impl From<&AccountUpdateDetails> for proto::account::AccountUpdateDetails {
         use proto::account::account_update_details::Update;
 
         let update = match details {
-            AccountUpdateDetails::Private => {
-                Update::Private(proto::account::PrivateAccountUpdate {})
-            },
+            AccountUpdateDetails::Private => Update::Private(()),
             AccountUpdateDetails::Public(patch) => Update::Public(patch.into()),
         };
         Self { update: Some(update) }
@@ -237,10 +235,4 @@ impl From<AccountUpdateDetails> for proto::account::AccountUpdateDetails {
     fn from(details: AccountUpdateDetails) -> Self {
         Self::from(&details)
     }
-}
-
-pub(crate) fn decode_private_account_update(
-    _update: proto::account::PrivateAccountUpdate,
-) -> AccountUpdateDetails {
-    AccountUpdateDetails::Private
 }

@@ -247,7 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target: ::miden_protocol::account::AccountUpdateDetails,
             oneof: {
                 update: {
-                    Private: constructor(crate::conversion::decode_private_account_update),
+                    Private: constant(::miden_protocol::account::AccountUpdateDetails::Private),
                     Public: constructor(
                         ::miden_protocol::account::AccountUpdateDetails::Public
                     ),

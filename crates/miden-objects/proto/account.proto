@@ -140,11 +140,9 @@ message AccountPatch {
   optional primitives.Felt final_nonce = 6;
 }
 
-message PrivateAccountUpdate {}
-
 message AccountUpdateDetails {
   oneof update {
-    PrivateAccountUpdate private = 1;
+    google.protobuf.Empty private = 1;
     AccountPatch public = 2;
   }
 }
