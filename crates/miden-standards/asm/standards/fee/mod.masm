@@ -334,11 +334,8 @@ end
 #! signature::estimate_authentication_cycles); this procedure adds its own tail cycles and the
 #! post-authentication kernel epilogue cycles internally.
 #!
-#! The fee is payable only in the chain's native fee asset, at rate 1/1, so the paid amount is
-#! the computed fee: the conversion info must equal native_conversion_info. Nothing bounds the
-#! paid amount from above otherwise - the batch builder rejects only underpayment - so a host
-#! that supplied the faucet and rate could price the fee note arbitrarily, and only a signer that
-#! inspects the account delta and output notes would notice.
+#! The conversion info must equal native_conversion_info, so the paid amount is the computed
+#! fee. Nothing bounds it from above otherwise: the batch builder rejects only underpayment.
 #!
 #! If the computed fee is zero (e.g. the reference block's verification base fee is zero), no
 #! fee note is created and no conversion info is required (the empty word is accepted). Note that
@@ -357,8 +354,6 @@ end
 #!   the end of the authentication procedure.
 #! - CONVERSION_INFO is [faucet_id_suffix, faucet_id_prefix, rate_num, rate_den], or the empty
 #!   word if no conversion info was committed (only accepted when the computed fee is zero).
-#!   For a non-zero fee it must be the native conversion info, i.e. the reference block's fee
-#!   faucet at rate 1/1.
 #! - total_sponsored_fee_amount is the total amount the sponsorship step moved into sponsorship
 #!   notes.
 #!
@@ -410,9 +405,7 @@ pub proc pay_fee(num_extra_cycles: felt, conversion_info: ConversionInfo) -> fel
         exec.word::testz assertz.err=ERR_FEE_CONVERSION_INFO_MISSING
         # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 
-        # the fee is payable only in the chain's native fee asset, at par. nothing bounds the
-        # paid amount from above otherwise, since the batch builder rejects only underpayment, so
-        # a host-supplied faucet and rate could price the fee note arbitrarily
+        # pin the payment to the native fee asset at par; nothing downstream bounds it
         dupw exec.native_conversion_info assert_eqw.err=ERR_FEE_CONVERSION_INFO_NOT_NATIVE
         # => [CONVERSION_INFO, fee_amount, total_sponsored_fee_amount]
 

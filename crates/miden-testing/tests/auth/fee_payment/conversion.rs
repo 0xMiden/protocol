@@ -11,14 +11,10 @@ use rstest::rstest;
 // ================================================================================================
 
 /// Executes a transaction script that converts `amount` at the rate `rate_num / rate_den` via
-/// `fee::convert_amount`, returning the raw execution result.
+/// `fee::convert_amount`, asserting the result in-VM when `expected` is `Some`.
 ///
-/// A `Some` expectation asserts the converted amount in-VM; `None` drops it, for the cases that
-/// are expected to abort before the conversion returns.
-///
-/// `fee::pay_fee` pins the fee payment to the native fee asset at rate 1/1, so `convert_amount` is
-/// exercised directly rather than through a fee-paying transaction. The chain charges no fee, so
-/// the script is the only thing under test.
+/// `pay_fee` pins the payment to the native fee asset at rate 1/1, so `convert_amount` is
+/// exercised directly rather than through a fee-paying transaction.
 async fn convert_amount(
     amount: u64,
     rate_num: u64,

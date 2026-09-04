@@ -156,11 +156,10 @@ impl AuthMultisigConfig {
 /// `miden::standards::fee::pay_fee`: it creates a public TX_FEE note (see
 /// [`TxFeeNote`](crate::note::TxFeeNote)) funded from the account's vault, so on
 /// fee-charging chains the account must hold a sufficient balance of the native fee asset. The
-/// payment asset and conversion rate come from the auth args and must name the reference block's
-/// fee asset at rate 1/1 (see
-/// [`FeeConversionInfo::one_to_one`](super::FeeConversionInfo::one_to_one)); any other value
-/// aborts. On chains with a zero verification base fee no note is created. The fee note is
-/// created before the transaction summary, so it is covered by the approver signatures.
+/// conversion info from the auth args must name the reference block's fee asset at rate 1/1 (see
+/// [`FeeConversionInfo::one_to_one`](super::FeeConversionInfo::one_to_one)). On chains with a
+/// zero verification base fee no note is created. The fee note is created before the transaction
+/// summary, so it is covered by the approver signatures.
 ///
 /// # Expiration
 ///
@@ -503,10 +502,9 @@ impl MultisigAuthArgs {
 
     /// Returns new multisig auth args carrying the conversion info the fee payment needs.
     ///
-    /// The fee is payable only in the native fee asset at rate 1/1, so this must be
-    /// [`FeeConversionInfo::one_to_one`] built with the reference block's fee faucet. Without
-    /// conversion info, or with any other value, the fee payment aborts on chains that charge a
-    /// non-zero verification base fee.
+    /// Must be [`FeeConversionInfo::one_to_one`] built with the reference block's fee faucet.
+    /// Anything else, or no conversion info at all, aborts on chains that charge a non-zero
+    /// verification base fee.
     #[must_use]
     pub fn with_conversion_info(mut self, conversion_info: FeeConversionInfo) -> Self {
         self.conversion_info = Some(conversion_info);
@@ -527,7 +525,7 @@ impl MultisigAuthArgs {
     }
 
     /// Returns the fee conversion info, or `None` if none was committed - in which case the fee
-    /// payment aborts on chains that charge a non-zero verification base fee.
+    /// payment aborts on fee-charging chains.
     pub fn conversion_info(&self) -> Option<FeeConversionInfo> {
         self.conversion_info
     }

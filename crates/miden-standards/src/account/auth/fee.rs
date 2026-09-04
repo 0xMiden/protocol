@@ -10,13 +10,11 @@ use miden_protocol::{Felt, Hasher, Word};
 /// Conversion info instructing `miden::standards::fee::pay_fee` which asset to pay
 /// the transaction fee in.
 ///
-/// The fee amount computed by the transaction kernel is denominated in the native fee asset, and
-/// `pay_fee` accepts only that asset at rate 1/1, so the paid amount is the computed fee. Build
-/// the accepted value with [`Self::one_to_one`] and the reference block's fee faucet; any other
-/// faucet or rate aborts the transaction in-VM.
+/// `pay_fee` accepts only the native fee asset at rate 1/1, so the paid amount is the fee the
+/// kernel computed. Build it with [`Self::one_to_one`] and the reference block's fee faucet.
 ///
 /// For signature-based authentication components the conversion info is committed to via the
-/// transaction's auth args (see [`commit_fee_conversion_info`]), so the signature covers it.
+/// transaction's auth args (see [`commit_fee_conversion_info`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeeConversionInfo {
     faucet_id: AccountId,
@@ -28,8 +26,7 @@ impl FeeConversionInfo {
     /// Creates new fee conversion info paying the fee in the asset issued by `faucet_id` at the
     /// rate `rate_num / rate_den`.
     ///
-    /// `miden::standards::fee::pay_fee` accepts only the native fee asset at rate 1/1, so info
-    /// built here with any other faucet or rate aborts the transaction in-VM. Prefer
+    /// Any faucet or rate other than the native fee asset at 1/1 aborts in-VM; prefer
     /// [`Self::one_to_one`].
     ///
     /// # Errors
@@ -54,8 +51,7 @@ impl FeeConversionInfo {
     }
 
     /// Creates fee conversion info paying the fee in the asset issued by `faucet_id` at the
-    /// rate 1/1, i.e. the only info `miden::standards::fee::pay_fee` accepts when `faucet_id` is
-    /// the reference block's fee faucet.
+    /// rate 1/1, the only info `pay_fee` accepts for the reference block's fee faucet.
     pub fn one_to_one(faucet_id: AccountId) -> Self {
         Self {
             faucet_id,
