@@ -303,19 +303,3 @@ impl From<OutputNote> for proto::transaction::OutputNote {
         Self::from(&note)
     }
 }
-
-impl TryFrom<proto::transaction::OutputNote> for OutputNote {
-    type Error = ConversionError;
-
-    fn try_from(note: proto::transaction::OutputNote) -> Result<Self, Self::Error> {
-        use proto::transaction::output_note::Note;
-
-        match note.note {
-            Some(Note::Public(note)) => note.try_into().map(OutputNote::Public).context("public"),
-            Some(Note::Private(note)) => {
-                note.try_into().map(OutputNote::Private).context("private")
-            },
-            None => Err(ConversionError::missing_field::<proto::transaction::OutputNote>("note")),
-        }
-    }
-}

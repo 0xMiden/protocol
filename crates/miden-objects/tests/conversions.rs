@@ -63,6 +63,8 @@ use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
+    OutputNote,
+    PrivateOutputNote,
     ProvenTransaction,
     PublicOutputNote,
     TransactionHeader,
@@ -750,6 +752,37 @@ fn public_output_note_protobuf_rejects_private_note() {
             .and_then(|source| source.downcast_ref::<OutputNoteError>()),
         Some(OutputNoteError::NoteIsPrivate(note_id)) if *note_id == note.id()
     );
+}
+
+#[test]
+fn output_note_oneof_variants_roundtrip_through_protobuf() {
+    let public = OutputNote::Public(PublicOutputNote::new(public_note()).unwrap());
+    let private_note = Note::mock_noop(Word::empty());
+    let private = OutputNote::Private(
+        PrivateOutputNote::new(*private_note.header(), private_note.attachments().clone()).unwrap(),
+    );
+
+    for note in [public, private] {
+        let message = proto::transaction::OutputNote::from(&note);
+        assert_eq!(OutputNote::try_from(message).unwrap(), note);
+    }
+}
+
+#[test]
+fn output_note_oneof_reports_missing_and_variant_paths() {
+    let error = OutputNote::try_from(proto::transaction::OutputNote::default()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "note: field miden_objects::proto::transaction::OutputNote::note is missing"
+    );
+
+    let error = OutputNote::try_from(proto::transaction::OutputNote {
+        note: Some(proto::transaction::output_note::Note::Public(
+            proto::transaction::PublicOutputNote::default(),
+        )),
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("note.public.note: "));
 }
 
 fn proven_batch_data() -> proto::transaction::ProvenBatch {

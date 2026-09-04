@@ -436,6 +436,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 attachments,
             ),
         },
+        ".transaction.OutputNote" => {
+            target: ::miden_protocol::transaction::OutputNote,
+            oneof: {
+                note: {
+                    Public: ::miden_protocol::transaction::OutputNote::Public,
+                    Private: ::miden_protocol::transaction::OutputNote::Private,
+                },
+            },
+            constructor: note,
+        },
         ".transaction.TransactionId" => {
             target: ::miden_protocol::transaction::TransactionId,
             constructor: ::miden_protocol::transaction::TransactionId::from_raw(
