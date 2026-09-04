@@ -838,10 +838,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         ".protocol_config.KernelConfig" => {
             target: ::miden_protocol::protocol_config::KernelConfig,
-            encode: {
-                main_proc: ::miden_protocol::protocol_config::KernelConfig::main_proc,
-                kernel_procs: ::miden_protocol::protocol_config::KernelConfig::kernel_procs,
-            },
             try_constructor: ::miden_protocol::protocol_config::KernelConfig::new(
                 main_proc,
                 kernel_procs,

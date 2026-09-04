@@ -1,4 +1,4 @@
-//! Derives conversions between Prost-generated messages and domain types.
+//! Derives conversions from Prost-generated messages into domain types.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -48,19 +48,6 @@ pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     expand(input, runtime).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Generates `From<&DomainType>` for a Prost-generated message.
-///
-/// The derive reads cardinality and presence information from Prost's field attributes. The
-/// `proto_encode` attribute supplies the foreign source type and an accessor for every Protobuf
-/// field. Accessors receive a shared reference to the source value. Required messages are wrapped
-/// in `Some`, optional values are mapped, and repeated values are collected automatically.
-#[proc_macro_derive(ProtoEncode, attributes(proto_decode, proto_encode))]
-pub fn derive_proto_encode(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    expand_encode(input).unwrap_or_else(syn::Error::into_compile_error).into()
-}
-
 fn runtime_path() -> Result<TokenStream2> {
     match crate_name("miden-protobuf") {
         Ok(FoundCrate::Itself) => Ok(quote!(crate::__private)),
@@ -84,7 +71,7 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
     }
 
     let config = DecodeConfig::parse(&input.attrs, input.ident.span())?;
-    let fields = parse_fields(&input, "ProtoDecode")?;
+    let fields = parse_fields(&input)?;
     let constructor_fields = config.constructor.fields()?;
     validate_handled_fields(
         &fields,
@@ -148,102 +135,6 @@ fn expand(input: DeriveInput, runtime: TokenStream2) -> Result<TokenStream2> {
             }
         }
     })
-}
-
-fn expand_encode(input: DeriveInput) -> Result<TokenStream2> {
-    if !input.generics.params.is_empty() {
-        return Err(syn::Error::new(
-            input.generics.span(),
-            "ProtoEncode does not support generic Protobuf messages",
-        ));
-    }
-
-    let config = EncodeConfig::parse(&input.attrs, input.ident.span())?;
-    let fields = parse_fields(&input, "ProtoEncode")?;
-    validate_field_encoders(&fields, &config.field_encoders, input.ident.span())?;
-
-    let target = &input.ident;
-    let source = &config.source;
-    let encoded_fields = config.field_encoders.iter().map(|encoder| {
-        let name = ident_name(&encoder.field);
-        fields.get(&name).expect("validated encoder field must exist").encoder(encoder)
-    });
-
-    Ok(quote! {
-        impl ::core::convert::From<&#source> for #target {
-            fn from(value: &#source) -> Self {
-                Self {
-                    #(#encoded_fields),*
-                }
-            }
-        }
-    })
-}
-
-struct EncodeConfig {
-    source: Type,
-    field_encoders: Vec<FieldEncoder>,
-}
-
-impl EncodeConfig {
-    fn parse(attributes: &[Attribute], span: Span) -> Result<Self> {
-        let mut source = None;
-        let mut field_encoders = Vec::new();
-        let mut found_attribute = false;
-
-        for attribute in
-            attributes.iter().filter(|attribute| attribute.path().is_ident("proto_encode"))
-        {
-            if found_attribute {
-                return Err(syn::Error::new(
-                    attribute.span(),
-                    "duplicate `proto_encode` attribute",
-                ));
-            }
-            found_attribute = true;
-
-            attribute.parse_nested_meta(|meta| {
-                if meta.path.is_ident("source") {
-                    if source.is_some() {
-                        return Err(meta.error("duplicate `source` setting"));
-                    }
-                    let content;
-                    parenthesized!(content in meta.input);
-                    source = Some(content.parse()?);
-                    return Ok(());
-                }
-
-                if meta.path.is_ident("encode") {
-                    let content;
-                    parenthesized!(content in meta.input);
-                    let field = content.call(Ident::parse_any)?;
-                    content.parse::<Token![,]>()?;
-                    let accessor = content.parse()?;
-                    if !content.is_empty() {
-                        return Err(content.error("unexpected tokens after field accessor path"));
-                    }
-                    field_encoders.push(FieldEncoder { field, accessor });
-                    return Ok(());
-                }
-
-                Err(meta.error("expected `source` or `encode`"))
-            })?;
-        }
-
-        if !found_attribute {
-            return Err(syn::Error::new(span, "missing `proto_encode` attribute"));
-        }
-
-        Ok(Self {
-            source: source.ok_or_else(|| syn::Error::new(span, "missing `source` setting"))?,
-            field_encoders,
-        })
-    }
-}
-
-struct FieldEncoder {
-    field: Ident,
-    accessor: Path,
 }
 
 struct DecodeConfig {
@@ -699,63 +590,22 @@ enum ConstructorKind {
     Fallible,
 }
 
-fn parse_fields(input: &DeriveInput, derive_name: &str) -> Result<BTreeMap<String, ProtoField>> {
+fn parse_fields(input: &DeriveInput) -> Result<BTreeMap<String, ProtoField>> {
     let Data::Struct(data) = &input.data else {
-        return Err(syn::Error::new(
-            input.ident.span(),
-            format!("{derive_name} only supports structs"),
-        ));
+        return Err(syn::Error::new(input.ident.span(), "ProtoDecode only supports structs"));
     };
     let Fields::Named(fields) = &data.fields else {
-        return Err(syn::Error::new(
-            data.fields.span(),
-            format!("{derive_name} requires named fields"),
-        ));
+        return Err(syn::Error::new(data.fields.span(), "ProtoDecode requires named fields"));
     };
 
     fields
         .named
         .iter()
         .map(|field| {
-            let field = ProtoField::parse(field, derive_name)?;
+            let field = ProtoField::parse(field)?;
             Ok((ident_name(&field.ident), field))
         })
         .collect()
-}
-
-fn validate_field_encoders(
-    fields: &BTreeMap<String, ProtoField>,
-    encoders: &[FieldEncoder],
-    span: Span,
-) -> Result<()> {
-    let mut configured = BTreeSet::new();
-
-    for encoder in encoders {
-        let name = ident_name(&encoder.field);
-        if !configured.insert(name.clone()) {
-            return Err(syn::Error::new(
-                encoder.field.span(),
-                format!("field `{name}` has multiple encoders"),
-            ));
-        }
-        if !fields.contains_key(&name) {
-            return Err(syn::Error::new(
-                encoder.field.span(),
-                format!("encoder references unknown field `{name}`"),
-            ));
-        }
-    }
-
-    let missing: Vec<_> =
-        fields.keys().filter(|field| !configured.contains(*field)).cloned().collect();
-    if !missing.is_empty() {
-        return Err(syn::Error::new(
-            span,
-            format!("encoder does not handle fields: {}", missing.join(", ")),
-        ));
-    }
-
-    Ok(())
 }
 
 fn validate_handled_fields(
@@ -1017,39 +867,16 @@ struct ProtoField {
 }
 
 impl ProtoField {
-    fn parse(field: &Field, derive_name: &str) -> Result<Self> {
-        let ident = field.ident.clone().ok_or_else(|| {
-            syn::Error::new(field.span(), format!("{derive_name} requires named fields"))
-        })?;
-        let prost = ProstField::parse(field, derive_name)?;
+    fn parse(field: &Field) -> Result<Self> {
+        let ident = field
+            .ident
+            .clone()
+            .ok_or_else(|| syn::Error::new(field.span(), "ProtoDecode requires named fields"))?;
+        let prost = ProstField::parse(field)?;
         let override_kind = FieldKindOverride::parse(&field.attrs)?;
         let kind = override_kind.map(FieldKind::from).unwrap_or_else(|| prost.kind());
 
         Ok(Self { ident, kind })
-    }
-
-    fn encoder(&self, field_encoder: &FieldEncoder) -> TokenStream2 {
-        let ident = &self.ident;
-        let accessor = &field_encoder.accessor;
-        let value = quote!((#accessor)(value));
-        let expression = match &self.kind {
-            FieldKind::Required | FieldKind::Oneof(_) => quote! {
-                ::core::option::Option::Some(::core::convert::Into::into(#value))
-            },
-            FieldKind::Optional => quote! {
-                (#value).map(::core::convert::Into::into)
-            },
-            FieldKind::Repeated => quote! {
-                ::core::iter::IntoIterator::into_iter(#value)
-                    .map(::core::convert::Into::into)
-                    .collect()
-            },
-            FieldKind::Value | FieldKind::Enumeration(_) => quote! {
-                ::core::convert::Into::into(#value)
-            },
-        };
-
-        quote!(#ident: #expression)
     }
 
     fn decoder(
@@ -1140,7 +967,7 @@ struct ProstField {
 }
 
 impl ProstField {
-    fn parse(field: &Field, derive_name: &str) -> Result<Self> {
+    fn parse(field: &Field) -> Result<Self> {
         let mut parsed = Self {
             message: false,
             optional: false,
@@ -1184,7 +1011,7 @@ impl ProstField {
         if !found {
             return Err(syn::Error::new(
                 field.span(),
-                format!("{derive_name} fields must have a `prost` attribute"),
+                "ProtoDecode fields must have a `prost` attribute",
             ));
         }
 
@@ -1269,69 +1096,11 @@ mod tests {
     use quote::quote;
     use syn::{DeriveInput, parse2};
 
-    use super::{expand, expand_encode};
+    use super::expand;
 
     fn expand_input(input: TokenStream) -> syn::Result<String> {
         let input: DeriveInput = parse2(input)?;
         expand(input, quote!(::runtime)).map(|tokens| tokens.to_string())
-    }
-
-    fn expand_encode_input(input: TokenStream) -> syn::Result<String> {
-        let input: DeriveInput = parse2(input)?;
-        expand_encode(input).map(|tokens| tokens.to_string())
-    }
-
-    #[test]
-    fn generates_borrowed_encoders_using_protobuf_cardinality() {
-        let generated = expand_encode_input(quote! {
-            #[proto_encode(
-                source(::domain::Example),
-                encode(required_message, ::domain::Example::required_message),
-                encode(optional_value, ::domain::Example::optional_value),
-                encode(items, ::domain::Example::items),
-                encode(count, ::domain::Example::count)
-            )]
-            struct ExampleMessage {
-                #[prost(message, optional, tag = "1")]
-                required_message: Option<Message>,
-                #[prost(uint32, optional, tag = "2")]
-                optional_value: Option<u32>,
-                #[prost(message, repeated, tag = "3")]
-                items: Vec<Message>,
-                #[prost(uint32, tag = "4")]
-                count: u32,
-            }
-        })
-        .unwrap();
-
-        assert!(generated.contains(
-            "impl :: core :: convert :: From < & :: domain :: Example > for ExampleMessage"
-        ));
-        assert!(generated.contains("required_message : :: core :: option :: Option :: Some"));
-        assert!(generated.contains("optional_value : ("));
-        assert!(generated.contains(". map (:: core :: convert :: Into :: into)"));
-        assert!(generated.contains("items : :: core :: iter :: IntoIterator :: into_iter"));
-        assert!(generated.contains(". collect ()"));
-        assert!(generated.contains("count : :: core :: convert :: Into :: into"));
-    }
-
-    #[test]
-    fn rejects_incomplete_encoders() {
-        let error = expand_encode_input(quote! {
-            #[proto_encode(
-                source(::domain::Example),
-                encode(first, ::domain::Example::first)
-            )]
-            struct ExampleMessage {
-                #[prost(uint32, tag = "1")]
-                first: u32,
-                #[prost(uint32, tag = "2")]
-                second: u32,
-            }
-        })
-        .unwrap_err();
-
-        assert_eq!(error.to_string(), "encoder does not handle fields: second");
     }
 
     #[test]

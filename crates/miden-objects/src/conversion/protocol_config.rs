@@ -9,6 +9,15 @@ use miden_protocol::protocol_config::{
 
 use crate::{ConversionError, proto};
 
+impl From<&KernelConfig> for proto::protocol_config::KernelConfig {
+    fn from(config: &KernelConfig) -> Self {
+        Self {
+            main_proc: Some(config.main_proc().into()),
+            kernel_procs: config.kernel_procs().iter().copied().map(Into::into).collect(),
+        }
+    }
+}
+
 impl From<KernelConfig> for proto::protocol_config::KernelConfig {
     fn from(config: KernelConfig) -> Self {
         (&config).into()

@@ -9,15 +9,13 @@ use prost_types::{DescriptorProto, FileDescriptorSet};
 
 const OPTIONAL_ATTRIBUTE: &str = "#[proto_decode(optional)]";
 
-/// Structured configuration for generated `ProtoDecode` and optional `ProtoEncode`
-/// implementations.
+/// Structured configuration for a generated `ProtoDecode` implementation.
 #[doc(hidden)]
 pub struct ProtoDecodeConfig<'a> {
     message_name: &'static str,
     target: &'static str,
     validators: &'a [(&'static str, &'static str)],
     field_decoders: &'a [(&'static str, &'static str)],
-    field_encoders: &'a [(&'static str, &'static str)],
     enumerations: &'a [ProtoDecodeEnumerationConfig<'a>],
     oneofs: &'a [ProtoDecodeOneofConfig<'a>],
     constructor: &'static str,
@@ -37,7 +35,6 @@ impl<'a> ProtoDecodeConfig<'a> {
             target,
             validators,
             field_decoders: &[],
-            field_encoders: &[],
             enumerations: &[],
             oneofs: &[],
             constructor,
@@ -57,7 +54,6 @@ impl<'a> ProtoDecodeConfig<'a> {
             target,
             validators,
             field_decoders: &[],
-            field_encoders: &[],
             enumerations: &[],
             oneofs: &[],
             constructor,
@@ -71,15 +67,6 @@ impl<'a> ProtoDecodeConfig<'a> {
         field_decoders: &'a [(&'static str, &'static str)],
     ) -> Self {
         self.field_decoders = field_decoders;
-        self
-    }
-
-    #[doc(hidden)]
-    pub const fn with_field_encoders(
-        mut self,
-        field_encoders: &'a [(&'static str, &'static str)],
-    ) -> Self {
-        self.field_encoders = field_encoders;
         self
     }
 
@@ -115,12 +102,6 @@ impl<'a> ProtoDecodeConfig<'a> {
             .map(|(field, decoder)| format!(", decode({field}, {decoder})"))
             .collect::<Vec<_>>()
             .join("");
-        let field_encoders = self
-            .field_encoders
-            .iter()
-            .map(|(field, accessor)| format!(", encode({field}, {accessor})"))
-            .collect::<Vec<_>>()
-            .join("");
         let enumerations = self
             .enumerations
             .iter()
@@ -134,26 +115,16 @@ impl<'a> ProtoDecodeConfig<'a> {
             .collect::<Vec<_>>()
             .join("");
 
-        let (derives, encode_attribute) = if self.field_encoders.is_empty() {
-            ("::miden_protobuf::ProtoDecode", String::new())
-        } else {
-            (
-                "::miden_protobuf::ProtoDecode, ::miden_protobuf::ProtoEncode",
-                format!("\n#[proto_encode(source({}){})]", self.target, field_encoders),
-            )
-        };
-
         format!(
-            "#[derive({derives})]\n\
-             #[proto_decode(target({}){}{}{}{}, {}({}))]{}",
+            "#[derive(::miden_protobuf::ProtoDecode)]\n\
+             #[proto_decode(target({}){}{}{}{}, {}({}))]",
             self.target,
             validators,
             field_decoders,
             enumerations,
             oneofs,
             constructor,
-            self.constructor,
-            encode_attribute,
+            self.constructor
         )
     }
 }
@@ -323,9 +294,8 @@ enum ConstructorKind {
     Fallible,
 }
 
-/// Configures generated messages for `ProtoDecode` and optional `ProtoEncode` implementations, and
-/// preserves explicitly optional message fields that Prost's Rust attributes cannot distinguish
-/// from unlabelled message fields.
+/// Configures generated messages for `ProtoDecode` and preserves explicitly optional message
+/// fields that Prost's Rust attributes cannot distinguish from unlabelled message fields.
 pub fn configure_proto_decodes<'a>(
     prost: &mut prost_build::Config,
     descriptors: &FileDescriptorSet,
@@ -638,27 +608,6 @@ mod tests {
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
              #[proto_decode(target(SelectedTarget), decode(count, crate::decode_count), \
              constructor(count))]"
-        );
-    }
-
-    #[test]
-    fn renders_field_encoders_with_the_decode_configuration() {
-        let encoders = [("value", "SelectedTarget::value"), ("items", "SelectedTarget::items")];
-        let config = ProtoDecodeConfig::constructor(
-            ".example.Selected",
-            "SelectedTarget",
-            &[],
-            "SelectedTarget::new(value, items)",
-        )
-        .with_field_encoders(&encoders);
-
-        assert_eq!(
-            config.derive_attribute(),
-            "#[derive(::miden_protobuf::ProtoDecode, ::miden_protobuf::ProtoEncode)]\n\
-             #[proto_decode(target(SelectedTarget), \
-             constructor(SelectedTarget::new(value, items)))]\n\
-             #[proto_encode(source(SelectedTarget), encode(value, SelectedTarget::value), \
-             encode(items, SelectedTarget::items))]"
         );
     }
 
