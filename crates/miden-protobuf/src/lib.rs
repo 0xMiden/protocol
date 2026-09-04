@@ -199,8 +199,8 @@ macro_rules! __proto_decode_config {
             $(
                 $field:ident: {
                     $(
-                        $variant:ident: $variant_constructor_kind:ident(
-                            $variant_constructor:path
+                        $variant:ident: $variant_action:ident(
+                            $variant_value:expr
                         )
                     ),+ $(,)?
                 }
@@ -224,7 +224,7 @@ macro_rules! __proto_decode_config {
                             $(
                                 $crate::__proto_decode_oneof_variant!(
                                     $variant,
-                                    $variant_constructor_kind($variant_constructor)
+                                    $variant_action($variant_value)
                                 ),
                             )+
                         ],
@@ -301,16 +301,22 @@ macro_rules! __proto_decode_enumeration_variant {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __proto_decode_oneof_variant {
-    ($variant:ident,constructor($constructor:path)) => {
+    ($variant:ident,constructor($constructor:expr)) => {
         $crate::build::ProtoDecodeOneofVariantConfig::constructor(
             ::core::stringify!($variant),
             ::core::stringify!($constructor),
         )
     };
-    ($variant:ident,try_constructor($constructor:path)) => {
+    ($variant:ident,try_constructor($constructor:expr)) => {
         $crate::build::ProtoDecodeOneofVariantConfig::try_constructor(
             ::core::stringify!($variant),
             ::core::stringify!($constructor),
+        )
+    };
+    ($variant:ident,constant($value:expr)) => {
+        $crate::build::ProtoDecodeOneofVariantConfig::constant(
+            ::core::stringify!($variant),
+            ::core::stringify!($value),
         )
     };
 }

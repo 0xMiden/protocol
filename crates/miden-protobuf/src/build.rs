@@ -241,8 +241,8 @@ impl<'a> ProtoDecodeOneofConfig<'a> {
 #[doc(hidden)]
 pub struct ProtoDecodeOneofVariantConfig {
     variant: &'static str,
-    constructor: &'static str,
-    constructor_kind: ConstructorKind,
+    value: &'static str,
+    kind: OneofVariantKind,
 }
 
 impl ProtoDecodeOneofVariantConfig {
@@ -250,8 +250,8 @@ impl ProtoDecodeOneofVariantConfig {
     pub const fn constructor(variant: &'static str, constructor: &'static str) -> Self {
         Self {
             variant,
-            constructor,
-            constructor_kind: ConstructorKind::Infallible,
+            value: constructor,
+            kind: OneofVariantKind::Constructor,
         }
     }
 
@@ -259,18 +259,34 @@ impl ProtoDecodeOneofVariantConfig {
     pub const fn try_constructor(variant: &'static str, constructor: &'static str) -> Self {
         Self {
             variant,
-            constructor,
-            constructor_kind: ConstructorKind::Fallible,
+            value: constructor,
+            kind: OneofVariantKind::TryConstructor,
+        }
+    }
+
+    #[doc(hidden)]
+    pub const fn constant(variant: &'static str, value: &'static str) -> Self {
+        Self {
+            variant,
+            value,
+            kind: OneofVariantKind::Constant,
         }
     }
 
     fn derive_setting(&self) -> String {
-        let constructor = match self.constructor_kind {
-            ConstructorKind::Infallible => "constructor",
-            ConstructorKind::Fallible => "try_constructor",
+        let action = match self.kind {
+            OneofVariantKind::Constructor => "constructor",
+            OneofVariantKind::TryConstructor => "try_constructor",
+            OneofVariantKind::Constant => "constant",
         };
-        format!("{} => {constructor}({})", self.variant, self.constructor)
+        format!("{} => {action}({})", self.variant, self.value)
     }
+}
+
+enum OneofVariantKind {
+    Constructor,
+    TryConstructor,
+    Constant,
 }
 
 enum ConstructorKind {
@@ -515,6 +531,7 @@ mod tests {
         let variants = [
             ProtoDecodeOneofVariantConfig::constructor("First", "SelectedTarget::First"),
             ProtoDecodeOneofVariantConfig::try_constructor("Second", "SelectedTarget::try_second"),
+            ProtoDecodeOneofVariantConfig::constant("Empty", "SelectedTarget::Empty"),
         ];
         let oneofs = [ProtoDecodeOneofConfig::new("choice", &variants)];
         let config =
@@ -526,7 +543,8 @@ mod tests {
             "#[derive(::miden_protobuf::ProtoDecode)]\n\
              #[proto_decode(target(SelectedTarget), oneof(choice, First => \
              constructor(SelectedTarget::First), Second => \
-             try_constructor(SelectedTarget::try_second)), constructor(choice))]"
+             try_constructor(SelectedTarget::try_second), Empty => \
+             constant(SelectedTarget::Empty)), constructor(choice))]"
         );
     }
 

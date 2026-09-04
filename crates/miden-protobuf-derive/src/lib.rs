@@ -35,7 +35,8 @@ use syn::{
 /// fields before constructor arguments are decoded and must return `Result<(), E>`. Enumeration
 /// fields explicitly map variants to domain values or accept them for validation-only fields.
 /// Oneof fields require explicit mappings from generated variants to infallible or fallible target
-/// constructors. Fallible field decoders run after the field's cardinality-aware conversion.
+/// constructors, or to constants when the source variant contains a unit payload. Fallible field
+/// decoders run after the field's cardinality-aware conversion.
 #[proc_macro_derive(ProtoDecode, attributes(proto_decode))]
 pub fn derive_proto_decode(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -213,25 +214,32 @@ impl DecodeConfig {
                     while !content.is_empty() {
                         let variant = content.call(Ident::parse_any)?;
                         content.parse::<Token![=>]>()?;
-                        let constructor_kind = content.call(Ident::parse_any)?;
-                        let kind = if constructor_kind == "constructor" {
-                            ConstructorKind::Infallible
-                        } else if constructor_kind == "try_constructor" {
-                            ConstructorKind::Fallible
+                        let action = content.call(Ident::parse_any)?;
+                        let action_content;
+                        parenthesized!(action_content in content);
+                        let action = if action == "constructor" {
+                            OneofVariantAction::Constructor {
+                                constructor: action_content.parse()?,
+                                kind: ConstructorKind::Infallible,
+                            }
+                        } else if action == "try_constructor" {
+                            OneofVariantAction::Constructor {
+                                constructor: action_content.parse()?,
+                                kind: ConstructorKind::Fallible,
+                            }
+                        } else if action == "constant" {
+                            OneofVariantAction::Constant(action_content.parse()?)
                         } else {
                             return Err(syn::Error::new(
-                                constructor_kind.span(),
-                                "expected `constructor` or `try_constructor`",
+                                action.span(),
+                                "expected `constructor`, `try_constructor`, or `constant`",
                             ));
                         };
-                        let constructor_content;
-                        parenthesized!(constructor_content in content);
-                        let constructor = constructor_content.parse()?;
-                        if !constructor_content.is_empty() {
-                            return Err(constructor_content
-                                .error("unexpected tokens after oneof variant constructor path"));
+                        if !action_content.is_empty() {
+                            return Err(action_content
+                                .error("unexpected tokens after oneof variant action"));
                         }
-                        variants.push(OneofVariantMapping { variant, constructor, kind });
+                        variants.push(OneofVariantMapping { variant, action });
 
                         if !content.is_empty() {
                             content.parse::<Token![,]>()?;
@@ -416,26 +424,32 @@ impl OneofMapping {
             let variant = &mapping.variant;
             let variant_name =
                 LitStr::new(&ident_name(variant).to_snake_case(), mapping.variant.span());
-            let constructor = &mapping.constructor;
-            let construct = match mapping.kind {
-                ConstructorKind::Infallible => quote! {
-                    #constructor(value)
-                },
-                ConstructorKind::Fallible => quote! {
-                    #constructor(value)
-                        .map_err(#runtime::ConversionError::new)
-                        .map_err(|error| error.context(#variant_name))
-                        .map_err(|error| error.context(#field_name))?
-                },
-            };
+            match &mapping.action {
+                OneofVariantAction::Constructor { constructor, kind } => {
+                    let construct = match kind {
+                        ConstructorKind::Infallible => quote! {
+                            #constructor(value)
+                        },
+                        ConstructorKind::Fallible => quote! {
+                            #constructor(value)
+                                .map_err(#runtime::ConversionError::new)
+                                .map_err(|error| error.context(#variant_name))
+                                .map_err(|error| error.context(#field_name))?
+                        },
+                    };
 
-            quote! {
-                #source_path::#variant(value) => {
-                    let value = #runtime::decode(
-                        #runtime::ValueField::new(#variant_name, value),
-                    )
-                    .map_err(|error| error.context(#field_name))?;
-                    #construct
+                    quote! {
+                        #source_path::#variant(value) => {
+                            let value = #runtime::decode(
+                                #runtime::ValueField::new(#variant_name, value),
+                            )
+                            .map_err(|error| error.context(#field_name))?;
+                            #construct
+                        }
+                    }
+                },
+                OneofVariantAction::Constant(value) => quote! {
+                    #source_path::#variant(()) => #value
                 }
             }
         });
@@ -453,8 +467,15 @@ impl OneofMapping {
 
 struct OneofVariantMapping {
     variant: Ident,
-    constructor: Path,
-    kind: ConstructorKind,
+    action: OneofVariantAction,
+}
+
+enum OneofVariantAction {
+    Constructor {
+        constructor: Path,
+        kind: ConstructorKind,
+    },
+    Constant(Expr),
 }
 
 struct FieldValidator {
@@ -1210,12 +1231,13 @@ mod tests {
                 oneof(
                     choice,
                     First => constructor(::domain::Choice::First),
-                    Second => try_constructor(::domain::Choice::try_second)
+                    Second => try_constructor(::domain::Choice::try_second),
+                    Empty => constant(::domain::Choice::Empty)
                 ),
                 constructor(choice)
             )]
             struct ExampleMessage {
-                #[prost(oneof = "choice::Value", tags = "1, 2")]
+                #[prost(oneof = "choice::Value", tags = "1, 2, 3")]
                 choice: Option<choice::Value>,
             }
         })
@@ -1225,6 +1247,8 @@ mod tests {
         assert!(generated.contains("domain :: Choice :: First (value)"));
         assert!(generated.contains("choice :: Value :: Second (value)"));
         assert!(generated.contains("domain :: Choice :: try_second"));
+        assert!(generated.contains("choice :: Value :: Empty (())"));
+        assert!(generated.contains("domain :: Choice :: Empty"));
         assert!(generated.contains("error . context (\"choice\")"));
         assert!(generated.contains("error . context (\"second\")"));
         assert!(generated.contains("ValueField :: new (\"first"));
