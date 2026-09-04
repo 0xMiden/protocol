@@ -13,6 +13,7 @@
 
 ### Changes
 
+- [BREAKING] `fee::pay_fee` now requires the committed conversion info to name the reference block's fee asset at rate 1/1, so the transaction fee is always paid in the native asset at the computed amount ([#3763](https://github.com/0xMiden/protocol/issues/3763)).
 - Added a check that the guardian public key is not one of the approver public keys ([#3764](https://github.com/0xMiden/protocol/pull/3764)).
 - [BREAKING] Updated the Miden VM and crypto crate family from v0.29.4 to v0.32.0. The cumulative update gives `CoreLibrary` one merged package, makes `LocalTransactionProver::new` take `miden_prover::Prover`, makes `TransactionVerifier::verify` return `VerificationOutcome`, adds a format version and compatible VM and PVM verifier roots to execution proof bytes, reports separate VM and precompile security parameters, and moves all Plonky3 dependencies to v0.7.0 ([#3782](https://github.com/0xMiden/protocol/pull/3782), [#3806](https://github.com/0xMiden/protocol/pull/3806), [#3813](https://github.com/0xMiden/protocol/pull/3813)).
 - [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).

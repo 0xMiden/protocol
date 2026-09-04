@@ -794,7 +794,8 @@ end
 #! - block_number is the number of the block the transaction summary binds.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - CONVERSION_INFO tells miden::standards::fee::pay_fee which asset to pay the transaction fee
-#!   in. It is the empty word if the caller committed no conversion info.
+#!   in; pay_fee accepts only the reference block's fee asset at rate 1/1. It is the empty word
+#!   if the caller committed no conversion info.
 #!
 #! Panics if:
 #! - the advice map holds no preimage for the auth args.
