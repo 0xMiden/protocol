@@ -156,6 +156,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             constructor: patch,
         },
+        ".account.StorageMapEntry" => {
+            target: (
+                ::miden_protocol::account::StorageMapKey,
+                ::miden_protocol::Word
+            ),
+            constructor: (key, value),
+        },
+        ".account.StorageMapPatch.Entries" => {
+            target: ::miden_protocol::account::StorageMapPatchEntries,
+            try_constructor: crate::conversion::decode_storage_map_patch_entries(
+                entries,
+            ),
+        },
+        ".account.StorageMapPatch" => {
+            target: ::miden_protocol::account::StorageMapPatch,
+            oneof: {
+                patch: {
+                    Create: constructor(crate::conversion::decode_storage_map_patch_create),
+                    Update: try_constructor(crate::conversion::decode_storage_map_patch_update),
+                    Remove: constant(::miden_protocol::account::StorageMapPatch::Remove),
+                },
+            },
+            constructor: patch,
+        },
         ".account.StorageSlotPatch" => {
             target: (
                 ::miden_protocol::account::StorageSlotName,

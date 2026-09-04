@@ -79,13 +79,6 @@ message PartialVault {
   repeated primitives.Word asset_ids = 2;
 }
 
-enum StoragePatchOperation {
-  STORAGE_PATCH_OPERATION_UNSPECIFIED = 0;
-  STORAGE_PATCH_OPERATION_CREATE = 1;
-  STORAGE_PATCH_OPERATION_UPDATE = 2;
-  STORAGE_PATCH_OPERATION_REMOVE = 3;
-}
-
 message StorageValuePatch {
   oneof patch {
     primitives.Word create = 1;
@@ -100,8 +93,15 @@ message StorageMapEntry {
 }
 
 message StorageMapPatch {
-  StoragePatchOperation operation = 1;
-  repeated StorageMapEntry entries = 2;
+  message Entries {
+    repeated StorageMapEntry entries = 1;
+  }
+
+  oneof patch {
+    Entries create = 1;
+    Entries update = 2;
+    google.protobuf.Empty remove = 3;
+  }
 }
 
 message StorageSlotPatch {

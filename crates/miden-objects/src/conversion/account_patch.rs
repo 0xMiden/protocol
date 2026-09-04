@@ -15,14 +15,12 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageMapPatch,
     StorageMapPatchEntries,
-    StoragePatchOperation,
     StorageSlotName,
     StorageSlotPatch,
     StorageValuePatch,
 };
 use miden_protocol::asset::AssetId;
 
-use super::{MessageDecodeExt, required};
 use crate::{ConversionError, ConversionResultExt, proto};
 
 // ACCOUNT CODE
@@ -61,28 +59,6 @@ pub(crate) fn decode_account_code(
 // STORAGE PATCHES
 // ================================================================================================
 
-const fn encode_storage_operation(operation: StoragePatchOperation) -> i32 {
-    match operation {
-        StoragePatchOperation::Create => proto::account::StoragePatchOperation::Create as i32,
-        StoragePatchOperation::Update => proto::account::StoragePatchOperation::Update as i32,
-        StoragePatchOperation::Remove => proto::account::StoragePatchOperation::Remove as i32,
-    }
-}
-
-fn decode_storage_operation(operation: i32) -> Result<StoragePatchOperation, ConversionError> {
-    match proto::account::StoragePatchOperation::try_from(operation) {
-        Ok(proto::account::StoragePatchOperation::Create) => Ok(StoragePatchOperation::Create),
-        Ok(proto::account::StoragePatchOperation::Update) => Ok(StoragePatchOperation::Update),
-        Ok(proto::account::StoragePatchOperation::Remove) => Ok(StoragePatchOperation::Remove),
-        Ok(proto::account::StoragePatchOperation::Unspecified) => {
-            Err(ConversionError::message("storage patch operation is unspecified"))
-        },
-        Err(_) => {
-            Err(ConversionError::message(format!("unknown storage patch operation {operation}")))
-        },
-    }
-}
-
 impl From<&StorageValuePatch> for proto::account::StorageValuePatch {
     fn from(patch: &StorageValuePatch) -> Self {
         use proto::account::storage_value_patch::Patch;
@@ -106,63 +82,57 @@ pub(crate) fn decode_storage_value_patch_update(value: Word) -> StorageValuePatc
 
 impl From<&StorageMapPatch> for proto::account::StorageMapPatch {
     fn from(patch: &StorageMapPatch) -> Self {
-        let entries = patch
-            .entries()
-            .into_iter()
-            .flat_map(StorageMapPatchEntries::as_map)
-            .map(|(key, value)| proto::account::StorageMapEntry {
-                key: Some(Word::from(*key).into()),
-                value: Some((*value).into()),
-            })
-            .collect();
+        use proto::account::storage_map_patch::{Entries, Patch};
 
-        Self {
-            operation: encode_storage_operation(patch.patch_op()),
-            entries,
-        }
+        let encode_entries = |entries: &StorageMapPatchEntries| Entries {
+            entries: entries
+                .as_map()
+                .iter()
+                .map(|(key, value)| proto::account::StorageMapEntry {
+                    key: Some(Word::from(*key).into()),
+                    value: Some((*value).into()),
+                })
+                .collect(),
+        };
+        let patch = match patch {
+            StorageMapPatch::Create { entries } => Patch::Create(encode_entries(entries)),
+            StorageMapPatch::Update { entries } => Patch::Update(encode_entries(entries)),
+            StorageMapPatch::Remove => Patch::Remove(()),
+        };
+        Self { patch: Some(patch) }
     }
 }
 
-impl TryFrom<proto::account::StorageMapPatch> for StorageMapPatch {
-    type Error = ConversionError;
-
-    fn try_from(patch: proto::account::StorageMapPatch) -> Result<Self, Self::Error> {
-        let operation = decode_storage_operation(patch.operation).context("operation")?;
-        if operation.is_remove() {
-            if !patch.entries.is_empty() {
-                return Err(ConversionError::message(
-                    "entries must be empty for a remove operation",
-                )
-                .context("entries"));
-            }
-            return Ok(StorageMapPatch::Remove);
-        }
-
-        let mut entries = BTreeMap::new();
-        for (index, entry) in patch.entries.into_iter().enumerate() {
-            let decoder = entry.decoder();
-            let entry_context = format!("entries[{index}]");
-            let key = StorageMapKey::from_raw(
-                required!(decoder, entry.key).context(entry_context.clone())?,
-            );
-            let value = required!(decoder, entry.value).context(entry_context.clone())?;
-            if entries.insert(key, value).is_some() {
-                return Err(ConversionError::message("duplicate storage map key")
-                    .context(format!("{entry_context}.key")));
-            }
-        }
-
-        let entries = StorageMapPatchEntries::from_raw(entries);
-        match operation {
-            StoragePatchOperation::Create => Ok(StorageMapPatch::Create { entries }),
-            StoragePatchOperation::Update if entries.is_empty() => {
-                Err(ConversionError::message("entries must be non-empty for an update operation")
-                    .context("entries"))
-            },
-            StoragePatchOperation::Update => Ok(StorageMapPatch::Update { entries }),
-            StoragePatchOperation::Remove => unreachable!("remove handled above"),
+pub(crate) fn decode_storage_map_patch_entries(
+    decoded_entries: Vec<(StorageMapKey, Word)>,
+) -> Result<StorageMapPatchEntries, ConversionError> {
+    let mut entries = BTreeMap::new();
+    for (index, (key, value)) in decoded_entries.into_iter().enumerate() {
+        let entry_context = format!("entries[{index}]");
+        if entries.insert(key, value).is_some() {
+            return Err(ConversionError::message("duplicate storage map key")
+                .context(format!("{entry_context}.key")));
         }
     }
+
+    Ok(StorageMapPatchEntries::from_raw(entries))
+}
+
+pub(crate) fn decode_storage_map_patch_create(entries: StorageMapPatchEntries) -> StorageMapPatch {
+    StorageMapPatch::Create { entries }
+}
+
+pub(crate) fn decode_storage_map_patch_update(
+    entries: StorageMapPatchEntries,
+) -> Result<StorageMapPatch, ConversionError> {
+    if entries.is_empty() {
+        return Err(ConversionError::message(
+            "entries must be non-empty for an update operation",
+        )
+        .context("entries"));
+    }
+
+    Ok(StorageMapPatch::Update { entries })
 }
 
 impl From<&AccountStoragePatch> for proto::account::AccountStoragePatch {

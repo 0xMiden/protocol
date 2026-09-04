@@ -14,7 +14,9 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AccountVaultPatch,
     AssetCallbackFlag,
+    StorageMapKey,
     StorageMapPatch,
+    StorageMapPatchEntries,
     StorageSlotHeader,
     StorageSlotName,
     StorageSlotPatch,
@@ -960,6 +962,16 @@ fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
 fn storage_slot_patch_oneof_variants_decode() {
     let create_value = Word::from([1, 2, 3, 4_u32]);
     let update_value = Word::from([5, 6, 7, 8_u32]);
+    let map_key = StorageMapKey::from_index(9);
+    let map_value = Word::from([10, 11, 12, 13_u32]);
+    let map_entries =
+        StorageMapPatchEntries::from_raw([(map_key, map_value)].into_iter().collect());
+    let proto_map_entries = proto::account::storage_map_patch::Entries {
+        entries: vec![proto::account::StorageMapEntry {
+            key: Some(Word::from(map_key).into()),
+            value: Some(map_value.into()),
+        }],
+    };
     for (patch, expected) in [
         (
             proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
@@ -985,8 +997,23 @@ fn storage_slot_patch_oneof_variants_decode() {
         ),
         (
             proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
-                operation: proto::account::StoragePatchOperation::Remove as i32,
-                entries: vec![],
+                patch: Some(proto::account::storage_map_patch::Patch::Create(
+                    proto_map_entries.clone(),
+                )),
+            }),
+            StorageSlotPatch::Map(StorageMapPatch::Create {
+                entries: map_entries.clone(),
+            }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
+                patch: Some(proto::account::storage_map_patch::Patch::Update(proto_map_entries)),
+            }),
+            StorageSlotPatch::Map(StorageMapPatch::Update { entries: map_entries }),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
+                patch: Some(proto::account::storage_map_patch::Patch::Remove(())),
             }),
             StorageSlotPatch::Map(StorageMapPatch::Remove),
         ),
@@ -1022,6 +1049,43 @@ fn storage_slot_patch_reports_field_and_variant_paths() {
     assert_eq!(
         error.to_string(),
         "patch.value.patch: field miden_objects::proto::account::StorageValuePatch::patch is missing"
+    );
+}
+
+#[test]
+fn storage_map_patch_reports_oneof_and_entry_paths() {
+    let error = StorageMapPatch::try_from(proto::account::StorageMapPatch::default()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "patch: field miden_objects::proto::account::StorageMapPatch::patch is missing"
+    );
+
+    let error = StorageMapPatch::try_from(proto::account::StorageMapPatch {
+        patch: Some(proto::account::storage_map_patch::Patch::Update(
+            proto::account::storage_map_patch::Entries::default(),
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "patch.update.entries: entries must be non-empty for an update operation"
+    );
+
+    let entry = proto::account::StorageMapEntry {
+        key: Some(Word::empty().into()),
+        value: Some(Word::empty().into()),
+    };
+    let error = StorageMapPatch::try_from(proto::account::StorageMapPatch {
+        patch: Some(proto::account::storage_map_patch::Patch::Create(
+            proto::account::storage_map_patch::Entries {
+                entries: vec![entry.clone(), entry],
+            },
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "patch.create.entries[1].key: duplicate storage map key"
     );
 }
 
