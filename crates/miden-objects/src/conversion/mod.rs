@@ -32,7 +32,8 @@ pub(crate) use account_patch::{
     decode_storage_value_patch_create,
     decode_storage_value_patch_update,
 };
-pub use batch::{decode_proposed_batch, decode_proven_batch, decode_standalone_proven_batch};
+pub(crate) use batch::construct_proven_batch;
+pub use batch::decode_proposed_batch;
 pub(crate) use block::{
     decode_block_body,
     decode_block_header,

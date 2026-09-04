@@ -1,7 +1,6 @@
 use core::error::Error;
 
 use assert_matches::assert_matches;
-use miden_objects::conversion::decode_standalone_proven_batch;
 use miden_objects::{ConversionError, proto};
 use miden_protocol::account::{
     AccountHeader,
@@ -31,7 +30,7 @@ use miden_protocol::asset::{
     FungibleAsset,
     NonFungibleAsset,
 };
-use miden_protocol::batch::BatchAccountUpdate;
+use miden_protocol::batch::{BatchAccountUpdate, ProvenBatch};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{
     BlockAccountUpdate,
@@ -840,6 +839,39 @@ fn proven_batch_data() -> proto::transaction::ProvenBatch {
     }
 }
 
+fn proven_batch() -> ProvenBatch {
+    let account_id = private_account_id();
+    let initial_state_commitment = Word::from([1_u32, 2, 3, 4]);
+    let final_state_commitment = Word::from([5_u32, 6, 7, 8]);
+    let transaction = TransactionHeader::new(
+        account_id,
+        initial_state_commitment,
+        final_state_commitment,
+        InputNotes::default(),
+        vec![],
+    )
+    .unwrap();
+    let account_update = BatchAccountUpdate::new(
+        account_id,
+        initial_state_commitment,
+        final_state_commitment,
+        AccountUpdateDetails::Private,
+    )
+    .unwrap();
+
+    ProvenBatch::new(
+        Word::empty(),
+        1_u32.into(),
+        [account_update],
+        InputNotes::default(),
+        vec![],
+        2_u32.into(),
+        OrderedTransactionHeaders::new_unchecked(vec![transaction]),
+        dummy_execution_proof(),
+    )
+    .unwrap()
+}
+
 #[test]
 fn account_update_roundtrips_through_protobuf_bytes() {
     let update = BatchAccountUpdate::new(
@@ -853,6 +885,22 @@ fn account_update_roundtrips_through_protobuf_bytes() {
     let encoded = proto::transaction::BatchAccountUpdate::from(&update).encode_to_vec();
     let message = proto::transaction::BatchAccountUpdate::decode(encoded.as_slice()).unwrap();
     assert_eq!(BatchAccountUpdate::try_from(message).unwrap(), update);
+}
+
+#[test]
+fn proven_batch_roundtrips_and_reports_noncanonical_account_order() {
+    let batch = proven_batch();
+    let encoded = proto::transaction::ProvenBatch::from(&batch).encode_to_vec();
+    let message = proto::transaction::ProvenBatch::decode(encoded.as_slice()).unwrap();
+    assert_eq!(ProvenBatch::try_from(message.clone()).unwrap(), batch);
+
+    let mut noncanonical = message;
+    noncanonical.account_updates.push(noncanonical.account_updates[0].clone());
+    let error = ProvenBatch::try_from(noncanonical).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "account_updates[1].account_id: account updates must have unique, ascending account IDs"
+    );
 }
 
 #[test]
@@ -1320,12 +1368,12 @@ fn proven_transaction_rejects_missing_block_numbers() {
 fn proven_batch_rejects_missing_block_numbers() {
     let mut message = proven_batch_data();
     message.reference_block_num = None;
-    let error = decode_standalone_proven_batch(message).unwrap_err();
+    let error = ProvenBatch::try_from(message).unwrap_err();
     assert_missing_block_number(error, "reference_block_num");
 
     let mut message = proven_batch_data();
     message.expiration_block_num = None;
-    let error = decode_standalone_proven_batch(message).unwrap_err();
+    let error = ProvenBatch::try_from(message).unwrap_err();
     assert_missing_block_number(error, "expiration_block_num");
 }
 

@@ -649,6 +649,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 details,
             ),
         },
+        ".transaction.ProvenBatch" => {
+            target: ::miden_protocol::batch::ProvenBatch,
+            try_constructor: crate::conversion::construct_proven_batch(
+                reference_block_commitment,
+                reference_block_num,
+                account_updates,
+                input_notes,
+                output_notes,
+                expiration_block_num,
+                transactions,
+                proof,
+            ),
+        },
         ".transaction.TxAccountUpdate" => {
             target: ::miden_protocol::transaction::TxAccountUpdate,
             try_constructor: ::miden_protocol::transaction::TxAccountUpdate::new(
