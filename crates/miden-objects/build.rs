@@ -124,6 +124,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entries,
             ),
         },
+        ".account.StorageSlotPatch" => {
+            target: (
+                ::miden_protocol::account::StorageSlotName,
+                ::miden_protocol::account::StorageSlotPatch
+            ),
+            decode: {
+                slot_name: crate::conversion::decode_storage_slot_name,
+            },
+            oneof: {
+                patch: {
+                    Value: ::miden_protocol::account::StorageSlotPatch::Value,
+                    Map: ::miden_protocol::account::StorageSlotPatch::Map,
+                },
+            },
+            constructor: (slot_name, patch),
+        },
         ".account.AccountStoragePatch" => {
             target: ::miden_protocol::account::AccountStoragePatch,
             try_constructor: crate::conversion::decode_account_storage_patch(

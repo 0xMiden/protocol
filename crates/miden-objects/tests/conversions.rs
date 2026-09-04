@@ -964,6 +964,58 @@ fn account_storage_patch_protobuf_slots_follow_canonical_storage_order() {
 }
 
 #[test]
+fn storage_slot_patch_oneof_variants_decode() {
+    for (patch, expected) in [
+        (
+            proto::account::storage_slot_patch::Patch::Value(proto::account::StorageValuePatch {
+                operation: proto::account::StoragePatchOperation::Remove as i32,
+                value: None,
+            }),
+            StorageSlotPatch::Value(StorageValuePatch::Remove),
+        ),
+        (
+            proto::account::storage_slot_patch::Patch::Map(proto::account::StorageMapPatch {
+                operation: proto::account::StoragePatchOperation::Remove as i32,
+                entries: vec![],
+            }),
+            StorageSlotPatch::Map(StorageMapPatch::Remove),
+        ),
+    ] {
+        let (slot_name, patch) =
+            <(StorageSlotName, StorageSlotPatch)>::try_from(proto::account::StorageSlotPatch {
+                slot_name: "miden::test::slot".into(),
+                patch: Some(patch),
+            })
+            .unwrap();
+
+        assert_eq!(slot_name, StorageSlotName::new("miden::test::slot").unwrap());
+        assert_eq!(patch, expected);
+    }
+}
+
+#[test]
+fn storage_slot_patch_reports_field_and_variant_paths() {
+    let error = <(StorageSlotName, StorageSlotPatch)>::try_from(proto::account::StorageSlotPatch {
+        slot_name: "invalid".into(),
+        patch: None,
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("slot_name: "));
+
+    let error = <(StorageSlotName, StorageSlotPatch)>::try_from(proto::account::StorageSlotPatch {
+        slot_name: "miden::test::slot".into(),
+        patch: Some(proto::account::storage_slot_patch::Patch::Value(
+            proto::account::StorageValuePatch::default(),
+        )),
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "patch.value.operation: storage patch operation is unspecified"
+    );
+}
+
+#[test]
 fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
     let expected =
         BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))

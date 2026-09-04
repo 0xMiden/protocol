@@ -203,28 +203,10 @@ impl From<&AccountStoragePatch> for proto::account::AccountStoragePatch {
     }
 }
 
-impl TryFrom<proto::account::StorageSlotPatch> for (StorageSlotName, StorageSlotPatch) {
-    type Error = ConversionError;
-
-    fn try_from(slot: proto::account::StorageSlotPatch) -> Result<Self, Self::Error> {
-        use proto::account::storage_slot_patch::Patch;
-
-        let slot_name = StorageSlotName::new(slot.slot_name)
-            .map_err(ConversionError::new)
-            .context("slot_name")?;
-        let patch = match slot.patch {
-            Some(Patch::Value(value)) => {
-                StorageSlotPatch::Value(value.try_into().context("patch")?)
-            },
-            Some(Patch::Map(map)) => StorageSlotPatch::Map(map.try_into().context("patch")?),
-            None => {
-                return Err(ConversionError::missing_field::<proto::account::StorageSlotPatch>(
-                    "patch",
-                ));
-            },
-        };
-        Ok((slot_name, patch))
-    }
+pub(crate) fn decode_storage_slot_name(
+    slot_name: alloc::string::String,
+) -> Result<StorageSlotName, ConversionError> {
+    StorageSlotName::new(slot_name).map_err(ConversionError::new)
 }
 
 pub(crate) fn decode_account_storage_patch(
