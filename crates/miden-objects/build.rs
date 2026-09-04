@@ -423,6 +423,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 foreign_account_slot_names,
             ),
         },
+        ".transaction.TransactionInputs" => {
+            target: ::miden_protocol::transaction::TransactionInputs,
+            oneof: {
+                version: {
+                    V1: ::core::convert::identity,
+                },
+            },
+            constructor: version,
+        },
         ".transaction.PublicOutputNote" => {
             target: ::miden_protocol::transaction::PublicOutputNote,
             try_constructor: ::miden_protocol::transaction::PublicOutputNote::new(

@@ -45,7 +45,7 @@ fn transaction_inputs_v1_requires_every_singular_message() {
         let error = TransactionInputs::try_from(message).unwrap_err();
 
         assert!(
-            error.to_string().starts_with(&format!("v1.{field}: field ")),
+            error.to_string().starts_with(&format!("version.v1.{field}: field ")),
             "unexpected error for {field}: {error}"
         );
         assert!(error.to_string().ends_with(&format!("::{field} is missing")));
@@ -69,13 +69,21 @@ fn input_notes_require_their_oneof_and_authenticated_fields() {
     let mut message = common::dummy_transaction_inputs_message();
     common::authenticated_input_note_mut(&mut message).note = None;
     let error = TransactionInputs::try_from(message).unwrap_err();
-    assert!(error.to_string().starts_with("v1.input_notes.notes[0].authenticated: field "));
+    assert!(
+        error
+            .to_string()
+            .starts_with("version.v1.input_notes.notes[0].authenticated: field ")
+    );
     assert!(error.to_string().ends_with("::note is missing"));
 
     let mut message = common::dummy_transaction_inputs_message();
     common::authenticated_input_note_mut(&mut message).proof = None;
     let error = TransactionInputs::try_from(message).unwrap_err();
-    assert!(error.to_string().starts_with("v1.input_notes.notes[0].authenticated: field "));
+    assert!(
+        error
+            .to_string()
+            .starts_with("version.v1.input_notes.notes[0].authenticated: field ")
+    );
     assert!(error.to_string().ends_with("::proof is missing"));
 }
 
@@ -91,9 +99,9 @@ fn authenticated_input_note_rejects_a_proof_for_a_different_note() {
     let error = TransactionInputs::try_from(message).unwrap_err();
 
     assert!(
-        error
-            .to_string()
-            .starts_with("v1.input_notes.notes[0].authenticated.proof.note_id: note ID mismatch:"),
+        error.to_string().starts_with(
+            "version.v1.input_notes.notes[0].authenticated.proof.note_id: note ID mismatch:"
+        ),
         "unexpected error: {error}"
     );
 }
@@ -110,7 +118,7 @@ fn input_notes_reject_duplicate_nullifiers_and_preserve_the_domain_source() {
     assert!(
         error
             .to_string()
-            .starts_with("v1.input_notes: transaction input note with nullifier"),
+            .starts_with("version.v1.input_notes: transaction input note with nullifier"),
         "unexpected error: {error}"
     );
     assert_matches!(transaction_input_error(&error), TransactionInputError::DuplicateInputNote(_));
@@ -124,7 +132,11 @@ fn foreign_slot_names_reject_invalid_names_and_preserve_the_domain_source() {
 
     let error = TransactionInputs::try_from(message).unwrap_err();
 
-    assert!(error.to_string().starts_with("v1.foreign_account_slot_names[0].slot_name: "));
+    assert!(
+        error
+            .to_string()
+            .starts_with("version.v1.foreign_account_slot_names[0].slot_name: ")
+    );
     assert_matches!(
         error.source().and_then(|source| source.downcast_ref::<StorageSlotNameError>()),
         Some(StorageSlotNameError::TooShort)
@@ -141,7 +153,7 @@ fn foreign_slot_names_reject_id_name_mismatches() {
 
     assert_eq!(
         error.to_string(),
-        "v1.foreign_account_slot_names[0].slot_id: storage slot ID does not match slot name"
+        "version.v1.foreign_account_slot_names[0].slot_id: storage slot ID does not match slot name"
     );
 }
 
@@ -157,7 +169,7 @@ fn foreign_slot_names_reject_duplicate_ids() {
 
     assert_eq!(
         error.to_string(),
-        "v1.foreign_account_slot_names[2].slot_id: duplicate foreign account storage slot ID"
+        "version.v1.foreign_account_slot_names[2].slot_id: duplicate foreign account storage slot ID"
     );
 }
 

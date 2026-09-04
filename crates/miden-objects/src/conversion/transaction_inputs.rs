@@ -177,18 +177,3 @@ pub(crate) fn decode_transaction_inputs_v1(
     )
     .map_err(ConversionError::new)
 }
-
-impl TryFrom<proto::transaction::TransactionInputs> for TransactionInputs {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::transaction::TransactionInputs) -> Result<Self, Self::Error> {
-        use proto::transaction::transaction_inputs::Version;
-
-        match value.version {
-            Some(Version::V1(v1)) => Self::try_from(v1).context("v1"),
-            None => Err(ConversionError::missing_field::<proto::transaction::TransactionInputs>(
-                "version",
-            )),
-        }
-    }
-}
