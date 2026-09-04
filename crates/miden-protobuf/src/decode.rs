@@ -39,11 +39,11 @@ where
     S::Error: Error + Send + Sync + 'static,
 {
     fn decode(self) -> Result<T, ConversionError> {
-        self.value
-            .ok_or_else(|| ConversionError::missing_field::<M>(self.name))?
-            .try_into()
-            .map_err(ConversionError::new)
-            .context(self.name)
+        let value = self
+            .value
+            .ok_or_else(|| ConversionError::missing_field::<M>(self.name))
+            .context(self.name)?;
+        value.try_into().map_err(ConversionError::new).context(self.name)
     }
 }
 
@@ -162,8 +162,11 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
 
-    use super::{DecodeRepeated, OptionalField, RepeatedField, decode};
+    use super::{DecodeRepeated, OptionalField, RepeatedField, RequiredField, decode};
     use crate::ConversionError;
+
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct Message {}
 
     #[derive(Debug, PartialEq, Eq)]
     struct Numbers(Vec<u16>);
@@ -183,6 +186,15 @@ mod tests {
     fn optional_field_converts_present_values() {
         let value: Option<u16> = decode(OptionalField::new("value", Some(7_u32))).unwrap();
         assert_eq!(value, Some(7));
+    }
+
+    #[test]
+    fn required_field_reports_its_name_when_missing() {
+        let error =
+            decode::<_, u16>(RequiredField::<Message, _>::new("value", None::<u32>)).unwrap_err();
+
+        assert!(error.to_string().starts_with("value: field "));
+        assert!(error.to_string().ends_with("::value is missing"));
     }
 
     #[test]

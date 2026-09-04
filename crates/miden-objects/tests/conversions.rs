@@ -170,7 +170,7 @@ fn structured_asset_conversion_requires_message_fields() {
     .unwrap_err();
     assert_eq!(
         suffix_error.to_string(),
-        "field miden_objects::proto::asset::AssetClass::suffix is missing"
+        "suffix: field miden_objects::proto::asset::AssetClass::suffix is missing"
     );
 
     let prefix_error = AssetClass::try_from(proto::asset::AssetClass {
@@ -180,7 +180,7 @@ fn structured_asset_conversion_requires_message_fields() {
     .unwrap_err();
     assert_eq!(
         prefix_error.to_string(),
-        "field miden_objects::proto::asset::AssetClass::prefix is missing"
+        "prefix: field miden_objects::proto::asset::AssetClass::prefix is missing"
     );
 
     let asset_id_error = AssetId::try_from(proto::asset::AssetId {
@@ -732,7 +732,7 @@ fn public_output_note_protobuf_requires_nested_note() {
 
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::transaction::PublicOutputNote::note is missing"
+        "note: field miden_objects::proto::transaction::PublicOutputNote::note is missing"
     );
 }
 
@@ -1052,7 +1052,8 @@ fn proven_transaction_rejects_missing_block_numbers() {
     let error = ProvenTransaction::try_from(message).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::transaction::ProvenTransaction::reference_block_num is missing"
+        "reference_block_num: field \
+         miden_objects::proto::transaction::ProvenTransaction::reference_block_num is missing"
     );
 
     let mut message = proven_transaction_data();
@@ -1060,7 +1061,8 @@ fn proven_transaction_rejects_missing_block_numbers() {
     let error = ProvenTransaction::try_from(message).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "field miden_objects::proto::transaction::ProvenTransaction::expiration_block_num is missing"
+        "expiration_block_num: field \
+         miden_objects::proto::transaction::ProvenTransaction::expiration_block_num is missing"
     );
 }
 

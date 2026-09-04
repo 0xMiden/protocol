@@ -45,7 +45,7 @@ fn transaction_inputs_v1_requires_every_singular_message() {
         let error = TransactionInputs::try_from(message).unwrap_err();
 
         assert!(
-            error.to_string().starts_with("v1: field "),
+            error.to_string().starts_with(&format!("v1.{field}: field ")),
             "unexpected error for {field}: {error}"
         );
         assert!(error.to_string().ends_with(&format!("::{field} is missing")));
