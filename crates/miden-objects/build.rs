@@ -284,6 +284,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 update_data,
             ),
         },
+        ".primitives.PartialSmtNode" => {
+            target: (u64, ::miden_protocol::Word),
+            constructor: (index, digest),
+        },
+        ".primitives.PartialSmtNodeLevel" => {
+            target: (u32, ::alloc::vec::Vec<(u64, ::miden_protocol::Word)>),
+            constructor: (depth, nodes),
+        },
+        ".primitives.IndexedSmtLeaf" => {
+            target: (
+                u64,
+                ::miden_protocol::crypto::merkle::smt::SmtLeaf
+            ),
+            constructor: (index, leaf),
+        },
+        ".primitives.IndexedDigest" => {
+            target: (u64, ::miden_protocol::Word),
+            constructor: (index, value),
+        },
+        ".primitives.PartialSmt" => {
+            target: ::miden_protocol::crypto::merkle::smt::UniqueNodes,
+            try_constructor: crate::conversion::decode_unique_nodes(
+                root,
+                node_levels,
+                leaves,
+                value_only_leaves,
+            ),
+        },
         ".primitives.SmtLeafEntryList" => {
             target: ::alloc::vec::Vec<(
                 ::miden_protocol::Word,
