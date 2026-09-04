@@ -170,6 +170,19 @@ The RECIPIENT is not necessarily just an account address. Its pre-image consists
 
 The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
 
+#### Declaring who may consume a note
+
+A note script either restricts consumption to accounts the note commits to, or is open to any consumer by design. Nothing in a script's body distinguishes the second case from a restriction that was simply left out, so every standard note script states its rule on a `Consumers:` line in the doc comment of its `@note_script` procedure, and the note's Rust type declares the same rule as a [`NoteConsumers`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/src/note/consumers.rs) value.
+
+A note commits to the accounts allowed to consume it in one of two ways:
+
+- as a `NetworkAccountTarget` [attachment](#attachments), which the [config notes](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes) and the agglayer note scripts use.
+- as an account ID in the note's [storage](#storage), which P2ID, P2IDE, MINT and BURN use.
+
+Both are enforced through the shared [`miden::standards::note::consumer`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/note/consumer.masm) procedures, so a restricted note has exactly one recognizable enforcement site rather than a hand-written comparison per script.
+
+A note that is open to any consumer says so and says why: a SWAP or PSWAP note is filled by whoever provides the requested asset, and a TX_FEE note is claimed by whichever batch builder includes the transaction. A test walks every note script on disk and fails for one that declares no rule, restricts consumption without enforcing it, or declares a rule that differs from the one its Rust type declares.
+
 #### Note nullifier ensuring private consumption
 
 The `Note` nullifier, computed as:

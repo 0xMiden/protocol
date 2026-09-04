@@ -1,4 +1,5 @@
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
+use miden_standards::note::NoteConsumers;
 use miden_standards::note::costs::NoteCost;
 
 use crate::{
@@ -56,6 +57,21 @@ impl AgglayerNote {
             Self::DEREGISTER_AGG_FAUCET => "DEREGISTER_AGG_FAUCET",
             Self::UPDATE_GER => "UPDATE_GER",
             Self::REMOVE_GER => "REMOVE_GER",
+        }
+    }
+
+    /// Returns the accounts this [`AgglayerNote`] allows to consume it.
+    ///
+    /// See [`NoteConsumers`] for why every note declares this.
+    pub const fn consumers(&self) -> NoteConsumers {
+        match self {
+            Self::CLAIM => NoteConsumers::TargetAccount,
+            // Either the bridge account the note is targeted at, or the sender reclaiming it.
+            Self::B2AGG => NoteConsumers::CommittedAccounts,
+            Self::CONFIG_AGG_BRIDGE => NoteConsumers::TargetAccount,
+            Self::DEREGISTER_AGG_FAUCET => NoteConsumers::TargetAccount,
+            Self::UPDATE_GER => NoteConsumers::TargetAccount,
+            Self::REMOVE_GER => NoteConsumers::TargetAccount,
         }
     }
 

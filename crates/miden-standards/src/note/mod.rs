@@ -21,6 +21,9 @@ pub use burn::BurnNote;
 mod constant_fee_policy_config;
 pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
 
+mod consumers;
+pub use consumers::NoteConsumers;
+
 mod faucet_metadata_config;
 pub use faucet_metadata_config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
 
@@ -200,6 +203,45 @@ impl StandardNote {
             Self::NETWORK_ACCOUNT_CONFIG => "NETWORK_ACCOUNT_CONFIG",
             Self::FEE_SPONSORSHIP => "FEE_SPONSORSHIP",
             Self::TX_FEE => "TX_FEE",
+        }
+    }
+
+    /// Returns the accounts this [`StandardNote`] allows to consume it.
+    ///
+    /// See [`NoteConsumers`] for why every standard note declares this.
+    pub const fn consumers(&self) -> NoteConsumers {
+        match self {
+            Self::P2ID => NoteConsumers::TargetAccount,
+            Self::P2IDE => NoteConsumers::CommittedAccounts,
+            Self::SWAP => NoteConsumers::Unrestricted {
+                rationale: "any account may take the offered asset in exchange for the requested \
+                            one, which is the point of a swap note",
+            },
+            Self::PSWAP => NoteConsumers::Unrestricted {
+                rationale: "any account may fill the order and receive the offered asset in \
+                            exchange for the requested one, which is the point of a swap note",
+            },
+            Self::MINT => NoteConsumers::TargetAccount,
+            Self::BURN => NoteConsumers::TargetAccount,
+            Self::CONSTANT_FEE_POLICY_CONFIG => NoteConsumers::TargetAccount,
+            Self::FAUCET_POLICY_CONFIG => NoteConsumers::TargetAccount,
+            Self::FAUCET_METADATA_CONFIG => NoteConsumers::TargetAccount,
+            Self::MIN_BURN_AMOUNT_CONFIG => NoteConsumers::TargetAccount,
+            Self::ALLOWLIST_CONFIG => NoteConsumers::TargetAccount,
+            Self::BLOCKLIST_CONFIG => NoteConsumers::TargetAccount,
+            Self::PAUSE_CONFIG => NoteConsumers::TargetAccount,
+            Self::OWNER_CONFIG => NoteConsumers::TargetAccount,
+            Self::RBAC_CONFIG => NoteConsumers::TargetAccount,
+            Self::NETWORK_ACCOUNT_CONFIG => NoteConsumers::TargetAccount,
+            Self::FEE_SPONSORSHIP => NoteConsumers::Unrestricted {
+                rationale: "the note pays for one feature note and may only be consumed alongside \
+                            it, so consumption rights are inherited from that note; the reclaim \
+                            path is restricted to the reclaimer named in the note storage",
+            },
+            Self::TX_FEE => NoteConsumers::Unrestricted {
+                rationale: "the fee is claimed by whichever batch builder includes the \
+                            transaction, which is not known when the note is created",
+            },
         }
     }
 

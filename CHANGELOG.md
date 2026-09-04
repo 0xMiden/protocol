@@ -8,9 +8,11 @@
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
 - Added the block kernel skeleton, establishing its public input/output contract and the `BlockExecutor` that runs it ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
+- Added the `miden::standards::note::consumer` module and a `Consumers:` declaration on every note script, so each note states who may consume it and enforces that through shared procedures ([#TODO](https://github.com/0xMiden/protocol/issues/TODO)).
 
 ### Changes
 
+- [BREAKING] Replaced the per-note target-account error constants with the shared `ERR_NOTE_CONSUMER_NOT_ATTACHMENT_TARGET` and `ERR_NOTE_CONSUMER_NOT_STORAGE_TARGET`, and the MINT and BURN scripts now reject a consuming faucet other than the one named by the stored asset before calling it ([#TODO](https://github.com/0xMiden/protocol/issues/TODO)).
 - [BREAKING] Incremented the MSRV to 1.98.
 - [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
 - Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
