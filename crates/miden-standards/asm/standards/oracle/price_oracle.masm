@@ -1,0 +1,89 @@
+# miden::standards::oracle::price_oracle
+#
+# The user-facing price oracle interface: a single procedure returning the rate between two assets.
+#
+# The rate is returned as a `ConversionRate`. Callers apply it with `fee::convert_amount`.
+#
+# `get_conversion_rate` is a stable MAST root that invokes the rate provider dynamically.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::standards::access::authority
+use {AccountProcedureRoot, AssetId, Bool} from miden::protocol::types
+use {ConversionRate} from miden::standards::fee
+
+# CONSTANTS - slot names
+# =================================================================================================
+
+# Procedure root of the rate provider `get_conversion_rate` dispatches to.
+# Layout: [RATE_PROVIDER_PROC_ROOT]
+pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::price_oracle::active_rate_provider_proc_root")
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Returns the rate converting the source asset into the target asset.
+#!
+#! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+#! Outputs: [has_conversion_rate, num, den, pad(13)]
+#!
+#! Where:
+#! - SOURCE_ASSET_ID is the asset being converted from.
+#! - TARGET_ASSET_ID is the asset being converted to.
+#! - has_conversion_rate is 1 when the active rate provider can price the pair, 0 otherwise. It is
+#!   0 both for a pair the provider has no data for and for one whose data is too stale to rely on.
+#! - num and den express the rate, and are only valid when has_conversion_rate is 1: `amount` of the
+#!   source asset is worth `ceil(amount * num / den)` of the target asset. Both are 0 otherwise, so
+#!   handing the rate to `fee::convert_amount` without checking the flag aborts rather than
+#!   converting at a wrong rate.
+#!
+#! Panics if:
+#! - no rate provider is configured.
+#! - the active rate provider aborts.
+#!
+#! Invocation: call
+@locals(4) # rate provider procedure root
+@account_procedure
+pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (Bool, ConversionRate)
+    push.ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
+    # => [RATE_PROVIDER_PROC_ROOT, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    loc_storew_le.0 dropw
+    # => [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    locaddr.0
+    # => [rate_provider_proc_root_ptr, SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+
+    dyncall
+    # => [has_conversion_rate, num, den, pad(13)]
+end
+
+# CONFIGURATION PROCEDURES
+# =================================================================================================
+
+#! Sets the rate provider `get_conversion_rate` dispatches to.
+#!
+#! The root must belong to a procedure of this account, since `dyncall` can only reach the account's
+#! own procedures.
+#!
+#! Inputs:  [RATE_PROVIDER_PROC_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - RATE_PROVIDER_PROC_ROOT is the procedure root of the rate provider.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_rate_provider(rate_provider_proc_root: AccountProcedureRoot)
+    exec.authority::assert_authorized
+    # => [RATE_PROVIDER_PROC_ROOT, pad(12)]
+
+    push.ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT[0..2] exec.native_account::set_item
+    # => [OLD_ROOT, pad(12)]
+
+    dropw
+    # => [pad(12)]
+end
