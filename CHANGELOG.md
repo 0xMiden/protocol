@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.17.0 (TBD)
+## v0.17.0-pre.1 (2026-09-05)
 
 ### Features
 
@@ -13,25 +13,16 @@
 
 ### Changes
 
-- [BREAKING] `fee::pay_fee` now requires the committed conversion info to name the reference block's fee asset at rate 1/1, so the transaction fee is always paid in the native asset at the computed amount ([#3763](https://github.com/0xMiden/protocol/issues/3763)).
-- Added a check that the guardian public key is not one of the approver public keys ([#3764](https://github.com/0xMiden/protocol/pull/3764)).
-- [BREAKING] Updated the Miden VM and crypto crate family from v0.29.4 to v0.32.0. The cumulative update gives `CoreLibrary` one merged package, makes `LocalTransactionProver::new` take `miden_prover::Prover`, makes `TransactionVerifier::verify` return `VerificationOutcome`, adds a format version and compatible VM and PVM verifier roots to execution proof bytes, reports separate VM and precompile security parameters, and moves all Plonky3 dependencies to v0.7.0 ([#3782](https://github.com/0xMiden/protocol/pull/3782), [#3806](https://github.com/0xMiden/protocol/pull/3806), [#3813](https://github.com/0xMiden/protocol/pull/3813)).
-- [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
-- Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] Refactored `AccountVaultDelta` to track generic assets. `FungibleAssetDelta`, `NonFungibleAssetDelta` and `NonFungibleDeltaAction` were removed ([#3485](https://github.com/0xMiden/protocol/pull/3485)).
-- [BREAKING] The multisig authentication components now bind a caller-chosen block instead of the transaction reference block, so approver signatures stay valid while the chain advances ([#3731](https://github.com/0xMiden/protocol/pull/3731)).
-- [BREAKING] Multisig approvals now expire relative to the block the transaction summary binds, so a transaction that is executed against a later reference block keeps the deadline the approvers signed ([#3737](https://github.com/0xMiden/protocol/pull/3737)).
-- [BREAKING] `tx::get_block_commitment` now takes the block number to read. Its direct replacement is `get_reference_block_commitment`. `tx::get_block_number` was renamed to `tx::get_reference_block_number` ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
-- [BREAKING] The transaction summary gained a version and the bound block number, reducing the number of user parameters from seven to six ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).
 - [BREAKING] Changed asset callbacks into validation-only interfaces that return no asset value; the transaction kernel retains and uses the original value, preventing callbacks from modifying it. The kernel commitment changes ([#3505](https://github.com/0xMiden/protocol/issues/3505), [#3513](https://github.com/0xMiden/protocol/pull/3513)).
 - [BREAKING] Added the `miden::standards::expiration` MASM module with `apply_default` and used it to apply a default 20-block transaction expiration limit to the standard allowlist and blocklist transfer policies and the fee manager's `estimate_note_fee` procedure ([#3512](https://github.com/0xMiden/protocol/pull/3512)).
 - [BREAKING] Extracted the shared `MastForestScript` type and `MastForestScriptError` backing `NoteScript` / `TransactionScript`, moving `TransactionScript` into `transaction::script` ([#3516](https://github.com/0xMiden/protocol/pull/3516)).
 - Documented the RBAC freeze-only actor pattern on `Authority` and added test coverage pinning that a `FREEZER` can trip the emergency switch but can never unfreeze the account ([#3520](https://github.com/0xMiden/protocol/pull/3520)).
+- [BREAKING] Replaced the dedicated AggLayer faucet account component with the standard `FungibleFaucet`. `AggLayerFaucet` is now a stateless namespace, `AgglayerFaucetError` and the `miden-agglayer-faucet` MASM package were removed, `AggLayerFaucet::account_builder` and `create_existing_agglayer_faucet` take a token name, and `account_builder` now takes `TokenName` / `TokenSymbol` / `AssetAmount` rather than `&str` / `Felt` ([#3525](https://github.com/0xMiden/protocol/pull/3525)).
 - [BREAKING] `NoteScript::from_parts` and `TransactionScript::from_parts` now return a `Result` instead of panicking when the specified entrypoint is not in the provided MAST forest ([#3548](https://github.com/0xMiden/protocol/pull/3548)).
 - [BREAKING] Sorted the procedures of `AccountCode` after the authentication procedure at index 0, making the account code commitment independent of the order in which components are provided ([#3565](https://github.com/0xMiden/protocol/pull/3565)).
 - The transaction kernel now validates that a new account's procedures are sorted and unique ([#3567](https://github.com/0xMiden/protocol/pull/3567)).
-- The transaction kernel now validates the version and reserved bit of every input note's metadata ([#3743](https://github.com/0xMiden/protocol/pull/3743)).
 - [BREAKING] Renamed the fungible asset amount extraction procedures so the unsuffixed name is the validating one ([#3576](https://github.com/0xMiden/protocol/pull/3576)):
   - `miden::protocol::asset::fungible_value_into_amount` -> `fungible_value_into_amount_unchecked`.
   - `miden::standards::assets::fungible_asset::value_into_amount` to `value_into_amount_unchecked`.
@@ -50,14 +41,23 @@
 - [BREAKING] Narrowed the block header version field from 32 to 8 bits and set it to the only supported version instead of taking it as a `BlockHeader::new` parameter ([#3696](https://github.com/0xMiden/protocol/pull/3696)).
 - [BREAKING] Serialize the version in `Account`, `AccountHeader`, `PartialNoteMetadata` and `AssetId` ([#3697](https://github.com/0xMiden/protocol/pull/3697)).
 - [BREAKING] Moved the account delta and patch domain separators into the hasher capacity word. Added a version to their commitments ([#3698](https://github.com/0xMiden/protocol/pull/3698)).
+- Added the `miden::protocol::tx::before_block_witness_load` kernel event, emitted before a block other than the reference block is read from the partial blockchain ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
+- [BREAKING] `tx::get_block_commitment` now takes the block number to read. Its direct replacement is `get_reference_block_commitment`. `tx::get_block_number` was renamed to `tx::get_reference_block_number` ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
+- [BREAKING] The transaction summary gained a version and the bound block number, reducing the number of user parameters from seven to six ([#3699](https://github.com/0xMiden/protocol/pull/3699)).
+- [BREAKING] Removed the `BlockProof` placeholder in favor of `ExecutionProof` on `ProvenBlock`, matching `ProvenTransaction` and `ProvenBatch`, and `LocalBlockProver::prove` now takes an `ExecutedBlock` ([#3703](https://github.com/0xMiden/protocol/pull/3703)).
 - [BREAKING] Added structurally validating constructors for `BatchAccountUpdate`, `ProvenBatch`, `BlockAccountUpdate`, and `BlockBody` ([#3706](https://github.com/0xMiden/protocol/issues/3706)).
-- [BREAKING] Replaced the dedicated AggLayer faucet account component with the standard `FungibleFaucet`. `AggLayerFaucet` is now a stateless namespace, `AgglayerFaucetError` and the `miden-agglayer-faucet` MASM package were removed, `AggLayerFaucet::account_builder` and `create_existing_agglayer_faucet` take a token name, and `account_builder` now takes `TokenName` / `TokenSymbol` / `AssetAmount` rather than `&str` / `Felt` ([#3525](https://github.com/0xMiden/protocol/pull/3525)).
 - [BREAKING] Introduced `ProtocolConfig` that commits to all kernel's procedures, the fee asset ID and the security policy for recursive verification ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
 - [BREAKING] Renamed `ValidatorKeys` to `ValidatorConfig` and added a quorum to it ([#3725](https://github.com/0xMiden/protocol/pull/3725)).
+- [BREAKING] The multisig authentication components now bind a caller-chosen block instead of the transaction reference block, so approver signatures stay valid while the chain advances ([#3731](https://github.com/0xMiden/protocol/pull/3731)).
+- [BREAKING] Multisig approvals now expire relative to the block the transaction summary binds, so a transaction that is executed against a later reference block keeps the deadline the approvers signed ([#3737](https://github.com/0xMiden/protocol/pull/3737)).
 - [BREAKING] Replaced `tx::get_fee_faucet_id` with `tx::get_fee_asset_id` ([#3741](https://github.com/0xMiden/protocol/pull/3741)).
-- [BREAKING] Moved the MINT note scripts under a single `miden::standards::notes::mint` module, replacing `notes::mint_fungible` and `notes::mint_non_fungible` with the private `mint::fungible` and `mint::non_fungible` submodules ([#3751](https://github.com/0xMiden/protocol/pull/3751)).
+- The transaction kernel now validates the version and reserved bit of every input note's metadata ([#3743](https://github.com/0xMiden/protocol/pull/3743)).
 - [BREAKING] `FeeSponsorshipNote` is now parsed back from a `Note` with `TryFrom<&Note>`, carries a fungible fee asset, and replaces its `target_id` accessor with `tag` ([#3746](https://github.com/0xMiden/protocol/pull/3746)).
+- [BREAKING] Moved the MINT note scripts under a single `miden::standards::notes::mint` module, replacing `notes::mint_fungible` and `notes::mint_non_fungible` with the private `mint::fungible` and `mint::non_fungible` submodules ([#3751](https://github.com/0xMiden/protocol/pull/3751)).
+- [BREAKING] `fee::pay_fee` now requires the committed conversion info to name the reference block's fee asset at rate 1/1, so the transaction fee is always paid in the native asset at the computed amount ([#3763](https://github.com/0xMiden/protocol/issues/3763)).
+- Added a check that the guardian public key is not one of the approver public keys ([#3764](https://github.com/0xMiden/protocol/pull/3764)).
 - [BREAKING] Moved the config note types into the `note::config` module, so `miden_standards::note::PauseConfigNote` and its siblings are now `miden_standards::note::config::PauseConfigNote` ([#3779](https://github.com/0xMiden/protocol/pull/3779)).
+- [BREAKING] Updated the Miden VM and crypto crate family from v0.29.4 to v0.32.0. The cumulative update gives `CoreLibrary` one merged package, makes `LocalTransactionProver::new` take `miden_prover::Prover`, makes `TransactionVerifier::verify` return `VerificationOutcome`, adds a format version and compatible VM and PVM verifier roots to execution proof bytes, reports separate VM and precompile security parameters, and moves all Plonky3 dependencies to v0.7.0 ([#3782](https://github.com/0xMiden/protocol/pull/3782), [#3806](https://github.com/0xMiden/protocol/pull/3806), [#3813](https://github.com/0xMiden/protocol/pull/3813)).
 - [BREAKING] Incremented the MSRV to 1.98.1.
 
 ### Fixes
@@ -126,6 +126,7 @@
 
 - [BREAKING] Moved the `note_tag` MASM module from `miden::standards::note_tag` to `miden::standards::note::note_tag` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
 - [BREAKING] Moved the `note_creator` account component MASM namespace from `miden::standards::components::wallets::note_creator` to `miden::standards::components::note::note_creator`, and moved the Rust `NoteCreator` type from `account::wallets` to `account::note_creator` ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
+- [BREAKING] The user fungible faucet factories now install `BasicWallet` so a faucet can hold the native fee asset ([#3766](https://github.com/0xMiden/protocol/pull/3766)).
 - [BREAKING] Bind the standard config notes to their target account: `OwnerConfigNote`, `PauseConfigNote`, `RbacConfigNote`, `FaucetPolicyConfigNote`, `AllowlistConfigNote`, `BlocklistConfigNote` and `FaucetMetadataConfigNote` now carry a `NetworkAccountTarget` attachment for that account ([#3433](https://github.com/0xMiden/protocol/issues/3433), [#3455](https://github.com/0xMiden/protocol/pull/3455)).
 - [BREAKING] BURN notes now store and validate the asset passed to `receive_and_burn`, and target its faucet with a `NetworkAccountTarget` attachment ([#2343](https://github.com/0xMiden/protocol/issues/2343)).
 - [BREAKING] Moved the generic EVM-bridging helpers from `miden-agglayer` into `miden-standards`: the `agglayer::common` MASM modules now live at `miden::standards::utils`, `miden::standards::assets::conversion` and `miden::standards::interop::eth`. Corresponding Rust types moved to `miden_standards::interop::eth` ([#3423](https://github.com/0xMiden/protocol/pull/3423)).

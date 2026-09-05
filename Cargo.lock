@@ -648,7 +648,7 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -698,9 +698,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.4.4"
+version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273"
+checksum = "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1076,7 +1076,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -1087,7 +1087,7 @@ checksum = "2ac7135c3ef02b2f7833bbeb1be5ba7f966dcde8a87c6b87f65a778d71a02785"
 dependencies = [
  "darling_core",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -1327,7 +1327,7 @@ checksum = "a65863d15a4ce2888bd2f0f543cc963d3879c3a022c8ee43f6141d479a3ac815"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -1446,9 +1446,9 @@ checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
+checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
 
 [[package]]
 name = "findshlibs"
@@ -1566,7 +1566,7 @@ checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -2214,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "miden-agglayer"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "alloy-sol-types",
  "fs-err",
@@ -2304,7 +2304,7 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -2565,7 +2565,7 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "assert_matches",
  "miden-protocol",
@@ -2697,7 +2697,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2734,7 +2734,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol-build-utils"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2786,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "miden-standards"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2827,7 +2827,7 @@ dependencies = [
 
 [[package]]
 name = "miden-testing"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2855,7 +2855,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "bon",
  "miden-agglayer",
@@ -2869,7 +2869,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch"
-version = "0.17.0"
+version = "0.17.0-rc.1"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -3485,9 +3485,9 @@ checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
 name = "portable-atomic-util"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
+checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
 dependencies = [
  "portable-atomic",
 ]
@@ -3537,7 +3537,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
 dependencies = [
  "proc-macro2",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -3952,7 +3952,7 @@ checksum = "92ecd8964f8453721699a1ed72037b0db49ce2f5a5138486ee89bed6f67cdf3a"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -4299,7 +4299,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -4561,9 +4561,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.4"
+version = "3.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
+checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4644,7 +4644,7 @@ checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -4738,7 +4738,7 @@ checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
