@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -148,17 +149,19 @@ impl AllowlistConfigNote {
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
         sender: AccountId,
         target: AccountId,
+        expiration_block_num: Option<BlockNumber>,
         config: AllowlistConfig,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
         // The note script asserts that the consuming account matches this target before
         // dispatching.
-        NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
-            NoteError::other_with_source(
-                "failed to bind the AllowlistConfig note to its target account",
-                err,
-            )
-        })?;
+        NetworkAccountTarget::ensure_presence(&mut attachments, target, expiration_block_num)
+            .map_err(|err| {
+                NoteError::other_with_source(
+                    "failed to bind the AllowlistConfig note to its target account",
+                    err,
+                )
+            })?;
 
         let attachments = NoteAttachments::new(attachments)?;
 

@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
@@ -11,6 +12,7 @@ use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::errors::standards::{
+    ERR_NETWORK_ACCOUNT_TARGET_EXPIRED,
     ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_PAUSE_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
@@ -55,6 +57,25 @@ fn pause_config_note(
         .sender(sender)
         .target(account)
         .config(config)
+        .generate_serial_number(rng)
+        .build()?
+        .into();
+    Ok(note)
+}
+
+/// Builds a [`PauseConfigNote`] that stops taking effect after `expiration_block_num`.
+fn expiring_pause_config_note(
+    sender: AccountId,
+    account: AccountId,
+    config: PauseConfig,
+    expiration_block_num: BlockNumber,
+    rng: &mut RandomCoin,
+) -> anyhow::Result<Note> {
+    let note = PauseConfigNote::builder()
+        .sender(sender)
+        .target(account)
+        .config(config)
+        .expiration_block_num(expiration_block_num)
         .generate_serial_number(rng)
         .build()?
         .into();
@@ -243,5 +264,93 @@ async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC);
+    Ok(())
+}
+
+/// A note whose expiration block still lies ahead is consumed normally, so an expiration does not
+/// get in the way of a note used within its intended window.
+#[tokio::test]
+async fn note_within_its_expiration_window_is_consumed() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let account = create_pausable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let expiration_block_num = mock_chain.latest_block_header().block_num() + 50;
+    let note = expiring_pause_config_note(
+        owner,
+        account.id(),
+        PauseConfig::Pause,
+        expiration_block_num,
+        &mut rng,
+    )?;
+
+    let paused = execute_note_and_apply(&mock_chain, &account, &note).await?;
+
+    assert!(is_paused(&paused)?);
+    Ok(())
+}
+
+/// A note held until after its expiration block no longer takes effect, so a config note cannot sit
+/// unconsumed and be applied at a moment of the submitter's choosing.
+///
+/// This is the delayed-consumption case: the note is well-formed, its sender is still authorized
+/// and the consuming account is still its target; only the passage of blocks invalidates it.
+#[tokio::test]
+async fn note_held_past_its_expiration_is_rejected() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let account = create_pausable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mut mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let expiration_block_num = mock_chain.latest_block_header().block_num() + 5;
+    let note = expiring_pause_config_note(
+        owner,
+        account.id(),
+        PauseConfig::Pause,
+        expiration_block_num,
+        &mut rng,
+    )?;
+
+    // hold the note until its expiration block has passed
+    mock_chain.prove_until_block(expiration_block_num + 1)?;
+
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TARGET_EXPIRED);
+    Ok(())
+}
+
+/// A note built without an expiration keeps the pre-existing behaviour and stays valid
+/// indefinitely, so the expiration is opt-in rather than a silent change for notes that do not set
+/// one.
+#[tokio::test]
+async fn note_without_an_expiration_is_consumed_at_any_height() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let account = create_pausable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mut mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let note = pause_config_note(owner, account.id(), PauseConfig::Pause, &mut rng)?;
+
+    mock_chain.prove_until_block(mock_chain.latest_block_header().block_num() + 100)?;
+
+    let paused = execute_note_and_apply(&mock_chain, &account, &note).await?;
+
+    assert!(is_paused(&paused)?);
     Ok(())
 }
