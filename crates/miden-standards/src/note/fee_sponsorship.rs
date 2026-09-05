@@ -149,6 +149,24 @@ impl FeeSponsorshipNote {
         FEE_SPONSORSHIP_SCRIPT.root()
     }
 
+    /// Returns the ID of the feature note that `note` sponsors, or `None` if `note` is not a
+    /// FEE_SPONSORSHIP note or its storage does not decode as [`FeeSponsorshipNoteStorage`].
+    ///
+    /// This is the binding that `collect_sponsored_fees` relies on: a sponsorship names its
+    /// feature note by ID, so the pair may appear at any positions in the input notes and several
+    /// sponsorships may be bound to the same feature note. Use this to group input notes into the
+    /// sets that must be consumed together, since neither half of a bound pair is consumable on
+    /// its own.
+    pub fn sponsored_feature_note_id(note: &Note) -> Option<NoteId> {
+        if note.script().root() != Self::script_root() {
+            return None;
+        }
+
+        FeeSponsorshipNoteStorage::try_from(note.storage().items())
+            .ok()
+            .map(|storage| storage.feature_note_id())
+    }
+
     /// Returns the account ID of the sponsor which created the note.
     pub fn sender(&self) -> AccountId {
         self.sender
