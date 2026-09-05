@@ -11,22 +11,25 @@ use miden::protocol::account_id
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
+use miden::standards::expiration
 
 # POLICY PROCEDURES
 # ================================================================================================
 
 #! Transfer policy that rejects transfers whose native account is blocked on the issuing faucet.
 #!
-#! The same procedure root is reusable as both send and receive policy because it only
-#! consumes the top eight felts (`ASSET_ID`, `ASSET_VALUE`) and leaves the rest of the call
-#! frame untouched — any `note_idx` carried in the send signature passes through unchanged.
+#! The same procedure root is reusable as both send and receive policy because it does not depend
+#! on custom_data.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - custom_data is `0` for the receive (account) callback and the output note index for the
-#!   send (note) callback. This policy does not inspect it; it passes through unchanged.
+#!   send (note) callback. This policy does not inspect it.
 #!
 #! Panics if:
 #! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
@@ -34,6 +37,9 @@ use miden::standards::faucets::policies::transfer::blocklist
 #! Invocation: call
 @account_procedure
 pub proc check_policy
+    exec.expiration::apply_default
+    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+
     exec.asset::id_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
 
@@ -61,5 +67,8 @@ pub proc check_policy
         dropw
         # => [ASSET_VALUE, custom_data, pad(7)]
     end
-    # => [ASSET_VALUE, pad(12)]
+    # => [ASSET_VALUE, custom_data, pad(7)]
+
+    dropw drop
+    # => [pad(16)]
 end

@@ -143,8 +143,8 @@ impl RoleConfig {
 /// accounts holding `MINTER_ADMIN` can manage the `MINTER` role but have no authority over
 /// `BURNER` or `PAUSER`.
 ///
-/// Delegation is *exclusive*: once a role's admin is delegated to another role, the `ADMIN`
-/// role loses all authority over it (grant, revoke, and further `set_role_admin` are then
+/// Delegation is *exclusive* while the delegated admin role is populated: the `ADMIN` role then
+/// has no authority over the delegated role (grant, revoke, and further `set_role_admin` are
 /// gated on the delegated admin). This lets a sensitive role — say a token issuer — be placed
 /// exclusively under a dedicated admin role and kept out of reach of the general
 /// administrator. To hand authority back, the current delegated admin re-points the role
@@ -170,10 +170,7 @@ impl RoleConfig {
 ///
 /// The delegated admin of a role can itself be any role, including one that it admins.
 /// Circular relationships are possible but should be designed with care, since each role
-/// can then revoke the other. Only delegate to a role that already has members, and treat
-/// emptying a role's effective admin like ownership renouncement: the role stays
-/// unmanageable until its effective admin is repopulated — for a self-administering role
-/// (including `ADMIN`), never.
+/// can then revoke the other.
 ///
 /// ## Role semantics
 ///
@@ -195,6 +192,15 @@ impl RoleConfig {
 /// single field element using the same packing as the token symbol type. Examples:
 /// `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is reserved and cannot be
 /// used as a role symbol; attempting to do so panics with `ERR_ROLE_SYMBOL_ZERO`.
+///
+/// On-chain a role is only ever the encoded field element, so the entrypoints that write one to
+/// storage hold it to this same encoding and panic with `ERR_INVALID_ROLE_SYMBOL` otherwise. The
+/// read guard `assert_sender_has_role` does not re-check: a non-canonical symbol matches no stored
+/// membership and fails the guard anyway. The one role symbol this component does not write is the
+/// one `Authority` keeps in its procedure-roles map, and `authority::assert_authorized_rbac`
+/// validates that on read, which keeps on-chain authorization and off-chain readers (such as
+/// [`Authority::try_from_storage`][crate::account::access::Authority::try_from_storage]) in
+/// agreement.
 ///
 /// ## Usage
 ///
@@ -231,10 +237,11 @@ impl RoleBasedAccessControl {
     /// - the same role is specified more than once.
     /// - a role is configured with neither members nor a delegated admin.
     /// - a role's member count exceeds [`u32::MAX`].
-    /// - a role's effective admin — its delegated admin, or `ADMIN` when unset — can never hold
-    ///   members, which would leave the role permanently unmanageable. Setting an operational role
-    ///   without defining `ADMIN` is the common case: `ADMIN` administers itself, so nothing can
-    ///   ever populate it.
+    /// - `ADMIN` is defined without members, or not defined at all, and a role's admin chain never
+    ///   reaches a populated role, which would leave that role permanently unmanageable. A
+    ///   populated `ADMIN` administers every role whose delegated admin is memberless, so it makes
+    ///   any admin chain recoverable; without one, defining an operational role and no `ADMIN` is
+    ///   the common defect, since `ADMIN` administers itself and nothing can ever populate it.
     #[builder]
     pub fn new(
         #[builder(field)] role_configs: Vec<RoleConfig>,
@@ -256,15 +263,31 @@ impl RoleBasedAccessControl {
             roles.insert(config.role.clone(), config);
         }
 
-        // Check the effective admin of every role, not just of the explicitly delegated ones: a
-        // role left with the default admin is just as frozen when `ADMIN` can never hold members.
-        for role_config in roles.values() {
-            let admin = role_config.admin.clone().unwrap_or_else(Self::admin_role);
-            if !reaches_populated_role(&admin, &roles) {
-                return Err(RoleBasedAccessControlError::UnmanageableRole {
-                    role: role_config.role.clone(),
-                    admin,
-                });
+        // Prevent creating unmanagable role graphs by checking that roles are administered,
+        // directly or indirectly, by an admin role that has members, otherwise the role could not
+        // be actively managed. Delegated admin roles that are memberless fall back to the authority
+        // of the built-in admin role. So, there are two cases:
+        // - If the default admin role is populated, this is globally ensured due to the fallback.
+        // - If the default admin role is not populated, check that every role is administered by a
+        //   role that has members (e.g. its direct admin, or indirectly through the admin's admin,
+        //   and so on).
+        //
+        // Note that this does not prevent decentralized setups which don't make use of the built-in
+        // admin role, so long as the terminating admin role administers itself. For example, a
+        // Pauser + PauserAdmin and a Burner + BurnerAdmin can set up completely independently of
+        // one another and without the built-in admin, if PauserAdmin and BurnerAdmin administer
+        // themselves.
+        let admin_is_populated =
+            roles.get(&Self::admin_role()).is_some_and(|config| !config.members.is_empty());
+        if !admin_is_populated {
+            for role_config in roles.values() {
+                let admin = role_config.admin.clone().unwrap_or_else(Self::admin_role);
+                if !reaches_populated_role(&admin, &roles) {
+                    return Err(RoleBasedAccessControlError::UnmanageableRole {
+                        role: role_config.role.clone(),
+                        admin,
+                    });
+                }
             }
         }
 
@@ -386,11 +409,9 @@ impl<S: role_based_access_control_builder::State> RoleBasedAccessControlBuilder<
 /// Returns `true` if walking the delegated-admin chain starting at `role` reaches a role defined
 /// with at least one member.
 ///
-/// Only a populated role can grant members to the role below it in the chain, so a chain that
-/// reaches none of them can never be acted on by anyone. A role that is not configured, or
-/// configured without members, is administered by its delegated admin, defaulting to `ADMIN`.
-/// Every role has exactly one admin, so the walk always ends in a cycle, which the visited set
-/// terminates.
+/// A role that is not configured, or configured without members, is administered by its delegated
+/// admin, defaulting to `ADMIN`. Every role has exactly one admin, so the walk always ends in a
+/// cycle, which the visited set terminates.
 fn reaches_populated_role(role: &RoleSymbol, configs: &BTreeMap<RoleSymbol, RoleConfig>) -> bool {
     let admin_role = RoleBasedAccessControl::admin_role();
     let mut visited = BTreeSet::new();
@@ -659,6 +680,25 @@ mod tests {
         );
         let membership = find_map(&component, RoleBasedAccessControl::role_membership_slot());
         assert_eq!(membership.num_entries(), 1);
+
+        Ok(())
+    }
+
+    /// A populated `ADMIN` administers every role whose delegated admin is memberless, so even an
+    /// admin chain that reaches no populated role of its own leaves the role manageable.
+    #[test]
+    fn populated_admin_allows_an_otherwise_unmanageable_delegation() -> anyhow::Result<()> {
+        let admin = test_admin(1);
+        let minter_role = RoleSymbol::new("MINTER")?;
+        let minter_admin_role = RoleSymbol::new("MINTER_ADMIN")?;
+
+        // MINTER_ADMIN administers itself and has no members, so nothing in MINTER's chain can be
+        // populated by the chain itself — ADMIN takes over administering both.
+        RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
+            .role(RoleConfig::new(minter_role).with_admin(minter_admin_role.clone()))
+            .role(RoleConfig::new(minter_admin_role.clone()).with_admin(minter_admin_role))
+            .build()?;
 
         Ok(())
     }

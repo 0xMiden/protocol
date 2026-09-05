@@ -13,6 +13,7 @@ use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
 
 pub mod execution_hint
 pub mod note_creator
+pub mod note_tag
 
 # ERRORS
 # =================================================================================================

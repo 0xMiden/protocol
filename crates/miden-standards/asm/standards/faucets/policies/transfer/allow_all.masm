@@ -5,19 +5,19 @@
 
 #! Transfer policy that accepts every transfer.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`, which applies the
-#! account-wide pause check.
+#! Invoked as the active send or receive policy via `TokenPolicyManager`, which limits the
+#! transaction's expiration and applies the account-wide pause check.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - custom_data is `0` for the receive (account) callback and the output note index for the
-#!   send (note) callback. This policy does not inspect it; it passes through unchanged.
+#!   send (note) callback. This policy does not inspect it.
 #!
 #! Invocation: call
 @account_procedure
 pub proc check_policy
-    dropw
-    # => [ASSET_VALUE, pad(12)]
+    dropw dropw drop
+    # => [pad(16)]
 end

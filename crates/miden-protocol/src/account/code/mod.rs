@@ -1,7 +1,7 @@
-use alloc::collections::BTreeSet;
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 
 use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
@@ -33,9 +33,10 @@ use procedure::{AccountProcedureRoot, PrintableProcedure};
 /// An account's public interface consists of a set of account procedures, each of which is
 /// identified and committed to by a MAST root. They are represented by [`AccountProcedureRoot`].
 ///
-/// The set of procedures has an arbitrary order, i.e. they are not sorted. The only exception is
-/// the authentication procedure of the account, which is always at index 0. This procedure is
-/// automatically called at the end of a transaction to validate an account's state transition.
+/// The authentication procedure of the account is always at index 0. It is automatically called at
+/// the end of a transaction to validate an account's state transition. The remaining procedures are
+/// sorted in ascending order, which makes the code commitment independent of the order in which the
+/// account's components were provided.
 ///
 /// The code commits to the entire account interface by building a sequential hash of all procedure
 /// MAST roots. Specifically, each procedure contributes exactly 4 field elements to the sequence of
@@ -72,6 +73,8 @@ impl AccountCode {
     ///
     /// Returns an error if:
     /// - The number of procedures is smaller than 2 or greater than 256.
+    /// - The procedures after the authentication procedure at index 0 are not sorted in ascending
+    ///   order.
     /// - The procedure roots are not unique.
     /// - Any provided procedure root is not in the provided [`MastForest`].
     pub fn from_parts(
@@ -85,11 +88,31 @@ impl AccountCode {
             return Err(AccountError::AccountCodeTooManyProcedures(procedures.len()));
         }
 
-        let mut unique_roots = BTreeSet::new();
-        for procedure in &procedures {
-            if !unique_roots.insert(procedure.as_word()) {
-                return Err(AccountError::AccountCodeDuplicateProcedureRoot(procedure.as_word()));
+        // The authentication procedure at index 0 is exempt from the ordering invariant, so the
+        // remaining procedures are checked to be strictly increasing, which also makes them unique.
+        // Each of them is also compared against the authentication procedure, which must not appear
+        // a second time.
+        let (auth_proc, other_procs) = procedures
+            .split_first()
+            .expect("account code should contain at least two procedures");
+
+        let mut previous_proc: Option<&AccountProcedureRoot> = None;
+        for procedure in other_procs {
+            if procedure == auth_proc {
+                return Err(AccountError::AccountCodeDuplicateProcedureRoot(*procedure));
             }
+
+            if let Some(previous_proc) = previous_proc {
+                match previous_proc.cmp(procedure) {
+                    Ordering::Less => {},
+                    Ordering::Equal => {
+                        return Err(AccountError::AccountCodeDuplicateProcedureRoot(*procedure));
+                    },
+                    Ordering::Greater => return Err(AccountError::AccountCodeProceduresUnsorted),
+                }
+            }
+
+            previous_proc = Some(procedure);
         }
 
         // make sure that all account procedures are in the MAST forest
@@ -126,9 +149,8 @@ impl AccountCode {
     /// Returns an error if:
     /// - The number of procedures in all merged packages is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
-    /// - Two or more packages export a procedure with the same MAST root.
-    /// - The first component doesn't contain exactly one authentication procedure.
-    /// - Other components contain authentication procedures.
+    /// - The components don't contain exactly one authentication component with exactly one
+    ///   authentication procedure.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of a component or of all
     ///   components exceeds 255.
     /// - [`MastForest::merge`] fails on all packages.
@@ -160,11 +182,9 @@ impl AccountCode {
 
         let procedures = builder.build()?;
 
-        Ok(Self {
-            commitment: build_procedure_commitment(&procedures),
-            procedures,
-            mast: Arc::new(merged_mast_forest),
-            package_debug_info,
+        Self::from_parts(Arc::new(merged_mast_forest), procedures).map(|mut code| {
+            code.package_debug_info = package_debug_info;
+            code
         })
     }
 
@@ -363,7 +383,8 @@ impl PrettyPrint for AccountCode {
 
 /// A helper type for building the set of account procedures from account components.
 ///
-/// In particular, this ensures that the auth procedure ends up at index 0.
+/// In particular, this ensures that the auth procedure ends up at index 0 and that the remaining
+/// procedures are sorted.
 struct AccountProcedureBuilder {
     procedures: Vec<AccountProcedureRoot>,
 }
@@ -373,16 +394,14 @@ impl AccountProcedureBuilder {
         Self { procedures: Vec::new() }
     }
 
-    /// This method must be called before add_component is called.
     fn add_auth_component(&mut self, component: &AccountComponent) -> Result<(), AccountError> {
         let mut auth_proc_count = 0;
 
         for (proc_root, is_auth) in component.procedures() {
-            self.add_procedure(proc_root);
+            let proc_idx = self.add_procedure(proc_root);
 
             if is_auth {
-                let auth_proc_idx = self.procedures.len() - 1;
-                self.procedures.swap(0, auth_proc_idx);
+                self.procedures.swap(0, proc_idx);
                 auth_proc_count += 1;
             }
         }
@@ -407,22 +426,34 @@ impl AccountProcedureBuilder {
         Ok(())
     }
 
-    fn add_procedure(&mut self, proc_root: AccountProcedureRoot) {
-        // Allow procedures with the same MAST root from different components, but only add them
-        // once.
-        if !self.procedures.contains(&proc_root) {
-            self.procedures.push(proc_root);
+    /// Adds the procedure and returns its index, which is the index of the existing entry if the
+    /// procedure was added before.
+    ///
+    /// Different components may export procedures with the same MAST root, but the set of
+    /// procedures must not contain duplicates.
+    fn add_procedure(&mut self, proc_root: AccountProcedureRoot) -> usize {
+        match self.procedures.iter().position(|existing_root| existing_root == &proc_root) {
+            Some(existing_idx) => existing_idx,
+            None => {
+                self.procedures.push(proc_root);
+                self.procedures.len() - 1
+            },
         }
     }
 
-    fn build(self) -> Result<Vec<AccountProcedureRoot>, AccountError> {
+    fn build(mut self) -> Result<Vec<AccountProcedureRoot>, AccountError> {
         if self.procedures.len() < AccountCode::MIN_NUM_PROCEDURES {
-            Err(AccountError::AccountCodeNoProcedures)
+            return Err(AccountError::AccountCodeNoProcedures);
         } else if self.procedures.len() > AccountCode::MAX_NUM_PROCEDURES {
-            Err(AccountError::AccountCodeTooManyProcedures(self.procedures.len()))
-        } else {
-            Ok(self.procedures)
+            return Err(AccountError::AccountCodeTooManyProcedures(self.procedures.len()));
         }
+
+        // Sorting makes the account code commitment independent of the order in which components
+        // were provided. The auth procedure at index 0 is excluded from the sort so it keeps the
+        // position the transaction kernel expects.
+        self.procedures[1..].sort_unstable();
+
+        Ok(self.procedures)
     }
 }
 
@@ -474,7 +505,9 @@ fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
 mod tests {
     use alloc::vec::Vec;
 
+    use anyhow::Context;
     use assert_matches::assert_matches;
+    use rstest::rstest;
 
     use super::{AccountCode, ByteWriter, Deserializable, DeserializationError, Serializable};
     use crate::Word;
@@ -568,6 +601,66 @@ mod tests {
         assert_matches!(err, AccountError::AccountComponentMultipleAuthProcedures);
     }
 
+    /// Tests that the auth procedure is at index 0 even if its MAST root was already added by a
+    /// previously processed non-auth component, no matter at which index that component sits.
+    #[rstest]
+    #[case::duplicate_first(true)]
+    #[case::duplicate_second(false)]
+    fn test_account_code_auth_procedure_at_index_zero_on_duplicate_root(
+        #[case] duplicate_first: bool,
+    ) -> anyhow::Result<()> {
+        // Same body as the auth procedure of NoopAuthComponent, so it has the same MAST root.
+        let duplicate_of_auth = "
+            @account_procedure
+            pub proc noop
+                push.0 drop
+            end
+        ";
+        let duplicate_component = AccountComponent::new(
+            assemble_test_package(
+                "test-account-code-duplicate-auth-root",
+                "test::duplicate_auth_root",
+                duplicate_of_auth,
+            ),
+            vec![],
+            AccountComponentMetadata::new("test::duplicate_auth_root"),
+        )?;
+
+        let other_component = AccountComponent::new(
+            assemble_test_package("test-account-code-other", "test::other", CODE),
+            vec![],
+            AccountComponentMetadata::new("test::other"),
+        )?;
+
+        let auth_component = AccountComponent::from(NoopAuthComponent);
+        let auth_proc_root = auth_component
+            .procedures()
+            .find_map(|(proc_root, is_auth)| is_auth.then_some(proc_root))
+            .context("auth component should export an auth procedure")?;
+
+        // Without this the test would not cover the deduplication path it guards.
+        let duplicate_proc_root = duplicate_component
+            .procedures()
+            .next()
+            .context("duplicate component should export a procedure")?
+            .0;
+        assert_eq!(duplicate_proc_root, auth_proc_root);
+
+        let components = if duplicate_first {
+            [duplicate_component, other_component, auth_component]
+        } else {
+            [other_component, duplicate_component, auth_component]
+        };
+
+        let code = AccountCode::from_components(&components)?;
+
+        assert_eq!(code.procedures()[0], auth_proc_root);
+        // The procedure displaced by moving the auth procedure to index 0 must be retained.
+        assert_eq!(code.num_procedures(), 3);
+
+        Ok(())
+    }
+
     #[test]
     fn test_account_code_from_parts_rejects_duplicate_roots() {
         let code = AccountCode::mock();
@@ -579,7 +672,7 @@ mod tests {
 
         assert_matches!(
             err,
-            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[1].as_word()
+            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[1]
         );
     }
 
@@ -617,5 +710,86 @@ mod tests {
             err,
             DeserializationError::InvalidValue(msg) if msg.contains("duplicate procedure with root")
         );
+    }
+
+    #[test]
+    fn account_code_procedures_are_sorted_after_the_auth_procedure() {
+        let code = AccountCode::mock();
+
+        assert!(code.procedures()[1..].is_sorted());
+    }
+
+    #[test]
+    fn account_code_commitment_is_independent_of_component_order() -> anyhow::Result<()> {
+        let first = mock_component("test-account-code-first", "test::first", 1);
+        let second = mock_component("test-account-code-second", "test::second", 2);
+
+        let mut components = vec![NoopAuthComponent.into(), first.clone(), second.clone()];
+
+        let code = AccountCode::from_components(&components)?;
+        components.reverse();
+        let reversed_code = AccountCode::from_components(&components)?;
+
+        assert_eq!(code.commitment(), reversed_code.commitment());
+        assert_eq!(
+            code.procedures()[0],
+            reversed_code.procedures()[0],
+            "the auth procedure should stay at index 0"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn account_code_from_parts_rejects_unsorted_procedures() -> anyhow::Result<()> {
+        let code = AccountCode::mock();
+        let procedures = code.procedures();
+
+        // the procedures of the mock code are sorted, so swapping two of them breaks the invariant
+        let unsorted = vec![procedures[0], procedures[2], procedures[1]];
+        let err = AccountCode::from_parts(code.mast(), unsorted).unwrap_err();
+
+        assert_matches!(err, AccountError::AccountCodeProceduresUnsorted);
+
+        Ok(())
+    }
+
+    #[test]
+    fn account_code_from_parts_rejects_duplicated_auth_procedure() -> anyhow::Result<()> {
+        let code = AccountCode::mock();
+        let procedures = code.procedures();
+
+        // the auth procedure must not reappear among the sorted procedures
+        let mut duplicated_auth = vec![procedures[0], procedures[1], procedures[0]];
+        duplicated_auth[1..].sort_unstable();
+        let err = AccountCode::from_parts(code.mast(), duplicated_auth).unwrap_err();
+
+        assert_matches!(
+            err,
+            AccountError::AccountCodeDuplicateProcedureRoot(root) if root == procedures[0]
+        );
+
+        Ok(())
+    }
+
+    /// Creates a component exporting a single account procedure whose MAST root is made unique by
+    /// the provided value.
+    fn mock_component(
+        package_name: &str,
+        module_path: &str,
+        unique_value: u32,
+    ) -> AccountComponent {
+        let code = format!(
+            "
+            @account_procedure
+            pub proc account_procedure
+                push.{unique_value} drop
+            end
+            "
+        );
+        let package = assemble_test_package(package_name, module_path, &code);
+        let metadata = AccountComponentMetadata::new(module_path);
+
+        AccountComponent::new(package, vec![], metadata).expect("component should be valid")
     }
 }

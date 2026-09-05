@@ -15,6 +15,8 @@ pub mod errors;
 pub mod note;
 pub mod package;
 mod protocol;
+pub mod protocol_config;
+pub(crate) mod script;
 pub mod transaction;
 
 #[cfg(any(feature = "testing", test))]
@@ -34,6 +36,7 @@ pub use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{Word, WordError};
 pub use protocol::ProtocolLib;
+pub use script::MastForestScriptError;
 
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};
@@ -64,7 +67,7 @@ pub mod utils;
 
 pub mod vm {
     pub use miden_assembly_syntax::ast::{AttributeSet, QualifiedProcedureName};
-    pub use miden_core::advice::{AdviceInputs, AdviceMap};
+    pub use miden_core::advice::{AdviceInputs, AdviceMap, AdviceStack};
     pub use miden_core::events::{EventId, EventName, SystemEvent};
     pub use miden_core::program::{Program, ProgramInfo};
     pub use miden_mast_package::debug_info::{DebugSourceNodeId, PackageDebugInfo};
@@ -80,5 +83,11 @@ pub mod vm {
     };
     pub use miden_processor::trace::RowIndex;
     pub use miden_processor::{FutureMaybeSend, MIN_STACK_DEPTH, StackInputs, StackOutputs};
-    pub use miden_verifier::ExecutionProof;
+    pub use miden_verifier::{
+        ExecutionProof,
+        ExecutionProofCompatibility,
+        PrecompileStatus,
+        ProofSecurityParameters,
+        VerificationOutcome,
+    };
 }

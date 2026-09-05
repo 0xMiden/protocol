@@ -5,7 +5,7 @@ use miden::standards::faucets::policies::transfer::blocklist::manager
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the BlocklistConfig note storage. Both actions carry the same arguments: the
@@ -23,6 +23,9 @@ const SELECTOR_UNBLOCK_ACCOUNT = 1
 const NUM_ITEMS_BLOCK_ACCOUNT = 3
 const NUM_ITEMS_UNBLOCK_ACCOUNT = 3
 
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_BLOCK_ACCOUNT
+
 # ERRORS
 # =================================================================================================
 
@@ -32,20 +35,22 @@ const ERR_BLOCKLIST_CONFIG_UNKNOWN_SELECTOR = "blocklist config note selector do
 
 const ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "blocklist config note storage item count does not match the selected action"
 
+const ERR_BLOCKLIST_CONFIG_NOTE_IS_NOT_PUBLIC = "blocklist config note must be public"
+
 # NOTE SCRIPT
 # =================================================================================================
 
 #! BlocklistConfig script: triggers a `BlocklistManager` admin action against the consuming
 #! account, dispatched on a selector stored in the first note storage item.
 #!
-#! The selected action and its arguments are read from the note storage (fixed at note creation,
-#! so authorization is bound to the note sender):
+#! The selected action and its arguments are read from the note storage and are fixed at note
+#! creation:
 #! - `0` BlockAccount:   `[0, account_suffix, account_prefix]`.
 #! - `1` UnblockAccount: `[1, account_suffix, account_prefix]`.
 #!
 #! Authorization is enforced by the called `BlocklistManager` procedures via the account-wide
-#! `Authority` component (`assert_authorized`), which resolves the note sender against the
-#! configured owner or role; this script only loads the arguments and calls them.
+#! `Authority` component (`assert_authorized`); this script only loads the arguments and calls
+#! them.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::faucets::policies::transfer::blocklist::manager::{block_account,
@@ -56,13 +61,19 @@ const ERR_BLOCKLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "blocklist confi
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the note sender is not authorized for the selected action (per the `Authority` component).
+#! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
 pub proc main
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_BLOCKLIST_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
@@ -72,7 +83,7 @@ pub proc main
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR
@@ -106,7 +117,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_BLOCK_ACCOUNT.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_block_account
@@ -135,7 +146,7 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not NUM_ITEMS_UNBLOCK_ACCOUNT.
-#! - the note sender is not authorized (per the `Authority` component).
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
 proc execute_unblock_account

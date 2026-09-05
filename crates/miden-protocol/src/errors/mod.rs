@@ -5,6 +5,7 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::deferred::IntegrityError;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -14,16 +15,25 @@ use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetComposition, AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{Asset, AssetComposition, AssetId, FungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
-use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use super::{
+    MAX_ACCOUNTS_PER_BLOCK,
+    MAX_BATCHES_PER_BLOCK,
+    MAX_INPUT_NOTES_PER_BLOCK,
+    MAX_OUTPUT_NOTES_PER_BATCH,
+    Word,
+};
 use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueNameError};
+use crate::account::delta::AssetDeltaOperation;
 use crate::account::{
     AccountCode,
+    AccountHeader,
     AccountIdPrefix,
     AccountProcedureRoot,
     AccountStorage,
+    AccountVaultDelta,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -31,7 +41,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
-use crate::block::BlockNumber;
+use crate::block::{BlockNumber, ValidatorConfig};
 use crate::note::{
     NoteAssets,
     NoteAttachment,
@@ -41,6 +51,8 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
+use crate::protocol_config::KernelConfig;
+use crate::script::MastForestScriptError;
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
@@ -121,21 +133,33 @@ pub enum AccountError {
     #[error("account code contains {0} procedures but it may contain at most {max} procedures", max = AccountCode::MAX_NUM_PROCEDURES)]
     AccountCodeTooManyProcedures(usize),
     #[error("account code contains a duplicate procedure with root {0}")]
-    AccountCodeDuplicateProcedureRoot(Word),
+    AccountCodeDuplicateProcedureRoot(AccountProcedureRoot),
+    #[error(
+        "account code procedures following the authentication procedure are not sorted in ascending order"
+    )]
+    AccountCodeProceduresUnsorted,
     #[error("failed to assemble account component:\n{}", PrintDiagnostic::new(.0))]
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
     AccountComponentMastForestMergeError(#[source] MastForestError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
+    #[error(
+        "storage of account {0} contains an asset callback slot but its asset callback flag is disabled, so the callback would never be invoked"
+    )]
+    AssetCallbackSlotWithDisabledFlag(AccountId),
     #[error("failed to update asset vault")]
     AssetVaultUpdateError(#[source] AssetVaultError),
     #[error("account build error: {0}")]
     BuildError(String, #[source] Option<Box<AccountError>>),
     #[error("failed to parse account ID from final account header")]
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
-    #[error("account header data has length {actual} but it must be of length {expected}")]
-    HeaderDataIncorrectLength { actual: usize, expected: usize },
+    #[error("account header data has length {actual} but it must be of length {expected}",
+        expected = AccountHeader::NUM_ELEMENTS
+    )]
+    UnexpectedHeaderLength { actual: usize },
+    #[error("account has an unsupported version {0}")]
+    UnsupportedAccountVersion(u64),
     #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(
@@ -172,6 +196,8 @@ pub enum AccountError {
     StorageSlotIdNotFound { slot_id: StorageSlotId },
     #[error("storage slots must be sorted by slot ID")]
     UnsortedStorageSlots,
+    #[error("reserved element of a storage slot must be zero but was {0}")]
+    StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
@@ -222,6 +248,37 @@ impl AccountError {
             source: Some(Box::new(source)),
         }
     }
+}
+
+/// Error returned when account update details are incompatible with an account ID.
+#[derive(Debug)]
+pub(crate) enum AccountUpdateDetailsValidationError {
+    PrivateAccountWithDetails(AccountId),
+    PublicStateAccountMissingDetails(AccountId),
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+}
+
+/// Error returned when serialized account update details exceed the size limit.
+#[derive(Debug)]
+pub(crate) struct AccountUpdateSizeValidationError {
+    pub(crate) account_id: AccountId,
+    pub(crate) update_size: usize,
+}
+
+/// Error returned when a new public account cannot be reconstructed from its update details.
+#[derive(Debug)]
+pub(crate) enum NewPublicAccountValidationError {
+    RequiresFullStatePatch {
+        id: AccountId,
+        source: AccountError,
+    },
+    FinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
 }
 
 // ACCOUNT ID ERROR
@@ -417,15 +474,15 @@ pub enum NetworkIdError {
 pub enum AccountDeltaError {
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
-    #[error("non fungible vault can neither be added nor removed twice")]
-    DuplicateNonFungibleVaultUpdate(NonFungibleAsset),
+    #[error("asset {0} is changed by more than one asset delta")]
+    DuplicateAssetDelta(AssetId),
     #[error(
-        "fungible asset issued by faucet {faucet_id} has delta {delta} which overflows when added to current value {current}"
+        "number of {delta_op} operations in account vault delta is {num_ops} but max is {max}",
+        max = AccountVaultDelta::MAX_ASSETS_PER_DELTA_OP
     )]
-    FungibleAssetDeltaOverflow {
-        faucet_id: AccountId,
-        current: i64,
-        delta: i64,
+    TooManyVaultAssetDeltas {
+        delta_op: AssetDeltaOperation,
+        num_ops: usize,
     },
     #[error(
         "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
@@ -441,10 +498,6 @@ pub enum AccountDeltaError {
     },
     #[error("non-empty account storage or vault delta with zero nonce delta is not allowed")]
     NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
-    #[error(
-        "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
-    )]
-    NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
     #[error("a full state delta must only contain storage create operations")]
@@ -535,6 +588,33 @@ pub enum StorageMapError {
 #[derive(Debug, Error)]
 pub enum BatchAccountUpdateError {
     #[error(
+        "account update of size {update_size} for account {account_id} exceeds maximum update size of {ACCOUNT_UPDATE_MAX_SIZE}"
+    )]
+    AccountUpdateSizeLimitExceeded {
+        account_id: AccountId,
+        update_size: usize,
+    },
+    #[error("private account {0} should not have account details")]
+    PrivateAccountWithDetails(AccountId),
+    #[error("account {0} with public state is missing its account details")]
+    PublicStateAccountMissingDetails(AccountId),
+    #[error(
+        "batch account update's account ID {account_id} and account patch ID {patch_account_id} must match"
+    )]
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error(
+        "batch account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
+    )]
+    AccountFinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
+    #[error(
         "account update for account {expected_account_id} cannot be merged with update from transaction {transaction} which was executed against account {actual_account_id}"
     )]
     AccountUpdateIdMismatch {
@@ -548,6 +628,62 @@ pub enum BatchAccountUpdateError {
     AccountUpdateInitialStateMismatch(TransactionId),
     #[error("failed to merge account patch from transaction {0}")]
     TransactionUpdateMergeError(TransactionId, #[source] Box<AccountPatchError>),
+}
+
+// BLOCK ACCOUNT UPDATE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockAccountUpdateError {
+    #[error("private account {0} should not have account details")]
+    PrivateAccountWithDetails(AccountId),
+    #[error("account {0} with public state is missing its account details")]
+    PublicStateAccountMissingDetails(AccountId),
+    #[error(
+        "block account update's account ID {account_id} and account patch ID {patch_account_id} must match"
+    )]
+    AccountIdMismatch {
+        account_id: AccountId,
+        patch_account_id: AccountId,
+    },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error(
+        "block account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
+    )]
+    AccountFinalCommitmentMismatch {
+        final_state_commitment: Word,
+        account_commitment: Word,
+    },
+}
+
+// BLOCK BODY ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockBodyError {
+    #[error("block has {0} account updates but at most {MAX_ACCOUNTS_PER_BLOCK} are allowed")]
+    TooManyAccountUpdates(usize),
+    #[error("block has {0} nullifiers but at most {MAX_INPUT_NOTES_PER_BLOCK} are allowed")]
+    TooManyNullifiers(usize),
+    #[error("block has {0} output note batches but at most {MAX_BATCHES_PER_BLOCK} are allowed")]
+    TooManyOutputNoteBatches(usize),
+    #[error(
+        "output note batch {batch_index} has {note_count} notes but at most {MAX_OUTPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyOutputNotes { batch_index: usize, note_count: usize },
+    #[error("output note batch {batch_index} contains invalid note index {note_index}")]
+    InvalidOutputNoteIndex { batch_index: usize, note_index: usize },
+    #[error("output note batch {batch_index} contains note index {note_index} twice")]
+    DuplicateOutputNoteIndex { batch_index: usize, note_index: usize },
+    #[error("output note {0} appears twice in the block body")]
+    DuplicateOutputNote(NoteId),
+    #[error("account update for {0} appears twice in the block body")]
+    DuplicateAccountUpdate(AccountId),
+    #[error("nullifier {0} appears twice in the block body")]
+    DuplicateNullifier(Nullifier),
+    #[error("transaction {0} appears twice in the block body")]
+    DuplicateTransaction(TransactionId),
 }
 
 // ASSET ERROR
@@ -598,6 +734,8 @@ pub enum AssetError {
     },
     #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
     ReservedAssetMetadata(u8),
+    #[error("unknown asset ID version: {0}")]
+    UnknownAssetIdVersion(u8),
 }
 
 // TOKEN SYMBOL ERROR
@@ -690,11 +828,11 @@ pub enum AssetVaultError {
     #[error("provided assets contain duplicates")]
     DuplicateAsset(#[source] MerkleError),
     #[error("non fungible asset {0} already exists in the vault")]
-    DuplicateNonFungibleAsset(NonFungibleAsset),
+    DuplicateNonFungibleAsset(Asset),
     #[error("fungible asset {0} does not exist in the vault")]
     FungibleAssetNotFound(FungibleAsset),
     #[error("non fungible asset {0} does not exist in the vault")]
-    NonFungibleAssetNotFound(NonFungibleAsset),
+    NonFungibleAssetNotFound(Asset),
     #[error("subtracting fungible asset amounts would underflow")]
     SubtractFungibleAssetBalanceError(#[source] AssetError),
     #[error("maximum number of asset vault leaves exceeded")]
@@ -706,6 +844,8 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
+    #[error("duplicate asset ID {0} in partial vault")]
+    DuplicateAssetId(AssetId),
     #[error("partial vault contains invalid asset value {value} at ID {id}")]
     InvalidAssetForId {
         id: AssetId,
@@ -724,20 +864,14 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
-    #[error("package does not contain a procedure with @note_script attribute")]
-    NoteScriptNoProcedureWithAttribute,
-    #[error("package contains multiple procedures with @note_script attribute")]
-    NoteScriptMultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in package")]
-    NoteScriptProcedureNotFound(Box<str>),
-    #[error("procedure at path '{0}' does not have @note_script attribute")]
-    NoteScriptProcedureMissingAttribute(Box<str>),
+    #[error("error while creating note script: {0}")]
+    MastForestScript(#[source] MastForestScriptError),
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
     DuplicateFungibleAsset(AccountId),
     #[error("duplicate non fungible asset {0} in note")]
-    DuplicateNonFungibleAsset(NonFungibleAsset),
+    DuplicateNonFungibleAsset(Asset),
     #[error("note type {0} is inconsistent with note tag {1}")]
     InconsistentNoteTag(NoteType, u64),
     #[error("adding fungible asset amounts would exceed maximum allowed amount")]
@@ -868,25 +1002,6 @@ impl PartialBlockchainError {
     }
 }
 
-// TRANSACTION SCRIPT ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum TransactionScriptError {
-    #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
-    AssemblyError(Report),
-    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
-    PackageNotProgram(Report),
-    #[error("package does not contain a procedure with @transaction_script attribute")]
-    NoProcedureWithAttribute,
-    #[error("package contains multiple procedures with @transaction_script attribute")]
-    MultipleProceduresWithAttribute,
-    #[error("procedure at path '{0}' not found in package")]
-    ProcedureNotFound(Box<str>),
-    #[error("procedure at path '{0}' does not have @transaction_script attribute")]
-    ProcedureMissingAttribute(Box<str>),
-}
-
 // TRANSACTION INPUT ERROR
 // ================================================================================================
 
@@ -903,6 +1018,10 @@ pub enum TransactionInputError {
         "partial blockchain has commitment {actual} which does not match the block header's chain commitment {expected}"
     )]
     InconsistentChainCommitment { expected: Word, actual: Word },
+    #[error(
+        "protocol config has commitment {actual} which does not match the block header's protocol config commitment {expected}"
+    )]
+    InconsistentProtocolConfig { expected: Word, actual: Word },
     #[error("block in which input note with id {0} was created is not in partial blockchain")]
     InputNoteBlockNotInPartialBlockchain(NoteId),
     #[error("input note with id {0} was not created in block {1}")]
@@ -981,6 +1100,10 @@ pub enum TransactionOutputError {
 /// [`PrivateOutputNote`](crate::transaction::PrivateOutputNote).
 #[derive(Debug, Error)]
 pub enum OutputNoteError {
+    #[error("attachment headers do not match attachments for private note with id {0}")]
+    AttachmentHeadersMismatch(NoteId),
+    #[error("attachments commitment does not match attachments for private note with id {0}")]
+    AttachmentsCommitmentMismatch(NoteId),
     #[error("note with id {0} is private but expected a public note")]
     NoteIsPrivate(NoteId),
     #[error("note with id {0} is public but expected a private note")]
@@ -996,12 +1119,16 @@ pub enum OutputNoteError {
 
 #[derive(Debug, Error)]
 pub enum TransactionSummaryError {
-    #[error("expiration delta element {0} does not fit into a u16")]
-    ExpirationDeltaTooLarge(Felt),
     #[error(
         "transaction summary preimage contains {actual} elements but expected {expected} elements"
     )]
     InvalidPreimageLength { actual: usize, expected: usize },
+    #[error("transaction summary metadata element {0} sets bits above the packed fields")]
+    MetadataOutOfRange(Felt),
+    #[error(
+        "transaction summary layout version is {actual} but only version {expected} is supported"
+    )]
+    UnsupportedVersion { actual: Felt, expected: u8 },
 }
 
 // TRANSACTION EVENT PARSING ERROR
@@ -1075,6 +1202,144 @@ pub enum ProvenTransactionError {
     NoteCreatedAndConsumed(NoteId),
 }
 
+// TRANSACTION HEADER ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid transaction header.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum TransactionHeaderError {
+    #[error("input note with nullifier {0} appears twice in the transaction header")]
+    DuplicateInputNote(Nullifier),
+    #[error("output note {0} appears twice in the transaction header")]
+    DuplicateOutputNote(NoteId),
+    #[error("note with id {0} is both created and consumed by the transaction header")]
+    NoteCreatedAndConsumed(NoteId),
+}
+
+impl From<AccountUpdateDetailsValidationError> for ProvenTransactionError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch {
+                tx_account_id: account_id,
+                details_account_id: patch_account_id,
+            },
+        }
+    }
+}
+
+impl From<AccountUpdateSizeValidationError> for ProvenTransactionError {
+    fn from(error: AccountUpdateSizeValidationError) -> Self {
+        Self::AccountUpdateSizeLimitExceeded {
+            account_id: error.account_id,
+            update_size: error.update_size,
+        }
+    }
+}
+
+impl From<AccountUpdateSizeValidationError> for BatchAccountUpdateError {
+    fn from(error: AccountUpdateSizeValidationError) -> Self {
+        Self::AccountUpdateSizeLimitExceeded {
+            account_id: error.account_id,
+            update_size: error.update_size,
+        }
+    }
+}
+
+impl From<AccountUpdateDetailsValidationError> for BatchAccountUpdateError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch { account_id, patch_account_id },
+        }
+    }
+}
+
+impl From<AccountUpdateDetailsValidationError> for BlockAccountUpdateError {
+    fn from(error: AccountUpdateDetailsValidationError) -> Self {
+        match error {
+            AccountUpdateDetailsValidationError::PrivateAccountWithDetails(account_id) => {
+                Self::PrivateAccountWithDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::PublicStateAccountMissingDetails(account_id) => {
+                Self::PublicStateAccountMissingDetails(account_id)
+            },
+            AccountUpdateDetailsValidationError::AccountIdMismatch {
+                account_id,
+                patch_account_id,
+            } => Self::AccountIdMismatch { account_id, patch_account_id },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for ProvenTransactionError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                tx_final_commitment: final_state_commitment,
+                details_commitment: account_commitment,
+            },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for BatchAccountUpdateError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            },
+        }
+    }
+}
+
+impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
+    fn from(error: NewPublicAccountValidationError) -> Self {
+        match error {
+            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
+                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            },
+            NewPublicAccountValidationError::FinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            } => Self::AccountFinalCommitmentMismatch {
+                final_state_commitment,
+                account_commitment,
+            },
+        }
+    }
+}
+
 // PROPOSED BATCH ERROR
 // ================================================================================================
 
@@ -1085,6 +1350,9 @@ pub enum ProposedBatchError {
         transaction_id: TransactionId,
         source: TransactionVerifierError,
     },
+
+    #[error("transaction {transaction_id} has an outstanding precompile obligation")]
+    IncompleteTransactionProof { transaction_id: TransactionId },
 
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
@@ -1201,6 +1469,59 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
+    #[error("transaction batch must contain at least one transaction")]
+    EmptyTransactionBatch,
+    #[error("transaction {0} appears twice in the proven batch")]
+    DuplicateTransaction(TransactionId),
+    #[error(
+        "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyInputNotes(usize),
+    #[error("input note with nullifier {0} appears twice in the proven batch")]
+    DuplicateInputNote(Nullifier),
+    #[error(
+        "transaction batch has {0} output notes but at most {MAX_OUTPUT_NOTES_PER_BATCH} are allowed"
+    )]
+    TooManyOutputNotes(usize),
+    #[error(
+        "transaction batch has at least {0} account updates but at most {MAX_ACCOUNTS_PER_BATCH} are allowed"
+    )]
+    TooManyAccountUpdates(usize),
+    #[error("output note {0} appears twice in the proven batch")]
+    DuplicateOutputNote(NoteId),
+    #[error("note with id {0} is both created and consumed by the proven batch")]
+    NoteCreatedAndConsumed(NoteId),
+    #[error("account {0} is updated more than once in the proven batch")]
+    DuplicateAccountUpdate(AccountId),
+    #[error("account update for {0} is missing from the proven batch")]
+    MissingAccountUpdate(AccountId),
+    #[error("account update for {0} has no corresponding transaction in the proven batch")]
+    UnexpectedAccountUpdate(AccountId),
+    #[error(
+        "transaction {transaction_id} for account {account_id} starts from state {actual_initial_state_commitment}, but the previous transaction ends at state {expected_initial_state_commitment}"
+    )]
+    TransactionAccountStateMismatch {
+        account_id: AccountId,
+        transaction_id: TransactionId,
+        expected_initial_state_commitment: Word,
+        actual_initial_state_commitment: Word,
+    },
+    #[error(
+        "account update for {account_id} starts from state {actual}, but its first transaction starts from state {expected}"
+    )]
+    AccountUpdateInitialStateMismatch {
+        account_id: AccountId,
+        expected: Word,
+        actual: Word,
+    },
+    #[error(
+        "account update for {account_id} ends at state {actual}, but its last transaction ends at state {expected}"
+    )]
+    AccountUpdateFinalStateMismatch {
+        account_id: AccountId,
+        expected: Word,
+        actual: Word,
+    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]
@@ -1210,6 +1531,10 @@ pub enum ProvenBatchError {
     },
     #[error("batch kernel execution failed")]
     BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel proving failed")]
+    BatchKernelProvingFailed(#[source] ExecutionError),
+    #[error("batch proof contains precompiles")]
+    BatchProofContainsPrecompiles,
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
 }
@@ -1223,6 +1548,17 @@ pub enum BatchOutputError {
     OutputStackInvalid(String),
     #[error("batch expiration block number {0} does not fit into a u32")]
     ExpirationBlockNumberTooLarge(Felt),
+}
+
+// BLOCK OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BlockOutputError {
+    #[error(
+        "block kernel output stack has a non-zero element at index {index}, but everything past the nullifier commitment must be zero padding"
+    )]
+    PaddingNotZero { index: usize },
 }
 
 // PROPOSED BLOCK ERROR
@@ -1391,6 +1727,46 @@ pub enum ProposedBlockError {
     NullifierWitnessRootMismatch(NullifierTreeError),
 }
 
+// PROTOCOL CONFIG ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid protocol configuration.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ProtocolConfigError {
+    #[error("fee asset composition {0:?} is not supported, it must be fungible")]
+    FeeAssetMustBeFungible(AssetComposition),
+    #[error("minimum proof security must be at least one bit")]
+    MinimumSecurityBitsMustBeNonZero,
+    #[error("next protocol config cannot become effective at the genesis block")]
+    NextConfigEffectiveAtGenesis,
+    #[error(
+        "kernel config contains {count} procedures but must contain at most {max}",
+        max = KernelConfig::MAX_NUM_KERNEL_PROCEDURES,
+    )]
+    TooManyKernelProcedures { count: usize },
+}
+
+// VALIDATOR CONFIG ERROR
+// ================================================================================================
+
+/// Error returned when constructing an invalid [`ValidatorConfig`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ValidatorConfigError {
+    #[error("validator set must contain at least one key")]
+    EmptySet,
+    #[error(
+        "validator set contains {count} keys but must contain at most {max}",
+        max = ValidatorConfig::MAX_VALIDATORS,
+    )]
+    TooManyKeys { count: usize },
+    #[error("validator set contains duplicate public keys")]
+    DuplicateKey,
+    #[error("quorum is {quorum} but must equal the validator count of {count}")]
+    QuorumMustEqualValidatorCount { quorum: u16, count: usize },
+}
+
 // NULLIFIER TREE ERROR
 // ================================================================================================
 
@@ -1439,6 +1815,14 @@ pub enum AuthSchemeError {
 pub enum TransactionVerifierError {
     #[error("failed to verify transaction")]
     TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof contains settled precompile work")]
+    TransactionProofContainsPrecompiles,
+    #[error("transaction precompile witness is invalid")]
+    InvalidTransactionPrecompileWitness(#[source] IntegrityError),
+    #[error(
+        "transaction precompile witness root ({actual}) does not match the VM proof root ({expected})"
+    )]
+    TransactionPrecompileRootMismatch { expected: Word, actual: Word },
     #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

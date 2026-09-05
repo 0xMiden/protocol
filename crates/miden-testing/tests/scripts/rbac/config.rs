@@ -7,19 +7,22 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::note::Note;
 use miden_standards::errors::standards::{
+    ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_RBAC_CONFIG_UNKNOWN_SELECTOR,
     ERR_SENDER_NOT_ROLE_ADMIN,
 };
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, RbacConfig, RbacConfigNote};
+use miden_standards::note::config::{RbacConfig, RbacConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
 // The RBAC account and storage-getter helpers are shared with the parent `rbac` suite, which
 // owns the exhaustive tests of the underlying component. This suite only checks that the
 // RbacConfig note dispatches each action and rejects malformed notes.
-use super::{create_rbac_chain, get_role_config, is_role_member, role, test_account_id};
+use super::{create_rbac_chain, get_role_admin, is_role_member, role, test_account_id};
+use crate::into_private_note;
 
 // HELPERS
 // ================================================================================================
@@ -132,7 +135,7 @@ async fn set_role_admin_dispatch() -> anyhow::Result<()> {
     )?;
     let updated = execute_note_and_apply(&mock_chain, &account, note).await?;
 
-    let (_, admin_role_symbol) = get_role_config(&updated, &minter)?;
+    let admin_role_symbol = get_role_admin(&updated, &minter)?;
     assert_eq!(admin_role_symbol, mint_admin.as_element());
     Ok(())
 }
@@ -266,5 +269,33 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .await;
 
     assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any role change runs.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let admin = test_account_id(41);
+    let member = test_account_id(42);
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let note = rbac_config_note(
+        admin,
+        account.id(),
+        RbacConfig::GrantRole { role: role("MINTER"), account: member },
+        &mut rng,
+    )?;
+
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC);
     Ok(())
 }

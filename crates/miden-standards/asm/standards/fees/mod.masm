@@ -23,7 +23,7 @@ use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::attachments::network_account_target
 use miden::standards::note
-use miden::standards::note_tag
+use miden::standards::note::note_tag
 use miden::standards::notes::fee_sponsorship
 use {NUM_ASSETS as SPONSORSHIP_NUM_ASSETS, FEATURE_NOTE_ID_ITEM_OFFSET} from miden::standards::notes::fee_sponsorship
 use {NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME, NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS}
@@ -510,7 +510,7 @@ proc estimate_input_note_fee
 
     # the manager asserts the estimate is denominated in its configured fee asset, so only the
     # fee amount is needed here
-    dropw exec.fungible_asset::value_into_amount
+    dropw exec.fungible_asset::value_into_amount_unchecked
     # => [required_fee_amount]
 end
 
@@ -543,7 +543,7 @@ proc move_sponsored_fee_to_vault
     movupw.2 exec.word::eq assert.err=ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET
     # => [ASSET_VALUE]
 
-    exec.fungible_asset::value_into_amount
+    exec.fungible_asset::value_into_amount_unchecked
     # => [fee_amount]
 end
 
@@ -642,7 +642,7 @@ proc create_network_note_sponsorship(
     exec.compute_sponsorship_fee
     # => [FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
 
-    exec.fungible_asset::to_amount
+    exec.fungible_asset::to_amount_unchecked
     # => [fee_amount, FEE_ASSET_ID, FEE_ASSET_VALUE, target_id_prefix, note_idx]
 
     movdn.10 dup.10 eq.0

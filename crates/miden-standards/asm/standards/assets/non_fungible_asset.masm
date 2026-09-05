@@ -14,6 +14,12 @@ const ERR_NON_FUNGIBLE_ASSET_CLASS_SUFFIX_MUST_MATCH_HASH0 = "the asset class su
 
 const ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1 = "the asset class prefix in a non-fungible asset ID must match hash1 of the asset value"
 
+# CONSTANTS
+# ================================================================================================
+
+#! Encodes the asset metadata with composition none and asset version 1.
+const ASSET_METADATA_NONE = 0x01
+
 # PROCEDURES
 # ================================================================================================
 
@@ -33,13 +39,8 @@ const ERR_NON_FUNGIBLE_ASSET_CLASS_PREFIX_MUST_MATCH_HASH1 = "the asset class pr
 #!
 #! Invocation: exec
 pub proc create
-    # push the non-fungible (None) composition
-    # this is equivalent to the asset metadata
-    push.COMPOSITION_NONE
-    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
-
-    # merge the asset metadata into the lower 8 bits of the suffix
-    add
+    # merge the non-fungible asset metadata into the lower 8 bits of the suffix
+    add.ASSET_METADATA_NONE
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
 
     # copy hashes at indices 0 and 1 in the data hash word to the corresponding index in the key

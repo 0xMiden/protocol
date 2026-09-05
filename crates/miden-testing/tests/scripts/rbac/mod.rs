@@ -19,6 +19,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, RoleBasedAccessControl, RoleConfig};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
+    ERR_INVALID_ROLE_SYMBOL,
     ERR_ROLE_SYMBOL_ZERO,
     ERR_SENDER_NOT_ROLE_ADMIN,
 };
@@ -80,6 +81,17 @@ pub(super) fn get_role_config(
         .storage()
         .get_map_item(RoleBasedAccessControl::role_config_slot(), role_config_key(role))?;
     Ok((word[0], word[1]))
+}
+
+/// Returns the number of accounts holding the role, per on-chain storage.
+pub(super) fn get_role_member_count(account: &Account, role: &RoleSymbol) -> anyhow::Result<Felt> {
+    Ok(get_role_config(account, role)?.0)
+}
+
+/// Returns the role's delegated admin role symbol, or `Felt::ZERO` when it is unset, per on-chain
+/// storage.
+pub(super) fn get_role_admin(account: &Account, role: &RoleSymbol) -> anyhow::Result<Felt> {
+    Ok(get_role_config(account, role)?.1)
 }
 
 pub(crate) fn is_role_member(
@@ -318,6 +330,26 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
     )
 }
 
+fn grant_role_raw_script(role: Felt, account_id: AccountId) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{account_prefix}
+            push.{account_suffix}
+            push.{role}
+            call.rbac::grant_role
+            dropw dropw dropw dropw
+        end
+        "#,
+        account_prefix = account_id.prefix().as_felt(),
+        account_suffix = account_id.suffix(),
+    )
+}
+
 // TESTS
 // ================================================================================================
 
@@ -420,7 +452,7 @@ async fn test_rbac_grant_role_sets_membership() -> anyhow::Result<()> {
     let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
 
     assert!(is_role_member(&granted, &minter, member)?);
-    let (member_count, _) = get_role_config(&granted, &minter)?;
+    let member_count = get_role_member_count(&granted, &minter)?;
     assert_eq!(member_count, Felt::ONE);
 
     Ok(())
@@ -443,7 +475,7 @@ async fn test_rbac_grant_existing_member_is_noop() -> anyhow::Result<()> {
     let regrant_note = build_note(admin, grant_minter_to_member)?;
     let regranted = execute_note_and_apply(&mock_chain, &granted, &regrant_note).await?;
 
-    let (member_count, _) = get_role_config(&regranted, &minter)?;
+    let member_count = get_role_member_count(&regranted, &minter)?;
     assert_eq!(member_count, Felt::from(1u32));
     assert!(is_role_member(&regranted, &minter, member)?);
 
@@ -462,21 +494,21 @@ async fn test_rbac_member_count_tracks_grants_and_revokes() -> anyhow::Result<()
 
     let first_grant = build_note(admin, grant_role_script(&pauser, alice))?;
     let updated = execute_note_and_apply(&mock_chain, &account, &first_grant).await?;
-    assert_eq!(get_role_config(&updated, &pauser)?.0, Felt::from(1u32));
+    assert_eq!(get_role_member_count(&updated, &pauser)?, Felt::from(1u32));
 
     let second_grant = build_note(admin, grant_role_script(&pauser, bob))?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &second_grant).await?;
-    assert_eq!(get_role_config(&updated, &pauser)?.0, Felt::from(2u32));
+    assert_eq!(get_role_member_count(&updated, &pauser)?, Felt::from(2u32));
 
     let revoke_alice = build_note(admin, revoke_role_script(&pauser, alice))?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_alice).await?;
-    assert_eq!(get_role_config(&updated, &pauser)?.0, Felt::from(1u32));
+    assert_eq!(get_role_member_count(&updated, &pauser)?, Felt::from(1u32));
     assert!(!is_role_member(&updated, &pauser, alice)?);
     assert!(is_role_member(&updated, &pauser, bob)?);
 
     let revoke_bob = build_note(admin, revoke_role_script(&pauser, bob))?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_bob).await?;
-    assert_eq!(get_role_config(&updated, &pauser)?.0, Felt::from(0u32));
+    assert_eq!(get_role_member_count(&updated, &pauser)?, Felt::from(0u32));
     assert!(!is_role_member(&updated, &pauser, bob)?);
 
     Ok(())
@@ -570,7 +602,7 @@ async fn test_rbac_revoke_role_clears_membership() -> anyhow::Result<()> {
     let revoke_note = build_note(admin, revoke_role_script(&burner, member))?;
     let revoked = execute_note_and_apply(&mock_chain, &granted, &revoke_note).await?;
     assert!(!is_role_member(&revoked, &burner, member)?);
-    assert_eq!(get_role_config(&revoked, &burner)?.0, Felt::from(0u32));
+    assert_eq!(get_role_member_count(&revoked, &burner)?, Felt::from(0u32));
 
     Ok(())
 }
@@ -684,6 +716,75 @@ async fn test_rbac_non_admin_cannot_set_role_admin() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// On-chain a role is only ever a felt, so the entrypoints enforce the encoding the Rust
+/// `RoleSymbol` accepts: without that, a role could be granted and authorized on-chain under a felt
+/// that no reader can decode back into a symbol.
+///
+/// `27` announces a length of zero (it is the first multiple of the alphabet size), and
+/// `MAX_ENCODED_VALUE + 1` runs past the longest encodable symbol, and `ALPHABET_LEN^13 + 12`
+/// announces the longest encodable length while carrying a digit past it; none names a role.
+#[rstest]
+#[case::announces_no_characters(Felt::new(27).unwrap())]
+#[case::past_the_longest_symbol(Felt::new(4052555153018976253).unwrap())]
+#[case::a_digit_past_the_announced_length(Felt::new(4052555153018976279).unwrap())]
+#[tokio::test]
+async fn test_rbac_grant_role_rejects_non_canonical_role_symbol(
+    #[case] role_symbol: Felt,
+) -> anyhow::Result<()> {
+    let admin = test_account_id(130);
+    let member = test_account_id(131);
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let note = build_note(admin, grant_role_raw_script(role_symbol, member))?;
+    let tx = mock_chain.build_transaction(account).unauthenticated_input_note(note).build()?;
+    let result = tx.execute().await;
+    assert_transaction_executor_error!(result, ERR_INVALID_ROLE_SYMBOL);
+
+    Ok(())
+}
+
+/// The shortest and the longest encodable symbols stay grantable: the encoding check must not
+/// narrow the role space the `RoleSymbol` type allows.
+#[rstest]
+#[case::shortest("A")]
+#[case::longest("____________")]
+#[tokio::test]
+async fn test_rbac_grant_role_accepts_the_encoding_extremes(
+    #[case] symbol: &str,
+) -> anyhow::Result<()> {
+    let admin = test_account_id(132);
+    let member = test_account_id(133);
+
+    let edge_role = role(symbol);
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let note = build_note(admin, grant_role_script(&edge_role, member))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &note).await?;
+    assert!(is_role_member(&updated, &edge_role, member)?);
+
+    Ok(())
+}
+
+/// A delegated admin is a role like any other, so `set_role_admin` holds its symbol to the same
+/// encoding. Zero stays accepted: it clears the delegation.
+#[tokio::test]
+async fn test_rbac_set_role_admin_rejects_non_canonical_admin_role_symbol() -> anyhow::Result<()> {
+    let admin = test_account_id(134);
+
+    let minter = role("MINTER");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let note =
+        build_note(admin, set_role_admin_raw_script(Felt::from(&minter), Felt::new(27).unwrap()))?;
+    let tx = mock_chain.build_transaction(account).unauthenticated_input_note(note).build()?;
+    let result = tx.execute().await;
+    assert_transaction_executor_error!(result, ERR_INVALID_ROLE_SYMBOL);
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_rbac_set_role_admin_rejects_zero_role_symbol() -> anyhow::Result<()> {
     let admin = test_account_id(92);
@@ -715,7 +816,7 @@ async fn test_rbac_set_role_admin_does_not_create_role() -> anyhow::Result<()> {
     let (user_count, user_admin) = get_role_config(&updated, &user_role)?;
     assert_eq!(user_count, Felt::from(0u32));
     assert_eq!(user_admin, Felt::from(&manager_role));
-    let (manager_count, _) = get_role_config(&updated, &manager_role)?;
+    let manager_count = get_role_member_count(&updated, &manager_role)?;
     assert_eq!(manager_count, Felt::from(0u32));
 
     Ok(())
@@ -734,7 +835,7 @@ async fn test_rbac_granting_admin_role_does_not_change_target_role_admin_config(
 
     let set_admin_note = build_note(admin, set_role_admin_script(&user_role, Some(&manager_role)))?;
     let updated = execute_note_and_apply(&mock_chain, &account, &set_admin_note).await?;
-    assert_eq!(get_role_config(&updated, &user_role)?.1, Felt::from(&manager_role));
+    assert_eq!(get_role_admin(&updated, &user_role)?, Felt::from(&manager_role));
 
     let grant_manager_note = build_note(admin, grant_role_script(&manager_role, delegate))?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &grant_manager_note).await?;
@@ -905,7 +1006,7 @@ async fn test_rbac_admin_can_renounce_admin_role() -> anyhow::Result<()> {
     let renounce_admin2_note = build_note(admin2, renounce_role_script(&admin_role))?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_admin2_note).await?;
     assert!(!is_role_member(&updated, &admin_role, admin2)?);
-    assert_eq!(get_role_config(&updated, &admin_role)?.0, Felt::from(0u32));
+    assert_eq!(get_role_member_count(&updated, &admin_role)?, Felt::from(0u32));
 
     // ADMIN is now unmanageable: granting an ADMIN-administered role fails for everyone.
     let orphan_grant_note = build_note(admin2, grant_role_script(&pauser, orphan))?;
@@ -1041,6 +1142,102 @@ async fn test_rbac_self_administered_role_survives_admin_renounce() -> anyhow::R
     let grant_second_note = build_note(manager, grant_role_script(&manager_role, second_manager))?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &grant_second_note).await?;
     assert!(is_role_member(&updated, &manager_role, second_manager)?);
+
+    Ok(())
+}
+
+/// Delegating to a memberless role does not put the delegated role out of `ADMIN`'s reach: a
+/// memberless role can authorize nothing, so authority falls back to `ADMIN` until the delegate
+/// gains its first member, at which point it takes over exclusively.
+#[tokio::test]
+async fn test_rbac_admin_retains_authority_while_delegated_admin_is_memberless()
+-> anyhow::Result<()> {
+    let admin = test_account_id(210);
+    let mint_admin_member = test_account_id(211);
+    let member = test_account_id(212);
+    let second_member = test_account_id(213);
+
+    let minter = role("MINTER");
+    let mint_admin = role("MINT_ADMIN");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    // MINTER is delegated to MINT_ADMIN, which has no members — an unpopulated or mistyped role.
+    let set_admin_note = build_note(admin, set_role_admin_script(&minter, Some(&mint_admin)))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &set_admin_note).await?;
+    assert_eq!(get_role_member_count(&updated, &mint_admin)?, Felt::ZERO);
+
+    // ADMIN keeps authority over MINTER while MINTER's delegated admin is memberless.
+    let grant_minter_note = build_note(admin, grant_role_script(&minter, member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_minter_note).await?;
+    assert!(is_role_member(&updated, &minter, member)?);
+
+    // Once MINT_ADMIN gains a member it administers MINTER exclusively, locking ADMIN out again.
+    let grant_admin_note = build_note(admin, grant_role_script(&mint_admin, mint_admin_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_admin_note).await?;
+
+    let admin_grant_note = build_note(admin, grant_role_script(&minter, second_member))?;
+    let result = mock_chain
+        .build_transaction(updated.clone())
+        .unauthenticated_input_note(admin_grant_note)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    let delegate_grant_note =
+        build_note(mint_admin_member, grant_role_script(&minter, second_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &delegate_grant_note).await?;
+    assert!(is_role_member(&updated, &minter, second_member)?);
+
+    Ok(())
+}
+
+/// Regression test: a delegated role does not become permanently unmanageable when its admin chain
+/// empties out. Authority over the roles a memberless role administers falls back to `ADMIN`, which
+/// can then manage the delegated role, re-point its delegation, and repopulate the dead admin role.
+#[tokio::test]
+async fn test_rbac_admin_recovers_role_from_dead_admin_chain() -> anyhow::Result<()> {
+    let admin = test_account_id(214);
+    let mint_admin_member = test_account_id(215);
+    let member = test_account_id(216);
+
+    let minter = role("MINTER");
+    let mint_admin = role("MINT_ADMIN");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    // ADMIN delegates MINTER to MINT_ADMIN and seeds MINT_ADMIN, so MINTER is exclusively
+    // MINT_ADMIN's and out of ADMIN's reach.
+    let set_admin_note = build_note(admin, set_role_admin_script(&minter, Some(&mint_admin)))?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &set_admin_note).await?;
+    let grant_admin_note = build_note(admin, grant_role_script(&mint_admin, mint_admin_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_admin_note).await?;
+
+    // MINT_ADMIN administers itself, so once it empties no live role administers it either.
+    let self_admin_note = build_note(admin, set_role_admin_script(&mint_admin, Some(&mint_admin)))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &self_admin_note).await?;
+
+    // MINT_ADMIN's last member renounces, so MINTER's effective admin is memberless.
+    let renounce_note = build_note(mint_admin_member, renounce_role_script(&mint_admin))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_note).await?;
+    assert_eq!(get_role_member_count(&updated, &mint_admin)?, Felt::ZERO);
+
+    // ADMIN regains authority over MINTER: it can manage membership...
+    let grant_minter_note = build_note(admin, grant_role_script(&minter, member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_minter_note).await?;
+    assert!(is_role_member(&updated, &minter, member)?);
+
+    // ...and re-point the delegation back to itself.
+    let clear_note = build_note(admin, set_role_admin_script(&minter, None))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &clear_note).await?;
+    assert_eq!(get_role_admin(&updated, &minter)?, Felt::ZERO);
+
+    // The dead admin role is recoverable too: its own effective admin is memberless, so ADMIN can
+    // repopulate it.
+    let regrant_note = build_note(admin, grant_role_script(&mint_admin, mint_admin_member))?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &regrant_note).await?;
+    assert!(is_role_member(&updated, &mint_admin, mint_admin_member)?);
 
     Ok(())
 }

@@ -40,7 +40,8 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds max supply"
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
-const ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
+const ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO = "the amount to mint is zero"
+const ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
 
 # =================================================================================================
@@ -246,6 +247,7 @@ end
 #!
 #! Panics if:
 #! - active mint policy validation fails.
+#! - the amount to mint, after the mint policy ran, is zero.
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
 #! - the token supply exceeds the maximum supply.
 #! - the maximum supply exceeds the maximum representable fungible asset amount.
@@ -268,7 +270,11 @@ pub proc mint_and_send
 
     # ASSET_VALUE for a fungible asset is `[amount, 0, 0, 0]`. Keep amount, drop the rest.
     movdn.3 drop drop drop
-    # => [amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+
+    # Reject a zero amount.
+    dup neq.0 assert.err=ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
 
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
@@ -362,7 +368,7 @@ pub proc mint_and_send
     padw loc_loadw_le.MINT_ASSET_ID_LOCAL dupw.1
     # => [ASSET_ID, NOTE_ASSET_ID, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
-    assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    assert_eqw.err=ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1
@@ -393,6 +399,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the supplied asset is not a well-formed fungible asset.
 #! - active burn policy validation fails.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
@@ -401,6 +408,11 @@ end
 #! Invocation: call
 @account_procedure
 pub proc receive_and_burn
+    # validate the asset to burn is well-formed before processing it
+    # note that the asset's origin is validated by the kernel
+    exec.fungible_asset::validate
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
     # the burn policy consumes the asset, so keep a copy for the burn itself
     dupw.1 dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
@@ -411,7 +423,7 @@ pub proc receive_and_burn
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    exec.fungible_asset::to_amount movdn.8
+    exec.fungible_asset::to_amount_unchecked movdn.8
     # => [ASSET_ID, ASSET_VALUE, amount, pad(8)]
 
     # burn the asset

@@ -5,7 +5,7 @@ use miden::standards::faucets::policies::burn::min_burn_amount
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory address of the new minimum burn amount in the MinBurnAmountConfig note storage.
@@ -20,6 +20,8 @@ const NUM_STORAGE_ITEMS = 1
 const ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "min burn amount config note attachment target account does not match the consuming account"
 
 const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn amount config note storage item count is not the expected count"
+
+const ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "min burn amount config note must be public"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -47,6 +49,7 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn 
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
 #! - the note sender is not authorized (per the `Authority` component).
@@ -56,6 +59,10 @@ pub proc main
     dropw
     # => [pad(16)]
 
+    exec.active_note::is_public
+    assert.err=ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC
+    # => [pad(16)]
+
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
     exec.network_account_target::active_account_matches_target_account
@@ -63,7 +70,7 @@ pub proc main
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items, pad(16)]
 
     eq.NUM_STORAGE_ITEMS

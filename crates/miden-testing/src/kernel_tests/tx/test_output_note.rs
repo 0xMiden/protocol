@@ -908,7 +908,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
 async fn test_get_asset_info() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let fungible_asset_0 = Asset::Fungible(
+    let fungible_asset_0 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("id should be valid"),
             5,
@@ -918,7 +918,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     // create the second asset with the different faucet ID to increase the number of assets in the
     // output note to 2.
-    let fungible_asset_1 = Asset::Fungible(
+    let fungible_asset_1 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).expect("id should be valid"),
             5,
@@ -1272,7 +1272,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let code = format!(
         "
         use miden::protocol::output_note
-        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use {{DEFAULT_TAG}} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1305,7 +1305,7 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::output_note
-        use {DEFAULT_TAG} from miden::standards::note_tag
+        use {DEFAULT_TAG} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1982,7 +1982,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     let code = format!(
         "
         use miden::protocol::output_note
-        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use {{DEFAULT_TAG}} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 

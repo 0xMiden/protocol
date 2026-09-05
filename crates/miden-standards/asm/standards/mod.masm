@@ -4,13 +4,13 @@ pub mod assets
 pub mod attachments
 pub mod auth
 pub mod data_structures
+pub mod expiration
 pub mod faucets
 pub mod fee
 pub mod fees
 pub mod inspection
 pub mod interop
 pub mod note
-pub mod note_tag
 pub mod notes
 pub mod tx_scripts
 pub mod utils

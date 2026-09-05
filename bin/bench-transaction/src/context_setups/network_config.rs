@@ -20,7 +20,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountType,
-    AssetCallbackFlag,
     RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
@@ -42,7 +41,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{
+use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
     BlocklistConfig,
@@ -101,7 +100,6 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
@@ -221,7 +219,6 @@ pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransactio
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
@@ -362,7 +359,6 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(list.manager())
         .with_assets([super::fee_funding_asset()?]);

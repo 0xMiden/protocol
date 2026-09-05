@@ -11,6 +11,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentCode,
     AccountId,
+    AccountIdVersion,
     AccountProcedureRoot,
     AccountType,
     AssetCallbackFlag,
@@ -24,13 +25,17 @@ use miden_protocol::asset::{
     AssetAmount,
     AssetCallbacks,
     AssetComposition,
+    AssetVault,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
-use miden_protocol::errors::tx_kernel::ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT;
+use miden_protocol::errors::tx_kernel::{
+    ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE,
+    ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
+};
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -91,7 +96,7 @@ end
 #! Checks whether the receiving account is in the block list. If so, panics.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @account_procedure
@@ -99,9 +104,8 @@ pub proc on_before_asset_added_to_account
     exec.assert_native_account_not_blocked
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-    # drop unused asset ID
-    dropw
-    # => [ASSET_VALUE, pad(12)]
+    dropw dropw
+    # => [pad(16)]
 end
 
 #! Callback invoked when an asset with callbacks enabled is added to an output note.
@@ -109,7 +113,7 @@ end
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 @account_procedure
@@ -117,9 +121,8 @@ pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-    # drop unused asset ID
-    dropw
-    # => [ASSET_VALUE, note_idx, pad(7)]
+    dropw dropw drop
+    # => [pad(16)]
 end
 "#;
 
@@ -246,15 +249,21 @@ async fn test_faucet_without_callback_slot_skips_callback(
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     // Create a faucet whose ID enables callbacks, but WITHOUT a populated AssetCallbacks slot.
+    // The flag has to be enabled explicitly here, since without a callback slot the builder would
+    // otherwise derive it as disabled.
     let mut account_builder = AccountBuilder::new([45u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
+        .enable_asset_callbacks()
         .with_component(MockFaucetComponent);
 
-    // If callback proc roots should be empty, add the empty storage slots.
+    // If callback proc roots should be empty, add the callback slots holding the empty word.
+    // `AssetCallbacks` cannot express these, since it only emits slots for non-empty roots.
     if has_empty_callback_proc_root {
         let name = "miden::testing::callbacks";
-        let slots = AssetCallbacks::new().into_storage_slots();
+        let slots = AssetCallbacks::slot_names()
+            .into_iter()
+            .map(|slot_name| StorageSlot::with_value(slot_name.clone(), Word::empty()))
+            .collect();
         let component = AccountComponent::new(
             CodeBuilder::new().compile_component_code(name, "pub proc dummy nop end")?,
             slots,
@@ -302,6 +311,65 @@ async fn test_faucet_without_callback_slot_skips_callback(
     Ok(())
 }
 
+/// Tests that consuming a callbacks-enabled asset fails when the issuing faucet's callback slot
+/// holds a procedure root that is not part of the faucet's account code.
+#[tokio::test]
+async fn test_faucet_with_invalid_callback_root_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    // Create a faucet whose ID enables callbacks and whose callback slot holds an arbitrary root
+    // that does not correspond to any of the faucet's procedures.
+    let arbitrary_root = Word::from([1u32, 2, 3, 4]);
+    let name = "miden::testing::callbacks";
+    let slots = AssetCallbacks::new()
+        .on_before_asset_added_to_account(arbitrary_root)
+        .into_storage_slots();
+    let component = AccountComponent::new(
+        CodeBuilder::new().compile_component_code(name, "pub proc dummy nop end")?,
+        slots,
+        AccountComponentMetadata::mock(name),
+    )?;
+
+    let account_builder = AccountBuilder::new([45u8; 32])
+        .account_type(AccountType::Public)
+        .with_component(MockFaucetComponent)
+        .with_component(component);
+
+    let faucet = builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let asset = Asset::from(FungibleAsset::new(faucet.id(), 100)?);
+    let note =
+        builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_transaction(target_account.id())
+        .authenticated_input_note(note.id())
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE
+    );
+
+    Ok(())
+}
+
 // ON_ASSET_ADDED_TO_ACCOUNT TESTS
 // ================================================================================================
 
@@ -322,7 +390,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     let account_callback_masm = format!(
         r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_account
         # Assert native account ID can be retrieved via native_account::get_id
@@ -332,23 +400,19 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
         # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
-        # duplicate the asset value for returning
-        dupw.1 swapw
-        # => [ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
-
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, pad(8)]
         exec.::miden::standards::assets::fungible_asset::create
-        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
 
         movupw.2
         assert_eqw.err="callback received unexpected asset ID"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, pad(8)]
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         assert_eqw.err="callback received unexpected asset value"
-        # => [ASSET_VALUE, pad(12)]
+        # => [pad(16)]
     end
     "#
     );
@@ -360,7 +424,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(fungible_asset)],
+        &[Asset::from(fungible_asset)],
         NoteType::Public,
     )?;
 
@@ -377,66 +441,6 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         .build()?
         .execute()
         .await?;
-
-    Ok(())
-}
-
-/// Tests that the account callback cannot change the value of an asset added to the account
-/// vault, even when offsetting rewrites would leave the aggregate totals intact.
-///
-/// The two consumed notes add 200 and 100 units to the vault; the callback swaps the amounts by
-/// rewriting them to 100 and 200 units. Because the vault aggregates amounts per asset ID, the
-/// final vault - and thus the epilogue's conservation check - is identical either way. Unlike the
-/// note path, there is also no host-side backstop: `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT` is
-/// emitted after the callback with the processed value, so the host never disagrees with the
-/// kernel. The callback-boundary assertion is therefore the only enforcement on this path.
-#[tokio::test]
-async fn test_callback_cannot_rewrite_value_added_to_account() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let account_callback_masm = r#"
-    #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-    #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
-    @account_procedure
-    pub proc on_before_asset_added_to_account
-        # Drop the asset ID and swap amounts 200 and 100 while preserving their total.
-        dropw
-        neg add.300
-        # => [PROCESSED_ASSET_VALUE, pad(8)]
-    end
-    "#;
-
-    let faucet = add_faucet_with_callbacks(&mut builder, Some(account_callback_masm), None)?;
-    let first_asset = FungibleAsset::new(faucet.id(), 200)?;
-    let second_asset = FungibleAsset::new(faucet.id(), 100)?;
-    let first_note = builder.add_p2id_note(
-        faucet.id(),
-        target_account.id(),
-        &[first_asset.into()],
-        NoteType::Public,
-    )?;
-    let second_note = builder.add_p2id_note(
-        faucet.id(),
-        target_account.id(),
-        &[second_asset.into()],
-        NoteType::Public,
-    )?;
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-    let result = mock_chain
-        .build_transaction(target_account.id())
-        .authenticated_input_notes([first_note.id(), second_note.id()])
-        .foreign_accounts(vec![faucet_inputs])
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT);
 
     Ok(())
 }
@@ -584,7 +588,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     const ERR_WRONG_NOTE_IDX = "callback received unexpected note_idx"
 
     #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_note
         # Assert native account ID can be retrieved via native_account::get_id
@@ -598,23 +602,22 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
         dup.8 push.1 assert_eq.err=ERR_WRONG_NOTE_IDX
         # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-        # duplicate the asset value for returning
-        dupw.1 swapw
-        # => [ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
-
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
-        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [active_account_id_suffix, active_account_id_prefix, amount, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
         exec.::miden::standards::assets::fungible_asset::create
-        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
         movupw.2
         assert_eqw.err="callback received unexpected asset ID"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, note_idx, pad(7)]
 
         assert_eqw.err="callback received unexpected asset value"
-        # => [ASSET_VALUE, note_idx, pad(7)]
+        # => [note_idx, pad(7)]
+
+        drop
+        # => [pad(16)]
     end
     "#
     );
@@ -624,7 +627,7 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     // Create a P2ID note with a callbacks-enabled fungible asset.
     // Consuming this note adds the asset to the wallet's vault.
     let fungible_asset = FungibleAsset::new(faucet.id(), amount)?;
-    let asset = Asset::Fungible(fungible_asset);
+    let asset = Asset::from(fungible_asset);
     let note =
         builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
 
@@ -676,84 +679,6 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     Ok(())
 }
 
-/// Tests that callbacks cannot redistribute value between output notes while preserving the
-/// transaction-wide total.
-///
-/// Without a callback-boundary equality check, the callback below swaps additions of 200 and 100
-/// units. The epilogue's aggregate asset-conservation check would still see 300
-/// input and 300 output units, so it cannot enforce the per-callback invariant.
-///
-/// The executor also notices the rewrite today: `NOTE_BEFORE_ADD_ASSET_EVENT` is emitted before the
-/// callback runs, so the host records the pre-callback amounts and its output-notes commitment ends
-/// up disagreeing with the kernel's. That reconciliation is not proof-enforced, which is why this
-/// test asserts on the kernel error rather than on the resulting commitment mismatch.
-#[tokio::test]
-async fn test_callback_cannot_redistribute_value_between_output_notes() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let note_callback_masm = r#"
-    #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
-    @account_procedure
-    pub proc on_before_asset_added_to_note
-        # Drop the asset ID and swap amounts 200 and 100 while preserving their total.
-        dropw
-        neg add.300
-        # => [PROCESSED_ASSET_VALUE, note_idx, pad(7)]
-    end
-    "#;
-
-    let faucet = add_faucet_with_callbacks(&mut builder, None, Some(note_callback_masm))?;
-    let input_asset = FungibleAsset::new(faucet.id(), 300)?;
-    let first_moved_asset = FungibleAsset::new(faucet.id(), 200)?;
-    let second_moved_asset = FungibleAsset::new(faucet.id(), 100)?;
-    let input_note = builder.add_p2id_note(
-        faucet.id(),
-        target_account.id(),
-        &[input_asset.into()],
-        NoteType::Public,
-    )?;
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
-        r#"
-        use mock::util
-
-        @transaction_script
-        pub proc main
-            push.{first_asset_value}
-            push.{asset_id}
-            exec.util::create_default_note_with_moved_asset
-
-            push.{second_asset_value}
-            push.{asset_id}
-            exec.util::create_default_note_with_moved_asset
-        end
-        "#,
-        first_asset_value = first_moved_asset.to_value_word(),
-        second_asset_value = second_moved_asset.to_value_word(),
-        asset_id = first_moved_asset.to_id_word(),
-    ))?;
-
-    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-    let result = mock_chain
-        .build_transaction(target_account.id())
-        .authenticated_input_note(input_note.id())
-        .tx_script(tx_script)
-        .foreign_accounts(vec![faucet_inputs])
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FAUCET_CALLBACK_ASSET_VALUE_MUST_MATCH_INPUT);
-
-    Ok(())
-}
-
 /// Tests that consuming a callbacks-enabled asset succeeds when the issuing faucet is itself the
 /// target of the callback.
 ///
@@ -764,21 +689,21 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 
     let account_callback_masm = r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_account
-        dropw
-        # => [ASSET_VALUE, pad(12)]
+        dropw dropw
+        # => [pad(16)]
     end
     "#;
 
     let note_callback_masm = r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_note
-        dropw movup.4 drop
-        # => [ASSET_VALUE, pad(12)]
+        dropw dropw drop
+        # => [pad(16)]
     end
     "#;
 
@@ -833,6 +758,61 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that a new account whose storage contains an asset callback slot is rejected if its
+/// account ID has the asset callback flag disabled.
+#[tokio::test]
+async fn test_new_account_with_callback_slot_and_disabled_flag_fails() -> anyhow::Result<()> {
+    let mut mock_chain = MockChain::new();
+    mock_chain.prove_next_block()?;
+
+    // The block list component installs both callback slots, so the builder derives an enabled
+    // flag for this account.
+    let faucet = AccountBuilder::new([45u8; 32])
+        .account_type(AccountType::Public)
+        .with_components(Auth::IncrNonce)
+        .with_component(MockFaucetComponent)
+        .with_component(BlockList::new(BTreeSet::new()))
+        .build()?;
+    assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
+
+    // Re-grind the ID of the very same code and storage, but with callbacks disabled.
+    let seed = AccountId::compute_account_seed(
+        [45; 32],
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+        AccountIdVersion::Version1,
+        faucet.code().commitment(),
+        faucet.storage().to_commitment(),
+    )?;
+    let account_id = AccountId::new(
+        seed,
+        AccountIdVersion::Version1,
+        faucet.code().commitment(),
+        faucet.storage().to_commitment(),
+    )?;
+    assert_eq!(account_id.asset_callback_flag(), AssetCallbackFlag::Disabled);
+
+    let account = Account::new_unchecked(
+        account_id,
+        AssetVault::default(),
+        faucet.storage().clone(),
+        faucet.code().clone(),
+        Felt::ZERO,
+        Some(seed),
+    );
+
+    let mock_tx = mock_chain.build_transaction(account).build()?;
+
+    let result = mock_tx.execute().await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG
+    );
+
+    Ok(())
+}
+
 // HELPERS
 // ================================================================================================
 
@@ -849,7 +829,6 @@ fn add_faucet_with_block_list(
 
     let account_builder = AccountBuilder::new([42u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(MockFaucetComponent)
         .with_component(block_list);
 
@@ -915,7 +894,6 @@ fn add_faucet_with_callbacks(
 
     let account_builder = AccountBuilder::new([42; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(

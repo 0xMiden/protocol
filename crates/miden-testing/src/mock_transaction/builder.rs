@@ -1,7 +1,7 @@
 // MOCK TRANSACTION BUILDER
 // ================================================================================================
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -81,6 +81,7 @@ pub struct MockTransactionBuilder<'chain> {
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
     auth_args: Word,
+    required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
@@ -111,6 +112,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_script: None,
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
+            required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
@@ -179,7 +181,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
     ///
     /// To add multiple entries, call this repeatedly or use [`Self::extend_advice_inputs`].
     pub fn add_advice_map_entry(mut self, key: Word, value: Vec<Felt>) -> Self {
-        self.advice_inputs.map.insert(key, value);
+        self.advice_inputs = self.advice_inputs.with_map([(key, value)]);
         self
     }
 
@@ -219,6 +221,16 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Sets the desired auth arguments.
     pub fn auth_args(mut self, auth_args: Word) -> Self {
         self.auth_args = auth_args;
+        self
+    }
+
+    /// Requires the transaction's partial blockchain to track the provided block, so that the
+    /// executed code can read its commitment.
+    ///
+    /// The blocks the input notes were created in are tracked anyway. Blocks at or after the
+    /// reference block are ignored, see [`MockChain::get_transaction_inputs_at`].
+    pub fn required_block(mut self, block_num: BlockNumber) -> Self {
+        self.required_blocks.insert(block_num);
         self
     }
 
@@ -288,28 +300,23 @@ impl<'chain> MockTransactionBuilder<'chain> {
     pub fn build(self) -> anyhow::Result<MockTransaction> {
         let account = self.chain.resolve_tx_account(self.input)?;
 
-        let mut tx_inputs = match self.reference_block {
-            Some(reference_block) => {
-                let latest_block = self.chain.latest_block_header().block_num();
-                anyhow::ensure!(
-                    reference_block <= latest_block,
-                    "reference block {reference_block} is out of range (latest {latest_block})",
-                );
+        let latest_block = self.chain.latest_block_header().block_num();
+        let reference_block = self.reference_block.unwrap_or(latest_block);
+        anyhow::ensure!(
+            reference_block <= latest_block,
+            "reference block {reference_block} is out of range (latest {latest_block})",
+        );
 
-                self.chain.get_transaction_inputs_at(
-                    reference_block,
-                    &account,
-                    &self.authenticated_notes,
-                    &self.unauthenticated_notes,
-                )
-            },
-            None => self.chain.get_transaction_inputs(
+        let mut tx_inputs = self
+            .chain
+            .get_transaction_inputs_at(
+                reference_block,
                 &account,
                 &self.authenticated_notes,
                 &self.unauthenticated_notes,
-            ),
-        }
-        .context("failed to resolve transaction inputs from mock chain")?;
+                self.required_blocks,
+            )
+            .context("failed to resolve transaction inputs from mock chain")?;
 
         let mut tx_args = TransactionArgs::default().with_note_args(self.note_args);
         if let Some(tx_script) = self.tx_script {

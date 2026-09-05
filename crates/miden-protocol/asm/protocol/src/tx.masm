@@ -1,6 +1,6 @@
-use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_FAUCET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
+use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_ASSET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
     from miden::protocol::kernel_proc_offsets
-use {AccountId, AccountProcedureRoot, BlockNumber, TransactionScriptRoot}
+use {AccountId, AccountProcedureRoot, AssetId, BlockNumber, TransactionScriptRoot}
     from miden::protocol::types
 
 #! Returns the block number of the transaction reference block.
@@ -12,12 +12,12 @@ use {AccountId, AccountProcedureRoot, BlockNumber, TransactionScriptRoot}
 #! - num is the transaction reference block number.
 #!
 #! Invocation: exec
-pub proc get_block_number() -> BlockNumber
+pub proc get_reference_block_number() -> BlockNumber
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    push.TX_GET_BLOCK_NUMBER_OFFSET
+    push.TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -26,6 +26,37 @@ pub proc get_block_number() -> BlockNumber
     # clean the stack
     swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [num]
+end
+
+#! Returns the commitment of the block with the provided block number.
+#!
+#! Any block up to and including the transaction reference block can be read.
+#!
+#! Inputs:  [block_number]
+#! Outputs: [BLOCK_COMMITMENT]
+#!
+#! Where:
+#! - block_number is the number of the block whose commitment should be returned.
+#! - BLOCK_COMMITMENT is the commitment of that block.
+#!
+#! Panics if:
+#! - block_number is not a u32.
+#! - block_number exceeds the transaction reference block number.
+#!
+#! Invocation: exec
+pub proc get_block_commitment(block_number: BlockNumber) -> word
+    padw padw padw push.0.0 movup.14
+    # => [block_number, pad(14)]
+
+    push.TX_GET_BLOCK_COMMITMENT_OFFSET
+    # => [offset, block_number, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [BLOCK_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [BLOCK_COMMITMENT]
 end
 
 #! Returns the block commitment of the transaction reference block.
@@ -37,26 +68,18 @@ end
 #! - BLOCK_COMMITMENT is the commitment to the reference block of the transaction.
 #!
 #! Invocation: exec
-pub proc get_block_commitment() -> word
-    # pad the stack
-    padw padw padw push.0.0.0
-    # => [pad(15)]
+pub proc get_reference_block_commitment() -> word
+    exec.get_reference_block_number
+    # => [reference_block_number]
 
-    push.TX_GET_BLOCK_COMMITMENT_OFFSET
-    # => [offset, pad(15)]
-
-    syscall.exec_kernel_proc
-    # => [BLOCK_COMMITMENT, pad(12)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw
+    exec.get_block_commitment
     # => [BLOCK_COMMITMENT]
 end
 
 #! Returns the timestamp of the reference block for this transaction.
 #!
 #! WARNING: the returned timestamp is not guaranteed to be precise (i.e., could be several seconds
-#! off) or recent, unless recency is separately enforced by setting transaction expiration delta.
+#! off) or recent, unless an expiration delta bounds the age of the reference block.
 #!
 #! Specifically, the reference blocks (and therefore the corresponding block timestamp) can be
 #! chosen somewhat arbitrarily by the transaction executor. While this does not allow executors to
@@ -69,8 +92,8 @@ end
 #! to consume the note when referencing the latest block. This is not necessarily a problem in all
 #! cases, but must be taken into consideration by script developers.
 #!
-#! If the above is undesired, then one possible countermeasure is to set a transaction expiration
-#! delta. For example, with a delta of 3, the oldest block account X could reference is the one at
+#! If the above is undesired, then one possible countermeasure is to set an expiration delta. For
+#! example, with an expiration delta of 3, the oldest block account X could reference is the one at
 #! time 8. This still allows for consumption by both accounts during a period of time, but shortens
 #! that window.
 #!
@@ -209,12 +232,16 @@ end
 #! and is not revalidated against the foreign account's current on-chain state at inclusion, so the
 #! returned values may be outdated.
 #!
-#! If a foreign account holds time-sensitive data, it is the responsibility of that account to set a
-#! transaction expiration delta according to how time-sensitive the data is. The delta bounds how old
-#! the reference block can be relative to the block the transaction is included in. For example, if an
-#! oracle price is updated every 5 blocks, the oracle account should set an expiration delta of 5 (or
-#! smaller): if the current block is 40 and the delta is 5, the reference block must be block 35 or
-#! newer, so a value from block 20 could not be read.
+#! Any FPI-callable procedure or asset callback that reads mutable, security-sensitive state must
+#! call [`tx::update_expiration_block_delta`] in the execution path that reads that state. This is
+#! the foreign account's responsibility because the caller chooses the transaction reference block.
+#! No expiration delta is required when a procedure reads only immutable data or when stale data is
+#! acceptable.
+#!
+#! The expiration delta bounds the age of the reference block relative to the block that includes
+#! the transaction. For example, if an oracle price is updated every 5 blocks, the oracle account
+#! should set an expiration delta of 5 or less. If the current block is 40 and the delta is 5, the
+#! reference block must be block 35 or newer, so a value from block 20 cannot be read.
 #!
 #! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
 #! Outputs: [foreign_procedure_outputs(16)]
@@ -227,6 +254,7 @@ end
 #!
 #! Panics if:
 #! - the provided foreign account ID is invalid.
+#! - FOREIGN_PROC_ROOT is not part of the foreign account's code.
 #!
 #! Invocation: exec
 @locals(6) # foreign proc root (4) + foreign account ID (2)
@@ -275,21 +303,20 @@ pub proc execute_foreign_procedure(
     # => [foreign_procedure_outputs(16)]
 end
 
-#! Updates the transaction expiration delta.
+#! Updates the expiration delta.
 #!
-#! The transaction expiration delta specifies how close to the transaction's reference block the
-#! transaction must be included into the chain. For example, if the transaction's reference block is
-#! 100 and transaction expiration delta is 10, the transaction can be included into the chain by
-#! block 110. If this does not happen, the transaction is considered expired and cannot be included
-#! into the chain.
+#! The expiration delta specifies how close to the transaction's reference block the transaction
+#! must be included in the chain. For example, if the transaction's reference block is 100 and the
+#! expiration delta is 10, the transaction can be included in the chain by block 110. If this does
+#! not happen, the transaction is considered expired and cannot be included in the chain.
 #!
-#! Once set, transaction expiration delta can be decreased, but not increased.
+#! Once set, the expiration delta can be decreased, but not increased.
 #!
 #! Inputs: [block_height_delta, ...]
 #! Output: [...]
 #!
 #! Where:
-#! - block_height_delta is the desired expiration time delta (1 to 0xFFFF).
+#! - block_height_delta is the desired expiration delta (1 to 65535).
 #!
 #! Annotation hint: is not used anywhere
 pub proc update_expiration_block_delta(block_height_delta: u16)
@@ -306,13 +333,13 @@ pub proc update_expiration_block_delta(block_height_delta: u16)
     dropw dropw dropw dropw
 end
 
-#! Returns the transaction expiration delta, or 0 if the delta has not been set.
+#! Returns the expiration delta, or 0 if the delta has not been set.
 #!
 #! Inputs: [...]
 #! Output: [block_height_delta, ...]
 #!
 #! Where:
-#! - block_height_delta is the stored expiration time delta (1 to 0xFFFF).
+#! - block_height_delta is the stored expiration delta (1 to 65535).
 #!
 #! Annotation hint: is not used anywhere
 pub proc get_expiration_block_delta() -> u16
@@ -387,28 +414,27 @@ pub proc compute_fee(num_extra_cycles: u32, exclude_notes_commitment: word) -> f
     # => [fee_amount]
 end
 
-#! Returns the fee faucet ID of the transaction's reference block.
+#! Returns the fee asset ID of the transaction's reference block.
 #!
 #! Inputs:  []
-#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
+#! Outputs: [FEE_ASSET_ID]
 #!
 #! Where:
-#! - fee_faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet issuing
-#!   the native fee asset.
+#! - FEE_ASSET_ID is the ID of the asset that fees are paid in.
 #!
 #! Invocation: exec
-pub proc get_fee_faucet_id() -> AccountId
+pub proc get_fee_asset_id() -> AssetId
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    push.TX_GET_FEE_FAUCET_ID_OFFSET
+    push.TX_GET_FEE_ASSET_ID_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, pad(14)]
+    # => [FEE_ASSET_ID, pad(12)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 movdn.3 drop drop
-    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
+    swapdw dropw dropw swapw dropw
+    # => [FEE_ASSET_ID]
 end

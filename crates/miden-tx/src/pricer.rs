@@ -1,13 +1,15 @@
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use miden_agglayer::AgglayerNote;
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::block::FeeParameters;
 use miden_protocol::errors::AssetError;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::{TransactionFee, TransactionFeeError};
-use miden_standards::note::StandardNote;
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::note::costs::NoteCost;
+use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 
 // NETWORK NOTE PRICER
 // ================================================================================================
@@ -32,16 +34,6 @@ pub enum NotePricingError {
     UnknownNoteScriptRoot(NoteScriptRoot),
 }
 
-/// The lookup resolving a note script root to its benchmarked consumption cost.
-type CostLookupFn = fn(NoteScriptRoot) -> Option<NoteCost>;
-
-/// Resolves a note script root to its benchmarked consumption cost, consulting the standard
-/// and agglayer cost tables (their script-root domains are disjoint, so the order is
-/// irrelevant).
-fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
-    StandardNote::note_cost(root).or_else(|| AgglayerNote::note_cost(root))
-}
-
 /// Prices the consumption of notes by network accounts from their benchmarked cycle costs,
 /// e.g. to populate a network account's fee schedule or to size a sponsorship.
 ///
@@ -51,31 +43,45 @@ fn resolve_note_cost(root: NoteScriptRoot) -> Option<NoteCost> {
 ///
 /// The chain's current [`FeeParameters`] provide the verification base fee. Costs are
 /// resolved from the standard and agglayer cost tables ([`StandardNote::note_cost`] and
-/// [`AgglayerNote::note_cost`]), so both families of notes are priced alike.
+/// [`AgglayerNote::note_cost`]), so both families of notes are priced alike. Costs supplied
+/// through the builder's `note_costs` take precedence over the tables, letting an account
+/// price note families the tables do not know — or a table-known script root whose
+/// consumption on that account runs extra code and so measures a different cost.
 ///
-/// The computed fees are denominated in the chain's fee asset - the asset issued by the fee
-/// faucet of the given [`FeeParameters`]. A fee schedule stores bare amounts, so install the
-/// fees only into a policy whose
+/// [`FeeSponsorshipNote`] defaults to zero because standard network-account fee collection exempts
+/// sponsorship notes from sponsoring themselves. A cost supplied through the builder's `note_cost`
+/// or `note_costs` methods takes precedence over this default.
+///
+/// The computed fees are denominated in the given fee asset. A fee schedule stores bare amounts,
+/// so install the fees only into a policy whose
 /// [`FeePolicyManager`](miden_standards::account::fees::FeePolicyManager) charges in that same
-/// asset; [`Self::fee_parameters`] exposes the parameters for that check.
+/// asset; [`Self::fee_asset_id`] exposes it for that check.
 #[derive(Debug, Clone, bon::Builder)]
 pub struct NetworkNotePricer {
+    /// Benchmarked costs overriding or extending the built-in tables: a root present here is
+    /// priced from this map, shadowing the standard and agglayer cost tables. Populated through
+    /// the builder's [`note_cost`](NetworkNotePricerBuilder::note_cost) and
+    /// [`note_costs`](NetworkNotePricerBuilder::note_costs) extensions.
+    #[builder(field)]
+    note_costs: BTreeMap<NoteScriptRoot, NoteCost>,
     /// The chain's fee parameters, providing the verification base fee.
     fee_parameters: FeeParameters,
+    /// The chain's fee asset, which the computed fees are denominated in.
+    fee_asset_id: AssetId,
     /// Safety margin in verification cycles added on top of the kernel formula.
     #[builder(default = 1)]
     safety_margin_verification_cycles: u32,
-    /// The cost lookup resolving note script roots; always `resolve_note_cost`, swapped out
-    /// only by tests.
-    #[builder(skip = resolve_note_cost)]
-    lookup: CostLookupFn,
 }
 
 impl NetworkNotePricer {
-    /// Returns the chain fee parameters the pricer computes fees under; the fees are
-    /// denominated in the asset of the parameters' fee faucet.
+    /// Returns the chain fee parameters the pricer computes fees under.
     pub fn fee_parameters(&self) -> &FeeParameters {
         &self.fee_parameters
+    }
+
+    /// Returns the asset the computed fees are denominated in.
+    pub fn fee_asset_id(&self) -> AssetId {
+        self.fee_asset_id
     }
 
     /// Returns the fee charged for a network transaction with the given fee inputs, including
@@ -113,6 +119,49 @@ impl NetworkNotePricer {
         AssetAmount::new(price).map_err(NotePricingError::PriceExceedsMaxAssetAmount)
     }
 
+    /// Builds a [`BasicConstantFeePolicy`] that prices every supplied note script root through
+    /// [`Self::price`].
+    ///
+    /// The policy's bare fee amounts are denominated in the fee asset configured by
+    /// [`Self::fee_asset_id`]. Each root is priced through [`Self::price`], so the fee includes
+    /// the default safety margin and the recursively priced notes created by consuming it.
+    pub fn basic_constant_fee_policy(
+        &self,
+        note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+    ) -> Result<BasicConstantFeePolicy, NotePricingError> {
+        let mut policy = BasicConstantFeePolicy::new();
+        for root in note_script_roots {
+            policy = policy.with_fee(root, self.price(root)?);
+        }
+        Ok(policy)
+    }
+
+    /// Builds a fee policy manager whose active [`BasicConstantFeePolicy`] is generated from the
+    /// supplied note script roots.
+    ///
+    /// The manager charges in the fee asset configured by [`Self::fee_asset_id`], keeping the
+    /// policy's bare fee amounts and their denomination together.
+    pub fn basic_constant_fee_policy_manager(
+        &self,
+        note_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+    ) -> Result<FeePolicyManager, NotePricingError> {
+        let policy = self.basic_constant_fee_policy(note_script_roots)?;
+        Ok(FeePolicyManager::builder()
+            .fee_faucet_id(self.fee_asset_id.faucet_id())
+            .active_fee_policy(policy.into())
+            .build())
+    }
+
+    /// Resolves a note script root to its pricing cost. Supplied costs take precedence over the
+    /// defaults.
+    fn resolve_note_cost(&self, root: NoteScriptRoot) -> Option<NoteCost> {
+        self.note_costs
+            .get(&root)
+            .cloned()
+            .or_else(|| StandardNote::note_cost(root))
+            .or_else(|| AgglayerNote::note_cost(root))
+    }
+
     /// Computes the recursive price of `root` as a raw `u64`, tracking the roots currently
     /// being priced to cut off self-recursion.
     fn price_recursive(
@@ -120,7 +169,13 @@ impl NetworkNotePricer {
         root: NoteScriptRoot,
         pricing_stack: &mut Vec<NoteScriptRoot>,
     ) -> Result<u64, NotePricingError> {
-        let cost = (self.lookup)(root).ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
+        if root == FeeSponsorshipNote::script_root() && !self.note_costs.contains_key(&root) {
+            return Ok(0);
+        }
+
+        let cost = self
+            .resolve_note_cost(root)
+            .ok_or(NotePricingError::UnknownNoteScriptRoot(root))?;
         // Cycle counts enter the fee computation only here, where the looked-up cost is
         // converted into the kernel's fee inputs.
         let fee_inputs = TransactionFee::new(cost.cycles()).map_err(NotePricingError::Fee)?;
@@ -142,6 +197,27 @@ impl NetworkNotePricer {
     }
 }
 
+// BUILDER EXTENSIONS
+// ================================================================================================
+
+impl<S: network_note_pricer_builder::State> NetworkNotePricerBuilder<S> {
+    /// Adds a single benchmarked note cost, overriding or extending the built-in tables for the
+    /// given script root.
+    pub fn note_cost(mut self, root: NoteScriptRoot, cost: NoteCost) -> Self {
+        self.note_costs.insert(root, cost);
+        self
+    }
+
+    /// Adds multiple benchmarked note costs, overriding or extending the built-in tables.
+    pub fn note_costs(
+        mut self,
+        note_costs: impl IntoIterator<Item = (NoteScriptRoot, NoteCost)>,
+    ) -> Self {
+        self.note_costs.extend(note_costs);
+        self
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -152,24 +228,26 @@ mod tests {
     use miden_protocol::MAX_TX_EXECUTION_CYCLES;
     use miden_protocol::account::AccountId;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-    use miden_standards::note::SwapNote;
+    use miden_standards::note::config::ConstantFeePolicyConfigNote;
     use miden_standards::note::costs::{
         MINT_CONSUMPTION_CYCLES,
         P2ID_CONSUMPTION_CYCLES,
         SWAP_CONSUMPTION_CYCLES,
     };
+    use miden_standards::note::{FeeSponsorshipNote, P2idNote, SwapNote};
 
     use super::*;
 
-    fn fee_parameters(base_fee: u32) -> FeeParameters {
+    fn fee_asset_id() -> AssetId {
         let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .expect("testing faucet ID should be valid");
-        FeeParameters::new(fee_faucet_id, base_fee)
+        AssetId::new_fungible(fee_faucet_id)
     }
 
     fn pricer(base_fee: u32, margin: u32) -> NetworkNotePricer {
         NetworkNotePricer::builder()
-            .fee_parameters(fee_parameters(base_fee))
+            .fee_parameters(FeeParameters::new(base_fee))
+            .fee_asset_id(fee_asset_id())
             .safety_margin_verification_cycles(margin)
             .build()
     }
@@ -193,27 +271,19 @@ mod tests {
 
     #[test]
     fn default_safety_margin_adds_one_verification_cycle() {
-        let default_margin =
-            NetworkNotePricer::builder().fee_parameters(fee_parameters(500)).build();
+        let default_margin = NetworkNotePricer::builder()
+            .fee_parameters(FeeParameters::new(500))
+            .fee_asset_id(fee_asset_id())
+            .build();
         assert_eq!(default_margin.fee(fee_inputs(1 << 16)).unwrap().as_u64(), 500 * 18);
-    }
-
-    /// Fabricated broken lookup returning a zero-cycle cost, which the real tables never
-    /// contain.
-    fn zero_cost_lookup(_root: NoteScriptRoot) -> Option<NoteCost> {
-        Some(NoteCost::new(0, Vec::new()))
-    }
-
-    /// Fabricated broken lookup returning a cost above the kernel's maximum cycle count.
-    fn oversized_cost_lookup(_root: NoteScriptRoot) -> Option<NoteCost> {
-        Some(NoteCost::new(u32::MAX, Vec::new()))
     }
 
     #[test]
     fn out_of_range_cycle_costs_cannot_be_priced() {
         let root = NoteScriptRoot::from_array([1, 0, 0, 0]);
-        for lookup in [zero_cost_lookup as CostLookupFn, oversized_cost_lookup] {
-            let broken = custom_pricer(lookup);
+        // Zero-cycle and above-maximum costs, which the real tables never contain.
+        for cycles in [0, u32::MAX] {
+            let broken = custom_pricer([(root, NoteCost::new(cycles, Vec::new()))]);
             assert!(matches!(broken.price(root), Err(NotePricingError::Fee(_))));
         }
     }
@@ -231,20 +301,17 @@ mod tests {
     /// Fabricated creation graph shared by the recursion and accumulation tests, mirroring
     /// PSWAP's self-recreation: `[1, 0, 0, 0]` (`2^16` cycles) creates `[2, 0, 0, 0]` and
     /// itself, `[2, 0, 0, 0]` (`2^10` cycles) creates `[3, 0, 0, 0]`, and `[3, 0, 0, 0]`
-    /// (`2^16` cycles) creates nothing.
-    fn test_graph_lookup(root: NoteScriptRoot) -> Option<NoteCost> {
+    /// (`2^16` cycles) creates nothing. The roots are fabricated, so the costs extend rather
+    /// than shadow the built-in tables.
+    fn test_graph() -> [(NoteScriptRoot, NoteCost); 3] {
         let self_recursive = NoteScriptRoot::from_array([1, 0, 0, 0]);
         let parent = NoteScriptRoot::from_array([2, 0, 0, 0]);
         let leaf = NoteScriptRoot::from_array([3, 0, 0, 0]);
-        if root == self_recursive {
-            Some(NoteCost::new(1 << 16, vec![parent, self_recursive]))
-        } else if root == parent {
-            Some(NoteCost::new(1 << 10, vec![leaf]))
-        } else if root == leaf {
-            Some(NoteCost::new(1 << 16, Vec::new()))
-        } else {
-            None
-        }
+        [
+            (self_recursive, NoteCost::new(1 << 16, vec![parent, self_recursive])),
+            (parent, NoteCost::new(1 << 10, vec![leaf])),
+            (leaf, NoteCost::new(1 << 16, Vec::new())),
+        ]
     }
 
     /// Builds a pricer whose fee for a `2^16`-cycle cost lands exactly at `AssetAmount::MAX`:
@@ -252,11 +319,12 @@ mod tests {
     /// `u32::MAX * 2^31 = AssetAmount::MAX`. The `2^10`-cycle parent's fee falls six base
     /// fees short of that.
     fn max_fee_pricer() -> NetworkNotePricer {
-        NetworkNotePricer {
-            fee_parameters: fee_parameters(u32::MAX),
-            safety_margin_verification_cycles: (1 << 31) - 17,
-            lookup: test_graph_lookup,
-        }
+        NetworkNotePricer::builder()
+            .fee_parameters(FeeParameters::new(u32::MAX))
+            .fee_asset_id(fee_asset_id())
+            .safety_margin_verification_cycles((1 << 31) - 17)
+            .note_costs(test_graph())
+            .build()
     }
 
     #[test]
@@ -278,14 +346,16 @@ mod tests {
         ));
     }
 
-    /// Builds a pricer over a fabricated lookup; only tests can bypass the built-in cost
-    /// resolution.
-    fn custom_pricer(lookup: CostLookupFn) -> NetworkNotePricer {
-        NetworkNotePricer {
-            fee_parameters: fee_parameters(500),
-            safety_margin_verification_cycles: 0,
-            lookup,
-        }
+    /// Builds a zero-margin pricer carrying the given fabricated costs.
+    fn custom_pricer(
+        costs: impl IntoIterator<Item = (NoteScriptRoot, NoteCost)>,
+    ) -> NetworkNotePricer {
+        NetworkNotePricer::builder()
+            .fee_parameters(FeeParameters::new(500))
+            .fee_asset_id(fee_asset_id())
+            .safety_margin_verification_cycles(0)
+            .note_costs(costs)
+            .build()
     }
 
     #[test]
@@ -293,7 +363,7 @@ mod tests {
         let parent = NoteScriptRoot::from_array([2, 0, 0, 0]);
         // The parent's own fee (11 verification cycles) plus the leaf's (17).
         let expected = 500 * 11 + 500 * 17;
-        assert_eq!(custom_pricer(test_graph_lookup).price(parent).unwrap().as_u64(), expected);
+        assert_eq!(custom_pricer(test_graph()).price(parent).unwrap().as_u64(), expected);
     }
 
     #[test]
@@ -302,7 +372,7 @@ mod tests {
         // Own fee + the created chain (parent + leaf) + own fee again (the nested
         // self-reference, cut off there).
         let expected = 500 * 17 + (500 * 11 + 500 * 17) + 500 * 17;
-        assert_eq!(custom_pricer(test_graph_lookup).price(selfish).unwrap().as_u64(), expected);
+        assert_eq!(custom_pricer(test_graph()).price(selfish).unwrap().as_u64(), expected);
     }
 
     #[test]
@@ -312,6 +382,53 @@ mod tests {
             pricer(500, 0).price(unknown),
             Err(NotePricingError::UnknownNoteScriptRoot(root)) if root == unknown
         ));
+    }
+
+    /// A root absent from the built-in tables is priced from the supplied costs, and its
+    /// created notes still resolve through the built-in tables.
+    #[test]
+    fn supplied_note_costs_extend_the_built_in_tables() {
+        let custom = NoteScriptRoot::from_array([7, 0, 0, 0]);
+        let pricer =
+            custom_pricer([(custom, NoteCost::new(1 << 16, vec![P2idNote::script_root()]))]);
+        let expected = pricer.fee(fee_inputs(1 << 16)).unwrap().as_u64()
+            + pricer.fee(fee_inputs(P2ID_CONSUMPTION_CYCLES)).unwrap().as_u64();
+        assert_eq!(pricer.price(custom).unwrap().as_u64(), expected);
+    }
+
+    /// Individual costs can be supplied one at a time through the `note_cost` builder extension,
+    /// accumulating across chained calls just like the iterator-taking `note_costs`.
+    #[test]
+    fn individual_note_costs_can_be_supplied_one_at_a_time() {
+        let first = NoteScriptRoot::from_array([7, 0, 0, 0]);
+        let second = NoteScriptRoot::from_array([8, 0, 0, 0]);
+        let pricer = NetworkNotePricer::builder()
+            .fee_parameters(FeeParameters::new(500))
+            .fee_asset_id(fee_asset_id())
+            .safety_margin_verification_cycles(0)
+            .note_cost(first, NoteCost::new(1 << 16, Vec::new()))
+            .note_cost(second, NoteCost::new(1 << 10, Vec::new()))
+            .build();
+        assert_eq!(
+            pricer.price(first).unwrap().as_u64(),
+            pricer.fee(fee_inputs(1 << 16)).unwrap().as_u64()
+        );
+        assert_eq!(
+            pricer.price(second).unwrap().as_u64(),
+            pricer.fee(fee_inputs(1 << 10)).unwrap().as_u64()
+        );
+    }
+
+    /// A root present in both the supplied costs and the built-in tables is priced from the
+    /// supplied cost: the map shadows the tables. The override drops the P2ID payback leg the
+    /// table's SWAP cost carries, so a table-derived price could not produce this value.
+    #[test]
+    fn supplied_note_costs_shadow_the_built_in_tables() {
+        let root = SwapNote::script_root();
+        let pricer =
+            custom_pricer([(root, NoteCost::new(2 * SWAP_CONSUMPTION_CYCLES, Vec::new()))]);
+        let expected = pricer.fee(fee_inputs(2 * SWAP_CONSUMPTION_CYCLES)).unwrap().as_u64();
+        assert_eq!(pricer.price(root).unwrap().as_u64(), expected);
     }
 
     /// The built-in lookup resolves standard notes: a SWAP prices as its own fee plus the
@@ -333,5 +450,47 @@ mod tests {
             + pricer.fee(fee_inputs(MINT_CONSUMPTION_CYCLES)).unwrap().as_u64()
             + pricer.fee(fee_inputs(P2ID_CONSUMPTION_CYCLES)).unwrap().as_u64();
         assert_eq!(pricer.price(ClaimNote::script_root()).unwrap().as_u64(), expected);
+    }
+
+    #[test]
+    fn basic_constant_fee_policy_manager_prices_every_root_in_the_native_fee_asset() {
+        let pricer = pricer(500, 0);
+        let roots = [
+            SwapNote::script_root(),
+            ClaimNote::script_root(),
+            ConstantFeePolicyConfigNote::script_root(),
+        ];
+
+        let manager = pricer.basic_constant_fee_policy_manager(roots).unwrap();
+        assert_eq!(manager.active_fee_policy(), BasicConstantFeePolicy::root());
+        assert_eq!(manager.fee_asset_id(), pricer.fee_asset_id());
+    }
+
+    #[test]
+    fn sponsorship_defaults_to_zero_but_allows_a_cost_override() {
+        let root = FeeSponsorshipNote::script_root();
+
+        let default_pricer = pricer(500, 0);
+        let default_policy = default_pricer.basic_constant_fee_policy([root]).unwrap();
+        assert_eq!(default_pricer.price(root).unwrap(), AssetAmount::ZERO);
+        assert_eq!(default_policy.fee_schedule().get(&root), Some(&AssetAmount::ZERO));
+
+        const CUSTOM_SPONSORSHIP_CYCLES: u32 = 65_536;
+        let custom_pricer =
+            custom_pricer([(root, NoteCost::new(CUSTOM_SPONSORSHIP_CYCLES, Vec::new()))]);
+        let custom_price = custom_pricer.fee(fee_inputs(CUSTOM_SPONSORSHIP_CYCLES)).unwrap();
+        let custom_policy = custom_pricer.basic_constant_fee_policy([root]).unwrap();
+
+        assert_eq!(custom_pricer.price(root).unwrap(), custom_price);
+        assert_eq!(custom_policy.fee_schedule().get(&root), Some(&custom_price));
+    }
+
+    #[test]
+    fn basic_constant_fee_policy_rejects_unknown_roots() {
+        let unknown = NoteScriptRoot::from_array([9, 9, 9, 9]);
+        assert!(matches!(
+            pricer(500, 0).basic_constant_fee_policy([unknown]),
+            Err(NotePricingError::UnknownNoteScriptRoot(root)) if root == unknown
+        ));
     }
 }

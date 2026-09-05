@@ -29,23 +29,25 @@ use alloc::vec::Vec;
 
 use miden_protocol::note::NoteScriptRoot;
 
-use crate::note::{
+use crate::note::config::{
     AllowlistConfigNote,
     BlocklistConfigNote,
-    BurnNote,
     ConstantFeePolicyConfigNote,
     FaucetMetadataConfigNote,
     FaucetPolicyConfigNote,
-    FeeSponsorshipNote,
     MinBurnAmountConfigNote,
-    MintNote,
     NetworkAccountConfigNote,
     OwnerConfigNote,
+    PauseConfigNote,
+    RbacConfigNote,
+};
+use crate::note::{
+    BurnNote,
+    FeeSponsorshipNote,
+    MintNote,
     P2idNote,
     P2ideNote,
-    PauseConfigNote,
     PswapNote,
-    RbacConfigNote,
     StandardNote,
     SwapNote,
 };

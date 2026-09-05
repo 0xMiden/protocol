@@ -8,12 +8,14 @@ use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
+    AssetDelta,
     StorageMap,
     StorageMapKey,
     StorageSlotName,
     StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -267,13 +269,12 @@ impl TransactionEvent {
                         source,
                     }
                 })?;
-                let asset =
-                    Asset::from_id_and_value(asset_id, delta_asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountOnAssetDeltaComputation",
-                            source,
-                        }
-                    })?;
+                let asset = Asset::new(asset_id, delta_asset_value).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountOnAssetDeltaComputation",
+                        source,
+                    }
+                })?;
                 let delta_op = AssetDeltaOperation::try_from(
                     u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
                         TransactionKernelError::other("failed to convert asset delta op to u8")
@@ -287,7 +288,7 @@ impl TransactionEvent {
                 })?;
 
                 TransactionEvent::AccountOnAssetDeltaComputation {
-                    delta: AssetDelta { delta_op, asset },
+                    delta: AssetDelta::new(delta_op, asset),
                 }
             }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
@@ -488,6 +489,11 @@ impl TransactionEvent {
                 Some(TransactionEvent::InputNoteIndexLookup { note_id })
             },
 
+            // TODO(block_witness_lazy_loading): provide the authentication witness of the requested
+            // block so that a block which the transaction inputs do not already authenticate can be
+            // read.
+            TransactionEventId::TxBeforeBlockWitnessLoad => None,
+
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
@@ -618,7 +624,7 @@ impl TxSummaryOrSignature {
     }
 }
 
-// ASSET PATCH AND DELTA
+// ASSET PATCH
 // ================================================================================================
 
 #[derive(Debug)]
@@ -628,12 +634,6 @@ pub(crate) struct AssetPatch {
     pub initial_vault_value: Word,
     /// The absolute value of `asset_id` in the vault after the operation.
     pub final_vault_value: Word,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOperation,
-    pub asset: Asset,
 }
 
 // RECIPIENT DATA
@@ -755,9 +755,10 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```text
 /// Expected advice map state: {
 ///     MESSAGE: [
-///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-///         BLOCK_COMMITMENT, [expiration_delta, user_param0, user_param1, user_param2],
-///         [user_param3, user_param4, user_param5, user_param6]
+///         [version, metadata, user_param0, user_param1],
+///         [user_param2, user_param3, user_param4, user_param5],
+///         ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+///         OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
 ///     ]
 /// }
 /// ```
@@ -772,34 +773,48 @@ fn extract_tx_summary<'store, STORE>(
         ));
     };
 
-    // This also validates the preimage length, which is what makes the commitment words below
-    // safe to slice out.
-    let (expiration_delta, user_params) = TransactionSummary::try_params_from_elements(commitments)
+    // This also validates the preimage length and the layout version, which is what makes the
+    // commitment words below safe to slice out.
+    let (metadata, user_params) = TransactionSummary::try_params_from_elements(commitments)
         .map_err(|source| {
             TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(source))
         })?;
 
-    let account_delta_commitment = extract_word(commitments, 0);
-    let input_notes_commitment = extract_word(commitments, 4);
-    let output_notes_commitment = extract_word(commitments, 8);
-    let block_commitment = extract_word(commitments, 12);
+    let account_delta_commitment = extract_word(commitments, 8);
+    let input_notes_commitment = extract_word(commitments, 12);
+    let output_notes_commitment = extract_word(commitments, 16);
+    let block_commitment = extract_word(commitments, 20);
 
-    // Validate the expiration delta against the kernel state so that a summary preimage
-    // carrying a fabricated delta is rejected rather than presented to the signer.
-    let expected_expiration_delta = process.get_expiration_block_delta()?;
-    if expiration_delta != expected_expiration_delta {
-        return Err(TransactionKernelError::TransactionSummaryExpirationDeltaMismatch {
-            expected: expected_expiration_delta,
-            actual: expiration_delta,
+    // Validate the metadata against the kernel state so that a summary preimage carrying
+    // fabricated values is rejected rather than presented to the signer.
+    //
+    // The deadlines are compared instead of the raw deltas because the summary measures its delta
+    // from the block it binds while the kernel measures it from the reference block. Both name the
+    // same block for a summary bound to the reference block, and components binding an earlier
+    // block, such as the multisig ones, rebase the kernel's delta onto it.
+    let expected_expiration = expiration_block_num(
+        process.get_reference_block_number()?,
+        process.get_expiration_block_delta()?,
+    );
+    let summary_expiration =
+        expiration_block_num(metadata.block_number(), metadata.expiration_delta());
+    if summary_expiration != expected_expiration {
+        return Err(TransactionKernelError::TransactionSummaryExpirationMismatch {
+            expected: expected_expiration,
+            actual: summary_expiration,
         });
     }
 
+    // The block number itself is validated by `build_tx_summary`, which rejects a summary naming a
+    // block the transaction does not authenticate and cross-checks the bound block commitment
+    // against the one the host knows for that block.
     let tx_summary = base_host.build_tx_summary(
         account_delta_commitment,
         input_notes_commitment,
         output_notes_commitment,
+        metadata.block_number(),
         block_commitment,
-        expiration_delta,
+        metadata.expiration_delta(),
         user_params,
     )?;
 
@@ -814,6 +829,19 @@ fn extract_tx_summary<'store, STORE>(
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Returns the block by which a transaction expiring `expiration_delta` blocks after `block_number`
+/// must be included, or [`BlockNumber::MAX`] if the delta is unset, which is how the kernel denotes
+/// a transaction that does not expire.
+fn expiration_block_num(block_number: BlockNumber, expiration_delta: u16) -> BlockNumber {
+    if expiration_delta == 0 {
+        return BlockNumber::MAX;
+    }
+
+    // A fabricated block number close to the maximum would overflow, but saturating is safe: the
+    // bound block is validated against the blocks the transaction authenticates further down.
+    BlockNumber::from(block_number.as_u32().saturating_add(u32::from(expiration_delta)))
+}
 
 /// Builds the note metadata from sender, note type and tag if all inputs are valid.
 fn build_note_metadata(
@@ -878,7 +906,9 @@ fn extract_note_attachment(
     }
 
     let words: Vec<Word> = elements
-        .chunks_exact(WORD_SIZE)
+        .as_chunks::<WORD_SIZE>()
+        .0
+        .iter()
         .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();
 

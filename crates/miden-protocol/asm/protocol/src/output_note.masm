@@ -1,4 +1,5 @@
 use miden::protocol::note
+use miden::protocol::note_internal
 use miden::core::crypto::hashes::poseidon2
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 use {Asset, Bool, MemoryAddress, NoteId, NoteMetadata, NoteRecipient, NoteTag, NoteType}
@@ -119,7 +120,7 @@ pub proc get_assets(dest_ptr: MemoryAddress, note_index: u16) -> u8
     # => [ASSETS_COMMITMENT, num_assets, dest_ptr, num_assets]
 
     # write the assets stored in the advice map to the specified memory pointer
-    exec.note::write_assets_to_memory
+    exec.note_internal::write_assets_to_memory
     # => [num_assets]
 end
 
@@ -505,7 +506,7 @@ pub proc write_attachment_commitments_to_memory(dest_ptr: MemoryAddress, note_in
     swap exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 
-    exec.note::write_attachment_commitments_to_memory
+    exec.note_internal::write_attachment_commitments_to_memory
     # => [num_attachments]
 end
 
@@ -546,6 +547,6 @@ pub proc write_attachment_to_memory(
     locaddr.0 swap
     # => [num_attachments, attachment_commitments_ptr, attachment_idx, dest_ptr]
 
-    exec.note::write_indexed_attachment_to_memory
+    exec.note_internal::write_indexed_attachment_to_memory
     # => [num_words]
 end

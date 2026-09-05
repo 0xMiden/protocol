@@ -1,0 +1,30 @@
+[package]
+authors.workspace      = true
+categories             = ["encoding", "no-std"]
+description            = "Canonical Protobuf representations for Miden protocol objects"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["miden", "protobuf", "protocol", "serialization"]
+license.workspace      = true
+name                   = "miden-objects"
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[features]
+default = ["std"]
+std     = ["miden-protocol/std", "prost/std"]
+
+[dependencies]
+miden-protocol = { workspace = true }
+prost          = { features = ["derive"], workspace = true }
+
+[build-dependencies]
+prost       = { features = ["derive"], workspace = true }
+prost-build = { workspace = true }
+protox      = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+miden-protocol = { features = ["testing"], workspace = true }

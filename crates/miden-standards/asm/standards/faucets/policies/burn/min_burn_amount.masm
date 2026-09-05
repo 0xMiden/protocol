@@ -44,7 +44,7 @@ pub proc check_policy
     dropw
     # => [ASSET_VALUE, pad(12)]
 
-    exec.fungible_asset::value_into_amount
+    exec.fungible_asset::value_into_amount_unchecked
     # => [amount, pad(15)]
 
     push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item

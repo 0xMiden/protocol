@@ -17,9 +17,12 @@
 # - Every role has an effective admin role. It is the role's configured
 #   `admin_role_symbol` when set, otherwise the built-in `ADMIN` role. Only members of a
 #   role's effective admin role may grant, revoke, or re-point (`set_role_admin`) that role.
-# - Delegation is exclusive: once a role's admin is delegated to another role, the `ADMIN`
-#   role no longer has any authority over it. This lets a role be placed exclusively under a
-#   dedicated admin role and kept out of reach of the general administrator.
+# - Delegation is exclusive while the delegated admin role is populated: the `ADMIN` role then has
+#   no authority over the delegated role. This lets a role be placed exclusively under a dedicated
+#   admin role and kept out of reach of the general administrator.
+# - Delegation is not a one-way door: a memberless role can authorize nothing, so authority over
+#   the roles a memberless role administers falls back to the `ADMIN` role. Delegating to a dead
+#   role therefore cannot orphan a role permanently, and only emptying `ADMIN` itself is final.
 # - The `ADMIN` role administers itself (its own effective admin is `ADMIN`), so `ADMIN`
 #   membership can be granted, revoked, and renounced through the standard API.
 # - A role is considered to "exist" when it has at least one member. Role admin
@@ -38,6 +41,7 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::native_account
+use miden::standards::access::role_symbol
 
 # CONSTANTS
 # =================================================================================================
@@ -65,7 +69,6 @@ const ADMIN_ROLE = 1836707
 const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
 const ERR_SENDER_NOT_ROLE_ADMIN = "note sender does not hold the role's admin role"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
-const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
 const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 
 # PUBLIC INTERFACE
@@ -141,6 +144,9 @@ end
 #! Pass `admin_role_symbol = 0` to clear the delegation and revert the role to
 #! management by the default `ADMIN` role.
 #!
+#! Delegating to a memberless role does not put the role out of reach: authority over it falls
+#! back to the `ADMIN` role for as long as the delegate stays memberless.
+#!
 #! Inputs:  [role_symbol, admin_role_symbol, pad(14)]
 #! Outputs: [pad(16)]
 #!
@@ -150,13 +156,18 @@ end
 #!   management by the default `ADMIN` role.
 #!
 #! Panics if:
-#! - role_symbol is zero.
-#! - the note sender does not hold the role's current effective admin role.
+#! - role_symbol is not a valid role symbol encoding.
+#! - admin_role_symbol is non-zero and is not a valid role symbol encoding.
+#! - the note sender is not authorized to administer the role (see
+#!   `assert_sender_is_role_admin`).
 #!
 #! Invocation: call
 @account_procedure
 pub proc set_role_admin
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
+    # => [role_symbol, new_admin_role_symbol, pad(14)]
+
+    dup.1 exec.role_symbol::validate_admin_role_symbol
     # => [role_symbol, new_admin_role_symbol, pad(14)]
 
     dup exec.assert_sender_is_role_admin
@@ -185,14 +196,15 @@ end
 #! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - role_symbol is zero.
-#! - the note sender does not hold the role's effective admin role.
+#! - role_symbol is not a valid role symbol encoding.
+#! - the note sender is not authorized to administer the role (see
+#!   `assert_sender_is_role_admin`).
 #! - the account ID is invalid.
 #!
 #! Invocation: call
 @account_procedure
 pub proc grant_role
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     dup exec.assert_sender_is_role_admin
@@ -224,14 +236,15 @@ end
 #! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - role_symbol is zero.
-#! - the note sender does not hold the role's effective admin role.
+#! - role_symbol is not a valid role symbol encoding.
+#! - the note sender is not authorized to administer the role (see
+#!   `assert_sender_is_role_admin`).
 #! - the account does not hold the role.
 #!
 #! Invocation: call
 @account_procedure
 pub proc revoke_role
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     dup exec.assert_sender_is_role_admin
@@ -253,13 +266,13 @@ end
 #! - role_symbol is the encoded role symbol to renounce.
 #!
 #! Panics if:
-#! - role_symbol is zero.
+#! - role_symbol is not a valid role symbol encoding.
 #! - the note sender does not hold the role.
 #!
 #! Invocation: call
 @account_procedure
 pub proc renounce_role
-    dup exec.assert_role_symbol_non_zero
+    dup exec.role_symbol::validate_encoding
     # => [role_symbol, pad(15)]
 
     exec.active_note::get_sender
@@ -286,15 +299,16 @@ end
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #!
+#! The symbol is not validated here. Callers pass either a compile-time constant or a value they
+#! have already validated, and a non-canonical symbol can match no stored membership anyway, so it
+#! fails the assertion below. `authority::assert_authorized_rbac`, the one caller that forwards a
+#! symbol read from unvalidated storage, validates it before calling.
+#!
 #! Panics if:
-#! - role_symbol is zero.
 #! - the note sender does not hold the given role.
 #!
 #! Invocation: exec
 pub proc assert_sender_has_role
-    dup exec.assert_role_symbol_non_zero
-    # => [role_symbol]
-
     exec.is_sender_in_role
     # => [has_role]
 
@@ -319,19 +333,6 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Asserts that a role symbol is non-zero.
-#!
-#! Inputs:  [role_symbol]
-#! Outputs: []
-#!
-#! Panics if:
-#! - role_symbol is zero.
-#!
-#! Invocation: exec
-proc assert_role_symbol_non_zero
-    eq.0 assertz.err=ERR_ROLE_SYMBOL_ZERO
-    # => []
-end
 
 #! Returns the config for a role.
 #!
@@ -441,21 +442,30 @@ proc get_effective_role_admin
     # => [effective_admin_role_symbol]
 end
 
-#! Asserts that the note sender holds the role's effective admin role.
+#! Asserts that the note sender is authorized to administer a role.
 #!
-#! The effective admin is the role's configured delegated admin, or the built-in `ADMIN`
-#! role when none is configured.
+#! Authority rests with the role's effective admin role: its configured delegated admin, or the
+#! built-in `ADMIN` role when none is configured.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
 #!
 #! Panics if:
-#! - the note sender does not hold the role's effective admin role.
+#! - the note sender holds neither the role's effective admin role nor, when that role is
+#!   memberless, the `ADMIN` role.
 #!
 #! Invocation: exec
 proc assert_sender_is_role_admin
     exec.get_effective_role_admin
     # => [effective_admin_role_symbol]
+
+    push.ADMIN_ROLE
+    dup.1 exec.get_role_member_count_internal eq.0
+    # => [is_memberless, admin_role, effective_admin_role_symbol]
+
+    # A memberless effective admin cannot authorize anything, so fall back to the `ADMIN` role.
+    cdrop
+    # => [authorizing_role_symbol]
 
     exec.is_sender_in_role
     # => [has_admin_role]

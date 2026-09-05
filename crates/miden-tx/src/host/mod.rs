@@ -42,6 +42,7 @@ use miden_protocol::account::{
     AccountId,
     AccountPatch,
     AccountStorageHeader,
+    AssetDelta,
     PartialAccount,
     StorageMapKey,
     StorageSlotHeader,
@@ -49,6 +50,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     InputNote,
@@ -68,7 +70,7 @@ pub(crate) use tx_event::{
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
-use crate::host::tx_event::{AssetDelta, AssetPatch};
+use crate::host::tx_event::AssetPatch;
 
 // TRANSACTION BASE HOST
 // ================================================================================================
@@ -101,8 +103,8 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Input notes consumed by the transaction.
     input_notes: InputNotes<InputNote>,
 
-    /// The commitment to the reference block of the transaction.
-    ref_block_commitment: Word,
+    /// The commitments of the blocks the transaction authenticates, keyed by block number.
+    block_commitments: BTreeMap<BlockNumber, Word>,
 
     /// The list of notes created while executing a transaction stored as note_ptr |-> note_builder
     /// map.
@@ -120,7 +122,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
-        ref_block_commitment: Word,
+        block_commitments: BTreeMap<BlockNumber, Word>,
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
@@ -145,7 +147,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
-            ref_block_commitment,
+            block_commitments,
             core_lib_handlers,
         }
     }
@@ -288,7 +290,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         let is_found = Felt::from(note_idx.is_some() as u8);
         let note_idx = Felt::from(note_idx.unwrap_or(0));
 
-        vec![AdviceMutation::extend_advice_stack([note_idx, is_found].into_iter().collect())]
+        vec![AdviceMutation::extend_advice_stack_with([note_idx, is_found])]
     }
 
     /// Handles the event if the core lib event handler registry contains a handler with the emitted
@@ -324,7 +326,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
-        vec![AdviceMutation::extend_advice_stack(signature.into())]
+        vec![AdviceMutation::extend_advice_stack_with(signature)]
     }
 
     /// Adds an asset to the output note identified by the note index.
@@ -366,9 +368,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_advice_stack(
-            [Felt::from(proc_idx)].into_iter().collect(),
-        )])
+        Ok(vec![AdviceMutation::extend_advice_stack_with([Felt::from(proc_idx)])])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.
@@ -426,11 +426,15 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Tracks the computation of an asset delta for the account delta.
+    ///
+    /// The kernel iterates its asset delta map once per computation, so this is called at most once
+    /// per asset ID, and only after
+    /// [`Self::on_account_before_asset_delta_computation`] has reset the accumulated delta.
     pub fn on_account_on_asset_delta_computation(
         &mut self,
         delta: AssetDelta,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.update_asset_delta(delta);
+        self.update_tracker.add_asset_delta(delta);
 
         Ok(Vec::new())
     }
@@ -455,6 +459,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         account_delta_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        block_number: BlockNumber,
         block_commitment: Word,
         expiration_delta: u16,
         user_params: TransactionSummaryUserParams,
@@ -497,8 +502,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             ));
         }
 
-        let expected_block_commitment = self.ref_block_commitment;
-        if expected_block_commitment != block_commitment {
+        let expected_block_commitment = self
+            .block_commitments
+            .get(&block_number)
+            .ok_or(TransactionKernelError::TransactionSummaryUnknownBlockNumber(block_number))?;
+        if *expected_block_commitment != block_commitment {
             return Err(TransactionKernelError::TransactionSummaryCommitmentMismatch(
                 format!(
                     "expected block commitment to be {expected_block_commitment} but was {block_commitment}"
@@ -511,6 +519,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             account_delta,
             input_notes,
             output_notes,
+            block_number,
             block_commitment,
             expiration_delta,
             user_params,

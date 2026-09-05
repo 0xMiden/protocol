@@ -7,7 +7,7 @@ pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT} from miden::protocol::asset
 # RE-EXPORTS
 # ================================================================================================
 
-pub use {fungible_value_into_amount as value_into_amount} from miden::protocol::asset
+pub use {fungible_value_into_amount_unchecked as value_into_amount_unchecked} from miden::protocol::asset
 
 # ERRORS
 # ================================================================================================
@@ -17,6 +17,16 @@ const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET = "get_balance 
 const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT = "fungible asset build operation called with amount that exceeds the maximum allowed asset amount"
 
 const ERR_FUNGIBLE_ASSET_VALUE_MALFORMED = "fungible asset value is not well-formed"
+
+const ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE = "fungible asset ID's composition must be fungible"
+
+const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO = "fungible asset ID asset class prefix and suffix must be zero"
+
+# CONSTANTS
+# ================================================================================================
+
+#! Encodes the asset metadata with composition fungible and asset version 1.
+const ASSET_METADATA_FUNGIBLE = 0x11
 
 # PROCEDURES
 # ================================================================================================
@@ -32,13 +42,8 @@ const ERR_FUNGIBLE_ASSET_VALUE_MALFORMED = "fungible asset value is not well-for
 #!
 #! Invocation: exec
 pub proc create_id
-    # push the fungible composition for create_metadata
-    # this is equivalent to the asset metadata
-    push.COMPOSITION_FUNGIBLE
-    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
-
-    # merge the asset metadata into the lower 8 bits of the suffix
-    add
+    # merge the fungible asset metadata into the lower 8 bits of the suffix
+    add.ASSET_METADATA_FUNGIBLE
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
 
     push.0.0
@@ -108,7 +113,8 @@ end
 #!
 #! Panics if:
 #! - the asset composition encoded in ASSET_ID is not fungible.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_native_account_balance
@@ -122,7 +128,7 @@ pub proc get_initial_native_account_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.value_into_amount
+    exec.value_into_amount_unchecked
     # => [balance]
 end
 
@@ -151,7 +157,7 @@ pub proc get_active_account_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.value_into_amount
+    exec.value_into_amount_unchecked
     # => [balance]
 end
 
@@ -167,16 +173,13 @@ end
 #! - amount is the amount of the fungible asset.
 #!
 #! Invocation: exec
-pub proc to_amount
+pub proc to_amount_unchecked
     # => [ASSET_ID, [amount, 0, 0, 0]]
     dup.4
     # => [amount, ASSET_ID, ASSET_VALUE]
 end
 
-#! Validates the provided asset value and returns its amount.
-#!
-#! This procedure checks that the provided asset value is well-formed (first, second and third
-#! elements are zeros) and checks that the amount doesn't exceed the maximum.
+#! Validates the given fungible asset value and returns its amount, consuming it.
 #!
 #! Inputs:  [ASSET_VALUE]
 #! Outputs: [amount]
@@ -190,7 +193,7 @@ end
 #! - the asset amount exceeds maximum allowed amount.
 #!
 #! Invocation: exec
-pub proc try_value_to_amount
+pub proc value_into_amount
     # assert the amount does not exceed the maximum fungible asset amount
     dup lte.MAX_AMOUNT assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
     # => [amount, e1, e2, e3]
@@ -201,4 +204,42 @@ pub proc try_value_to_amount
     assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
     assertz.err=ERR_FUNGIBLE_ASSET_VALUE_MALFORMED
     # => [amount]
+end
+
+#! Validates that a fungible asset is well formed.
+#!
+#! This mirrors the kernel's fungible asset validation, except for the asset ID's account ID, whose
+#! structure the kernel validates and which is therefore not re-checked here.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE]
+#! Outputs: [ASSET_ID, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset ID's composition is not fungible.
+#! - the asset ID's asset class is not zero.
+#! - the asset value is not well-formed (see value_into_amount).
+#!
+#! Invocation: exec
+pub proc validate
+    # assert the asset composition is fungible
+    exec.asset::id_to_composition
+    eq.COMPOSITION_FUNGIBLE
+    assert.err=ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # assert the asset class is zero, since a fungible asset ID does not encode an asset class
+    exec.asset::id_to_asset_class
+    # => [asset_class_suffix, asset_class_prefix, ASSET_ID, ASSET_VALUE]
+
+    assertz.err=ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
+    assertz.err=ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO
+    # => [ASSET_ID, ASSET_VALUE]
+
+    # assert the value word is well-formed, i.e. [amount, 0, 0, 0] with amount <= MAX_AMOUNT
+    dupw.1 exec.value_into_amount drop
+    # => [ASSET_ID, ASSET_VALUE]
 end

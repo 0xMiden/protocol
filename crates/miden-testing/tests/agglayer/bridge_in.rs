@@ -9,6 +9,7 @@ use miden_agglayer::errors::{
     ERR_GER_NOT_FOUND,
     ERR_TOKEN_NOT_REGISTERED,
 };
+use miden_agglayer::testing::create_existing_agglayer_faucet;
 use miden_agglayer::{
     B2AggNote,
     ClaimNote,
@@ -21,8 +22,6 @@ use miden_agglayer::{
     SmtNode,
     UpdateGerNote,
     agglayer_package,
-    create_existing_agglayer_faucet,
-    create_existing_agglayer_faucet_with_callbacks,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
@@ -35,9 +34,9 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::policies::MintPolicy;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
+use miden_standards::errors::standards::ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
 use miden_standards::interop::eth::{EthAddress, EthEmbeddedAccountId};
-use miden_standards::note::P2idNote;
+use miden_standards::note::{FeeSponsorshipNote, P2idNote, StandardNote};
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
@@ -49,8 +48,14 @@ use super::test_utils::{
     MIDEN_NETWORK_ID,
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
+    VERIFICATION_BASE_FEE,
+    add_fee_sponsorship,
+    assert_transaction_paid_fee,
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
+    create_existing_priced_bridge,
+    find_output_note,
+    priced_faucet_builder,
 };
 
 // CONSTANTS
@@ -126,13 +131,18 @@ fn merkle_proof_verification_code(
 /// - [`ClaimDataSource::L2ToMiden`]: uses rollup deposit data from
 ///   `claim_asset_vectors_l2_tx.json`, produced by simulating a rollup deposit.
 #[rstest::rstest]
-#[case::l1_to_miden(ClaimDataSource::L1ToMiden)]
-#[case::l2_to_miden(ClaimDataSource::L2ToMiden)]
+#[case::l1_to_miden(ClaimDataSource::L1ToMiden, 0)]
+#[case::l2_to_miden(ClaimDataSource::L2ToMiden, 0)]
+#[case::l1_to_miden_with_fees(ClaimDataSource::L1ToMiden, VERIFICATION_BASE_FEE)]
 #[tokio::test]
-async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
+async fn test_bridge_in_claim_to_p2id(
+    #[case] data_source: ClaimDataSource,
+    #[case] verification_base_fee: u32,
+) -> anyhow::Result<()> {
     use miden_agglayer::AggLayerBridge;
 
-    let mut builder = MockChain::builder();
+    let fees_enabled = verification_base_fee > 0;
+    let mut builder = MockChain::builder().verification_base_fee(verification_base_fee);
 
     // CREATE FAUCET MANAGER ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
@@ -155,14 +165,14 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account_with_roles(
+    let bridge_account = create_existing_priced_bridge(
         bridge_seed,
         bridge_admin_account_id(),
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
-        MIDEN_NETWORK_ID,
-    );
+        verification_base_fee,
+    )?;
     assert_eq!(AggLayerBridge::network_id(&bridge_account)?, MIDEN_NETWORK_ID);
     builder.add_account(bridge_account.clone())?;
 
@@ -170,9 +180,10 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // --------------------------------------------------------------------------------------------
     let (proof_data, leaf_data, ger, cgi_chain_hash) = data_source.get_data();
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // Use the origin token address and network from the claim data.
     // --------------------------------------------------------------------------------------------
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -182,14 +193,17 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let origin_network = leaf_data.origin_network;
     let scale = 10u8;
 
-    let agglayer_faucet = create_existing_agglayer_faucet_with_callbacks(
+    let agglayer_faucet = priced_faucet_builder(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
         Felt::ZERO,
         bridge_account.id(),
-    );
+        verification_base_fee,
+    )?
+    .build_existing()?;
     builder.add_account(agglayer_faucet.clone())?;
 
     // Get the destination account ID from the leaf data.
@@ -265,6 +279,21 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         UpdateGerNote::create(ger, ger_injector.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
+    let config_sponsorship = add_fee_sponsorship(
+        &mut builder,
+        &config_note,
+        bridge_account.id(),
+        verification_base_fee,
+    )?;
+    let update_ger_sponsorship = add_fee_sponsorship(
+        &mut builder,
+        &update_ger_note,
+        bridge_account.id(),
+        verification_base_fee,
+    )?;
+    let claim_sponsorship =
+        add_fee_sponsorship(&mut builder, &claim_note, bridge_account.id(), verification_base_fee)?;
+
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
     // --------------------------------------------------------------------------------------------
     let mut mock_chain = builder.clone().build()?;
@@ -274,8 +303,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let config_mock_tx = mock_chain
         .build_transaction(bridge_account.id())
         .authenticated_input_note(config_note.id())
+        .authenticated_input_notes(config_sponsorship.as_ref().map(Note::id))
         .build()?;
     let config_executed = config_mock_tx.execute().await?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&config_executed);
+    }
 
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
@@ -285,8 +318,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let update_ger_mock_tx = mock_chain
         .build_transaction(bridge_account.id())
         .authenticated_input_note(update_ger_note.id())
+        .authenticated_input_notes(update_ger_sponsorship.as_ref().map(Note::id))
         .build()?;
     let update_ger_executed = update_ger_mock_tx.execute().await?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&update_ger_executed);
+    }
 
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
@@ -298,12 +335,16 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .build_transaction(bridge_account.id())
         .unauthenticated_input_note(claim_note)
         .foreign_accounts(vec![faucet_foreign_inputs])
+        .authenticated_input_notes(claim_sponsorship.as_ref().map(Note::id))
         .build()?;
 
     let claim_executed = claim_mock_tx
         .execute()
         .await
         .context("TX2: CLAIM note execution against bridge failed")?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&claim_executed);
+    }
 
     // VERIFY CGI CHAIN HASH WAS SUCCESSFULLY UPDATED
     // --------------------------------------------------------------------------------------------
@@ -323,8 +364,14 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
-    assert_eq!(claim_executed.output_notes().num_notes(), 1);
-    let mint_output_note = claim_executed.output_notes().get_note(0);
+    assert_eq!(claim_executed.output_notes().num_notes(), if fees_enabled { 3 } else { 1 });
+    let mint_output_note = find_output_note(&claim_executed, StandardNote::MINT.script_root())
+        .expect("CLAIM should create a MINT note");
+    let mint_sponsorship_id = fees_enabled.then(|| {
+        find_output_note(&claim_executed, FeeSponsorshipNote::script_root())
+            .expect("fee-enabled CLAIM should sponsor its MINT note")
+            .id()
+    });
 
     // Verify the MINT note was sent by the bridge
     assert_eq!(mint_output_note.metadata().sender(), bridge_account.id());
@@ -340,19 +387,23 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .build_transaction(agglayer_faucet.id())
         .authenticated_input_note(mint_output_note.id())
         .add_note_script(P2idNote::script())
+        .authenticated_input_notes(mint_sponsorship_id)
         .build()?;
 
     let mint_executed = mint_mock_tx
         .execute()
         .await
         .context("TX3: MINT note execution against faucet failed")?;
+    if fees_enabled {
+        assert_transaction_paid_fee(&mint_executed);
+    }
 
     // VERIFY P2ID NOTE WAS CREATED BY THE FAUCET
     // --------------------------------------------------------------------------------------------
 
-    // Check that exactly one P2ID note was created by the faucet
-    assert_eq!(mint_executed.output_notes().num_notes(), 1);
-    let output_note = mint_executed.output_notes().get_note(0);
+    assert_eq!(mint_executed.output_notes().num_notes(), if fees_enabled { 2 } else { 1 });
+    let output_note = find_output_note(&mint_executed, StandardNote::P2ID.script_root())
+        .expect("MINT should create a P2ID note");
 
     // Verify note metadata properties
     assert_eq!(output_note.metadata().sender(), agglayer_faucet.id());
@@ -435,7 +486,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 /// consuming faucet A's MINT note is the faucet bind itself. The MINT note embeds the full
 /// `ASSET` (`ASSET_ID` + `ASSET_VALUE`) in its storage; `fungible::mint_and_send` derives the
 /// asset for the consuming faucet and rejects it with
-/// `ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET` when its key does not match the stored
+/// `ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET` when its key does not match the stored
 /// `ASSET_ID`. Before this fix the MINT note carried only the amount, so faucet B would mint its
 /// own token and the cross-faucet consumption would succeed.
 #[tokio::test]
@@ -460,13 +511,17 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
 
+    let token_name_a = "AggLayer Token A";
     let token_symbol_a = "AGGA";
+    let token_name_b = "AggLayer Token B";
     let token_symbol_b = "AGGB";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -476,10 +531,12 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let faucet_a_seed = builder.rng_mut().draw_word();
     let faucet_a = create_existing_agglayer_faucet(
         faucet_a_seed,
+        token_name_a,
         token_symbol_a,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(faucet_a.clone())?;
@@ -493,10 +550,12 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let other_token_address = EthAddress::new(other_bytes);
     let faucet_b = create_existing_agglayer_faucet(
         faucet_b_seed,
+        token_name_b,
         token_symbol_b,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(faucet_b.clone())?;
@@ -625,10 +684,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         .build()?;
 
     let attack_result = attack_mock_tx.execute().await;
-    assert_transaction_executor_error!(
-        attack_result,
-        ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
-    );
+    assert_transaction_executor_error!(attack_result, ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET);
 
     Ok(())
 }
@@ -667,6 +723,8 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -680,9 +738,10 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     leaf_data.destination_network = MIDEN_NETWORK_ID.saturating_add(1);
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // Use the origin token address and network from the claim data.
     // --------------------------------------------------------------------------------------------
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -694,10 +753,12 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let metadata_hash = leaf_data.metadata_hash;
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -818,6 +879,8 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -826,6 +889,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -837,10 +901,12 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -985,6 +1051,8 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -993,6 +1061,7 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -1004,10 +1073,12 @@ async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -1143,6 +1214,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1432,6 +1505,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
@@ -1683,12 +1758,15 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
 
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -1708,10 +1786,12 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -1828,12 +1908,15 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
 
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -1849,10 +1932,12 @@ async fn test_reregister_clears_prior_token_key() -> anyhow::Result<()> {
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;

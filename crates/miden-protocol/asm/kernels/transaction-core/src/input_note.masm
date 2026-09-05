@@ -1,6 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use miden::tx_kernel_core::asset
+use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::memory
 use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_NONE} from miden::tx_kernel_core::asset
 
@@ -24,6 +25,8 @@ const ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS =
 
 const ERR_INPUT_NOTE_ASSET_INDEX_OUT_OF_BOUNDS =
     "requested asset index should be less than the number of assets in the input note"
+
+const ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY = "asset ID to remove must not be the empty word"
 
 const ERR_INPUT_NOTE_ASSET_TO_REMOVE_NOT_FOUND = "asset to remove was not found in the input note"
 
@@ -110,13 +113,31 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
+#! - the asset is fungible but not well formed (see fungible_asset::validate).
 #! - the asset is not present in the note.
 #! - the asset is not composable and is not present in the note with the exact value.
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 pub proc remove_asset
+    # reject the empty asset ID explicitly so that the linear scan doesn't report it as found
+    exec.word::testz not assert.err=ERR_INPUT_NOTE_ASSET_ID_TO_REMOVE_IS_EMPTY
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+
+    exec.asset::validate_id
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
+    # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+
+    # validate the supplied fungible value so a non-canonical value is caught
+    exec.asset::is_fungible_asset_id
+    # => [is_fungible, ASSET_ID, ASSET_VALUE, input_note_ptr]
+    if.true
+        exec.fungible_asset::validate
+        # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
+    end
     # => [ASSET_ID, ASSET_VALUE, input_note_ptr]
 
     # set up the linear scan over the note's asset slots

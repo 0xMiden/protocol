@@ -12,7 +12,7 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes the `create_note` procedure from the
-    /// [`NoteCreator`][crate::account::wallets::NoteCreator] component.
+    /// [`NoteCreator`][crate::account::note_creator::NoteCreator] component.
     NoteCreator,
     /// Exposes procedures from the
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
@@ -51,8 +51,9 @@ pub enum AccountComponentInterface {
     /// [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] module.
     ///
     /// This authentication scheme is intended for network-owned accounts. It rejects transactions
-    /// that executed a tx script or consumed input notes outside of a fixed allowlist of note
-    /// script roots.
+    /// that executed a tx script or consumed input notes outside of fixed allowlists, as well as
+    /// transactions that do not consume an input note, create an output note, or change the
+    /// account before fee payment.
     AuthNetworkAccount,
     /// A non-standard, custom interface which exposes the contained procedures.
     ///

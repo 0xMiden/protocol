@@ -371,6 +371,31 @@ async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_default_expiration_helper() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+
+    let code = r#"
+        use miden::tx_kernel_core::prologue
+        use miden::protocol::tx
+        use miden::standards::expiration
+        use {DEFAULT_EXPIRATION_BLOCK_DELTA} from miden::standards::expiration
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.expiration::apply_default
+            exec.tx::get_expiration_block_delta
+            push.DEFAULT_EXPIRATION_BLOCK_DELTA
+            assert_eq.err="expiration helper did not set the default expiration delta"
+        end
+    "#;
+
+    mock_tx.execute_code(code).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
 
@@ -437,7 +462,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
             push.{expected_nonce} assert_eq.err="nonce mismatch"
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
     );
 
     mock_tx.execute_code(code.as_str()).await?;
@@ -464,7 +489,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
             dropw
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;

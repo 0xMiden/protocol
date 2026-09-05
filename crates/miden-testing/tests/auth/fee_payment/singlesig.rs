@@ -7,15 +7,13 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
 use miden_protocol::transaction::ExecutedTransaction;
-use miden_protocol::{Felt, Hasher, Word};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
     ERR_FEE_CONVERSION_INFO_MISSING,
-    ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO,
-    ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO,
-    ERR_FEE_CONVERTED_AMOUNT_OVERFLOW,
+    ERR_FEE_CONVERSION_INFO_NOT_NATIVE,
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -42,31 +40,25 @@ fn post_auth_epilogue_estimate(num_output_notes: usize) -> usize {
 /// Executes an empty transaction against a singlesig wallet on a fee-charging mock chain and
 /// returns the executed transaction together with the wallet's initial nonce.
 ///
-/// When no conversion info entry is provided, the fee is paid in the native fee asset via
-/// [`FeeConversionInfo::one_to_one`] at rate 1/1.
+/// The fee is paid in the native fee asset via [`FeeConversionInfo::one_to_one`] at rate 1/1, the
+/// only conversion info `pay_fee` accepts.
 async fn execute_fee_paying_tx(
     auth_scheme: AuthScheme,
-    extra_assets: &[Asset],
-    conversion_info_entry: Option<(Word, Vec<miden_protocol::Felt>)>,
 ) -> anyhow::Result<(ExecutedTransaction, miden_protocol::Felt)> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let mut assets = vec![fee_asset];
-    assets.extend_from_slice(extra_assets);
     let account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme }, assets)?;
+        builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme }, [fee_asset])?;
     let mock_chain = builder.build()?;
 
     let initial_nonce = account.nonce();
 
-    let (args, advice_value) = conversion_info_entry.unwrap_or_else(|| {
-        commit_fee_conversion_info(
-            FeeConversionInfo::one_to_one(fee_faucet_id),
-            Word::from([9u32, 10, 11, 12]),
-        )
-    });
+    let (args, advice_value) = commit_fee_conversion_info(
+        FeeConversionInfo::one_to_one(fee_faucet_id),
+        Word::from([9u32, 10, 11, 12]),
+    );
 
     let executed_transaction = mock_chain
         .build_transaction(account.id())
@@ -90,7 +82,7 @@ async fn execute_fee_paying_tx(
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
-    let (executed_transaction, _) = execute_fee_paying_tx(auth_scheme, &[], None).await?;
+    let (executed_transaction, _) = execute_fee_paying_tx(auth_scheme).await?;
 
     // exactly one output note is created: the fee note
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
@@ -103,9 +95,7 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
     let assets = output_note.assets();
     assert_eq!(assets.num_assets(), 1);
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(fee_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let fee_asset = asset.unwrap_fungible();
     assert_eq!(fee_asset.faucet_id(), ACCOUNT_ID_FEE_FAUCET.try_into()?);
 
     // the paid amount covers the fee required for the actual cycle count, and the overshoot is
@@ -132,7 +122,7 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
 #[tokio::test]
 async fn fee_note_serial_is_derivable() -> anyhow::Result<()> {
     let (executed_transaction, initial_nonce) =
-        execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2, &[], None).await?;
+        execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2).await?;
 
     let output_note = executed_transaction.output_notes().get_note(0);
     let assets = output_note.assets();
@@ -151,109 +141,6 @@ async fn fee_note_serial_is_derivable() -> anyhow::Result<()> {
     assert_eq!(output_note.id(), expected_note.id());
 
     Ok(())
-}
-
-/// When the auth args commit to conversion info, the fee is paid in the specified asset at the
-/// specified rate.
-#[tokio::test]
-async fn converted_fee_payment() -> anyhow::Result<()> {
-    let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    let payment_asset: Asset = FungibleAsset::new(payment_faucet_id, 10_000_000)?.into();
-
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 2, 1)?;
-    let salt = Word::from([5u32, 6, 7, 8]);
-
-    let (executed_transaction, _) = execute_fee_paying_tx(
-        AuthScheme::Falcon512Poseidon2,
-        &[payment_asset],
-        Some(commit_fee_conversion_info(conversion_info, salt)),
-    )
-    .await?;
-
-    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    let output_note = executed_transaction.output_notes().get_note(0);
-    assert_eq!(output_note.metadata().tag(), TxFeeNote::TAG);
-
-    let assets = output_note.assets();
-    let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(paid_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
-
-    // the fee is paid in the conversion asset at twice the native fee amount
-    assert_eq!(paid_asset.faucet_id(), payment_faucet_id);
-    assert!(paid_asset.amount().as_u64() >= 2 * executed_transaction.compute_fee().as_u64());
-
-    // the converted path (advice load, commitment check, u128 rate math) must also stay within
-    // the pay_fee cycle margin
-    let measurements = executed_transaction.measurements();
-    let auth_estimate = FALCON_512_POSEIDON2_AUTH_CYCLES + PAY_FEE_CYCLES;
-    assert!(
-        measurements.auth_procedure <= auth_estimate,
-        "auth procedure with converted fee payment took {} cycles, exceeding the estimate of \
-         {auth_estimate}",
-        measurements.auth_procedure,
-    );
-
-    Ok(())
-}
-
-/// A conversion whose division leaves a remainder rounds the paid amount up (ceil division).
-///
-/// Uses rate 1/3 and asserts the exact ceil of the natively-paid fee: the native amount is
-/// obtained from an identical transaction in native mode, which executes the same instruction
-/// stream up to the fee computation and therefore computes the same in-VM fee.
-#[tokio::test]
-async fn converted_fee_payment_rounds_up() -> anyhow::Result<()> {
-    let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    let payment_asset: Asset = FungibleAsset::new(payment_faucet_id, 10_000_000)?.into();
-
-    // reference run in native mode to learn the in-VM computed fee amount
-    let (native_tx, _) =
-        execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2, &[payment_asset], None).await?;
-    let native_assets = native_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(native_paid) =
-        native_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
-    let native_amount = native_paid.amount().as_u64();
-
-    // the rate must produce a non-zero remainder for this test to exercise the round-up branch
-    assert_ne!(native_amount % 3, 0, "test setup should produce a non-zero division remainder");
-
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, 1, 3)?;
-    let salt = Word::from([5u32, 6, 7, 8]);
-
-    let (converted_tx, _) = execute_fee_paying_tx(
-        AuthScheme::Falcon512Poseidon2,
-        &[payment_asset],
-        Some(commit_fee_conversion_info(conversion_info, salt)),
-    )
-    .await?;
-
-    assert_eq!(converted_tx.output_notes().num_notes(), 1);
-    let converted_assets = converted_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(converted_paid) =
-        converted_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
-
-    assert_eq!(converted_paid.faucet_id(), payment_faucet_id);
-    assert_eq!(converted_paid.amount().as_u64(), native_amount.div_ceil(3));
-
-    Ok(())
-}
-
-/// Builds a raw advice-map entry committing to the given conversion info word, bypassing the
-/// validation in [`FeeConversionInfo`]. Used to exercise the in-VM validation of malformed rates.
-fn raw_conversion_entry(conversion_word: Word, salt: Word) -> (Word, Vec<Felt>) {
-    let key = Hasher::merge(&[conversion_word, salt]);
-    let mut value = Vec::with_capacity(8);
-    value.extend(salt.iter());
-    value.extend(conversion_word.iter());
-    (key, value)
 }
 
 /// Executes an empty transaction on a fee-charging chain with the given advice-map entry set as
@@ -298,112 +185,24 @@ async fn conversion_commitment_mismatch_aborts() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Builds a raw conversion word for the given rate, targeting the second public fungible faucet.
-fn conversion_word_with_rate(rate_num: Felt, rate_den: Felt) -> anyhow::Result<Word> {
-    let payment_faucet_id: miden_protocol::account::AccountId =
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    Ok(Word::from([
-        payment_faucet_id.suffix(),
-        payment_faucet_id.prefix().as_felt(),
-        rate_num,
-        rate_den,
-    ]))
-}
-
-/// Zero conversion rates that pass the commitment check are rejected by the in-VM rate
-/// validation.
+/// The fee is payable only in the chain's native fee asset at par, so a foreign payment faucet or
+/// a rate other than 1/1 aborts.
 #[rstest]
-#[case::zero_denominator([2u32.into(), 0u32.into()], ERR_FEE_CONVERSION_RATE_DENOMINATOR_ZERO)]
-#[case::zero_numerator([0u32.into(), 1u32.into()], ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO)]
+#[case::foreign_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, 1, 1)]
+#[case::rate_above_par(ACCOUNT_ID_FEE_FAUCET, 2, 1)]
+#[case::rate_below_par(ACCOUNT_ID_FEE_FAUCET, 1, 3)]
 #[tokio::test]
-async fn zero_conversion_rate_aborts(
-    #[case] rate: [Felt; 2],
-    #[case] expected_error: miden_protocol::errors::MasmError,
+async fn non_native_conversion_info_aborts(
+    #[case] payment_faucet: u128,
+    #[case] rate_num: u64,
+    #[case] rate_den: u64,
 ) -> anyhow::Result<()> {
-    let conversion_word = conversion_word_with_rate(rate[0], rate[1])?;
-    let entry = raw_conversion_entry(conversion_word, Word::from([5u32, 6, 7, 8]));
+    let conversion_info = FeeConversionInfo::new(payment_faucet.try_into()?, rate_num, rate_den)?;
+    let entry = commit_fee_conversion_info(conversion_info, Word::from([5u32, 6, 7, 8]));
 
     let result = execute_with_conversion_entry(entry).await?;
 
-    assert_transaction_executor_error!(result, expected_error);
-
-    Ok(())
-}
-
-/// A conversion rate scaling between decimal conventions (10^16 / 10^4, a net factor of 10^12
-/// as for an 18-decimals vs 6-decimals asset pair) is applied exactly, even though the rate
-/// numerator exceeds a u32 and the intermediate product `fee_amount * rate_num` exceeds a u64.
-///
-/// The native amount is obtained from an identical transaction in native mode, which executes
-/// the same instruction stream up to the fee computation and therefore computes the same in-VM
-/// fee.
-#[tokio::test]
-async fn large_conversion_rate_converts_exactly() -> anyhow::Result<()> {
-    const RATE_NUM: u64 = 10u64.pow(16);
-    const RATE_DEN: u64 = 10u64.pow(4);
-
-    let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    let payment_asset: Asset = FungibleAsset::new(payment_faucet_id, 10u64.pow(17))?.into();
-
-    // reference run in native mode to learn the in-VM computed fee amount
-    let (native_tx, _) =
-        execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2, &[payment_asset], None).await?;
-    let native_assets = native_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(native_paid) =
-        native_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
-    let native_amount = native_paid.amount().as_u64();
-
-    // the intermediate product must exceed a u64 for this test to exercise the 128-bit math
-    assert!(
-        u128::from(native_amount) * u128::from(RATE_NUM) > u128::from(u64::MAX),
-        "test setup should overflow the intermediate u64 product"
-    );
-
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, RATE_NUM, RATE_DEN)?;
-    let salt = Word::from([5u32, 6, 7, 8]);
-
-    let (converted_tx, _) = execute_fee_paying_tx(
-        AuthScheme::Falcon512Poseidon2,
-        &[payment_asset],
-        Some(commit_fee_conversion_info(conversion_info, salt)),
-    )
-    .await?;
-
-    assert_eq!(converted_tx.output_notes().num_notes(), 1);
-    let converted_assets = converted_tx.output_notes().get_note(0).assets();
-    let Asset::Fungible(converted_paid) =
-        converted_assets.iter().next().expect("fee note should carry an asset")
-    else {
-        panic!("fee note asset should be fungible");
-    };
-
-    // 10^4 divides 10^16, so the conversion is exact: native_amount * 10^12
-    assert_eq!(converted_paid.faucet_id(), payment_faucet_id);
-    assert_eq!(converted_paid.amount().as_u64(), native_amount * (RATE_NUM / RATE_DEN));
-
-    Ok(())
-}
-
-/// A conversion whose quotient does not fit into a fungible asset amount aborts instead of
-/// wrapping: with rate_den 1 and the ~8500 native fee of these chains, rate_num 2^62 pushes the
-/// quotient beyond a u64 and rate_num 2^50 lands it in [2^63, 2^64), exercising both overflow
-/// asserts.
-#[rstest]
-#[case::quotient_exceeds_u64(1u64 << 62)]
-#[case::quotient_exceeds_max_amount(1u64 << 50)]
-#[tokio::test]
-async fn converted_amount_overflow_aborts(#[case] rate_num: u64) -> anyhow::Result<()> {
-    let payment_faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into()?;
-    let conversion_info = FeeConversionInfo::new(payment_faucet_id, rate_num, 1)?;
-    let salt = Word::from([5u32, 6, 7, 8]);
-
-    let entry = commit_fee_conversion_info(conversion_info, salt);
-    let result = execute_with_conversion_entry(entry).await?;
-
-    assert_transaction_executor_error!(result, ERR_FEE_CONVERTED_AMOUNT_OVERFLOW);
+    assert_transaction_executor_error!(result, ERR_FEE_CONVERSION_INFO_NOT_NATIVE);
 
     Ok(())
 }
@@ -491,7 +290,7 @@ async fn cycle_estimates_are_upper_bounds(
     #[case] auth_scheme: AuthScheme,
     #[case] scheme_cycles: usize,
 ) -> anyhow::Result<()> {
-    let (executed_transaction, _) = execute_fee_paying_tx(auth_scheme, &[], None).await?;
+    let (executed_transaction, _) = execute_fee_paying_tx(auth_scheme).await?;
 
     let measurements = executed_transaction.measurements();
 

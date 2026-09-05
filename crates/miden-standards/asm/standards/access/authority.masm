@@ -8,6 +8,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
+use miden::standards::access::role_symbol
 
 # TYPE ALIASES
 # =================================================================================================
@@ -94,6 +95,10 @@ end
 #!   holds that role; otherwise falls back to the `ADMIN` role check. Requires the
 #!   [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
 #!   installed on the account; otherwise linking the account fails.
+#!
+#! This procedure never panics under AuthControlled so the account's auth component is the sole
+#! gate and MUST authenticate every authority-gated procedure root, otherwise those procedures are
+#! permissionless.
 #!
 #! Because the calling procedure is identified via `caller`, `assert_authorized` MUST be invoked
 #! with `exec` (inlined) from the gated procedure, and the gated procedure MUST be a `call`
@@ -236,6 +241,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - a role is configured for the procedure and it is not a valid role symbol encoding.
 #! - a role is configured for the procedure and the sender does not hold it.
 #! - no role is configured for the procedure and the sender does not hold ADMIN.
 #!
@@ -265,9 +271,12 @@ proc assert_authorized_rbac
         exec.rbac::assert_sender_is_admin
         # => []
     else
-        # Assert the sender holds the configured role.
         # => [mapped_role]
 
+        dup exec.role_symbol::validate_encoding
+        # => [mapped_role]
+
+        # Assert the sender holds the configured role.
         exec.rbac::assert_sender_has_role
         # => []
     end

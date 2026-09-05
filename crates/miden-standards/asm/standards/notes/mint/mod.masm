@@ -1,0 +1,79 @@
+# miden::standards::notes::mint
+#
+# The MINT note script, which mints against both fungible and non-fungible faucets. This module
+# holds the dispatcher that picks the faucet kind; the per-kind note storage layouts and mint
+# argument builders live in the private [`mint::fungible`] and [`mint::non_fungible`] submodules.
+
+use miden::standards::faucets::fungible as fungible_faucet
+use miden::standards::faucets::non_fungible as non_fungible_faucet
+use miden::standards::inspection::code_inspection
+
+mod fungible
+mod non_fungible
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MINT_UNSUPPORTED_FAUCET = "the consuming account exposes neither a fungible nor a non-fungible faucet mint_and_send procedure"
+
+#! MINT script: mints the asset stored in the note by calling the consuming faucet's
+#! `mint_and_send` procedure. Works against both fungible and non-fungible faucets.
+#!
+#! The faucet kind is determined by reflection: the script asks the account (via the
+#! `CodeInspection` component's `has_procedure`) whether it exposes the fungible `mint_and_send`;
+#! if so the fungible mint path runs (see `mint::fungible`), otherwise the non-fungible path runs
+#! (see `mint::non_fungible`) after asserting the account exposes the non-fungible `mint_and_send`.
+#!
+#! This note is intended to be executed against a network faucet account. Both faucet kinds share
+#! the same storage layout, documented on `mint::fungible::mint` and `mint::non_fungible::mint`.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::inspection::code_inspection::has_procedure` (the `CodeInspection` component).
+#! - either `miden::standards::faucets::fungible::mint_and_send` or
+#!   `miden::standards::faucets::non_fungible::mint_and_send`.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the account does not expose the `has_procedure` procedure.
+#! - the account exposes neither faucet's `mint_and_send` procedure.
+#! - the number of storage items does not match the detected faucet kind.
+#! - the asset stored in the note does not belong to the consuming faucet.
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # Determine the faucet kind.
+    procref.fungible_faucet::mint_and_send
+    # => [FUNGIBLE_MINT_AND_SEND_ROOT, pad(16)]
+
+    call.code_inspection::has_procedure
+    # => [is_fungible, pad(19)]
+
+    movdn.4 dropw
+    # => [is_fungible, pad(15)]
+
+    if.true
+        exec.fungible::mint
+        # => [pad(16)]
+    else
+        # require that the account exposes the non-fungible mint_and_send.
+        procref.non_fungible_faucet::mint_and_send
+        # => [NON_FUNGIBLE_MINT_AND_SEND_ROOT, pad(16)]
+
+        call.code_inspection::has_procedure
+        # => [is_non_fungible, pad(19)]
+
+        movdn.4 dropw
+        # => [is_non_fungible, pad(15)]
+
+        assert.err=ERR_MINT_UNSUPPORTED_FAUCET
+        # => [pad(16)]
+
+        exec.non_fungible::mint
+        # => [pad(16)]
+    end
+    # => [pad(16)]
+end

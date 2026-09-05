@@ -1,3 +1,4 @@
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -18,13 +19,14 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::{
     Approver,
     ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     GuardianConfig,
+    MultisigAuthArgs,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -32,6 +34,7 @@ use miden_standards::errors::standards::{
     ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
+    ERR_PUBLIC_KEY_IS_APPROVER,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
@@ -39,6 +42,8 @@ use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
+
+use super::multisig::{MultisigAuthArgsExt, build_update_signers_config_vector};
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -218,7 +223,10 @@ async fn test_guarded_multisig_signature_required(
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -339,7 +347,10 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_script)
-        .auth_args(update_salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            update_salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -388,7 +399,9 @@ async fn test_guarded_multisig_update_guardian_public_key(
     // this same transaction.
     let next_salt = Word::from([Felt::new_unchecked(992); 4]);
     let mock_tx_builder_next =
-        mock_chain.build_transaction(updated_multisig_account.id()).auth_args(next_salt);
+        mock_chain.build_transaction(updated_multisig_account.id()).multisig_auth_args(
+            MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), next_salt),
+        );
 
     let tx_summary_next = mock_tx_builder_next
         .clone()
@@ -514,7 +527,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .build_transaction(multisig_account.id())
         .authenticated_input_note(receive_asset_note.id())
         .tx_script(update_guardian_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -612,7 +628,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .tx_script(update_guardian_with_output_script)
         .add_note_script(note_script)
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -682,7 +701,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .tx_script(update_guardian_with_receive_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -817,7 +839,10 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .build_transaction(multisig_account.id())
         .authenticated_input_notes(input_ids)
         .tx_script(update_guardian_script)
-        .auth_args(salt);
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
     if let Some(out) = output_note {
         mock_tx_builder = mock_tx_builder.expected_output_note(RawOutputNote::Full(out));
     }
@@ -863,6 +888,222 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
             ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
         ),
     }
+
+    Ok(())
+}
+
+/// Tests that the guarded multisig auth script rejects a guardian rotation onto an existing
+/// approver's public key, the configuration `AuthGuardedMultisigConfig::new` already rejects at
+/// deployment time.
+///
+/// The rotation path is the one that skips guardian verification, so without this check the quorum
+/// could make one of its own signatures satisfy both the multisig and the guardian check.
+#[tokio::test]
+async fn test_guarded_multisig_rotation_to_approver_public_key_is_rejected() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let guardian_public_key = guardian_secret_key.public_key();
+
+    let multisig_account = create_guarded_multisig_account(
+        2,
+        &approvers,
+        GuardianConfig::new(Approver::new(
+            guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
+        10,
+        vec![],
+    )?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    // Rotate the guardian onto the first approver's public key.
+    let new_guardian_key_word: Word = public_keys[0].to_commitment().into();
+    let update_guardian_script = CodeBuilder::new()
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
+        .compile_tx_script(build_update_guardian_script_source(
+            new_guardian_key_word,
+            auth_scheme as u32,
+            None,
+        ))?;
+
+    let salt = Word::from([Felt::new_unchecked(994); 4]);
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(update_guardian_script)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    // A quorum alone is enough to reach the rotation path, which is exactly why the auth script has
+    // to reject the resulting configuration.
+    let result = mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PUBLIC_KEY_IS_APPROVER);
+
+    Ok(())
+}
+
+/// Tests the symmetric case of the check above: the approver set must not be updated to include
+/// the configured guardian public key, while an update that keeps the guardian outside the new
+/// approver set still goes through.
+#[rstest]
+#[case::guardian_added_as_approver(true)]
+#[case::guardian_outside_approver_set(false)]
+#[tokio::test]
+async fn test_guarded_multisig_signer_update_enforces_the_guardian_invariant(
+    #[case] add_guardian_as_approver: bool,
+) -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let guardian_public_key = guardian_secret_key.public_key();
+    let guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
+
+    let multisig_account = create_guarded_multisig_account(
+        2,
+        &approvers,
+        GuardianConfig::new(Approver::new(
+            guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
+        10,
+        vec![],
+    )?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    // Grow the signer set by one key: either the guardian's, which must be rejected, or an
+    // unrelated one, which must be accepted.
+    let new_approver_public_key = if add_guardian_as_approver {
+        guardian_public_key.clone()
+    } else {
+        AuthSecretKey::new_ecdsa_k256_keccak().public_key()
+    };
+    let new_public_keys =
+        vec![public_keys[0].clone(), public_keys[1].clone(), new_approver_public_key.clone()];
+    let config_and_pubkeys_vector =
+        build_update_signers_config_vector(2, 3, &new_public_keys, auth_scheme);
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+
+    let update_signers_script = CodeBuilder::new()
+        .with_dynamically_linked_package(AuthGuardedMultisig::code())?
+        .compile_tx_script(
+            "
+            @transaction_script
+            pub proc main
+                call.::miden::standards::components::auth::guarded_multisig::update_signers_and_threshold
+            end
+            ",
+        )?;
+
+    let advice_inputs =
+        AdviceInputs::default().with_map([(multisig_config_hash, config_and_pubkeys_vector)]);
+    let salt = Word::from([Felt::new_unchecked(995); 4]);
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .tx_script(update_signers_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+    let guardian_signature = guardian_authenticator
+        .get_signature(guardian_public_key.to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let result = mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .add_signature(guardian_public_key.to_commitment(), msg, guardian_signature)
+        .build()?
+        .execute()
+        .await;
+
+    if add_guardian_as_approver {
+        assert_transaction_executor_error!(result, ERR_PUBLIC_KEY_IS_APPROVER);
+
+        return Ok(());
+    }
+
+    // The new signer set is applied and the guardian keeps its own key.
+    let mut updated_multisig_account = multisig_account.clone();
+    updated_multisig_account.apply_patch(result?.account_patch())?;
+
+    let stored_new_approver = updated_multisig_account.storage().get_map_item(
+        AuthGuardedMultisig::approver_public_keys_slot(),
+        StorageMapKey::from_index(2),
+    )?;
+    assert_eq!(stored_new_approver, Word::from(new_approver_public_key.to_commitment()));
+
+    let stored_guardian = updated_multisig_account.storage().get_map_item(
+        AuthGuardedMultisig::guardian_public_key_slot(),
+        StorageMapKey::from_index(0),
+    )?;
+    assert_eq!(stored_guardian, Word::from(guardian_public_key.to_commitment()));
 
     Ok(())
 }

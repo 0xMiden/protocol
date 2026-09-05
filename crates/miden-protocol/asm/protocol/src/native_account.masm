@@ -1,5 +1,6 @@
 use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET}
     from miden::protocol::kernel_proc_offsets
+use miden::protocol::active_account
 use miden::core::word
 use {AccountId, AccountProcedureRoot, Asset, AssetId, AssetValue, Bool, StorageMapKey, StorageSlotId}
     from miden::protocol::types
@@ -50,7 +51,7 @@ end
 #!   also be the final nonce of the account after transaction execution.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the authentication procedure
 #!   of the account.
 #! - the nonce has already been incremented.
@@ -97,8 +98,8 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
 #! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #! - the vault or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment() -> word
     # pad the stack
@@ -159,7 +160,8 @@ end
 #! - INIT_COMMITMENT is the initial account commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_commitment() -> word
@@ -178,6 +180,31 @@ pub proc get_initial_commitment() -> word
     # => [INIT_COMMITMENT]
 end
 
+#! Returns true if the native account's state has changed since the transaction began.
+#!
+#! Unlike compute_delta_commitment, this procedure may be called before the authentication
+#! procedure increments the nonce. It first reads the initial commitment, which also verifies that
+#! the native account is active, and then compares it with the active account's current commitment.
+#!
+#! Inputs:  []
+#! Outputs: [has_state_changed]
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
+#!
+#! Invocation: exec
+pub proc has_state_changed() -> Bool
+    exec.get_initial_commitment
+    # => [INITIAL_COMMITMENT]
+
+    exec.active_account::compute_commitment
+    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT]
+
+    exec.word::eq not
+    # => [has_state_changed]
+end
+
 #! Returns the storage commitment of the native account at the beginning of the transaction.
 #!
 #! During an account-creating transaction (when the initial nonce is 0), this procedure and
@@ -192,7 +219,8 @@ end
 #! - INIT_STORAGE_COMMITMENT is the initial account storage commitment.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_storage_commitment() -> word
@@ -220,7 +248,8 @@ end
 #! - INIT_VAULT_ROOT is the initial account vault root.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_vault_root() -> word
@@ -255,7 +284,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc set_item(slot_id: StorageSlotId, value: word) -> word
@@ -290,8 +320,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-#! - the procedure is called from a non-account context.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc set_map_item(slot_id: StorageSlotId, key: StorageMapKey, value: word) -> word
@@ -329,7 +359,8 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_item(slot_id: StorageSlotId) -> word
@@ -366,7 +397,8 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the slot item at index is not a map.
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
@@ -467,7 +499,8 @@ end
 #!   present.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
@@ -498,7 +531,8 @@ end
 #! - has_asset is a boolean indicating whether the account vault had the asset.
 #!
 #! Panics if:
-#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: exec
 pub proc has_initial_asset(asset_id: AssetId) -> Bool

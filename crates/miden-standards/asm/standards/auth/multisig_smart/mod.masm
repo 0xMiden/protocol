@@ -1,6 +1,7 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
+use {BlockNumber} from miden::protocol::types
 use miden::standards::auth
 use miden::standards::auth::multisig
 use {APPROVER_PUBLIC_KEYS_SLOT} from miden::standards::auth::multisig
@@ -47,7 +48,9 @@ const ERR_PROC_POLICY_INVALID_MODE = "called procedures do not support the selec
 
 const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
 
-const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate or delayed threshold"
+const ERR_DELAY_ONLY_POLICY_UNSUPPORTED = "delayed threshold requires an immediate threshold"
+
+const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate threshold"
 
 const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
 
@@ -88,16 +91,22 @@ const INIT_NUM_OF_APPROVERS_LOC = 1
 #!
 #! Where:
 #! - immediate_threshold is the threshold for direct execution, or 0 when disabled.
-#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled.
+#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled. It requires a
+#!   non-zero immediate_threshold: delayed execution is not implemented yet, so a delay-only
+#!   policy would make the procedure permanently uncallable.
 #! - note_restrictions is the note restriction enum value in the 0..=NOTE_RESTRICTION_MAX range.
 #! - PROC_ROOT is the root of the account procedure whose policy is being updated.
+#!
+#! Passing a zero immediate_threshold together with a zero delayed_threshold and no note
+#! restrictions clears the procedure's policy.
 #!
 #! Panics if:
 #! - immediate_threshold or delayed_threshold is not a u32 value.
 #! - note_restrictions is outside the supported range.
 #! - either threshold exceeds the current number of approvers.
 #! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
-#! - note_restrictions is non-zero while both thresholds are zero.
+#! - delayed_threshold is non-zero while immediate_threshold is zero.
+#! - note_restrictions is non-zero while immediate_threshold is zero.
 #! - PROC_ROOT is not one of the account's procedures.
 #!
 #! Invocation: call
@@ -145,17 +154,13 @@ pub proc set_procedure_policy
     # => [is_immediate_threshold_zero, PROC_ROOT]
 
     if.true
-        # immediate is zero. If delayed is also zero, note_restrictions must be zero, otherwise
-        # the policy would forbid notes for a procedure that has no threshold to authorize them.
-        loc_load.DELAYED_THRESHOLD_LOC eq.0
-        # => [is_delayed_threshold_zero, PROC_ROOT]
+        # immediate is zero, so the entry can only clear the policy.
+        loc_load.DELAYED_THRESHOLD_LOC eq.0 assert.err=ERR_DELAY_ONLY_POLICY_UNSUPPORTED
+        # => [PROC_ROOT]
 
-        if.true
-            # `eq.0 assert` produces the proper error when note_restrictions is non-zero;
-            # `assertz` would surface a generic "binary value expected" error for values 2 or 3.
-            loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
-            # => [PROC_ROOT]
-        end
+        # both thresholds are zero, so note_restrictions must be zero as well.
+        loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
+        # => [PROC_ROOT]
     else
         # immediate is non-zero. Validate delayed_threshold <= immediate_threshold.
         loc_load.DELAYED_THRESHOLD_LOC loc_load.IMMEDIATE_THRESHOLD_LOC
@@ -253,6 +258,9 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     # => [MULTISIG_CONFIG, pad(12)]
 
     loc_load.NEW_NUM_OF_APPROVERS_LOC
+    # => [num_approvers, MULTISIG_CONFIG, pad(12)]
+
+    dup exec.multisig::assert_num_approvers_in_bounds
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
     exec.assert_proc_policies_lte_num_approvers
@@ -385,16 +393,12 @@ end
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! Inputs:
-#!   Operand stack: [user_param0, user_param1, user_param2, user_param3, user_param4, user_param5,
-#!                   user_param6]
+#!   Operand stack: [block_number, SALT]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - user_param0 through user_param6 are arbitrary, user-defined inputs folded into the signed
-#!   message. Binding them enforces no meaning, so any semantics must be implemented by the calling
-#!   component. The components calling this procedure pass a cryptographically random salt in
-#!   user_param3 through user_param6 for replay protection.
+#! - block_number and SALT are as described in `miden::standards::auth::multisig::auth_tx`.
 #!
 #! Locals:
 #! 0: policy_threshold
@@ -414,17 +418,31 @@ end
 #!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
 #!   propose/cancel/execute state.
 @locals(2)
-pub proc auth_tx(user_params: [felt; 7])
+pub proc auth_tx(block_number: BlockNumber, salt: word)
     exec.native_account::incr_nonce drop
-    # => [user_params(7)]
+    # => [block_number, SALT]
 
     # ------ Computing transaction summary ------
-    exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL]
+
+    # the multisig components expose no meaning for the leading user params, so they are zeroed
+    # and the salt occupies the trailing four
+    push.0.0 movup.2
+    # => [block_number, 0, 0, SALT]
+
+    dup movdn.7
+    # => [block_number, 0, 0, SALT, block_number]
+
+    exec.auth::create_tx_summary_with_block
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, block_number]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted
     # into the advice map for extraction by the host
     exec.auth::hash_and_insert_tx_summary
+    # => [TX_SUMMARY_COMMITMENT, block_number]
+
+    # this must run after the summary was created since rebasing the expiration before would bind a
+    # reference-block-dependent delta and so change the summary with every new reference block.
+    movup.4 exec.multisig::rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Reading threshold config (default + num_approvers) ------
