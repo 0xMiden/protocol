@@ -1,0 +1,158 @@
+use miden::core::crypto::dsa::ecdsa_k256_keccak
+use miden::core::crypto::hashes::keccak256
+use miden::core::crypto::hashes::poseidon2
+
+# CONSTANTS
+# =================================================================================================
+
+# The repeated u32 is the little-endian ASCII encoding of "E712". It domains the EIP-712 advice
+# key from the existing raw-signature key.
+const EIP712_SIGNATURE_KEY_DOMAIN=0x32313745
+
+# Local memory layout for verify_transaction_summary:
+#   0..16   MidenTransaction struct preimage
+#   16..24  MidenTransaction struct hash
+#   24..48  EIP-712 digest preimage, zero-padded to three 32-byte chunks
+#   48..52  public-key commitment
+const STRUCT_PREIMAGE_LOC=0
+const TX_SUMMARY_LOC=8
+const STRUCT_HASH_LOC=16
+const DIGEST_PREIMAGE_LOC=24
+const PUBLIC_KEY_COMMITMENT_LOC=48
+
+# `keccak256("MidenTransaction(bytes32 txSummaryHash)")`, packed as little-endian u32 limbs.
+const TRANSACTION_TYPE_HASH_0=3002887380
+const TRANSACTION_TYPE_HASH_1=1420631288
+const TRANSACTION_TYPE_HASH_2=494091842
+const TRANSACTION_TYPE_HASH_3=2729528150
+const TRANSACTION_TYPE_HASH_4=4274085984
+const TRANSACTION_TYPE_HASH_5=2147426208
+const TRANSACTION_TYPE_HASH_6=2043519110
+const TRANSACTION_TYPE_HASH_7=1663807340
+
+# The first 32 bytes of `0x1901 || DOMAIN_SEPARATOR`, where DOMAIN_SEPARATOR is derived from
+# `EIP712Domain(string name,string version)`, name "Miden Multisig", and version "1".
+const DIGEST_HEAD_0=4077322521
+const DIGEST_HEAD_1=3974781457
+const DIGEST_HEAD_2=181385674
+const DIGEST_HEAD_3=1159338660
+const DIGEST_HEAD_4=3093865099
+const DIGEST_HEAD_5=1254704965
+const DIGEST_HEAD_6=870292288
+const DIGEST_HEAD_7=114851585
+
+# The last two bytes of DOMAIN_SEPARATOR, packed into the low half of a u32 limb.
+const DOMAIN_SEPARATOR_TAIL=59562
+
+# PROCEDURES
+# =================================================================================================
+
+#! Extends a raw transaction-signature advice key into the EIP-712 key domain.
+#!
+#! Inputs:  [RAW_SIGNATURE_KEY]
+#! Outputs: [EIP712_SIGNATURE_KEY]
+pub proc extend_signature_key
+    push.EIP712_SIGNATURE_KEY_DOMAIN.EIP712_SIGNATURE_KEY_DOMAIN.EIP712_SIGNATURE_KEY_DOMAIN.EIP712_SIGNATURE_KEY_DOMAIN
+    swapw
+    exec.poseidon2::merge
+end
+
+#! Verifies an ECDSA signature over the EIP-712 transaction-summary message.
+#!
+#! Inputs:
+#!   Operand stack: [PK_COMM, TX_SUMMARY_HASH]
+#!   Advice stack:  [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! The signed digest is `keccak256(0x1901 || DOMAIN_SEPARATOR || STRUCT_HASH)`, where STRUCT_HASH
+#! commits to `MidenTransaction(bytes32 txSummaryHash)`. The transaction-summary hash is supplied
+#! by the authentication component, not by advice.
+@locals(52)
+pub proc verify_transaction_summary
+    loc_storew_le.PUBLIC_KEY_COMMITMENT_LOC dropw
+    # => [TX_SUMMARY_HASH]
+
+    # Stage `keccak256("MidenTransaction(bytes32 txSummaryHash)")`.
+    push.TRANSACTION_TYPE_HASH_3.TRANSACTION_TYPE_HASH_2.TRANSACTION_TYPE_HASH_1.TRANSACTION_TYPE_HASH_0
+    locaddr.STRUCT_PREIMAGE_LOC mem_storew_le dropw
+    push.TRANSACTION_TYPE_HASH_7.TRANSACTION_TYPE_HASH_6.TRANSACTION_TYPE_HASH_5.TRANSACTION_TYPE_HASH_4
+    locaddr.STRUCT_PREIMAGE_LOC add.4 mem_storew_le dropw
+
+    # Append TX_SUMMARY_HASH as an EIP-712 bytes32 value.
+    locaddr.TX_SUMMARY_LOC movdn.4
+    exec.write_word
+
+    # Compute STRUCT_HASH.
+    push.64 locaddr.STRUCT_PREIMAGE_LOC
+    exec.keccak256::hash_bytes
+    locaddr.STRUCT_HASH_LOC mem_storew_le dropw
+    locaddr.STRUCT_HASH_LOC add.4 mem_storew_le dropw
+
+    # Stage the fixed first 32 bytes of the EIP-712 digest preimage.
+    push.DIGEST_HEAD_3.DIGEST_HEAD_2.DIGEST_HEAD_1.DIGEST_HEAD_0
+    locaddr.DIGEST_PREIMAGE_LOC mem_storew_le dropw
+    push.DIGEST_HEAD_7.DIGEST_HEAD_6.DIGEST_HEAD_5.DIGEST_HEAD_4
+    locaddr.DIGEST_PREIMAGE_LOC add.4 mem_storew_le dropw
+
+    # Zero the final chunk before inserting the shifted struct hash. The byte verifier requires
+    # every unused byte after the 66-byte preimage to be zero.
+    padw locaddr.DIGEST_PREIMAGE_LOC add.16 mem_storew_le dropw
+    padw locaddr.DIGEST_PREIMAGE_LOC add.20 mem_storew_le dropw
+
+    # The 2-byte EIP-712 prefix shifts the struct hash by half a u32 limb.
+    push.DOMAIN_SEPARATOR_TAIL
+    locaddr.STRUCT_HASH_LOC mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.8 mem_store
+
+    locaddr.STRUCT_HASH_LOC mem_load u32shr.16
+    locaddr.STRUCT_HASH_LOC add.1 mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.9 mem_store
+
+    locaddr.STRUCT_HASH_LOC add.1 mem_load u32shr.16
+    locaddr.STRUCT_HASH_LOC add.2 mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.10 mem_store
+
+    locaddr.STRUCT_HASH_LOC add.2 mem_load u32shr.16
+    locaddr.STRUCT_HASH_LOC add.3 mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.11 mem_store
+
+    locaddr.STRUCT_HASH_LOC add.3 mem_load u32shr.16
+    locaddr.STRUCT_HASH_LOC add.4 mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.12 mem_store
+
+    locaddr.STRUCT_HASH_LOC add.4 mem_load u32shr.16
+    locaddr.STRUCT_HASH_LOC add.5 mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.13 mem_store
+
+    locaddr.STRUCT_HASH_LOC add.5 mem_load u32shr.16
+    locaddr.STRUCT_HASH_LOC add.6 mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.14 mem_store
+
+    locaddr.STRUCT_HASH_LOC add.6 mem_load u32shr.16
+    locaddr.STRUCT_HASH_LOC add.7 mem_load push.0xFFFF u32and u32shl.16 u32or
+    locaddr.DIGEST_PREIMAGE_LOC add.15 mem_store
+
+    locaddr.STRUCT_HASH_LOC add.7 mem_load u32shr.16
+    locaddr.DIGEST_PREIMAGE_LOC add.16 mem_store
+
+    # Hash the 66-byte EIP-712 preimage and verify the resulting ECDSA digest.
+    push.66 locaddr.DIGEST_PREIMAGE_LOC
+    padw loc_loadw_le.PUBLIC_KEY_COMMITMENT_LOC
+    exec.ecdsa_k256_keccak::verify_bytes
+end
+
+#! Writes a Miden word as the 32-byte EIP-712 bytes32 value at ptr.
+#!
+#! Inputs:  [W0, W1, W2, W3, ptr]
+#! Outputs: []
+proc write_word
+    swap u32split
+    movup.2 u32split
+    dup.6 mem_storew_le dropw
+
+    swap u32split
+    movup.2 u32split
+    dup.4 add.4 mem_storew_le dropw
+    drop
+end

@@ -976,7 +976,7 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     push.APPROVER_SCHEME_ID_SLOT[0..2]
     # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    exec.::miden::standards::auth::signature::verify_signatures
+    exec.::miden::standards::auth::signature::verify_signatures_with_eip712
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
     # ------ Checking threshold is >= num_verified_signatures ------

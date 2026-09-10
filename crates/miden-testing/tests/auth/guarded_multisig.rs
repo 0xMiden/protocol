@@ -1,3 +1,4 @@
+use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
@@ -27,6 +28,7 @@ use miden_standards::account::auth::{
     AuthGuardedMultisigConfig,
     GuardianConfig,
     MultisigAuthArgs,
+    eip712,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -258,6 +260,34 @@ async fn test_guarded_multisig_signature_required(
         Err(TransactionExecutorError::Unauthorized(_))
     ));
 
+    let AuthSecretKey::EcdsaK256Keccak(guardian_signing_key) = &guardian_secret_key else {
+        unreachable!("test creates an ECDSA guardian")
+    };
+    let PublicKey::EcdsaK256Keccak(guardian_ecdsa_public_key) = &guardian_public_key else {
+        unreachable!("test creates an ECDSA guardian")
+    };
+    let guardian_eip712_signature =
+        guardian_signing_key.sign_prehash(eip712::transaction_summary_digest(msg));
+    let guardian_eip712_key =
+        eip712::transaction_summary_signature_key(guardian_public_key.to_commitment(), msg);
+
+    // The EIP-712 extension applies only to approvers. Guardian acknowledgements remain raw.
+    let eip712_only_guardian_result = mock_tx_builder
+        .clone()
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
+        .add_advice_map_entry(
+            guardian_eip712_key,
+            encode_signature(guardian_ecdsa_public_key, &guardian_eip712_signature),
+        )
+        .build()?
+        .execute()
+        .await;
+    assert!(matches!(
+        eip712_only_guardian_result,
+        Err(TransactionExecutorError::Unauthorized(_))
+    ));
+
     let guardian_signature = guardian_authenticator
         .get_signature(guardian_public_key.to_commitment(), &tx_summary_signing)
         .await?;
@@ -280,6 +310,93 @@ async fn test_guarded_multisig_signature_required(
         multisig_account.vault().get_balance(output_note_asset.id())?.as_u64(),
         10 - output_note_asset.unwrap_fungible().amount().as_u64()
     );
+
+    Ok(())
+}
+
+/// Tests the complete guarded flow with one raw approver signature, one EIP-712 approver
+/// signature, and the guardian acknowledgement on its existing raw-signature path.
+#[tokio::test]
+async fn test_guarded_multisig_accepts_mixed_raw_and_eip712_approver_signatures()
+-> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let guardian_public_key = guardian_secret_key.public_key();
+    let guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
+
+    let multisig_account = create_guarded_multisig_account(
+        2,
+        &approvers,
+        GuardianConfig::new(Approver::new(
+            guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
+        10,
+        vec![],
+    )?;
+
+    let output_note_asset = FungibleAsset::mock(0);
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[output_note_asset],
+        NoteType::Public,
+    )?;
+    let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
+    let mock_chain = mock_chain_builder.build().unwrap();
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(output_note))
+        .auth_args(Word::from([Felt::new_unchecked(777); 4]));
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+
+    let AuthSecretKey::EcdsaK256Keccak(eip712_signing_key) = &secret_keys[0] else {
+        unreachable!("test creates ECDSA approvers")
+    };
+    let PublicKey::EcdsaK256Keccak(eip712_public_key) = &public_keys[0] else {
+        unreachable!("test creates ECDSA approvers")
+    };
+    let eip712_signature =
+        eip712_signing_key.sign_prehash(eip712::transaction_summary_digest(tx_summary_hash));
+    let eip712_key =
+        eip712::transaction_summary_signature_key(public_keys[0].to_commitment(), tx_summary_hash);
+    let eip712_witness = encode_signature(eip712_public_key, &eip712_signature);
+
+    let raw_signature = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+    let guardian_signature = guardian_authenticator
+        .get_signature(guardian_public_key.to_commitment(), &tx_summary_signing)
+        .await?;
+
+    mock_tx_builder
+        .add_advice_map_entry(eip712_key, eip712_witness)
+        .add_signature(public_keys[1].to_commitment(), tx_summary_hash, raw_signature)
+        .add_signature(guardian_public_key.to_commitment(), tx_summary_hash, guardian_signature)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }
