@@ -20,13 +20,34 @@ const SIGNATURE_KEY_DOMAIN: u32 = 0x3231_3745;
 
 /// Computes the EIP-712 digest for a Miden transaction-summary commitment.
 pub fn transaction_summary_digest(tx_summary_hash: Word) -> [u8; 32] {
-    let domain_separator = domain_separator();
-    let struct_hash = transaction_struct_hash(tx_summary_hash);
+    digest(domain_separator(), transaction_struct_hash(tx_summary_hash))
+}
 
+/// Computes an EIP-712 typed-data digest from an already-derived domain separator and struct hash.
+///
+/// Callers are responsible for deriving both hashes from the schema and trusted application state.
+pub fn digest(domain_separator: [u8; 32], struct_hash: [u8; 32]) -> [u8; 32] {
     let mut preimage = Vec::with_capacity(66);
     preimage.extend_from_slice(&[0x19, 0x01]);
     preimage.extend_from_slice(&domain_separator);
     preimage.extend_from_slice(&struct_hash);
+    keccak(&preimage)
+}
+
+/// Computes the domain separator used by Miden transaction-summary signatures.
+pub fn domain_separator() -> [u8; 32] {
+    let mut preimage = Vec::with_capacity(96);
+    preimage.extend_from_slice(&keccak(DOMAIN_TYPE.as_bytes()));
+    preimage.extend_from_slice(&keccak(DOMAIN_NAME.as_bytes()));
+    preimage.extend_from_slice(&keccak(DOMAIN_VERSION.as_bytes()));
+    keccak(&preimage)
+}
+
+/// Computes the struct hash for `MidenTransaction(bytes32 txSummaryHash)`.
+pub fn transaction_struct_hash(tx_summary_hash: Word) -> [u8; 32] {
+    let mut preimage = Vec::with_capacity(64);
+    preimage.extend_from_slice(&keccak(TRANSACTION_TYPE.as_bytes()));
+    preimage.extend_from_slice(&word_to_bytes32(tx_summary_hash));
     keccak(&preimage)
 }
 
@@ -43,21 +64,6 @@ pub fn transaction_summary_signature_key(
 /// Encodes a Miden word as the `bytes32` value used by the EIP-712 message.
 pub fn word_to_bytes32(word: Word) -> [u8; 32] {
     word.as_bytes()
-}
-
-fn domain_separator() -> [u8; 32] {
-    let mut preimage = Vec::with_capacity(96);
-    preimage.extend_from_slice(&keccak(DOMAIN_TYPE.as_bytes()));
-    preimage.extend_from_slice(&keccak(DOMAIN_NAME.as_bytes()));
-    preimage.extend_from_slice(&keccak(DOMAIN_VERSION.as_bytes()));
-    keccak(&preimage)
-}
-
-fn transaction_struct_hash(tx_summary_hash: Word) -> [u8; 32] {
-    let mut preimage = Vec::with_capacity(64);
-    preimage.extend_from_slice(&keccak(TRANSACTION_TYPE.as_bytes()));
-    preimage.extend_from_slice(&word_to_bytes32(tx_summary_hash));
-    keccak(&preimage)
 }
 
 fn keccak(bytes: &[u8]) -> [u8; 32] {

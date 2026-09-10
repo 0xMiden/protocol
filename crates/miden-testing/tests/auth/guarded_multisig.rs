@@ -314,11 +314,8 @@ async fn test_guarded_multisig_signature_required(
     Ok(())
 }
 
-/// Tests the complete guarded flow with one raw approver signature, one EIP-712 approver
-/// signature, and the guardian acknowledgement on its existing raw-signature path.
 #[tokio::test]
-async fn test_guarded_multisig_accepts_mixed_raw_and_eip712_approver_signatures()
--> anyhow::Result<()> {
+async fn test_guarded_multisig_mixed_raw_and_eip712_signatures() -> anyhow::Result<()> {
     let (secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
     let approvers = public_keys

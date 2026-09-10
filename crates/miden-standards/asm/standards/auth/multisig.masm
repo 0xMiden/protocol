@@ -5,13 +5,15 @@ use {AccountProcedureRoot, BlockNumber} from miden::protocol::types
 # See the `AuthMultisig` Rust type's documentation for more details.
 
 use miden::protocol::active_account
-use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
+use {AUTH_REQUEST_EVENT, AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth
+use miden::standards::auth::eip712
 use miden::standards::auth::signature
 use {ConversionInfo} from miden::standards::fee
 use miden::core::mem
+use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use {ONE_WORD} from miden::standards::utils
 
@@ -44,8 +46,12 @@ const DEFAULT_THRESHOLD_LOC=0
 const UNIQUE_OUTER_INDEX_LOC=0
 const UNIQUE_INNER_INDEX_LOC=1
 
+const SUCCESSFUL_VERIFICATIONS_LOC=0
+
 # CONSTANTS
 # =================================================================================================
+
+const ECDSA_K256_KECCAK_SCHEME_ID=1
 
 # Storage Slots
 #
@@ -134,6 +140,10 @@ const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval window ended at or 
 const ERR_MULTISIG_EXPIRATION_DELTAS_NOT_U32 = "the expiration delta and the reference block delta must be u32 values"
 
 const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
+
+const ERR_EIP712_REQUIRES_ECDSA = "EIP-712 transaction-summary signatures require ecdsa_k256_keccak"
+
+const ERR_EIP712_INVALID_SIGNATURE_LENGTH = "EIP-712 signature advice value must contain exactly 32 field elements"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -901,24 +911,17 @@ pub proc rebase_expiration_delta(bound_block: BlockNumber)
     end
 end
 
-#! Authenticate a transaction using the signature scheme specified by scheme_id
-#! with multi-signature support
+#! Authenticates a transaction with threshold signatures.
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
 #! - 2 => falcon512_poseidon2
 #!
-#! This procedure implements multi-signature authentication by:
-#! 1. Computing the transaction summary message that needs to be signed
-#! 2. Verifying signatures from multiple required signers against their public keys
-#! 3. Ensuring the minimum threshold of valid signatures is met
-#!
 #! Inputs:
 #!   Operand stack: [block_number, SALT]
 #!   Advice map: {
-#!     h(SIG_0, MSG): SIG_0,
-#!     h(SIG_1, MSG): SIG_1,
-#!     h(SIG_n, MSG): SIG_n
+#!     H(PK_COMM, MSG): RAW_SIGNATURE,
+#!     H(H(PK_COMM, MSG), [0x32313745; 4]): EIP712_ECDSA_SIGNATURE
 #!   }
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
@@ -926,14 +929,17 @@ end
 #! Where:
 #! - block_number is the number of the block the transaction summary binds.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
-#! - SIG_i is the signature from the i-th signer.
+#! - H is Poseidon2.
+#! - PK_COMM is an approver's public-key commitment.
 #! - MSG is the transaction message being signed.
-#! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
+#! - Raw advice takes precedence when both keys are present.
+#! - A wrapper must call `record_and_assert_new_tx`; this procedure does not record the summary.
 #!
 #! Panics if:
 #! - insufficient number of valid signatures (below threshold).
 #! - the approval window ended at or before the transaction reference block, see
 #!   `rebase_expiration_delta`.
+#! - an EIP-712 entry belongs to a non-ECDSA approver or does not contain 32 field elements.
 #!
 #! Invocation: exec
 pub proc auth_tx(block_number: BlockNumber, salt: word)
@@ -970,13 +976,7 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     movdn.5
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
-
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
-
-    exec.::miden::standards::auth::signature::verify_signatures_with_eip712
+    exec.verify_approver_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
     # ------ Checking threshold is >= num_verified_signatures ------
@@ -999,6 +999,130 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     # TX_SUMMARY_COMMITMENT is returned so wrappers can run optional checks
     # (e.g. guardian verification) before replay-protection finalization.
     # => [TX_SUMMARY_COMMITMENT]
+end
+
+# Verifies each approver at most once. Raw advice takes precedence; EIP-712 advice is accepted only
+# for ECDSA approvers under its domain-separated key.
+#
+# Inputs:  [num_of_approvers, MSG]
+# Outputs: [num_verified_signatures, MSG]
+@locals(1)
+proc verify_approver_signatures
+    push.0 loc_store.SUCCESSFUL_VERIFICATIONS_LOC
+    # => [num_of_approvers, MSG]
+
+    dup neq.0
+    while.true
+        # => [i, MSG]
+
+        sub.1 dup
+        # => [signer_idx, signer_idx, MSG]
+
+        exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, signer_idx, MSG]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        exec.native_account::get_initial_map_item
+        # => [PK_COMM, signer_idx, MSG]
+
+        movup.4 movdn.8
+        # => [PK_COMM, MSG, signer_idx]
+
+        # Check the existing raw-signature advice key first.
+        dupw.1 dupw.1
+        exec.poseidon2::merge
+        # => [RAW_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        adv.has_mapkey
+        dropw
+        adv_push
+        # => [has_raw_signature, PK_COMM, MSG, signer_idx]
+
+        if.true
+            dupw.1
+            # => [MSG, PK_COMM, MSG, signer_idx]
+
+            emit.AUTH_REQUEST_EVENT
+            swapw
+            # => [PK_COMM, MSG, MSG, signer_idx]
+
+            dup.12 exec.signature::create_approver_map_key
+            push.APPROVER_SCHEME_ID_SLOT[0..2]
+            exec.native_account::get_initial_map_item
+            # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
+
+            movdn.3 drop drop drop
+            # OS => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
+            # AS => [SIGNATURE]
+
+            exec.signature::verify_signature_by_scheme
+            # => [MSG, signer_idx]
+
+            loc_load.SUCCESSFUL_VERIFICATIONS_LOC add.1
+            loc_store.SUCCESSFUL_VERIFICATIONS_LOC
+            # => [MSG, signer_idx]
+        else
+            # Check the domain-separated EIP-712 signature key.
+            dupw.1 dupw.1
+            exec.poseidon2::merge
+            exec.eip712::extend_signature_key
+            # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+            adv.has_mapkey
+            adv_push
+            # => [has_eip712_signature, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+            if.true
+                # The EIP-712 witness is loaded directly, so validate its length first.
+                adv.push_mapval_count
+                adv_push
+                eq.32 assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
+                # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+                adv.push_mapval
+                dropw
+                # OS => [PK_COMM, MSG, signer_idx]
+                # AS => [SIGNATURE]
+
+                dupw.1 swapw
+                # => [PK_COMM, MSG, MSG, signer_idx]
+
+                dup.12 exec.signature::create_approver_map_key
+                push.APPROVER_SCHEME_ID_SLOT[0..2]
+                exec.native_account::get_initial_map_item
+                # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
+
+                movdn.3 drop drop drop
+                # => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
+
+                eq.ECDSA_K256_KECCAK_SCHEME_ID
+                assert.err=ERR_EIP712_REQUIRES_ECDSA
+                # => [PK_COMM, MSG, MSG, signer_idx]
+
+                exec.eip712::verify_transaction_summary
+                # => [MSG, signer_idx]
+
+                loc_load.SUCCESSFUL_VERIFICATIONS_LOC add.1
+                loc_store.SUCCESSFUL_VERIFICATIONS_LOC
+                # => [MSG, signer_idx]
+            else
+                dropw dropw
+                # => [MSG, signer_idx]
+            end
+        end
+
+        movup.4
+        # => [signer_idx, MSG]
+
+        dup neq.0
+        # => [should_continue, signer_idx, MSG]
+    end
+
+    drop
+    # => [MSG]
+
+    loc_load.SUCCESSFUL_VERIFICATIONS_LOC
+    # => [num_verified_signatures, MSG]
 end
 
 # HELPER PROCEDURES
