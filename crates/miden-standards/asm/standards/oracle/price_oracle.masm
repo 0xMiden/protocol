@@ -6,11 +6,18 @@
 #
 # `get_conversion_rate` is a stable MAST root that invokes the rate provider dynamically.
 
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
 use {AccountProcedureRoot, AssetId, Bool} from miden::protocol::types
 use {ConversionRate} from miden::standards::fee
+
+# CONSTANTS - errors
+# =================================================================================================
+
+const ERR_PRICE_ORACLE_RATE_PROVIDER_ROOT_IS_ZERO = "rate provider procedure root must be non-zero"
+const ERR_PRICE_ORACLE_RATE_PROVIDER_NOT_IN_ACCOUNT = "rate provider procedure is not part of this account"
 
 # CONSTANTS - slot names
 # =================================================================================================
@@ -63,9 +70,6 @@ end
 
 #! Sets the rate provider `get_conversion_rate` dispatches to.
 #!
-#! The root must belong to a procedure of this account, since `dyncall` can only reach the account's
-#! own procedures.
-#!
 #! Inputs:  [RATE_PROVIDER_PROC_ROOT, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -74,11 +78,20 @@ end
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority`.
+#! - the root is zero, which would leave the oracle unable to answer.
+#! - the root is not a procedure of this account, since `dyncall` could never reach it.
 #!
 #! Invocation: call
 @account_procedure
 pub proc set_rate_provider(rate_provider_proc_root: AccountProcedureRoot)
     exec.authority::assert_authorized
+    # => [RATE_PROVIDER_PROC_ROOT, pad(12)]
+
+    exec.word::testz assertz.err=ERR_PRICE_ORACLE_RATE_PROVIDER_ROOT_IS_ZERO
+    # => [RATE_PROVIDER_PROC_ROOT, pad(12)]
+
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_PRICE_ORACLE_RATE_PROVIDER_NOT_IN_ACCOUNT
     # => [RATE_PROVIDER_PROC_ROOT, pad(12)]
 
     push.ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT[0..2] exec.native_account::set_item

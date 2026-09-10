@@ -23,7 +23,12 @@ use miden_standards::account::access::Authority;
 use miden_standards::account::oracle::PriceOracle;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::{Auth, MockChain};
+use miden_standards::errors::standards::{
+    ERR_PRICE_ORACLE_RATE_PROVIDER_NOT_IN_ACCOUNT,
+    ERR_PRICE_ORACLE_RATE_PROVIDER_ROOT_IS_ZERO,
+};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_tx::TransactionExecutorError;
 
 // TEST RATE PROVIDERS
 // ================================================================================================
@@ -79,6 +84,29 @@ const RATE_PROVIDERS_CODE: &str = r#"
 
         push.0 push.0 push.0
         # => [has_conversion_rate = 0, num = 0, den = 0, pad(8)]
+
+        exec.sys::truncate_stack
+    end
+"#;
+
+/// A rate provider that is compiled but never installed on the oracle account, so its root is a
+/// well-formed procedure root the account does not carry.
+const FOREIGN_PROVIDER_PATH: &str = "test::oracle::foreign_provider";
+
+const FOREIGN_PROVIDER_CODE: &str = r#"
+    use miden::core::sys
+
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [has_conversion_rate, num, den, pad(13)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc fixed_rate_2_over_1
+        dropw dropw
+        # => [pad(8)]
+
+        push.1 push.2 push.1
+        # => [has_conversion_rate, num, den, pad(8)]
 
         exec.sys::truncate_stack
     end
@@ -331,6 +359,79 @@ async fn an_unpriceable_pair_comes_back_as_a_zero_denominator() -> anyhow::Resul
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Builds a transaction script pointing the oracle at `root`.
+fn set_rate_provider_tx_script_code(root: Word) -> String {
+    format!(
+        r#"
+        use miden::core::sys
+        use miden::standards::oracle::price_oracle
+
+        @transaction_script
+        pub proc main
+            push.{root}
+            # => [RATE_PROVIDER_PROC_ROOT, ...]
+
+            call.price_oracle::set_rate_provider
+
+            exec.sys::truncate_stack
+        end
+        "#
+    )
+}
+
+/// Runs a `set_rate_provider` transaction against a freshly built oracle and returns the outcome.
+async fn set_rate_provider(
+    root: Word,
+) -> anyhow::Result<
+    Result<miden_protocol::transaction::ExecutedTransaction, TransactionExecutorError>,
+> {
+    let code = rate_providers_code()?;
+    let oracle = oracle_account(&code, rate_provider_root(&code, "fixed_rate_1500_over_3")?)?;
+
+    let tx_script =
+        CodeBuilder::default().compile_tx_script(set_rate_provider_tx_script_code(root))?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(oracle.clone())?;
+    let mock_chain = builder.build()?;
+
+    Ok(mock_chain
+        .build_transaction(oracle.id())
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await)
+}
+
+/// A root the account does not carry can never be reached by `dyncall`, so it is refused at write
+/// time rather than bricking every later read.
+#[tokio::test]
+async fn setting_a_rate_provider_outside_the_account_is_rejected() -> anyhow::Result<()> {
+    let foreign = CodeBuilder::default()
+        .compile_component_code(FOREIGN_PROVIDER_PATH, FOREIGN_PROVIDER_CODE)?;
+    let foreign_root = foreign
+        .get_procedure_root_by_path(
+            format!("{FOREIGN_PROVIDER_PATH}::fixed_rate_2_over_1").as_str(),
+        )
+        .ok_or_else(|| anyhow::anyhow!("component should export fixed_rate_2_over_1"))?;
+
+    let result = set_rate_provider(*foreign_root.mast_root()).await?;
+
+    assert_transaction_executor_error!(result, ERR_PRICE_ORACLE_RATE_PROVIDER_NOT_IN_ACCOUNT);
+
+    Ok(())
+}
+
+/// The empty root is refused too, since it would leave the oracle unable to answer at all.
+#[tokio::test]
+async fn setting_a_zero_rate_provider_is_rejected() -> anyhow::Result<()> {
+    let result = set_rate_provider(Word::empty()).await?;
+
+    assert_transaction_executor_error!(result, ERR_PRICE_ORACLE_RATE_PROVIDER_ROOT_IS_ZERO);
 
     Ok(())
 }
