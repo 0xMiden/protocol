@@ -71,7 +71,7 @@ proc reclaim_note
     dup neq.0 assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED
     # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
-    exec.tx::get_block_number
+    exec.tx::get_reference_block_number
     # => [current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
 
     lte assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED

@@ -68,13 +68,7 @@ impl<'de> Deserialize<'de> for FeltSchema {
 
         let felt_type = raw.r#type.unwrap_or_else(SchemaType::native_felt);
 
-        let description = raw.description.and_then(|description| {
-            if description.trim().is_empty() {
-                None
-            } else {
-                Some(description)
-            }
-        });
+        let description = raw.description.filter(|description| !description.trim().is_empty());
 
         if felt_type == SchemaType::void() {
             if raw.name.is_some() {

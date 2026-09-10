@@ -350,7 +350,7 @@ mod tests {
             20,
             ChipletsLengths::from_parts(30, 40, 50, 60, 70),
             80,
-            128,
+            [128; 3],
         );
 
         let measurements = TraceMeasurements::from(summary);

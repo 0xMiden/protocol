@@ -29,6 +29,8 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET,
+    ERR_MINT_POLICY_MODIFIED_NOTE_METADATA,
+    ERR_MINT_POLICY_MODIFIED_RECIPIENT,
     ERR_NFT_ALREADY_ISSUED,
     ERR_NFT_MINT_POLICY_MODIFIED_ASSET_VALUE,
     ERR_SENDER_NOT_OWNER,
@@ -77,7 +79,6 @@ fn build_nft_faucet_with_type(
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(account_type)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
@@ -270,6 +271,56 @@ async fn nft_mint_policy_modifying_asset_value_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A mint policy that mutates the output note's tag is rejected.
+#[tokio::test]
+async fn nft_mint_policy_modifying_note_tag_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
+
+    // the tag sits at stack index 4, directly below the asset value word
+    let policy =
+        custom_mint_policy("test::faucets::policies::mint::tag_mutating", "movup.4 add.1 movdn.4")?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
+    let mock_chain = builder.build()?;
+
+    let commitment =
+        NonFungibleFaucet::compute_asset_commitment(b"retagged token", Word::from([5, 5, 5, 5u32]));
+    let recipient = Word::from([6, 6, 6, 6u32]);
+
+    let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_MINT_POLICY_MODIFIED_NOTE_METADATA);
+
+    Ok(())
+}
+
+/// A mint policy that mutates the output note's recipient is rejected.
+#[tokio::test]
+async fn nft_mint_policy_modifying_recipient_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder().account_type(AccountType::Private).build_with_seed([5; 32]);
+
+    // the recipient word spans stack indices 6..9
+    let policy = custom_mint_policy(
+        "test::faucets::policies::mint::recipient_mutating",
+        "movup.6 add.1 movdn.6",
+    )?;
+    let faucet = build_nft_faucet(&mut builder, "EC", owner, policy)?;
+    let mock_chain = builder.build()?;
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"redirected token",
+        Word::from([5, 5, 5, 5u32]),
+    );
+    let recipient = Word::from([6, 6, 6, 6u32]);
+
+    let result = build_nft_mint_tx(&mock_chain, &faucet, commitment, recipient)?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_MINT_POLICY_MODIFIED_RECIPIENT);
+
+    Ok(())
+}
+
 /// Full mint -> burn flow: mint an NFT (status ISSUED), then consume a BURN note carrying that
 /// NFT against the faucet. A successful burn proves the status transitioned ISSUED -> BURNED,
 /// since `receive_and_burn` asserts the prior status was ISSUED. Uses the production
@@ -324,6 +375,68 @@ async fn nft_burn_succeeds() -> anyhow::Result<()> {
         .await?;
 
     // after burning, the status API reports the commitment as BURNED
+    faucet.apply_patch(burned.account_patch())?;
+    assert_eq!(
+        NonFungibleFaucet::get_asset_status(faucet.storage(), commitment)?,
+        AssetStatus::Burned,
+    );
+
+    Ok(())
+}
+
+/// A private faucet can consume a BURN note, mirroring the MINT path: the note's consume-side bind
+/// is the asset it carries, which `receive_and_burn` validates against the active faucet, so it
+/// carries no requirement on the faucet's account type. Such a note derives no network target,
+/// since a private account can never be a network account.
+#[tokio::test]
+async fn nft_burn_succeeds_for_a_private_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([16; 32]);
+    let faucet = build_nft_faucet_with_type(
+        &mut builder,
+        "EC",
+        owner,
+        MintPolicy::allow_all(),
+        AccountType::Private,
+    )?;
+    let mut mock_chain = builder.build()?;
+    assert!(faucet.id().is_private());
+
+    let commitment = NonFungibleFaucet::compute_asset_commitment(
+        b"token burned by a private faucet",
+        Word::from([1, 3, 5, 7u32]),
+    );
+    let recipient = Word::from([8, 8, 8, 8u32]);
+
+    // mint first, so the commitment is ISSUED and the burn below can transition it to BURNED
+    let minted = execute_nft_mint(&mut mock_chain, faucet.clone(), commitment, recipient).await?;
+    let mut faucet = faucet;
+    faucet.apply_patch(minted.account_patch())?;
+
+    let asset: Asset = NonFungibleAsset::from_parts(faucet.id(), commitment).into();
+    let sender = AccountId::builder()
+        .account_type(AccountType::Private)
+        .build_with_seed([17; 32]);
+    let mut rng = RandomCoin::new([Felt::from(12u32); 4].into());
+    let burn_note: Note = BurnNote::builder()
+        .sender(sender)
+        .asset(asset)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into();
+
+    // a private faucet is no network account, so the note carries no routing target
+    assert_eq!(burn_note.attachments().num_attachments(), 0);
+
+    let burned = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(burn_note)
+        .build()?
+        .execute()
+        .await?;
+
     faucet.apply_patch(burned.account_patch())?;
     assert_eq!(
         NonFungibleFaucet::get_asset_status(faucet.storage(), commitment)?,
@@ -552,7 +665,6 @@ fn build_nft_faucet_with_blocklist(
 
     let account_builder = AccountBuilder::new([55u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)

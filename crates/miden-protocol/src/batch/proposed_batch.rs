@@ -344,7 +344,8 @@ impl ProposedBatch {
     /// # Errors
     ///
     /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
-    /// or if a transaction's proof fails to verify or does not meet `proof_security_level`.
+    /// if a transaction's proof fails to verify or does not meet `proof_security_level`, or if the
+    /// proof has an outstanding precompile obligation.
     pub fn new(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
@@ -361,12 +362,17 @@ impl ProposedBatch {
 
         let verifier = TransactionVerifier::new(proof_security_level);
         for tx in batch.transactions() {
-            verifier.verify(tx).map_err(|source| {
+            let verification_outcome = verifier.verify(tx).map_err(|source| {
                 ProposedBatchError::TransactionVerificationFailed {
                     transaction_id: tx.id(),
                     source,
                 }
             })?;
+            if !verification_outcome.is_complete() {
+                return Err(ProposedBatchError::IncompleteTransactionProof {
+                    transaction_id: tx.id(),
+                });
+            }
         }
 
         Ok(batch)
@@ -505,6 +511,13 @@ impl Deserializable for ProposedBatch {
             .map(Arc::new)
             .collect::<Vec<Arc<ProvenTransaction>>>();
 
+        if let Some(tx) = transactions.iter().find(|tx| !tx.proof().is_complete()) {
+            return Err(DeserializationError::InvalidValue(format!(
+                "transaction {} has an outstanding precompile obligation",
+                tx.id()
+            )));
+        }
+
         let block_header = BlockHeader::read_from(source)?;
         let partial_blockchain = PartialBlockchain::read_from(source)?;
         let unauthenticated_note_proofs =
@@ -528,7 +541,6 @@ mod tests {
     use anyhow::Context;
     use miden_crypto::merkle::mmr::{Mmr, PartialMmr};
     use miden_crypto::rand::test_utils::rand_value;
-    use miden_verifier::ExecutionProof;
 
     use super::*;
     use crate::Word;
@@ -540,7 +552,7 @@ mod tests {
         // create partial blockchain with 3 blocks - i.e., 2 peaks
         let mut mmr = Mmr::default();
         for i in 0..3 {
-            let block_header = BlockHeader::mock(i, None, None, &[], Word::empty());
+            let block_header = BlockHeader::mock(i, None, None, &[]);
             mmr.add(block_header.commitment())
                 .expect("mmr leaf count exceeds forest leaf bound");
         }
@@ -549,14 +561,8 @@ mod tests {
 
         let chain_commitment = partial_blockchain.peaks().hash_peaks();
         let note_root = rand_value::<Word>();
-        let tx_kernel_commitment = rand_value::<Word>();
-        let reference_block_header = BlockHeader::mock(
-            3,
-            Some(chain_commitment),
-            Some(note_root),
-            &[],
-            tx_kernel_commitment,
-        );
+        let reference_block_header =
+            BlockHeader::mock(3, Some(chain_commitment), Some(note_root), &[]);
 
         let account_id =
             AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
@@ -569,7 +575,7 @@ mod tests {
         let block_num = reference_block_header.block_num();
         let block_ref = reference_block_header.commitment();
         let expiration_block_num = reference_block_header.block_num() + 1;
-        let proof = ExecutionProof::new_dummy();
+        let proof = crate::testing::dummy_execution_proof();
 
         let account_update = TxAccountUpdate::new(
             account_id,
@@ -581,7 +587,7 @@ mod tests {
         .context("failed to build account update")?;
 
         let tx = ProvenTransaction::new(
-            account_update,
+            account_update.clone(),
             Vec::<InputNoteCommitment>::new(),
             Vec::<OutputNote>::new(),
             block_num,
@@ -593,8 +599,8 @@ mod tests {
 
         let batch = ProposedBatch::new_unverified(
             vec![Arc::new(tx)],
-            reference_block_header,
-            partial_blockchain,
+            reference_block_header.clone(),
+            partial_blockchain.clone(),
             BTreeMap::new(),
         )
         .context("failed to propose batch")?;
@@ -613,6 +619,34 @@ mod tests {
         assert_eq!(batch.batch_expiration_block_num, batch2.batch_expiration_block_num);
         assert_eq!(batch.input_notes, batch2.input_notes);
         assert_eq!(batch.output_notes, batch2.output_notes);
+
+        let tx = ProvenTransaction::new(
+            account_update,
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<OutputNote>::new(),
+            block_num,
+            block_ref,
+            expiration_block_num,
+            crate::testing::dummy_deferred_execution_proof(),
+        )
+        .context("failed to build deferred proven transaction")?;
+        let transaction_id = tx.id();
+        let batch = ProposedBatch::new_unverified(
+            vec![Arc::new(tx)],
+            reference_block_header,
+            partial_blockchain,
+            BTreeMap::new(),
+        )
+        .context("failed to propose deferred batch")?;
+
+        let error = ProposedBatch::read_from_bytes(&batch.to_bytes()).unwrap_err();
+        let expected_error =
+            format!("transaction {transaction_id} has an outstanding precompile obligation");
+        assert_matches::assert_matches!(
+            error,
+            DeserializationError::InvalidValue(message)
+                if message == expected_error
+        );
 
         Ok(())
     }

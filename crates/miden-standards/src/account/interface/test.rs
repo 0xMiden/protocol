@@ -19,6 +19,7 @@ use crate::account::auth::{
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::wallets::BasicWallet;
 use crate::note::SwapNote;
+use crate::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use crate::testing::account_interface::get_public_keys_from_account;
 
 /// Checks that building a SWAP note should fail if the requested asset is the same as the
@@ -47,6 +48,60 @@ fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
     AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2))
+}
+
+// CUSTOM COMPONENT IDENTIFICATION TESTS
+// ================================================================================================
+
+/// An account assembled purely from standard components must not be reported with a custom
+/// component, so that the presence of `Custom` is a reliable signal for non-standard code.
+#[test]
+fn test_standard_only_account_has_no_custom_component() {
+    let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
+    let standard_account = AccountBuilder::new(mock_seed)
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .build_existing()
+        .expect("failed to create standard-only account");
+
+    let interface = AccountInterface::from_account(&standard_account);
+
+    assert!(interface.components().contains(&AccountComponentInterface::BasicWallet));
+    assert!(interface.components().contains(&AccountComponentInterface::AuthNoAuth));
+    assert!(
+        !interface
+            .components()
+            .iter()
+            .any(|component| matches!(component, AccountComponentInterface::Custom(_)))
+    );
+}
+
+/// An account exporting non-standard procedures must report them in a custom component.
+#[test]
+fn test_custom_component_holds_the_non_standard_procedures() {
+    let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
+    let custom_account = AccountBuilder::new(mock_seed)
+        .with_component(NoAuth)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .build_existing()
+        .expect("failed to create account with a custom component");
+
+    let interface = AccountInterface::from_account(&custom_account);
+
+    let custom_procedures = interface
+        .components()
+        .iter()
+        .find_map(|component| match component {
+            AccountComponentInterface::Custom(proc_roots) => Some(proc_roots),
+            _ => None,
+        })
+        .expect("account with non-standard procedures should report a custom component");
+
+    assert!(!custom_procedures.is_empty());
+    // The procedures of the identified standard component are not reported as custom.
+    for proc_root in NoAuth::code().procedure_roots() {
+        assert!(!custom_procedures.contains(&proc_root));
+    }
 }
 
 // AUTH COMPONENT IDENTIFICATION TESTS
@@ -84,6 +139,33 @@ fn test_account_interface_identifies_no_auth() {
         no_auth_account_interface.auth_component(),
         AccountComponentInterface::AuthNoAuth
     ));
+}
+
+#[test]
+fn test_account_interface_identifies_custom_auth() {
+    let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
+    let custom_auth_account = AccountBuilder::new(mock_seed)
+        .with_component(IncrNonceAuthComponent)
+        .with_component(BasicWallet)
+        .build_existing()
+        .expect("failed to create custom-auth account");
+
+    // `AccountCode` places the authentication procedure at index 0.
+    let auth_procedure = custom_auth_account.code().procedures()[0];
+
+    let custom_auth_account_interface = AccountInterface::from_account(&custom_auth_account);
+
+    assert_matches!(
+        custom_auth_account_interface.auth_component(),
+        AccountComponentInterface::CustomAuth(proc_root) if *proc_root == auth_procedure
+    );
+
+    // The authentication procedure must not also be reported as a plain custom procedure.
+    for component in custom_auth_account_interface.components() {
+        if let AccountComponentInterface::Custom(proc_roots) = component {
+            assert!(!proc_roots.contains(&auth_procedure));
+        }
+    }
 }
 
 #[test]

@@ -3,26 +3,25 @@ use alloc::collections::BTreeSet;
 use miden_agglayer::testing::bridge_admin_account_id;
 use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
-use miden_protocol::asset::{AssetId, FungibleAsset};
+use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount};
+use miden_standards::account::faucets::TokenName;
 use miden_standards::account::fees::{
     BasicConstantFeePolicy,
     ConstantFeeManager,
     FeePolicyManager,
 };
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
-use miden_standards::note::{
-    BurnNote,
+use miden_standards::note::config::{
     ConstantFeePolicyConfigNote,
-    FeeSponsorshipNote,
-    MintNote,
     NetworkAccountConfigNote,
     PauseConfig,
     RbacConfigNote,
 };
+use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote};
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -144,7 +143,7 @@ fn bridge_account_builder() -> anyhow::Result<AccountBuilder> {
         bridge_admin,
         roles,
         MIDEN_NETWORK_ID,
-        pricer.fee_parameters().fee_faucet_id(),
+        pricer.fee_asset_id().faucet_id(),
         fee_policy,
     ))
 }
@@ -158,14 +157,15 @@ fn build_managed_account(managed: ManagedAccount) -> anyhow::Result<Account> {
         ManagedAccount::Bridge => bridge,
         ManagedAccount::Faucet => AggLayerFaucet::account_builder(
             Word::from([1u32, 0, 0, 0]),
-            "AGG",
+            TokenName::new("AggLayer Token")?,
+            TokenSymbol::new("AGG")?,
             6,
-            1_000u32.into(),
-            Felt::ZERO,
+            AssetAmount::new(1_000)?,
+            AssetAmount::ZERO,
             account_admin,
             fee_manager_id(),
             bridge.id(),
-            pricer.fee_parameters().fee_faucet_id(),
+            pricer.fee_asset_id().faucet_id(),
             pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?,
         )
         .build_existing()?,

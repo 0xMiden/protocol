@@ -196,6 +196,7 @@ end
 #!
 #! Panics if:
 #! - the active mint policy validation fails.
+#! - the active mint policy modified the tag, note_type, or RECIPIENT.
 #! - the faucet is paused.
 #! - the token ID derived from ASSET_VALUE has already been issued.
 #! - the asset stored in the MINT note does not belong to this faucet.

@@ -7,25 +7,24 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
+use self::config::{
+    AllowlistConfigNote,
+    BlocklistConfigNote,
+    ConstantFeePolicyConfigNote,
+    FaucetMetadataConfigNote,
+    FaucetPolicyConfigNote,
+    MinBurnAmountConfigNote,
+    NetworkAccountConfigNote,
+    OwnerConfigNote,
+    PauseConfigNote,
+    RbacConfigNote,
+};
+
+pub mod config;
 pub mod costs;
-
-mod allowlist_config;
-pub use allowlist_config::{AllowlistConfig, AllowlistConfigNote};
-
-mod blocklist_config;
-pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
 
 mod burn;
 pub use burn::BurnNote;
-
-mod constant_fee_policy_config;
-pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
-
-mod faucet_metadata_config;
-pub use faucet_metadata_config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
-
-mod faucet_policy_config;
-pub use faucet_policy_config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
 
 mod fee_sponsorship;
 pub use fee_sponsorship::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
@@ -36,17 +35,8 @@ pub use execution_hint::NoteExecutionHint;
 mod file;
 pub use file::{NoteFile, NoteSyncHint};
 
-mod min_burn_amount_config;
-pub use min_burn_amount_config::MinBurnAmountConfigNote;
-
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
-
-mod network_account_config;
-pub use network_account_config::{NetworkAccountConfig, NetworkAccountConfigNote};
-
-mod owner_config;
-pub use owner_config::{OwnerConfig, OwnerConfigNote};
 
 mod p2id;
 pub use p2id::{P2idNote, P2idNoteStorage};
@@ -54,14 +44,8 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
-mod pause_config;
-pub use pause_config::{PauseConfig, PauseConfigNote};
-
 mod pswap;
 pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
-
-mod rbac_config;
-pub use rbac_config::{RbacConfig, RbacConfigNote};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
@@ -203,30 +187,39 @@ impl StandardNote {
         }
     }
 
-    /// Returns the expected number of storage items of the active note.
-    pub fn expected_num_storage_items(&self) -> usize {
+    /// Returns the [`NumStorageItems`] items this kind of note accepts.
+    pub fn num_storage_items(&self) -> NumStorageItems {
         match self {
-            Self::P2ID => P2idNote::NUM_STORAGE_ITEMS,
-            Self::P2IDE => P2ideNote::NUM_STORAGE_ITEMS,
-            Self::SWAP => SwapNote::NUM_STORAGE_ITEMS,
-            Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
-            Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
-            Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
-            Self::CONSTANT_FEE_POLICY_CONFIG => ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS,
-            Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::NUM_STORAGE_ITEMS,
-            // FaucetMetadataConfig storage is variable per action; this returns the upper bound.
-            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS,
-            Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::NUM_STORAGE_ITEMS,
-            Self::ALLOWLIST_CONFIG => AllowlistConfigNote::NUM_STORAGE_ITEMS,
-            Self::BLOCKLIST_CONFIG => BlocklistConfigNote::NUM_STORAGE_ITEMS,
-            Self::PAUSE_CONFIG => PauseConfigNote::NUM_STORAGE_ITEMS,
-            // OwnerConfig storage is variable per action; this returns the upper bound.
-            Self::OWNER_CONFIG => OwnerConfigNote::MAX_NUM_STORAGE_ITEMS,
-            // RbacConfig storage is variable per action; this returns the upper bound.
-            Self::RBAC_CONFIG => RbacConfigNote::MAX_NUM_STORAGE_ITEMS,
-            Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::NUM_STORAGE_ITEMS,
-            Self::FEE_SPONSORSHIP => FeeSponsorshipNote::NUM_STORAGE_ITEMS,
-            Self::TX_FEE => TxFeeNote::NUM_STORAGE_ITEMS,
+            Self::P2ID => NumStorageItems::Exact(P2idNote::NUM_STORAGE_ITEMS),
+            Self::P2IDE => NumStorageItems::Exact(P2ideNote::NUM_STORAGE_ITEMS),
+            Self::SWAP => NumStorageItems::Exact(SwapNote::NUM_STORAGE_ITEMS),
+            Self::PSWAP => NumStorageItems::Exact(PswapNote::NUM_STORAGE_ITEMS),
+            Self::MINT => MintNote::NUM_STORAGE_ITEMS,
+            Self::BURN => NumStorageItems::Exact(BurnNote::NUM_STORAGE_ITEMS),
+            Self::CONSTANT_FEE_POLICY_CONFIG => {
+                NumStorageItems::Exact(ConstantFeePolicyConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::FAUCET_POLICY_CONFIG => {
+                NumStorageItems::Exact(FaucetPolicyConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::NUM_STORAGE_ITEMS,
+            Self::MIN_BURN_AMOUNT_CONFIG => {
+                NumStorageItems::Exact(MinBurnAmountConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::ALLOWLIST_CONFIG => {
+                NumStorageItems::Exact(AllowlistConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::BLOCKLIST_CONFIG => {
+                NumStorageItems::Exact(BlocklistConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::PAUSE_CONFIG => NumStorageItems::Exact(PauseConfigNote::NUM_STORAGE_ITEMS),
+            Self::OWNER_CONFIG => OwnerConfigNote::NUM_STORAGE_ITEMS,
+            Self::RBAC_CONFIG => RbacConfigNote::NUM_STORAGE_ITEMS,
+            Self::NETWORK_ACCOUNT_CONFIG => {
+                NumStorageItems::Exact(NetworkAccountConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::FEE_SPONSORSHIP => NumStorageItems::Exact(FeeSponsorshipNote::NUM_STORAGE_ITEMS),
+            Self::TX_FEE => NumStorageItems::Exact(TxFeeNote::NUM_STORAGE_ITEMS),
         }
     }
 
@@ -400,6 +393,37 @@ impl StandardNote {
     }
 }
 
+// NUM STORAGE ITEMS
+// ================================================================================================
+
+/// The number of storage items a [`StandardNote`] accepts.
+///
+/// A note script asserts the size of the storage it is handed, and some scripts accept more than
+/// one size: they branch on it, or hold a variable-length tail. This is the set of sizes one of
+/// them accepts, so that a caller can check a note against it instead of comparing against a
+/// single constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumStorageItems {
+    /// The note holds exactly this many storage items.
+    Exact(usize),
+    /// The note holds any number of storage items in this inclusive range.
+    Range { min: usize, max: usize },
+    /// The note holds a number of storage items accepted by any of these, and by none of the
+    /// sizes in between them.
+    AnyOf(&'static [NumStorageItems]),
+}
+
+impl NumStorageItems {
+    /// Returns `true` if `num_items` is one of the accepted numbers of storage items.
+    pub fn accepts(&self, num_items: usize) -> bool {
+        match self {
+            Self::Exact(expected) => num_items == *expected,
+            Self::Range { min, max } => (*min..=*max).contains(&num_items),
+            Self::AnyOf(accepted) => accepted.iter().any(|accepted| accepted.accepts(num_items)),
+        }
+    }
+}
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -462,6 +486,80 @@ impl Clone for NoteConsumptionStatus {
                 let err = error.to_string();
                 NoteConsumptionStatus::NeverConsumable(err.into())
             },
+        }
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::MAX_NOTE_STORAGE_ITEMS;
+
+    use super::*;
+
+    /// A MINT note holds exactly 13 items when it creates a private output note, and 20 or more
+    /// when it creates a public one, so the sizes in between are the only invalid ones below the
+    /// protocol limit.
+    #[test]
+    fn mint_accepts_both_the_private_and_the_public_storage_sizes() {
+        for num_items in [MintNote::NUM_STORAGE_ITEMS_PRIVATE, 20, 21, MAX_NOTE_STORAGE_ITEMS] {
+            assert!(
+                StandardNote::MINT.num_storage_items().accepts(num_items),
+                "{num_items} items should be accepted"
+            );
+        }
+
+        for num_items in [0, 12, 14, 19, MAX_NOTE_STORAGE_ITEMS + 1] {
+            assert!(
+                !StandardNote::MINT.num_storage_items().accepts(num_items),
+                "{num_items} items should be rejected"
+            );
+        }
+    }
+
+    /// The config notes size their storage per action, and the sizes no action uses must be
+    /// rejected even when they fall between the bounds.
+    #[test]
+    fn config_notes_accept_only_the_sizes_their_actions_use() {
+        for (note, accepted, rejected) in [
+            (StandardNote::OWNER_CONFIG, [1, 3].as_slice(), [0, 2, 4].as_slice()),
+            (StandardNote::RBAC_CONFIG, [2, 3, 4].as_slice(), [0, 1, 5].as_slice()),
+            (
+                StandardNote::FAUCET_METADATA_CONFIG,
+                [2, 32].as_slice(),
+                [0, 3, 31, 33].as_slice(),
+            ),
+        ] {
+            for &num_items in accepted {
+                assert!(
+                    note.num_storage_items().accepts(num_items),
+                    "{} should accept {num_items} items",
+                    note.name()
+                );
+            }
+
+            for &num_items in rejected {
+                assert!(
+                    !note.num_storage_items().accepts(num_items),
+                    "{} should reject {num_items} items",
+                    note.name()
+                );
+            }
+        }
+    }
+
+    /// A note of fixed layout reports its size as exact, so no other size is accepted.
+    #[test]
+    fn fixed_size_notes_report_an_exact_size() {
+        for (note, num_items) in [
+            (StandardNote::P2ID, P2idNote::NUM_STORAGE_ITEMS),
+            (StandardNote::P2IDE, P2ideNote::NUM_STORAGE_ITEMS),
+            (StandardNote::TX_FEE, TxFeeNote::NUM_STORAGE_ITEMS),
+        ] {
+            assert_eq!(note.num_storage_items(), NumStorageItems::Exact(num_items));
+            assert!(!note.num_storage_items().accepts(num_items + 1));
         }
     }
 }

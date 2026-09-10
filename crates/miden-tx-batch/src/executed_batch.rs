@@ -1,4 +1,4 @@
-use miden_processor::TraceBuildInputs;
+use miden_processor::ExecutionWitness;
 use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 
 // EXECUTED BATCH
@@ -8,26 +8,22 @@ use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 ///
 /// Produced by [`BatchExecutor::execute`](crate::BatchExecutor::execute) and consumed by
 /// [`LocalBatchProver::prove`](crate::LocalBatchProver::prove). It carries the executed batch's
-/// trace inputs so that proving only needs to build the trace and generate the proof.
+/// execution witness so that proving only needs to build the trace and generate the proof.
 pub struct ExecutedBatch {
     proposed_batch: ProposedBatch,
-    trace_inputs: TraceBuildInputs,
+    witness: ExecutionWitness,
     batch_outputs: BatchOutputs,
 }
 
 impl ExecutedBatch {
-    /// Creates a new [`ExecutedBatch`] from the proposed batch, the trace inputs and the public
-    /// outputs produced by executing the batch kernel over it.
+    /// Creates a new [`ExecutedBatch`] from the proposed batch, the execution witness and the
+    /// public outputs produced by executing the batch kernel over it.
     pub(crate) fn new(
         proposed_batch: ProposedBatch,
-        trace_inputs: TraceBuildInputs,
+        witness: ExecutionWitness,
         batch_outputs: BatchOutputs,
     ) -> Self {
-        Self {
-            proposed_batch,
-            trace_inputs,
-            batch_outputs,
-        }
+        Self { proposed_batch, witness, batch_outputs }
     }
 
     /// Returns the [`ProposedBatch`] this batch was executed from.
@@ -40,9 +36,9 @@ impl ExecutedBatch {
         &self.batch_outputs
     }
 
-    /// Consumes the executed batch, returning the proposed batch and the trace inputs needed to
-    /// prove it.
-    pub(crate) fn into_parts(self) -> (ProposedBatch, TraceBuildInputs) {
-        (self.proposed_batch, self.trace_inputs)
+    /// Consumes the executed batch, returning the proposed batch and the execution witness needed
+    /// to prove it.
+    pub(crate) fn into_parts(self) -> (ProposedBatch, ExecutionWitness) {
+        (self.proposed_batch, self.witness)
     }
 }

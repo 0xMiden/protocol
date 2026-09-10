@@ -1,14 +1,27 @@
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_METADATA_UNSUPPORTED_VERSION = "note metadata has an unsupported version"
+
+const ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT = "note metadata has a non-zero reserved bit"
+
 # CONSTANTS
 # =================================================================================================
 
 # The maximum number of storage values associated with a single note.
 pub const MAX_NOTE_STORAGE_ITEMS = 1024
 
-# Note type constants. These encode the note type in the lower byte of the metadata.
-# See NoteType in the Rust protocol crate for details.
-
 #! Version 1 of the note metadata encoding.
 pub const NOTE_METADATA_VERSION_1 = 1
+
+#! The mask for the version bits in the first felt of the note metadata.
+const NOTE_METADATA_VERSION_MASK = 0x3f # 0b0011_1111
+
+#! The mask for the reserved bit in the first felt of the note metadata.
+const NOTE_METADATA_RESERVED_BIT_MASK = 0x80 # 0b1000_0000
+
+# Note type constants. These encode the note type in the lower byte of the metadata.
+# See NoteType in the Rust protocol crate for details.
 
 #! The note type of private notes.
 pub const NOTE_TYPE_PRIVATE = 0
@@ -27,3 +40,73 @@ pub const MAX_ATTACHMENT_TOTAL_WORDS = 512
 
 #! The reserved value to signal a `None` note attachment scheme.
 pub const ATTACHMENT_SCHEME_NONE = 1
+
+# PROCEDURES
+# =================================================================================================
+
+#! Extracts the version from the provided metadata.
+#!
+#! Inputs:  [METADATA]
+#! Outputs: [version]
+#!
+#! Where:
+#! - METADATA is the metadata of a note.
+#! - version is the version of the note metadata encoding.
+pub proc metadata_into_version
+    movdn.3 drop drop drop
+    # => [sender_id_suffix_type_version]
+
+    u32split swap drop
+    # => [lo32]
+
+    u32and.NOTE_METADATA_VERSION_MASK
+    # => [version]
+end
+
+#! Extracts the reserved bit from the provided metadata.
+#!
+#! Inputs:  [METADATA]
+#! Outputs: [reserved_bit]
+#!
+#! Where:
+#! - METADATA is the metadata of a note.
+#! - reserved_bit is 1 if the reserved bit is set, 0 otherwise.
+proc metadata_into_reserved_bit
+    movdn.3 drop drop drop
+    # => [sender_id_suffix_type_version]
+
+    u32split swap drop
+    # => [lo32]
+
+    u32and.NOTE_METADATA_RESERVED_BIT_MASK neq.0
+    # => [reserved_bit]
+end
+
+#! Validates that note metadata is well formed and consumes it.
+#!
+#! WARNING: This procedure should not be exposed to or called from user code (e.g. miden::protocol
+#! or miden::standards) as this would make the calling code only accept note metadata version 1.
+#!
+#! Inputs:  [METADATA]
+#! Outputs: []
+#!
+#! Where:
+#! - METADATA is the metadata of a note.
+#!
+#! Panics if:
+#! - the metadata encodes an unknown version.
+#! - the metadata has its reserved bit set.
+pub proc validate_metadata
+    # the version defines how the rest of the metadata is decoded, so assert it first
+    dupw exec.metadata_into_version
+    # => [version, METADATA]
+
+    eq.NOTE_METADATA_VERSION_1 assert.err=ERR_NOTE_METADATA_UNSUPPORTED_VERSION
+    # => [METADATA]
+
+    exec.metadata_into_reserved_bit
+    # => [reserved_bit]
+
+    assertz.err=ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT
+    # => []
+end

@@ -18,7 +18,6 @@ use miden_protocol::account::{
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
-    AssetCallbackFlag,
     StorageSlot,
     StorageSlotName,
 };
@@ -40,6 +39,7 @@ use crate::account::account_component_code;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
 use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::TokenPolicyManager;
+use crate::account::wallets::BasicWallet;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -575,12 +575,11 @@ pub fn create_singlesig_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
-    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_asset_callbacks(asset_callbacks)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -597,12 +596,11 @@ pub fn create_multisig_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
-    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_asset_callbacks(asset_callbacks)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -619,12 +617,11 @@ pub fn create_guarded_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
-    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_asset_callbacks(asset_callbacks)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -648,11 +645,8 @@ pub fn create_network_fungible_faucet(
     fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
-    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
-
     NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty")
-        .with_asset_callbacks(asset_callbacks)
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)

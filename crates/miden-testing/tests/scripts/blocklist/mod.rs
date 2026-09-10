@@ -18,7 +18,6 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountType,
-    AssetCallbackFlag,
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
@@ -88,7 +87,6 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
@@ -567,7 +565,6 @@ fn add_rbac_faucet_with_blocklist(
 
     let account_builder = AccountBuilder::new([71u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_components(AccessControl::Rbac {
             admin,

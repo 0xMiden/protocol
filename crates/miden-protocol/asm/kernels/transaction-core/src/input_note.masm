@@ -231,22 +231,9 @@ pub proc remove_asset
         exec.asset::split
         # => [FINAL_ASSET_VALUE, found_asset_ptr]
 
-        # if nothing remains, clear the whole slot
-        exec.word::testz
-        # => [is_empty_remainder, FINAL_ASSET_VALUE, found_asset_ptr]
-
-        if.true
-            # clear the asset's slot; the removed asset becomes (EMPTY_WORD, EMPTY_WORD)
-            padw movup.8 exec.asset::store
-            # => []
-
-            padw
-            # => [FINAL_ASSET_VALUE]
-        else
-            # write the reduced value back to the note's asset slot
-            movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le
-            # => [FINAL_ASSET_VALUE]
-        end
+        # write the reduced value back to the note's asset slot
+        movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le
+        # => [FINAL_ASSET_VALUE]
     end
 end
 

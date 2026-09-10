@@ -81,7 +81,7 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let expected_id = batch.id();
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
-    let proven = LocalBatchProver::new().prove(executed).context("batch proving failed")?;
+    let proven = LocalBatchProver::default().prove(executed).context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
 

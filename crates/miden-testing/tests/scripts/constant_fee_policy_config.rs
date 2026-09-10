@@ -1,4 +1,4 @@
-//! Tests for the [`miden_standards::note::ConstantFeePolicyConfigNote`] standardized note,
+//! Tests for the [`miden_standards::note::config::ConstantFeePolicyConfigNote`] standardized note,
 //! which schedules a fee for a note script root by calling the consuming network account's
 //! [`ConstantFeeManager`](miden_standards::account::fees::ConstantFeeManager)
 //! `set_note_fee` procedure.
@@ -15,11 +15,13 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::errors::standards::{
     ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH,
+    ERR_CONSTANT_FEE_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_NETWORK_ACCOUNT_TARGET_MISSING,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{ConstantFeePolicyConfigNote, NetworkAccountTarget, NoteExecutionHint};
+use miden_standards::note::config::ConstantFeePolicyConfigNote;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
@@ -32,7 +34,7 @@ use super::constant_fee_manager::{
     owner_id,
 };
 use super::fee_manager::{FEE_AMOUNT, priced_root};
-use crate::consume_note;
+use crate::{consume_note, into_private_note};
 
 // HELPERS
 // ================================================================================================
@@ -246,6 +248,33 @@ async fn config_note_without_target_attachment_is_rejected() -> anyhow::Result<(
         .await;
 
     assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TARGET_MISSING);
+
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before `set_note_fee` runs.
+#[tokio::test]
+async fn private_config_note_is_rejected() -> anyhow::Result<()> {
+    let owner = owner_id();
+    let consuming_account = build_manageable_fee_account(
+        owner,
+        BTreeSet::from([ConstantFeePolicyConfigNote::script_root()]),
+    )?;
+    let config_note = build_config_note(owner, consuming_account.id(), fee_asset(FEE_AMOUNT)?, 4)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(consuming_account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(consuming_account.id())
+        .unauthenticated_input_note(into_private_note(config_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_CONSTANT_FEE_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC);
 
     Ok(())
 }

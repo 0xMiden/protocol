@@ -193,6 +193,15 @@ impl RoleConfig {
 /// `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is reserved and cannot be
 /// used as a role symbol; attempting to do so panics with `ERR_ROLE_SYMBOL_ZERO`.
 ///
+/// On-chain a role is only ever the encoded field element, so the entrypoints that write one to
+/// storage hold it to this same encoding and panic with `ERR_INVALID_ROLE_SYMBOL` otherwise. The
+/// read guard `assert_sender_has_role` does not re-check: a non-canonical symbol matches no stored
+/// membership and fails the guard anyway. The one role symbol this component does not write is the
+/// one `Authority` keeps in its procedure-roles map, and `authority::assert_authorized_rbac`
+/// validates that on read, which keeps on-chain authorization and off-chain readers (such as
+/// [`Authority::try_from_storage`][crate::account::access::Authority::try_from_storage]) in
+/// agreement.
+///
 /// ## Usage
 ///
 /// Guarding a procedure in MASM so that only members of `MINTER` can call it:

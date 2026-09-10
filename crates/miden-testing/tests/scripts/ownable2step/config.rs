@@ -9,16 +9,13 @@ use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS};
 use miden_standards::errors::standards::{
+    ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_OWNER_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{
-    NetworkAccountTarget,
-    NoteExecutionHint,
-    OwnerConfig,
-    OwnerConfigNote,
-};
+use miden_standards::note::config::{OwnerConfig, OwnerConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -27,6 +24,7 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 // suite only checks that the OwnerConfig note dispatches each action and rejects malformed
 // notes.
 use super::{create_ownable_account, get_nominated_owner_from_storage, get_owner_from_storage};
+use crate::into_private_note;
 
 // HELPERS
 // ================================================================================================
@@ -234,5 +232,35 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .await;
 
     assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any ownership change runs.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
+
+    let account = create_ownable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let note = owner_config_note(
+        owner,
+        account.id(),
+        OwnerConfig::TransferOwnership { new_owner: Some(new_owner) },
+        &mut rng,
+    )?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC);
     Ok(())
 }

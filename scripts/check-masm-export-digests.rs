@@ -70,7 +70,7 @@ fn compare_roots(previous: Roots, current: Roots) -> Result<(), String> {
 }
 
 mod current {
-    use miden_agglayer_current::{AggLayerBridge, agglayer_package, bridge, faucet};
+    use miden_agglayer_current::{AggLayerBridge, agglayer_package, bridge};
     use miden_protocol_current::account::AccountComponentCode;
     use miden_protocol_current::account::component::AUTH_SCRIPT_ATTRIBUTE;
     use miden_protocol_current::transaction::TransactionKernel;
@@ -188,10 +188,6 @@ mod current {
             "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
             bridge::BRIDGE_CODE_COMMITMENT.to_hex(),
         );
-        roots.insert(
-            "agglayer::FAUCET_CODE_COMMITMENT".to_string(),
-            faucet::FAUCET_CODE_COMMITMENT.to_hex(),
-        );
 
         for code in COMPONENT_CODE {
             collect_component(code(), &mut roots);
@@ -233,7 +229,7 @@ mod current {
 }
 
 mod previous {
-    use miden_agglayer_previous::{AggLayerBridge, agglayer_package, bridge, faucet};
+    use miden_agglayer_previous::{AggLayerBridge, agglayer_package, bridge};
     use miden_protocol_previous::account::AccountComponentCode;
     use miden_protocol_previous::account::component::AUTH_SCRIPT_ATTRIBUTE;
     use miden_protocol_previous::transaction::TransactionKernel;
@@ -350,10 +346,6 @@ mod previous {
         roots.insert(
             "agglayer::BRIDGE_CODE_COMMITMENT".to_string(),
             bridge::BRIDGE_CODE_COMMITMENT.to_hex(),
-        );
-        roots.insert(
-            "agglayer::FAUCET_CODE_COMMITMENT".to_string(),
-            faucet::FAUCET_CODE_COMMITMENT.to_hex(),
         );
 
         for code in COMPONENT_CODE {

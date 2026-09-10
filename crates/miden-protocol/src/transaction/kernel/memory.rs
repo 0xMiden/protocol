@@ -22,6 +22,7 @@ pub type StorageSlot = u8;
 // | Bookkeeping        | 1_200         | 85               |                                             |
 // | Global inputs      | 1_600         | 40               |                                             |
 // | Block header       | 2_000         | 44               |                                             |
+// | Protocol config    | 2_200         | 24               |                                             |
 // | Partial blockchain | 2_400         | 132              |                                             |
 // | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each         |
 // | Account delta      | 532_480       | 264              | fungible + non-fungible ptr + 256 patches   |
@@ -179,56 +180,74 @@ pub const AUTH_ARGS_PTR: MemoryAddress = 1636;
 // BLOCK DATA
 // ------------------------------------------------------------------------------------------------
 
-/// The memory address at which the block data section begins.
-pub const BLOCK_DATA_SECTION_OFFSET: MemoryOffset = 2000;
+/// The memory address at which the block data section begins, holding the block metadata.
+///
+/// The section holds the reference block header, see
+/// [`BlockHeader::to_elements`](crate::block::BlockHeader::to_elements) for its layout.
+pub const BLOCK_METADATA_PTR: MemoryAddress = 2000;
 
-/// The memory address at which the previous block commitment is stored.
-pub const PREV_BLOCK_COMMITMENT_PTR: MemoryAddress = 2000;
-
-/// The memory address at which the chain commitment is stored.
-pub const CHAIN_COMMITMENT_PTR: MemoryAddress = 2004;
-
-/// The memory address at which the state root is stored.
-pub const ACCT_DB_ROOT_PTR: MemoryAddress = 2008;
-
-/// The memory address at which the nullifier db root is store.
-pub const NULLIFIER_DB_ROOT_PTR: MemoryAddress = 2012;
-
-/// The memory address at which the TX commitment is stored.
-pub const TX_COMMITMENT_PTR: MemoryAddress = 2016;
-
-/// The memory address at which the transaction kernel commitment is stored.
-pub const TX_KERNEL_COMMITMENT_PTR: MemoryAddress = 2020;
-
-/// The memory address at which the public key is stored.
-pub const VALIDATOR_KEY_COMMITMENT_PTR: MemoryAddress = 2024;
-
-/// The memory address at which the block number is stored.
-pub const BLOCK_METADATA_PTR: MemoryAddress = 2028;
+/// The index of the block header version within the block metadata.
+pub const BLOCK_VERSION_IDX: DataIndex = 0;
 
 /// The index of the block number within the block metadata.
-pub const BLOCK_NUMBER_IDX: DataIndex = 0;
-
-/// The index of the protocol version within the block metadata.
-pub const PROTOCOL_VERSION_IDX: DataIndex = 1;
+pub const BLOCK_NUMBER_IDX: DataIndex = 1;
 
 /// The index of the timestamp within the block metadata.
 pub const TIMESTAMP_IDX: DataIndex = 2;
 
-/// The memory address at which the fee parameters are stored. These occupy a double word.
-pub const FEE_PARAMETERS_PTR: MemoryAddress = 2032;
+/// The memory address at which the previous block commitment is stored.
+pub const PREV_BLOCK_COMMITMENT_PTR: MemoryAddress = 2004;
+
+/// The memory address at which the chain commitment is stored.
+pub const CHAIN_COMMITMENT_PTR: MemoryAddress = 2008;
+
+/// The memory address at which the state root is stored.
+pub const ACCT_DB_ROOT_PTR: MemoryAddress = 2012;
+
+/// The memory address at which the nullifier db root is store.
+pub const NULLIFIER_DB_ROOT_PTR: MemoryAddress = 2016;
+
+/// The memory address at which the TX commitment is stored.
+pub const TX_COMMITMENT_PTR: MemoryAddress = 2020;
+
+/// The memory address at which the protocol config commitment is stored.
+pub const PROTOCOL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2024;
+
+/// The memory address at which the validator config commitment is stored.
+pub const VALIDATOR_CONFIG_COMMITMENT_PTR: MemoryAddress = 2028;
+
+/// The memory address at which the next protocol config commitment is stored.
+pub const NEXT_PROTOCOL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2032;
+
+/// The memory address at which the fee parameters are stored.
+pub const FEE_PARAMETERS_PTR: MemoryAddress = 2036;
 
 /// The index of the verification base fee within the block fee parameters.
-pub const VERIFICATION_BASE_FEE_IDX: DataIndex = 1;
-
-/// The index of the fee faucet ID suffix within the block fee parameters.
-pub const FEE_FAUCET_ID_SUFFIX_IDX: DataIndex = 2;
-
-/// The index of the fee faucet ID prefix within the block fee parameters.
-pub const FEE_FAUCET_ID_PREFIX_IDX: DataIndex = 3;
+pub const VERIFICATION_BASE_FEE_IDX: DataIndex = 0;
 
 /// The memory address at which the note root is stored.
 pub const NOTE_ROOT_PTR: MemoryAddress = 2040;
+
+// PROTOCOL CONFIG
+// ------------------------------------------------------------------------------------------------
+
+/// The memory address at which the protocol config section begins.
+pub const PROTOCOL_CONFIG_SECTION_OFFSET: MemoryOffset = 2200;
+
+/// The memory address at which the fee asset ID is stored.
+pub const FEE_ASSET_ID_PTR: MemoryAddress = 2200;
+
+/// The memory address at which the transaction kernel config commitment is stored.
+pub const TX_KERNEL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2204;
+
+/// The memory address at which the batch kernel config commitment is stored.
+pub const BATCH_KERNEL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2208;
+
+/// The memory address at which the block kernel config commitment is stored.
+pub const BLOCK_KERNEL_CONFIG_COMMITMENT_PTR: MemoryAddress = 2212;
+
+/// The memory address at which the proof verification config commitment is stored.
+pub const PROOF_VERIFICATION_COMMITMENT_PTR: MemoryAddress = 2216;
 
 // CHAIN DATA
 // ------------------------------------------------------------------------------------------------

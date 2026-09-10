@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
-use crate::account::AccountId;
-use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorKeys};
+use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorConfig};
+use crate::protocol_config::NextProtocolConfig;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -19,37 +19,44 @@ use crate::{Felt, Hasher, Word, ZERO};
 ///
 /// A block header includes the following fields:
 ///
-/// - `version` specifies the version of the protocol.
-/// - `prev_block_commitment` is the hash of the previous block header.
+/// - `version` specifies the version of the block header itself. It changes when fields are added
+///   to or removed from the header, and when the scheme behind one of the header's commitments
+///   changes, for example the structure of the SMTs or of the MMR.
+/// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. The u32 is
+///   sufficient to represent timestamps up to year 2106.
 /// - `block_num` is a unique sequential number of the current block.
+/// - `prev_block_commitment` is the hash of the previous block header.
 /// - `chain_commitment` is a commitment to an MMR of the entire chain where each block is a leaf.
 /// - `account_root` is a commitment to account database.
 /// - `nullifier_root` is a commitment to the nullifier database.
 /// - `note_root` is a commitment to all notes created in the current block.
 /// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
 ///   block.
-/// - `tx_kernel_commitment` is the sequential hash of the kernel procedures.
-/// - `validator_keys` is the set of validator public keys authorized to sign the *next* block.
-/// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
-///   [`FeeParameters`] for more details.
-/// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. Current
-///   representation is sufficient to represent time up to year 2106.
+/// - `validator_config` is the set of validator public keys authorized to sign the *next* block,
+///   together with the quorum, see [`ValidatorConfig`] for more details.
+/// - `fee_parameters` are the parameters defining the base fees, see [`FeeParameters`] for more
+///   details.
+/// - `protocol_config_commitment` is the commitment to the chain's
+///   [`ProtocolConfig`](crate::protocol_config::ProtocolConfig).
+/// - `next_protocol_config` is the scheduled protocol upgrade, if any, see [`NextProtocolConfig`]
+///   for more details.
 /// - `sub_commitment` is a sequential hash of all fields except the note_root.
 /// - `commitment` is a 2-to-1 hash of the sub_commitment and the note_root.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct BlockHeader {
     version: u8,
-    prev_block_commitment: Word,
+    timestamp: u32,
     block_num: BlockNumber,
+    prev_block_commitment: Word,
     chain_commitment: Word,
     account_root: Word,
     nullifier_root: Word,
     note_root: Word,
     tx_commitment: Word,
-    tx_kernel_commitment: Word,
-    validator_keys: ValidatorKeys,
+    validator_config: ValidatorConfig,
     fee_parameters: FeeParameters,
-    timestamp: u32,
+    protocol_config_commitment: Word,
+    next_protocol_config: Option<NextProtocolConfig>,
     sub_commitment: Word,
     commitment: Word,
 }
@@ -62,6 +69,9 @@ impl BlockHeader {
     ///
     /// It is encoded using 8 bits.
     const VERSION_1: u8 = 1;
+
+    /// The number of field elements in the preimage of [`BlockHeader::sub_commitment`].
+    const NUM_SUB_COMMITMENT_ELEMENTS: usize = 40;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -76,27 +86,29 @@ impl BlockHeader {
         nullifier_root: Word,
         note_root: Word,
         tx_commitment: Word,
-        tx_kernel_commitment: Word,
-        validator_keys: ValidatorKeys,
+        validator_config: ValidatorConfig,
         fee_parameters: FeeParameters,
+        protocol_config_commitment: Word,
+        next_protocol_config: Option<NextProtocolConfig>,
         timestamp: u32,
     ) -> Self {
         let version = Self::VERSION_1;
 
-        // Compute block sub commitment.
-        let sub_commitment = Self::compute_sub_commitment(
+        let sub_elements = Self::to_sub_elements(
             version,
             prev_block_commitment,
+            block_num,
             chain_commitment,
             account_root,
             nullifier_root,
             tx_commitment,
-            tx_kernel_commitment,
-            &validator_keys,
+            &validator_config,
             &fee_parameters,
+            protocol_config_commitment,
+            next_protocol_config.as_ref(),
             timestamp,
-            block_num,
         );
+        let sub_commitment = Hasher::hash_elements(&sub_elements);
 
         // The sub commitment is merged with the note_root - hash(sub_commitment, note_root) to
         // produce the final hash. This is done to make the note_root easily accessible
@@ -106,17 +118,18 @@ impl BlockHeader {
 
         Self {
             version,
-            prev_block_commitment,
+            timestamp,
             block_num,
+            prev_block_commitment,
             chain_commitment,
             account_root,
             nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            validator_keys,
+            validator_config,
             fee_parameters,
-            timestamp,
+            protocol_config_commitment,
+            next_protocol_config,
             sub_commitment,
             commitment,
         }
@@ -182,12 +195,12 @@ impl BlockHeader {
         self.note_root
     }
 
-    /// Returns the set of validator public keys authorized to sign the *next* block.
+    /// Returns the validator configuration authorized to sign the *next* block.
     ///
-    /// A block's signatures are verified against the `validator_keys` committed to by its parent
+    /// A block's signatures are verified against the `validator_config` committed to by its parent
     /// block, not against this field. See the [`BlockHeader`] docs for details.
-    pub fn validator_keys(&self) -> &ValidatorKeys {
-        &self.validator_keys
+    pub fn validator_config(&self) -> &ValidatorConfig {
+        &self.validator_config
     }
 
     /// Returns the commitment to all transactions in this block.
@@ -199,17 +212,26 @@ impl BlockHeader {
         self.tx_commitment
     }
 
-    /// Returns the transaction kernel commitment.
-    ///
-    /// The transaction kernel commitment is computed as a sequential hash of all transaction kernel
-    /// hashes.
-    pub fn tx_kernel_commitment(&self) -> Word {
-        self.tx_kernel_commitment
-    }
-
     /// Returns a reference to the [`FeeParameters`] in this header.
     pub fn fee_parameters(&self) -> &FeeParameters {
         &self.fee_parameters
+    }
+
+    /// Returns the commitment to the chain's
+    /// [`ProtocolConfig`](crate::protocol_config::ProtocolConfig).
+    pub fn protocol_config_commitment(&self) -> Word {
+        self.protocol_config_commitment
+    }
+
+    /// Returns the protocol upgrade scheduled by this block, if any.
+    pub fn next_protocol_config(&self) -> Option<&NextProtocolConfig> {
+        self.next_protocol_config.as_ref()
+    }
+
+    /// Returns the commitment to the scheduled protocol upgrade, or [`Word::empty`] if no upgrade
+    /// is scheduled.
+    pub fn next_protocol_config_commitment(&self) -> Word {
+        Self::compute_next_protocol_config_commitment(self.next_protocol_config.as_ref())
     }
 
     /// Returns the timestamp at which the block was created, in seconds since UNIX epoch.
@@ -222,13 +244,63 @@ impl BlockHeader {
         BlockNumber::from_epoch(self.block_epoch())
     }
 
+    // ELEMENT ENCODING
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns this header as a sequence of field elements.
+    ///
+    /// The element layout is:
+    ///
+    /// ```text
+    /// [
+    ///     [version, block_num, timestamp, 0],
+    ///     PREV_BLOCK_COMMITMENT,
+    ///     CHAIN_COMMITMENT,
+    ///     ACCOUNT_ROOT,
+    ///     NULLIFIER_ROOT,
+    ///     TX_COMMITMENT,
+    ///     PROTOCOL_CONFIG_COMMITMENT,
+    ///     VALIDATOR_CONFIG_COMMITMENT,
+    ///     NEXT_PROTOCOL_CONFIG_COMMITMENT,
+    ///     [verification_base_fee, 0, 0, 0],
+    ///     NOTE_ROOT,
+    /// ]
+    /// ```
+    ///
+    /// This is the canonical encoding of a header. It is the layout of the kernel's block data
+    /// memory section and the order in which the header is provided to the kernel, so keep it in
+    /// sync with the kernel's `process_block_data` procedure.
+    ///
+    /// Note that [`BlockHeader::commitment`] is *not* the sequential hash of these elements: the
+    /// note root is hashed separately so that it stays accessible without unhashing the whole
+    /// header. All elements but the trailing note root form the preimage of
+    /// [`BlockHeader::sub_commitment`].
+    pub fn to_elements(&self) -> Vec<Felt> {
+        let mut elements = Self::to_sub_elements(
+            self.version,
+            self.prev_block_commitment,
+            self.block_num,
+            self.chain_commitment,
+            self.account_root,
+            self.nullifier_root,
+            self.tx_commitment,
+            &self.validator_config,
+            &self.fee_parameters,
+            self.protocol_config_commitment,
+            self.next_protocol_config.as_ref(),
+            self.timestamp,
+        );
+        elements.extend_from_slice(self.note_root.as_elements());
+        elements
+    }
+
     // VALIDATION
     // --------------------------------------------------------------------------------------------
 
     /// Validates that `parent` precedes and authorizes this block.
     ///
     /// The `signatures` are positional with respect to the validator set committed to by `parent`
-    /// (see [`ValidatorKeys`]): the signature at index `i` must verify against the parent's
+    /// (see [`ValidatorConfig`]): the signature at index `i` must verify against the parent's
     /// validator key at index `i`. Every validator in the parent's set must have signed.
     ///
     /// # Errors
@@ -268,7 +340,7 @@ impl BlockHeader {
         // Verify the signatures positionally against the parent's validator set using the shared,
         // canonical verifier, which also enforces that every validator signed.
         signatures
-            .verify_against(self.commitment(), parent.validator_keys())
+            .verify_against(self.commitment(), parent.validator_config())
             .map_err(|err| match err {
                 SignatureVerificationError::SignatureCountMismatch { expected, actual } => {
                     ParentValidationError::SignatureCountMismatch { expected, actual }
@@ -284,44 +356,45 @@ impl BlockHeader {
     // HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Computes the sub commitment of the block header.
+    /// Returns the preimage of the block's sub commitment as a sequence of field elements.
     ///
-    /// The sub commitment is computed as a sequential hash of the following fields:
-    /// `prev_block_commitment`, `chain_commitment`, `account_root`, `nullifier_root`, `note_root`,
-    /// `tx_commitment`, `tx_kernel_commitment`, `validator_keys_commitment`, `version`,
-    /// `timestamp`, `block_num`, `fee_faucet_id`, `verification_base_fee` (all fields except
-    /// the `note_root`).
+    /// This covers every header field except the note root. See [`BlockHeader::to_elements`] for
+    /// the element layout.
     #[allow(clippy::too_many_arguments)]
-    fn compute_sub_commitment(
+    fn to_sub_elements(
         version: u8,
         prev_block_commitment: Word,
+        block_num: BlockNumber,
         chain_commitment: Word,
         account_root: Word,
         nullifier_root: Word,
         tx_commitment: Word,
-        tx_kernel_commitment: Word,
-        validator_keys: &ValidatorKeys,
+        validator_config: &ValidatorConfig,
         fee_parameters: &FeeParameters,
+        protocol_config_commitment: Word,
+        next_protocol_config: Option<&NextProtocolConfig>,
         timestamp: u32,
-        block_num: BlockNumber,
-    ) -> Word {
-        let mut elements: Vec<Felt> = Vec::with_capacity(40);
+    ) -> Vec<Felt> {
+        let mut elements: Vec<Felt> = Vec::with_capacity(Self::NUM_SUB_COMMITMENT_ELEMENTS);
+        elements.extend([Felt::from(version), block_num.into(), Felt::from(timestamp), ZERO]);
         elements.extend_from_slice(prev_block_commitment.as_elements());
         elements.extend_from_slice(chain_commitment.as_elements());
         elements.extend_from_slice(account_root.as_elements());
         elements.extend_from_slice(nullifier_root.as_elements());
         elements.extend_from_slice(tx_commitment.as_elements());
-        elements.extend_from_slice(tx_kernel_commitment.as_elements());
-        elements.extend(validator_keys.commitment());
-        elements.extend([block_num.into(), Felt::from(version), Felt::from(timestamp), ZERO]);
-        elements.extend([
-            ZERO,
-            Felt::from(fee_parameters.verification_base_fee()),
-            fee_parameters.fee_faucet_id().suffix(),
-            fee_parameters.fee_faucet_id().prefix().as_felt(),
-        ]);
-        elements.extend([ZERO, ZERO, ZERO, ZERO]);
-        Hasher::hash_elements(&elements)
+        elements.extend_from_slice(protocol_config_commitment.as_elements());
+        elements.extend(validator_config.to_commitment());
+        elements.extend(Self::compute_next_protocol_config_commitment(next_protocol_config));
+        elements.extend([Felt::from(fee_parameters.verification_base_fee()), ZERO, ZERO, ZERO]);
+        elements
+    }
+
+    /// Returns the commitment to `next_protocol_config`, or [`Word::empty`] if no upgrade is
+    /// scheduled.
+    fn compute_next_protocol_config_commitment(
+        next_protocol_config: Option<&NextProtocolConfig>,
+    ) -> Word {
+        next_protocol_config.map_or(Word::empty(), NextProtocolConfig::to_commitment)
     }
 
     // TEST HELPERS
@@ -337,10 +410,9 @@ impl BlockHeader {
     pub(crate) fn new_dummy(
         block_num: u32,
         prev_block_commitment: Word,
-        validator_keys: ValidatorKeys,
+        validator_config: ValidatorConfig,
     ) -> Self {
         use crate::block::{BlockBody, FeeParameters};
-        use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
         use crate::transaction::OrderedTransactionHeaders;
 
         let body = BlockBody::new_unchecked(
@@ -352,8 +424,6 @@ impl BlockHeader {
         let note_root = body.compute_block_note_tree().root();
         let tx_commitment = body.transactions().commitment();
 
-        let fee_parameters =
-            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
         BlockHeader::new(
             prev_block_commitment,
             BlockNumber::from(block_num),
@@ -362,9 +432,10 @@ impl BlockHeader {
             Word::empty(),
             note_root,
             tx_commitment,
+            validator_config,
+            FeeParameters::new(500),
             Word::empty(),
-            validator_keys,
-            fee_parameters,
+            None,
             0,
         )
     }
@@ -384,9 +455,10 @@ impl Serializable for BlockHeader {
             nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            validator_keys,
+            validator_config,
             fee_parameters,
+            protocol_config_commitment,
+            next_protocol_config,
             timestamp,
             // Don't serialize sub commitment and commitment as they can be derived.
             sub_commitment: _,
@@ -401,9 +473,10 @@ impl Serializable for BlockHeader {
         nullifier_root.write_into(target);
         note_root.write_into(target);
         tx_commitment.write_into(target);
-        tx_kernel_commitment.write_into(target);
-        validator_keys.write_into(target);
+        validator_config.write_into(target);
         fee_parameters.write_into(target);
+        protocol_config_commitment.write_into(target);
+        next_protocol_config.write_into(target);
         timestamp.write_into(target);
     }
 }
@@ -427,9 +500,10 @@ impl Deserializable for BlockHeader {
         let nullifier_root = source.read()?;
         let note_root = source.read()?;
         let tx_commitment = source.read()?;
-        let tx_kernel_commitment = source.read()?;
-        let validator_keys = source.read()?;
+        let validator_config = source.read()?;
         let fee_parameters = source.read()?;
+        let protocol_config_commitment = source.read()?;
+        let next_protocol_config = <Option<NextProtocolConfig>>::read_from(source)?;
         let timestamp = source.read()?;
 
         Ok(Self::new(
@@ -440,9 +514,10 @@ impl Deserializable for BlockHeader {
             nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            validator_keys,
+            validator_config,
             fee_parameters,
+            protocol_config_commitment,
+            next_protocol_config,
             timestamp,
         ))
     }
@@ -453,16 +528,10 @@ impl Deserializable for BlockHeader {
 
 /// The fee-related parameters of a block.
 ///
-/// This defines how to compute the fees of a transaction and which asset fees can be paid in.
-///
-/// The fee asset is assumed to be a fungible asset
-/// ([`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible)).
+/// This defines how to compute the fees of a transaction. Which asset fees are paid in is defined
+/// by [`ProtocolConfig::fee_asset_id`](crate::protocol_config::ProtocolConfig::fee_asset_id).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeeParameters {
-    /// The [`AccountId`] of the faucet whose assets are accepted for fee payments in the
-    /// transaction kernel, or in other words, the fee faucet of the blockchain.
-    fee_faucet_id: AccountId,
-
     /// The base fee (in base units) capturing the cost for the verification of a transaction.
     verification_base_fee: u32,
 }
@@ -472,18 +541,12 @@ impl FeeParameters {
     // --------------------------------------------------------------------------------------------
 
     /// Creates [`FeeParameters`] from the provided inputs.
-    pub fn new(fee_faucet_id: AccountId, verification_base_fee: u32) -> Self {
-        Self { fee_faucet_id, verification_base_fee }
+    pub fn new(verification_base_fee: u32) -> Self {
+        Self { verification_base_fee }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns the [`AccountId`] of the faucet whose assets are accepted for fee payments in the
-    /// transaction kernel, or in other words, the fee faucet of the blockchain.
-    pub fn fee_faucet_id(&self) -> AccountId {
-        self.fee_faucet_id
-    }
 
     /// Returns the base fee capturing the cost for the verification of a transaction.
     pub fn verification_base_fee(&self) -> u32 {
@@ -493,17 +556,17 @@ impl FeeParameters {
 
 impl Serializable for FeeParameters {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.fee_faucet_id.write_into(target);
-        self.verification_base_fee.write_into(target);
+        let Self { verification_base_fee } = self;
+
+        verification_base_fee.write_into(target);
     }
 }
 
 impl Deserializable for FeeParameters {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let fee_faucet_id = source.read()?;
         let verification_base_fee = source.read()?;
 
-        Ok(Self::new(fee_faucet_id, verification_base_fee))
+        Ok(Self::new(verification_base_fee))
     }
 }
 
@@ -547,7 +610,6 @@ mod tests {
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
-    use crate::testing::validator_keys::{random_validator_set, sign_all};
 
     #[test]
     fn block_header_deserialization_rejects_unsupported_version() {
@@ -562,50 +624,88 @@ mod tests {
     fn test_serde() {
         let chain_commitment = rand_value::<Word>();
         let note_root = rand_value::<Word>();
-        let tx_kernel_commitment = rand_value::<Word>();
-        let header = BlockHeader::mock(
-            0,
-            Some(chain_commitment),
-            Some(note_root),
-            &[],
-            tx_kernel_commitment,
-        );
+        let header = BlockHeader::mock(0, Some(chain_commitment), Some(note_root), &[]);
         let serialized = header.to_bytes();
         let deserialized = BlockHeader::read_from_bytes(&serialized).unwrap();
 
         assert_eq!(deserialized, header);
     }
 
+    /// Returns `header` with a protocol upgrade scheduled for block 42.
+    fn with_scheduled_upgrade(header: &BlockHeader) -> BlockHeader {
+        let next_protocol_config =
+            NextProtocolConfig::new(BlockNumber::from(42u32), rand_value::<Word>()).unwrap();
+
+        BlockHeader::new(
+            header.prev_block_commitment(),
+            header.block_num(),
+            header.chain_commitment(),
+            header.account_root(),
+            header.nullifier_root(),
+            header.note_root(),
+            header.tx_commitment(),
+            header.validator_config().clone(),
+            header.fee_parameters().clone(),
+            header.protocol_config_commitment(),
+            Some(next_protocol_config),
+            header.timestamp(),
+        )
+    }
+
+    #[test]
+    fn scheduled_upgrade_round_trips_and_changes_the_commitment() {
+        let without_upgrade = BlockHeader::mock(0, None, None, &[]);
+        let with_upgrade = with_scheduled_upgrade(&without_upgrade);
+
+        assert_eq!(without_upgrade.next_protocol_config_commitment(), Word::empty());
+        assert_ne!(with_upgrade.commitment(), without_upgrade.commitment());
+
+        let deserialized = BlockHeader::read_from_bytes(&with_upgrade.to_bytes()).unwrap();
+        assert_eq!(deserialized, with_upgrade);
+    }
+
+    /// The header's element encoding is the single definition of the block data layout, used by
+    /// both the commitment and the kernel's advice inputs. This checks the two stay in agreement.
+    #[test]
+    fn to_elements_is_the_sub_commitment_preimage_plus_the_note_root() {
+        let header = BlockHeader::mock(0, None, None, &[]);
+        let elements = header.to_elements();
+
+        let (sub_elements, note_root) = elements.split_at(BlockHeader::NUM_SUB_COMMITMENT_ELEMENTS);
+        assert_eq!(Hasher::hash_elements(sub_elements), header.sub_commitment());
+        assert_eq!(note_root, header.note_root().as_elements());
+    }
+
     /// Builds a child of `parent` committing a fresh validator set of `next_count` validators as
     /// the signer of the *next* block.
     fn child_of(parent: &BlockHeader, child_num: u32, next_count: usize) -> BlockHeader {
-        let (_, next_keys) = random_validator_set(next_count);
+        let (_, next_keys) = ValidatorConfig::random_with_signers(next_count);
         BlockHeader::new_dummy(child_num, parent.commitment(), next_keys)
     }
 
     #[test]
     fn validate_against_parent_accepts_all_signatures() {
-        let (signers, keys) = random_validator_set(5);
+        let (signers, keys) = ValidatorConfig::random_with_signers(5);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 5);
-        let signatures = sign_all(&keys, &signers, child.commitment());
+        let signatures = keys.sign_all(&signers, child.commitment());
 
         child.validate_against_parent(&parent, &signatures).unwrap();
     }
 
     #[test]
     fn validate_against_parent_accepts_single_validator() {
-        let (signers, keys) = random_validator_set(1);
+        let (signers, keys) = ValidatorConfig::random_with_signers(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 1);
-        let signatures = sign_all(&keys, &signers, child.commitment());
+        let signatures = keys.sign_all(&signers, child.commitment());
 
         child.validate_against_parent(&parent, &signatures).unwrap();
     }
 
     #[test]
     fn validate_against_parent_rejects_incomplete_signatures() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 3);
         // Only one of three validators signs, so the resulting set is too short to align
@@ -623,14 +723,14 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_signature_count_mismatch() {
-        let (_, keys) = random_validator_set(3);
+        let (_, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 3);
 
         // A block signed by a validator set of a different size cannot align positionally with the
         // parent's committed set. Deserialization does not check this, so build it directly.
-        let (other_signers, other_keys) = random_validator_set(4);
-        let signatures = sign_all(&other_keys, &other_signers, child.commitment());
+        let (other_signers, other_keys) = ValidatorConfig::random_with_signers(4);
+        let signatures = other_keys.sign_all(&other_signers, child.commitment());
         let bytes = signatures.to_bytes();
         let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();
 
@@ -643,14 +743,14 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_uncommitted_signatures() {
-        let (_, keys) = random_validator_set(3);
+        let (_, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 3);
 
         // The child is signed by a full, valid validator set of the same size the parent never
         // committed, so the signatures do not verify against the parent's validator keys.
-        let (impostor_signers, impostor_keys) = random_validator_set(3);
-        let signatures = sign_all(&impostor_keys, &impostor_signers, child.commitment());
+        let (impostor_signers, impostor_keys) = ValidatorConfig::random_with_signers(3);
+        let signatures = impostor_keys.sign_all(&impostor_signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(result, Err(ParentValidationError::InvalidSignatureAtPosition { .. })));
@@ -658,11 +758,15 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_genesis() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         // Block 0 has no parent to anchor against.
-        let child = BlockHeader::new_dummy(0, parent.commitment(), random_validator_set(3).1);
-        let signatures = sign_all(&keys, &signers, child.commitment());
+        let child = BlockHeader::new_dummy(
+            0,
+            parent.commitment(),
+            ValidatorConfig::random_with_signers(3).1,
+        );
+        let signatures = keys.sign_all(&signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(result, Err(ParentValidationError::GenesisBlockHasNoParent { .. })));
@@ -670,11 +774,11 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_wrong_parent_number() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         // Child claims to be block 2, but the parent is block 0.
         let child = child_of(&parent, 2, 3);
-        let signatures = sign_all(&keys, &signers, child.commitment());
+        let signatures = keys.sign_all(&signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(result, Err(ParentValidationError::ParentNumberMismatch { .. })));
@@ -682,11 +786,12 @@ mod tests {
 
     #[test]
     fn validate_against_parent_rejects_wrong_parent_commitment() {
-        let (signers, keys) = random_validator_set(3);
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         // Child does not link to the parent's commitment.
-        let child = BlockHeader::new_dummy(1, Word::empty(), random_validator_set(3).1);
-        let signatures = sign_all(&keys, &signers, child.commitment());
+        let child =
+            BlockHeader::new_dummy(1, Word::empty(), ValidatorConfig::random_with_signers(3).1);
+        let signatures = keys.sign_all(&signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(result, Err(ParentValidationError::ParentCommitmentMismatch { .. })));

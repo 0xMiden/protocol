@@ -869,7 +869,7 @@ async fn test_malicious_note_cannot_remove_assets_via_foreign_account() -> anyho
     mock_chain.prove_next_block()?;
 
     let foreign_account_inputs = mock_chain
-        .get_foreign_account_inputs(foreign_account.id())
+        .get_foreign_account_inputs(foreign_account.clone())
         .expect("foreign account inputs should be available");
 
     let result = mock_chain

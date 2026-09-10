@@ -379,6 +379,14 @@ impl OutputNote {
         }
     }
 
+    /// Returns the note's [`NoteHeader`].
+    pub fn header(&self) -> &NoteHeader {
+        match self {
+            Self::Public(note) => note.header(),
+            Self::Private(note) => note.header(),
+        }
+    }
+
     /// Returns the commitment to the note's details, excluding metadata.
     pub fn details_commitment(&self) -> NoteDetailsCommitment {
         match self {
@@ -399,7 +407,7 @@ impl OutputNote {
 
     /// Returns the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
-        <&NoteHeader>::from(self).metadata()
+        self.header().metadata()
     }
 
     /// Returns the recipient of the public note, if this is a public note.
@@ -416,10 +424,7 @@ impl OutputNote {
 
 impl<'note> From<&'note OutputNote> for &'note NoteHeader {
     fn from(note: &'note OutputNote) -> Self {
-        match note {
-            OutputNote::Public(public_note) => public_note.header(),
-            OutputNote::Private(private_note) => private_note.header(),
-        }
+        note.header()
     }
 }
 
@@ -648,5 +653,23 @@ impl Deserializable for PrivateOutputNote {
         let attachments = NoteAttachments::read_from(source)?;
         Self::new(header, attachments)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::RawOutputNote;
+    use crate::Word;
+    use crate::note::Note;
+
+    #[test]
+    fn output_note_exposes_its_header() {
+        let note = Note::mock_noop(Word::from([1_u32, 2, 3, 4]));
+        let output_note = RawOutputNote::Full(note.clone()).into_output_note().unwrap();
+
+        assert_eq!(output_note.header(), note.header());
     }
 }

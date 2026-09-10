@@ -107,7 +107,7 @@ async fn prepare_note_recipient_matches_rust() -> anyhow::Result<()> {
             .reclaimer(reclaimer)
             .reclaim_height(BlockNumber::from(reclaim_height))
             .serial_number(serial_number)
-            .asset(FungibleAsset::mock(10))
+            .asset(FungibleAsset::new(FungibleAsset::mock_issuer(), 10)?)
             .build()?,
     );
     let expected_recipient = note.recipient().digest();

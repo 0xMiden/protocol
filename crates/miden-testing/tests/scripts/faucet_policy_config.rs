@@ -12,7 +12,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, AssetCallbackFlag};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
@@ -27,16 +27,13 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::errors::standards::{
+    ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR,
 };
-use miden_standards::note::{
-    FaucetPolicyConfig,
-    FaucetPolicyConfigNote,
-    NetworkAccountTarget,
-    NoteExecutionHint,
-};
+use miden_standards::note::config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -45,6 +42,8 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
+
+use crate::into_private_note;
 
 // HELPERS
 // ================================================================================================
@@ -77,7 +76,6 @@ fn create_faucet_with_policies(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -305,5 +303,35 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         .await;
 
     assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any policy switch runs.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let mut builder = MockChain::builder();
+    let faucet = create_faucet_with_policies(&mut builder, owner)?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let note = faucet_policy_config_note(
+        owner,
+        faucet.id(),
+        FaucetPolicyConfig::SetMintPolicy {
+            policy_root: MintPolicy::owner_only().root(),
+        },
+        &mut rng,
+    )?;
+    let result = mock_chain
+        .build_transaction(faucet.clone())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC);
     Ok(())
 }

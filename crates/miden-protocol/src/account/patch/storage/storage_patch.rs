@@ -100,8 +100,11 @@ impl AccountStoragePatch {
         self.patches.len()
     }
 
-    /// Returns an iterator over the slot patches.
-    pub(crate) fn slots(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageSlotPatch)> {
+    /// Returns an iterator over the slot patches in ascending slot ID order.
+    ///
+    /// The order is guaranteed by the [`BTreeMap`] backing this patch, whose keys are ordered by
+    /// their slot IDs.
+    pub fn slots(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageSlotPatch)> {
         self.patches.iter()
     }
 

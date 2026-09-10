@@ -39,5 +39,9 @@ pub use script::{TRANSACTION_SCRIPT_ATTRIBUTE, TransactionScript, TransactionScr
 pub use transaction_id::TransactionId;
 pub use tx_args::TransactionArgs;
 pub use tx_header::TransactionHeader;
-pub use tx_summary::{TransactionSummary, TransactionSummaryUserParams};
+pub use tx_summary::{
+    TransactionSummary,
+    TransactionSummaryMetadata,
+    TransactionSummaryUserParams,
+};
 pub use verifier::TransactionVerifier;

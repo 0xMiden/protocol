@@ -18,7 +18,6 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountType,
-    AssetCallbackFlag,
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
@@ -460,7 +459,6 @@ fn add_faucet_with_pause_and_policies(
 
     let account_builder = AccountBuilder::new([44u8; 32])
         .account_type(AccountType::Public)
-        .with_asset_callbacks(AssetCallbackFlag::Enabled)
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(Pausable::unpaused())

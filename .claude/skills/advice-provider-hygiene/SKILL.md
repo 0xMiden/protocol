@@ -52,7 +52,7 @@ adv_pipe exec.poseidon2::permute
 # ... one permute per piped block ...
 exec.poseidon2::squeeze_digest
 # => [COMPUTED_COMMITMENT, ...]
-exec.memory::get_block_commitment
+exec.memory::get_ref_block_commitment
 assert_eqw.err=ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT
 
 # Good: pipe double words while hashing, then assert against the provided commitment

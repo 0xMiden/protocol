@@ -15,6 +15,7 @@ use miden_protocol::transaction::memory::{
     ACTIVE_INPUT_NOTE_PTR,
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
+    INPUT_NOTE_ID_OFFSET,
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
     TX_EXPIRATION_BLOCK_NUM_PTR,
@@ -40,6 +41,9 @@ pub(super) trait TransactionKernelProcess {
 
     /// Returns the current number of output notes.
     fn get_num_output_notes(&self) -> u64;
+
+    /// Returns the transaction's reference block number from the kernel memory.
+    fn get_reference_block_number(&self) -> Result<BlockNumber, TransactionKernelError>;
 
     /// Returns the transaction's expiration block delta from the kernel memory, or 0 if the
     /// expiration has not been set.
@@ -155,10 +159,24 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             .unwrap_or(0)
     }
 
+    fn get_reference_block_number(&self) -> Result<BlockNumber, TransactionKernelError> {
+        // The block metadata lives in the kernel context, while the events reading it may be
+        // emitted from an account context, so read from the root context explicitly.
+        let block_num = self
+            .get_mem_value(ContextId::root(), BLOCK_METADATA_PTR + BLOCK_NUMBER_IDX as u32)
+            .ok_or_else(|| {
+                TransactionKernelError::other("reference block number should be initialized")
+            })?
+            .as_canonical_u64();
+
+        u32::try_from(block_num).map(BlockNumber::from).map_err(|_| {
+            TransactionKernelError::other("reference block number should fit into a u32")
+        })
+    }
+
     fn get_expiration_block_delta(&self) -> Result<u16, TransactionKernelError> {
-        // The expiration block number and the block metadata live in the kernel context, while
-        // the events reading them may be emitted from an account context, so read from the root
-        // context explicitly.
+        // The expiration block number lives in the kernel context, while the events reading it may
+        // be emitted from an account context, so read from the root context explicitly.
         let expiration_block_num = self
             .get_mem_value(ContextId::root(), TX_EXPIRATION_BLOCK_NUM_PTR)
             .ok_or_else(|| {
@@ -174,12 +192,7 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             return Ok(0);
         }
 
-        let block_num = self
-            .get_mem_value(ContextId::root(), BLOCK_METADATA_PTR + BLOCK_NUMBER_IDX as u32)
-            .ok_or_else(|| {
-                TransactionKernelError::other("reference block number should be initialized")
-            })?
-            .as_canonical_u64();
+        let block_num = self.get_reference_block_number()?.as_u64();
 
         expiration_block_num
             .checked_sub(block_num)
@@ -213,10 +226,10 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             Ok(None)
         } else {
             Ok(self
-                .get_mem_word(self.ctx(), note_address)
+                .get_mem_word(self.ctx(), note_address + INPUT_NOTE_ID_OFFSET)
                 .map_err(|err| {
                     TransactionKernelError::other_with_source(
-                        "failed to read note address",
+                        "failed to read note ID",
                         ExecutionError::MemoryErrorNoCtx(err),
                     )
                 })?
