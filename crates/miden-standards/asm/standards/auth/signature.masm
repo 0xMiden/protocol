@@ -50,7 +50,6 @@ const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=1
 const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=2
 const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=3
 const SUCCESSFUL_VERIFICATIONS_LOC=4
-const ALLOW_EIP712_LOC=5
 
 # ERRORS
 # =================================================================================================
@@ -311,28 +310,22 @@ end
 #! the owner public key mapping - the previous signers must authorize the change to the new signers,
 #! not the new signers authorizing themselves.
 #!
-#! When `allow_eip712` is one, an ECDSA approver without a raw signature may instead provide an
-#! EIP-712 transaction-summary signature. Raw signatures take precedence, and each approver is
-#! counted at most once. When it is zero, only raw signatures are considered.
+#! An ECDSA signer without a raw signature may instead provide an EIP-712 transaction-summary
+#! signature. Raw signatures take precedence, and each signer is counted at most once.
 #!
-#! Inputs:  [allow_eip712, approver_scheme_id_slot_id_suffix, approver_scheme_id_slot_id_prefix,
+#! Inputs:  [approver_scheme_id_slot_id_suffix, approver_scheme_id_slot_id_prefix,
 #!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
 #!
 #! Invocation: exec
-@locals(6)
+@locals(5)
 pub proc verify_signatures(
-    allow_eip712: Bool,
     approver_scheme_id_slot_id: StorageSlotId,
     approver_pub_key_slot_id: StorageSlotId,
     num_of_approvers: u8,
     msg: SignatureMessage
 ) -> (u8, SignatureMessage)
-    loc_store.ALLOW_EIP712_LOC
-    # => [approver_scheme_id_slot_id_suffix, approver_scheme_id_slot_id_prefix,
-    #     approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix, num_of_approvers, MSG]
-
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
     # => [approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix, num_of_approvers, MSG]
@@ -421,52 +414,44 @@ pub proc verify_signatures(
             loc_store.SUCCESSFUL_VERIFICATIONS_LOC
             # => [MSG, signer_idx]
         else
-            loc_load.ALLOW_EIP712_LOC
-            # => [allow_eip712, SIG_KEY, PK_COMM, MSG, signer_idx]
+            exec.eip712_transaction_summary::extend_signature_key
+            # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+            adv.has_mapkey
+            adv_push
+            # => [has_eip712_signature, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
             if.true
-                exec.eip712_transaction_summary::extend_signature_key
+                dup.12
+                loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
+                loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
+                exec.get_initial_approver_scheme_id
+                # => [scheme_id, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+                eq.ECDSA_K256_KECCAK_SCHEME_ID
+                assert.err=ERR_EIP712_REQUIRES_ECDSA
                 # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
-                adv.has_mapkey
+                adv.push_mapval_count
                 adv_push
-                # => [has_eip712_signature, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+                eq.32 assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
+                # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
-                if.true
-                    dup.12
-                    loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
-                    loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-                    exec.get_initial_approver_scheme_id
-                    # => [scheme_id, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+                adv.push_mapval
+                dropw
+                # OS => [PK_COMM, MSG, signer_idx]
+                # AS => [SIGNATURE]
 
-                    eq.ECDSA_K256_KECCAK_SCHEME_ID
-                    assert.err=ERR_EIP712_REQUIRES_ECDSA
-                    # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+                dupw.1 swapw
+                # => [PK_COMM, MSG, MSG, signer_idx]
 
-                    adv.push_mapval_count
-                    adv_push
-                    eq.32 assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
-                    # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+                exec.eip712_transaction_summary::verify
+                # => [MSG, signer_idx]
 
-                    adv.push_mapval
-                    dropw
-                    # OS => [PK_COMM, MSG, signer_idx]
-                    # AS => [SIGNATURE]
-
-                    dupw.1 swapw
-                    # => [PK_COMM, MSG, MSG, signer_idx]
-
-                    exec.eip712_transaction_summary::verify
-                    # => [MSG, signer_idx]
-
-                    loc_load.SUCCESSFUL_VERIFICATIONS_LOC
-                    add.1
-                    loc_store.SUCCESSFUL_VERIFICATIONS_LOC
-                    # => [MSG, signer_idx]
-                else
-                    dropw dropw
-                    # => [MSG, signer_idx]
-                end
+                loc_load.SUCCESSFUL_VERIFICATIONS_LOC
+                add.1
+                loc_store.SUCCESSFUL_VERIFICATIONS_LOC
+                # => [MSG, signer_idx]
             else
                 dropw dropw
                 # => [MSG, signer_idx]

@@ -175,7 +175,7 @@ pub proc verify_signature(msg: word)
         # => [guardian_scheme_slot_suffix, guardian_scheme_slot_prefix,
         #     guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, 1, MSG]
 
-        push.0 exec.signature::verify_signatures
+        exec.signature::verify_signatures
         # => [num_verified_signatures, MSG]
 
         neq.1
