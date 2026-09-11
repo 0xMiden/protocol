@@ -3,6 +3,12 @@ use miden::core::crypto::dsa::ecdsa_k256_keccak
 # CONSTANTS
 # =================================================================================================
 
+# EIP-191 prefix for EIP-712 typed data, encoded as a little-endian u16.
+const EIP712_PREFIX=0x0119
+
+# 2-byte EIP-191 prefix + 32-byte domain separator + 32-byte struct hash.
+const EIP712_PREIMAGE_LENGTH=66
+
 # Local memory layout for verify:
 #   0..24   EIP-712 digest preimage, zero-padded to three 32-byte chunks
 #   24..28  public-key commitment
@@ -38,8 +44,8 @@ pub proc verify
     # => [DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
 
     # Build 0x1901 || domainSeparator || structHash. Each iteration writes one output limb and
-    # carries the high 16 bits of the previous input limb.
-    push.0x0119 locaddr.DIGEST_PREIMAGE_LOC
+    # carries the upper 16 bits of each input limb into the next output limb.
+    push.EIP712_PREFIX locaddr.DIGEST_PREIMAGE_LOC
     # => [ptr, carry, DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
 
     repeat.16
@@ -60,7 +66,7 @@ pub proc verify
     mem_store
     # => []
 
-    push.66 locaddr.DIGEST_PREIMAGE_LOC
+    push.EIP712_PREIMAGE_LENGTH locaddr.DIGEST_PREIMAGE_LOC
     padw loc_loadw_le.PUBLIC_KEY_COMMITMENT_LOC
     # OS => [PK_COMM, 66, DIGEST_PREIMAGE_LOC]
     # AS => [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
