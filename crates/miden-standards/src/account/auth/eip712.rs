@@ -46,7 +46,7 @@ pub fn digest(domain_separator: [u8; 32], struct_hash: [u8; 32]) -> [u8; 32] {
     preimage[..2].copy_from_slice(&[0x19, 0x01]);
     preimage[2..34].copy_from_slice(&domain_separator);
     preimage[34..].copy_from_slice(&struct_hash);
-    keccak(&preimage)
+    Keccak256::hash(&preimage).into()
 }
 
 /// Computes the struct hash for `MidenTransaction(bytes32 txSummaryHash)`.
@@ -54,7 +54,7 @@ fn transaction_struct_hash(tx_summary_hash: Word) -> [u8; 32] {
     let mut preimage = [0u8; 64];
     preimage[..32].copy_from_slice(&TRANSACTION_TYPE_HASH);
     preimage[32..].copy_from_slice(&tx_summary_hash.as_bytes());
-    keccak(&preimage)
+    Keccak256::hash(&preimage).into()
 }
 
 /// Computes the advice-map key for an EIP-712 transaction-summary signature.
@@ -66,10 +66,6 @@ pub fn transaction_summary_signature_key(
     let domain =
         Word::new([Felt::new_unchecked(SIGNATURE_KEY_DOMAIN), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
     Hasher::merge(&[raw_signature_key, domain])
-}
-
-fn keccak(bytes: &[u8]) -> [u8; 32] {
-    Keccak256::hash(bytes).into()
 }
 
 #[cfg(test)]
@@ -87,12 +83,16 @@ mod tests {
     #[test]
     fn precomputed_hashes_match_schema() {
         let mut domain_preimage = [0u8; 96];
-        domain_preimage[..32].copy_from_slice(&keccak(DOMAIN_TYPE.as_bytes()));
-        domain_preimage[32..64].copy_from_slice(&keccak(DOMAIN_NAME.as_bytes()));
-        domain_preimage[64..].copy_from_slice(&keccak(DOMAIN_VERSION.as_bytes()));
+        domain_preimage[..32].copy_from_slice(Keccak256::hash(DOMAIN_TYPE.as_bytes()).as_bytes());
+        domain_preimage[32..64].copy_from_slice(Keccak256::hash(DOMAIN_NAME.as_bytes()).as_bytes());
+        domain_preimage[64..]
+            .copy_from_slice(Keccak256::hash(DOMAIN_VERSION.as_bytes()).as_bytes());
 
-        assert_eq!(DOMAIN_SEPARATOR, keccak(&domain_preimage));
-        assert_eq!(TRANSACTION_TYPE_HASH, keccak(TRANSACTION_TYPE.as_bytes()));
+        assert_eq!(DOMAIN_SEPARATOR, <[u8; 32]>::from(Keccak256::hash(&domain_preimage)));
+        assert_eq!(
+            TRANSACTION_TYPE_HASH,
+            <[u8; 32]>::from(Keccak256::hash(TRANSACTION_TYPE.as_bytes()))
+        );
         assert_eq!(
             bytes_to_packed_u32_elements(&DOMAIN_SEPARATOR),
             [
