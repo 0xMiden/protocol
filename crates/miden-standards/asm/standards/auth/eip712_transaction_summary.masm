@@ -5,16 +5,21 @@ use miden::standards::auth::eip712
 # CONSTANTS
 # =================================================================================================
 
-# Little-endian ASCII "EIP712". This separates EIP-712 witnesses from raw signatures.
+# Little-endian ASCII "EIP712" packed into one felt. This separates EIP-712 advice-map keys from
+# raw signature keys.
 const SIGNATURE_KEY_DOMAIN=0x323137504945
 
-# keccak256("MidenTransaction(bytes32 txSummaryHash)"), little-endian u32 limbs.
+# keccak256("MidenTransaction(bytes32 txSummaryHash)"), stored as eight little-endian u32 limbs.
 const TRANSACTION_TYPE_HASH_LOW=[3002887380, 1420631288, 494091842, 2729528150]
 const TRANSACTION_TYPE_HASH_HIGH=[4274085984, 2147426208, 2043519110, 1663807340]
 
-# EIP-712 domain separator for name "Miden Multisig" and version "1", little-endian u32 limbs.
+# keccak256(domainTypeHash || keccak256("Miden Multisig") || keccak256("1")), stored as eight
+# little-endian u32 limbs.
 const DOMAIN_SEPARATOR_LOW=[1511125767, 3117083882, 446958287, 2727036186]
 const DOMAIN_SEPARATOR_HIGH=[1195751528, 2604681929, 2130785247, 3903456984]
+
+# Local memory address for the transaction-summary hash.
+const TX_SUMMARY_HASH_LOC=0
 
 # PROCEDURES
 # =================================================================================================
@@ -48,7 +53,7 @@ end
 #! Invocation: exec
 @locals(4)
 pub proc verify
-    loc_storew_le.0 dropw
+    loc_storew_le.TX_SUMMARY_HASH_LOC dropw
     # => [TX_SUMMARY_HASH]
 
     # Convert the Miden word to the little-endian u32 limbs of its bytes32 encoding.
@@ -64,7 +69,7 @@ pub proc verify
     push.DOMAIN_SEPARATOR_HIGH push.DOMAIN_SEPARATOR_LOW
     # => [DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
 
-    padw loc_loadw_le.0
+    padw loc_loadw_le.TX_SUMMARY_HASH_LOC
     # OS => [PK_COMM, DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
     # AS => [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
 
