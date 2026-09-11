@@ -1,26 +1,12 @@
 use miden::core::crypto::dsa::ecdsa_k256_keccak
-use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 
 # CONSTANTS
 # =================================================================================================
 
-# The repeated u32 is the little-endian ASCII encoding of "E712". It domain-separates the
-# EIP-712 advice key from the raw-signature key.
-const EIP712_SIGNATURE_KEY_DOMAIN=0x32313745
-
-# Local memory layout for verify_transaction_summary:
-#   0..16   MidenTransaction struct preimage
-#   16..24  MidenTransaction struct hash
-#   24..32  Miden Multisig domain separator
-#   32..36  public-key commitment
-const STRUCT_PREIMAGE_LOC=0
-const TX_SUMMARY_LOC=8
-const STRUCT_HASH_LOC=16
-const STRUCT_HASH_HIGH_LOC=20
-const DOMAIN_SEPARATOR_LOC=24
-const DOMAIN_SEPARATOR_HIGH_LOC=28
-const ADAPTER_PUBLIC_KEY_COMMITMENT_LOC=32
+# The little-endian ASCII encoding of "EIP712". It domain-separates the EIP-712 advice key from
+# the raw-signature key.
+const EIP712_SIGNATURE_KEY_DOMAIN=0x323137504945
 
 # Local memory layout for verify:
 #   0..24   EIP-712 digest preimage, zero-padded to three 32-byte chunks
@@ -34,30 +20,6 @@ const DOMAIN_SEPARATOR_INPUT_HIGH_LOC=32
 const STRUCT_HASH_INPUT_LOC=36
 const STRUCT_HASH_INPUT_HIGH_LOC=40
 
-# `keccak256("MidenTransaction(bytes32 txSummaryHash)")`, packed as little-endian u32 limbs.
-const TRANSACTION_TYPE_HASH_0=3002887380
-const TRANSACTION_TYPE_HASH_1=1420631288
-const TRANSACTION_TYPE_HASH_2=494091842
-const TRANSACTION_TYPE_HASH_3=2729528150
-const TRANSACTION_TYPE_HASH_4=4274085984
-const TRANSACTION_TYPE_HASH_5=2147426208
-const TRANSACTION_TYPE_HASH_6=2043519110
-const TRANSACTION_TYPE_HASH_7=1663807340
-
-# `keccak256(abi.encode(
-#     keccak256("EIP712Domain(string name,string version)"),
-#     keccak256("Miden Multisig"),
-#     keccak256("1")
-# ))`, packed as little-endian u32 limbs.
-const DOMAIN_SEPARATOR_0=1511125767
-const DOMAIN_SEPARATOR_1=3117083882
-const DOMAIN_SEPARATOR_2=446958287
-const DOMAIN_SEPARATOR_3=2727036186
-const DOMAIN_SEPARATOR_4=1195751528
-const DOMAIN_SEPARATOR_5=2604681929
-const DOMAIN_SEPARATOR_6=2130785247
-const DOMAIN_SEPARATOR_7=3903456984
-
 # PROCEDURES
 # =================================================================================================
 
@@ -66,9 +28,14 @@ const DOMAIN_SEPARATOR_7=3903456984
 #! Inputs:  [RAW_SIGNATURE_KEY]
 #! Outputs: [EIP712_SIGNATURE_KEY]
 pub proc extend_signature_key
-    push.EIP712_SIGNATURE_KEY_DOMAIN.EIP712_SIGNATURE_KEY_DOMAIN.EIP712_SIGNATURE_KEY_DOMAIN.EIP712_SIGNATURE_KEY_DOMAIN
+    push.0.0.0.EIP712_SIGNATURE_KEY_DOMAIN
+    # => [EIP712_DOMAIN, RAW_SIGNATURE_KEY]
+
     swapw
+    # => [RAW_SIGNATURE_KEY, EIP712_DOMAIN]
+
     exec.poseidon2::merge
+    # => [EIP712_SIGNATURE_KEY]
 end
 
 #! Verifies an ECDSA signature over an EIP-712 typed-data digest.
@@ -172,65 +139,4 @@ pub proc verify
     push.66 locaddr.DIGEST_PREIMAGE_LOC
     padw loc_loadw_le.PUBLIC_KEY_COMMITMENT_LOC
     exec.ecdsa_k256_keccak::verify_bytes
-end
-
-#! Verifies an ECDSA signature over the EIP-712 transaction-summary message.
-#!
-#! Inputs:
-#!   Operand stack: [PK_COMM, TX_SUMMARY_HASH]
-#!   Advice stack:  [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
-#! Outputs:
-#!   Operand stack: []
-#!
-#! The struct hash commits to `MidenTransaction(bytes32 txSummaryHash)`. The transaction-summary
-#! hash comes from the authentication component, not advice.
-@locals(36)
-pub proc verify_transaction_summary
-    loc_storew_le.ADAPTER_PUBLIC_KEY_COMMITMENT_LOC dropw
-    # => [TX_SUMMARY_HASH]
-
-    # Stage `keccak256("MidenTransaction(bytes32 txSummaryHash)")`.
-    push.TRANSACTION_TYPE_HASH_3.TRANSACTION_TYPE_HASH_2.TRANSACTION_TYPE_HASH_1.TRANSACTION_TYPE_HASH_0
-    locaddr.STRUCT_PREIMAGE_LOC mem_storew_le dropw
-    push.TRANSACTION_TYPE_HASH_7.TRANSACTION_TYPE_HASH_6.TRANSACTION_TYPE_HASH_5.TRANSACTION_TYPE_HASH_4
-    locaddr.STRUCT_PREIMAGE_LOC add.4 mem_storew_le dropw
-
-    # Append TX_SUMMARY_HASH as an EIP-712 bytes32 value.
-    locaddr.TX_SUMMARY_LOC movdn.4
-    exec.write_word
-
-    # Compute STRUCT_HASH.
-    push.64 locaddr.STRUCT_PREIMAGE_LOC
-    exec.keccak256::hash_bytes
-    locaddr.STRUCT_HASH_LOC mem_storew_le dropw
-    locaddr.STRUCT_HASH_LOC add.4 mem_storew_le dropw
-
-    # Stage the fixed Miden Multisig domain separator.
-    push.DOMAIN_SEPARATOR_3.DOMAIN_SEPARATOR_2.DOMAIN_SEPARATOR_1.DOMAIN_SEPARATOR_0
-    locaddr.DOMAIN_SEPARATOR_LOC mem_storew_le dropw
-    push.DOMAIN_SEPARATOR_7.DOMAIN_SEPARATOR_6.DOMAIN_SEPARATOR_5.DOMAIN_SEPARATOR_4
-    locaddr.DOMAIN_SEPARATOR_LOC add.4 mem_storew_le dropw
-
-    # Delegate the generic EIP-712 digest construction and ECDSA verification.
-    padw loc_loadw_le.STRUCT_HASH_HIGH_LOC
-    padw loc_loadw_le.STRUCT_HASH_LOC
-    padw loc_loadw_le.DOMAIN_SEPARATOR_HIGH_LOC
-    padw loc_loadw_le.DOMAIN_SEPARATOR_LOC
-    padw loc_loadw_le.ADAPTER_PUBLIC_KEY_COMMITMENT_LOC
-    exec.verify
-end
-
-#! Writes a Miden word as the 32-byte EIP-712 bytes32 value at ptr.
-#!
-#! Inputs:  [W0, W1, W2, W3, ptr]
-#! Outputs: []
-proc write_word
-    swap u32split
-    movup.2 u32split
-    dup.6 mem_storew_le dropw
-
-    swap u32split
-    movup.2 u32split
-    dup.4 add.4 mem_storew_le dropw
-    drop
 end

@@ -44,13 +44,13 @@ async fn verifies_transaction_summary_signature() -> anyhow::Result<()> {
     let pk = public_key_commitment.as_elements();
     let script = format!(
         r#"
-            use miden::standards::auth::eip712
+            use miden::standards::auth::multisig
 
             begin
                 push.9.9.9.9 adv.push_mapval dropw
                 push.{tx3}.{tx2}.{tx1}.{tx0}
                 push.{pk3}.{pk2}.{pk1}.{pk0}
-                exec.eip712::verify_transaction_summary
+                exec.multisig::verify_eip712_transaction_summary
             end
         "#,
         tx0 = tx[0].as_canonical_u64(),
@@ -162,13 +162,13 @@ async fn verifies_ledger_speculos_signature() -> anyhow::Result<()> {
     let pk = public_key_commitment.as_elements();
     let script = format!(
         r#"
-            use miden::standards::auth::eip712
+            use miden::standards::auth::multisig
 
             begin
                 push.9.9.9.9 adv.push_mapval dropw
                 push.{tx3}.{tx2}.{tx1}.{tx0}
                 push.{pk3}.{pk2}.{pk1}.{pk0}
-                exec.eip712::verify_transaction_summary
+                exec.multisig::verify_eip712_transaction_summary
             end
         "#,
         tx0 = tx[0].as_canonical_u64(),

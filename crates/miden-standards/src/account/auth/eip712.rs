@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::crypto::hash::keccak::Keccak256;
-use miden_protocol::{Hasher, Word};
+use miden_protocol::{Felt, Hasher, Word};
 
 /// EIP-712 domain type used for transaction-summary signatures.
 pub const DOMAIN_TYPE: &str = "EIP712Domain(string name,string version)";
@@ -16,7 +16,7 @@ pub const DOMAIN_VERSION: &str = "1";
 /// EIP-712 primary type used for transaction-summary signatures.
 pub const TRANSACTION_TYPE: &str = "MidenTransaction(bytes32 txSummaryHash)";
 
-const SIGNATURE_KEY_DOMAIN: u32 = 0x3231_3745;
+const SIGNATURE_KEY_DOMAIN: u64 = 0x3231_3750_4945;
 
 /// Computes the EIP-712 digest for a Miden transaction-summary commitment.
 pub fn transaction_summary_digest(tx_summary_hash: Word) -> [u8; 32] {
@@ -57,7 +57,12 @@ pub fn transaction_summary_signature_key(
     tx_summary_hash: Word,
 ) -> Word {
     let raw_signature_key = Hasher::merge(&[public_key.into(), tx_summary_hash]);
-    let domain = Word::from([SIGNATURE_KEY_DOMAIN; 4]);
+    let domain = Word::new([
+        Felt::new_unchecked(SIGNATURE_KEY_DOMAIN),
+        Felt::ZERO,
+        Felt::ZERO,
+        Felt::ZERO,
+    ]);
     Hasher::merge(&[raw_signature_key, domain])
 }
 
