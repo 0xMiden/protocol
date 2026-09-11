@@ -15,6 +15,10 @@ const EIP712_PREIMAGE_LENGTH=66
 const DIGEST_PREIMAGE_LOC=0
 const PUBLIC_KEY_COMMITMENT_LOC=24
 
+# EIP-712 hashes 0x1901 || domainSeparator || structHash. The two hashes contain 16 u32 limbs in
+# total. Since the two-byte prefix shifts them by half a limb, each iteration writes one limb and
+# carries the upper 16 bits into the next one.
+
 # PROCEDURES
 # =================================================================================================
 
@@ -22,7 +26,6 @@ const PUBLIC_KEY_COMMITMENT_LOC=24
 #!
 #! Inputs:
 #!   Operand stack: [PK_COMM, DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
-#!   Advice stack:  [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
 #! Outputs:
 #!   Operand stack: []
 #!
@@ -43,8 +46,7 @@ pub proc verify
     padw locaddr.DIGEST_PREIMAGE_LOC add.20 mem_storew_le dropw
     # => [DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
 
-    # Build 0x1901 || domainSeparator || structHash. Each iteration writes one output limb and
-    # carries the upper 16 bits of each input limb into the next output limb.
+    # Build the EIP-712 preimage.
     push.EIP712_PREFIX locaddr.DIGEST_PREIMAGE_LOC
     # => [ptr, carry, DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
 
@@ -69,9 +71,7 @@ pub proc verify
     push.EIP712_PREIMAGE_LENGTH locaddr.DIGEST_PREIMAGE_LOC
     padw loc_loadw_le.PUBLIC_KEY_COMMITMENT_LOC
     # OS => [PK_COMM, 66, DIGEST_PREIMAGE_LOC]
-    # AS => [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
 
     exec.ecdsa_k256_keccak::verify_bytes
     # OS => []
-    # AS => []
 end
