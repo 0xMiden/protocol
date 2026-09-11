@@ -1,6 +1,8 @@
 use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
+use miden_protocol::crypto::utils::Deserializable;
+use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::{Felt, Word};
 use miden_standards::StandardsLib;
 use miden_standards::account::auth::eip712;
@@ -120,6 +122,59 @@ async fn verifies_generic_eip712_signature() -> anyhow::Result<()> {
         message5 = message[5],
         message6 = message[6],
         message7 = message[7],
+        pk0 = pk[0].as_canonical_u64(),
+        pk1 = pk[1].as_canonical_u64(),
+        pk2 = pk[2].as_canonical_u64(),
+        pk3 = pk[3].as_canonical_u64(),
+    );
+    let advice = AdviceInputs::default().with_map([(Word::from([9u32; 4]), witness)]);
+
+    CodeExecutor::with_default_host()
+        .extend_advice_inputs(advice)
+        .run(&script)
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn verifies_ledger_speculos_signature() -> anyhow::Result<()> {
+    let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(
+        "0x0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
+    )?)?;
+    let signature = Signature::from_sec1_bytes_and_recovery_id(
+        hex_to_bytes::<64>(
+            "0x3a260929a57fc23dc0b35b3bd41aa66df2d6cf0aff4914e5caf25f65f2f9f15b\
+             2fedb745401497982d8ee305c490af99440edabfd17ada7acfd527b7342f54b4",
+        )?,
+        0,
+    )?;
+    let tx_summary_hash = Word::new([Felt::new(0xefcd_ab89_6745_2301)?; 4]);
+    let digest = eip712::transaction_summary_digest(tx_summary_hash);
+    assert_eq!(
+        digest,
+        hex_to_bytes::<32>("0xe24fddd9b9535fa24adf94097b68c4f00bbed14ee6970cd41d62a62b5b6a07b3")?
+    );
+    assert!(public_key.verify_prehash(digest, &signature));
+
+    let witness = encode_signature(&public_key, &signature);
+    let public_key_commitment = public_key.to_commitment();
+    let tx = tx_summary_hash.as_elements();
+    let pk = public_key_commitment.as_elements();
+    let script = format!(
+        r#"
+            use miden::standards::auth::eip712
+
+            begin
+                push.9.9.9.9 adv.push_mapval dropw
+                push.{tx3}.{tx2}.{tx1}.{tx0}
+                push.{pk3}.{pk2}.{pk1}.{pk0}
+                exec.eip712::verify_transaction_summary
+            end
+        "#,
+        tx0 = tx[0].as_canonical_u64(),
+        tx1 = tx[1].as_canonical_u64(),
+        tx2 = tx[2].as_canonical_u64(),
+        tx3 = tx[3].as_canonical_u64(),
         pk0 = pk[0].as_canonical_u64(),
         pk1 = pk[1].as_canonical_u64(),
         pk2 = pk[2].as_canonical_u64(),
