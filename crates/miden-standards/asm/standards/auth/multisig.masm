@@ -5,16 +5,13 @@ use {AccountProcedureRoot, BlockNumber} from miden::protocol::types
 # See the `AuthMultisig` Rust type's documentation for more details.
 
 use miden::protocol::active_account
-use {AUTH_REQUEST_EVENT, AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
+use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth
-use miden::standards::auth::eip712
 use miden::standards::auth::signature
 use {ConversionInfo} from miden::standards::fee
 use miden::core::mem
-use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use {ONE_WORD} from miden::standards::utils
 
@@ -47,45 +44,8 @@ const DEFAULT_THRESHOLD_LOC=0
 const UNIQUE_OUTER_INDEX_LOC=0
 const UNIQUE_INNER_INDEX_LOC=1
 
-const SUCCESSFUL_VERIFICATIONS_LOC=0
-
-# Local memory layout for verify_eip712_transaction_summary:
-#   0..16   MidenTransaction struct preimage
-#   16..24  MidenTransaction struct hash
-#   24..32  Miden Multisig domain separator
-#   32..36  public-key commitment
-const EIP712_STRUCT_PREIMAGE_LOC=0
-const EIP712_TX_SUMMARY_LOC=8
-const EIP712_STRUCT_HASH_LOC=16
-const EIP712_STRUCT_HASH_HIGH_LOC=20
-const EIP712_DOMAIN_SEPARATOR_LOC=24
-const EIP712_DOMAIN_SEPARATOR_HIGH_LOC=28
-const EIP712_PUBLIC_KEY_COMMITMENT_LOC=32
-
 # CONSTANTS
 # =================================================================================================
-
-const ECDSA_K256_KECCAK_SCHEME_ID=1
-
-# `keccak256("MidenTransaction(bytes32 txSummaryHash)")`, packed as little-endian u32 limbs.
-const EIP712_TRANSACTION_TYPE_HASH_0=3002887380
-const EIP712_TRANSACTION_TYPE_HASH_1=1420631288
-const EIP712_TRANSACTION_TYPE_HASH_2=494091842
-const EIP712_TRANSACTION_TYPE_HASH_3=2729528150
-const EIP712_TRANSACTION_TYPE_HASH_4=4274085984
-const EIP712_TRANSACTION_TYPE_HASH_5=2147426208
-const EIP712_TRANSACTION_TYPE_HASH_6=2043519110
-const EIP712_TRANSACTION_TYPE_HASH_7=1663807340
-
-# The EIP-712 domain separator for `Miden Multisig`, version `1`, packed as little-endian u32 limbs.
-const EIP712_DOMAIN_SEPARATOR_0=1511125767
-const EIP712_DOMAIN_SEPARATOR_1=3117083882
-const EIP712_DOMAIN_SEPARATOR_2=446958287
-const EIP712_DOMAIN_SEPARATOR_3=2727036186
-const EIP712_DOMAIN_SEPARATOR_4=1195751528
-const EIP712_DOMAIN_SEPARATOR_5=2604681929
-const EIP712_DOMAIN_SEPARATOR_6=2130785247
-const EIP712_DOMAIN_SEPARATOR_7=3903456984
 
 # Storage Slots
 #
@@ -174,10 +134,6 @@ const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval window ended at or 
 const ERR_MULTISIG_EXPIRATION_DELTAS_NOT_U32 = "the expiration delta and the reference block delta must be u32 values"
 
 const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
-
-const ERR_EIP712_REQUIRES_ECDSA = "EIP-712 transaction-summary signatures require ecdsa_k256_keccak"
-
-const ERR_EIP712_INVALID_SIGNATURE_LENGTH = "EIP-712 signature advice value must contain exactly 32 field elements"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -959,10 +915,10 @@ end
 #! Inputs:
 #!   Operand stack: [block_number, SALT]
 #!   Advice map: {
-#!     h(SIG_0, MSG): SIG_0,
-#!     h(SIG_1, MSG): SIG_1,
-#!     h(SIG_n, MSG): SIG_n,
-#!     h(h(PK_COMM_i, MSG), ["EIP712", 0, 0, 0]): EIP712_SIG_i
+#!     h(PK_COMM_0, MSG): SIG_0,
+#!     h(PK_COMM_1, MSG): SIG_1,
+#!     h(PK_COMM_n, MSG): SIG_n,
+#!     h(h(PK_COMM_i, MSG), [0x323137504945, 0, 0, 0]): EIP712_SIG_i
 #!   }
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
@@ -973,7 +929,11 @@ end
 #! - H is Poseidon2.
 #! - PK_COMM is an approver's public-key commitment.
 #! - MSG is the transaction message being signed.
-#! - Raw advice takes precedence when both keys are present.
+#! - Raw signatures take precedence when both formats are present for an approver, and each
+#!   approver can increase the verified-signature count at most once.
+#! - EIP-712 signatures are accepted only for ECDSA approvers. Unlike raw signatures, they must be
+#!   inserted into the advice map before execution and do not emit an authentication request event.
+#! - h(PK_COMM_i, MSG) is the raw-signature advice-map key.
 #! - A wrapper must call `record_and_assert_new_tx`; this procedure does not record the summary.
 #!
 #! Panics if:
@@ -1017,7 +977,16 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     movdn.5
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    exec.verify_approver_signatures
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    push.1
+    # => [allow_eip712, scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    exec.signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
     # ------ Checking threshold is >= num_verified_signatures ------
@@ -1040,228 +1009,6 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     # TX_SUMMARY_COMMITMENT is returned so wrappers can run optional checks
     # (e.g. guardian verification) before replay-protection finalization.
     # => [TX_SUMMARY_COMMITMENT]
-end
-
-# Verifies each approver at most once. Raw advice takes precedence; EIP-712 advice is accepted only
-# for ECDSA approvers under its domain-separated key.
-#
-# Inputs:  [num_of_approvers, MSG]
-# Outputs: [num_verified_signatures, MSG]
-@locals(1)
-proc verify_approver_signatures
-    push.0 loc_store.SUCCESSFUL_VERIFICATIONS_LOC
-    # => [num_of_approvers, MSG]
-
-    dup neq.0
-    while.true
-        # => [i, MSG]
-
-        sub.1 dup
-        # => [signer_idx, signer_idx, MSG]
-
-        exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, signer_idx, MSG]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        exec.native_account::get_initial_map_item
-        # => [PK_COMM, signer_idx, MSG]
-
-        movup.4 movdn.8
-        # => [PK_COMM, MSG, signer_idx]
-
-        # Check the existing raw-signature advice key first.
-        dupw.1 dupw.1
-        exec.poseidon2::merge
-        # => [RAW_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-        adv.has_mapkey
-        dropw
-        adv_push
-        # => [has_raw_signature, PK_COMM, MSG, signer_idx]
-
-        if.true
-            dupw.1
-            # => [MSG, PK_COMM, MSG, signer_idx]
-
-            emit.AUTH_REQUEST_EVENT
-            swapw
-            # => [PK_COMM, MSG, MSG, signer_idx]
-
-            dup.12 exec.signature::create_approver_map_key
-            push.APPROVER_SCHEME_ID_SLOT[0..2]
-            exec.native_account::get_initial_map_item
-            # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
-
-            movdn.3 drop drop drop
-            # OS => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
-            # AS => [SIGNATURE]
-
-            exec.signature::verify_signature_by_scheme
-            # => [MSG, signer_idx]
-
-            loc_load.SUCCESSFUL_VERIFICATIONS_LOC add.1
-            loc_store.SUCCESSFUL_VERIFICATIONS_LOC
-            # => [MSG, signer_idx]
-        else
-            # Check the domain-separated EIP-712 signature key.
-            dupw.1 dupw.1
-            exec.poseidon2::merge
-            exec.eip712::extend_signature_key
-            # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-            adv.has_mapkey
-            adv_push
-            # => [has_eip712_signature, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-            if.true
-                # The EIP-712 witness is loaded directly, so validate its length first.
-                adv.push_mapval_count
-                adv_push
-                eq.32 assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
-                # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-                adv.push_mapval
-                dropw
-                # OS => [PK_COMM, MSG, signer_idx]
-                # AS => [SIGNATURE]
-
-                dupw.1 swapw
-                # => [PK_COMM, MSG, MSG, signer_idx]
-
-                dup.12 exec.signature::create_approver_map_key
-                push.APPROVER_SCHEME_ID_SLOT[0..2]
-                exec.native_account::get_initial_map_item
-                # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
-
-                movdn.3 drop drop drop
-                # => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
-
-                eq.ECDSA_K256_KECCAK_SCHEME_ID
-                assert.err=ERR_EIP712_REQUIRES_ECDSA
-                # => [PK_COMM, MSG, MSG, signer_idx]
-
-                exec.verify_eip712_transaction_summary
-                # => [MSG, signer_idx]
-
-                loc_load.SUCCESSFUL_VERIFICATIONS_LOC add.1
-                loc_store.SUCCESSFUL_VERIFICATIONS_LOC
-                # => [MSG, signer_idx]
-            else
-                dropw dropw
-                # => [MSG, signer_idx]
-            end
-        end
-
-        movup.4
-        # => [signer_idx, MSG]
-
-        dup neq.0
-        # => [should_continue, signer_idx, MSG]
-    end
-
-    drop
-    # => [MSG]
-
-    loc_load.SUCCESSFUL_VERIFICATIONS_LOC
-    # => [num_verified_signatures, MSG]
-end
-
-# Verifies an ECDSA signature over the multisig EIP-712 transaction-summary message.
-#
-# Inputs:
-#   Operand stack: [PK_COMM, TX_SUMMARY_HASH]
-#   Advice stack:  [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
-# Outputs:
-#   Operand stack: []
-@locals(36)
-pub proc verify_eip712_transaction_summary
-    loc_storew_le.EIP712_PUBLIC_KEY_COMMITMENT_LOC dropw
-    # => [TX_SUMMARY_HASH]
-
-    push.EIP712_TRANSACTION_TYPE_HASH_3.EIP712_TRANSACTION_TYPE_HASH_2.EIP712_TRANSACTION_TYPE_HASH_1.EIP712_TRANSACTION_TYPE_HASH_0
-    # => [TRANSACTION_TYPE_HASH_LOW, TX_SUMMARY_HASH]
-
-    locaddr.EIP712_STRUCT_PREIMAGE_LOC mem_storew_le dropw
-    # => [TX_SUMMARY_HASH]
-
-    push.EIP712_TRANSACTION_TYPE_HASH_7.EIP712_TRANSACTION_TYPE_HASH_6.EIP712_TRANSACTION_TYPE_HASH_5.EIP712_TRANSACTION_TYPE_HASH_4
-    # => [TRANSACTION_TYPE_HASH_HIGH, TX_SUMMARY_HASH]
-
-    locaddr.EIP712_STRUCT_PREIMAGE_LOC add.4 mem_storew_le dropw
-    # => [TX_SUMMARY_HASH]
-
-    locaddr.EIP712_TX_SUMMARY_LOC movdn.4
-    # => [TX_SUMMARY_HASH, EIP712_TX_SUMMARY_LOC]
-
-    exec.write_eip712_word
-    # => []
-
-    push.64 locaddr.EIP712_STRUCT_PREIMAGE_LOC
-    # => [64, EIP712_STRUCT_PREIMAGE_LOC]
-
-    exec.keccak256::hash_bytes
-    # => [STRUCT_HASH[8]]
-
-    locaddr.EIP712_STRUCT_HASH_LOC mem_storew_le dropw
-    # => [STRUCT_HASH_HIGH]
-
-    locaddr.EIP712_STRUCT_HASH_LOC add.4 mem_storew_le dropw
-    # => []
-
-    push.EIP712_DOMAIN_SEPARATOR_3.EIP712_DOMAIN_SEPARATOR_2.EIP712_DOMAIN_SEPARATOR_1.EIP712_DOMAIN_SEPARATOR_0
-    # => [DOMAIN_SEPARATOR_LOW]
-
-    locaddr.EIP712_DOMAIN_SEPARATOR_LOC mem_storew_le dropw
-    # => []
-
-    push.EIP712_DOMAIN_SEPARATOR_7.EIP712_DOMAIN_SEPARATOR_6.EIP712_DOMAIN_SEPARATOR_5.EIP712_DOMAIN_SEPARATOR_4
-    # => [DOMAIN_SEPARATOR_HIGH]
-
-    locaddr.EIP712_DOMAIN_SEPARATOR_LOC add.4 mem_storew_le dropw
-    # => []
-
-    padw loc_loadw_le.EIP712_STRUCT_HASH_HIGH_LOC
-    # => [STRUCT_HASH_HIGH]
-
-    padw loc_loadw_le.EIP712_STRUCT_HASH_LOC
-    # => [STRUCT_HASH_LOW, STRUCT_HASH_HIGH]
-
-    padw loc_loadw_le.EIP712_DOMAIN_SEPARATOR_HIGH_LOC
-    # => [DOMAIN_SEPARATOR_HIGH, STRUCT_HASH[8]]
-
-    padw loc_loadw_le.EIP712_DOMAIN_SEPARATOR_LOC
-    # => [DOMAIN_SEPARATOR[8], STRUCT_HASH[8]]
-
-    padw loc_loadw_le.EIP712_PUBLIC_KEY_COMMITMENT_LOC
-    # OS => [PK_COMM, DOMAIN_SEPARATOR[8], STRUCT_HASH[8]]
-    # AS => [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
-
-    exec.eip712::verify
-    # OS => []
-    # AS => []
-end
-
-# Writes a Miden word as a 32-byte EIP-712 bytes32 value at ptr.
-#
-# Inputs:  [W0, W1, W2, W3, ptr]
-# Outputs: []
-proc write_eip712_word
-    swap u32split
-    movup.2 u32split
-    # => [W0_U32[2], W1_U32[2], W2, W3, ptr]
-
-    dup.6 mem_storew_le dropw
-    # => [W2, W3, ptr]
-
-    swap u32split
-    movup.2 u32split
-    # => [W2_U32[2], W3_U32[2], ptr]
-
-    dup.4 add.4 mem_storew_le dropw
-    # => [ptr]
-
-    drop
-    # => []
 end
 
 # HELPER PROCEDURES

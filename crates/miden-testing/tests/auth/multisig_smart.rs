@@ -1,7 +1,8 @@
 use core::num::NonZeroU16;
 
+use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::account::auth::{AuthScheme, PublicKey};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
@@ -19,6 +20,7 @@ use miden_standards::account::auth::{
     AuthMultisigSmart,
     AuthMultisigSmartConfig,
     MultisigAuthArgs,
+    eip712,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -150,6 +152,59 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_accepts_raw_and_eip712_signatures() -> anyhow::Result<()> {
+    let (secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mock_chain = mock_chain_builder.build()?;
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(note.id())
+        .auth_args(Word::from([Felt::new_unchecked(2); 4]));
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let raw_signature = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+
+    let AuthSecretKey::EcdsaK256Keccak(signing_key) = &secret_keys[1] else {
+        unreachable!("test creates ECDSA signing keys")
+    };
+    let PublicKey::EcdsaK256Keccak(public_key) = &public_keys[1] else {
+        unreachable!("test creates ECDSA public keys")
+    };
+    let signature = signing_key.sign_prehash(eip712::transaction_summary_digest(tx_summary_hash));
+    let signature_key =
+        eip712::transaction_summary_signature_key(public_keys[1].to_commitment(), tx_summary_hash);
+
+    mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
+        .add_advice_map_entry(signature_key, encode_signature(public_key, &signature))
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }

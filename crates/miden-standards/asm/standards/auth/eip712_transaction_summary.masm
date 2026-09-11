@@ -1,0 +1,74 @@
+use miden::core::crypto::hashes::keccak256
+use miden::core::crypto::hashes::poseidon2
+use miden::standards::auth::eip712
+
+# CONSTANTS
+# =================================================================================================
+
+# Little-endian ASCII "EIP712". This separates EIP-712 witnesses from raw signatures.
+const SIGNATURE_KEY_DOMAIN=0x323137504945
+
+# keccak256("MidenTransaction(bytes32 txSummaryHash)"), little-endian u32 limbs.
+const TRANSACTION_TYPE_HASH_LOW=[3002887380, 1420631288, 494091842, 2729528150]
+const TRANSACTION_TYPE_HASH_HIGH=[4274085984, 2147426208, 2043519110, 1663807340]
+
+# EIP-712 domain separator for name "Miden Multisig" and version "1", little-endian u32 limbs.
+const DOMAIN_SEPARATOR_LOW=[1511125767, 3117083882, 446958287, 2727036186]
+const DOMAIN_SEPARATOR_HIGH=[1195751528, 2604681929, 2130785247, 3903456984]
+
+# PROCEDURES
+# =================================================================================================
+
+#! Extends a raw transaction-signature advice key into the EIP-712 key domain.
+#!
+#! Inputs:  [RAW_SIGNATURE_KEY]
+#! Outputs: [EIP712_SIGNATURE_KEY]
+#!
+#! Invocation: exec
+pub proc extend_signature_key
+    push.0.0.0.SIGNATURE_KEY_DOMAIN
+    # => [EIP712_DOMAIN, RAW_SIGNATURE_KEY]
+
+    swapw
+    exec.poseidon2::merge
+    # => [EIP712_SIGNATURE_KEY]
+end
+
+#! Verifies an ECDSA signature over the Miden multisig EIP-712 transaction-summary message.
+#!
+#! Inputs:
+#!   Operand stack: [PK_COMM, TX_SUMMARY_HASH]
+#!   Advice stack:  [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Panics if the public key or signature is malformed, the public-key commitment is invalid, or
+#! signature verification fails.
+#!
+#! Invocation: exec
+@locals(4)
+pub proc verify
+    loc_storew_le.0 dropw
+    # => [TX_SUMMARY_HASH]
+
+    # Convert the Miden word to the little-endian u32 limbs of its bytes32 encoding.
+    movup.3 u32split movup.4 u32split movup.5 u32split movup.6 u32split
+    # => [TX_SUMMARY_U32[8]]
+
+    push.TRANSACTION_TYPE_HASH_HIGH push.TRANSACTION_TYPE_HASH_LOW
+    # => [TRANSACTION_TYPE_HASH_U32[8], TX_SUMMARY_U32[8]]
+
+    exec.keccak256::merge
+    # => [STRUCT_HASH_U32[8]]
+
+    push.DOMAIN_SEPARATOR_HIGH push.DOMAIN_SEPARATOR_LOW
+    # => [DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
+
+    padw loc_loadw_le.0
+    # OS => [PK_COMM, DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
+    # AS => [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
+
+    exec.eip712::verify
+    # OS => []
+    # AS => []
+end

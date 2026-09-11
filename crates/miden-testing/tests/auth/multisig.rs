@@ -167,6 +167,26 @@ fn create_multisig_account(
     Ok(multisig_account)
 }
 
+fn eip712_signature_witness(
+    secret_key: &AuthSecretKey,
+    public_key: &PublicKey,
+    tx_summary_hash: Word,
+) -> anyhow::Result<(Word, Vec<Felt>)> {
+    let AuthSecretKey::EcdsaK256Keccak(signing_key) = secret_key else {
+        anyhow::bail!("EIP-712 transaction-summary signatures require an ECDSA signing key");
+    };
+    let PublicKey::EcdsaK256Keccak(public_key) = public_key else {
+        anyhow::bail!("EIP-712 transaction-summary signatures require an ECDSA public key");
+    };
+    let signature = signing_key.sign_prehash(eip712::transaction_summary_digest(tx_summary_hash));
+    let key = eip712::transaction_summary_signature_key(
+        public_key.to_commitment().into(),
+        tx_summary_hash,
+    );
+
+    Ok((key, encode_signature(public_key, &signature)))
+}
+
 // ================================================================================================
 // TESTS
 // ================================================================================================
@@ -330,23 +350,11 @@ async fn test_multisig_2_of_2_with_raw_and_eip712_signatures(
         .get_signature(public_keys[raw_signer_index].to_commitment(), &signing_inputs)
         .await?;
 
-    let AuthSecretKey::EcdsaK256Keccak(eip712_signing_key) = &secret_keys[eip712_signer_index]
-    else {
-        anyhow::bail!("test setup must use ECDSA signing keys");
-    };
-    let PublicKey::EcdsaK256Keccak(eip712_public_key) = &public_keys[eip712_signer_index] else {
-        anyhow::bail!("test setup must use ECDSA public keys");
-    };
-
-    let eip712_digest = eip712::transaction_summary_digest(tx_summary_hash);
-    let eip712_signature = eip712_signing_key.sign_prehash(eip712_digest);
-    assert!(eip712_public_key.verify_prehash(eip712_digest, &eip712_signature));
-
-    let eip712_signature_key = eip712::transaction_summary_signature_key(
-        public_keys[eip712_signer_index].to_commitment(),
+    let (eip712_signature_key, encoded_eip712_signature) = eip712_signature_witness(
+        &secret_keys[eip712_signer_index],
+        &public_keys[eip712_signer_index],
         tx_summary_hash,
-    );
-    let encoded_eip712_signature = encode_signature(eip712_public_key, &eip712_signature);
+    )?;
 
     let executed_transaction = mock_tx_builder
         .add_signature(
@@ -372,6 +380,131 @@ async fn test_multisig_2_of_2_with_raw_and_eip712_signatures(
             .as_u64(),
         starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
+
+    Ok(())
+}
+
+#[rstest]
+#[case::raw_signature_under_eip712_key(true)]
+#[case::eip712_signature_under_raw_key(false)]
+#[tokio::test]
+async fn test_multisig_rejects_signature_format_confusion(
+    #[case] raw_under_eip712_key: bool,
+) -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(1, 0, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = vec![(public_keys[0].clone(), auth_schemes[0])];
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build().unwrap();
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .auth_args(Word::from([Felt::new_unchecked(9); 4]));
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let raw_key = Hasher::merge(&[public_keys[0].to_commitment().into(), tx_summary_hash]);
+    let raw_witness = secret_keys[0].sign(tx_summary_hash).to_encoded_signature(tx_summary_hash);
+    let (eip712_key, eip712_witness) =
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
+
+    let (key, witness) = if raw_under_eip712_key {
+        (eip712_key, raw_witness)
+    } else {
+        (raw_key, eip712_witness)
+    };
+    let result = mock_tx_builder.add_advice_map_entry(key, witness).build()?.execute().await;
+
+    assert!(
+        result.is_err(),
+        "a signature must not verify under the other format's advice key"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_eip712_signature_is_bound_to_approver_key() -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(2, 0, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes)
+        .map(|(public_key, scheme)| (public_key.clone(), scheme))
+        .collect::<Vec<_>>();
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .auth_args(Word::from([Felt::new_unchecked(10); 4]));
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let (_, signer_b_witness) =
+        eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary_hash)?;
+    let signer_a_key =
+        eip712::transaction_summary_signature_key(public_keys[0].to_commitment(), tx_summary_hash);
+
+    let result = mock_tx_builder
+        .add_advice_map_entry(signer_a_key, signer_b_witness)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(
+        result,
+        MasmError::from_static_str("invalid public key commitment")
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_eip712_replay_protection() -> anyhow::Result<()> {
+    let (secret_keys, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(1, 0, AuthScheme::EcdsaK256Keccak)?;
+    let approvers = vec![(public_keys[0].clone(), auth_schemes[0])];
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+    let salt = Word::from([Felt::new_unchecked(11); 4]);
+    let reference_block = mock_chain.latest_block_header().block_num();
+    let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).auth_args(salt);
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let (signature_key, witness) =
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
+
+    let executed_transaction = mock_tx_builder
+        .add_advice_map_entry(signature_key, witness.clone())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    let replay = mock_chain
+        .build_transaction(multisig_account.id())
+        .reference_block(reference_block)
+        .auth_args(salt)
+        .add_advice_map_entry(signature_key, witness)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(replay, ERR_TX_ALREADY_EXECUTED);
 
     Ok(())
 }
