@@ -1,8 +1,7 @@
 use core::num::NonZeroU16;
 
-use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
+use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
@@ -20,7 +19,6 @@ use miden_standards::account::auth::{
     AuthMultisigSmart,
     AuthMultisigSmartConfig,
     MultisigAuthArgs,
-    eip712,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -41,6 +39,7 @@ use rstest::rstest;
 use super::multisig::{
     MultisigAuthArgsExt,
     build_update_signers_config_vector,
+    eip712_signature_witness,
     setup_keys_and_authenticators_with_scheme,
 };
 
@@ -189,19 +188,12 @@ async fn test_multisig_smart_accepts_raw_and_eip712_signatures() -> anyhow::Resu
         .get_signature(public_keys[0].to_commitment(), &signing_inputs)
         .await?;
 
-    let AuthSecretKey::EcdsaK256Keccak(signing_key) = &secret_keys[1] else {
-        unreachable!("test creates ECDSA signing keys")
-    };
-    let PublicKey::EcdsaK256Keccak(public_key) = &public_keys[1] else {
-        unreachable!("test creates ECDSA public keys")
-    };
-    let signature = signing_key.sign_prehash(eip712::transaction_summary_digest(tx_summary_hash));
-    let signature_key =
-        eip712::transaction_summary_signature_key(public_keys[1].to_commitment(), tx_summary_hash);
+    let (signature_key, witness) =
+        eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary_hash)?;
 
     mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
-        .add_advice_map_entry(signature_key, encode_signature(public_key, &signature))
+        .add_advice_map_entry(signature_key, witness)
         .build()?
         .execute()
         .await?;

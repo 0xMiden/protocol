@@ -1,4 +1,3 @@
-use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
@@ -28,7 +27,6 @@ use miden_standards::account::auth::{
     AuthGuardedMultisigConfig,
     GuardianConfig,
     MultisigAuthArgs,
-    eip712,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -45,7 +43,11 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
-use super::multisig::{MultisigAuthArgsExt, build_update_signers_config_vector};
+use super::multisig::{
+    MultisigAuthArgsExt,
+    build_update_signers_config_vector,
+    eip712_signature_witness,
+};
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -260,26 +262,15 @@ async fn test_guarded_multisig_signature_required(
         Err(TransactionExecutorError::Unauthorized(_))
     ));
 
-    let AuthSecretKey::EcdsaK256Keccak(guardian_signing_key) = &guardian_secret_key else {
-        unreachable!("test creates an ECDSA guardian")
-    };
-    let PublicKey::EcdsaK256Keccak(guardian_ecdsa_public_key) = &guardian_public_key else {
-        unreachable!("test creates an ECDSA guardian")
-    };
-    let guardian_eip712_signature =
-        guardian_signing_key.sign_prehash(eip712::transaction_summary_digest(msg));
-    let guardian_eip712_key =
-        eip712::transaction_summary_signature_key(guardian_public_key.to_commitment(), msg);
+    let (guardian_eip712_key, guardian_eip712_witness) =
+        eip712_signature_witness(&guardian_secret_key, &guardian_public_key, msg)?;
 
     // The EIP-712 extension applies only to approvers. Guardian acknowledgements remain raw.
     let eip712_only_guardian_result = mock_tx_builder
         .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
-        .add_advice_map_entry(
-            guardian_eip712_key,
-            encode_signature(guardian_ecdsa_public_key, &guardian_eip712_signature),
-        )
+        .add_advice_map_entry(guardian_eip712_key, guardian_eip712_witness)
         .build()?
         .execute()
         .await;
@@ -368,17 +359,8 @@ async fn test_guarded_multisig_mixed_raw_and_eip712_signatures() -> anyhow::Resu
     let tx_summary_hash = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
 
-    let AuthSecretKey::EcdsaK256Keccak(eip712_signing_key) = &secret_keys[0] else {
-        unreachable!("test creates ECDSA approvers")
-    };
-    let PublicKey::EcdsaK256Keccak(eip712_public_key) = &public_keys[0] else {
-        unreachable!("test creates ECDSA approvers")
-    };
-    let eip712_signature =
-        eip712_signing_key.sign_prehash(eip712::transaction_summary_digest(tx_summary_hash));
-    let eip712_key =
-        eip712::transaction_summary_signature_key(public_keys[0].to_commitment(), tx_summary_hash);
-    let eip712_witness = encode_signature(eip712_public_key, &eip712_signature);
+    let (eip712_key, eip712_witness) =
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
 
     let raw_signature = authenticators[1]
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)

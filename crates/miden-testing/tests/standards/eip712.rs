@@ -2,7 +2,7 @@ use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
 use miden_protocol::crypto::utils::Deserializable;
-use miden_protocol::utils::hex_to_bytes;
+use miden_protocol::utils::{bytes_to_packed_u32_elements, hex_to_bytes};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::eip712;
 use miden_testing::executor::CodeExecutor;
@@ -56,8 +56,8 @@ async fn verifies_generic_eip712_signature() -> anyhow::Result<()> {
     let signature = signing_key.sign_prehash(eip712::digest(domain_separator, struct_hash));
     let witness = encode_signature(&public_key, &signature);
 
-    let domain_push = push_u32_limbs(bytes_to_u32_limbs(domain_separator));
-    let message_push = push_u32_limbs(bytes_to_u32_limbs(struct_hash));
+    let domain_push = push_u32_limbs(&bytes_to_packed_u32_elements(&domain_separator));
+    let message_push = push_u32_limbs(&bytes_to_packed_u32_elements(&struct_hash));
     let public_key_commitment = public_key.to_commitment();
     let script = format!(
         r#"
@@ -124,16 +124,17 @@ async fn verifies_ledger_speculos_signature() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn bytes_to_u32_limbs(bytes: [u8; 32]) -> [u32; 8] {
-    core::array::from_fn(|index| {
-        let start = index * 4;
-        u32::from_le_bytes(bytes[start..start + 4].try_into().expect("four-byte chunk"))
-    })
-}
-
-fn push_u32_limbs(limbs: [u32; 8]) -> String {
+fn push_u32_limbs(limbs: &[Felt]) -> String {
+    assert_eq!(limbs.len(), 8);
     format!(
         "push.{}.{}.{}.{} push.{}.{}.{}.{}",
-        limbs[7], limbs[6], limbs[5], limbs[4], limbs[3], limbs[2], limbs[1], limbs[0]
+        limbs[7].as_canonical_u64(),
+        limbs[6].as_canonical_u64(),
+        limbs[5].as_canonical_u64(),
+        limbs[4].as_canonical_u64(),
+        limbs[3].as_canonical_u64(),
+        limbs[2].as_canonical_u64(),
+        limbs[1].as_canonical_u64(),
+        limbs[0].as_canonical_u64()
     )
 }

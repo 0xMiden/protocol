@@ -74,7 +74,7 @@ fn keccak(bytes: &[u8]) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::utils::bytes_to_hex_string;
+    use miden_protocol::utils::{bytes_to_hex_string, bytes_to_packed_u32_elements};
     use miden_protocol::{Felt, Word};
 
     use super::*;
@@ -94,27 +94,22 @@ mod tests {
         assert_eq!(DOMAIN_SEPARATOR, keccak(&domain_preimage));
         assert_eq!(TRANSACTION_TYPE_HASH, keccak(TRANSACTION_TYPE.as_bytes()));
         assert_eq!(
-            bytes_to_u32_limbs(DOMAIN_SEPARATOR),
+            bytes_to_packed_u32_elements(&DOMAIN_SEPARATOR),
             [
                 1511125767, 3117083882, 446958287, 2727036186, 1195751528, 2604681929, 2130785247,
                 3903456984,
             ]
+            .map(Felt::from_u32)
         );
         assert_eq!(
-            bytes_to_u32_limbs(TRANSACTION_TYPE_HASH),
+            bytes_to_packed_u32_elements(&TRANSACTION_TYPE_HASH),
             [
                 3002887380, 1420631288, 494091842, 2729528150, 4274085984, 2147426208, 2043519110,
                 1663807340,
             ]
+            .map(Felt::from_u32)
         );
         assert_eq!(SIGNATURE_KEY_DOMAIN, u64::from_le_bytes(*b"EIP712\0\0"));
-    }
-
-    fn bytes_to_u32_limbs(bytes: [u8; 32]) -> [u32; 8] {
-        core::array::from_fn(|index| {
-            let start = index * 4;
-            u32::from_le_bytes(bytes[start..start + 4].try_into().expect("four-byte chunk"))
-        })
     }
 
     #[test]
