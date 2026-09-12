@@ -21,28 +21,7 @@ async fn verifies_transaction_summary_signature() -> anyhow::Result<()> {
     let signing_key = SigningKey::with_rng(&mut rng);
     let public_key = signing_key.public_key();
     let signature = signing_key.sign_prehash(eip712::transaction_summary_digest(tx_summary_hash));
-    let witness = encode_signature(&public_key, &signature);
-    let public_key_commitment = public_key.to_commitment();
-
-    let script = format!(
-        r#"
-            use miden::standards::auth::eip712_multisig_v1_transaction_summary
-
-            begin
-                push.9.9.9.9 adv.push_mapval dropw
-                push.{tx_summary_hash}
-                push.{public_key_commitment}
-                exec.eip712_multisig_v1_transaction_summary::verify
-            end
-        "#
-    );
-    let advice = AdviceInputs::default().with_map([(Word::from([9u32; 4]), witness)]);
-
-    CodeExecutor::with_default_host()
-        .extend_advice_inputs(advice)
-        .run(&script)
-        .await?;
-    Ok(())
+    verify_transaction_summary_signature(tx_summary_hash, &public_key, &signature).await
 }
 
 #[tokio::test]
@@ -101,7 +80,40 @@ async fn verifies_ledger_speculos_signature() -> anyhow::Result<()> {
     );
     assert!(public_key.verify_prehash(digest, &signature));
 
-    let witness = encode_signature(&public_key, &signature);
+    verify_transaction_summary_signature(tx_summary_hash, &public_key, &signature).await
+}
+
+#[tokio::test]
+async fn verifies_eth_sign_typed_data_v4_signature() -> anyhow::Result<()> {
+    // Generated with @metamask/eth-sig-util from the exact MidenTransaction typed-data object.
+    let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(
+        "0x034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+    )?)?;
+    let signature = Signature::from_sec1_bytes_and_recovery_id(
+        hex_to_bytes::<64>(
+            "0xdcb39402dc03c3ff8abc5a0e3e4d69968422fd60a6e4cb4ed832326d4ecd9692\
+             302ab820da2250c3cff27614bf514f7122a605abfbe492fb83b2ee9b5dcab2b0",
+        )?,
+        0,
+    )?;
+    let tx_summary_hash = Word::new([Felt::new(0xefcd_ab89_6745_2301)?; 4]);
+    let digest = eip712::transaction_summary_digest(tx_summary_hash);
+
+    assert_eq!(
+        digest,
+        hex_to_bytes::<32>("0xe24fddd9b9535fa24adf94097b68c4f00bbed14ee6970cd41d62a62b5b6a07b3")?
+    );
+    assert!(public_key.verify_prehash(digest, &signature));
+
+    verify_transaction_summary_signature(tx_summary_hash, &public_key, &signature).await
+}
+
+async fn verify_transaction_summary_signature(
+    tx_summary_hash: Word,
+    public_key: &PublicKey,
+    signature: &Signature,
+) -> anyhow::Result<()> {
+    let witness = encode_signature(public_key, signature);
     let public_key_commitment = public_key.to_commitment();
     let script = format!(
         r#"
