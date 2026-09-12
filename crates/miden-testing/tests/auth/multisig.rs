@@ -196,6 +196,7 @@ enum InvalidEip712Witness {
     RawSignature,
     RawAdviceKey,
     WrongApprover,
+    WrongTransactionSummary,
 }
 
 /// Tests basic 2-of-2 multisig functionality with note creation.
@@ -306,12 +307,13 @@ async fn test_multisig_2_of_2_with_note_creation(
 }
 
 #[rstest]
-#[case::raw_signer_at_index_0(0, 1)]
-#[case::raw_signer_at_index_1(1, 0)]
+#[case::raw_signer_at_index_0(Some(0), &[1])]
+#[case::raw_signer_at_index_1(Some(1), &[0])]
+#[case::both_signers_use_eip712(None, &[0, 1])]
 #[tokio::test]
-async fn test_multisig_2_of_2_with_raw_and_eip712_signatures(
-    #[case] raw_signer_index: usize,
-    #[case] eip712_signer_index: usize,
+async fn test_multisig_2_of_2_with_eip712_signatures(
+    #[case] raw_signer_index: Option<usize>,
+    #[case] eip712_signer_indices: &[usize],
 ) -> anyhow::Result<()> {
     let (secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
@@ -353,26 +355,28 @@ async fn test_multisig_2_of_2_with_raw_and_eip712_signatures(
     let tx_summary_hash = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
 
-    let raw_signature = authenticators[raw_signer_index]
-        .get_signature(public_keys[raw_signer_index].to_commitment(), &signing_inputs)
-        .await?;
-
-    let (eip712_signature_key, encoded_eip712_signature) = eip712_signature_witness(
-        &secret_keys[eip712_signer_index],
-        &public_keys[eip712_signer_index],
-        tx_summary_hash,
-    )?;
-
-    let executed_transaction = mock_tx_builder
-        .add_signature(
-            public_keys[raw_signer_index].to_commitment(),
+    let mut signed_tx_builder = mock_tx_builder;
+    if let Some(signer_index) = raw_signer_index {
+        let raw_signature = authenticators[signer_index]
+            .get_signature(public_keys[signer_index].to_commitment(), &signing_inputs)
+            .await?;
+        signed_tx_builder = signed_tx_builder.add_signature(
+            public_keys[signer_index].to_commitment(),
             tx_summary_hash,
             raw_signature,
-        )
-        .add_advice_map_entry(eip712_signature_key, encoded_eip712_signature)
-        .build()?
-        .execute()
-        .await?;
+        );
+    }
+
+    for &signer_index in eip712_signer_indices {
+        let (signature_key, witness) = eip712_signature_witness(
+            &secret_keys[signer_index],
+            &public_keys[signer_index],
+            tx_summary_hash,
+        )?;
+        signed_tx_builder = signed_tx_builder.add_advice_map_entry(signature_key, witness);
+    }
+
+    let executed_transaction = signed_tx_builder.build()?.execute().await?;
 
     multisig_account.apply_patch(executed_transaction.account_patch())?;
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
@@ -395,6 +399,7 @@ async fn test_multisig_2_of_2_with_raw_and_eip712_signatures(
 #[case::raw_signature_under_eip712_key(InvalidEip712Witness::RawSignature)]
 #[case::eip712_signature_under_raw_key(InvalidEip712Witness::RawAdviceKey)]
 #[case::signature_bound_to_another_approver(InvalidEip712Witness::WrongApprover)]
+#[case::signature_bound_to_another_summary(InvalidEip712Witness::WrongTransactionSummary)]
 #[tokio::test]
 async fn test_multisig_rejects_invalid_eip712_witness(
     #[case] invalid_witness: InvalidEip712Witness,
@@ -433,6 +438,12 @@ async fn test_multisig_rejects_invalid_eip712_witness(
                 eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary_hash)?;
             (eip712_key, signer_b_witness)
         },
+        InvalidEip712Witness::WrongTransactionSummary => {
+            let other_summary_hash = Word::from([42u32; 4]);
+            let (_, other_summary_witness) =
+                eip712_signature_witness(&secret_keys[0], &public_keys[0], other_summary_hash)?;
+            (eip712_key, other_summary_witness)
+        },
     };
     let result = mock_tx_builder.add_advice_map_entry(key, witness).build()?.execute().await;
 
@@ -441,9 +452,11 @@ async fn test_multisig_rejects_invalid_eip712_witness(
             result,
             MasmError::from_static_str("invalid public key commitment")
         ),
-        InvalidEip712Witness::RawSignature | InvalidEip712Witness::RawAdviceKey => assert!(
+        InvalidEip712Witness::RawSignature
+        | InvalidEip712Witness::RawAdviceKey
+        | InvalidEip712Witness::WrongTransactionSummary => assert!(
             result.is_err(),
-            "a signature must not verify under the other format's advice key"
+            "a signature must not verify for a different message format or transaction summary"
         ),
     }
 
