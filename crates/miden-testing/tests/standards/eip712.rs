@@ -26,13 +26,13 @@ async fn verifies_transaction_summary_signature() -> anyhow::Result<()> {
 
     let script = format!(
         r#"
-            use miden::standards::auth::eip712_transaction_summary
+            use miden::standards::auth::eip712_multisig_v1_transaction_summary
 
             begin
                 push.9.9.9.9 adv.push_mapval dropw
                 push.{tx_summary_hash}
                 push.{public_key_commitment}
-                exec.eip712_transaction_summary::verify
+                exec.eip712_multisig_v1_transaction_summary::verify
             end
         "#
     );
@@ -105,13 +105,13 @@ async fn verifies_ledger_speculos_signature() -> anyhow::Result<()> {
     let public_key_commitment = public_key.to_commitment();
     let script = format!(
         r#"
-            use miden::standards::auth::eip712_transaction_summary
+            use miden::standards::auth::eip712_multisig_v1_transaction_summary
 
             begin
                 push.9.9.9.9 adv.push_mapval dropw
                 push.{tx_summary_hash}
                 push.{public_key_commitment}
-                exec.eip712_transaction_summary::verify
+                exec.eip712_multisig_v1_transaction_summary::verify
             end
         "#
     );

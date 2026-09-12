@@ -5,7 +5,7 @@ use miden::core::crypto::dsa::ecdsa_k256_keccak
 use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth
-use miden::standards::auth::eip712_transaction_summary
+use miden::standards::auth::eip712_multisig_v1_transaction_summary
 
 # Schemes 1 (ECDSA) and 2 (Falcon) are currently supported.
 pub type SignatureScheme = u8
@@ -414,7 +414,7 @@ pub proc verify_signatures(
             loc_store.SUCCESSFUL_VERIFICATIONS_LOC
             # => [MSG, signer_idx]
         else
-            exec.eip712_transaction_summary::extend_signature_key
+            exec.eip712_multisig_v1_transaction_summary::extend_signature_key
             # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
             adv.has_mapkey
@@ -445,7 +445,7 @@ pub proc verify_signatures(
                 dupw.1 swapw
                 # => [PK_COMM, MSG, MSG, signer_idx]
 
-                exec.eip712_transaction_summary::verify
+                exec.eip712_multisig_v1_transaction_summary::verify
                 # => [MSG, signer_idx]
 
                 loc_load.SUCCESSFUL_VERIFICATIONS_LOC
