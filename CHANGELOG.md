@@ -5,6 +5,9 @@
 ### Changes
 
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
+
+### Fixes
+
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 
 ## v0.17.0-pre.1 (2026-09-05)
