@@ -5,6 +5,7 @@
 ### Features
 
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
+- Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
 
 ### Changes
 
