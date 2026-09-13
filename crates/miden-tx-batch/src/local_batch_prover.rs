@@ -42,8 +42,7 @@ impl LocalBatchProver {
     ///
     /// The precompile claims of the batch's transactions are settled with a single precompile proof
     /// over their merged witness. That proof is discarded rather than attached to the returned
-    /// batch; see [`BatchExecutor::execute`](crate::BatchExecutor::execute) for what this does and
-    /// does not establish.
+    /// batch; see [`ProvenBatch`] for what this does and does not establish.
     ///
     /// # Errors
     ///

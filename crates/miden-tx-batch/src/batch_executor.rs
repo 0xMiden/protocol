@@ -31,13 +31,6 @@ impl BatchExecutor {
     /// The executed batch carries the merged precompile witness of the batch's transactions, which
     /// the prover settles with a single precompile proof.
     ///
-    /// A successful execution does not make the claims checkable from the
-    /// [`ProvenBatch`](miden_protocol::batch::ProvenBatch) alone: the precompile proof is not part
-    /// of the proven batch (yet), so a party that did not execute the batch itself cannot check
-    /// them. This goes away once the batch kernel verifies the precompile proof in-circuit, at
-    /// which point the proof and the transactions' VM proofs become advice inputs to the kernel
-    /// execution below.
-    ///
     /// # Errors
     ///
     /// Returns an error if:

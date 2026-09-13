@@ -33,6 +33,12 @@ use crate::{
 
 /// A transaction batch with an execution proof.
 /// Currently, this only carries a skeleton proof which does not attest to anything meaningful.
+///
+/// The batch's transactions may carry outstanding precompile claims. The batch prover settles them
+/// with a single precompile proof, but that proof is not part of the proven batch (yet), so a party
+/// that holds only a [`ProvenBatch`] cannot check those claims. This goes away once the batch
+/// kernel verifies the precompile proof in-circuit, in which case the batch proof will recursively
+/// attest to the veracity of the precompile claims.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvenBatch {
     id: BatchId,
