@@ -10,7 +10,7 @@ use miden::standards::note::note_tag
 use {DEFAULT_TAG} from miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use miden::standards::attachments::network_account_target
-use {ALWAYS} from miden::standards::note::execution_hint
+use {ALWAYS} from miden::standards::note::note_execution_hint
 
 # CONSTANTS
 # =================================================================================================

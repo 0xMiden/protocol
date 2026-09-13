@@ -28,9 +28,9 @@ use miden_standards::account::policies::{
 };
 use miden_standards::errors::standards::{
     ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
-    ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR,
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
 };
 use miden_standards::note::config::{FaucetPolicyConfig, FaucetPolicyConfigNote};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
@@ -302,7 +302,10 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
     Ok(())
 }
 

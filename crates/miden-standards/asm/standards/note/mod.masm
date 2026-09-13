@@ -11,9 +11,11 @@ use miden::protocol::input_note
 use miden::protocol::output_note
 
 
-pub mod execution_hint
 pub mod note_creator
+pub mod note_execution_hint
+pub mod note_reclaim
 pub mod note_tag
+pub mod note_target
 
 # ERRORS
 # =================================================================================================

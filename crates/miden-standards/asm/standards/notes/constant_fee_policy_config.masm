@@ -1,7 +1,7 @@
 use {NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::fees::policies::constant_fee_manager
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -23,8 +23,6 @@ const NUM_STORAGE_ITEMS = 12
 # =================================================================================================
 
 const ERR_CONSTANT_FEE_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "constant fee policy config note storage item count is not the expected count"
-
-const ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH = "constant fee policy config note is not targeted at the consuming account"
 
 const ERR_CONSTANT_FEE_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "constant fee policy config note must be public"
 
@@ -52,6 +50,8 @@ const ERR_CONSTANT_FEE_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "constant fee policy c
 #! - allowlists this note's own script root and already has a set-marked fee schedule entry for it,
 #!   so the network account can price and consume this note.
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -74,8 +74,7 @@ pub proc main(args: NoteArgs)
 
     # assert the consuming account is the account the note is targeted at, so it cannot be consumed
     # and by an unrelated account (the note's `set_note_fee` call only checks the sender)
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_CONSTANT_FEE_POLICY_CONFIG_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR

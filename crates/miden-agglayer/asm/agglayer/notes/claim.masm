@@ -3,7 +3,7 @@ use {AdviceMapKey} from agglayer::types
 use agglayer::bridge::bridge_in as bridge
 use miden::protocol::active_note
 use miden::core::crypto::hashes::poseidon2
-use miden::standards::attachments::network_account_target
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -20,11 +20,6 @@ const PROOF_DATA_START_PTR = CLAIM_NOTE_STORAGE_PTR
 const LEAF_DATA_START_PTR = 536
 const FAUCET_MINT_AMOUNT = 568
 
-# ERRORS
-# =================================================================================================
-
-const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account does not match consuming account"
-
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -37,6 +32,8 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge::bridge_in::claim procedure.
+#!
+#! Consumers: target account (attachment)
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -87,8 +84,7 @@ pub proc main(args: NoteArgs)
     # => [pad(16)]
 
     # Ensure note attachment targets the consuming bridge account.
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # Load CLAIM note storage into memory, starting at address 0
