@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
+
 ### Changes
 
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
