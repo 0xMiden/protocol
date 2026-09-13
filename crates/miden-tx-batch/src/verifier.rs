@@ -24,6 +24,8 @@ use crate::BatchVerifierError;
 /// commits to, so a `ProvenBatch` whose contents were mutated would still verify. This verifier
 /// must therefore not be relied on at a trust boundary until the kernel verification logic that
 /// emits and binds the real commitments lands.
+///
+/// The proof also does not cover the precompile claims of the batch's transactions.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
     proof_security_level: u32,

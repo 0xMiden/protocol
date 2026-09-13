@@ -40,13 +40,27 @@ impl LocalBatchProver {
     /// the returned [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against
     /// the proposed batch's expected values.
     ///
+    /// The precompile claims of the batch's transactions are settled with a single precompile proof
+    /// over their merged witness. That proof is discarded rather than attached to the returned
+    /// batch; see [`BatchExecutor::execute`](crate::BatchExecutor::execute) for what this does and
+    /// does not establish.
+    ///
     /// # Errors
     ///
-    /// Returns an error if proof generation fails or the batch execution used a precompile.
+    /// Returns an error if proof generation fails.
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
-        let (proposed_batch, witness) = executed_batch.into_parts();
-        if witness.has_precompiles() {
-            return Err(ProvenBatchError::BatchProofContainsPrecompiles);
+        let (proposed_batch, witness, precompile_witness) = executed_batch.into_parts();
+
+        if let Some(precompile_witness) = precompile_witness {
+            // The proof is dropped: the batch kernel cannot verify it yet, and shipping it on the
+            // proven batch would add a wire format field that has to be removed again once the
+            // kernel does. The claims themselves were already checked natively when the executor
+            // rehydrated them; proving them adds that the statement holds in-circuit.
+            let _precompile_proof = self
+                .prover
+                .prove_precompile(&precompile_witness)
+                .map_err(|error| ExecutionError::ProvingError(error.to_string()))
+                .map_err(ProvenBatchError::PrecompileProvingFailed)?;
         }
 
         let proof = self
