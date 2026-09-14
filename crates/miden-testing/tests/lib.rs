@@ -6,6 +6,8 @@ mod scripts;
 mod standards;
 mod wallet;
 
+use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
@@ -24,7 +26,7 @@ use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, Transa
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain};
-use miden_tx::{LocalTransactionProver, Prover};
+use miden_tx::{ExecutionOptions, LocalTransactionProver, Prover, TransactionProverError};
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -107,6 +109,37 @@ async fn transaction_verifier_rejects_settled_precompile_proofs() -> anyhow::Res
     assert_matches::assert_matches!(
         error,
         TransactionVerifierError::TransactionProofContainsPrecompiles
+    );
+
+    Ok(())
+}
+
+/// The prover's [`ExecutionOptions`] reach the VM: an advice size limit far below what the kernel
+/// needs makes proving fail while the initial advice inputs are loaded.
+#[tokio::test]
+async fn custom_execution_options_reach_the_vm() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    let prover = LocalTransactionProver::default()
+        .with_execution_options(ExecutionOptions::default().with_max_advice_size_bytes(1));
+
+    let error = prover.prove(executed).unwrap_err();
+    assert_matches::assert_matches!(
+        error,
+        TransactionProverError::TransactionProgramExecutionFailed(ExecutionError::AdviceError {
+            err: AdviceError::SizeBudgetExceeded { .. },
+            ..
+        })
     );
 
     Ok(())
