@@ -11,9 +11,6 @@ use std::sync::Arc;
 
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
-use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
-#[cfg(test)]
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProposedBatch;
@@ -30,8 +27,8 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
-#[cfg(test)]
 use miden_protocol::vm::VerificationOutcome;
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain};
 use miden_tx::{ExecutionOptions, LocalTransactionProver, Prover, TransactionProverError};
@@ -40,7 +37,6 @@ use rstest::rstest;
 // HELPER FUNCTIONS
 // ================================================================================================
 
-#[cfg(test)]
 pub async fn prove_and_verify_transaction_deferred(
     executed_transaction: ExecutedTransaction,
 ) -> Result<(), TransactionVerifierError> {
@@ -50,7 +46,6 @@ pub async fn prove_and_verify_transaction_deferred(
 }
 
 /// Proves `executed_transaction` locally, round-trips it and verifies it.
-#[cfg(test)]
 pub async fn prove_and_verify_transaction_complete(
     executed_transaction: ExecutedTransaction,
 ) -> Result<(), TransactionVerifierError> {
@@ -61,7 +56,6 @@ pub async fn prove_and_verify_transaction_complete(
 
 /// Proves `executed_transaction` locally, round-trips it and verifies it, returning the proven
 /// transaction together with its verification outcome.
-#[cfg(test)]
 pub async fn prove_and_verify_transaction(
     executed_transaction: ExecutedTransaction,
 ) -> Result<(ProvenTransaction, VerificationOutcome), TransactionVerifierError> {
@@ -216,7 +210,6 @@ async fn custom_execution_options_reach_the_vm() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
 pub fn get_note_with_fungible_asset_and_script(
     fungible_asset: FungibleAsset,
     note_script: &str,
@@ -235,7 +228,6 @@ pub fn get_note_with_fungible_asset_and_script(
 
 /// Consumes a single authenticated input note against `account_id` in its own transaction and
 /// commits the resulting block, so the note's effects are visible to subsequent transactions.
-#[cfg(test)]
 pub async fn consume_note(
     mock_chain: &mut MockChain,
     account_id: AccountId,
@@ -257,7 +249,6 @@ pub async fn consume_note(
 /// The typed note builders of the standard config notes fix the note type to
 /// [`NoteType::Public`], so this is how a sender would hand-craft a private note that is
 /// otherwise indistinguishable from a legitimate config note.
-#[cfg(test)]
 pub fn into_private_note(note: Note) -> Note {
     let metadata = PartialNoteMetadata::new(note.metadata().sender(), NoteType::Private)
         .with_tag(note.metadata().tag());
