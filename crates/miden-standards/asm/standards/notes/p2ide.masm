@@ -1,8 +1,9 @@
-use {AccountId, BlockNumber} from miden::protocol::types
+use {BlockNumber} from miden::protocol::types
 use miden::protocol::active_account
 use miden::protocol::account_id
 use miden::protocol::active_note
 use miden::protocol::tx
+use miden::standards::note::note_reclaim
 use miden::standards::wallets::basic as basic_wallet
 
 # CONSTANTS
@@ -32,12 +33,6 @@ const TIMELOCK_HEIGHT_ITEM = STORAGE_PTR + 5
 
 const ERR_P2IDE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2IDE note expects exactly 6 note storage items"
 
-const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER="failed to reclaim P2IDE note because the reclaiming account is not the reclaimer"
-
-const ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED="failed to reclaim P2IDE note because the reclaim block height is not reached yet"
-
-const ERR_P2IDE_RECLAIM_DISABLED="P2IDE reclaim is disabled"
-
 const ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED="failed to consume P2IDE note because the note is still timelocked"
 
 # HELPER PROCEDURES
@@ -46,60 +41,13 @@ const ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED="failed to consume P2IDE note becaus
 #! Helper procedure to check if the P2IDE note is unlocked.
 #!
 #! Inputs:  [current_block_height, timelock_block_height]
-#! Outputs: [current_block_height]
+#! Outputs: []
 proc assert_unlocked(
     current_block_height: BlockNumber,
     timelock_block_height: BlockNumber
-) -> BlockNumber
-    dup movdn.2
-    # => [current_block_height, timelock_block_height, current_block_height]
-
+)
     # check timelock_block_height <= current_block_height
     lte assert.err=ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED
-    # => [current_block_height]
-end
-
-#! Helper procedure which adds the note assets to the reclaimer account.
-#!
-#! Checks if P2IDE reclaim is enabled and if true, if reclaim height has been reached, and that
-#! the active account is the note's reclaimer.
-#!
-#! Inputs:  [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - account_id_{suffix,prefix} are the suffix and prefix felts of the active account ID.
-#! - current_block_height is the transaction's reference block number.
-#! - reclaim_block_height is the block height at which the note becomes reclaimable (0 = reclaim disabled).
-#! - reclaimer_id_{suffix,prefix} are the suffix and prefix felts of the account ID allowed to reclaim the note.
-#!
-#! Panics if:
-#! - the reclaim of the active note is disabled.
-#! - the reclaim block height is not reached yet.
-#! - the account attempting to reclaim the note is not the reclaimer account.
-proc reclaim_note(
-    account_id: AccountId,
-    current_block_height: BlockNumber,
-    reclaim_block_height: BlockNumber,
-    reclaimer_id: AccountId
-)
-    # check that the reclaim of the active note is enabled
-    movup.3 dup neq.0 assert.err=ERR_P2IDE_RECLAIM_DISABLED
-    # => [reclaim_block_height, account_id_suffix, account_id_prefix, current_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
-
-    # now check that reclaimer is allowed to reclaim, reclaim block height <= current block height
-    movup.3
-    # => [current_block_height, reclaim_block_height, account_id_suffix, account_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
-
-    lte assert.err=ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED
-    # => [account_id_suffix, account_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
-
-    # ensure active account ID = reclaimer account ID
-    exec.account_id::eq assert.err=ERR_P2IDE_RECLAIM_ACCT_IS_NOT_RECLAIMER
-    # => []
-
-    # add note assets to account
-    exec.basic_wallet::move_note_assets_to_account
     # => []
 end
 
@@ -114,6 +62,8 @@ end
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
+#!
+#! Consumers: committed accounts (note storage)
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -150,38 +100,34 @@ pub proc main()
     # => [current_block_height, timelock_block_height]
 
     exec.assert_unlocked
-    # => [current_block_height]
+    # => []
 
-    # get active account id
+    # load the target account ID from note storage and compare it against the active account
+    mem_load.TARGET_PREFIX_ITEM mem_load.TARGET_SUFFIX_ITEM
+    # => [target_account_id_suffix, target_account_id_prefix]
+
     exec.active_account::get_id
-    # => [account_id_suffix, account_id_prefix, current_block_height]
+    # => [account_id_suffix, account_id_prefix, target_account_id_suffix, target_account_id_prefix]
 
-    # duplicate the active account id and load the target account id to compare against
-    dup.1 dup.1 mem_load.TARGET_PREFIX_ITEM mem_load.TARGET_SUFFIX_ITEM
-    # => [target_account_id_suffix, target_account_id_prefix, account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, current_block_height]
-
-    # determine if the active account is the target account
     exec.account_id::eq
-    # => [is_target, account_id_suffix, account_id_prefix, current_block_height]
+    # => [is_target]
 
     if.true
         # we can safely consume the note since the active account is the target of the note
-        drop drop drop exec.basic_wallet::move_note_assets_to_account
+        exec.basic_wallet::move_note_assets_to_account
+        # => []
+    else
+        # the note may only go back to the reclaimer named in the note storage, and only once its
+        # reclaim block height is reached
+        mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM
+        mem_load.RECLAIM_HEIGHT_ITEM
+        # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
+
+        exec.note_reclaim::assert_reclaimable
         # => []
 
-    else
-        # load the reclaimer account ID from note storage
-        mem_load.RECLAIMER_PREFIX_ITEM movdn.3 mem_load.RECLAIMER_SUFFIX_ITEM movdn.3
-        # => [account_id_suffix, account_id_prefix, current_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
-
-        # load the reclaim block height from note storage
-        mem_load.RECLAIM_HEIGHT_ITEM movdn.3
-        # => [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
-
-        # checks if active account is the reclaimer and if reclaim is enabled
-        exec.reclaim_note
+        exec.basic_wallet::move_note_assets_to_account
         # => []
     end
-
     # => []
 end

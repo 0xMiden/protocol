@@ -124,6 +124,7 @@ pub struct MockChainBuilder {
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
     notes: Vec<RawOutputNote>,
     rng: RandomCoin,
+    validator_signing_keys: Option<Vec<SigningKey>>,
     // Fee parameters.
     fee_faucet_id: AccountId,
     verification_base_fee: u32,
@@ -139,6 +140,9 @@ impl MockChainBuilder {
     /// overwritten using [`Self::fee_faucet_id`].
     ///
     /// The `verification_base_fee` is initialized to 0 which means no fees are required by default.
+    ///
+    /// By default, three random validator signing keys are generated when building the chain.
+    /// Use [`Self::validator_signing_keys`] to supply the keys instead.
     pub fn new() -> Self {
         let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into().expect("account ID should be valid");
 
@@ -147,6 +151,7 @@ impl MockChainBuilder {
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
             rng: RandomCoin::new(Default::default()),
+            validator_signing_keys: None,
             fee_faucet_id,
             verification_base_fee: 0,
         }
@@ -187,6 +192,19 @@ impl MockChainBuilder {
     /// See [`FeeParameters`] for more details.
     pub fn verification_base_fee(mut self, verification_base_fee: u32) -> Self {
         self.verification_base_fee = verification_base_fee;
+        self
+    }
+
+    /// Sets the validator signing keys for genesis and subsequent blocks, until validator rotation.
+    ///
+    /// By default, three random keys are generated. Supplied keys may be in any order; the genesis
+    /// [`ValidatorConfig`] and signatures follow the config's canonical public key order. All keys
+    /// must sign each block.
+    ///
+    /// [`Self::build`] returns an error if the set is empty, contains duplicate keys, or exceeds
+    /// [`ValidatorConfig::MAX_VALIDATORS`].
+    pub fn validator_signing_keys(mut self, keys: Vec<SigningKey>) -> Self {
+        self.validator_signing_keys = Some(keys);
         self
     }
 
@@ -256,9 +274,16 @@ impl MockChainBuilder {
         let fee_parameters = FeeParameters::new(self.verification_base_fee);
         let protocol_config = ProtocolConfig::current(AssetId::new_fungible(self.fee_faucet_id))
             .context("failed to build the genesis protocol config")?;
-        let validator_secret_keys: Vec<SigningKey> =
-            (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect();
-        let validator_config = ValidatorConfig::from_signers(&validator_secret_keys);
+        let validator_secret_keys = self
+            .validator_signing_keys
+            .unwrap_or_else(|| (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect());
+        let quorum = u16::try_from(validator_secret_keys.len())
+            .context("genesis validator count exceeds u16::MAX")?;
+        let validator_config = ValidatorConfig::new(
+            validator_secret_keys.iter().map(|signer| signer.public_key()).collect(),
+            quorum,
+        )
+        .context("failed to build the genesis validator config")?;
 
         let header = BlockHeader::new(
             prev_block_commitment,
