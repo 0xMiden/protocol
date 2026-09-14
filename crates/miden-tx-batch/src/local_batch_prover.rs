@@ -18,20 +18,37 @@ use crate::ExecutedBatch;
 #[derive(Clone)]
 pub struct LocalBatchProver {
     prover: Prover,
+    skip_precompile_proof_generation: bool,
 }
 
 impl Default for LocalBatchProver {
     fn default() -> Self {
-        Self {
-            prover: Prover::new().with_hash_fn(Poseidon2),
-        }
+        Self::new(Prover::new().with_hash_fn(Poseidon2))
     }
 }
 
 impl LocalBatchProver {
     /// Creates a new [`LocalBatchProver`] instance.
     pub fn new(prover: Prover) -> Self {
-        Self { prover }
+        Self {
+            prover,
+            skip_precompile_proof_generation: false,
+        }
+    }
+
+    /// Returns the prover with generation of the batch's precompile proof turned off.
+    ///
+    /// The precompile claims are still checked natively when the executor rehydrates them, so the
+    /// resulting batch is unchanged; only the in-circuit evidence for those claims is missing.
+    ///
+    /// This option can be removed once the batch kernel proof recursively verifies the transaction
+    /// precompiles.
+    pub fn skip_precompile_proof_generation(
+        mut self,
+        skip_precompile_proof_generation: bool,
+    ) -> Self {
+        self.skip_precompile_proof_generation = skip_precompile_proof_generation;
+        self
     }
 
     /// Proves the [`ExecutedBatch`] into a [`ProvenBatch`].
@@ -41,8 +58,9 @@ impl LocalBatchProver {
     /// the proposed batch's expected values.
     ///
     /// The precompile claims of the batch's transactions are settled with a single precompile proof
-    /// over their merged witness. That proof is discarded rather than attached to the returned
-    /// batch; see [`ProvenBatch`] for what this does and does not establish.
+    /// over their merged witness, unless [`Self::skip_precompile_proof_generation`] was called.
+    /// That proof is discarded rather than attached to the returned batch; see [`ProvenBatch`] for
+    /// what this does and does not establish.
     ///
     /// # Errors
     ///
@@ -50,7 +68,9 @@ impl LocalBatchProver {
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
         let (proposed_batch, witness, precompile_witness) = executed_batch.into_parts();
 
-        if let Some(precompile_witness) = precompile_witness {
+        if !self.skip_precompile_proof_generation
+            && let Some(precompile_witness) = precompile_witness
+        {
             // The proof is dropped: the batch kernel cannot verify it yet, and shipping it on the
             // proven batch would add a wire format field that has to be removed again once the
             // kernel does. The claims themselves were already checked natively when the executor
