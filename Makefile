@@ -163,6 +163,7 @@ generate-solidity-test-vectors: ## Regenerate Solidity test vectors using Foundr
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVerificationProofData
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generate_MTF_vectors
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateExitRootVectors
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateEip712TransactionSummaryVector
 
 # --- benchmarking --------------------------------------------------------------------------------
 

@@ -20,14 +20,18 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{
+    RawOutputNote,
+    TransactionSummary,
+    TransactionSummaryUserParams,
+};
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::{
     Approver,
     ApproverSet,
     AuthMultisig,
+    Eip712TransactionSummary,
     MultisigAuthArgs,
-    eip712,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -55,6 +59,9 @@ use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
+
+const ERR_ECDSA_VERIFICATION_FAILED: MasmError =
+    MasmError::from_static_str("ECDSA verification failed: x(VERIFY_POINT) != SIG_R");
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -170,7 +177,7 @@ fn create_multisig_account(
 pub(super) fn eip712_signature_witness(
     secret_key: &AuthSecretKey,
     public_key: &PublicKey,
-    tx_summary_hash: Word,
+    tx_summary: &TransactionSummary,
 ) -> anyhow::Result<(Word, Vec<Felt>)> {
     let AuthSecretKey::EcdsaK256Keccak(signing_key) = secret_key else {
         anyhow::bail!("EIP-712 transaction-summary signatures require an ECDSA signing key");
@@ -178,11 +185,8 @@ pub(super) fn eip712_signature_witness(
     let PublicKey::EcdsaK256Keccak(public_key) = public_key else {
         anyhow::bail!("EIP-712 transaction-summary signatures require an ECDSA public key");
     };
-    let signature = signing_key.sign_prehash(eip712::transaction_summary_digest(tx_summary_hash));
-    let key = eip712::transaction_summary_signature_key(
-        public_key.to_commitment().into(),
-        tx_summary_hash,
-    );
+    let signature = signing_key.sign_prehash(tx_summary.eip712_hash().into_bytes());
+    let key = tx_summary.eip712_signature_key(public_key.to_commitment().into());
 
     Ok((key, encode_signature(public_key, &signature)))
 }
@@ -353,7 +357,7 @@ async fn test_multisig_2_of_2_with_eip712_signatures(
         .unwrap_err()
         .unwrap_unauthorized_err();
     let tx_summary_hash = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary.clone());
 
     let mut signed_tx_builder = mock_tx_builder;
     if let Some(signer_index) = raw_signer_index {
@@ -371,7 +375,7 @@ async fn test_multisig_2_of_2_with_eip712_signatures(
         let (signature_key, witness) = eip712_signature_witness(
             &secret_keys[signer_index],
             &public_keys[signer_index],
-            tx_summary_hash,
+            tx_summary.as_ref(),
         )?;
         signed_tx_builder = signed_tx_builder.add_advice_map_entry(signature_key, witness);
     }
@@ -428,20 +432,27 @@ async fn test_multisig_rejects_invalid_eip712_witness(
     let raw_key = Hasher::merge(&[public_keys[0].to_commitment().into(), tx_summary_hash]);
     let raw_witness = secret_keys[0].sign(tx_summary_hash).to_encoded_signature(tx_summary_hash);
     let (eip712_key, eip712_witness) =
-        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
 
     let (key, witness) = match invalid_witness {
         InvalidEip712Witness::RawSignature => (eip712_key, raw_witness),
         InvalidEip712Witness::RawAdviceKey => (raw_key, eip712_witness),
         InvalidEip712Witness::WrongApprover => {
             let (_, signer_b_witness) =
-                eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary_hash)?;
+                eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary.as_ref())?;
             (eip712_key, signer_b_witness)
         },
         InvalidEip712Witness::WrongTransactionSummary => {
-            let other_summary_hash = Word::from([42u32; 4]);
+            let other_summary = TransactionSummary::new(
+                tx_summary.account_delta().clone(),
+                tx_summary.input_notes().clone(),
+                tx_summary.output_notes().clone(),
+                tx_summary.block_commitment(),
+                tx_summary.expiration_delta(),
+                TransactionSummaryUserParams::new([Felt::new_unchecked(42); 7]),
+            );
             let (_, other_summary_witness) =
-                eip712_signature_witness(&secret_keys[0], &public_keys[0], other_summary_hash)?;
+                eip712_signature_witness(&secret_keys[0], &public_keys[0], &other_summary)?;
             (eip712_key, other_summary_witness)
         },
     };
@@ -454,10 +465,9 @@ async fn test_multisig_rejects_invalid_eip712_witness(
         ),
         InvalidEip712Witness::RawSignature
         | InvalidEip712Witness::RawAdviceKey
-        | InvalidEip712Witness::WrongTransactionSummary => assert!(
-            result.is_err(),
-            "a signature must not verify for a different message format or transaction summary"
-        ),
+        | InvalidEip712Witness::WrongTransactionSummary => {
+            assert_transaction_executor_error!(result, ERR_ECDSA_VERIFICATION_FAILED)
+        },
     }
 
     Ok(())
@@ -480,9 +490,8 @@ async fn test_multisig_eip712_replay_protection() -> anyhow::Result<()> {
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    let tx_summary_hash = tx_summary.as_ref().to_commitment();
     let (signature_key, witness) =
-        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
 
     let executed_transaction = mock_tx_builder
         .add_advice_map_entry(signature_key, witness.clone())
@@ -541,13 +550,13 @@ async fn test_multisig_does_not_double_count_raw_and_eip712_signatures() -> anyh
         .unwrap_err()
         .unwrap_unauthorized_err();
     let tx_summary_hash = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary.clone());
 
     let raw_signature = authenticators[0]
         .get_signature(public_keys[0].to_commitment(), &signing_inputs)
         .await?;
     let (eip712_key, eip712_witness) =
-        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
 
     let result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
@@ -591,9 +600,7 @@ async fn test_multisig_rejects_eip712_for_falcon_approver() -> anyhow::Result<()
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    let tx_summary_hash = tx_summary.as_ref().to_commitment();
-    let eip712_key =
-        eip712::transaction_summary_signature_key(public_keys[0].to_commitment(), tx_summary_hash);
+    let eip712_key = tx_summary.eip712_signature_key(public_keys[0].to_commitment());
 
     let result = mock_tx_builder
         .add_advice_map_entry(eip712_key, vec![Felt::ZERO; 32])
@@ -641,10 +648,8 @@ async fn test_multisig_rejects_invalid_eip712_signature_length(
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    let tx_summary_hash = tx_summary.as_ref().to_commitment();
-
     let (signature_key, mut witness) =
-        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
+        eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary.as_ref())?;
     witness.resize(witness_length, Felt::ZERO);
 
     let result = mock_tx_builder

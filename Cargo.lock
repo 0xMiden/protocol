@@ -2888,6 +2888,7 @@ dependencies = [
 name = "miden-testing"
 version = "0.17.0-rc.4"
 dependencies = [
+ "alloy-sol-types",
  "anyhow",
  "assert_matches",
  "bon",

@@ -917,8 +917,8 @@ end
 #!   Advice map: {
 #!     h(PK_COMM_0, MSG): SIG_0,
 #!     h(PK_COMM_1, MSG): SIG_1,
-#!     h(PK_COMM_n, MSG): SIG_n,
-#!     h(h(PK_COMM_i, MSG), [0x323137504945, 0, 0, 0]): EIP712_SIG_i
+#!     h(h(PK_COMM_i, MSG), [0x323137504945, 0, 0, 0]): EIP712_SIG_i,
+#!     h(PK_COMM_n, MSG): SIG_n
 #!   }
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]

@@ -5,7 +5,7 @@ use miden::core::crypto::dsa::ecdsa_k256_keccak
 use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth
-use miden::standards::auth::eip712_multisig_v1_transaction_summary
+use miden::standards::auth::eip712_transaction_summary
 
 # Schemes 1 (ECDSA) and 2 (Falcon) are currently supported.
 pub type SignatureScheme = u8
@@ -26,6 +26,7 @@ pub type SignatureSchemeWord = struct {
 # Auth Scheme ID Structure
 const ECDSA_K256_KECCAK_SCHEME_ID=1
 const FALCON_512_POSEIDON2_SCHEME_ID=2
+const ECDSA_K256_KECCAK_SIGNATURE_LENGTH=32
 
 # Estimated upper bounds on the number of cycles authenticate_transaction takes per signature
 # scheme, for use as the num_extra_cycles input of fee::pay_fee. Measured values (see
@@ -414,7 +415,7 @@ pub proc verify_signatures(
             loc_store.SUCCESSFUL_VERIFICATIONS_LOC
             # => [MSG, signer_idx]
         else
-            exec.eip712_multisig_v1_transaction_summary::extend_signature_key
+            exec.eip712_transaction_summary::compute_signature_key
             # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
             adv.has_mapkey
@@ -434,7 +435,7 @@ pub proc verify_signatures(
 
                 adv.push_mapval_count
                 adv_push
-                eq.32 assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
+                eq.ECDSA_K256_KECCAK_SIGNATURE_LENGTH assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
                 # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
                 adv.push_mapval
@@ -445,7 +446,7 @@ pub proc verify_signatures(
                 dupw.1 swapw
                 # => [PK_COMM, MSG, MSG, signer_idx]
 
-                exec.eip712_multisig_v1_transaction_summary::verify
+                exec.eip712_transaction_summary::verify
                 # => [MSG, signer_idx]
 
                 loc_load.SUCCESSFUL_VERIFICATIONS_LOC

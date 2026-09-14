@@ -36,6 +36,7 @@ rand_chacha = { workspace = true }
 thiserror   = { workspace = true }
 
 [dev-dependencies]
+alloy-sol-types = { workspace = true }
 anyhow          = { features = ["backtrace", "std"], workspace = true }
 assert_matches  = { workspace = true }
 bon             = { workspace = true }

@@ -1,0 +1,92 @@
+use miden::core::crypto::hashes::keccak256
+use miden::core::crypto::hashes::poseidon2
+use miden::standards::auth::eip712
+
+# CONSTANTS
+# =================================================================================================
+
+# Little-endian ASCII "EIP712" packed into one felt. This separates EIP-712 advice-map keys from
+# raw signature keys.
+const SIGNATURE_KEY_DOMAIN=0x323137504945
+
+# keccak256("MidenTransaction(bytes32 txSummaryHash)"), stored as eight little-endian u32 limbs.
+const TRANSACTION_TYPE_HASH_LOW=[3002887380, 1420631288, 494091842, 2729528150]
+const TRANSACTION_TYPE_HASH_HIGH=[4274085984, 2147426208, 2043519110, 1663807340]
+
+# keccak256(domainTypeHash || keccak256("Miden Transaction") || keccak256("1")), stored as eight
+# little-endian u32 limbs.
+const DOMAIN_SEPARATOR_LOW=[825989586, 400295538, 7363001, 2458011656]
+const DOMAIN_SEPARATOR_HIGH=[919736643, 3455887530, 1338955348, 3083259562]
+
+# local memory address for the public-key commitment
+const PUBLIC_KEY_COMMITMENT_LOC=0
+
+# PROCEDURES
+# =================================================================================================
+
+#! Computes the advice-map key for an EIP-712 transaction-summary signature.
+#!
+#! Inputs:  [RAW_SIGNATURE_KEY]
+#! Outputs: [EIP712_SIGNATURE_KEY]
+#!
+#! Where:
+#! - RAW_SIGNATURE_KEY is the advice-map key for a raw transaction signature.
+#! - EIP712_SIGNATURE_KEY is the domain-separated advice-map key for an EIP-712 signature.
+#!
+#! Invocation: exec
+pub proc compute_signature_key(raw_signature_key: word) -> word
+    push.0.0.0.SIGNATURE_KEY_DOMAIN
+    # => [EIP712_DOMAIN, RAW_SIGNATURE_KEY]
+
+    swapw
+    exec.poseidon2::merge
+    # => [EIP712_SIGNATURE_KEY]
+end
+
+#! Verifies an ECDSA signature over the Miden EIP-712 transaction-summary message.
+#!
+#! Inputs:
+#!   Operand stack: [PUBLIC_KEY_COMMITMENT, TX_SUMMARY_HASH]
+#!   Advice stack:  [public_key(16) | signature_r(8) | signature_s(8)]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - PUBLIC_KEY_COMMITMENT is the commitment to public_key(16).
+#! - TX_SUMMARY_HASH is the transaction-summary commitment.
+#! - public_key(16) is the secp256k1 public key as little-endian u32 limbs.
+#! - signature_r(8) and signature_s(8) are the ECDSA signature scalars as little-endian u32
+#!   limbs.
+#!
+#! Panics if:
+#! - the public key or signature is malformed.
+#! - the public-key commitment is invalid.
+#! - signature verification fails.
+#!
+#! Invocation: exec
+@locals(4)
+pub proc verify(public_key_commitment: word, tx_summary_hash: word)
+    loc_storew_le.PUBLIC_KEY_COMMITMENT_LOC dropw
+    # => [TX_SUMMARY_HASH]
+
+    # convert the Miden word to the little-endian u32 limbs of its bytes32 encoding
+    movup.3 u32split movup.4 u32split movup.5 u32split movup.6 u32split
+    # => [tx_summary_hash_u32(8)]
+
+    push.TRANSACTION_TYPE_HASH_HIGH push.TRANSACTION_TYPE_HASH_LOW
+    # => [transaction_type_hash(8), tx_summary_hash_u32(8)]
+
+    exec.keccak256::merge
+    # => [struct_hash(8)]
+
+    push.DOMAIN_SEPARATOR_HIGH push.DOMAIN_SEPARATOR_LOW
+    # => [domain_separator(8), struct_hash(8)]
+
+    padw loc_loadw_le.PUBLIC_KEY_COMMITMENT_LOC
+    # OS => [PUBLIC_KEY_COMMITMENT, domain_separator(8), struct_hash(8)]
+    # AS => [public_key(16) | signature_r(8) | signature_s(8)]
+
+    exec.eip712::verify_raw
+    # OS => []
+    # AS => []
+end

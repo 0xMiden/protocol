@@ -183,13 +183,13 @@ async fn test_multisig_smart_accepts_raw_and_eip712_signatures() -> anyhow::Resu
         .unwrap_err()
         .unwrap_unauthorized_err();
     let tx_summary_hash = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary.clone());
     let raw_signature = authenticators[0]
         .get_signature(public_keys[0].to_commitment(), &signing_inputs)
         .await?;
 
     let (signature_key, witness) =
-        eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary_hash)?;
+        eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary.as_ref())?;
 
     mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)

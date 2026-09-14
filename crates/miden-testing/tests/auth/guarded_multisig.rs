@@ -240,7 +240,7 @@ async fn test_guarded_multisig_signature_required(
         .unwrap_err()
         .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
-    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary.clone());
 
     let sig_1 = authenticators[0]
         .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
@@ -263,7 +263,7 @@ async fn test_guarded_multisig_signature_required(
     ));
 
     let (guardian_eip712_key, guardian_eip712_witness) =
-        eip712_signature_witness(&guardian_secret_key, &guardian_public_key, msg)?;
+        eip712_signature_witness(&guardian_secret_key, &guardian_public_key, tx_summary.as_ref())?;
 
     // Guardian acknowledgements accept the same EIP-712 fallback as multisig approvers.
     mock_tx_builder
