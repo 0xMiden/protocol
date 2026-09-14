@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Added EIP-712 transaction-summary signatures for ECDSA approvers to the `multisig`, `multisig_smart`, and `guarded_multisig` authentication components ([#3856](https://github.com/0xMiden/protocol/pull/3856)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
@@ -154,7 +155,6 @@
 - Added a genesis-only native fungible faucet factory that configures the faucet to pay fees in its own asset ([#3584](https://github.com/0xMiden/protocol/issues/3584)).
 - Added `note_costs` to the `NetworkNotePricer` builder, a supplied cost map that extends or shadows the built-in cost tables ([#3602](https://github.com/0xMiden/protocol/pull/3602)).
 - [BREAKING] AggLayer bridge and faucet accounts deploy with a priced fee policy and `ADMIN`-gated repricing; both code commitments change ([#3486](https://github.com/0xMiden/protocol/pull/3486)).
-- [BREAKING] Added EIP-712 transaction-summary signatures for ECDSA approvers in the regular, smart, and guarded multisig authentication components. Raw ECDSA and Falcon signatures remain supported, but the affected authentication procedure roots change ([rust-sdk#2369](https://github.com/0xMiden/rust-sdk/issues/2369)).
 - [BREAKING] The AggLayer bridge now accepts `RbacConfigNote`s, enabling on-chain rotation of its `ADMIN`, `FAUCET_MNGR`, `GER_INJECTOR`, and `GER_REMOVER` roles; the `create_existing_bridge_account_with_roles` testing fixture now takes the `ADMIN` member explicitly ([#2706](https://github.com/0xMiden/protocol/issues/2706)).
 - Added the `ConstantFeeManager` account component, exposing the authority-gated `set_note_fee` procedure to update a `BasicConstantFeePolicy`'s fee schedule on a network account after deployment; the supplied fee asset's ID is validated against the account's configured fee asset and its value word is validated to be a well-formed fungible amount not exceeding the maximum ([#3322](https://github.com/0xMiden/protocol/issues/3322)).
 - Added the `miden-protocol-build-utils` crate with helpers to assemble MASM code ([#3334](https://github.com/0xMiden/protocol/pull/3334)).
