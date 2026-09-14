@@ -1,4 +1,5 @@
 use core::cell::Cell;
+use core::convert::Infallible;
 use core::error::Error;
 use core::num::TryFromIntError;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,6 +23,51 @@ impl Verify for Entry {
 
     fn verify(self) -> Result<u8, Self::Error> {
         self.0.try_into()
+    }
+}
+
+struct InfallibleEntry(u8);
+
+impl Verify for InfallibleEntry {
+    type Verified = u32;
+    type Error = Infallible;
+
+    fn verify(self) -> Result<u32, Infallible> {
+        Ok(u32::from(self.0) + 1)
+    }
+}
+
+#[test]
+fn infallible_verification_composes_without_introducing_errors() {
+    let optional: Option<u32> =
+        OptionalField::new("optional", Some(InfallibleEntry(3))).verify_infallible();
+    assert_eq!(optional, Some(4));
+    assert!(
+        OptionalField::new("optional", None::<InfallibleEntry>)
+            .verify_infallible()
+            .is_none()
+    );
+    let values: Vec<u32> = RepeatedField::new(
+        "values",
+        vec![InfallibleEntry(2), InfallibleEntry(1), InfallibleEntry(2)],
+    )
+    .verify_infallible();
+    assert_eq!(values, [3, 2, 3]);
+    assert!(
+        RepeatedField::new("values", Vec::<InfallibleEntry>::new())
+            .verify_infallible()
+            .is_empty()
+    );
+    let map: BTreeMap<i32, u32> =
+        MapField::new("map", BTreeMap::from([(-5, InfallibleEntry(7))])).verify_infallible();
+    assert_eq!(map, BTreeMap::from([(-5, 8)]));
+
+    #[cfg(feature = "std")]
+    {
+        use std::collections::HashMap;
+        let map: HashMap<&str, u32> =
+            MapField::new("map", HashMap::from([("rpc", InfallibleEntry(7))])).verify_infallible();
+        assert_eq!(map, HashMap::from([("rpc", 8)]));
     }
 }
 

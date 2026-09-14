@@ -1,18 +1,67 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::vec::Vec;
+use core::convert::Infallible;
 use core::error::Error;
 use core::fmt::Debug;
 
 use super::{MapField, OptionalField, RepeatedField};
-use crate::{ConversionError, ConversionResultExt, Verify, VerifyWith};
+use crate::{ConversionError, ConversionResultExt, Verify, VerifyWith, unwrap_infallible};
+
+impl<S: Verify<Error = Infallible>> OptionalField<S> {
+    /// Verifies the present value without introducing a fallible result.
+    /// Only available when the element verifier is statically infallible.
+    pub fn verify_infallible(self) -> Option<S::Verified> {
+        self.map(|value| unwrap_infallible(value.verify()))
+    }
+}
+
+impl<S: Verify<Error = Infallible>> RepeatedField<S> {
+    /// Verifies each value without introducing a fallible result, preserving order and duplicates.
+    /// Only available when the element verifier is statically infallible.
+    ///
+    /// A fallible element verifier cannot use this method:
+    ///
+    /// ```compile_fail,E0599
+    /// use miden_protobuf::{RepeatedField, Verify};
+    /// struct Entry(u32);
+    /// impl Verify for Entry {
+    ///     type Verified = u8;
+    ///     type Error = core::num::TryFromIntError;
+    ///     fn verify(self) -> Result<u8, Self::Error> { self.0.try_into() }
+    /// }
+    /// RepeatedField::new("entries", vec![Entry(256)]).verify_infallible();
+    /// ```
+    pub fn verify_infallible(self) -> Vec<S::Verified> {
+        self.map(|value| unwrap_infallible(value.verify()))
+    }
+}
+
+impl<K: Ord, S: Verify<Error = Infallible>> MapField<BTreeMap<K, S>> {
+    /// Verifies each value without introducing a fallible result, preserving keys.
+    /// Only available when the element verifier is statically infallible.
+    pub fn verify_infallible(self) -> BTreeMap<K, S::Verified> {
+        self.map(|value| unwrap_infallible(value.verify()))
+    }
+}
+
+#[cfg(feature = "std")]
+impl<K: Eq + core::hash::Hash, S: Verify<Error = Infallible>>
+    MapField<std::collections::HashMap<K, S>>
+{
+    /// Verifies each value without introducing a fallible result, preserving keys.
+    /// Only available when the element verifier is statically infallible.
+    pub fn verify_infallible(self) -> std::collections::HashMap<K, S::Verified> {
+        self.map(|value| unwrap_infallible(value.verify()))
+    }
+}
 
 impl<S: Verify> Verify for OptionalField<S> {
     type Verified = Option<S::Verified>;
     type Error = ConversionError;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        self.value.map(Verify::verify).transpose().context(self.name)
+        self.try_map(Verify::verify)
     }
 }
 
@@ -21,10 +70,7 @@ impl<S: VerifyWith<C>, C> VerifyWith<C> for OptionalField<S> {
     type Error = ConversionError;
 
     fn verify_with(self, context: C) -> Result<Self::Verified, Self::Error> {
-        self.value
-            .map(|value| value.verify_with(context))
-            .transpose()
-            .context(self.name)
+        self.try_map(|value| value.verify_with(context))
     }
 }
 
@@ -33,11 +79,7 @@ impl<S: Verify> Verify for RepeatedField<S> {
     type Error = ConversionError;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        self.values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| value.verify().with_context(|| format!("{}[{index}]", self.name)))
-            .collect()
+        self.try_map(Verify::verify)
     }
 }
 
@@ -46,15 +88,7 @@ impl<S: VerifyWith<C>, C: Clone> VerifyWith<C> for RepeatedField<S> {
     type Error = ConversionError;
 
     fn verify_with(self, context: C) -> Result<Self::Verified, Self::Error> {
-        self.values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| {
-                value
-                    .verify_with(context.clone())
-                    .with_context(|| format!("{}[{index}]", self.name))
-            })
-            .collect()
+        self.try_map(|value| value.verify_with(context.clone()))
     }
 }
 
@@ -63,13 +97,7 @@ impl<K: Ord + Debug, S: Verify> Verify for MapField<BTreeMap<K, S>> {
     type Error = ConversionError;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        self.values
-            .into_iter()
-            .map(|(key, value)| {
-                let value = value.verify().with_context(|| format!("{}[{key:?}]", self.name))?;
-                Ok((key, value))
-            })
-            .collect()
+        self.try_map(Verify::verify)
     }
 }
 
@@ -78,15 +106,7 @@ impl<K: Ord + Debug, S: VerifyWith<C>, C: Clone> VerifyWith<C> for MapField<BTre
     type Error = ConversionError;
 
     fn verify_with(self, context: C) -> Result<Self::Verified, Self::Error> {
-        self.values
-            .into_iter()
-            .map(|(key, value)| {
-                let value = value
-                    .verify_with(context.clone())
-                    .with_context(|| format!("{}[{key:?}]", self.name))?;
-                Ok((key, value))
-            })
-            .collect()
+        self.try_map(|value| value.verify_with(context.clone()))
     }
 }
 
@@ -98,13 +118,7 @@ impl<K: Eq + core::hash::Hash + Debug, S: Verify> Verify
     type Error = ConversionError;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        self.values
-            .into_iter()
-            .map(|(key, value)| {
-                let value = value.verify().with_context(|| format!("{}[{key:?}]", self.name))?;
-                Ok((key, value))
-            })
-            .collect()
+        self.try_map(Verify::verify)
     }
 }
 
@@ -116,15 +130,7 @@ impl<K: Eq + core::hash::Hash + Debug, S: VerifyWith<C>, C: Clone> VerifyWith<C>
     type Error = ConversionError;
 
     fn verify_with(self, context: C) -> Result<Self::Verified, Self::Error> {
-        self.values
-            .into_iter()
-            .map(|(key, value)| {
-                let value = value
-                    .verify_with(context.clone())
-                    .with_context(|| format!("{}[{key:?}]", self.name))?;
-                Ok((key, value))
-            })
-            .collect()
+        self.try_map(|value| value.verify_with(context.clone()))
     }
 }
 

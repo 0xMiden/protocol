@@ -12,10 +12,7 @@ impl Verify for PartialStorageMap {
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok(Self::Verified::try_from_parts(
             self.smt.verify()?,
-            self.keys
-                .into_inner()
-                .into_iter()
-                .map(miden_protocol::account::StorageMapKey::from_raw),
+            self.keys.map(miden_protocol::account::StorageMapKey::from_raw),
         )?)
     }
 }
@@ -51,12 +48,7 @@ impl Verify for PartialVault {
     type Verified = miden_protocol::asset::PartialVault;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let ids = self
-            .asset_ids
-            .into_inner()
-            .into_iter()
-            .map(miden_protocol::asset::AssetId::try_from)
-            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+        let ids = self.asset_ids.try_map(miden_protocol::asset::AssetId::try_from)?;
         Ok(Self::Verified::try_from_parts(self.smt.verify()?, ids)?)
     }
 }

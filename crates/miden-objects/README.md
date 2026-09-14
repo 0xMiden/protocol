@@ -49,6 +49,12 @@ values; `into_inner()` extracts them for custom processing without automatic fie
 Domain constructors and explicit loops enforce collection-wide rules such as ordering and
 uniqueness. Scalar byte buffers remain ordinary buffers.
 
+Collections also compose `build_unchecked()`, preserving element error context while retaining
+the caller's responsibility for skipped checks. `verify_infallible()` verifies elements whose
+error type is `Infallible` without introducing a fallible result. Field-specific conversions use
+`map()` or `try_map()`; the latter preserves field and index context, for example when turning
+raw vault words into asset IDs. These operations return ordinary collections.
+
 Import `DecodeMessageExt` to combine field decoding with an explicit construction choice:
 
 ```rust

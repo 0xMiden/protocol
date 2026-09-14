@@ -29,10 +29,7 @@ impl crate::VerifyWith<u32> for ProposedBatch {
     fn verify_with(self, proof_security_level: u32) -> Result<Self::Verified, Self::Error> {
         let transactions = self
             .transactions
-            .into_inner()
-            .into_iter()
-            .map(|tx| tx.build_unchecked().map(alloc::sync::Arc::new))
-            .collect::<Result<_, _>>()?;
+            .try_map(|tx| tx.build_unchecked().map(alloc::sync::Arc::new))?;
         let header = self.reference_block_header.build_unchecked()?;
         let chain = self.partial_blockchain.build_unchecked()?;
         let mut proofs = alloc::collections::BTreeMap::new();
@@ -73,19 +70,9 @@ impl crate::BuildUnchecked for ProvenBatch {
             previous = Some(update.account_id());
             updates.push(update);
         }
-        let inputs = self
-            .input_notes
-            .into_inner()
-            .into_iter()
-            .map(BuildUnchecked::build_unchecked)
-            .collect::<Result<_, _>>()?;
+        let inputs = self.input_notes.build_unchecked()?;
         let outputs = self.output_notes.verify()?;
-        let transactions = self
-            .transactions
-            .into_inner()
-            .into_iter()
-            .map(BuildUnchecked::build_unchecked)
-            .collect::<Result<_, _>>()?;
+        let transactions = self.transactions.build_unchecked()?;
         Ok(Self::Output::new(
             self.reference_block_commitment,
             unwrap_infallible(self.reference_block_num.verify()),

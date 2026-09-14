@@ -31,14 +31,7 @@ impl Verify for PartialSmtNodeLevel {
     type Verified = (u32, alloc::vec::Vec<(u64, miden_protocol::Word)>);
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok((
-            self.depth,
-            self.nodes
-                .into_inner()
-                .into_iter()
-                .map(Verify::verify)
-                .collect::<Result<_, _>>()?,
-        ))
+        Ok((self.depth, self.nodes.verify_infallible()))
     }
 }
 
@@ -58,7 +51,7 @@ impl Verify for SmtLeafEntryList {
     type Verified = alloc::vec::Vec<(miden_protocol::Word, miden_protocol::Word)>;
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        self.entries.into_inner().into_iter().map(Verify::verify).collect()
+        Ok(self.entries.verify_infallible())
     }
 }
 

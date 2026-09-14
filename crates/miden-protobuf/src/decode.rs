@@ -1,5 +1,4 @@
 use alloc::collections::BTreeMap;
-use alloc::format;
 use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt::Debug;
@@ -7,6 +6,8 @@ use core::marker::PhantomData;
 
 use crate::{ConversionError, ConversionResultExt};
 
+mod build;
+mod map;
 mod verify;
 pub use verify::DuplicatePolicy;
 
@@ -82,7 +83,7 @@ where
     S::Error: Error + Send + Sync + 'static,
 {
     fn decode(self) -> Result<Option<T>, ConversionError> {
-        self.value.map(TryInto::try_into).transpose().context(self.name)
+        self.try_map(TryInto::try_into)
     }
 }
 
@@ -120,13 +121,7 @@ where
     S::Error: Error + Send + Sync + 'static,
 {
     fn decode(self) -> Result<Vec<T>, ConversionError> {
-        self.values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| {
-                value.try_into().with_context(|| format!("{}[{index}]", self.name))
-            })
-            .collect()
+        self.try_map(TryInto::try_into)
     }
 }
 
@@ -167,13 +162,7 @@ where
     S::Error: Error + Send + Sync + 'static,
 {
     fn decode(self) -> Result<BTreeMap<K, T>, ConversionError> {
-        self.values
-            .into_iter()
-            .map(|(key, value)| {
-                let value = value.try_into().with_context(|| format!("{}[{key:?}]", self.name))?;
-                Ok((key, value))
-            })
-            .collect()
+        self.try_map(TryInto::try_into)
     }
 }
 
@@ -186,13 +175,7 @@ where
     S::Error: Error + Send + Sync + 'static,
 {
     fn decode(self) -> Result<std::collections::HashMap<K, T>, ConversionError> {
-        self.values
-            .into_iter()
-            .map(|(key, value)| {
-                let value = value.try_into().with_context(|| format!("{}[{key:?}]", self.name))?;
-                Ok((key, value))
-            })
-            .collect()
+        self.try_map(TryInto::try_into)
     }
 }
 

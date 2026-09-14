@@ -56,7 +56,7 @@ impl Verify for ValidatorConfig {
     type Verified = miden_protocol::block::ValidatorConfig;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let keys = self.keys.verify()?;
+        let keys = self.keys.verify_infallible();
         Ok(Self::Verified::new(keys, self.quorum.try_into()?)?)
     }
 }
@@ -187,18 +187,8 @@ impl crate::BuildUnchecked for BlockBody {
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
         let updates = self.updated_accounts.verify()?;
         let notes = self.output_note_batches.verify()?;
-        let nullifiers = self
-            .created_nullifiers
-            .into_inner()
-            .into_iter()
-            .map(miden_protocol::note::Nullifier::from_raw)
-            .collect();
-        let transactions = self
-            .transactions
-            .into_inner()
-            .into_iter()
-            .map(crate::BuildUnchecked::build_unchecked)
-            .collect::<Result<_, _>>()?;
+        let nullifiers = self.created_nullifiers.map(miden_protocol::note::Nullifier::from_raw);
+        let transactions = self.transactions.build_unchecked()?;
         Ok(Self::Output::new(
             updates,
             notes,
@@ -228,7 +218,7 @@ impl SignedBlock {
 
         let header = self.header.build_unchecked()?;
         let body = self.body.build_unchecked()?;
-        let signatures = self.signatures.verify()?;
+        let signatures = self.signatures.verify_infallible();
         let signatures = miden_protocol::block::BlockSignatures::new(signatures)
             .map_err(VerificationError::new)?;
         let block = miden_protocol::block::SignedBlock::new_unchecked(header, body, signatures);
