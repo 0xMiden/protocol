@@ -418,11 +418,12 @@ async fn test_multisig_rejects_invalid_eip712_witness(
             result,
             MasmError::from_static_str("invalid public key commitment")
         ),
+        // RawAdviceKey places the witness under the raw key, so the raw verifier rejects it.
         InvalidEip712Witness::RawSignature
         | InvalidEip712Witness::RawAdviceKey
-        | InvalidEip712Witness::WrongTransactionSummary => assert!(
-            result.is_err(),
-            "a signature must not verify for a different message format or transaction summary"
+        | InvalidEip712Witness::WrongTransactionSummary => assert_transaction_executor_error!(
+            result,
+            MasmError::from_static_str("ECDSA verification failed: x(VERIFY_POINT) != SIG_R")
         ),
     }
 
@@ -514,6 +515,17 @@ async fn test_multisig_does_not_double_count_raw_and_eip712_signatures() -> anyh
         .await?;
     let (eip712_key, eip712_witness) =
         eip712_signature_witness(&secret_keys[0], &public_keys[0], tx_summary_hash)?;
+    let (approver_1_eip712_key, approver_1_eip712_witness) =
+        eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary_hash)?;
+
+    // Control: the same EIP-712 witness counts when approver 0 provides no raw signature.
+    mock_tx_builder
+        .clone()
+        .add_advice_map_entry(eip712_key, eip712_witness.clone())
+        .add_advice_map_entry(approver_1_eip712_key, approver_1_eip712_witness)
+        .build()?
+        .execute()
+        .await?;
 
     let result = mock_tx_builder
         .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
