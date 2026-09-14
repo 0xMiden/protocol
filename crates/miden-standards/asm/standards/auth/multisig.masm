@@ -726,8 +726,8 @@ end
 #! - MSG is the transaction message being signed.
 #! - Raw signatures take precedence when both formats are present for an approver, and each
 #!   approver can increase the verified-signature count at most once.
-#! - EIP-712 signatures are accepted only for ECDSA approvers. Unlike raw signatures, they must be
-#!   inserted into the advice map before execution and do not emit an authentication request event.
+#! - EIP-712 signatures are accepted only for ECDSA approvers. Signatures of both formats must be
+#!   in the advice map before execution; only a raw signature emits an authentication request event.
 #! - h(PK_COMM_i, MSG) is the raw-signature advice-map key.
 #!
 #! Panics if:
