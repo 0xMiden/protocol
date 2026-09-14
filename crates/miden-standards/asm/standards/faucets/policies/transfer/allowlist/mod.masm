@@ -1,3 +1,4 @@
+use {AccountId, Bool, StorageMapKey} from miden::protocol::types
 # miden::standards::faucets::policies::transfer::allowlist
 #
 # Per-faucet allowlist primitive: storage slot plus low-level `Invocation: exec` helpers.
@@ -49,7 +50,7 @@ const ERR_ACCOUNT_IS_NOT_ALLOWED = "account is not in the allowlist"
 #! Outputs: [is_allowed]
 #!
 #! Invocation: exec
-pub proc is_allowed
+pub proc is_allowed(account_id: AccountId) -> Bool
     exec.build_allowed_accounts_map_key
     # => [KEY]
 
@@ -71,7 +72,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc allow_account
+pub proc allow_account(account_id: AccountId)
     exec.build_allowed_accounts_map_key
     # => [KEY]
 
@@ -95,7 +96,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc disallow_account
+pub proc disallow_account(account_id: AccountId)
     exec.build_allowed_accounts_map_key
     # => [KEY]
 
@@ -128,7 +129,7 @@ end
 #! - the stored entry for this account is the zero word.
 #!
 #! Invocation: exec
-pub proc assert_allowed
+pub proc assert_allowed(account_id: AccountId)
     exec.is_allowed
     # => [is_allowed]
 
@@ -148,7 +149,7 @@ end
 #! - KEY is [0, 0, account_id_suffix, account_id_prefix].
 #!
 #! Invocation: exec
-proc build_allowed_accounts_map_key
+proc build_allowed_accounts_map_key(account_id: AccountId) -> StorageMapKey
     push.0.0
     # => [0, 0, account_id_suffix, account_id_prefix]
     # => [KEY]

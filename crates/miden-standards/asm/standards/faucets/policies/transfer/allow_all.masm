@@ -1,3 +1,4 @@
+use {Asset} from miden::protocol::types
 # Generic transfer policy procedures shared by policy manager flows.
 
 # POLICY PROCEDURES
@@ -17,7 +18,7 @@
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_policy
+pub proc check_policy(asset: Asset, custom_data: felt)
     dropw dropw drop
     # => [pad(16)]
 end

@@ -1,6 +1,12 @@
+use {
+    Asset,
+    NoteAssetsCommitment,
+    NoteAttachmentCommitment,
+    NoteAttachmentsCommitment,
+} from miden::protocol::types
 use miden::core::mem
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use {MemoryAddress} from miden::protocol::types
+
 
 # ERRORS
 # =================================================================================================
@@ -23,7 +29,11 @@ const ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
 #!   }
 #! Outputs:
 #!   Operand stack: []
-pub proc write_assets_to_memory(assets_commitment: word, num_assets: u8, dest_ptr: MemoryAddress)
+pub proc write_assets_to_memory(
+    assets_commitment: NoteAssetsCommitment,
+    num_assets: u8,
+    dest_ptr: ptr<Asset>
+)
     # load the asset data from the advice map to the advice stack
     adv.push_mapval
     # OS => [ASSETS_COMMITMENT, num_assets, dest_ptr]
@@ -56,8 +66,8 @@ end
 #! Outputs:
 #!   Operand stack: [num_attachments]
 pub proc write_attachment_commitments_to_memory(
-    attachments_commitment: word,
-    dest_ptr: MemoryAddress
+    attachments_commitment: NoteAttachmentsCommitment,
+    dest_ptr: ptr<NoteAttachmentCommitment>
 ) -> u8
     # push the individual ATTACHMENT commitments from the advice map onto the advice stack
     adv.push_mapvaln
@@ -102,7 +112,10 @@ end
 #! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
 #! - dest_ptr is the memory address to which to write the attachment data.
 #! - num_words is the number of words in the attachment.
-pub proc write_attachment_to_memory(attachment_commitment: word, dest_ptr: MemoryAddress) -> u16
+pub proc write_attachment_to_memory(
+    attachment_commitment: NoteAttachmentCommitment,
+    dest_ptr: ptr<word>
+) -> u16
     # push the number of attachment elements from the advice map onto the advice stack
     adv.push_mapvaln
     # OS => [ATTACHMENT_COMMITMENT, dest_ptr]
@@ -151,9 +164,9 @@ end
 #! Invocation: exec
 pub proc write_indexed_attachment_to_memory(
     num_attachments: u8,
-    attachment_commitments_ptr: MemoryAddress,
+    attachment_commitments_ptr: ptr<NoteAttachmentCommitment>,
     attachment_idx: u8,
-    dest_ptr: MemoryAddress
+    dest_ptr: ptr<word>
 ) -> u16
     # assert attachment_idx < num_attachments
     dup.2 swap u32assert2.err=ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS

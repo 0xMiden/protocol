@@ -2,9 +2,16 @@
 #!
 #! Provides a standardized way to work with network account targets.
 
+use {AccountId, Bool} from miden::protocol::types
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+
+pub type NetworkAccountTarget = struct {
+    account: AccountId,
+    execution_hint: felt,
+    padding: felt
+}
 
 # CONSTANTS
 # ================================================================================================
@@ -33,7 +40,7 @@ const ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS = "network account ta
 #! Outputs: [is_network_account_target]
 #!
 #! Invocation: exec
-pub proc is_network_account_target
+pub proc is_network_account_target(attachment_scheme: u32) -> Bool
     eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
     # => [is_network_account_target]
 end
@@ -56,7 +63,7 @@ end
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
 #!
 #! Invocation: exec
-pub proc into_target_id
+pub proc into_target_id(network_account_target_attachment: NetworkAccountTarget) -> AccountId
     # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
     # => [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
 
@@ -76,7 +83,7 @@ end
 #! - attachment_scheme is the attachment scheme (1) for use with `output_note::add_word_attachment`.
 #!
 #! Invocation: exec
-pub proc new
+pub proc new(account_id: AccountId, exec_hint_tag: felt) -> (u32, NetworkAccountTarget)
     # => [account_id_suffix, account_id_prefix, exec_hint_tag]
     push.0 movdn.3
     # => [NOTE_ATTACHMENT] = [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
@@ -98,7 +105,7 @@ end
 #!
 #! Invocation: exec
 @locals(4)
-pub proc active_account_matches_target_account
+pub proc active_account_matches_target_account() -> Bool
     # find the network account target attachment, if any
     # if there are multiple, we consider the first one the canonical one
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME

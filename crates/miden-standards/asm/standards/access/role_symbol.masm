@@ -13,6 +13,8 @@
 
 use miden::core::math::u64
 
+pub type RoleSymbol = felt
+
 # CONSTANTS
 # =================================================================================================
 
@@ -46,7 +48,7 @@ const ERR_INVALID_ROLE_SYMBOL = "role symbol is not a valid encoding"
 #! - role_symbol is not a valid role symbol encoding.
 #!
 #! Invocation: exec
-pub proc validate_encoding
+pub proc validate_encoding(role_symbol: RoleSymbol)
     dup eq.0 assertz.err=ERR_ROLE_SYMBOL_ZERO
     # => [role_symbol]
 
@@ -80,7 +82,7 @@ end
 #! - admin_role_symbol is non-zero and is not a valid role symbol encoding.
 #!
 #! Invocation: exec
-pub proc validate_admin_role_symbol
+pub proc validate_admin_role_symbol(admin_role_symbol: RoleSymbol)
     dup eq.0
     # => [is_unset, admin_role_symbol]
 
@@ -102,7 +104,7 @@ end
 #! Outputs: [num_chars]
 #!
 #! Invocation: exec
-proc get_num_chars
+proc get_num_chars(role_symbol: RoleSymbol) -> u8
     u32split
     # => [role_symbol_lo, role_symbol_hi]
 

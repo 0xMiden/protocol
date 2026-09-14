@@ -1,7 +1,7 @@
+use {BlockNumber} from miden::protocol::types
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::crypto::hashes::poseidon2
-use {BlockNumber} from miden::protocol::types
 
 pub mod guardian
 pub mod multisig

@@ -1,3 +1,5 @@
+use {Commitment} from miden::tx_kernel_core::types
+use {AccountId, BlockNumber} from miden::protocol_utils::types
 use miden::core::word
 
 use miden::tx_kernel_core::prologue
@@ -34,7 +36,14 @@ const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING = "the transaction script is missing"
 #! - account_id is the account that the transaction is being executed against.
 #! - INITIAL_ACCOUNT_COMMITMENT is the account state prior to the transaction, EMPTY_WORD for new accounts.
 #! - INPUT_NOTES_COMMITMENT, see `transaction::api::get_input_notes_commitment`.
-proc main
+proc main(
+    block_commitment: Commitment,
+    initial_account_commitment: Commitment,
+    input_notes_commitment: Commitment,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    padding: [felt; 1]
+) -> ...
     # Prologue
     # ---------------------------------------------------------------------------------------------
     exec.prologue::prepare_transaction

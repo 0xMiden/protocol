@@ -1,3 +1,11 @@
+use {
+    AccountId,
+    Asset,
+    AssetComposition,
+    AssetId,
+    AssetValue,
+    Bool,
+} from miden::protocol_utils::types
 use miden::protocol_utils::account_id
 use miden::tx_kernel_core::fungible_asset
 use miden::protocol_utils::asset as asset_utils
@@ -32,7 +40,7 @@ pub use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_CUSTOM, COMPOSITION_
 #! Where:
 #! - ASSET_ID is the asset ID from which to extract the metadata.
 #! - has_callbacks is 1 if callbacks are enabled and 0 if disabled.
-pub proc id_to_has_callbacks
+pub proc id_to_has_callbacks(asset_id: AssetId) -> (Bool, AssetId)
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
     dup.3 exec.account_id::asset_callback_flag
     # => [has_callbacks, ASSET_ID]
@@ -46,7 +54,7 @@ end
 #! Where:
 #! - ASSET_ID is the asset ID of the asset to check.
 #! - is_fungible_asset is a boolean indicating whether the asset is fungible.
-pub proc is_fungible_asset_id
+pub proc is_fungible_asset_id(asset_id: AssetId) -> (Bool, AssetId)
     # => [ASSET_ID]
     exec.id_to_composition
     # => [asset_composition, ASSET_ID]
@@ -66,7 +74,7 @@ end
 #! Panics if:
 #! - the asset is fungible and its ID is not valid (see fungible_asset::validate_id).
 #! - the asset's issuer or metadata is not valid (see validate_issuer).
-pub proc validate_id
+pub proc validate_id(asset_id: AssetId) -> AssetId
     # check if the asset ID is fungible
     exec.is_fungible_asset_id
     # => [is_fungible_asset, ASSET_ID]
@@ -93,7 +101,7 @@ end
 #! Panics if:
 #! - the asset metadata is invalid (not 0 or 1).
 #! - the faucet ID in the key is not a valid account ID.
-pub proc validate_issuer
+pub proc validate_issuer(asset_id: AssetId) -> AssetId
     # => [asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
     dup.3 dup.3 exec.asset_utils::split_suffix_and_metadata
     # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_ID]
@@ -115,7 +123,7 @@ end
 #!
 #! Panics if:
 #! - the asset's composition is Custom.
-pub proc assert_supported_composition
+pub proc assert_supported_composition(asset_id: AssetId) -> AssetId
     exec.id_to_composition
     # => [asset_composition, ASSET_ID]
 
@@ -138,7 +146,7 @@ end
 #! Panics if:
 #! - the asset is fungible and not valid (see fungible_asset::validate).
 #! - the asset's issuer or metadata is not valid (see validate_issuer).
-pub proc validate
+pub proc validate(asset: Asset) -> Asset
     # check if the asset is fungible
     exec.is_fungible_asset_id
     # => [is_fungible_asset, ASSET_ID, ASSET_VALUE]
@@ -168,7 +176,7 @@ end
 #! Panics if:
 #! - the asset is not well formed (see validate).
 #! - the asset's faucet ID does not match the provided faucet_id.
-pub proc validate_origin
+pub proc validate_origin(faucet_id: AccountId, asset: Asset) -> Asset
     movdn.9 movdn.9
     # => [ASSET_ID, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
@@ -204,7 +212,11 @@ end
 #! - the asset's composition is None.
 #! - the asset's composition is Custom (not yet supported).
 #! - the underlying merge operation panics (see fungible_asset::merge).
-pub proc merge
+pub proc merge(
+    asset_composition: AssetComposition,
+    current_asset_value: AssetValue,
+    other_asset_value: AssetValue
+) -> AssetValue
     dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_MERGE_COMPOSITION_NONE
     # => [asset_composition, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
@@ -238,7 +250,11 @@ end
 #! - the asset's composition is None.
 #! - the asset's composition is Custom (not yet supported).
 #! - the underlying split operation panics (see fungible_asset::split).
-pub proc split
+pub proc split(
+    asset_composition: AssetComposition,
+    current_asset_value: AssetValue,
+    other_asset_value: AssetValue
+) -> AssetValue
     dup neq.COMPOSITION_NONE assert.err=ERR_VAULT_SPLIT_COMPOSITION_NONE
     # => [asset_composition, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 
@@ -270,7 +286,11 @@ end
 #! Panics if:
 #! - the asset's composition is None.
 #! - the asset's composition is Custom (not yet supported).
-pub proc lt
+pub proc lt(
+    asset_id: AssetId,
+    current_asset_value: AssetValue,
+    other_asset_value: AssetValue
+) -> Bool
     exec.id_to_composition
     # => [asset_composition, ASSET_ID, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 

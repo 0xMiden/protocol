@@ -1,3 +1,4 @@
+use {Asset} from miden::protocol::types
 # miden::standards::fees::policies::constant_fee_manager
 #
 # Authority-gated admin for a constant-fee schedule: exposes `set_note_fee`, which updates a single
@@ -14,7 +15,6 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::fees::fee_manager
 
-use {Asset} from miden::protocol::types
 use miden::standards::assets::fungible_asset
 
 # CONSTANTS

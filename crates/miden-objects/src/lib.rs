@@ -3,9 +3,14 @@
 extern crate alloc;
 
 pub mod conversion;
+pub mod decoded;
 pub mod error;
 
+#[cfg(test)]
+pub(crate) mod test_utils;
+
 pub use error::{ConversionError, ConversionResultExt};
+pub use miden_protobuf::{BuildUnchecked, DecodeMessage, Decoded, Verify, VerifyWith};
 pub use prost;
 
 /// Generated canonical Protobuf messages.

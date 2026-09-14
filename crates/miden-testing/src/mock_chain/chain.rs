@@ -1349,6 +1349,7 @@ mod tests {
     use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::account::{AccountBuilder, AccountType};
     use miden_protocol::asset::{Asset, FungibleAsset};
+    use miden_protocol::errors::ValidatorConfigError;
     use miden_protocol::note::NoteType;
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -1410,9 +1411,18 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn validator_config_rotation_across_blocks() -> anyhow::Result<()> {
-        let mut chain = MockChain::new();
+    #[rstest::rstest]
+    #[case::default(None)]
+    #[case::supplied(Some(1))]
+    fn validator_config_rotation_across_blocks(
+        #[case] key_count: Option<usize>,
+    ) -> anyhow::Result<()> {
+        let mut builder = MockChain::builder();
+        if let Some(key_count) = key_count {
+            builder = builder
+                .validator_signing_keys((0..key_count).map(|_| random_secret_key()).collect());
+        }
+        let mut chain = builder.build()?;
         let original_keys = chain.validator_config();
 
         // Build normal blocks. The parent-linkage and signatures are verified inside `apply_block`,
@@ -1430,6 +1440,9 @@ mod tests {
         // commits the new set as the signer authorized for the next block.
         assert_eq!(rotation_block.header().validator_config(), &new_keys);
         assert_eq!(chain.validator_config(), new_keys);
+        rotation_block
+            .signatures()
+            .verify_against(rotation_block.header().commitment(), &original_keys)?;
 
         // The next block is signed by the rotated keys and must validate against the rotation
         // block's committed set; `apply_block` would error otherwise.
@@ -1437,6 +1450,82 @@ mod tests {
         assert_eq!(chain.validator_config(), new_keys);
 
         Ok(())
+    }
+
+    #[rstest::rstest]
+    #[case::single(1)]
+    #[case::multiple(3)]
+    #[case::maximum(ValidatorConfig::MAX_VALIDATORS)]
+    fn supplied_validator_signing_keys(#[case] key_count: usize) -> anyhow::Result<()> {
+        let mut keys: Vec<SigningKey> = (0..key_count).map(|_| random_secret_key()).collect();
+        // Reverse canonical order to exercise positional signature ordering.
+        keys.sort_by_key(|key| core::cmp::Reverse(key.public_key().to_bytes()));
+        let expected_config = ValidatorConfig::from_signers(&keys);
+        let mut chain = MockChain::builder().validator_signing_keys(keys.clone()).build()?;
+
+        assert_eq!(chain.validator_config(), expected_config);
+        assert_eq!(chain.genesis_block_header().validator_config(), &expected_config);
+        assert_eq!(expected_config.len(), key_count);
+        assert_eq!(usize::from(expected_config.quorum()), key_count);
+
+        let genesis = chain.latest_block();
+        genesis
+            .signatures()
+            .verify_against(genesis.header().commitment(), &expected_config)?;
+
+        // The same keys produce the same genesis header regardless of input order.
+        keys.reverse();
+        let reordered = MockChain::builder().validator_signing_keys(keys).build()?;
+        assert_eq!(chain.genesis_block_header(), reordered.genesis_block_header());
+
+        for _ in 0..2 {
+            let block = chain.prove_next_block()?;
+            assert_eq!(block.header().validator_config(), &expected_config);
+            block
+                .signatures()
+                .verify_against(block.header().commitment(), &expected_config)?;
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn empty_validator_signing_keys_are_rejected() {
+        let error = MockChain::builder().validator_signing_keys(Vec::new()).build().unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<ValidatorConfigError>(),
+            Some(ValidatorConfigError::EmptySet)
+        ));
+    }
+
+    #[test]
+    fn duplicate_validator_signing_keys_are_rejected() {
+        let key = random_secret_key();
+        let error = MockChain::builder()
+            .validator_signing_keys(vec![key.clone(), key])
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<ValidatorConfigError>(),
+            Some(ValidatorConfigError::DuplicateKey)
+        ));
+    }
+
+    #[test]
+    fn too_many_validator_signing_keys_are_rejected() {
+        let count = ValidatorConfig::MAX_VALIDATORS + 1;
+        let keys = (0..count).map(|_| random_secret_key()).collect();
+        let error = MockChain::builder().validator_signing_keys(keys).build().unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<ValidatorConfigError>(),
+            Some(ValidatorConfigError::TooManyKeys { count: actual }) if *actual == count
+        ));
+    }
+
+    #[test]
+    fn validator_signing_key_count_overflow_is_rejected() {
+        let keys = vec![random_secret_key(); usize::from(u16::MAX) + 1];
+        assert!(MockChain::builder().validator_signing_keys(keys).build().is_err());
     }
 
     #[test]
@@ -1576,6 +1665,8 @@ mod tests {
         // as the signer of block 1.
         let genesis_block = chain.latest_block();
         let genesis_validator_config = genesis_block.header().validator_config().clone();
+        assert_eq!(genesis_validator_config.len(), 3);
+        assert_eq!(genesis_validator_config.quorum(), 3);
         genesis_block
             .signatures()
             .verify_against(genesis_block.header().commitment(), &genesis_validator_config)
