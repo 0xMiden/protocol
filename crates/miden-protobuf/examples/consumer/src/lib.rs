@@ -11,6 +11,7 @@ pub struct Value {
 
 #[cfg(test)]
 mod tests {
+    use alloc::boxed::Box;
     use alloc::collections::BTreeMap;
     use alloc::string::ToString;
     use alloc::vec;
@@ -34,6 +35,61 @@ mod tests {
         let decoded = valid().decode_fields().unwrap();
         assert!(decoded.explicit.as_ref().is_none());
         assert!(matches!(decoded.selection, container::DecodedSelection::ChoiceValue(_)));
+    }
+
+    #[test]
+    fn generated_oneof_accessors_extract_decoded_payloads_without_std() {
+        use container::Selection;
+        use container::detail_request::StorageRequest;
+        use recursive_choice::Kind;
+
+        let wire = Selection::ChoiceValue(Child { leaf: Some(Leaf {}) });
+        let _: DecodedChild = wire.clone().into_choice_value().unwrap();
+        let _: DecodedChild = wire.decode_fields().unwrap().into_choice_value().unwrap();
+        assert_eq!(StorageRequest::Slot(7).into_slot().unwrap(), 7);
+        let error = StorageRequest::All(Child::default()).into_slot().unwrap_err();
+        assert_eq!(error.to_string(), "all: expected oneof variant `slot`, got `all`");
+        let error = StorageRequest::All(Child::default()).into_all().unwrap_err();
+        assert!(error.to_string().starts_with("all.leaf:"), "{error}");
+        let error = StorageRequest::Slot(7).decode_fields().unwrap().into_all().unwrap_err();
+        assert_eq!(error.to_string(), "slot: expected oneof variant `all`, got `slot`");
+
+        let wire = Kind::Branch(Box::new(RecursiveChoice { kind: Some(Kind::Leaf(Leaf {})) }));
+        let branch: Box<DecodedRecursiveChoice> = wire.into_branch().unwrap();
+        let _: DecodedLeaf = branch.kind.into_leaf().unwrap();
+    }
+
+    #[test]
+    fn prost_generated_recursive_boxes_decode_without_std() {
+        use recursive_choice::{DecodedKind, Kind};
+
+        let wire = Recursive {
+            leaf: Some(Leaf {}),
+            next: Some(Box::new(Recursive { leaf: Some(Leaf {}), next: None })),
+        };
+        let decoded = wire.clone().decode_fields().unwrap();
+        let next: Box<DecodedRecursive> = decoded.next.into_inner().unwrap();
+        assert!(next.next.as_ref().is_none());
+        let mut invalid = wire;
+        invalid.next.as_mut().unwrap().leaf = None;
+        let error = invalid.decode_fields().unwrap_err();
+        assert!(error.to_string().starts_with("next.leaf:"), "{error}");
+
+        let wire = RecursiveChoice {
+            kind: Some(Kind::Branch(Box::new(RecursiveChoice { kind: Some(Kind::Leaf(Leaf {})) }))),
+        };
+        let decoded = wire.decode_fields().unwrap();
+        let DecodedKind::Branch(branch) = decoded.kind else {
+            panic!("wrong variant")
+        };
+        let nested: Box<DecodedRecursiveChoice> = branch;
+        assert!(matches!(nested.kind, DecodedKind::Leaf(_)));
+        let error = RecursiveChoice {
+            kind: Some(Kind::Branch(Box::new(RecursiveChoice { kind: None }))),
+        }
+        .decode_fields()
+        .unwrap_err();
+        assert!(error.to_string().starts_with("kind.branch.kind:"), "{error}");
     }
 
     #[test]

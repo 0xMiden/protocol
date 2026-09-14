@@ -87,6 +87,40 @@ fn main() {
                     ..Default::default()
                 },
                 DescriptorProto {
+                    name: Some("Recursive".into()),
+                    field: vec![
+                        field("leaf", 1, ".example.Leaf"),
+                        FieldDescriptorProto {
+                            proto3_optional: Some(true),
+                            oneof_index: Some(0),
+                            ..field("next", 2, ".example.Recursive")
+                        },
+                    ],
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("_next".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("RecursiveChoice".into()),
+                    field: vec![
+                        FieldDescriptorProto {
+                            oneof_index: Some(0),
+                            ..field("branch", 1, ".example.RecursiveChoice")
+                        },
+                        FieldDescriptorProto {
+                            oneof_index: Some(0),
+                            ..field("leaf", 2, ".example.Leaf")
+                        },
+                    ],
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("kind".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                DescriptorProto {
                     name: Some("Container".into()),
                     nested_type: vec![DescriptorProto {
                         name: Some("DetailRequest".into()),
@@ -151,6 +185,8 @@ fn main() {
         [
             ".example.Leaf",
             ".example.Child",
+            ".example.Recursive",
+            ".example.RecursiveChoice",
             ".example.Container",
             ".example.Container.DetailRequest",
             ".example.MappedChildren",
