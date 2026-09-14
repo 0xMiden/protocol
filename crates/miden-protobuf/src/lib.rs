@@ -10,7 +10,15 @@ mod error;
 mod message;
 pub use decode::{DecodeField, OptionalField, RepeatedField, RequiredField, ValueField, decode};
 pub use error::{ConversionError, ConversionResultExt};
-pub use message::{BuildUnchecked, DecodeMessage, Decoded, Verify, VerifyWith, unwrap_infallible};
+pub use message::{
+    BuildUnchecked,
+    DecodeMessage,
+    DecodeMessageExt,
+    Decoded,
+    Verify,
+    VerifyWith,
+    unwrap_infallible,
+};
 #[cfg(feature = "derive")]
 pub use miden_protobuf_derive::{ProtoDecodeFields, ProtoDecodeValue};
 pub use prost;
