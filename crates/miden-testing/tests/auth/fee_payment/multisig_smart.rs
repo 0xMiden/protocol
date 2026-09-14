@@ -1,6 +1,6 @@
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::Account;
-use miden_protocol::account::auth::{AuthScheme, PublicKey};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
@@ -32,6 +32,7 @@ use miden_standards::note::{FeeSponsorshipNote, P2idNote, TxFeeNote};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
+use rstest::rstest;
 
 use super::super::multisig::setup_keys_and_authenticators_with_scheme;
 use super::sponsorship::{FEE_AMOUNT, fee_asset, network_account, p2id_network_note};
@@ -39,7 +40,9 @@ use super::{
     FALCON_512_POSEIDON2_AUTH_CYCLES,
     MULTISIG_AUTH_BASE_CYCLES,
     PAY_FEE_CYCLES,
+    SignatureFormat,
     VERIFICATION_BASE_FEE,
+    add_summary_signature,
     assert_single_fee_note,
 };
 
@@ -67,20 +70,34 @@ fn multisig_smart_fixture(
     verification_base_fee: u32,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<MultisigSmartFixture> {
+    let (fixture, _) = multisig_smart_fixture_with_scheme(
+        num_approvers,
+        AuthScheme::Falcon512Poseidon2,
+        verification_base_fee,
+        proc_policy_map,
+    )?;
+
+    Ok(fixture)
+}
+
+/// Like [`multisig_smart_fixture`], with approvers of `auth_scheme`. Also returns the approvers'
+/// secret keys, in the same order as the fixture's signers.
+fn multisig_smart_fixture_with_scheme(
+    num_approvers: usize,
+    auth_scheme: AuthScheme,
+    verification_base_fee: u32,
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+) -> anyhow::Result<(MultisigSmartFixture, Vec<AuthSecretKey>)> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, FEE_ASSET_AMOUNT)?.into();
 
-    let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(
-            num_approvers,
-            num_approvers,
-            AuthScheme::Falcon512Poseidon2,
-        )?;
+    let (secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(num_approvers, num_approvers, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
         .zip(auth_schemes.iter())
-        .map(|(public_key, auth_scheme)| Approver::new(public_key.to_commitment(), *auth_scheme))
+        .map(|(public_key, scheme)| Approver::new(public_key.to_commitment(), *scheme))
         .collect();
     let approver_set = ApproverSet::new(approvers, u32::try_from(num_approvers)?)?;
 
@@ -90,11 +107,13 @@ fn multisig_smart_fixture(
         [fee_asset],
     )?;
 
-    Ok(MultisigSmartFixture {
+    let fixture = MultisigSmartFixture {
         builder,
         account,
         signers: public_keys.into_iter().zip(authenticators).collect(),
-    })
+    };
+
+    Ok((fixture, secret_keys))
 }
 
 /// Asserts that `auth_args` is bound by the summary as the trailing word of its user parameters,
@@ -108,14 +127,21 @@ fn assert_auth_args_bound_as_salt(tx_summary: &TransactionSummary, auth_args: Wo
 }
 
 /// Executes an empty transaction against a wallet with the multisig smart auth component on a
-/// fee-charging mock chain, signing the summary with every approver.
+/// fee-charging mock chain, signing the summary with every approver in the given format.
 async fn execute_fee_paying_multisig_smart_tx(
     num_approvers: usize,
+    auth_scheme: AuthScheme,
+    format: SignatureFormat,
 ) -> anyhow::Result<ExecutedTransaction> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
 
-    let MultisigSmartFixture { builder, account, signers } =
-        multisig_smart_fixture(num_approvers, VERIFICATION_BASE_FEE, vec![])?;
+    let (MultisigSmartFixture { builder, account, signers }, secret_keys) =
+        multisig_smart_fixture_with_scheme(
+            num_approvers,
+            auth_scheme,
+            VERIFICATION_BASE_FEE,
+            vec![],
+        )?;
     let mock_chain = builder.build()?;
 
     let (args, advice_value) = commit_fee_conversion_info(
@@ -141,13 +167,11 @@ async fn execute_fee_paying_multisig_smart_tx(
     assert_auth_args_bound_as_salt(&tx_summary, args);
 
     let msg = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
 
     let mut signed_builder = mock_tx_builder;
-    for (public_key, authenticator) in &signers {
-        let signature =
-            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
-        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
+    for (secret_key, (public_key, _)) in secret_keys.iter().zip(&signers) {
+        signed_builder =
+            add_summary_signature(signed_builder, secret_key, public_key, msg, format)?;
     }
 
     Ok(signed_builder.build()?.execute().await?)
@@ -165,7 +189,12 @@ async fn execute_fee_paying_multisig_smart_tx(
 /// transaction paid one — a silent economic hole rather than a loud failure.
 #[tokio::test]
 async fn multisig_smart_pays_fee_note() -> anyhow::Result<()> {
-    let executed_transaction = execute_fee_paying_multisig_smart_tx(2).await?;
+    let executed_transaction = execute_fee_paying_multisig_smart_tx(
+        2,
+        AuthScheme::Falcon512Poseidon2,
+        SignatureFormat::Raw,
+    )
+    .await?;
 
     assert_single_fee_note(&executed_transaction)?;
 
@@ -179,10 +208,20 @@ async fn multisig_smart_pays_fee_note() -> anyhow::Result<()> {
 /// passes the approver count through unchanged. The two assertions are different properties: the
 /// upper bound is about measured cycles, while billing the right number of signers shows up only
 /// in the fee, since the estimate feeds `compute_fee` and nothing else.
+///
+/// The EIP-712 case measures the approvers' costlier EIP-712 verification path against the same
+/// estimate.
+#[rstest]
+#[case::falcon(AuthScheme::Falcon512Poseidon2, SignatureFormat::Raw)]
+#[case::ecdsa_eip712(AuthScheme::EcdsaK256Keccak, SignatureFormat::Eip712)]
 #[tokio::test]
-async fn multisig_smart_auth_cycles_stay_within_the_estimate() -> anyhow::Result<()> {
+async fn multisig_smart_auth_cycles_stay_within_the_estimate(
+    #[case] auth_scheme: AuthScheme,
+    #[case] format: SignatureFormat,
+) -> anyhow::Result<()> {
     let num_approvers = 2;
-    let executed_transaction = execute_fee_paying_multisig_smart_tx(num_approvers).await?;
+    let executed_transaction =
+        execute_fee_paying_multisig_smart_tx(num_approvers, auth_scheme, format).await?;
 
     let auth_estimate = num_approvers * FALCON_512_POSEIDON2_AUTH_CYCLES
         + MULTISIG_AUTH_BASE_CYCLES

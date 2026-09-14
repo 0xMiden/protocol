@@ -1,8 +1,13 @@
+use miden_protocol::Word;
+use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::note::TxFeeNote;
+use miden_testing::MockTransactionBuilder;
+
+use super::multisig::eip712_signature_witness;
 
 mod bound;
 mod guarded_multisig;
@@ -68,4 +73,32 @@ fn assert_single_fee_note(
     );
 
     Ok(*fee_asset)
+}
+
+/// How a signer authenticates the transaction summary.
+#[derive(Clone, Copy)]
+enum SignatureFormat {
+    /// A raw signature over the summary commitment.
+    Raw,
+    /// An ECDSA signature over the EIP-712 transaction-summary digest.
+    Eip712,
+}
+
+/// Adds `secret_key`'s signature over `msg` to the transaction in the given format.
+fn add_summary_signature<'chain>(
+    builder: MockTransactionBuilder<'chain>,
+    secret_key: &AuthSecretKey,
+    public_key: &PublicKey,
+    msg: Word,
+    format: SignatureFormat,
+) -> anyhow::Result<MockTransactionBuilder<'chain>> {
+    Ok(match format {
+        SignatureFormat::Raw => {
+            builder.add_signature(public_key.to_commitment(), msg, secret_key.sign(msg))
+        },
+        SignatureFormat::Eip712 => {
+            let (key, witness) = eip712_signature_witness(secret_key, public_key, msg)?;
+            builder.add_advice_map_entry(key, witness)
+        },
+    })
 }

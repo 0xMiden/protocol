@@ -48,7 +48,9 @@ use super::{
     FALCON_512_POSEIDON2_AUTH_CYCLES,
     MULTISIG_AUTH_BASE_CYCLES,
     PAY_FEE_CYCLES,
+    SignatureFormat,
     VERIFICATION_BASE_FEE,
+    add_summary_signature,
     assert_single_fee_note,
 };
 
@@ -62,6 +64,7 @@ struct GuardedFixture {
     signers: Vec<(PublicKey, BasicAuthenticator)>,
     guardian_config: GuardianConfig,
     guardian_public_key: PublicKey,
+    guardian_secret_key: AuthSecretKey,
     guardian_authenticator: BasicAuthenticator,
 }
 
@@ -101,6 +104,7 @@ fn guarded_fixture(
         signers,
         guardian_config,
         guardian_public_key,
+        guardian_secret_key,
         guardian_authenticator,
     })
 }
@@ -116,10 +120,11 @@ fn assert_auth_args_bound_as_salt(tx_summary: &TransactionSummary, auth_args: Wo
 }
 
 /// Executes an empty transaction against a guarded multisig wallet on a fee-charging mock chain,
-/// signing the summary with every approver and the guardian.
+/// signing the summary with every approver (raw) and the guardian (in `guardian_format`).
 async fn execute_fee_paying_guarded_multisig_tx(
     num_approvers: usize,
     guardian_scheme: AuthScheme,
+    guardian_format: SignatureFormat,
 ) -> anyhow::Result<ExecutedTransaction> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
@@ -169,15 +174,13 @@ async fn execute_fee_paying_guarded_multisig_tx(
         signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
     }
 
-    let guardian_signature = fixture
-        .guardian_authenticator
-        .get_signature(fixture.guardian_public_key.to_commitment(), &signing_inputs)
-        .await?;
-    signed_builder = signed_builder.add_signature(
-        fixture.guardian_public_key.to_commitment(),
+    signed_builder = add_summary_signature(
+        signed_builder,
+        &fixture.guardian_secret_key,
+        &fixture.guardian_public_key,
         msg,
-        guardian_signature,
-    );
+        guardian_format,
+    )?;
 
     Ok(signed_builder.build()?.execute().await?)
 }
@@ -284,18 +287,22 @@ async fn execute_rotation_with_conversion_info(
 /// counts one more signer than there are approvers. Only the `paid >= required` assertion inside
 /// `assert_single_fee_note` can catch an estimate that is too low, and only where the missing slot
 /// straddles a fee bucket edge — which is the sole reason the `single_falcon_approver` case exists.
-/// Dropping the extra signer there under-pays, at 8500 against a required 9000.
+/// Dropping the extra signer there under-pays, at 8500 against a required 9000. The EIP-712
+/// case measures the guardian's costlier EIP-712 verification path against the same estimate.
 #[rstest]
-#[case::ecdsa_guardian(AuthScheme::EcdsaK256Keccak, 2)]
-#[case::falcon_guardian(AuthScheme::Falcon512Poseidon2, 2)]
-#[case::single_falcon_approver(AuthScheme::Falcon512Poseidon2, 1)]
+#[case::ecdsa_guardian(AuthScheme::EcdsaK256Keccak, 2, SignatureFormat::Raw)]
+#[case::falcon_guardian(AuthScheme::Falcon512Poseidon2, 2, SignatureFormat::Raw)]
+#[case::single_falcon_approver(AuthScheme::Falcon512Poseidon2, 1, SignatureFormat::Raw)]
+#[case::ecdsa_guardian_eip712(AuthScheme::EcdsaK256Keccak, 2, SignatureFormat::Eip712)]
 #[tokio::test]
 async fn guarded_multisig_pays_fee_note_within_the_cycle_estimate(
     #[case] guardian_scheme: AuthScheme,
     #[case] num_approvers: usize,
+    #[case] guardian_format: SignatureFormat,
 ) -> anyhow::Result<()> {
     let executed_transaction =
-        execute_fee_paying_guarded_multisig_tx(num_approvers, guardian_scheme).await?;
+        execute_fee_paying_guarded_multisig_tx(num_approvers, guardian_scheme, guardian_format)
+            .await?;
 
     let fee_asset = assert_single_fee_note(&executed_transaction)?;
 

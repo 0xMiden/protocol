@@ -1,4 +1,4 @@
-use miden_protocol::account::auth::{AuthScheme, PublicKey};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, TransactionSummary};
@@ -11,7 +11,6 @@ use miden_standards::account::auth::{
 };
 use miden_testing::{Auth, MockChain};
 use miden_tx::TransactionExecutorError;
-use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
 use super::super::multisig::setup_keys_and_authenticators_with_scheme;
@@ -19,7 +18,9 @@ use super::{
     FALCON_512_POSEIDON2_AUTH_CYCLES,
     MULTISIG_AUTH_BASE_CYCLES,
     PAY_FEE_CYCLES,
+    SignatureFormat,
     VERIFICATION_BASE_FEE,
+    add_summary_signature,
     assert_single_fee_note,
 };
 
@@ -34,14 +35,14 @@ fn multisig_auth_estimate(num_signers: usize) -> usize {
 }
 
 /// Builds an [`ApproverSet`] of `num_approvers` signers of the given scheme with the given
-/// threshold, along with the (public key, authenticator) pairs of the first `threshold` signers.
+/// threshold, along with the (secret key, public key) pairs of the first `threshold` signers.
 fn multisig_fixture(
     num_approvers: usize,
     threshold: usize,
     auth_scheme: AuthScheme,
-) -> anyhow::Result<(ApproverSet, Vec<(PublicKey, BasicAuthenticator)>)> {
-    let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(num_approvers, threshold, auth_scheme)?;
+) -> anyhow::Result<(ApproverSet, Vec<(AuthSecretKey, PublicKey)>)> {
+    let (secret_keys, auth_schemes, public_keys, _) =
+        setup_keys_and_authenticators_with_scheme(num_approvers, 0, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
@@ -50,7 +51,7 @@ fn multisig_fixture(
         .collect();
     let approver_set = ApproverSet::new(approvers, u32::try_from(threshold)?)?;
 
-    let signers = public_keys.into_iter().zip(authenticators).collect();
+    let signers = secret_keys.into_iter().zip(public_keys).take(threshold).collect();
 
     Ok((approver_set, signers))
 }
@@ -67,10 +68,11 @@ fn assert_auth_args_bound_as_salt(tx_summary: &TransactionSummary, auth_args: Wo
 /// Executes an empty transaction against a wallet with the multisig auth component on a
 /// fee-charging mock chain: runs once without signatures to obtain the transaction summary,
 /// asserts the auth args are bound as the trailing word of the summary's user params, signs the
-/// summary with all provided signers, and executes the signed transaction.
+/// summary with all provided signers in the given format, and executes the signed transaction.
 async fn execute_fee_paying_multisig_tx(
     auth: Auth,
-    signers: Vec<(PublicKey, BasicAuthenticator)>,
+    signers: Vec<(AuthSecretKey, PublicKey)>,
+    format: SignatureFormat,
 ) -> anyhow::Result<ExecutedTransaction> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1_000_000)?.into();
@@ -102,13 +104,11 @@ async fn execute_fee_paying_multisig_tx(
     assert_auth_args_bound_as_salt(&tx_summary, args);
 
     let msg = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
 
     let mut signed_builder = mock_tx_builder;
-    for (public_key, authenticator) in &signers {
-        let signature =
-            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
-        signed_builder = signed_builder.add_signature(public_key.to_commitment(), msg, signature);
+    for (secret_key, public_key) in &signers {
+        signed_builder =
+            add_summary_signature(signed_builder, secret_key, public_key, msg, format)?;
     }
 
     Ok(signed_builder.build()?.execute().await?)
@@ -121,17 +121,22 @@ async fn execute_fee_paying_multisig_tx(
 /// the native fee asset, and the measured auth cycles stay within the multisig cycle estimate.
 /// This is the regression guard for `signature::estimate_multisig_authentication_cycles`. The
 /// ECDSA case additionally exercises the (large) overshoot of the Falcon-based per-signer bound
-/// for a cheaper scheme.
+/// for a cheaper scheme. The EIP-712 case measures ECDSA's costlier EIP-712 verification path.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2, SignatureFormat::Raw)]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak, SignatureFormat::Raw)]
+#[case::ecdsa_eip712(AuthScheme::EcdsaK256Keccak, SignatureFormat::Eip712)]
 #[tokio::test]
-async fn multisig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
+async fn multisig_pays_fee_note(
+    #[case] auth_scheme: AuthScheme,
+    #[case] format: SignatureFormat,
+) -> anyhow::Result<()> {
     let (approver_set, signers) = multisig_fixture(2, 2, auth_scheme)?;
 
     let executed_transaction = execute_fee_paying_multisig_tx(
         Auth::Multisig { approver_set, proc_threshold_map: vec![] },
         signers,
+        format,
     )
     .await?;
 
@@ -187,13 +192,10 @@ async fn multisig_fee_payment_preserves_replay_protection() -> anyhow::Result<()
     assert_auth_args_bound_as_salt(&tx_summary, args);
 
     let msg = tx_summary.as_ref().to_commitment();
-    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
 
     let mut signatures = Vec::new();
-    for (public_key, authenticator) in &signers {
-        let signature =
-            authenticator.get_signature(public_key.to_commitment(), &signing_inputs).await?;
-        signatures.push((public_key.to_commitment(), signature));
+    for (secret_key, public_key) in &signers {
+        signatures.push((public_key.to_commitment(), secret_key.sign(msg)));
     }
 
     let mut signed_builder = mock_tx_builder;
