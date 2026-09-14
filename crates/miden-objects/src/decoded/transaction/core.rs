@@ -26,14 +26,9 @@ impl BuildUnchecked for TransactionHeader {
     type Error = VerificationError;
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
         let transmitted = unwrap_infallible(self.transaction_id.verify());
-        let input_notes = self
-            .input_notes
-            .into_iter()
-            .map(BuildUnchecked::build_unchecked)
-            .collect::<Result<_, _>>()?;
+        let input_notes = self.input_notes.build_unchecked()?;
         let input_notes = miden_protocol::transaction::InputNotes::new(input_notes)?;
-        let output_notes =
-            self.output_notes.into_iter().map(Verify::verify).collect::<Result<_, _>>()?;
+        let output_notes = self.output_notes.verify()?;
         let header = Self::Output::new(
             self.account_id.verify()?,
             self.initial_state_commitment,
@@ -84,16 +79,8 @@ impl crate::BuildUnchecked for ProvenTransaction {
     type Output = miden_protocol::transaction::ProvenTransaction;
     type Error = VerificationError;
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
-        let inputs = self
-            .input_notes
-            .into_iter()
-            .map(BuildUnchecked::build_unchecked)
-            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
-        let outputs = self
-            .output_notes
-            .into_iter()
-            .map(Verify::verify)
-            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+        let inputs = self.input_notes.build_unchecked()?;
+        let outputs = self.output_notes.verify()?;
         Ok(Self::Output::new(
             self.account_update.verify()?,
             inputs,

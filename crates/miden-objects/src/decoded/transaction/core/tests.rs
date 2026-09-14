@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::vec;
 use core::error::Error;
 
@@ -105,5 +106,38 @@ fn transaction_header_conversion_preserves_validation_error_source() {
     assert_matches!(
         source,
         TransactionHeaderError::DuplicateOutputNote(note_id) if *note_id == note.id()
+    );
+}
+
+#[test]
+fn transaction_header_unchecked_build_retains_input_note_error_context() {
+    let transaction = TransactionHeader::new(
+        private_account_id(),
+        Word::empty(),
+        Word::empty(),
+        InputNotes::default(),
+        vec![],
+    )
+    .unwrap();
+    let mut message = proto::transaction::TransactionHeader::from(transaction);
+    let mut header = proto::note::NoteHeader::from(*Note::mock_noop(Word::empty()).header());
+    header.metadata.as_mut().unwrap().version = proto::note::NoteVersion::Unspecified as i32;
+    message.input_notes = vec![
+        proto::transaction::InputNoteCommitment {
+            nullifier: Some(Word::empty().into()),
+            header: None,
+        },
+        proto::transaction::InputNoteCommitment {
+            nullifier: Some(Word::empty().into()),
+            header: Some(header),
+        },
+    ];
+
+    let error = message.decode_fields().unwrap().build_unchecked().unwrap_err();
+    assert!(error.to_string().starts_with("input_notes[1]:"), "{error}");
+    assert!(error.to_string().contains("header:"), "{error}");
+    assert_matches!(
+        error_source::<crate::decoded::note::NoteMetadataError>(&error),
+        Some(crate::decoded::note::NoteMetadataError::UnspecifiedVersion)
     );
 }

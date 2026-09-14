@@ -34,9 +34,9 @@ impl Verify for TransactionArgs {
     type Verified = miden_protocol::transaction::TransactionArgs;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let tx_script = self.tx_script.map(Verify::verify).transpose()?;
+        let tx_script = self.tx_script.verify()?;
         let mut note_args = alloc::collections::BTreeMap::new();
-        for argument in self.note_args {
+        for argument in self.note_args.into_inner() {
             let (id, args) = unwrap_infallible(argument.verify());
             if note_args.insert(id, args).is_some() {
                 return Err(TransactionArgsError::DuplicateNoteArgument(id).into());

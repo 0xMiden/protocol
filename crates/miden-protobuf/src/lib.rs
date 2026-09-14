@@ -1,14 +1,23 @@
 //! Generated structural Protobuf decoding and opt-in domain construction.
 #![no_std]
 extern crate alloc;
-#[cfg(feature = "build")]
+#[cfg(feature = "std")]
 extern crate std;
 #[cfg(feature = "build")]
 pub mod build;
 mod decode;
 mod error;
 mod message;
-pub use decode::{DecodeField, OptionalField, RepeatedField, RequiredField, ValueField, decode};
+pub use decode::{
+    DecodeField,
+    DuplicatePolicy,
+    MapField,
+    OptionalField,
+    RepeatedField,
+    RequiredField,
+    ValueField,
+    decode,
+};
 pub use error::{ConversionError, ConversionResultExt};
 pub use message::{
     BuildUnchecked,
@@ -29,6 +38,7 @@ pub mod __private {
     pub use crate::{
         ConversionError,
         DecodeMessage,
+        MapField,
         OptionalField,
         RepeatedField,
         RequiredField,

@@ -21,8 +21,9 @@ repeated message conversion, and nested field/index error paths. Atomic messages
 types, preserving optional/repeated cardinality and rejecting unknown discriminants with generated
 paths. Known variants such as `Unspecified` remain available for domain verification. Oneofs
 generate matching decoded enums, with exact wire variant names supplied by descriptors.
-An absent oneof is rejected by default; an explicitly configured optional oneof retains its Option.
-Maps and boxed messages are not yet supported and are not used by these schemas.
+An absent oneof is rejected by default; an explicitly configured optional oneof retains its presence.
+Maps are supported by the derive but are not used by these schemas. Boxed messages are not yet
+supported.
 
 The three single-payload atoms use `ProtoDecodeValue` to generate `decode_value(&self, parser)`.
 Their parsers return representation errors; the helper supplies the payload field path and
@@ -36,9 +37,23 @@ Domain construction is opt-in and handwritten: `Verify::verify()` needs no exter
 `VerifyWith<C>::verify_with(context)` accepts borrowed or owned context, and
 `BuildUnchecked::build_unchecked()` uses a supported unchecked constructor. Unchecked construction
 can still fail and must document the invariants the caller must ensure. None of these operations
-is invoked automatically by field decoding, and verification errors do not get generated wire
-paths. Direct protobuf-to-domain `TryFrom`/`From` conversions are intentionally unavailable for
-generated records; only atomic representation adapters retain their `TryFrom` implementations.
+is invoked automatically by field decoding. Direct protobuf-to-domain `TryFrom`/`From`
+conversions are intentionally unavailable for generated records; only atomic representation
+adapters retain their `TryFrom` implementations.
+
+Decoded optional and repeated fields retain `miden_protobuf::OptionalField` and `RepeatedField`
+wrappers with generated field names. Composite verifiers call `self.field.verify()?` to verify
+their elements with field and index context. Their errors convert into `VerificationError`,
+preserving the original domain errors in the source chain. Borrowed accessors inspect decoded
+values; `into_inner()` extracts them for custom processing without automatic field context.
+Domain constructors and explicit loops enforce collection-wide rules such as ordering and
+uniqueness. Scalar byte buffers remain ordinary buffers.
+
+Collections also compose `build_unchecked()`, preserving element error context while retaining
+the caller's responsibility for skipped checks. `verify_infallible()` verifies elements whose
+error type is `Infallible` without introducing a fallible result. Field-specific conversions use
+`map()` or `try_map()`; the latter preserves field and index context, for example when turning
+raw vault words into asset IDs. These operations return ordinary collections.
 
 Import `DecodeMessageExt` to combine field decoding with an explicit construction choice:
 

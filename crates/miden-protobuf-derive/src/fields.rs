@@ -34,10 +34,10 @@ pub(super) fn expand(input: DeriveInput, runtime: TokenStream) -> Result<TokenSt
         let ident = field.ident.as_ref().expect("named field");
         let name = ident_name(ident);
         let prost = ProstField::parse(field)?;
-        if prost.map || prost.boxed {
+        if prost.boxed {
             return Err(syn::Error::new(
                 field.span(),
-                "ProtoDecodeFields does not yet support maps or boxed messages",
+                "ProtoDecodeFields does not yet support boxed messages",
             ));
         }
         let presence = FieldKindOverride::parse(&field.attrs)?;
@@ -52,89 +52,68 @@ pub(super) fn expand(input: DeriveInput, runtime: TokenStream) -> Result<TokenSt
             ));
         }
 
-        let (ty, value) = if let Some(ty) = bytes {
-            if prost.repeated {
-                (
-                    quote!(#runtime::Vec<#ty>),
-                    quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?),
-                )
-            } else if prost.optional {
-                (
-                    quote!(::core::option::Option<#ty>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    quote!(#ty),
-                    quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?),
-                )
-            }
-        } else if let Some(oneof) = &prost.oneof {
-            container_type(field, "Option")?;
-            let decoded = quote!(<#oneof as #runtime::DecodeMessage>::Decoded);
-            if matches!(presence, Some(FieldKindOverride::Optional)) {
-                (
-                    quote!(::core::option::Option<#decoded>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    decoded,
-                    quote!(#runtime::decode(
-                        #runtime::RequiredField::<#source, _>::new(#name, message.#ident)
-                    )?),
-                )
-            }
-        } else if let Some(enumeration) = &prost.enumeration {
-            if prost.repeated {
-                container_type(field, "Vec")?;
-                (
-                    quote!(#runtime::Vec<#enumeration>),
-                    quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?),
-                )
-            } else if prost.optional {
-                container_type(field, "Option")?;
-                (
-                    quote!(::core::option::Option<#enumeration>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    quote!(#enumeration),
-                    quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?),
-                )
-            }
-        } else if !prost.message {
-            let ty = &field.ty;
-            (quote!(#ty), quote!(message.#ident))
-        } else if prost.repeated {
-            let inner = container_type(field, "Vec")?;
-            (
-                quote!(#runtime::Vec<<#inner as #runtime::DecodeMessage>::Decoded>),
-                quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?),
-            )
-        } else if prost.optional {
-            let inner = container_type(field, "Option")?;
-            let decoded = quote!(<#inner as #runtime::DecodeMessage>::Decoded);
-            if matches!(presence, Some(FieldKindOverride::Optional)) {
-                (
-                    quote!(::core::option::Option<#decoded>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    decoded,
-                    quote!(#runtime::decode(
-                        #runtime::RequiredField::<#source, _>::new(#name, message.#ident)
-                    )?),
-                )
-            }
+        let (ty, value) = if prost.map {
+            let (ty, value) = map_field(field, &prost, bytes, &runtime)?;
+            (quote!(#runtime::MapField<#ty>), quote!(#runtime::MapField::new(#name, #value)))
         } else {
-            let inner = &field.ty;
-            (
-                quote!(<#inner as #runtime::DecodeMessage>::Decoded),
-                quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?),
-            )
+            let inner = if prost.repeated {
+                container_type(field, "Vec")?
+            } else if prost.optional || prost.oneof.is_some() {
+                container_type(field, "Option")?
+            } else {
+                &field.ty
+            };
+            let convert = bytes.is_some()
+                || prost.oneof.is_some()
+                || prost.enumeration.is_some()
+                || prost.message;
+            let ty = if let Some(ty) = bytes {
+                quote!(#ty)
+            } else if let Some(oneof) = &prost.oneof {
+                quote!(<#oneof as #runtime::DecodeMessage>::Decoded)
+            } else if let Some(enumeration) = &prost.enumeration {
+                quote!(#enumeration)
+            } else if prost.message {
+                quote!(<#inner as #runtime::DecodeMessage>::Decoded)
+            } else {
+                quote!(#inner)
+            };
+            // Presence is resolved during structural decoding. Only fields which remain
+            // optional retain an OptionalField in the decoded record.
+            let required = (prost.oneof.is_some() || (prost.message && prost.optional))
+                && !matches!(presence, Some(FieldKindOverride::Optional));
+            if prost.repeated {
+                let values = if convert {
+                    quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?)
+                } else {
+                    quote!(message.#ident)
+                };
+                (
+                    quote!(#runtime::RepeatedField<#ty>),
+                    quote!(#runtime::RepeatedField::new(#name, #values)),
+                )
+            } else if required {
+                (
+                    ty,
+                    quote!(#runtime::decode(
+                        #runtime::RequiredField::<#source, _>::new(#name, message.#ident)
+                    )?),
+                )
+            } else if prost.optional || prost.oneof.is_some() {
+                let value = if convert {
+                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?)
+                } else {
+                    quote!(message.#ident)
+                };
+                (
+                    quote!(#runtime::OptionalField<#ty>),
+                    quote!(#runtime::OptionalField::new(#name, #value)),
+                )
+            } else if convert {
+                (ty, quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?))
+            } else {
+                (ty, quote!(message.#ident))
+            }
         };
         let docs = field.attrs.iter().filter(|attribute| attribute.path().is_ident("doc"));
         let visibility = &field.vis;
@@ -163,6 +142,48 @@ pub(super) fn expand(input: DeriveInput, runtime: TokenStream) -> Result<TokenSt
             }
         }
     })
+}
+
+fn map_field(
+    field: &Field,
+    prost: &ProstField,
+    bytes: Option<Type>,
+    runtime: &TokenStream,
+) -> Result<(TokenStream, TokenStream)> {
+    let mut ty = field.ty.clone();
+    let Type::Path(path) = &mut ty else {
+        return Err(syn::Error::new(ty.span(), "expected a Prost map field"));
+    };
+    let segment = path.path.segments.last_mut().expect("nonempty type path");
+    if !matches!(segment.ident.to_string().as_str(), "HashMap" | "BTreeMap") {
+        return Err(syn::Error::new(ty.span(), "expected HashMap<K, V> or BTreeMap<K, V>"));
+    }
+    let PathArguments::AngleBracketed(args) = &mut segment.arguments else {
+        return Err(syn::Error::new(ty.span(), "expected map key and value types"));
+    };
+    if args.args.len() != 2 {
+        return Err(syn::Error::new(args.span(), "expected map key and value types"));
+    }
+    let Some(GenericArgument::Type(value)) = args.args.iter_mut().nth(1) else {
+        return Err(syn::Error::new(args.span(), "expected a map value type"));
+    };
+    let empty = matches!(value, Type::Tuple(tuple) if tuple.elems.is_empty());
+    let ident = field.ident.as_ref().expect("named field");
+    *value = if let Some(bytes) = bytes {
+        bytes
+    } else if let Some(enumeration) = &prost.enumeration {
+        syn::parse_quote!(#enumeration)
+    } else if prost.message && !empty {
+        syn::parse_quote!(<#value as #runtime::DecodeMessage>::Decoded)
+    } else {
+        // Scalars (including bytes and google.protobuf.Empty) need no conversion.
+        return Ok((quote!(#ty), quote!(message.#ident)));
+    };
+    let name = ident_name(ident);
+    Ok((
+        quote!(#ty),
+        quote!(#runtime::decode(#runtime::MapField::new(#name, message.#ident))?),
+    ))
 }
 
 fn expand_oneof(
@@ -290,15 +311,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unsupported_fields_fail_explicitly() {
+    fn boxed_fields_fail_explicitly() {
+        let input = parse_quote! {
+            struct Message {
+                #[prost(message, optional, boxed, tag = "1")]
+                value: Option<Box<Nested>>,
+            }
+        };
+        let error = expand(input, quote!(::runtime)).unwrap_err();
+        assert!(error.to_string().contains("does not yet support"), "{error}");
+    }
+
+    #[test]
+    fn malformed_maps_fail_explicitly() {
         for field in [
-            quote!(#[prost(map = "string, uint32", tag = "1")] value: HashMap<String, u32>),
-            quote!(#[prost(btree_map = "string, uint32", tag = "1")] value: BTreeMap<String, u32>),
-            quote!(#[prost(message, optional, boxed, tag = "1")] value: Option<Box<Nested>>),
+            quote!(#[prost(map = "string", tag = "1")] value: HashMap<String, u32>),
+            quote!(#[prost(map = "string, enumeration", tag = "1")] value: HashMap<String, i32>),
+            quote!(#[prost(map = "string, message", tag = "1")] value: Vec<Nested>),
+            quote!(#[prost(btree_map = "string, message", tag = "1")] value: BTreeMap<Nested>),
+            quote!(#[prost(map = "string, message", btree_map = "string, message", tag = "1")] value: HashMap<String, Nested>),
         ] {
             let input = syn::parse2(quote!(struct Message { #field })).unwrap();
-            let error = expand(input, quote!(::runtime)).unwrap_err();
-            assert!(error.to_string().contains("does not yet support"), "{error}");
+            assert!(expand(input, quote!(::runtime)).is_err());
         }
     }
 
