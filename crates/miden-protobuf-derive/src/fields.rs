@@ -34,10 +34,10 @@ pub(super) fn expand(input: DeriveInput, runtime: TokenStream) -> Result<TokenSt
         let ident = field.ident.as_ref().expect("named field");
         let name = ident_name(ident);
         let prost = ProstField::parse(field)?;
-        if prost.map || prost.boxed {
+        if prost.boxed {
             return Err(syn::Error::new(
                 field.span(),
-                "ProtoDecodeFields does not yet support maps or boxed messages",
+                "ProtoDecodeFields does not yet support boxed messages",
             ));
         }
         let presence = FieldKindOverride::parse(&field.attrs)?;
@@ -52,7 +52,9 @@ pub(super) fn expand(input: DeriveInput, runtime: TokenStream) -> Result<TokenSt
             ));
         }
 
-        let (ty, value) = if let Some(ty) = bytes {
+        let (ty, value) = if prost.map {
+            map_field(field, &prost, bytes, &runtime)?
+        } else if let Some(ty) = bytes {
             if prost.repeated {
                 (
                     quote!(#runtime::Vec<#ty>),
@@ -163,6 +165,48 @@ pub(super) fn expand(input: DeriveInput, runtime: TokenStream) -> Result<TokenSt
             }
         }
     })
+}
+
+fn map_field(
+    field: &Field,
+    prost: &ProstField,
+    bytes: Option<Type>,
+    runtime: &TokenStream,
+) -> Result<(TokenStream, TokenStream)> {
+    let mut ty = field.ty.clone();
+    let Type::Path(path) = &mut ty else {
+        return Err(syn::Error::new(ty.span(), "expected a Prost map field"));
+    };
+    let segment = path.path.segments.last_mut().expect("nonempty type path");
+    if !matches!(segment.ident.to_string().as_str(), "HashMap" | "BTreeMap") {
+        return Err(syn::Error::new(ty.span(), "expected HashMap<K, V> or BTreeMap<K, V>"));
+    }
+    let PathArguments::AngleBracketed(args) = &mut segment.arguments else {
+        return Err(syn::Error::new(ty.span(), "expected map key and value types"));
+    };
+    if args.args.len() != 2 {
+        return Err(syn::Error::new(args.span(), "expected map key and value types"));
+    }
+    let Some(GenericArgument::Type(value)) = args.args.iter_mut().nth(1) else {
+        return Err(syn::Error::new(args.span(), "expected a map value type"));
+    };
+    let empty = matches!(value, Type::Tuple(tuple) if tuple.elems.is_empty());
+    let ident = field.ident.as_ref().expect("named field");
+    *value = if let Some(bytes) = bytes {
+        bytes
+    } else if let Some(enumeration) = &prost.enumeration {
+        syn::parse_quote!(#enumeration)
+    } else if prost.message && !empty {
+        syn::parse_quote!(<#value as #runtime::DecodeMessage>::Decoded)
+    } else {
+        // Scalars (including bytes and google.protobuf.Empty) need no conversion.
+        return Ok((quote!(#ty), quote!(message.#ident)));
+    };
+    let name = ident_name(ident);
+    Ok((
+        quote!(#ty),
+        quote!(#runtime::decode(#runtime::MapField::new(#name, message.#ident))?),
+    ))
 }
 
 fn expand_oneof(
@@ -290,15 +334,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unsupported_fields_fail_explicitly() {
+    fn boxed_fields_fail_explicitly() {
+        let input = parse_quote! {
+            struct Message {
+                #[prost(message, optional, boxed, tag = "1")]
+                value: Option<Box<Nested>>,
+            }
+        };
+        let error = expand(input, quote!(::runtime)).unwrap_err();
+        assert!(error.to_string().contains("does not yet support"), "{error}");
+    }
+
+    #[test]
+    fn malformed_maps_fail_explicitly() {
         for field in [
-            quote!(#[prost(map = "string, uint32", tag = "1")] value: HashMap<String, u32>),
-            quote!(#[prost(btree_map = "string, uint32", tag = "1")] value: BTreeMap<String, u32>),
-            quote!(#[prost(message, optional, boxed, tag = "1")] value: Option<Box<Nested>>),
+            quote!(#[prost(map = "string", tag = "1")] value: HashMap<String, u32>),
+            quote!(#[prost(map = "string, enumeration", tag = "1")] value: HashMap<String, i32>),
+            quote!(#[prost(map = "string, message", tag = "1")] value: Vec<Nested>),
+            quote!(#[prost(btree_map = "string, message", tag = "1")] value: BTreeMap<Nested>),
+            quote!(#[prost(map = "string, message", btree_map = "string, message", tag = "1")] value: HashMap<String, Nested>),
         ] {
             let input = syn::parse2(quote!(struct Message { #field })).unwrap();
-            let error = expand(input, quote!(::runtime)).unwrap_err();
-            assert!(error.to_string().contains("does not yet support"), "{error}");
+            assert!(expand(input, quote!(::runtime)).is_err());
         }
     }
 

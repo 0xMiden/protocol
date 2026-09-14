@@ -40,7 +40,8 @@ pub fn derive_proto_decode_value(input: TokenStream) -> TokenStream {
 /// `#[proto_decode(bytes = Adapter)]` opts a bytes field into `TryFrom` conversion to a local
 /// representation adapter. Cardinality and error paths are still generated; this is not a
 /// constructor or verification hook.
-/// Maps and boxed messages are not supported by this experimental derive.
+/// Maps retain their keys and collection type, recursively decoding message and enum values.
+/// Boxed messages are not supported by this experimental derive.
 #[proc_macro_derive(ProtoDecodeFields, attributes(proto_decode))]
 pub fn derive_proto_decode_fields(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -114,10 +115,33 @@ impl ProstField {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("map")
+                    || meta.path.is_ident("hash_map")
+                    || meta.path.is_ident("btree_map")
+                {
+                    if parsed.map {
+                        return Err(meta.error("duplicate Prost map setting"));
+                    }
+                    parsed.map = true;
+                    let types = meta.value()?.parse::<LitStr>()?.value();
+                    let (_, value) = types
+                        .split_once(',')
+                        .ok_or_else(|| meta.error("expected Prost map key and value types"))?;
+                    let value: syn::Meta = syn::parse_str(value.trim())?;
+                    parsed.message = value.path().is_ident("message");
+                    parsed.bytes = value.path().is_ident("bytes");
+                    if value.path().is_ident("enumeration") {
+                        let syn::Meta::List(value) = value else {
+                            return Err(meta.error("expected enumeration(Type) map value"));
+                        };
+                        parsed.enumeration = Some(value.parse_args()?);
+                    }
+                    return Ok(());
+                }
+
                 parsed.message |= meta.path.is_ident("message");
                 parsed.optional |= meta.path.is_ident("optional");
                 parsed.repeated |= meta.path.is_ident("repeated");
-                parsed.map |= meta.path.is_ident("map") || meta.path.is_ident("btree_map");
                 parsed.boxed |= meta.path.is_ident("boxed");
                 parsed.bytes |= meta.path.is_ident("bytes");
 

@@ -1,6 +1,8 @@
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::vec::Vec;
 use core::error::Error;
+use core::fmt::Debug;
 use core::marker::PhantomData;
 
 use crate::{ConversionError, ConversionResultExt};
@@ -95,6 +97,58 @@ where
     }
 }
 
+/// A Protobuf map whose values are decoded while preserving its keys and collection type.
+///
+/// Decoding stops at the first error and includes the failing key in the field path, using
+/// `Debug` formatting to quote and escape string keys. Hash maps require the `std` feature;
+/// their iteration order, and thus the first reported failure, is unspecified.
+pub struct MapField<M> {
+    name: &'static str,
+    values: M,
+}
+
+impl<M> MapField<M> {
+    pub const fn new(name: &'static str, values: M) -> Self {
+        Self { name, values }
+    }
+}
+
+impl<K, S, T> DecodeField<BTreeMap<K, T>> for MapField<BTreeMap<K, S>>
+where
+    K: Ord + Debug,
+    S: TryInto<T>,
+    S::Error: Error + Send + Sync + 'static,
+{
+    fn decode(self) -> Result<BTreeMap<K, T>, ConversionError> {
+        self.values
+            .into_iter()
+            .map(|(key, value)| {
+                let value = value.try_into().with_context(|| format!("{}[{key:?}]", self.name))?;
+                Ok((key, value))
+            })
+            .collect()
+    }
+}
+
+#[cfg(feature = "std")]
+impl<K, S, T> DecodeField<std::collections::HashMap<K, T>>
+    for MapField<std::collections::HashMap<K, S>>
+where
+    K: Eq + core::hash::Hash + Debug,
+    S: TryInto<T>,
+    S::Error: Error + Send + Sync + 'static,
+{
+    fn decode(self) -> Result<std::collections::HashMap<K, T>, ConversionError> {
+        self.values
+            .into_iter()
+            .map(|(key, value)| {
+                let value = value.try_into().with_context(|| format!("{}[{key:?}]", self.name))?;
+                Ok((key, value))
+            })
+            .collect()
+    }
+}
+
 pub struct ValueField<S> {
     name: &'static str,
     value: S,
@@ -118,13 +172,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alloc::collections::BTreeMap;
     use alloc::string::ToString;
     use alloc::vec;
     use alloc::vec::Vec;
+    use core::cell::Cell;
     use core::error::Error;
     use core::num::TryFromIntError;
 
-    use super::{OptionalField, RepeatedField, RequiredField, decode};
+    use super::{MapField, OptionalField, RepeatedField, RequiredField, decode};
 
     #[derive(Clone, PartialEq, prost::Message)]
     struct Message {}
@@ -165,5 +221,30 @@ mod tests {
     fn empty_repeated_fields_do_not_enforce_domain_invariants() {
         let numbers: Vec<u16> = decode(RepeatedField::new("numbers", Vec::<u32>::new())).unwrap();
         assert!(numbers.is_empty());
+    }
+
+    #[test]
+    fn map_fields_stop_at_the_first_failed_value() {
+        struct Counted<'a>(&'a Cell<usize>, u32);
+
+        impl TryFrom<Counted<'_>> for u8 {
+            type Error = TryFromIntError;
+
+            fn try_from(value: Counted<'_>) -> Result<Self, Self::Error> {
+                value.0.set(value.0.get() + 1);
+                value.1.try_into()
+            }
+        }
+
+        let calls = Cell::new(0);
+        let values = BTreeMap::from([
+            (1, Counted(&calls, 7)),
+            (2, Counted(&calls, 256)),
+            (3, Counted(&calls, 8)),
+        ]);
+        let error = decode::<_, BTreeMap<_, u8>>(MapField::new("values", values)).unwrap_err();
+        assert_eq!(calls.get(), 2);
+        assert!(error.to_string().starts_with("values[2]:"), "{error}");
+        assert!(error.source().unwrap().is::<TryFromIntError>());
     }
 }

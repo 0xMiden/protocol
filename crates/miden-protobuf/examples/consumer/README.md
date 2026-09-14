@@ -5,6 +5,14 @@ A standalone `no_std` consumer showing build configuration, generated decoding, 
 - `build.rs` defines a small schema and configures decoding before generating Prost types.
 - `src/lib.rs` uses those types and demonstrates record, oneof, and payload decoding in tests.
 
+Maps retain their collection type and keys. Message and enum values are decoded, with errors such
+as `values["rpc"].values["limits"].leaf`. The example uses Prost's `btree_map` setting for `no_std`;
+the default `HashMap` representation requires the `std` feature. Synthetic map-entry descriptors
+can be included in the selected messages and are skipped automatically.
+
+Optional oneofs use a manual `#[proto_decode(optional)]` field attribute. The build script omits
+the leading dot from that attribute's path to avoid applying it to the oneof variants.
+
 Run from the protocol workspace root:
 
 ```sh
