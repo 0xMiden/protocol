@@ -15,10 +15,6 @@ const EIP712_PREIMAGE_LENGTH=66
 const DIGEST_PREIMAGE_LOC=0
 const PUBLIC_KEY_COMMITMENT_LOC=24
 
-# EIP-712 hashes 0x1901 || domainSeparator || structHash. The two hashes contain 16 u32 limbs in
-# total. Since the two-byte prefix shifts them by half a limb, each iteration writes one limb and
-# carries the upper 16 bits into the next one.
-
 # PROCEDURES
 # =================================================================================================
 
@@ -47,7 +43,9 @@ pub proc verify
     padw locaddr.DIGEST_PREIMAGE_LOC add.20 mem_storew_le dropw
     # => [DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
 
-    # Build the EIP-712 preimage.
+    # Build the EIP-712 preimage 0x1901 || domainSeparator || structHash. The two hashes contain
+    # 16 u32 limbs in total. Since the two-byte prefix shifts them by half a limb, each iteration
+    # writes one limb and carries the upper 16 bits into the next one.
     push.EIP712_PREFIX locaddr.DIGEST_PREIMAGE_LOC
     # => [ptr, carry, DOMAIN_SEPARATOR_U32[8], STRUCT_HASH_U32[8]]
 
