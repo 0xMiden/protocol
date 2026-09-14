@@ -10,6 +10,7 @@
 
 ### Changes
 
+- Disabled asset callbacks on newly created AggLayer faucets by omitting their unrestricted send and receive policies; minting and burning remain restricted to the bridge owner ([#3783](https://github.com/0xMiden/protocol/issues/3783)).
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
 - [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).

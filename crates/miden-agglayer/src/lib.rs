@@ -23,12 +23,7 @@ use miden_standards::account::fees::{
     ConstantFeeManager,
     FeePolicyManager,
 };
-use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    TokenPolicyManager,
-    TransferPolicy,
-};
+use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use miden_utils_sync::LazyLock;
 
 pub mod agglayer_note;
@@ -166,6 +161,10 @@ impl AggLayerFaucet {
     /// and decimals. Conversion metadata (origin address, origin network, scale, metadata hash)
     /// lives on the bridge and is written there at registration time.
     ///
+    /// No send or receive policies are registered, so the account is created with asset callbacks
+    /// disabled. Transfers of its assets do not require a callback into the faucet. The callback
+    /// flag is immutable; this configuration only applies to newly created accounts.
+    ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
     /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]
     /// owner, which is what the `owner_only` mint and burn policies gate on. `fee_policy` must
@@ -207,8 +206,6 @@ impl AggLayerFaucet {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::owner_only())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
         let rbac = RoleBasedAccessControl::builder()
@@ -247,11 +244,10 @@ mod tests {
         create_existing_bridge_account_with_roles,
     };
 
-    /// The agglayer faucet registers send and receive transfer policies, so its policy manager
-    /// installs the protocol-reserved asset callback slots and its account ID must carry an enabled
-    /// asset callback flag. Without the flag the kernel would never invoke those policies.
+    /// AggLayer faucets omit transfer policies and callback slots, so moving their assets skips
+    /// callback dispatch and the associated foreign-account read.
     #[test]
-    fn agglayer_faucet_has_asset_callbacks_enabled() {
+    fn agglayer_faucet_has_asset_callbacks_disabled() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
         let faucet = create_existing_agglayer_faucet(
@@ -267,11 +263,11 @@ mod tests {
 
         for slot_name in AssetCallbacks::slot_names() {
             assert!(
-                faucet.storage().get(slot_name).is_some(),
-                "faucet should install the {slot_name} callback slot"
+                faucet.storage().get(slot_name).is_none(),
+                "faucet should not install the {slot_name} callback slot"
             );
         }
-        assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Enabled);
+        assert_eq!(faucet.id().asset_callback_flag(), AssetCallbackFlag::Disabled);
     }
 
     /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
