@@ -732,7 +732,8 @@ end
 #!
 #! Panics if:
 #! - insufficient number of valid signatures (below threshold).
-#! - an EIP-712 entry belongs to a non-ECDSA approver or does not contain 32 field elements.
+#! - an approver without a raw signature has an EIP-712 entry but does not use ECDSA, or the entry
+#!   does not contain 32 field elements.
 #!
 #! Invocation: exec
 pub proc auth_tx(user_params: [felt; 7])

@@ -538,6 +538,52 @@ async fn test_multisig_does_not_double_count_raw_and_eip712_signatures() -> anyh
     Ok(())
 }
 
+/// A raw signature takes precedence over an EIP-712 entry for the same approver, so the entry is
+/// never checked and a malformed one does not abort the transaction.
+#[rstest]
+#[case::ecdsa_approver_with_short_eip712_entry(AuthScheme::EcdsaK256Keccak, 31)]
+#[case::falcon_approver_with_eip712_entry(AuthScheme::Falcon512Poseidon2, 32)]
+#[tokio::test]
+async fn test_multisig_raw_signature_takes_precedence_over_eip712_entry(
+    #[case] auth_scheme: AuthScheme,
+    #[case] eip712_entry_length: usize,
+) -> anyhow::Result<()> {
+    let (_, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(1, 1, auth_scheme)?;
+    let approvers = vec![(public_keys[0].clone(), auth_schemes[0])];
+    let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .auth_args(Word::from([Felt::new_unchecked(12); 4]));
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let raw_signature = authenticators[0]
+        .get_signature(
+            public_keys[0].to_commitment(),
+            &SigningInputs::TransactionSummary(tx_summary),
+        )
+        .await?;
+    let eip712_key =
+        eip712::transaction_summary_signature_key(public_keys[0].to_commitment(), tx_summary_hash);
+
+    mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
+        .add_advice_map_entry(eip712_key, vec![Felt::ZERO; eip712_entry_length])
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_multisig_rejects_eip712_for_falcon_approver() -> anyhow::Result<()> {
     let (_, auth_schemes, public_keys, _) =
