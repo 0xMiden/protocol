@@ -2,13 +2,10 @@
 
 ## Unreleased
 
-### Features
-
-- Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping.
-
 ### Changes
 
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
+- Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
 
 ## v0.17.0-pre.1 (2026-09-05)
 
