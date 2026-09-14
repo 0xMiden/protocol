@@ -5,7 +5,7 @@
 ### Features
 
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
-- Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors in `miden-protobuf`, returning decoded payloads without verification. The crate also provides optional tonic integration through `ConversionError::into_status()`, preserving field paths and the complete source chain in status messages.
+- Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors in `miden-protobuf`, returning decoded payloads without verification. The crate also provides optional tonic integration through `ConversionError::into_status()`, preserving field paths and the complete source chain in status messages ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
 - Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
 - Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
