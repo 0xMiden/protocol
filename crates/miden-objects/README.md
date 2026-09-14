@@ -37,14 +37,26 @@ Domain construction is opt-in and handwritten: `Verify::verify()` needs no exter
 `BuildUnchecked::build_unchecked()` uses a supported unchecked constructor. Unchecked construction
 can still fail and must document the invariants the caller must ensure. None of these operations
 is invoked automatically by field decoding, and verification errors do not get generated wire
-paths. Direct protobuf-to-domain `TryFrom`/`From` conversions and combined decoding helpers
-are intentionally unavailable for generated records. Callers must decode the fields and
-explicitly select a construction capability; only atomic representation adapters retain their
-`TryFrom` implementations.
+paths. Direct protobuf-to-domain `TryFrom`/`From` conversions are intentionally unavailable for
+generated records; only atomic representation adapters retain their `TryFrom` implementations.
 
-All 98 Miden messages are integrated: 95 generated records and three canonical atomic adapters.
-Construction capabilities, trust boundaries, and unreleased wire changes are detailed in
-[Decoded Conversion Migration](DECODED_MIGRATION.md).
+Import `DecodeMessageExt` to combine field decoding with an explicit construction choice:
+
+```rust
+use miden_objects::{ConversionError, DecodeMessageExt, proto};
+use miden_protocol::block::BlockNumber;
+
+fn decode_block_number(message: proto::blockchain::BlockNumber) -> Result<BlockNumber, ConversionError> {
+    message.decode_and_verify()
+}
+```
+
+`decode_and_verify_with(context)` and `decode_and_build_unchecked()` select the other capabilities.
+Each helper is available only when the decoded type implements the corresponding trait. They
+consume parsed Protobuf messages and return `ConversionError` with a `failed to decode`,
+`failed to verify`, or `failed to build unchecked` prefix. The original error, including structural
+field paths and domain error sources, is preserved in the source chain. Call `decode_fields()` and
+the construction method separately when the intermediate record or typed domain error is needed.
 
 ## License
 

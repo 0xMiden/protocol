@@ -8,13 +8,31 @@ use crate::ExecutedBatch;
 // ================================================================================================
 
 /// Executes the batch kernel over a [`ProposedBatch`], producing an [`ExecutedBatch`].
-#[derive(Clone, Default)]
-pub struct BatchExecutor;
+#[derive(Debug, Clone)]
+pub struct BatchExecutor {
+    execution_options: ExecutionOptions,
+}
 
 impl BatchExecutor {
     /// Creates a new [`BatchExecutor`] instance.
     pub fn new() -> Self {
-        Self
+        Self {
+            execution_options: ExecutionOptions::default(),
+        }
+    }
+
+    /// Sets the [`ExecutionOptions`] used while executing and returns the resulting executor.
+    ///
+    /// This will overwrite any previously set options.
+    #[must_use]
+    pub fn with_execution_options(mut self, execution_options: ExecutionOptions) -> Self {
+        self.execution_options = execution_options;
+        self
+    }
+
+    /// Returns the [`ExecutionOptions`] this executor uses.
+    pub fn execution_options(&self) -> ExecutionOptions {
+        self.execution_options
     }
 
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
@@ -31,13 +49,10 @@ impl BatchExecutor {
     ) -> Result<ExecutedBatch, ProvenBatchError> {
         let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
 
-        let processor = FastProcessor::new_with_options(
-            stack_inputs,
-            advice_inputs,
-            ExecutionOptions::default(),
-        )
-        .map_err(ExecutionError::advice_error_no_context)
-        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
+        let processor =
+            FastProcessor::new_with_options(stack_inputs, advice_inputs, self.execution_options)
+                .map_err(ExecutionError::advice_error_no_context)
+                .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
         let witness = processor
             .execute_for_proving_sync(&BatchKernel::main(), &mut DefaultHost::default())
@@ -50,5 +65,11 @@ impl BatchExecutor {
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
         Ok(ExecutedBatch::new(proposed_batch, witness, batch_outputs))
+    }
+}
+
+impl Default for BatchExecutor {
+    fn default() -> Self {
+        Self::new()
     }
 }
