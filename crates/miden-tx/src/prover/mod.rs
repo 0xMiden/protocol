@@ -39,20 +39,39 @@ pub use mast_store::TransactionMastStore;
 #[derive(Debug, Clone)]
 pub struct LocalTransactionProver {
     prover: Prover,
+    execution_options: ExecutionOptions,
 }
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
-        Self {
-            prover: Prover::new().with_hash_fn(Poseidon2),
-        }
+        Self::new(Prover::new().with_hash_fn(Poseidon2))
     }
 }
 
 impl LocalTransactionProver {
-    /// Creates a new [LocalTransactionProver] instance.
+    /// Creates a new [LocalTransactionProver] instance with the default [`ExecutionOptions`].
     pub fn new(prover: Prover) -> Self {
-        Self { prover }
+        Self {
+            prover,
+            execution_options: ExecutionOptions::default(),
+        }
+    }
+
+    /// Sets the [`ExecutionOptions`] used while proving and returns the resulting prover.
+    ///
+    /// This lets a caller tune the VM limits enforced during proving, so that proving can use the
+    /// same options as execution.
+    ///
+    /// This will overwrite any previously set options.
+    #[must_use]
+    pub fn with_execution_options(mut self, execution_options: ExecutionOptions) -> Self {
+        self.execution_options = execution_options;
+        self
+    }
+
+    /// Returns the [`ExecutionOptions`] this prover uses.
+    pub fn execution_options(&self) -> ExecutionOptions {
+        self.execution_options
     }
 
     fn build_proven_transaction(
@@ -151,7 +170,7 @@ impl LocalTransactionProver {
         let processor = FastProcessor::new_with_options(
             stack_inputs,
             advice_inputs.clone(),
-            ExecutionOptions::default(),
+            self.execution_options,
         )
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
@@ -237,5 +256,23 @@ impl LocalTransactionProver {
             ref_block.commitment(),
             proof,
         )
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_execution_options_are_used_unless_replaced() {
+        let prover = LocalTransactionProver::default();
+        assert_eq!(prover.execution_options(), ExecutionOptions::default());
+
+        let custom_options = ExecutionOptions::default().with_max_advice_size_bytes(1);
+        let prover = prover.with_execution_options(custom_options);
+        assert_eq!(prover.execution_options(), custom_options);
     }
 }
