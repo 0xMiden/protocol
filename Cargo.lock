@@ -2896,6 +2896,7 @@ dependencies = [
  "miden-agglayer",
  "miden-assembly",
  "miden-block-prover",
+ "miden-core",
  "miden-core-lib",
  "miden-crypto",
  "miden-processor",

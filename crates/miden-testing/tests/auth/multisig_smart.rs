@@ -170,10 +170,14 @@ async fn test_multisig_smart_accepts_raw_and_eip712_signatures() -> anyhow::Resu
         NoteType::Public,
     )?;
     let mock_chain = mock_chain_builder.build()?;
+    let salt = Word::from([Felt::new_unchecked(2); 4]);
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(note.id())
-        .auth_args(Word::from([Felt::new_unchecked(2); 4]));
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()

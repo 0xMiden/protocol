@@ -42,6 +42,7 @@ assert_matches  = { workspace = true }
 bon             = { workspace = true }
 miden-agglayer  = { features = ["testing"], workspace = true }
 miden-assembly  = { workspace = true }
+miden-core      = { workspace = true }
 miden-crypto    = { workspace = true }
 miden-protocol  = { features = ["std"], workspace = true }
 primitive-types = { workspace = true }

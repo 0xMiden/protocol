@@ -1,10 +1,11 @@
 use alloy_sol_types::{SolStruct, eip712_domain, sol};
+use miden_core::deferred::PrecompileError;
 use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
+use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
 use miden_protocol::crypto::hash::keccak::Keccak256;
 use miden_protocol::crypto::utils::Deserializable;
-use miden_protocol::errors::MasmError;
 use miden_protocol::utils::{bytes_to_packed_u32_elements, hex_to_bytes};
 use miden_protocol::{Felt, Word};
 use miden_testing::executor::CodeExecutor;
@@ -15,8 +16,18 @@ use rstest::rstest;
 use serde::Deserialize;
 
 const SOLIDITY_VECTOR_JSON: &str = include_str!("test-vectors/eip712_transaction_summary.json");
-const ERR_ECDSA_VERIFICATION_FAILED: MasmError =
-    MasmError::from_static_str("ECDSA verification failed: x(VERIFY_POINT) != SIG_R");
+
+macro_rules! assert_ecdsa_verification_failed {
+    ($result:expr) => {
+        assert_execution_error!(
+            $result,
+            matches ExecutionError::DeferredError {
+                err: PrecompileError::Precompile { name: "uint256", source },
+                ..
+            } if matches!(source.as_ref(), PrecompileError::AssertionFailed)
+        );
+    };
+}
 
 sol! {
     struct MidenTransaction {
@@ -74,7 +85,7 @@ async fn rejects_signature_for_different_domain(
 
     let result =
         verify_transaction_summary_signature(tx_summary_hash, &public_key, &signature).await;
-    assert_execution_error!(result, ERR_ECDSA_VERIFICATION_FAILED);
+    assert_ecdsa_verification_failed!(result);
 
     Ok(())
 }
@@ -111,7 +122,7 @@ async fn rejects_ledger_speculos_signature_from_previous_domain() -> anyhow::Res
 
     let result =
         verify_transaction_summary_signature(tx_summary_hash, &public_key, &signature).await;
-    assert_execution_error!(result, ERR_ECDSA_VERIFICATION_FAILED);
+    assert_ecdsa_verification_failed!(result);
     Ok(())
 }
 
@@ -190,7 +201,7 @@ async fn rejects_foundry_openzeppelin_signature_for_different_domain(
 
     let result =
         verify_eip712_signature(domain_separator, struct_hash, &public_key, &signature).await;
-    assert_execution_error!(result, ERR_ECDSA_VERIFICATION_FAILED);
+    assert_ecdsa_verification_failed!(result);
 
     Ok(())
 }
@@ -210,14 +221,14 @@ async fn rejects_mutated_foundry_openzeppelin_inputs() -> anyhow::Result<()> {
     let result =
         verify_transaction_summary_signature(changed_tx_summary_hash, &public_key, &signature)
             .await;
-    assert_execution_error!(result, ERR_ECDSA_VERIFICATION_FAILED);
+    assert_ecdsa_verification_failed!(result);
 
     let different_public_key =
         PublicKey::read_from_bytes(&hex_to_bytes::<33>(&vector.different_public_key)?)?;
     let result =
         verify_transaction_summary_signature(tx_summary_hash, &different_public_key, &signature)
             .await;
-    assert_execution_error!(result, ERR_ECDSA_VERIFICATION_FAILED);
+    assert_ecdsa_verification_failed!(result);
 
     let mut changed_signature_bytes = signature_bytes_from_solidity_vector(&vector)?;
     changed_signature_bytes[31] ^= 1;
@@ -228,7 +239,7 @@ async fn rejects_mutated_foundry_openzeppelin_inputs() -> anyhow::Result<()> {
     let result =
         verify_transaction_summary_signature(tx_summary_hash, &public_key, &changed_signature)
             .await;
-    assert_execution_error!(result, ERR_ECDSA_VERIFICATION_FAILED);
+    assert_ecdsa_verification_failed!(result);
 
     Ok(())
 }

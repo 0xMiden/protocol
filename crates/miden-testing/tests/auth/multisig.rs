@@ -1,6 +1,8 @@
 use core::num::NonZeroU16;
 
+use miden_core::deferred::PrecompileError;
 use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
+use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
@@ -59,9 +61,6 @@ use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
-
-const ERR_ECDSA_VERIFICATION_FAILED: MasmError =
-    MasmError::from_static_str("ECDSA verification failed: x(VERIFY_POINT) != SIG_R");
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -342,12 +341,16 @@ async fn test_multisig_2_of_2_with_eip712_signatures(
     )?;
     let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
     let mut mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
 
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(Word::from([Felt::ONE; 4]));
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
 
     let tx_summary = mock_tx_builder
         .clone()
@@ -418,9 +421,10 @@ async fn test_multisig_rejects_invalid_eip712_witness(
     let multisig_account = create_multisig_account(1, &approvers, 10, vec![])?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
-    let mock_tx_builder = mock_chain
-        .build_transaction(multisig_account.id())
-        .auth_args(Word::from([Felt::new_unchecked(9); 4]));
+    let salt = Word::from([Felt::new_unchecked(9); 4]);
+    let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).multisig_auth_args(
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt),
+    );
     let tx_summary = mock_tx_builder
         .clone()
         .build()?
@@ -447,9 +451,12 @@ async fn test_multisig_rejects_invalid_eip712_witness(
                 tx_summary.account_delta().clone(),
                 tx_summary.input_notes().clone(),
                 tx_summary.output_notes().clone(),
+                tx_summary.block_number(),
                 tx_summary.block_commitment(),
                 tx_summary.expiration_delta(),
-                TransactionSummaryUserParams::new([Felt::new_unchecked(42); 7]),
+                TransactionSummaryUserParams::new(
+                    [Felt::new_unchecked(42); TransactionSummaryUserParams::NUM_ELEMENTS],
+                ),
             );
             let (_, other_summary_witness) =
                 eip712_signature_witness(&secret_keys[0], &public_keys[0], &other_summary)?;
@@ -466,7 +473,13 @@ async fn test_multisig_rejects_invalid_eip712_witness(
         InvalidEip712Witness::RawSignature
         | InvalidEip712Witness::RawAdviceKey
         | InvalidEip712Witness::WrongTransactionSummary => {
-            assert_transaction_executor_error!(result, ERR_ECDSA_VERIFICATION_FAILED)
+            assert_transaction_executor_error!(
+                result,
+                matches ExecutionError::DeferredError {
+                    err: PrecompileError::Precompile { name: "uint256", source },
+                    ..
+                } if matches!(source.as_ref(), PrecompileError::AssertionFailed)
+            )
         },
     }
 
@@ -482,7 +495,10 @@ async fn test_multisig_eip712_replay_protection() -> anyhow::Result<()> {
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
     let salt = Word::from([Felt::new_unchecked(11); 4]);
     let reference_block = mock_chain.latest_block_header().block_num();
-    let mock_tx_builder = mock_chain.build_transaction(multisig_account.id()).auth_args(salt);
+    let auth_args = MultisigAuthArgs::new(reference_block, salt);
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args);
     let tx_summary = mock_tx_builder
         .clone()
         .build()?
@@ -504,7 +520,7 @@ async fn test_multisig_eip712_replay_protection() -> anyhow::Result<()> {
     let replay = mock_chain
         .build_transaction(multisig_account.id())
         .reference_block(reference_block)
-        .auth_args(salt)
+        .multisig_auth_args(auth_args)
         .add_advice_map_entry(signature_key, witness)
         .build()?
         .execute()
@@ -536,12 +552,16 @@ async fn test_multisig_does_not_double_count_raw_and_eip712_signatures() -> anyh
     )?;
     let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
     let mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
 
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(Word::from([Felt::ONE; 4]));
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
     let tx_summary = mock_tx_builder
         .clone()
         .build()?
@@ -587,12 +607,16 @@ async fn test_multisig_rejects_eip712_for_falcon_approver() -> anyhow::Result<()
     )?;
     let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
     let mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
 
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(Word::from([Felt::ONE; 4]));
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
     let tx_summary = mock_tx_builder
         .clone()
         .build()?
@@ -635,12 +659,16 @@ async fn test_multisig_rejects_invalid_eip712_signature_length(
     )?;
     let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
     let mock_chain = mock_chain_builder.build().unwrap();
+    let salt = Word::from([Felt::ONE; 4]);
 
     let mock_tx_builder = mock_chain
         .build_transaction(multisig_account.id())
         .authenticated_input_note(input_note.id())
         .expected_output_note(RawOutputNote::Full(output_note))
-        .auth_args(Word::from([Felt::ONE; 4]));
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
     let tx_summary = mock_tx_builder
         .clone()
         .build()?
