@@ -7,6 +7,9 @@ use core::marker::PhantomData;
 
 use crate::{ConversionError, ConversionResultExt};
 
+mod verify;
+pub use verify::DuplicatePolicy;
+
 pub fn decode<S, T>(source: S) -> Result<T, ConversionError>
 where
     S: DecodeField<T>,
@@ -47,6 +50,11 @@ where
     }
 }
 
+/// A named optional field for decoding or verifying its present value.
+///
+/// Generated decoded records retain this wrapper and its field name. The value has not been
+/// verified; use [`crate::Verify`] or [`Self::into_inner`] for explicit domain construction.
+#[derive(Debug)]
 pub struct OptionalField<S> {
     name: &'static str,
     value: Option<S>,
@@ -55,6 +63,16 @@ pub struct OptionalField<S> {
 impl<S> OptionalField<S> {
     pub const fn new(name: &'static str, value: Option<S>) -> Self {
         Self { name, value }
+    }
+
+    /// Borrows the present value without verifying it.
+    pub const fn as_ref(&self) -> Option<&S> {
+        self.value.as_ref()
+    }
+
+    /// Extracts the unverified value, discarding the field context for custom processing.
+    pub fn into_inner(self) -> Option<S> {
+        self.value
     }
 }
 
@@ -68,7 +86,12 @@ where
     }
 }
 
-/// A repeated Protobuf field together with the field name used for conversion error paths.
+/// A named repeated field for decoding or verifying its values.
+///
+/// [`crate::Verify`] and [`crate::VerifyWith`] preserve order and duplicates. Use the explicit
+/// set conversion methods to select a [`DuplicatePolicy`].
+/// Generated decoded records retain this wrapper and its field name; its values are unverified.
+#[derive(Debug)]
 pub struct RepeatedField<S> {
     name: &'static str,
     values: Vec<S>,
@@ -78,6 +101,16 @@ impl<S> RepeatedField<S> {
     /// Wraps the generated values from the named Protobuf field.
     pub const fn new(name: &'static str, values: Vec<S>) -> Self {
         Self { name, values }
+    }
+
+    /// Borrows the values without verifying them.
+    pub fn as_slice(&self) -> &[S] {
+        &self.values
+    }
+
+    /// Extracts the unverified values, discarding the field context for custom processing.
+    pub fn into_inner(self) -> Vec<S> {
+        self.values
     }
 }
 
@@ -97,11 +130,13 @@ where
     }
 }
 
-/// A Protobuf map whose values are decoded while preserving its keys and collection type.
+/// A named Protobuf map for decoding or verifying its values, preserving keys and collection type.
 ///
-/// Decoding stops at the first error and includes the failing key in the field path, using
+/// Processing stops at the first error and includes the failing key in the field path, using
 /// `Debug` formatting to quote and escape string keys. Hash maps require the `std` feature;
 /// their iteration order, and thus the first reported failure, is unspecified.
+/// Generated decoded records retain this wrapper and its field name; its values are unverified.
+#[derive(Debug)]
 pub struct MapField<M> {
     name: &'static str,
     values: M,
@@ -110,6 +145,18 @@ pub struct MapField<M> {
 impl<M> MapField<M> {
     pub const fn new(name: &'static str, values: M) -> Self {
         Self { name, values }
+    }
+
+    /// Extracts the unverified map, discarding the field context for custom processing.
+    pub fn into_inner(self) -> M {
+        self.values
+    }
+}
+
+impl<M> AsRef<M> for MapField<M> {
+    /// Borrows the map without verifying its values.
+    fn as_ref(&self) -> &M {
+        &self.values
     }
 }
 

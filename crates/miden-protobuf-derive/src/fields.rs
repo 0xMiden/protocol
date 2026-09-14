@@ -53,90 +53,67 @@ pub(super) fn expand(input: DeriveInput, runtime: TokenStream) -> Result<TokenSt
         }
 
         let (ty, value) = if prost.map {
-            map_field(field, &prost, bytes, &runtime)?
-        } else if let Some(ty) = bytes {
-            if prost.repeated {
-                (
-                    quote!(#runtime::Vec<#ty>),
-                    quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?),
-                )
-            } else if prost.optional {
-                (
-                    quote!(::core::option::Option<#ty>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    quote!(#ty),
-                    quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?),
-                )
-            }
-        } else if let Some(oneof) = &prost.oneof {
-            container_type(field, "Option")?;
-            let decoded = quote!(<#oneof as #runtime::DecodeMessage>::Decoded);
-            if matches!(presence, Some(FieldKindOverride::Optional)) {
-                (
-                    quote!(::core::option::Option<#decoded>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    decoded,
-                    quote!(#runtime::decode(
-                        #runtime::RequiredField::<#source, _>::new(#name, message.#ident)
-                    )?),
-                )
-            }
-        } else if let Some(enumeration) = &prost.enumeration {
-            if prost.repeated {
-                container_type(field, "Vec")?;
-                (
-                    quote!(#runtime::Vec<#enumeration>),
-                    quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?),
-                )
-            } else if prost.optional {
-                container_type(field, "Option")?;
-                (
-                    quote!(::core::option::Option<#enumeration>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    quote!(#enumeration),
-                    quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?),
-                )
-            }
-        } else if !prost.message {
-            let ty = &field.ty;
-            (quote!(#ty), quote!(message.#ident))
-        } else if prost.repeated {
-            let inner = container_type(field, "Vec")?;
-            (
-                quote!(#runtime::Vec<<#inner as #runtime::DecodeMessage>::Decoded>),
-                quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?),
-            )
-        } else if prost.optional {
-            let inner = container_type(field, "Option")?;
-            let decoded = quote!(<#inner as #runtime::DecodeMessage>::Decoded);
-            if matches!(presence, Some(FieldKindOverride::Optional)) {
-                (
-                    quote!(::core::option::Option<#decoded>),
-                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?),
-                )
-            } else {
-                (
-                    decoded,
-                    quote!(#runtime::decode(
-                        #runtime::RequiredField::<#source, _>::new(#name, message.#ident)
-                    )?),
-                )
-            }
+            let (ty, value) = map_field(field, &prost, bytes, &runtime)?;
+            (quote!(#runtime::MapField<#ty>), quote!(#runtime::MapField::new(#name, #value)))
         } else {
-            let inner = &field.ty;
-            (
-                quote!(<#inner as #runtime::DecodeMessage>::Decoded),
-                quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?),
-            )
+            let inner = if prost.repeated {
+                container_type(field, "Vec")?
+            } else if prost.optional || prost.oneof.is_some() {
+                container_type(field, "Option")?
+            } else {
+                &field.ty
+            };
+            let convert = bytes.is_some()
+                || prost.oneof.is_some()
+                || prost.enumeration.is_some()
+                || prost.message;
+            let ty = if let Some(ty) = bytes {
+                quote!(#ty)
+            } else if let Some(oneof) = &prost.oneof {
+                quote!(<#oneof as #runtime::DecodeMessage>::Decoded)
+            } else if let Some(enumeration) = &prost.enumeration {
+                quote!(#enumeration)
+            } else if prost.message {
+                quote!(<#inner as #runtime::DecodeMessage>::Decoded)
+            } else {
+                quote!(#inner)
+            };
+            // Presence is resolved during structural decoding. Only fields which remain
+            // optional retain an OptionalField in the decoded record.
+            let required = (prost.oneof.is_some() || (prost.message && prost.optional))
+                && !matches!(presence, Some(FieldKindOverride::Optional));
+            if prost.repeated {
+                let values = if convert {
+                    quote!(#runtime::decode(#runtime::RepeatedField::new(#name, message.#ident))?)
+                } else {
+                    quote!(message.#ident)
+                };
+                (
+                    quote!(#runtime::RepeatedField<#ty>),
+                    quote!(#runtime::RepeatedField::new(#name, #values)),
+                )
+            } else if required {
+                (
+                    ty,
+                    quote!(#runtime::decode(
+                        #runtime::RequiredField::<#source, _>::new(#name, message.#ident)
+                    )?),
+                )
+            } else if prost.optional || prost.oneof.is_some() {
+                let value = if convert {
+                    quote!(#runtime::decode(#runtime::OptionalField::new(#name, message.#ident))?)
+                } else {
+                    quote!(message.#ident)
+                };
+                (
+                    quote!(#runtime::OptionalField<#ty>),
+                    quote!(#runtime::OptionalField::new(#name, #value)),
+                )
+            } else if convert {
+                (ty, quote!(#runtime::decode(#runtime::ValueField::new(#name, message.#ident))?))
+            } else {
+                (ty, quote!(message.#ident))
+            }
         };
         let docs = field.attrs.iter().filter(|attribute| attribute.path().is_ident("doc"));
         let visibility = &field.vis;

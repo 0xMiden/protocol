@@ -6,7 +6,9 @@ use miden_protobuf::{
     BuildUnchecked,
     DecodeMessage,
     DecodeMessageExt,
+    DuplicatePolicy,
     ProtoDecodeFields,
+    Verify,
     VerifyWith,
 };
 
@@ -43,8 +45,8 @@ fn generated_records_preserve_presence_and_nested_fields() {
     .decode_fields()
     .unwrap();
     assert_eq!(decoded.required.leaf.value, 7);
-    assert!(decoded.optional.is_none());
-    assert_eq!(decoded.repeated[0].leaf.value, 7);
+    assert!(decoded.optional.as_ref().is_none());
+    assert_eq!(decoded.repeated.as_slice()[0].leaf.value, 7);
 }
 #[test]
 fn generated_records_report_complete_paths() {
@@ -92,6 +94,105 @@ fn construction_capabilities_are_independent_and_opt_in() {
     assert_eq!(Leaf { value: 7 }.decode_and_verify_with(&10).unwrap(), 7);
     assert!(Leaf { value: u32::MAX }.decode_and_verify_with(&5).is_err());
     assert_eq!(Leaf { value: u32::MAX }.decode_and_build_unchecked().unwrap(), u32::MAX);
+}
+
+impl Verify for DecodedChild {
+    type Verified = u8;
+    type Error = core::num::TryFromIntError;
+
+    fn verify(self) -> Result<u8, Self::Error> {
+        self.leaf.value.try_into()
+    }
+}
+
+impl VerifyWith<&u32> for DecodedChild {
+    type Verified = u32;
+    type Error = LimitExceeded;
+
+    fn verify_with(self, max: &u32) -> Result<u32, Self::Error> {
+        self.leaf.verify_with(max)
+    }
+}
+
+#[test]
+fn generated_collections_retain_context_until_explicit_verification() {
+    use core::error::Error;
+
+    let wire = Container {
+        required: Some(child()),
+        optional: Some(Child { leaf: Some(Leaf { value: 256 }) }),
+        repeated: vec![child(), Child { leaf: Some(Leaf { value: 256 }) }],
+    };
+    // Both malformed domain values survive structural decoding and can be inspected.
+    let decoded = wire.clone().decode_fields().unwrap();
+    assert_eq!(decoded.optional.as_ref().unwrap().leaf.value, 256);
+    assert_eq!(decoded.repeated.as_slice()[1].leaf.value, 256);
+    let optional = decoded.optional.verify().unwrap_err();
+    assert!(optional.to_string().starts_with("optional:"), "{optional}");
+    assert!(optional.source().unwrap().is::<core::num::TryFromIntError>());
+    let repeated = decoded.repeated.verify().unwrap_err();
+    assert!(repeated.to_string().starts_with("repeated[1]:"), "{repeated}");
+    assert!(repeated.source().unwrap().is::<core::num::TryFromIntError>());
+
+    let decoded = wire.decode_fields().unwrap();
+    let optional = decoded.optional.verify_with(&255).unwrap_err();
+    assert!(optional.to_string().starts_with("optional:"), "{optional}");
+    assert!(optional.source().unwrap().is::<LimitExceeded>());
+    let repeated = decoded.repeated.verify_with(&255).unwrap_err();
+    assert!(repeated.to_string().starts_with("repeated[1]:"), "{repeated}");
+    assert!(repeated.source().unwrap().is::<LimitExceeded>());
+}
+
+#[test]
+fn generated_collections_require_an_explicit_set_duplicate_policy() {
+    let wire = Container {
+        required: Some(child()),
+        optional: None,
+        repeated: vec![child(), child()],
+    };
+    let decoded = wire.clone().decode_fields().unwrap();
+    assert_eq!(decoded.optional.verify().unwrap(), None);
+    let error = decoded.repeated.verify_into_btree_set(DuplicatePolicy::Reject).unwrap_err();
+    assert!(error.to_string().starts_with("repeated[1]: duplicate"), "{error}");
+    let decoded = wire.decode_fields().unwrap();
+    let values = decoded.repeated.verify_into_btree_set(DuplicatePolicy::KeepFirst).unwrap();
+    assert_eq!(values, [7].into());
+}
+
+#[derive(Clone, PartialEq, prost::Message, ProtoDecodeFields)]
+struct ScalarCollections {
+    #[prost(uint32, repeated, tag = "1")]
+    numbers: Vec<u32>,
+    #[prost(uint32, optional, tag = "2")]
+    number: Option<u32>,
+    #[prost(bytes = "vec", tag = "3")]
+    bytes: Vec<u8>,
+    #[prost(bytes = "vec", repeated, tag = "4")]
+    buffers: Vec<Vec<u8>>,
+    #[prost(bytes = "vec", optional, tag = "5")]
+    buffer: Option<Vec<u8>>,
+}
+
+#[test]
+fn wrappers_follow_protobuf_cardinality_and_allow_explicit_extraction() {
+    let wire = ScalarCollections {
+        numbers: vec![2, 1, 2],
+        number: Some(0),
+        bytes: vec![1, 2],
+        buffers: vec![vec![3], vec![]],
+        buffer: Some(vec![]),
+    };
+    let decoded = wire.clone().decode_fields().unwrap();
+    let _: &Vec<u8> = &decoded.bytes;
+    assert_eq!(decoded.bytes, wire.bytes);
+    assert_eq!(decoded.numbers.as_slice(), wire.numbers);
+    assert_eq!(decoded.numbers.into_inner(), wire.numbers);
+    assert_eq!(decoded.number.as_ref(), Some(&0));
+    assert_eq!(decoded.number.into_inner(), wire.number);
+    assert_eq!(decoded.buffers.as_slice(), wire.buffers);
+    assert_eq!(decoded.buffers.into_inner(), wire.buffers);
+    assert_eq!(decoded.buffer.as_ref(), Some(&vec![]));
+    assert_eq!(decoded.buffer.into_inner(), wire.buffer);
 }
 
 mod kinds {
@@ -206,16 +307,16 @@ fn enum_fields_use_named_prost_types_and_preserve_presence() {
         .decode_fields()
         .unwrap();
     let _: Kind = decoded.r#type;
-    let _: Option<Kind> = decoded.optional;
-    let _: Vec<Kind> = decoded.repeated;
+    let _: &miden_protobuf::OptionalField<Kind> = &decoded.optional;
+    let _: &miden_protobuf::RepeatedField<Kind> = &decoded.repeated;
     assert_eq!(decoded.r#type, Kind::Active);
-    assert_eq!(decoded.optional, Some(Kind::Unspecified));
-    assert_eq!(decoded.repeated, [Kind::Negative, Kind::Active]);
+    assert_eq!(decoded.optional.into_inner(), Some(Kind::Unspecified));
+    assert_eq!(decoded.repeated.into_inner(), [Kind::Negative, Kind::Active]);
 
     let decoded = EnumFields::default().decode_fields().unwrap();
     assert_eq!(decoded.r#type, Kind::Unspecified);
-    assert_eq!(decoded.optional, None);
-    assert!(decoded.repeated.is_empty());
+    assert_eq!(decoded.optional.into_inner(), None);
+    assert!(decoded.repeated.as_slice().is_empty());
 }
 
 #[test]
@@ -304,8 +405,8 @@ fn bytes_adapters_keep_generated_paths_and_sources() {
     .decode_fields()
     .unwrap();
     assert_eq!(decoded.value, ByteValue(1));
-    assert_eq!(decoded.optional, Some(ByteValue(2)));
-    assert_eq!(decoded.repeated, [ByteValue(3)]);
+    assert_eq!(decoded.optional.into_inner(), Some(ByteValue(2)));
+    assert_eq!(decoded.repeated.into_inner(), [ByteValue(3)]);
     for (optional, repeated, path) in
         [(Some(vec![]), vec![], "optional"), (None, vec![vec![1], vec![]], "repeated[1]")]
     {
@@ -330,9 +431,9 @@ struct OptionalChoice {
 }
 #[test]
 fn optional_oneofs_preserve_absence_and_validate_present_payloads() {
-    assert!(OptionalChoice::default().decode_fields().unwrap().choice.is_none());
+    assert!(OptionalChoice::default().decode_fields().unwrap().choice.as_ref().is_none());
     let decoded = OptionalChoice { choice: Some(Choice::Index(0)) }.decode_fields().unwrap();
-    assert!(matches!(decoded.choice, Some(DecodedChoice::Index(0))));
+    assert!(matches!(decoded.choice.into_inner(), Some(DecodedChoice::Index(0))));
     let error = OptionalChoice {
         choice: Some(Choice::NestedChild(Child { leaf: None })),
     }

@@ -10,6 +10,7 @@ mod error;
 mod message;
 pub use decode::{
     DecodeField,
+    DuplicatePolicy,
     MapField,
     OptionalField,
     RepeatedField,

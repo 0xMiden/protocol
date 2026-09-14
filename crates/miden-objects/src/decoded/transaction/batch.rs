@@ -29,6 +29,7 @@ impl crate::VerifyWith<u32> for ProposedBatch {
     fn verify_with(self, proof_security_level: u32) -> Result<Self::Verified, Self::Error> {
         let transactions = self
             .transactions
+            .into_inner()
             .into_iter()
             .map(|tx| tx.build_unchecked().map(alloc::sync::Arc::new))
             .collect::<Result<_, _>>()?;
@@ -36,7 +37,7 @@ impl crate::VerifyWith<u32> for ProposedBatch {
         let chain = self.partial_blockchain.build_unchecked()?;
         let mut proofs = alloc::collections::BTreeMap::new();
         let mut previous = None;
-        for proof in self.unauthenticated_note_proofs {
+        for proof in self.unauthenticated_note_proofs.into_inner() {
             let (id, proof) = proof.verify()?;
             if previous.is_some_and(|previous| id <= previous) {
                 return Err(ProposedBatchError::ProofOrder.into());
@@ -64,7 +65,7 @@ impl crate::BuildUnchecked for ProvenBatch {
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
         let mut previous = None;
         let mut updates = alloc::vec::Vec::new();
-        for update in self.account_updates {
+        for update in self.account_updates.into_inner() {
             let update = update.verify()?;
             if previous.is_some_and(|previous| update.account_id() <= previous) {
                 return Err(ProvenBatchError::AccountOrder.into());
@@ -74,13 +75,14 @@ impl crate::BuildUnchecked for ProvenBatch {
         }
         let inputs = self
             .input_notes
+            .into_inner()
             .into_iter()
             .map(BuildUnchecked::build_unchecked)
             .collect::<Result<_, _>>()?;
-        let outputs =
-            self.output_notes.into_iter().map(Verify::verify).collect::<Result<_, _>>()?;
+        let outputs = self.output_notes.verify()?;
         let transactions = self
             .transactions
+            .into_inner()
             .into_iter()
             .map(BuildUnchecked::build_unchecked)
             .collect::<Result<_, _>>()?;

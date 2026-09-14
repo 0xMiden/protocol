@@ -36,6 +36,7 @@ impl Verify for AccountCode {
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let roots = self
             .procedure_roots
+            .into_inner()
             .into_iter()
             .map(miden_protocol::account::AccountProcedureRoot::from_raw)
             .collect();

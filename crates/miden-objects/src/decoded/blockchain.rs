@@ -15,7 +15,7 @@ impl Verify for TrackedMmrLeaf {
     type Verified = (u64, miden_protocol::Word, alloc::vec::Vec<miden_protocol::Word>);
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok((self.position, self.leaf, self.path))
+        Ok((self.position, self.leaf, self.path.into_inner()))
     }
 }
 
@@ -56,7 +56,7 @@ impl Verify for ValidatorConfig {
     type Verified = miden_protocol::block::ValidatorConfig;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let keys = self.keys.into_iter().map(|key| unwrap_infallible(key.verify())).collect();
+        let keys = self.keys.verify()?;
         Ok(Self::Verified::new(keys, self.quorum.try_into()?)?)
     }
 }
@@ -82,7 +82,7 @@ impl crate::BuildUnchecked for BlockHeader {
             self.validator_config.verify()?,
             unwrap_infallible(self.fee_parameters.verify()),
             self.protocol_config_commitment,
-            self.next_protocol_config.map(Verify::verify).transpose()?,
+            self.next_protocol_config.verify()?,
             self.timestamp,
         ))
     }
@@ -106,10 +106,10 @@ impl crate::BuildUnchecked for PartialBlockchain {
         use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 
         let size = usize::try_from(self.forest)?;
-        let peaks = MmrPeaks::new(Forest::new(size)?, self.peaks)?;
+        let peaks = MmrPeaks::new(Forest::new(size)?, self.peaks.into_inner())?;
         let mut mmr = PartialMmr::from_peaks(peaks);
         let mut previous = None;
-        for tracked in self.tracked_leaves {
+        for tracked in self.tracked_leaves.into_inner() {
             let position = usize::try_from(tracked.position)?;
             if position >= size {
                 return Err(PartialBlockchainError::Position { position, size }.into());
@@ -118,11 +118,11 @@ impl crate::BuildUnchecked for PartialBlockchain {
                 return Err(PartialBlockchainError::LeafOrder.into());
             }
             previous = Some(position);
-            mmr.track(position, tracked.leaf, &MerklePath::new(tracked.path))?;
+            mmr.track(position, tracked.leaf, &MerklePath::new(tracked.path.into_inner()))?;
         }
         let mut previous = None;
         let mut headers = alloc::vec::Vec::new();
-        for header in self.block_headers {
+        for header in self.block_headers.into_inner() {
             let header = header.build_unchecked()?;
             if previous.is_some_and(|previous| header.block_num() <= previous) {
                 return Err(PartialBlockchainError::HeaderOrder.into());
@@ -174,7 +174,7 @@ impl Verify for OutputNoteBatch {
     type Verified = miden_protocol::block::OutputNoteBatch;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        self.notes.into_iter().map(Verify::verify).collect()
+        Ok(self.notes.verify()?)
     }
 }
 
@@ -185,23 +185,17 @@ impl crate::BuildUnchecked for BlockBody {
     type Output = miden_protocol::block::BlockBody;
     type Error = VerificationError;
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
-        let updates = self
-            .updated_accounts
-            .into_iter()
-            .map(Verify::verify)
-            .collect::<Result<_, _>>()?;
-        let notes = self
-            .output_note_batches
-            .into_iter()
-            .map(Verify::verify)
-            .collect::<Result<_, _>>()?;
+        let updates = self.updated_accounts.verify()?;
+        let notes = self.output_note_batches.verify()?;
         let nullifiers = self
             .created_nullifiers
+            .into_inner()
             .into_iter()
             .map(miden_protocol::note::Nullifier::from_raw)
             .collect();
         let transactions = self
             .transactions
+            .into_inner()
             .into_iter()
             .map(crate::BuildUnchecked::build_unchecked)
             .collect::<Result<_, _>>()?;
@@ -234,11 +228,7 @@ impl SignedBlock {
 
         let header = self.header.build_unchecked()?;
         let body = self.body.build_unchecked()?;
-        let signatures = self
-            .signatures
-            .into_iter()
-            .map(|signature| unwrap_infallible(signature.verify()))
-            .collect();
+        let signatures = self.signatures.verify()?;
         let signatures = miden_protocol::block::BlockSignatures::new(signatures)
             .map_err(VerificationError::new)?;
         let block = miden_protocol::block::SignedBlock::new_unchecked(header, body, signatures);

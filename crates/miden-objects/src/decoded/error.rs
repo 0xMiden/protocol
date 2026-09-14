@@ -7,9 +7,9 @@ mod tests;
 /// A verification failure from a composite object, preserving its concrete domain source.
 ///
 /// Nested verifiers propagate this wrapper unchanged instead of introducing an error enum at
-/// every layer. Inspect [`Error::source`] to distinguish domain failures or the invariant errors
-/// defined alongside individual verifiers. Unlike structural decoding errors, these errors do
-/// not have generated wire paths.
+/// every layer. Walk the [`Error::source`] chain to distinguish domain failures or the invariant
+/// errors defined alongside individual verifiers. Generated collection wrappers attach field
+/// and index context when verified; other checks provide their own context.
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct VerificationError(#[source] Box<dyn Error + Send + Sync>);
@@ -36,6 +36,7 @@ macro_rules! impl_verification_error_from {
 
 impl_verification_error_from!(
     core::num::TryFromIntError,
+    miden_protobuf::ConversionError,
     miden_protocol::assembly::mast::MastForestError,
     miden_protocol::block::SignedBlockError,
     miden_protocol::crypto::merkle::MerkleError,

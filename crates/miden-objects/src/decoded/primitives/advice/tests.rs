@@ -52,7 +52,7 @@ fn advice_map_verification_rejects_duplicates_after_decoding() {
     let decoded = proto::primitives::AdviceMap { entries: vec![entry.clone(), entry] }
         .decode_fields()
         .unwrap();
-    assert_eq!(decoded.entries.len(), 2);
+    assert_eq!(decoded.entries.as_slice().len(), 2);
     assert!(
         matches!(decoded.verify(), Err(crate::decoded::primitives::AdviceError::DuplicateMapKey(key)) if key == Word::empty())
     );
@@ -68,7 +68,7 @@ fn merkle_store_verification_rejects_duplicates_after_decoding() {
     let decoded = proto::primitives::MerkleStore { nodes: vec![node.clone(), node] }
         .decode_fields()
         .unwrap();
-    assert_eq!(decoded.nodes.len(), 2);
+    assert_eq!(decoded.nodes.as_slice().len(), 2);
     assert!(
         matches!(decoded.verify(), Err(crate::decoded::primitives::AdviceError::DuplicateMerkleParent(key)) if key == Word::empty())
     );
@@ -78,7 +78,7 @@ fn merkle_store_verification_rejects_duplicates_after_decoding() {
 fn advice_inputs_decode_nested_records_before_verification() {
     let input = miden_protocol::vm::AdviceInputs::default();
     let decoded = proto::primitives::AdviceInputs::from(&input).decode_fields().unwrap();
-    assert!(decoded.advice_map.entries.is_empty());
+    assert!(decoded.advice_map.entries.as_slice().is_empty());
     assert_eq!(decoded.verify().unwrap(), input);
 }
 

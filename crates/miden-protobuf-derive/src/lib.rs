@@ -41,6 +41,10 @@ pub fn derive_proto_decode_value(input: TokenStream) -> TokenStream {
 /// representation adapter. Cardinality and error paths are still generated; this is not a
 /// constructor or verification hook.
 /// Maps retain their keys and collection type, recursively decoding message and enum values.
+/// Optional, repeated, and map fields retain named `OptionalField`, `RepeatedField`, and
+/// `MapField` wrappers in the decoded record. They support explicit verification with field
+/// context, borrowed inspection, or `into_inner()` for custom processing. Scalar bytes remain
+/// byte buffers; the wrappers follow Protobuf cardinality rather than the Rust storage type.
 /// Boxed messages are not supported by this experimental derive.
 #[proc_macro_derive(ProtoDecodeFields, attributes(proto_decode))]
 pub fn derive_proto_decode_fields(input: TokenStream) -> TokenStream {

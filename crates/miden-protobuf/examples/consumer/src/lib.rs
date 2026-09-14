@@ -32,7 +32,7 @@ mod tests {
     #[test]
     fn records_and_oneofs_decode() {
         let decoded = valid().decode_fields().unwrap();
-        assert!(decoded.explicit.is_none());
+        assert!(decoded.explicit.as_ref().is_none());
         assert!(matches!(decoded.selection, container::DecodedSelection::ChoiceValue(_)));
     }
 
@@ -52,7 +52,7 @@ mod tests {
                 .unwrap()
                 .decode_fields()
                 .unwrap();
-            match (storage_request, decoded.storage_request) {
+            match (storage_request, decoded.storage_request.into_inner()) {
                 (None, None)
                 | (Some(StorageRequest::All(_)), Some(DecodedStorageRequest::All(_)))
                 | (Some(StorageRequest::Slot(0)), Some(DecodedStorageRequest::Slot(0))) => {},
@@ -121,14 +121,14 @@ mod tests {
             .unwrap()
             .decode_fields()
             .unwrap();
-        let _: &BTreeMap<_, DecodedMappedChildren> = &decoded.values;
-        let _: &BTreeMap<_, DecodedChild> = &decoded.values["rpc"].values;
-        assert_eq!(decoded.values["rpc"].values.len(), 1);
-        assert!(MappedGroups::default().decode_fields().unwrap().values.is_empty());
+        let _: &BTreeMap<_, DecodedMappedChildren> = decoded.values.as_ref();
+        let _: &BTreeMap<_, DecodedChild> = decoded.values.as_ref()["rpc"].values.as_ref();
+        assert_eq!(decoded.values.as_ref()["rpc"].values.as_ref().len(), 1);
+        assert!(MappedGroups::default().decode_fields().unwrap().values.as_ref().is_empty());
         let scalars = MappedScalars { values: [("limit".into(), 10)].into() };
-        assert_eq!(scalars.clone().decode_fields().unwrap().values, scalars.values);
+        assert_eq!(scalars.clone().decode_fields().unwrap().values.into_inner(), scalars.values);
         let enums = MappedEnums { values: [("kind".into(), 0)].into() }.decode_fields().unwrap();
-        assert_eq!(enums.values["kind"], Kind::Unspecified);
+        assert_eq!(enums.values.as_ref()["kind"], Kind::Unspecified);
 
         let invalid = MappedGroups {
             values: [(

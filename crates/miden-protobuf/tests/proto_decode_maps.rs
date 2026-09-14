@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 
-use miden_protobuf::{DecodeMessage, ProtoDecodeFields};
+use miden_protobuf::{DecodeMessage, ProtoDecodeFields, Verify};
 use prost::Message;
 
 #[derive(Clone, PartialEq, prost::Message, ProtoDecodeFields)]
@@ -16,6 +16,15 @@ struct Leaf {
 struct Child {
     #[prost(message, optional, tag = "1")]
     leaf: Option<Leaf>,
+}
+
+impl Verify for DecodedChild {
+    type Verified = u8;
+    type Error = core::num::TryFromIntError;
+
+    fn verify(self) -> Result<u8, Self::Error> {
+        self.leaf.value.try_into()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, prost::Enumeration)]
@@ -61,23 +70,23 @@ fn map_values_decode_while_preserving_keys_and_collection_types() {
         empty: [("empty".into(), ())].into(),
     };
     let decoded = Maps::decode(wire.encode_to_vec().as_slice()).unwrap().decode_fields().unwrap();
-    let _: &HashMap<String, DecodedChild> = &decoded.messages;
-    let _: &BTreeMap<i32, DecodedChild> = &decoded.ordered_messages;
-    let _: &HashMap<String, Kind> = &decoded.enums;
-    let _: &BTreeMap<i64, Kind> = &decoded.ordered_enums;
-    assert_eq!(decoded.messages["rpc"].leaf.value, 7);
-    assert_eq!(decoded.ordered_messages[&-3].leaf.value, 8);
-    assert_eq!(decoded.enums["active"], Kind::Active);
-    assert_eq!(decoded.ordered_enums[&i64::MIN], Kind::Unspecified);
-    assert_eq!(decoded.scalars, wire.scalars);
-    assert_eq!(decoded.bytes, wire.bytes);
-    assert_eq!(decoded.empty, wire.empty);
+    let _: &HashMap<String, DecodedChild> = decoded.messages.as_ref();
+    let _: &BTreeMap<i32, DecodedChild> = decoded.ordered_messages.as_ref();
+    let _: &HashMap<String, Kind> = decoded.enums.as_ref();
+    let _: &BTreeMap<i64, Kind> = decoded.ordered_enums.as_ref();
+    assert_eq!(decoded.messages.as_ref()["rpc"].leaf.value, 7);
+    assert_eq!(decoded.ordered_messages.as_ref()[&-3].leaf.value, 8);
+    assert_eq!(decoded.enums.as_ref()["active"], Kind::Active);
+    assert_eq!(decoded.ordered_enums.as_ref()[&i64::MIN], Kind::Unspecified);
+    assert_eq!(decoded.scalars.into_inner(), wire.scalars);
+    assert_eq!(decoded.bytes.into_inner(), wire.bytes);
+    assert_eq!(decoded.empty.into_inner(), wire.empty);
 
     let empty = Maps::default().decode_fields().unwrap();
-    assert!(empty.messages.is_empty());
-    assert!(empty.ordered_messages.is_empty());
-    assert!(empty.enums.is_empty());
-    assert!(empty.ordered_enums.is_empty());
+    assert!(empty.messages.as_ref().is_empty());
+    assert!(empty.ordered_messages.as_ref().is_empty());
+    assert!(empty.enums.as_ref().is_empty());
+    assert!(empty.ordered_enums.as_ref().is_empty());
 }
 
 #[test]
@@ -101,6 +110,26 @@ fn map_message_errors_preserve_escaped_keys_and_nested_paths() {
     ] {
         let error = Parent { children: vec![Maps::default(), maps] }.decode_fields().unwrap_err();
         assert!(error.to_string().starts_with(&format!("children[1].{path}:")), "{error}");
+    }
+}
+
+#[test]
+fn generated_maps_retain_keys_for_later_verification() {
+    let key = "rpc.\"[limits]\n";
+    let decoded = Maps {
+        messages: [(key.into(), Child { leaf: Some(Leaf { value: 256 }) })].into(),
+        ordered_messages: [(-3, Child { leaf: Some(Leaf { value: 256 }) })].into(),
+        ..Default::default()
+    }
+    .decode_fields()
+    .unwrap();
+    assert_eq!(decoded.messages.as_ref()[key].leaf.value, 256);
+    for (error, path) in [
+        (decoded.messages.verify().unwrap_err(), format!("messages[{key:?}]")),
+        (decoded.ordered_messages.verify().unwrap_err(), "ordered_messages[-3]".into()),
+    ] {
+        assert!(error.to_string().starts_with(&format!("{path}:")), "{error}");
+        assert!(error.source().unwrap().is::<core::num::TryFromIntError>());
     }
 }
 
@@ -153,7 +182,7 @@ struct AdaptedMap {
 #[test]
 fn map_value_adapters_preserve_key_context_and_sources() {
     let decoded = AdaptedMap { values: [(true, vec![7])].into() }.decode_fields().unwrap();
-    assert_eq!(decoded.values[&true], ByteValue(7));
+    assert_eq!(decoded.values.as_ref()[&true], ByteValue(7));
     let error = AdaptedMap { values: [(false, vec![])].into() }.decode_fields().unwrap_err();
     assert!(error.to_string().starts_with("values[false]:"), "{error}");
     assert!(error.source().unwrap().is::<core::array::TryFromSliceError>());
