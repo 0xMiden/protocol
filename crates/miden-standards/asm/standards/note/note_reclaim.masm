@@ -1,0 +1,61 @@
+#! miden::standards::note::note_reclaim
+#!
+#! Provides the standard way for a note script to let its creator take the note's assets back.
+#!
+#! A reclaimable note commits the account allowed to reclaim it and the block height from which
+#! that is allowed. Reclaim is a consumption rule of its own: unlike the target account checked by
+#! `note::consumer`, it opens the note to the reclaimer only once a time window has passed.
+
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::tx
+
+# ERRORS
+# =================================================================================================
+
+const ERR_RECLAIM_DISABLED = "note reclaim is disabled"
+
+const ERR_RECLAIM_HEIGHT_NOT_REACHED = "failed to reclaim the note because the reclaim block height is not reached yet"
+
+const ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER = "failed to reclaim the note because the reclaiming account is not the reclaimer"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Asserts that the active account may reclaim the active note.
+#!
+#! The reclaimer and the reclaim block height are expected to come from the active note's storage,
+#! so that the note commits to who may reclaim it and from when.
+#!
+#! Inputs:  [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
+#! Outputs: []
+#!
+#! Where:
+#! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note.
+#!   A value of 0 means reclaim is disabled.
+#! - reclaimer_id_{suffix,prefix} are the suffix and prefix felts of the account ID allowed to
+#!   reclaim the note.
+#!
+#! Panics if:
+#! - reclaim is disabled.
+#! - the reclaim block height is not reached yet.
+#! - the active account is not the note's reclaimer.
+#!
+#! Invocation: exec
+pub proc assert_reclaimable
+    dup neq.0 assert.err=ERR_RECLAIM_DISABLED
+    # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
+
+    exec.tx::get_reference_block_number
+    # => [current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
+
+    # check reclaim_block_height <= current_block_height
+    lte assert.err=ERR_RECLAIM_HEIGHT_NOT_REACHED
+    # => [reclaimer_id_suffix, reclaimer_id_prefix]
+
+    exec.active_account::get_id
+    # => [active_id_suffix, active_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
+
+    exec.account_id::eq assert.err=ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER
+    # => []
+end

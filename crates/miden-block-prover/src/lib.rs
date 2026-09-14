@@ -1,3 +1,5 @@
+pub use miden_processor::ExecutionOptions;
+
 mod block_executor;
 pub use block_executor::BlockExecutor;
 

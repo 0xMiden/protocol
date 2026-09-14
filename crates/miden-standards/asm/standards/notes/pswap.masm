@@ -860,6 +860,9 @@ end
 #! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
 #! - `miden::standards::note::note_creator::create_note` procedure.
 #!
+#! Consumers: unrestricted - any account may fill the order and receive the offered asset in
+#!   exchange for the requested one
+#!
 #! Inputs:  [NOTE_ARGS]
 #! Outputs: []
 #!

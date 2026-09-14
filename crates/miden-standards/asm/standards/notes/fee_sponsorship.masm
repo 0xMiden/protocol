@@ -1,13 +1,10 @@
 use {AccountId, BlockNumber, NoteArgs, NoteId, NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
-use miden::protocol::account_id
-use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::input_note
 use miden::protocol::note
-use miden::protocol::tx
 
+use miden::standards::note::note_reclaim
 use miden::standards::wallets::basic as basic_wallet
-
 
 # CONSTANTS
 # =================================================================================================
@@ -42,51 +39,6 @@ const ERR_FEE_SPONSORSHIP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "fee sponsorship 
 
 const ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET = "fee sponsorship note must contain exactly one asset"
 
-const ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED = "fee sponsorship reclaim is disabled"
-
-const ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED = "failed to reclaim fee sponsorship note because the reclaim block height is not reached yet"
-
-const ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER = "failed to reclaim fee sponsorship note because the reclaiming account is not the reclaimer"
-
-# HELPER PROCEDURES
-# =================================================================================================
-
-#! Returns the sponsorship assets to the reclaimer, provided reclaim is enabled and its block height
-#! has been reached.
-#!
-#! Inputs:  [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - reclaim_block_height is the block height at or after which the reclaimer may reclaim the note.
-#!   A value of 0 means reclaim is disabled.
-#! - reclaimer_id_{suffix,prefix} are the suffix and prefix felts of the account ID allowed to
-#!   reclaim the note.
-#!
-#! Panics if:
-#! - reclaim is disabled.
-#! - the reclaim block height has not been reached.
-#! - the active account is not the note's reclaimer.
-proc reclaim_note(reclaim_block_height: BlockNumber, reclaimer_id: AccountId)
-    dup neq.0 assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED
-    # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
-
-    exec.tx::get_reference_block_number
-    # => [current_block_height, reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix]
-
-    lte assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED
-    # => [reclaimer_id_suffix, reclaimer_id_prefix]
-
-    exec.active_account::get_id
-    # => [account_id_suffix, account_id_prefix, reclaimer_id_suffix, reclaimer_id_prefix]
-
-    exec.account_id::eq assert.err=ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
-    # => []
-
-    exec.basic_wallet::move_note_assets_to_account
-    # => []
-end
-
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -112,6 +64,10 @@ end
 #!
 #! The reclaim path requires that the consuming account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
+#!
+#! Consumers: unrestricted - the note pays for one feature note and may only be consumed alongside
+#!   it, so consumption rights are inherited from that note; the reclaim path is restricted to the
+#!   reclaimer named in the note storage
 #!
 #! Inputs:  [NOTE_ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -174,7 +130,10 @@ pub proc main(note_args: NoteArgs)
         mem_load.RECLAIMER_PREFIX_ITEM mem_load.RECLAIMER_SUFFIX_ITEM mem_load.RECLAIM_HEIGHT_ITEM
         # => [reclaim_block_height, reclaimer_id_suffix, reclaimer_id_prefix, pad(16)]
 
-        exec.reclaim_note
+        exec.note_reclaim::assert_reclaimable
+        # => [pad(16)]
+
+        exec.basic_wallet::move_note_assets_to_account
         # => [pad(16)]
     end
     # => [pad(16)]

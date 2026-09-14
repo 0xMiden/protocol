@@ -30,6 +30,8 @@ const TX_FEE_NOTE_TAG = 0xFEE
 #! note does not restrict who can consume it. Its assets stay in the note, so the consuming
 #! account's own code must move them out.
 #!
+#! Consumers: unrestricted - the fee is claimed by whichever batch builder includes the transaction
+#!
 #! Inputs:  []
 #! Outputs: []
 #!

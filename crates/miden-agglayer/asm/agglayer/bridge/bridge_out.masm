@@ -9,7 +9,7 @@ use miden::standards::assets::fungible_asset
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
 use {DEFAULT_TAG} from miden::standards::note::note_tag
-use {ALWAYS} from miden::standards::note::execution_hint
+use {ALWAYS} from miden::standards::note::note_execution_hint
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
 use miden::standards::access::pausable
