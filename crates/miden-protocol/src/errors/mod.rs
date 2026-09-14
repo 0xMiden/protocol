@@ -5,7 +5,7 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_core::deferred::{IntegrityError, MAX_PRECOMPILE_ROOTS, PrecompileWitnessError};
+use miden_core::deferred::{IntegrityError, PrecompileWitnessError};
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -1535,10 +1535,6 @@ pub enum ProvenBatchError {
         transaction_id: TransactionId,
         source: PrecompileWitnessError,
     },
-    #[error(
-        "transaction batch has {0} transactions with outstanding precompile claims but at most {MAX_PRECOMPILE_ROOTS} are allowed"
-    )]
-    TooManyPrecompileTransactions(usize),
     #[error("merging the transactions' precompile witnesses failed")]
     PrecompileWitnessMergeFailed(#[source] PrecompileWitnessError),
     #[error("precompile proving failed")]
