@@ -1,4 +1,8 @@
 //! Generated structural Protobuf decoding and opt-in domain construction.
+//!
+//! Enable the optional `tonic` feature to convert a `ConversionError` into an `InvalidArgument`
+//! status with `into_status()`. The status message includes the field path and complete source
+//! chain. This feature enables `std` but does not enable tonic transport.
 #![no_std]
 extern crate alloc;
 #[cfg(feature = "std")]
@@ -33,6 +37,7 @@ pub use miden_protobuf_derive::{ProtoDecodeFields, ProtoDecodeValue};
 pub use prost;
 #[doc(hidden)]
 pub mod __private {
+    pub use alloc::boxed::Box;
     pub use alloc::vec::Vec;
 
     pub use crate::{

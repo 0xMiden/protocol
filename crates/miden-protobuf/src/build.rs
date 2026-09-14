@@ -17,6 +17,8 @@ const OPTIONAL_ATTRIBUTE: &str = "#[proto_decode(optional)]";
 /// must also derive `ProtoDecodeFields` or implement `DecodeMessage` as an atomic adapter.
 /// Real oneofs also derive decoded enums; their exact wire variant names are injected from the
 /// descriptors. Synthetic oneofs used for explicit optional fields are not configured as enums.
+/// Wire and decoded oneofs receive `into_<variant>()` methods returning decoded payloads without
+/// verification. Accessor names use snake case; errors retain the exact wire variant names.
 /// Synthetic map-entry messages are skipped if included in `messages`; Prost generates map fields
 /// for them rather than separate Rust messages.
 /// The derive path is resolved from the consumer's Cargo dependencies, including renamed and

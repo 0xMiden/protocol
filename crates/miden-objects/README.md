@@ -21,9 +21,11 @@ repeated message conversion, and nested field/index error paths. Atomic messages
 types, preserving optional/repeated cardinality and rejecting unknown discriminants with generated
 paths. Known variants such as `Unspecified` remain available for domain verification. Oneofs
 generate matching decoded enums, with exact wire variant names supplied by descriptors.
+Wire and decoded oneofs provide fallible `into_<variant>()` accessors returning decoded payloads.
+Wire accessors decode the matching payload; decoded accessors extract it unchanged. Neither
+invokes verification, and a mismatch reports the expected and actual wire variant names.
 An absent oneof is rejected by default; an explicitly configured optional oneof retains its presence.
-Maps are supported by the derive but are not used by these schemas. Boxed messages are not yet
-supported.
+Maps and boxed/recursive messages are supported by the derive but are not used by these schemas.
 
 The three single-payload atoms use `ProtoDecodeValue` to generate `decode_value(&self, parser)`.
 Their parsers return representation errors; the helper supplies the payload field path and
