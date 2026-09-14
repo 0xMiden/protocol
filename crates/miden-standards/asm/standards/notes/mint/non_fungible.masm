@@ -14,8 +14,8 @@ use {NOTE_TYPE_PRIVATE} from miden::protocol::note
 const STORAGE_PTR = 0
 
 # Non-fungible MINT note storage item counts. The layout matches the fungible one: the note
-# carries the full asset (ID and value), and the faucet binding is the component's comparison of
-# the stored ASSET_ID against the asset derived for the active faucet.
+# carries the full asset (ID and value), so the stored ASSET_ID names the faucet the note is for,
+# which the faucet's `mint_and_send` asserts against the asset it derives for itself.
 const NFT_NUM_STORAGE_ITEMS_PRIVATE = 13
 const NFT_MIN_NUM_STORAGE_ITEMS_PUBLIC = 20
 

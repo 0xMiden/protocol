@@ -28,8 +28,8 @@ use miden_standards::account::policies::{
 };
 use miden_standards::errors::standards::{
     ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC,
-    ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
 };
 use miden_standards::note::config::MinBurnAmountConfigNote;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
@@ -224,7 +224,10 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
     Ok(())
 }
 
