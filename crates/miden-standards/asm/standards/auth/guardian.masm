@@ -114,6 +114,9 @@ end
 
 #! Conditionally verifies a guardian signature.
 #!
+#! The guardian signs MSG with a raw signature or, when its key is ECDSA, with an EIP-712
+#! transaction-summary signature (see signature::verify_signatures).
+#!
 #! Inputs:  [num_own_output_notes, MSG]
 #! Outputs: []
 #!
