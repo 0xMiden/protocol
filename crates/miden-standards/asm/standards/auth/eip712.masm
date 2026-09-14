@@ -71,7 +71,7 @@ pub proc verify
 
     push.EIP712_PREIMAGE_LENGTH locaddr.DIGEST_PREIMAGE_LOC
     padw loc_loadw_le.PUBLIC_KEY_COMMITMENT_LOC
-    # OS => [PK_COMM, 66, DIGEST_PREIMAGE_LOC]
+    # OS => [PK_COMM, digest_preimage_ptr, preimage_num_bytes]
     # AS => [QX[8] | QY[8] | SIG_R[8] | SIG_S[8]]
 
     exec.ecdsa_k256_keccak::verify_bytes
