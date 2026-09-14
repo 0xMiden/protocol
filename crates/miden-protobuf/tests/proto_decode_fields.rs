@@ -2,7 +2,13 @@
 
 use core::convert::Infallible;
 
-use miden_protobuf::{BuildUnchecked, DecodeMessage, ProtoDecodeFields, VerifyWith};
+use miden_protobuf::{
+    BuildUnchecked,
+    DecodeMessage,
+    DecodeMessageExt,
+    ProtoDecodeFields,
+    VerifyWith,
+};
 
 #[derive(Clone, PartialEq, prost::Message, ProtoDecodeFields)]
 struct Leaf {
@@ -83,12 +89,9 @@ impl BuildUnchecked for DecodedLeaf {
 }
 #[test]
 fn construction_capabilities_are_independent_and_opt_in() {
-    assert_eq!(Leaf { value: 7 }.decode_fields().unwrap().verify_with(&10).unwrap(), 7);
-    assert!(Leaf { value: u32::MAX }.decode_fields().unwrap().verify_with(&5).is_err());
-    assert_eq!(
-        Leaf { value: u32::MAX }.decode_fields().unwrap().build_unchecked().unwrap(),
-        u32::MAX
-    );
+    assert_eq!(Leaf { value: 7 }.decode_and_verify_with(&10).unwrap(), 7);
+    assert!(Leaf { value: u32::MAX }.decode_and_verify_with(&5).is_err());
+    assert_eq!(Leaf { value: u32::MAX }.decode_and_build_unchecked().unwrap(), u32::MAX);
 }
 
 mod kinds {

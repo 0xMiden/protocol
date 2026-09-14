@@ -38,6 +38,8 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #! - either `miden::standards::faucets::fungible::receive_and_burn` or
 #!   `miden::standards::faucets::non_fungible::receive_and_burn`.
 #!
+#! Consumers: target account (enforced by the faucet's `receive_and_burn`)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!

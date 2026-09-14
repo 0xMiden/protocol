@@ -1,7 +1,7 @@
 use {NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::faucets::policies::burn::min_burn_amount
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -17,8 +17,6 @@ const NUM_STORAGE_ITEMS = 1
 
 # ERRORS
 # =================================================================================================
-
-const ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "min burn amount config note attachment target account does not match the consuming account"
 
 const ERR_MIN_BURN_AMOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "min burn amount config note storage item count is not the expected count"
 
@@ -46,6 +44,8 @@ const ERR_MIN_BURN_AMOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "min burn amount config no
 #! - `miden::standards::faucets::policies::burn::min_burn_amount::set_min_burn_amount` (the
 #!   `MinBurnAmount` burn policy component), backed by an `Authority` companion component.
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -66,8 +66,7 @@ pub proc main(args: NoteArgs)
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_MIN_BURN_AMOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR

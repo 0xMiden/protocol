@@ -25,7 +25,7 @@ use miden_protocol::transaction::{
 use prost::Message;
 
 use crate::test_utils::error_source;
-use crate::{BuildUnchecked, DecodeMessage, VerifyWith, proto};
+use crate::{DecodeMessage, DecodeMessageExt, VerifyWith, proto};
 
 fn proposal() -> ProposedBatch {
     let mut mmr = Mmr::default();
@@ -103,8 +103,8 @@ fn proven_batch_roundtrips_and_checks_proposal_agreement() {
     let batch = proven(&proposal);
     let wire: proto::transaction::ProvenBatch = (&batch).into();
     let wire = proto::transaction::ProvenBatch::decode(wire.encode_to_vec().as_slice()).unwrap();
-    assert_eq!(wire.clone().decode_fields().unwrap().build_unchecked().unwrap(), batch);
-    assert_eq!(wire.decode_fields().unwrap().verify_with(&proposal).unwrap(), batch);
+    assert_eq!(wire.clone().decode_and_build_unchecked().unwrap(), batch);
+    assert_eq!(wire.decode_and_verify_with(&proposal).unwrap(), batch);
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn proven_batch_rejects_changed_proposal_fields() {
             "expiration block" => wire.expiration_block_num.as_mut().unwrap().block_num += 1,
             _ => unreachable!(),
         }
-        let error = wire.decode_fields().unwrap().verify_with(&proposal).unwrap_err();
+        let error = wire.decode_and_verify_with(&proposal).unwrap_err();
         assert!(
             matches!(
                 error_source::<crate::decoded::transaction::ProvenBatchError>(&error),

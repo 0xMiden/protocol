@@ -35,10 +35,7 @@ pub type AttachmentRecord = struct {
 # CONSTANTS
 # =================================================================================================
 
-# The number of field elements in a word. Replace with
-# `miden::protocol::constants::WORD_NUM_ELEMENTS`, once
-# https://github.com/0xMiden/miden-vm/issues/3429 is fixed.
-pub const WORD_NUM_ELEMENTS = 4
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
 
 # Memory address at which the `send_notes` scripts write the payload, and the address of the note
 # count, which is the payload header's first element.

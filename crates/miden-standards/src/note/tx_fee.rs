@@ -41,9 +41,10 @@ static TX_FEE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// A TX_FEE note: the canonical way for a transaction to pay its fee to a batch builder.
 ///
-/// Unlike a [`P2idNote`](crate::note::P2idNote), the note does not restrict who can consume it:
-/// any account (i.e. whichever account builds the batch) can consume the note and claim its
-/// assets. The note is completely unopinionated about which assets are used to pay the fee.
+/// The note does not restrict who can consume it: any account (i.e. whichever account builds the
+/// batch) can consume the note. Its script leaves the assets in the note, so the consuming
+/// account's own code must move them out. The note is completely unopinionated about which assets
+/// are used to pay the fee.
 ///
 /// TX_FEE notes are always [public](NoteType::Public), carry no storage and no attachments, and
 /// are tagged with the unique [`TxFeeNote::TAG`].

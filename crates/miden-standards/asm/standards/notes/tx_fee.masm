@@ -24,31 +24,23 @@ const TX_FEE_NOTE_TAG = 0xFEE
 # PROCEDURES
 # =================================================================================================
 
-#! TX_FEE note script: adds the note's remaining assets to the consuming account.
+#! TX_FEE note script: leaves the note's assets in place for the consuming account to collect.
 #!
-#! A TX_FEE note is the canonical way for a transaction to pay its fee to the batch builder. Unlike
-#! P2ID, the note does not restrict who can consume it: any account can consume the note and claim
-#! its assets.
+#! A TX_FEE note is the canonical way for a transaction to pay its fee to the batch builder. The
+#! note does not restrict who can consume it. Its assets stay in the note, so the consuming
+#! account's own code must move them out.
 #!
-#! Requires that the account exposes:
-#! - miden::standards::wallets::basic::receive_asset procedure.
+#! Consumers: unrestricted - the fee is claimed by whichever batch builder includes the transaction
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
 #! - the note carries a non-zero number of storage items.
-#! - the account does not expose miden::standards::wallets::basic::receive_asset procedure.
-#! - the same non-fungible asset already exists in the account.
-#! - adding a fungible asset would result in amount overflow, i.e., the total amount would be
-#!   greater than 2^63.
 @note_script
 pub proc main()
     # make sure the note carries no storage items
     push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage drop
-    # => []
-
-    exec.basic_wallet::move_note_assets_to_account
     # => []
 end
 

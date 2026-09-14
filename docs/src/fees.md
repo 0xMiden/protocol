@@ -4,7 +4,7 @@ sidebar_position: 5.1
 
 # Fees
 
-Miden transactions pay a fee by creating a public TX_FEE note (see the [note documentation](note.md#tx_fee)) that whoever builds the batch collects as compensation. The note is created by the account's authentication procedure as part of authorizing the transaction.
+Miden transactions pay a fee by creating a public TX_FEE note (see the [note documentation](note.md#tx_fee)) that whoever builds the batch collects as compensation. The note is created by the account's authentication procedure as part of authorizing the transaction. Its script leaves the assets in the note for the collecting account's own code to move out. The standard collector is the `AuthTxFeeCollector` auth component: its transactions consume fee notes and forward their assets into a single P2ID note without changing the account.
 
 ## How fees are computed
 

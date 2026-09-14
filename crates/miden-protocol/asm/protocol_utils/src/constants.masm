@@ -1,5 +1,8 @@
 # CONSTANTS
 # =================================================================================================
 
+#! The maximum number of assets that can be stored in a single note.
+pub const MAX_ASSETS_PER_NOTE = 16
+
 #! The number of field elements in a Word.
 pub const WORD_NUM_ELEMENTS = 4
