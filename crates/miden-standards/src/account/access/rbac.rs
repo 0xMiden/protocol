@@ -39,7 +39,7 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 // ================================================================================================
 
 /// A role configuration for the [`RoleBasedAccessControl`] component: the accounts holding the
-/// role and the role administering it.
+/// role, the role administering it, and the delay its grants are subject to.
 ///
 /// A config establishes the state that the `grant_role` and `set_role_admin` procedures would
 /// otherwise have to reach on-chain, so an account can be created with its final role graph
@@ -51,6 +51,7 @@ pub struct RoleConfig {
     role: RoleSymbol,
     members: BTreeSet<AccountId>,
     admin: Option<RoleSymbol>,
+    grant_delay: u32,
 }
 
 impl RoleConfig {
@@ -60,6 +61,7 @@ impl RoleConfig {
             role,
             members: BTreeSet::new(),
             admin: None,
+            grant_delay: 0,
         }
     }
 
@@ -85,6 +87,13 @@ impl RoleConfig {
         self.members.insert(member);
         self
     }
+
+    /// Sets the delay, in seconds, between granting this role on-chain and the grant becoming
+    /// active.
+    pub fn with_grant_delay(mut self, grant_delay: u32) -> Self {
+        self.grant_delay = grant_delay;
+        self
+    }
 }
 
 impl RoleConfig {
@@ -102,6 +111,11 @@ impl RoleConfig {
     /// built-in [`ADMIN`][RoleBasedAccessControl::ADMIN_ROLE] role.
     pub fn admin(&self) -> Option<&RoleSymbol> {
         self.admin.as_ref()
+    }
+
+    /// Returns the delay, in seconds, between an on-chain grant of this role and its activation.
+    pub fn grant_delay(&self) -> u32 {
+        self.grant_delay
     }
 }
 
@@ -180,6 +194,13 @@ impl RoleConfig {
 /// `A` exist until a member is granted. Once the last member of `A` is revoked,
 /// `get_role_member_count(A)` returns `0`, though the admin configuration is retained and
 /// will apply the next time a member is granted.
+///
+/// ## Grant delays
+///
+/// Each role carries a `grant_delay` in seconds, set on-chain by the `ADMIN` role via
+/// `set_grant_delay` or seeded with [`RoleConfig::with_grant_delay`]. A grant records
+/// `active_since = now + grant_delay` in the membership record and counts as membership only once
+/// that timestamp has passed. The default of zero activates grants immediately.
 ///
 /// ## Membership lookup
 ///
@@ -356,7 +377,7 @@ impl RoleBasedAccessControl {
         (
             Self::role_config_slot().clone(),
             StorageSlotSchema::map(
-                "Per-role RBAC configuration (member count and delegated admin role)",
+                "Per-role RBAC configuration (member count, delegated admin role and grant delay)",
                 SchemaType::role_symbol(),
                 SchemaType::native_word(),
             ),
@@ -368,7 +389,7 @@ impl RoleBasedAccessControl {
         (
             Self::role_membership_slot().clone(),
             StorageSlotSchema::map(
-                "Role membership flag indexed by role symbol and account ID",
+                "Role membership flag and activation timestamp indexed by role symbol and account ID",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -434,8 +455,10 @@ fn reaches_populated_role(role: &RoleSymbol, configs: &BTreeMap<RoleSymbol, Role
 impl From<RoleBasedAccessControl> for AccountComponent {
     fn from(rbac: RoleBasedAccessControl) -> Self {
         // Config, for every role:
-        // - role_config:     [0, 0, 0, role] -> [member_count, admin_role, 0, 0]
-        // - role_membership: [0, role, acct_suffix, acct_prefix] -> [1, 0, 0, 0]
+        // - role_config:     [0, 0, 0, role] -> [member_count, admin_role, grant_delay, 0]
+        // - role_membership: [0, role, acct_suffix, acct_prefix] -> [1, active_since=0, 0, 0]
+        //
+        // Seeded members are active immediately: a zero `active_since` is always in the past.
         let mut config_entries = Vec::new();
         let mut membership_entries = Vec::new();
         for config in rbac.roles.into_values() {
@@ -445,7 +468,12 @@ impl From<RoleBasedAccessControl> for AccountComponent {
             let admin_symbol = config.admin.as_ref().map_or(Felt::ZERO, RoleSymbol::as_element);
             config_entries.push((
                 StorageMapKey::new(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, role_symbol])),
-                Word::from([Felt::from(member_count), admin_symbol, Felt::ZERO, Felt::ZERO]),
+                Word::from([
+                    Felt::from(member_count),
+                    admin_symbol,
+                    Felt::from(config.grant_delay),
+                    Felt::ZERO,
+                ]),
             ));
             for member in config.members {
                 membership_entries.push((
@@ -648,6 +676,40 @@ mod tests {
         assert_eq!(
             config.get(&role_config_key(&pauser_role)),
             Word::from([Felt::ONE, manager_symbol, Felt::ZERO, Felt::ZERO]),
+        );
+
+        Ok(())
+    }
+
+    /// A seeded grant delay lands in the third felt of the role config word.
+    #[test]
+    fn seeded_grant_delay_is_written_to_the_role_config() -> anyhow::Result<()> {
+        let admin = test_admin(1);
+        let minter = test_admin(2);
+        let minter_role = RoleSymbol::new("MINTER")?;
+
+        let component: AccountComponent = RoleBasedAccessControl::builder()
+            .role(RoleConfig::new(RoleBasedAccessControl::admin_role()).with_member(admin))
+            .role(RoleConfig::new(minter_role.clone()).with_member(minter).with_grant_delay(3_600))
+            .build()?
+            .into();
+
+        let config = find_map(&component, RoleBasedAccessControl::role_config_slot());
+        assert_eq!(
+            config.get(&role_config_key(&minter_role)),
+            Word::from([Felt::ONE, Felt::ZERO, Felt::from(3_600u32), Felt::ZERO]),
+        );
+
+        let membership = find_map(&component, RoleBasedAccessControl::role_membership_slot());
+        let key = StorageMapKey::new(Word::from([
+            Felt::ZERO,
+            minter_role.as_element(),
+            minter.suffix(),
+            minter.prefix().as_felt(),
+        ]));
+        assert_eq!(
+            membership.get(&key),
+            Word::from([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO])
         );
 
         Ok(())
