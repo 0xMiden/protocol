@@ -37,9 +37,10 @@ use crate::vm::{ExecutionProof, PrecompileStatus};
 // CONSTANTS
 // ================================================================================================
 
-/// The precompile registry every deferred transaction wire is rehydrated against.
+/// The set of precompiles that the protocol supports.
 ///
-/// Shared, because the registry is fixed and rehydration happens on every transaction of a batch.
+/// Built once and shared, because the set is fixed and every transaction with outstanding
+/// precompile claims is checked against it.
 static PRECOMPILE_REGISTRY: LazyLock<Arc<PrecompileRegistry>> =
     LazyLock::new(|| Arc::new(miden_precompiles::registry()));
 
@@ -211,12 +212,14 @@ impl ProvenTransaction {
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the hydrated deferred state of the transaction's outstanding precompile claims, or
+    /// Rebuilds the deferred state of the transaction's outstanding precompile claims, or returns
     /// `None` if the transaction has no outstanding claims.
     ///
-    /// Rehydration re-evaluates the deferred DAG against the protocol's precompile registry, so it
-    /// establishes that the claims hold natively. It **does not** check them against the
-    /// transaction's VM proof.
+    /// [`DeferredState::from_wire`] executes the claims of the deferred DAG against
+    /// [`PRECOMPILE_REGISTRY`] before this method returns. A returned state therefore has claims
+    /// that hold natively. This does not show that these are the claims that the transaction's VM
+    /// proof commits to. [`TransactionVerifier`](crate::transaction::TransactionVerifier) checks
+    /// that separately against the outstanding precompile root of the proof.
     ///
     /// # Errors
     ///
