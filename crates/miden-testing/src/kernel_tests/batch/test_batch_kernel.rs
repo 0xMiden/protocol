@@ -1,14 +1,22 @@
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use std::collections::BTreeMap;
+use std::iter;
 
 use anyhow::Context;
-use miden_protocol::Word;
+use assert_matches::assert_matches;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::ProvenBatchError;
+use miden_protocol::note::NoteType;
+use miden_protocol::transaction::ProvenTransaction;
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_tx::LocalTransactionProver;
 use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
 use super::proven_tx_builder::MockProvenTxBuilder;
+use crate::{Auth, MockChain};
 
 // SETUP HELPERS
 // ================================================================================================
@@ -51,6 +59,57 @@ pub(super) fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatc
     )?)
 }
 
+/// Executes and proves one transaction per given auth scheme, so that the transactions carry the
+/// real deferred precompile claims of their signature checks.
+///
+/// Returns the chain together with the proven transactions, in the order of the auth schemes.
+async fn proven_transactions(
+    auth_schemes: Vec<Auth>,
+) -> anyhow::Result<(MockChain, Vec<Arc<ProvenTransaction>>)> {
+    let mut builder = MockChain::builder();
+    let mut accounts_with_notes = Vec::with_capacity(auth_schemes.len());
+    for auth in auth_schemes {
+        let account = builder.add_existing_wallet(auth)?;
+        let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+        accounts_with_notes.push((account, note));
+    }
+    let chain = builder.build()?;
+
+    let mut transactions = Vec::with_capacity(accounts_with_notes.len());
+    for (account, note) in accounts_with_notes {
+        let executed = chain
+            .build_transaction(account.id())
+            .authenticated_input_note(note.id())
+            .build()?
+            .execute()
+            .await?;
+        let proven = LocalTransactionProver::default()
+            .prove(executed)
+            .context("failed to prove transaction")?;
+        transactions.push(Arc::new(proven));
+    }
+
+    Ok((chain, transactions))
+}
+
+/// Builds a batch over the given proven transactions, verifying each of their proofs.
+fn propose_batch(
+    chain: &MockChain,
+    transactions: Vec<Arc<ProvenTransaction>>,
+) -> anyhow::Result<ProposedBatch> {
+    let (reference_block, partial_blockchain, unauthenticated_note_proofs) =
+        chain.get_batch_inputs(transactions.iter().map(|tx| tx.ref_block_num()), iter::empty())?;
+
+    ProposedBatch::new(
+        transactions,
+        reference_block,
+        partial_blockchain,
+        unauthenticated_note_proofs,
+        MIN_PROOF_SECURITY_LEVEL,
+    )
+    .context("failed to propose batch")
+}
+
 // TESTS
 // ================================================================================================
 
@@ -84,6 +143,90 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let proven = LocalBatchProver::default().prove(executed).context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
+
+    Ok(())
+}
+
+/// The batch settles the outstanding precompile claims of its transactions: the executor merges one
+/// witness per ECDSA transaction in transaction order, and the prover proves them all at once.
+/// Falcon verifies in-circuit and therefore contributes no claim.
+///
+/// The four transactions are proven once and reused across the batch shapes, because proving them
+/// dominates the runtime of this test.
+#[tokio::test]
+async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
+    let schemes = vec![
+        Auth::basic_ecdsa(),
+        Auth::basic_ecdsa(),
+        Auth::basic_falcon(),
+        Auth::basic_falcon(),
+    ];
+    let (chain, transactions) = proven_transactions(schemes).await?;
+    let (ecdsa, falcon) = (&transactions[..2], &transactions[2..]);
+
+    // Each shape pairs transactions of different accounts, so their order in the batch is free.
+    let shapes = [
+        ("two ecdsa", vec![ecdsa[0].clone(), ecdsa[1].clone()], 2),
+        ("ecdsa then falcon", vec![ecdsa[0].clone(), falcon[0].clone()], 1),
+        ("falcon then ecdsa", vec![falcon[0].clone(), ecdsa[1].clone()], 1),
+        ("two falcon", vec![falcon[0].clone(), falcon[1].clone()], 0),
+    ];
+
+    for (shape, transactions, expected_root_count) in shapes {
+        let batch = propose_batch(&chain, transactions).context(shape)?;
+
+        // The roots the batch must settle, in transaction order.
+        let mut expected_roots = Vec::new();
+        for transaction in batch.transactions() {
+            expected_roots
+                .extend(transaction.precompile_witness()?.map(|witness| witness.state().root()));
+        }
+        // Pin the count independently, so this fails if transactions stop deferring claims.
+        assert_eq!(expected_roots.len(), expected_root_count, "{shape}");
+
+        let executed = BatchExecutor::new().execute(batch).context(shape)?;
+        match executed.precompile_witness() {
+            Some(witness) => assert_eq!(witness.roots(), expected_roots, "{shape}"),
+            None => assert!(expected_roots.is_empty(), "{shape}"),
+        }
+
+        LocalBatchProver::default().prove(executed).context(shape)?;
+    }
+
+    Ok(())
+}
+
+/// A deferred wire that opens no claims cannot produce a precompile witness, so the executor
+/// rejects the transaction carrying it.
+#[test]
+fn batch_executor_rejects_a_transaction_with_an_empty_deferred_wire() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let block1 = setup.chain.block_header(1);
+    let block2 = setup.chain.prove_next_block()?;
+
+    let tx = MockProvenTxBuilder::with_account(
+        setup.account1.id(),
+        Word::empty(),
+        setup.account1.to_commitment(),
+    )
+    .reference_block(&block1)
+    .authenticated_notes(vec![setup.note1.clone()])
+    .proof(miden_protocol::testing::dummy_deferred_execution_proof())
+    .build()?;
+
+    let batch = ProposedBatch::new_unverified(
+        vec![Arc::new(tx)],
+        block2.header().clone(),
+        setup.chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    let error = match BatchExecutor::new().execute(batch) {
+        Ok(_) => anyhow::bail!("executing a batch with an empty deferred wire should fail"),
+        Err(error) => error,
+    };
+
+    assert_matches!(error, ProvenBatchError::TransactionPrecompileWitnessInvalid { .. });
 
     Ok(())
 }

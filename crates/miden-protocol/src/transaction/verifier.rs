@@ -1,6 +1,4 @@
-use alloc::sync::Arc;
-
-use miden_core::deferred::{DeferredRoot, DeferredState, DeferredStateWire};
+use miden_core::deferred::{DeferredRoot, DeferredState};
 use miden_verifier::{ExecutionClaim, PrecompileStatus, VerificationOutcome, Verifier};
 
 use crate::errors::TransactionVerifierError;
@@ -73,11 +71,14 @@ impl TransactionVerifier {
             .map_err(TransactionVerifierError::TransactionVerificationFailed)?;
         let proof_security_level = outcome.vm_security_parameters().conjectured_security_level();
 
-        if let PrecompileStatus::Deferred(precompile) = transaction.proof().precompile() {
+        let deferred_state = transaction
+            .deferred_state()
+            .map_err(TransactionVerifierError::InvalidTransactionPrecompileWitness)?;
+        if let Some(state) = deferred_state {
             let expected_root = outcome
                 .outstanding_precompile_root()
                 .expect("a verified deferred proof must have an outstanding precompile root");
-            validate_deferred_witness(precompile, expected_root)?;
+            validate_deferred_root(&state, expected_root)?;
         }
 
         // check security level
@@ -92,12 +93,12 @@ impl TransactionVerifier {
     }
 }
 
-fn validate_deferred_witness(
-    witness: &DeferredStateWire,
+/// Checks that the transaction's hydrated deferred state commits to the root its VM proof leaves
+/// outstanding.
+fn validate_deferred_root(
+    state: &DeferredState,
     expected_root: DeferredRoot,
 ) -> Result<(), TransactionVerifierError> {
-    let state = DeferredState::from_wire(Arc::new(miden_precompiles::registry()), witness)
-        .map_err(TransactionVerifierError::InvalidTransactionPrecompileWitness)?;
     let actual_root = state.root();
 
     if actual_root != expected_root {
@@ -113,16 +114,15 @@ fn validate_deferred_witness(
 #[cfg(test)]
 mod tests {
     use miden_core::Word;
-    use miden_core::deferred::DeferredStateWire;
+    use miden_core::deferred::DeferredState;
 
-    use super::validate_deferred_witness;
+    use super::validate_deferred_root;
     use crate::errors::TransactionVerifierError;
 
     #[test]
-    fn rejects_a_deferred_witness_with_the_wrong_root() {
+    fn rejects_a_deferred_state_with_the_wrong_root() {
         let expected_root = Word::from([1_u32, 2, 3, 4]);
-        let error =
-            validate_deferred_witness(&DeferredStateWire::default(), expected_root).unwrap_err();
+        let error = validate_deferred_root(&DeferredState::default(), expected_root).unwrap_err();
 
         assert!(matches!(
             error,
