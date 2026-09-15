@@ -93,8 +93,7 @@ fn add_faucet_with_allow_all_transfer(builder: &mut MockChainBuilder) -> anyhow:
 }
 
 /// Builds a fungible faucet whose send and receive policies are registered only as reserved
-/// alternatives, so the asset callbacks are installed while both active roots are empty. The
-/// faucet installs [`Pausable`] in the given state so the dispatcher's pause check is reachable.
+/// alternatives, so the asset callbacks are installed while both active roots are empty.
 fn add_faucet_with_reserved_only_transfer(
     builder: &mut MockChainBuilder,
     pausable: Pausable,
