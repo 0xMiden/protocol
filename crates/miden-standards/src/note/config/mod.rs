@@ -18,18 +18,10 @@
 //!
 //! - Carries the variant as a single felt in its first storage item, so reading it requires neither
 //!   the item count nor any other part of the layout.
-//! - Mirrors the variant in a Rust enum over the actions, with the `VARIANT_*` constants the note
-//!   script dispatches on kept in sync with the constants in its `.masm` file.
 //! - Numbers the variants contiguously from `0`.
 //! - Asserts both that the variant is one it knows (`ERR_*_UNKNOWN_VARIANT`) and that the storage
 //!   item count matches that variant (`ERR_*_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS`), which keeps the
 //!   item count a length check rather than a second encoding of the variant.
-//!
-//! Two notes predate the first-item rule and keep the variant in the item following a word-sized
-//! payload ([`FaucetPolicyConfig`] and [`NetworkAccountConfig`]), so that payload stays
-//! word-aligned and loadable with a single `mem_loadw_le`; [`FaucetMetadataConfig`] instead keeps
-//! the variant first and pads it out to a full word. Moving them onto the first item is tracked
-//! separately, since it changes their storage layout.
 //!
 //! # Note type
 //!
