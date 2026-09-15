@@ -78,9 +78,7 @@ fn setup(reclaim_height: Option<BlockNumber>, reclaimer: Reclaimer) -> anyhow::R
     let mut rng = RandomCoin::new(Word::empty());
 
     let mut builder = MockChain::builder();
-    // The happy-path test proves this account's transaction. Use an auth scheme whose proof does
-    // not contain settled precompile work.
-    let network_account = builder.add_existing_wallet(Auth::basic_falcon())?;
+    let network_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
     let sponsor = builder.add_existing_wallet(Auth::basic_ecdsa())?;
     let stranger = builder.add_existing_wallet(Auth::basic_ecdsa())?;
 
@@ -151,7 +149,7 @@ async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Res
         "the network account should receive the sponsored fee",
     );
 
-    crate::prove_and_verify_transaction(executed).await?;
+    crate::prove_and_verify_transaction_deferred(executed).await?;
 
     Ok(())
 }

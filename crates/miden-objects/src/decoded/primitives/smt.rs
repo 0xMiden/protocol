@@ -31,10 +31,7 @@ impl Verify for PartialSmtNodeLevel {
     type Verified = (u32, alloc::vec::Vec<(u64, miden_protocol::Word)>);
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok((
-            self.depth,
-            self.nodes.into_iter().map(Verify::verify).collect::<Result<_, _>>()?,
-        ))
+        Ok((self.depth, self.nodes.verify_infallible()))
     }
 }
 
@@ -54,7 +51,7 @@ impl Verify for SmtLeafEntryList {
     type Verified = alloc::vec::Vec<(miden_protocol::Word, miden_protocol::Word)>;
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        self.entries.into_iter().map(Verify::verify).collect()
+        Ok(self.entries.verify_infallible())
     }
 }
 
@@ -119,7 +116,7 @@ impl PartialSmt {
         use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, UniqueNodes};
         let mut depths = BTreeSet::new();
         let mut nodes = BTreeMap::new();
-        for level in self.node_levels {
+        for level in self.node_levels.into_inner() {
             let depth = u8::try_from(level.depth)?;
             if depth == 0 || depth >= SMT_DEPTH {
                 return Err(PartialSmtError::Depth(depth).into());
@@ -127,7 +124,7 @@ impl PartialSmt {
             if !depths.insert(depth) {
                 return Err(PartialSmtError::DuplicateDepth(depth).into());
             }
-            for node in level.nodes {
+            for node in level.nodes.into_inner() {
                 let index = NodeIndex::new(depth, node.index)?;
                 if nodes.insert(index, node.digest).is_some() {
                     return Err(PartialSmtError::DuplicateNode { index: node.index, depth }.into());
@@ -135,14 +132,14 @@ impl PartialSmt {
             }
         }
         let mut leaves = BTreeMap::new();
-        for indexed in self.leaves {
+        for indexed in self.leaves.into_inner() {
             let (index, leaf) = indexed.verify()?;
             if leaves.insert(index, leaf).is_some() {
                 return Err(PartialSmtError::DuplicateLeaf(index).into());
             }
         }
         let mut value_only_leaves = BTreeMap::new();
-        for indexed in self.value_only_leaves {
+        for indexed in self.value_only_leaves.into_inner() {
             if leaves.contains_key(&indexed.index) {
                 return Err(PartialSmtError::OverlappingLeaf(indexed.index).into());
             }
