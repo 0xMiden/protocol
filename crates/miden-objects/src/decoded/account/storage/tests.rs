@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::vec;
 
 use miden_protocol::Word;
@@ -53,4 +54,29 @@ fn storage_header_defers_duplicate_validation() {
         .decode_fields()
         .unwrap();
     assert!(decoded.verify().is_err());
+}
+
+#[test]
+fn storage_header_verification_reports_the_invalid_slot_index() {
+    let slot = proto::account::account_storage_header::StorageSlot {
+        slot_name: miden_protocol::account::StorageSlotName::mock(1).as_str().into(),
+        content: Some(proto::account::account_storage_header::storage_slot::Content::Value(
+            Word::empty().into(),
+        )),
+    };
+    let invalid = proto::account::account_storage_header::StorageSlot {
+        slot_name: "".into(),
+        ..slot.clone()
+    };
+    let error = proto::account::AccountStorageHeader { slots: vec![slot, invalid] }
+        .decode_fields()
+        .unwrap()
+        .verify()
+        .unwrap_err();
+
+    assert!(error.to_string().starts_with("slots[1]:"), "{error}");
+    assert!(matches!(
+        crate::test_utils::error_source::<miden_protocol::errors::StorageSlotNameError>(&error),
+        Some(miden_protocol::errors::StorageSlotNameError::TooShort)
+    ));
 }

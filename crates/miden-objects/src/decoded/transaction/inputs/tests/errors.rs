@@ -38,7 +38,14 @@ fn authenticated_input_note_rejects_a_proof_for_a_different_note() {
         .map_err(ConversionError::new)
         .unwrap_err();
 
-    assert!(error.to_string().starts_with("note ID mismatch:"), "unexpected error: {error}");
+    assert!(
+        error.to_string().starts_with("notes[0]: note ID mismatch:"),
+        "unexpected error: {error}"
+    );
+    assert_matches!(
+        error_source::<crate::decoded::transaction::InputNoteError>(&error),
+        Some(crate::decoded::transaction::InputNoteError::IdMismatch { .. })
+    );
 }
 
 #[test]

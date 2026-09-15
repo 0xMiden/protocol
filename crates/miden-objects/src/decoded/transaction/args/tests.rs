@@ -48,7 +48,7 @@ fn transaction_args_decode_optional_script_without_verifying_it() {
     );
     let wire = proto::transaction::TransactionArgs::from(&input);
     let decoded = wire.clone().decode_fields().unwrap();
-    assert!(decoded.tx_script.is_none());
+    assert!(decoded.tx_script.as_ref().is_none());
     assert_eq!(decoded.verify().unwrap(), input);
     let decoded = proto::transaction::TransactionArgs {
         tx_script: Some(proto::transaction::TransactionScript {
@@ -59,8 +59,13 @@ fn transaction_args_decode_optional_script_without_verifying_it() {
     }
     .decode_fields()
     .unwrap();
-    assert!(decoded.tx_script.is_some());
-    assert!(decoded.verify().is_err());
+    assert!(decoded.tx_script.as_ref().is_some());
+    let error = decoded.verify().unwrap_err();
+    assert!(error.to_string().starts_with("tx_script:"), "{error}");
+    assert!(matches!(
+        error_source::<DeserializationError>(&error),
+        Some(DeserializationError::InvalidValue(_))
+    ));
 }
 
 #[test]

@@ -136,6 +136,6 @@ fn protocol_config_decodes_all_fields_before_verification() {
     use crate::{DecodeMessage, Verify};
     let config = dummy_protocol_config();
     let decoded = proto::protocol_config::ProtocolConfig::from(&config).decode_fields().unwrap();
-    assert_eq!(decoded.tx_kernel.kernel_procs, config.tx_kernel().kernel_procs());
+    assert_eq!(decoded.tx_kernel.kernel_procs.as_slice(), config.tx_kernel().kernel_procs());
     assert_eq!(decoded.verify().unwrap(), config);
 }

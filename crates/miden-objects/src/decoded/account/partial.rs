@@ -12,7 +12,7 @@ impl Verify for PartialStorageMap {
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok(Self::Verified::try_from_parts(
             self.smt.verify()?,
-            self.keys.into_iter().map(miden_protocol::account::StorageMapKey::from_raw),
+            self.keys.map(miden_protocol::account::StorageMapKey::from_raw),
         )?)
     }
 }
@@ -25,7 +25,7 @@ impl Verify for PartialStorage {
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let mut roots = alloc::collections::BTreeSet::new();
         let mut maps = alloc::vec::Vec::new();
-        for map in self.maps {
+        for map in self.maps.into_inner() {
             let map = map.verify()?;
             if !roots.insert(map.root()) {
                 return Err(PartialStorageError::DuplicateRoot(map.root()).into());
@@ -48,11 +48,7 @@ impl Verify for PartialVault {
     type Verified = miden_protocol::asset::PartialVault;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let ids = self
-            .asset_ids
-            .into_iter()
-            .map(miden_protocol::asset::AssetId::try_from)
-            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+        let ids = self.asset_ids.try_map(miden_protocol::asset::AssetId::try_from)?;
         Ok(Self::Verified::try_from_parts(self.smt.verify()?, ids)?)
     }
 }
@@ -69,7 +65,7 @@ impl Verify for PartialAccount {
             self.code.verify()?,
             self.storage.verify()?,
             self.vault.verify()?,
-            self.seed,
+            self.seed.into_inner(),
         )?)
     }
 }

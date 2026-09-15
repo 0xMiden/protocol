@@ -83,7 +83,7 @@ fn proposal_proofs_are_only_checked_by_explicit_verification() {
     let wire: proto::transaction::ProposedBatch = (&proposal).into();
     let wire = proto::transaction::ProposedBatch::decode(wire.encode_to_vec().as_slice()).unwrap();
     let decoded = wire.decode_fields().unwrap();
-    assert_eq!(decoded.transactions.len(), 1);
+    assert_eq!(decoded.transactions.as_slice().len(), 1);
     let error = decoded.verify_with(96).unwrap_err();
     assert!(
         matches!(
