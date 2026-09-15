@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Added EIP-712 transaction-summary signatures for ECDSA approvers to the `multisig`, `multisig_smart`, and `guarded_multisig` authentication components ([#3856](https://github.com/0xMiden/protocol/pull/3856)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
