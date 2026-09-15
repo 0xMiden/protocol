@@ -104,7 +104,7 @@ end
 #! or if the number of assets is not yet known, at least `4 * MAX_ASSETS_PER_NOTE`.
 #!
 #! The memory layout after the execution of this procedure will look like so:
-#! [ASSET_0, ASSET_1, ..., ASSET_N], where each asset occupies one word. For more detailed
+#! [ASSET_0, ASSET_1, ..., ASSET_N], where each asset occupies two words. For more detailed
 #! information about the layout of each asset see the description of the `Asset` Rust type.
 #!
 #! Inputs:  [dest_ptr, note_index]
