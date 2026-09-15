@@ -211,3 +211,4 @@ pub proc hash_and_insert_tx_summary(
     movup.4 drop movup.4 drop
     # => [TX_SUMMARY_COMMITMENT]
 end
+

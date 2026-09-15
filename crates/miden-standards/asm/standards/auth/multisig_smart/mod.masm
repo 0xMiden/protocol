@@ -11,6 +11,8 @@ use {THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 
+pub mod delayed_execution
+
 pub type ProcedurePolicy = struct {
     immediate: SignatureThreshold,
     delayed: SignatureThreshold,
@@ -55,9 +57,7 @@ const ERR_PROC_POLICY_INVALID_MODE = "called procedures do not support the selec
 
 const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
 
-const ERR_DELAY_ONLY_POLICY_UNSUPPORTED = "delayed threshold requires an immediate threshold"
-
-const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate threshold"
+const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate or delayed threshold"
 
 const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
 
@@ -88,6 +88,13 @@ const DEFAULT_THRESHOLD_LOC = 1
 const NEW_NUM_OF_APPROVERS_LOC = 0
 const INIT_NUM_OF_APPROVERS_LOC = 1
 
+# LOCAL ADDRESSES (auth_tx)
+# =================================================================================================
+
+const AUTH_TX_EXECUTION_MODE_LOC = 0
+const AUTH_TX_DEFAULT_THRESHOLD_LOC = 1
+const AUTH_TX_TX_THRESHOLD_LOC = 2
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -98,22 +105,16 @@ const INIT_NUM_OF_APPROVERS_LOC = 1
 #!
 #! Where:
 #! - immediate_threshold is the threshold for direct execution, or 0 when disabled.
-#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled. It requires a
-#!   non-zero immediate_threshold: delayed execution is not implemented yet, so a delay-only
-#!   policy would make the procedure permanently uncallable.
+#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled.
 #! - note_restrictions is the note restriction enum value in the 0..=NOTE_RESTRICTION_MAX range.
 #! - PROC_ROOT is the root of the account procedure whose policy is being updated.
-#!
-#! Passing a zero immediate_threshold together with a zero delayed_threshold and no note
-#! restrictions clears the procedure's policy.
 #!
 #! Panics if:
 #! - immediate_threshold or delayed_threshold is not a u32 value.
 #! - note_restrictions is outside the supported range.
 #! - either threshold exceeds the current number of approvers.
 #! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
-#! - delayed_threshold is non-zero while immediate_threshold is zero.
-#! - note_restrictions is non-zero while immediate_threshold is zero.
+#! - note_restrictions is non-zero while both thresholds are zero.
 #! - PROC_ROOT is not one of the account's procedures.
 #!
 #! Invocation: call
@@ -161,12 +162,14 @@ pub proc set_procedure_policy(policy: ProcedurePolicy, proc_root: AccountProcedu
     # => [is_immediate_threshold_zero, PROC_ROOT]
 
     if.true
-        # immediate is zero, so the entry can only clear the policy.
-        loc_load.DELAYED_THRESHOLD_LOC eq.0 assert.err=ERR_DELAY_ONLY_POLICY_UNSUPPORTED
-        # => [PROC_ROOT]
-
-        # both thresholds are zero, so note_restrictions must be zero as well.
-        loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
+        # immediate is zero. With a delayed threshold this is a delay-only policy and restrictions
+        # are fine. With neither threshold it is the cleared policy, which must not carry note
+        # restrictions: `ProcedurePolicy` has no restrictions-only mode (a called procedure without
+        # thresholds falls back to the default threshold), so such a word could never be built from
+        # Rust, and the all-zero word is what marks an entry as cleared.
+        loc_load.DELAYED_THRESHOLD_LOC neq.0
+        loc_load.NOTE_RESTRICTIONS_LOC eq.0
+        or assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
         # => [PROC_ROOT]
     else
         # immediate is non-zero. Validate delayed_threshold <= immediate_threshold.
@@ -407,24 +410,27 @@ end
 #! Where:
 #! - block_number and SALT are as described in `miden::standards::auth::multisig::auth_tx`.
 #!
+#! A propose/cancel transaction (delayed-execution timelock action) verifies its own signatures
+#! inside the called procedure, so this procedure only asserts that nothing else was bundled with
+#! it. Every other transaction is treated as an execution and runs the full signer-verification and
+#! per-procedure policy checks. The execution mode is derived from proposal presence: a transaction
+#! whose summary was proposed executes in DELAYED mode (through the timelock), everything else in
+#! IMMEDIATE mode.
+#!
 #! Locals:
-#! 0: policy_threshold
+#! 0: execution_mode
 #! 1: default_threshold
+#! 2: transaction_threshold
 #!
 #! Invocation: exec
 #!
-#! NOTE: This procedure is a temporary form covering signer verification and
-#! per-procedure policy enforcement. The following sections will be added:
+#! NOTE: This procedure is a temporary form covering signer verification, per-procedure policy
+#! enforcement, and delayed execution. The following section will be added:
 #! - Spending Limits + Amount-Based Thresholds: a prologue that calls
 #!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
 #!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
 #!   the final `compute_tx_threshold` fallback.
-#! - TimelockedAccount: after signature verification, assert the execute-path vs.
-#!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
-#!   `ERR_EXECUTE_PATH_MISMATCH`), then call
-#!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
-#!   propose/cancel/execute state.
-@locals(2)
+@locals(3)
 pub proc auth_tx(block_number: BlockNumber, salt: word)
     exec.native_account::incr_nonce drop
     # => [block_number, SALT]
@@ -442,8 +448,10 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     exec.auth::create_tx_summary_with_block
     # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, block_number]
 
-    # the commitment to the tx summary is the message that is signed; the preimage is inserted
-    # into the advice map for extraction by the host
+    # the commitment to the tx summary is the message that is signed; the preimage is inserted into
+    # the advice map for extraction by the host. Binding a caller-chosen block (rather than the tx
+    # reference block) keeps this commitment stable between the block a delayed action is proposed at
+    # and the later block it is executed at, so the same commitment keys the proposal across both.
     exec.auth::hash_and_insert_tx_summary
     # => [TX_SUMMARY_COMMITMENT, block_number]
 
@@ -452,45 +460,88 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     movup.4 exec.multisig::rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 
-    # ------ Reading threshold config (default + num_approvers) ------
-    exec.multisig::get_initial_threshold_and_num_approvers
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # Save default_threshold for the procedure-policy enforcement and the final tx-threshold
-    # fallback below.
-    dup loc_store.1
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # ------ Enforcing procedure policy (consumes default_threshold) ------
-    exec.enforce_procedure_policy
-    # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    loc_store.0
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # ------ Verifying approver signatures ------
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    exec.::miden::standards::auth::signature::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    # ------ Computing final transaction threshold ------
-    # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
-    # falls back to `default_threshold`; otherwise it returns the policy max directly.
-    loc_load.0
-    loc_load.1
-    # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    exec.compute_tx_threshold
-    # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    u32assert2 u32lt
-    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+    # ------ Dispatch ------
+    # A propose/cancel transaction verifies its own signatures inside the called procedure, so the
+    # auth procedure only enforces that nothing else was bundled with it. Any other transaction is
+    # treated as an execution and runs the full checks below.
+    exec.delayed_execution::was_propose_or_cancel_called
+    # => [was_propose_or_cancel, TX_SUMMARY_COMMITMENT]
 
     if.true
-        emit.AUTH_UNAUTHORIZED_EVENT
-        push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+        # A delay action must be the only non-auth procedure called, otherwise it could be bundled
+        # with a state-mutating procedure to bypass the timelock.
+        exec.tx_policy::assert_only_one_non_auth_procedure_called
+        # => [TX_SUMMARY_COMMITMENT]
+    else
+        # ------ Execution path ------
+        # The execution mode is delayed iff this transaction's action was proposed (and is therefore
+        # being executed through the timelock); otherwise it is immediate. Deriving the mode from
+        # proposal presence (rather than from the called procedures' policies) is what lets a
+        # procedure configured for both modes execute under its delayed threshold when it went
+        # through a proposal. The proposal is keyed by the (block-independent) tx-summary commitment,
+        # so it matches across the block change between propose and execute.
+        dupw exec.delayed_execution::is_tx_proposed
+        # => [execution_mode, TX_SUMMARY_COMMITMENT]
+
+        # Keep a copy on the stack for the policy check below; the stored one serves the
+        # delayed-execution branch after signature verification.
+        dup loc_store.AUTH_TX_EXECUTION_MODE_LOC
+        # => [execution_mode, TX_SUMMARY_COMMITMENT]
+
+        # ------ Reading threshold config (default + num_approvers) ------
+        exec.multisig::get_initial_threshold_and_num_approvers
+        # => [default_threshold, num_of_approvers, execution_mode, TX_SUMMARY_COMMITMENT]
+
+        dup loc_store.AUTH_TX_DEFAULT_THRESHOLD_LOC
+        # => [default_threshold, num_of_approvers, execution_mode, TX_SUMMARY_COMMITMENT]
+
+        # ------ Enforcing procedure policy with the derived execution mode ------
+        movup.2
+        # => [execution_mode, default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        exec.enforce_procedure_policy
+        # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        # ------ Computing the transaction threshold ------
+        # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
+        # falls back to `default_threshold`; otherwise it returns the policy max directly.
+        loc_load.AUTH_TX_DEFAULT_THRESHOLD_LOC
+        # => [default_threshold, policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        exec.compute_tx_threshold
+        # => [transaction_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        loc_store.AUTH_TX_TX_THRESHOLD_LOC
+        # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+        # ------ Verifying approver signatures ------
+        exec.multisig::verify_signatures
+        # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+        # ------ Checking the threshold ------
+        loc_load.AUTH_TX_TX_THRESHOLD_LOC
+        # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+        u32assert2 u32lt
+        # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+        if.true
+            emit.AUTH_UNAUTHORIZED_EVENT
+            push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+        end
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # ------ Delayed execution: enforce the timelock and consume the proposal ------
+        loc_load.AUTH_TX_EXECUTION_MODE_LOC
+        # => [execution_mode, TX_SUMMARY_COMMITMENT]
+
+        if.true
+            dupw exec.delayed_execution::consume_tx_proposal
+            # => [TX_SUMMARY_COMMITMENT]
+        end
+        # => [TX_SUMMARY_COMMITMENT]
     end
+    # => [TX_SUMMARY_COMMITMENT]
 end
 
 # HELPER PROCEDURES
@@ -589,11 +640,11 @@ proc compute_tx_threshold(default_threshold: u32, policy_threshold: u32) -> u32
     # => [effective_transaction_threshold]
 end
 
-#! Computes a single procedure's contribution to the threshold max-accumulator and the
-#! `requires_delay` flag, given that procedure's policy thresholds and the active execution mode.
+#! Computes a single procedure's contribution to the threshold max-accumulator, given that
+#! procedure's policy thresholds and the active execution mode.
 #!
 #! Inputs:  [immediate, delayed, execution_mode, default_threshold]
-#! Outputs: [contribution, requires_delay]
+#! Outputs: [contribution]
 #!
 #! Where:
 #! - immediate is the procedure's immediate-mode policy threshold (0 = not configured).
@@ -602,8 +653,6 @@ end
 #! - default_threshold is the account's configured default multisig threshold.
 #! - contribution is the policy-selected threshold when the procedure has a policy for the active
 #!   mode, or default_threshold when it has no policy at all.
-#! - requires_delay is execution_mode when the contribution came from policy, or 0 when it came
-#!   from default_threshold (a default contribution does not flip the delay flag).
 #!
 #! Panics if:
 #! - the procedure's policy exists but is configured for the opposite execution mode.
@@ -614,7 +663,7 @@ proc compute_proc_policy_contribution(
     delayed: SignatureThreshold,
     execution_mode: Bool,
     default_threshold: SignatureThreshold
-) -> (SignatureThreshold, Bool)
+) -> SignatureThreshold
     # selected = (execution_mode == DELAYED_EXECUTION_MODE) ? delayed : immediate
     dup dup.2
     # => [delayed, immediate, immediate, delayed, execution_mode, default_threshold]
@@ -639,27 +688,20 @@ proc compute_proc_policy_contribution(
         dup dup.2 u32or eq.0
         # => [is_no_policy, immediate, delayed, execution_mode, default_threshold]
 
-        if.true
-            # No policy for this procedure → contribute default_threshold; requires_delay = 0.
-            drop drop drop
-            # => [default_threshold]
+        # No policy for this procedure → contribute default_threshold. Otherwise the policy exists
+        # but is configured for the opposite execution mode; panic so the caller learns about the
+        # misconfiguration explicitly.
+        assert.err=ERR_PROC_POLICY_INVALID_MODE
+        # => [immediate, delayed, execution_mode, default_threshold]
 
-            push.0 swap
-            # => [default_threshold, 0]
-        else
-            # Mode misuse: policy exists but is configured for the opposite execution mode.
-            # Panic so the caller learns about the misconfiguration explicitly.
-            push.0 assert.err=ERR_PROC_POLICY_INVALID_MODE
-        end
+        drop drop drop
+        # => [default_threshold]
     else
-        # Selected threshold is non-zero → contribute it; requires_delay = execution_mode.
+        # Selected threshold is non-zero → contribute it.
         # => [selected, immediate, delayed, execution_mode, default_threshold]
 
-        movdn.2 drop drop
-        # => [selected, execution_mode, default_threshold]
-
-        movup.2 drop
-        # => [selected, execution_mode]
+        movdn.4 dropw
+        # => [selected]
     end
 end
 
@@ -669,11 +711,10 @@ end
 #! accumulates:
 #! - the highest required threshold (max),
 #! - the union of their note restrictions (so if one proc forbids input notes and another forbids
-#!   output notes, the transaction ends up forbidding both),
-#! - whether any called procedure requires the delayed execution mode.
+#!   output notes, the transaction ends up forbidding both).
 #!
 #! Inputs:  [execution_mode, default_threshold]
-#! Outputs: [policy_threshold, policy_requires_delay, note_restrictions]
+#! Outputs: [policy_threshold, note_restrictions]
 #!
 #! Where:
 #! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1).
@@ -684,8 +725,6 @@ end
 #!   high-impact proc (e.g. update_signers) could otherwise be authorized at the lower threshold.
 #! - policy_threshold is the max across all called non-auth procedures, where each called
 #!   procedure contributes either its policy-selected threshold or default_threshold (no policy).
-#! - policy_requires_delay is 1 when any called procedure's policy explicitly requires the
-#!   delayed execution mode (a default contribution does not flip this).
 #! - note_restrictions is the combined (union) note restriction enum across all called procedures.
 #!
 #! The auth procedure (procedure index 0) is excluded — it is the auth flow itself, not a
@@ -723,67 +762,63 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
     loc_store.DEFAULT_THRESHOLD_LOC
     # => []
 
-    push.0 push.0 push.0 exec.active_account::get_num_procedures
-    # => [proc_index, threshold_acc=0, requires_delay_acc=0, restrictions_acc=0]
+    push.0 push.0 exec.active_account::get_num_procedures
+    # => [proc_index, threshold_acc=0, restrictions_acc=0]
 
     dup neq.0
-    # => [should_continue, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+    # => [should_continue, proc_index, threshold_acc, restrictions_acc]
     while.true
         sub.1
-        # => [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+        # => [proc_index, threshold_acc, restrictions_acc]
 
         # Procedure index 0 is the auth procedure and must never contribute to the policy
         # threshold, even if it appears as a called procedure during the auth flow itself.
         dup neq.0
-        # => [is_non_auth, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+        # => [is_non_auth, proc_index, threshold_acc, restrictions_acc]
 
         dup.1 exec.active_account::get_procedure_root
-        # => [PROC_ROOT, is_non_auth, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+        # => [PROC_ROOT, is_non_auth, proc_index, threshold_acc, restrictions_acc]
 
         exec.native_account::was_procedure_called
-        # => [was_called, is_non_auth, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+        # => [was_called, is_non_auth, proc_index, threshold_acc, restrictions_acc]
 
         and
-        # => [should_process, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+        # => [should_process, proc_index, threshold_acc, restrictions_acc]
 
         if.true
             dup exec.active_account::get_procedure_root
-            # => [PROC_ROOT, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+            # => [PROC_ROOT, proc_index, threshold_acc, restrictions_acc]
 
             exec.get_procedure_policy
-            # => [immediate, delayed, restr_proc, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+            # => [immediate, delayed, restr_proc, proc_index, threshold_acc, restrictions_acc]
 
             # Fold per-proc note_restrictions into the accumulator via OR.
             # ProcedurePolicyNoteRestriction is bit-encoded (0=None, 1=NoInput, 2=NoOutput, 3=Both),
             # so bitwise OR is the union of constraints: e.g. NoInput (0b01) ∪ NoOutput (0b10) = Both (0b11).
-            movup.6 movup.3 u32or movdn.5
-            # => [immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+            movup.5 movup.3 u32or movdn.4
+            # => [immediate, delayed, proc_index, threshold_acc, new_restrictions]
 
             loc_load.EXECUTION_MODE_LOC movdn.2
             loc_load.DEFAULT_THRESHOLD_LOC movdn.3
-            # => [immediate, delayed, execution_mode, default_threshold, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+            # => [immediate, delayed, execution_mode, default_threshold, proc_index, threshold_acc, new_restrictions]
 
             exec.compute_proc_policy_contribution
-            # => [contribution, requires_delay, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+            # => [contribution, proc_index, threshold_acc, new_restrictions]
 
             # threshold_acc' = max(threshold_acc, contribution)
-            movup.3 u32max
-            # => [new_threshold, requires_delay, proc_index, requires_delay_acc, new_restrictions]
+            movup.2 u32max
+            # => [new_threshold, proc_index, new_restrictions]
 
-            # requires_delay_acc' = requires_delay_acc OR requires_delay
-            swap movup.3 or
-            # => [new_requires_delay, new_threshold, proc_index, new_restrictions]
-
-            swap movup.2
-            # => [proc_index, new_threshold, new_requires_delay, new_restrictions]
+            swap
+            # => [proc_index, new_threshold, new_restrictions]
         end
 
         dup neq.0
-        # => [should_continue, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+        # => [should_continue, proc_index, threshold_acc, restrictions_acc]
     end
 
     drop
-    # => [threshold_acc, requires_delay_acc, restrictions_acc]
+    # => [threshold_acc, restrictions_acc]
 end
 
 #! Enforces the procedure-policy for the current transaction:
@@ -791,31 +826,22 @@ end
 #! - asserts the union of note restrictions against the transaction's input/output notes,
 #! - returns the effective threshold required by the called procedure policies.
 #!
-#! Always uses IMMEDIATE_EXECUTION_MODE; procedures whose policies require the delayed mode
-#! panic via [`compute_called_proc_policy`] because this component has no timelock.
+#! Procedures whose policies require the opposite execution mode panic via
+#! [`compute_called_proc_policy`].
 #!
-#! Inputs:  [default_threshold]
+#! Inputs:  [execution_mode, default_threshold]
 #! Outputs: [policy_threshold]
 #!
 #! Where:
+#! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1). The auth
+#!   procedure derives it from proposal presence: a transaction executing through a delayed-
+#!   execution proposal runs in DELAYED mode, every other transaction in IMMEDIATE mode.
 #! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
 #!   contribution for any called procedure without an explicit policy.
 #!
 #! Invocation: exec
-#!
-#! NOTE: This procedure is a temporary form. Once the TimelockedAccount feature lands, the
-#! hardcoded IMMEDIATE_EXECUTION_MODE push will be replaced with a call to
-#! `timelock_controller::execution_mode`, and the procedure will also expose
-#! `policy_requires_delay` for downstream enforcement.
-proc enforce_procedure_policy(default_threshold: u32)
-    push.IMMEDIATE_EXECUTION_MODE
-    # => [execution_mode, default_threshold]
-
+proc enforce_procedure_policy(execution_mode: u32, default_threshold: u32)
     exec.compute_called_proc_policy
-    # => [policy_threshold, policy_requires_delay, note_restrictions]
-
-    # policy_requires_delay is always 0 on IMMEDIATE_EXECUTION_MODE; drop it.
-    swap drop
     # => [policy_threshold, note_restrictions]
 
     swap
