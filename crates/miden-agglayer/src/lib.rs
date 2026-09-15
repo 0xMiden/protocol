@@ -162,8 +162,7 @@ impl AggLayerFaucet {
     /// lives on the bridge and is written there at registration time.
     ///
     /// No send or receive policies are registered, so the account is created with asset callbacks
-    /// disabled. Transfers of its assets do not require a callback into the faucet. The callback
-    /// flag is immutable; this configuration only applies to newly created accounts.
+    /// disabled.
     ///
     /// `faucet_admin` is the initial member of the faucet's built-in `ADMIN` role; `fee_manager`
     /// is the initial member of its `FEE_MNGR` role; `bridge_account_id` is its [`Ownable2Step`]
