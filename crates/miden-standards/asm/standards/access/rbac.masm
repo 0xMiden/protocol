@@ -18,14 +18,11 @@ use {AccountId, Bool} from miden::protocol::types
 #
 # Grant delays:
 # - Each role carries a `grant_delay` in seconds, set by `ADMIN` via `set_grant_delay`. A grant
-#   records `active_since = now + grant_delay`; the membership counts only once that timestamp has
-#   passed, so a suspicious grant can be revoked before the new member can act.
-# - Zero is the default and means "active immediately", which is exactly the behaviour of a member
-#   written without a delay, so accounts and seeds that never set a delay are unaffected.
+#   records `active_since = now + grant_delay`.
+# - Zero is the default and means "active immediately".
 # - `now` is the reference block timestamp, which the executor may choose from the past. A grant
 #   with a non-zero delay therefore bounds the reference block's age with the default expiration
-#   delta, so the delay can be shortened by at most that window. The membership check needs no
-#   such bound: an older reference block can only make it stricter.
+#   delta, so the delay can be shortened by at most that window.
 #
 # Authority model:
 # - Every role has an effective admin role. It is the role's configured
@@ -228,10 +225,7 @@ end
 
 #! Grants a role to an account.
 #!
-#! If the role does not yet exist, it is created (made existing) by this grant. The membership
-#! activates at `now + grant_delay` (see `set_grant_delay`); with the default delay of zero it is
-#! active immediately. Until then the account is counted as a member but `has_role` returns `0`,
-#! so the grant can be revoked before it takes effect.
+#! If the role does not yet exist, it is created (made existing) by this grant. 
 #!
 #! If the account is already a member of the role, active or pending, this is a no-op: in
 #! particular it does not reset a pending member's activation.
@@ -362,12 +356,7 @@ end
 
 #! Sets the delay between granting a role and the grant becoming active.
 #!
-#! Applies to grants made after this call; pending and active members keep their activation
-#! timestamps. The role does not need to exist. Pass `0` to make grants active immediately.
-#!
-#! Only the built-in `ADMIN` role may set grant delays, including for roles it does not
-#! administer: a delegated admin can grant a role but cannot shorten the delay its grants are
-#! subject to.
+#! Pass `0` to make grants active immediately.
 #!
 #! Inputs:  [role_symbol, grant_delay, pad(14)]
 #! Outputs: [pad(16)]
@@ -517,10 +506,6 @@ end
 
 #! Returns whether an account holds a role.
 #!
-#! A granted membership counts only once its activation timestamp has passed. `now` is the
-#! reference block timestamp; an executor picking an older reference block can only make this
-#! check stricter, so no expiration bound is needed here.
-#!
 #! Inputs:  [role_symbol, account_suffix, account_prefix]
 #! Outputs: [has_role]
 #!
@@ -582,10 +567,6 @@ proc get_grant_delay_internal(role_symbol: RoleSymbol) -> GrantDelay
 end
 
 #! Returns the timestamp from which a grant made in this transaction is active.
-#!
-#! When the delay is non-zero, caps the transaction's expiration delta to the default so the
-#! reference block, and with it `now`, is at most that many blocks old. Without the cap an executor
-#! could reference an old block and shorten the delay by an arbitrary amount.
 #!
 #! Inputs:  [grant_delay]
 #! Outputs: [active_since]
@@ -652,10 +633,6 @@ end
 #!
 #! Authority rests with the role's effective admin role: its configured delegated admin, or the
 #! built-in `ADMIN` role when none is configured.
-#!
-#! A role whose only members are pending (granted, not yet active) counts as populated: `ADMIN`
-#! is then locked out of the roles it administers until a grant activates. Nobody can act in that
-#! window; revoking the pending grant restores the `ADMIN` fallback at any time.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []

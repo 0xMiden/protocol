@@ -1292,8 +1292,7 @@ async fn test_rbac_admin_recovers_role_from_dead_admin_chain() -> anyhow::Result
 const GRANT_DELAY_SECS: u64 = 3_600;
 
 /// A grant on a role with a delay is recorded immediately but counts as membership only once the
-/// delay has elapsed: until then the member cannot act, and the delegated-admin role it was granted
-/// counts as populated, locking `ADMIN` out of the roles it administers.
+/// delay has elapsed.
 #[tokio::test]
 async fn test_rbac_grant_delay_defers_activation_until_delay_elapses() -> anyhow::Result<()> {
     let admin = test_account_id(11);

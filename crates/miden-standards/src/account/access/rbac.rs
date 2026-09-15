@@ -89,7 +89,7 @@ impl RoleConfig {
     }
 
     /// Sets the delay, in seconds, between granting this role on-chain and the grant becoming
-    /// active. Members seeded here are active immediately regardless of the delay.
+    /// active.
     pub fn with_grant_delay(mut self, grant_delay: u32) -> Self {
         self.grant_delay = grant_delay;
         self
@@ -200,22 +200,7 @@ impl RoleConfig {
 /// Each role carries a `grant_delay` in seconds, set on-chain by the `ADMIN` role via
 /// `set_grant_delay` or seeded with [`RoleConfig::with_grant_delay`]. A grant records
 /// `active_since = now + grant_delay` in the membership record and counts as membership only once
-/// that timestamp has passed, so a suspicious grant can be revoked before the new member can act.
-/// The default of zero activates grants immediately.
-///
-/// Only `ADMIN` may set grant delays, including for roles it does not administer: a delegated
-/// admin can grant a role but cannot shorten the delay its grants are subject to. Without a
-/// setback on lowering delays, a compromised `ADMIN` can still clear a delay and grant at once;
-/// the protection is against compromised delegated admins.
-///
-/// `now` is the reference block timestamp, which the executor may choose from the past. A grant
-/// with a non-zero delay caps the transaction's expiration delta to the standards default, so the
-/// delay can be shortened by at most that window. The membership check needs no bound: an older
-/// reference block only makes it stricter.
-///
-/// A role whose only members are pending counts as populated, so a delegated admin role in that
-/// state keeps `ADMIN` locked out of the roles it administers until a grant activates. Revoking
-/// the pending grant restores the fallback.
+/// that timestamp has passed. The default of zero activates grants immediately.
 ///
 /// ## Membership lookup
 ///
@@ -696,8 +681,7 @@ mod tests {
         Ok(())
     }
 
-    /// A seeded grant delay lands in the third felt of the role config word; the seeded member is
-    /// nonetheless active immediately (zero `active_since`).
+    /// A seeded grant delay lands in the third felt of the role config word.
     #[test]
     fn seeded_grant_delay_is_written_to_the_role_config() -> anyhow::Result<()> {
         let admin = test_admin(1);
