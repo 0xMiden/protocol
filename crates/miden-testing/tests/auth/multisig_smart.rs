@@ -815,7 +815,14 @@ async fn execute_delay_action(
         "
     ))?;
 
-    let signing = SigningInputs::Blind(target_commitment);
+    // Cancelling signs a domain-separated message so proposal signatures cannot be replayed to
+    // cancel; proposing signs the target commitment itself.
+    let signing_message = if proc_name == "cancel_transaction_proposal" {
+        AuthMultisigSmart::cancel_signing_message(target_commitment)
+    } else {
+        target_commitment
+    };
+    let signing = SigningInputs::Blind(signing_message);
 
     let mut builder = mock_chain
         .build_transaction(account_id)
@@ -827,7 +834,7 @@ async fn execute_delay_action(
             .get_signature(public_keys[*signer_idx].to_commitment(), &signing)
             .await?;
         builder =
-            builder.add_signature(public_keys[*signer_idx].to_commitment(), target_commitment, sig);
+            builder.add_signature(public_keys[*signer_idx].to_commitment(), signing_message, sig);
     }
 
     Ok(builder.build()?.execute().await)
@@ -1312,6 +1319,97 @@ async fn test_multisig_smart_cancel_with_insufficient_signatures_fails(
     )
     .await?;
     assert_transaction_executor_error!(result, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
+
+    Ok(())
+}
+
+/// Proposal signatures must not double as cancellation signatures. They are public once the propose
+/// transaction lands (and also authorize execution), so if `cancel_transaction_proposal` accepted
+/// them anyone could replay them to veto any proposal. Cancelling verifies signatures over the
+/// domain-separated `cancel_signing_message` instead: replaying the proposal signatures fails, and
+/// signatures over the cancel message succeed.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[tokio::test]
+async fn test_multisig_smart_proposal_signatures_cannot_cancel(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let commitment = Word::from([Felt::from(711u32); 4]);
+
+    let propose_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "propose_transaction",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(712)),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("propose tx should succeed");
+    multisig_account.apply_patch(propose_tx.account_patch())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // An attacker replays the (public) proposal signatures, which are over the commitment itself,
+    // into a cancel transaction. Cancelling looks for signatures over the cancel message, so none
+    // of them count.
+    let cancel_script = compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{commitment}
+            call.::miden::standards::components::auth::multisig_smart::cancel_transaction_proposal
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let proposal_signing = SigningInputs::Blind(commitment);
+    let mut replay_builder = mock_chain
+        .build_transaction(account_id)
+        .tx_script(cancel_script)
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt(713),
+        ));
+    for signer_idx in [0, 1] {
+        let sig = authenticators[signer_idx]
+            .get_signature(public_keys[signer_idx].to_commitment(), &proposal_signing)
+            .await?;
+        replay_builder =
+            replay_builder.add_signature(public_keys[signer_idx].to_commitment(), commitment, sig);
+    }
+    let replayed = replay_builder.build()?.execute().await;
+    assert_transaction_executor_error!(replayed, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
+
+    // The proposal is still there and signatures over the cancel message do cancel it.
+    let cancel_tx = execute_delay_action(
+        &mock_chain,
+        account_id,
+        "cancel_transaction_proposal",
+        commitment,
+        MultisigAuthArgs::new(mock_chain.latest_block_header().block_num(), salt(714)),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .expect("cancel with signatures over the cancel message should succeed");
+    multisig_account.apply_patch(cancel_tx.account_patch())?;
+
+    let stored = multisig_account
+        .storage()
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), StorageMapKey::from_raw(commitment))
+        .expect("tx proposals slot should exist");
+    assert_eq!(stored, Word::empty(), "proposal must be removed after a valid cancel");
 
     Ok(())
 }

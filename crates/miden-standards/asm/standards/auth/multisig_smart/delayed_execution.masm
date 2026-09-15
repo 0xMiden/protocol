@@ -1,3 +1,4 @@
+use miden::core::crypto::hashes::poseidon2
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth::multisig
@@ -8,7 +9,9 @@ use miden::standards::auth::multisig
 # caller-chosen block into the summary (via `MultisigAuthArgs`) rather than the transaction reference
 # block, that commitment is stable across the reference-block change between proposing and executing
 # (the timelock measures elapsed time via block timestamps), so the proposal recorded at propose time
-# matches the transaction executed later. The same commitment is what the approvers' signatures cover.
+# matches the transaction executed later. Proposal and execution signatures are over that same
+# commitment; cancellation signatures are over a domain-separated message derived from it (see
+# `cancel_signing_message`), so proposing never doubles as consent to cancel.
 
 # CONSTANTS
 # =================================================================================================
@@ -335,6 +338,25 @@ proc assert_tx_proposed_and_unlocked
     # => []
 end
 
+#! Computes the message the approvers sign to cancel the proposal for `TX_SUMMARY_COMMITMENT`.
+#!
+#! The cancel message is `poseidon2::hash(TX_SUMMARY_COMMITMENT)`. Hashing domain-separates it from
+#! the proposal (and execution) signatures, which are over `TX_SUMMARY_COMMITMENT` itself, so a
+#! proposal signature cannot be replayed to cancel. The proposal stays keyed by the raw commitment.
+#!
+#! Inputs:  [TX_SUMMARY_COMMITMENT]
+#! Outputs: [CANCEL_MSG]
+#!
+#! Where:
+#! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
+#! - CANCEL_MSG is the message the cancellation signatures must be over.
+#!
+#! Invocation: exec
+proc cancel_signing_message(tx_summary_commitment: word) -> word
+    exec.poseidon2::hash
+    # => [CANCEL_MSG]
+end
+
 # DISPATCH
 # =================================================================================================
 
@@ -426,8 +448,15 @@ end
 
 #! Cancels an existing proposal for `TX_SUMMARY_COMMITMENT`.
 #!
-#! Verifies the cancellation signatures over `TX_SUMMARY_COMMITMENT` and requires at least the
-#! proposal's `min_cancel_sigs` valid signatures, then deletes the proposal entry.
+#! Verifies the cancellation signatures over the cancel message for `TX_SUMMARY_COMMITMENT` (see
+#! `cancel_signing_message`) and requires at least the proposal's `min_cancel_sigs` valid
+#! signatures, then deletes the proposal entry.
+#!
+#! Cancelling is a different intent from proposing, so it must not be satisfiable with the proposal
+#! signatures. Those are public once the propose transaction lands and are also valid for execution;
+#! if they were accepted here, anyone holding them could cancel any proposal, and keep cancelling it
+#! after every re-proposal. Requiring signatures over a distinct message makes a cancellation an
+#! explicit act of the approvers.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
@@ -437,7 +466,7 @@ end
 #!
 #! Panics if:
 #! - no proposal exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
-#! - fewer than `min_cancel_sigs` signatures verify over `TX_SUMMARY_COMMITMENT`
+#! - fewer than `min_cancel_sigs` signatures verify over the cancel message
 #!   (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`).
 #!
 #! Invocation: call
@@ -452,14 +481,20 @@ pub proc cancel_transaction_proposal
     movdn.4
     # => [TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
-    # ---- Verify cancellation signatures over the target commitment. ----
+    # ---- Verify cancellation signatures over the domain-separated cancel message. ----
+    dupw exec.cancel_signing_message
+    # => [CANCEL_MSG, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
+
     exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
+    # => [num_of_approvers, CANCEL_MSG, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
     exec.multisig::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
+    # => [num_verified_signatures, CANCEL_MSG, TX_SUMMARY_COMMITMENT, min_cancel_sigs]
 
-    movup.5 u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+    movup.9 u32gte assert.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+    # => [CANCEL_MSG, TX_SUMMARY_COMMITMENT]
+
+    dropw
     # => [TX_SUMMARY_COMMITMENT]
 
     exec.remove_tx_proposal

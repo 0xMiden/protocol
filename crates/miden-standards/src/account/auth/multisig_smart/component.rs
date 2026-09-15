@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -18,6 +17,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Hasher, Word};
 
 // Slots and schemas reused from `AuthMultisig` to keep the storage layout in sync. The statics
 // are exposed as `pub(super)` in the sibling `multisig` module; we reference them directly so
@@ -210,6 +210,11 @@ fn validate_proc_policies(
 ///   execution threshold and can be reused for it. An approver who signs to propose a transaction
 ///   has therefore also contributed a signature usable to execute it; consent cannot be withdrawn
 ///   passively, only by cancelling.
+///
+/// - Cancelling requires its own signatures. They are verified over
+///   [`AuthMultisigSmart::cancel_signing_message`], which is domain-separated from the proposed
+///   commitment, so the public proposal signatures cannot be replayed to cancel a proposal; only
+///   approvers who sign the cancel message can veto it.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,
@@ -298,6 +303,15 @@ impl AuthMultisigSmart {
     /// than the account default.
     pub fn update_signers_and_threshold_root() -> AccountProcedureRoot {
         *MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD
+    }
+
+    /// Returns the message approvers sign to cancel the proposal for `tx_summary_commitment`.
+    ///
+    /// Mirrors `cancel_signing_message` in the MASM component: the proposal stays keyed by the raw
+    /// commitment, but cancellation signatures are over its hash so that proposal signatures (which
+    /// are over the commitment itself and also authorize execution) cannot be replayed to cancel.
+    pub fn cancel_signing_message(tx_summary_commitment: Word) -> Word {
+        Hasher::hash_elements(tx_summary_commitment.as_elements())
     }
 
     /// Returns the [`AccountProcedureRoot`] of the `set_procedure_policy` procedure.
