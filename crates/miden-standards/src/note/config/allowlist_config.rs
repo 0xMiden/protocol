@@ -58,19 +58,19 @@ pub enum AllowlistConfig {
 }
 
 impl AllowlistConfig {
-    // SELECTORS
+    // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note selectors stored in the first storage item. Keep in sync with
+    // Config note variants stored in the first storage item. Keep in sync with
     // `allowlist_config.masm`.
-    const SELECTOR_ALLOW_ACCOUNT: u8 = 0;
-    const SELECTOR_DISALLOW_ACCOUNT: u8 = 1;
+    const VARIANT_ALLOW_ACCOUNT: u8 = 0;
+    const VARIANT_DISALLOW_ACCOUNT: u8 = 1;
 
-    /// Returns the selector encoding this action in the first storage item.
-    const fn selector(self) -> u8 {
+    /// Returns the variant encoding this action in the first storage item.
+    const fn variant(self) -> u8 {
         match self {
-            AllowlistConfig::AllowAccount { .. } => Self::SELECTOR_ALLOW_ACCOUNT,
-            AllowlistConfig::DisallowAccount { .. } => Self::SELECTOR_DISALLOW_ACCOUNT,
+            AllowlistConfig::AllowAccount { .. } => Self::VARIANT_ALLOW_ACCOUNT,
+            AllowlistConfig::DisallowAccount { .. } => Self::VARIANT_DISALLOW_ACCOUNT,
         }
     }
 
@@ -82,11 +82,11 @@ impl AllowlistConfig {
         }
     }
 
-    /// Returns the note storage values encoding this action, laid out as `[selector,
+    /// Returns the note storage values encoding this action, laid out as `[variant,
     /// account_suffix, account_prefix]`.
     fn to_storage_values(self) -> Vec<Felt> {
         let account = self.target();
-        vec![Felt::from(self.selector()), account.suffix(), account.prefix().as_felt()]
+        vec![Felt::from(self.variant()), account.suffix(), account.prefix().as_felt()]
     }
 }
 
@@ -104,7 +104,7 @@ impl From<AllowlistConfig> for NoteStorage {
 /// [`AllowlistManager`](crate::account::policies::AllowlistManager) admin action on the account
 /// that consumes it.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the component's
+/// A single note script dispatches on the note variant in its storage to one of the component's
 /// admin procedures (`allow_account`, `disallow_account`). Authorization is enforced by those
 /// procedures through the account-wide [`Authority`](crate::account::access::Authority) component,
 /// so the note carries no assets.
@@ -176,10 +176,10 @@ impl AllowlistConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of an AllowlistConfig note: a selector followed by the account ID
+    /// Number of storage items of an AllowlistConfig note: a variant followed by the account ID
     /// the action operates on.
     ///
-    /// Both actions carry the same arguments, so the layout is fixed at `[selector,
+    /// Both actions carry the same arguments, so the layout is fixed at `[variant,
     /// account_suffix, account_prefix]`.
     pub const NUM_STORAGE_ITEMS: usize = 3;
 
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// `AllowAccount` storage is `[selector, account_suffix, account_prefix]`.
+    /// `AllowAccount` storage is `[variant, account_suffix, account_prefix]`.
     #[test]
     fn allow_account_storage_layout() {
         let allowed = account_id(3);
@@ -334,14 +334,14 @@ mod tests {
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(AllowlistConfig::SELECTOR_ALLOW_ACCOUNT),
+                Felt::from(AllowlistConfig::VARIANT_ALLOW_ACCOUNT),
                 allowed.suffix(),
                 allowed.prefix().as_felt(),
             ]
         );
     }
 
-    /// `DisallowAccount` storage is `[selector, account_suffix, account_prefix]`.
+    /// `DisallowAccount` storage is `[variant, account_suffix, account_prefix]`.
     #[test]
     fn disallow_account_storage_layout() {
         let allowed = account_id(3);
@@ -350,7 +350,7 @@ mod tests {
         assert_eq!(
             storage.items(),
             &[
-                Felt::from(AllowlistConfig::SELECTOR_DISALLOW_ACCOUNT),
+                Felt::from(AllowlistConfig::VARIANT_DISALLOW_ACCOUNT),
                 allowed.suffix(),
                 allowed.prefix().as_felt(),
             ]

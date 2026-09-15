@@ -79,56 +79,56 @@ pub enum FaucetMetadataConfig {
 }
 
 impl FaucetMetadataConfig {
-    // SELECTORS
+    // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note selectors stored in the first storage item. Keep in sync with
+    // Config note variants stored in the first storage item. Keep in sync with
     // `faucet_metadata_config.masm`.
-    const SELECTOR_SET_MAX_SUPPLY: u8 = 0;
-    const SELECTOR_SET_DESCRIPTION: u8 = 1;
-    const SELECTOR_SET_LOGO_URI: u8 = 2;
-    const SELECTOR_SET_EXTERNAL_LINK: u8 = 3;
+    const VARIANT_SET_MAX_SUPPLY: u8 = 0;
+    const VARIANT_SET_DESCRIPTION: u8 = 1;
+    const VARIANT_SET_LOGO_URI: u8 = 2;
+    const VARIANT_SET_EXTERNAL_LINK: u8 = 3;
 
-    /// Returns the selector encoding this action in the first storage item.
-    const fn selector(&self) -> u8 {
+    /// Returns the variant encoding this action in the first storage item.
+    const fn variant(&self) -> u8 {
         match self {
-            FaucetMetadataConfig::SetMaxSupply { .. } => Self::SELECTOR_SET_MAX_SUPPLY,
-            FaucetMetadataConfig::SetDescription { .. } => Self::SELECTOR_SET_DESCRIPTION,
-            FaucetMetadataConfig::SetLogoUri { .. } => Self::SELECTOR_SET_LOGO_URI,
-            FaucetMetadataConfig::SetExternalLink { .. } => Self::SELECTOR_SET_EXTERNAL_LINK,
+            FaucetMetadataConfig::SetMaxSupply { .. } => Self::VARIANT_SET_MAX_SUPPLY,
+            FaucetMetadataConfig::SetDescription { .. } => Self::VARIANT_SET_DESCRIPTION,
+            FaucetMetadataConfig::SetLogoUri { .. } => Self::VARIANT_SET_LOGO_URI,
+            FaucetMetadataConfig::SetExternalLink { .. } => Self::VARIANT_SET_EXTERNAL_LINK,
         }
     }
 
     /// Returns the note storage values encoding this action.
     ///
-    /// `SetMaxSupply` lays out as `[selector, new_max_supply]`. The string actions lay out as
-    /// `[selector, 0, 0, 0, value(28)]`: the selector is padded out to a full word with three
+    /// `SetMaxSupply` lays out as `[variant, new_max_supply]`. The string actions lay out as
+    /// `[variant, 0, 0, 0, value(28)]`: the variant is padded out to a full word with three
     /// zeros, so the payload starts word-aligned, as the note script's `poseidon2::hash_elements`
     /// call requires.
     fn to_storage_values(&self) -> Vec<Felt> {
-        let selector = Felt::from(self.selector());
+        let variant = Felt::from(self.variant());
 
         match self {
             FaucetMetadataConfig::SetMaxSupply { max_supply } => {
-                vec![selector, Felt::from(*max_supply)]
+                vec![variant, Felt::from(*max_supply)]
             },
             FaucetMetadataConfig::SetDescription { description } => {
-                string_storage_values(selector, &description.to_words())
+                string_storage_values(variant, &description.to_words())
             },
             FaucetMetadataConfig::SetLogoUri { logo_uri } => {
-                string_storage_values(selector, &logo_uri.to_words())
+                string_storage_values(variant, &logo_uri.to_words())
             },
             FaucetMetadataConfig::SetExternalLink { external_link } => {
-                string_storage_values(selector, &external_link.to_words())
+                string_storage_values(variant, &external_link.to_words())
             },
         }
     }
 }
 
-/// Lays out a string action as `[selector, 0, 0, 0, value(28)]`.
-fn string_storage_values(selector: Felt, value: &[Word]) -> Vec<Felt> {
+/// Lays out a string action as `[variant, 0, 0, 0, value(28)]`.
+fn string_storage_values(variant: Felt, value: &[Word]) -> Vec<Felt> {
     let mut items = Vec::with_capacity(FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS);
-    items.push(selector);
+    items.push(variant);
     items.extend([Felt::ZERO; 3]);
     items.extend(value.iter().flat_map(Word::as_elements).copied());
 
@@ -150,7 +150,7 @@ impl From<FaucetMetadataConfig> for NoteStorage {
 /// A FaucetMetadataConfig note: triggers a token metadata admin action on the faucet that consumes
 /// it.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the faucet's
+/// A single note script dispatches on the note variant in its storage to one of the faucet's
 /// metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`).
 /// Authorization is enforced by those procedures through the account-wide
 /// [`Authority`](crate::account::access::Authority) component, so the note carries no assets.
@@ -225,8 +225,8 @@ impl FaucetMetadataConfigNote {
 
     /// Upper bound on the number of storage items of a FaucetMetadataConfig note.
     ///
-    /// The layout is variable: `SetMaxSupply` uses 2 items (`[selector, new_max_supply]`), while
-    /// the three string actions use 32 (`[selector, 0, 0, 0, value(28)]`).
+    /// The layout is variable: `SetMaxSupply` uses 2 items (`[variant, new_max_supply]`), while
+    /// the three string actions use 32 (`[variant, 0, 0, 0, value(28)]`).
     pub const MAX_NUM_STORAGE_ITEMS: usize = 4 + STRING_NUM_ELEMENTS;
 
     /// The numbers of storage items the FaucetMetadataConfig note script accepts.
@@ -382,7 +382,7 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// `SetMaxSupply` storage is `[selector, new_max_supply]`.
+    /// `SetMaxSupply` storage is `[variant, new_max_supply]`.
     #[test]
     fn set_max_supply_storage_layout() {
         let max_supply = AssetAmount::new(1_000).unwrap();
@@ -390,14 +390,11 @@ mod tests {
 
         assert_eq!(
             storage.items(),
-            &[
-                Felt::from(FaucetMetadataConfig::SELECTOR_SET_MAX_SUPPLY),
-                Felt::from(max_supply),
-            ]
+            &[Felt::from(FaucetMetadataConfig::VARIANT_SET_MAX_SUPPLY), Felt::from(max_supply),]
         );
     }
 
-    /// A string action reserves the first storage word for the selector so the 7-Word payload that
+    /// A string action reserves the first storage word for the variant so the 7-Word payload that
     /// follows starts word-aligned.
     #[test]
     fn set_description_storage_layout() {
@@ -408,7 +405,7 @@ mod tests {
 
         let items = storage.items();
         assert_eq!(items.len(), FaucetMetadataConfigNote::MAX_NUM_STORAGE_ITEMS);
-        assert_eq!(items[0], Felt::from(FaucetMetadataConfig::SELECTOR_SET_DESCRIPTION));
+        assert_eq!(items[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_DESCRIPTION));
         assert_eq!(&items[1..4], &[Felt::ZERO; 3]);
 
         let payload: Vec<Felt> =
@@ -416,18 +413,15 @@ mod tests {
         assert_eq!(&items[4..], payload.as_slice());
     }
 
-    /// Every string action carries the same layout, differing only in the selector.
+    /// Every string action carries the same layout, differing only in the variant.
     #[test]
-    fn string_action_selectors() {
+    fn string_action_variants() {
         let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
         let storage = NoteStorage::from(FaucetMetadataConfig::SetLogoUri { logo_uri });
-        assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::SELECTOR_SET_LOGO_URI));
+        assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_LOGO_URI));
 
         let external_link = ExternalLink::new("https://example.com").unwrap();
         let storage = NoteStorage::from(FaucetMetadataConfig::SetExternalLink { external_link });
-        assert_eq!(
-            storage.items()[0],
-            Felt::from(FaucetMetadataConfig::SELECTOR_SET_EXTERNAL_LINK)
-        );
+        assert_eq!(storage.items()[0], Felt::from(FaucetMetadataConfig::VARIANT_SET_EXTERNAL_LINK));
     }
 }

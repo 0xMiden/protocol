@@ -12,26 +12,26 @@ use miden::standards::note::note_target
 const STORAGE_PTR = 0
 
 # Memory addresses of the NetworkAccountConfig note storage. The root word occupies the first four
-# items with the selector after it.
+# items with the variant after it.
 const ROOT_PTR = STORAGE_PTR
-const SELECTOR_PTR = STORAGE_PTR + 4
+const VARIANT_PTR = STORAGE_PTR + 4
 
-# Config note selectors, stored in the storage item after the script root. Keep in sync with
+# Config note variants, stored in the storage item after the script root. Keep in sync with
 # `NetworkAccountConfig` on the Rust side.
-const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT = 0
-const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT = 1
-const SELECTOR_ADD_ALLOWED_TX_SCRIPT = 2
-const SELECTOR_REMOVE_ALLOWED_TX_SCRIPT = 3
-const SELECTOR_ADD_ALLOWED_FEE_POLICY = 4
-const SELECTOR_REMOVE_ALLOWED_FEE_POLICY = 5
+const VARIANT_ADD_ALLOWED_NOTE_SCRIPT = 0
+const VARIANT_REMOVE_ALLOWED_NOTE_SCRIPT = 1
+const VARIANT_ADD_ALLOWED_TX_SCRIPT = 2
+const VARIANT_REMOVE_ALLOWED_TX_SCRIPT = 3
+const VARIANT_ADD_ALLOWED_FEE_POLICY = 4
+const VARIANT_REMOVE_ALLOWED_FEE_POLICY = 5
 
-# Expected note storage item count: a selector plus the root word. Identical for every action.
+# Expected note storage item count: a variant plus the root word. Identical for every action.
 const NUM_STORAGE_ITEMS = 5
 
 # ERRORS
 # =================================================================================================
 
-const ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_SELECTOR = "network account config note selector does not match a known action"
+const ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_VARIANT = "network account config note variant does not match a known action"
 
 const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage item count of the network account config note does not match the expected number"
 
@@ -41,10 +41,10 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 # =================================================================================================
 
 #! NetworkAccountConfig script: mutates a network account's script allowlists and allowed fee policy
-#! roots, dispatched on a selector stored in the first note storage item.
+#! roots, dispatched on the note variant stored in the note storage item after the root.
 #!
 #! The selected action and its root are read from the note storage and are fixed at note creation.
-#! The storage is laid out as `[ROOT, selector]`:
+#! The storage is laid out as `[ROOT, variant]`:
 #! - `[ROOT, 0]` AddAllowedNoteScript.
 #! - `[ROOT, 1]` RemoveAllowedNoteScript.
 #! - `[ROOT, 2]` AddAllowedTxScript.
@@ -77,7 +77,7 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 #! Panics if:
 #! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
-#! - the selector is not a known action.
+#! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the caller is not authorized per the installed `Authority` component, as checked by the
 #!   `AuthNetworkAccount` procedures.
@@ -100,12 +100,12 @@ pub proc main(args: NoteArgs)
     push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items, pad(16)]
 
-    mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items, pad(16)]
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items, pad(16)]
 
-    # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_ADD_ALLOWED_NOTE_SCRIPT
-    # => [is_add_note, selector, num_storage_items, pad(16)]
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_ADD_ALLOWED_NOTE_SCRIPT
+    # => [is_add_note, variant, num_storage_items, pad(16)]
 
     if.true
         drop
@@ -113,8 +113,8 @@ pub proc main(args: NoteArgs)
 
         exec.execute_add_allowed_note_script
     else
-        dup eq.SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT
-        # => [is_remove_note, selector, num_storage_items, pad(16)]
+        dup eq.VARIANT_REMOVE_ALLOWED_NOTE_SCRIPT
+        # => [is_remove_note, variant, num_storage_items, pad(16)]
 
         if.true
             drop
@@ -122,8 +122,8 @@ pub proc main(args: NoteArgs)
 
             exec.execute_remove_allowed_note_script
         else
-            dup eq.SELECTOR_ADD_ALLOWED_TX_SCRIPT
-            # => [is_add_tx, selector, num_storage_items, pad(16)]
+            dup eq.VARIANT_ADD_ALLOWED_TX_SCRIPT
+            # => [is_add_tx, variant, num_storage_items, pad(16)]
 
             if.true
                 drop
@@ -131,8 +131,8 @@ pub proc main(args: NoteArgs)
 
                 exec.execute_add_allowed_tx_script
             else
-                dup eq.SELECTOR_REMOVE_ALLOWED_TX_SCRIPT
-                # => [is_remove_tx, selector, num_storage_items, pad(16)]
+                dup eq.VARIANT_REMOVE_ALLOWED_TX_SCRIPT
+                # => [is_remove_tx, variant, num_storage_items, pad(16)]
 
                 if.true
                     drop
@@ -140,8 +140,8 @@ pub proc main(args: NoteArgs)
 
                     exec.execute_remove_allowed_tx_script
                 else
-                    dup eq.SELECTOR_ADD_ALLOWED_FEE_POLICY
-                    # => [is_add_fee, selector, num_storage_items, pad(16)]
+                    dup eq.VARIANT_ADD_ALLOWED_FEE_POLICY
+                    # => [is_add_fee, variant, num_storage_items, pad(16)]
 
                     if.true
                         drop
@@ -149,8 +149,8 @@ pub proc main(args: NoteArgs)
 
                         exec.execute_add_allowed_fee_policy
                     else
-                        eq.SELECTOR_REMOVE_ALLOWED_FEE_POLICY
-                        assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_SELECTOR
+                        eq.VARIANT_REMOVE_ALLOWED_FEE_POLICY
+                        assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_VARIANT
                         # => [num_storage_items, pad(16)]
 
                         exec.execute_remove_allowed_fee_policy

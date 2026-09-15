@@ -10,15 +10,15 @@ use miden::standards::note::note_target
 const STORAGE_PTR = 0
 
 # Memory addresses of the OwnerConfig note storage.
-const SELECTOR_PTR = STORAGE_PTR
+const VARIANT_PTR = STORAGE_PTR
 const NEW_OWNER_SUFFIX_PTR = STORAGE_PTR + 1
 const NEW_OWNER_PREFIX_PTR = STORAGE_PTR + 2
 
-# Config note selectors, stored in the first storage item. Keep in sync with `OwnerConfig` on the
+# Config note variants, stored in the first storage item. Keep in sync with `OwnerConfig` on the
 # Rust side.
-const SELECTOR_TRANSFER_OWNERSHIP = 0
-const SELECTOR_ACCEPT_OWNERSHIP = 1
-const SELECTOR_RENOUNCE_OWNERSHIP = 2
+const VARIANT_TRANSFER_OWNERSHIP = 0
+const VARIANT_ACCEPT_OWNERSHIP = 1
+const VARIANT_RENOUNCE_OWNERSHIP = 2
 
 # Expected note storage item count per action.
 const NUM_ITEMS_TRANSFER_OWNERSHIP = 3
@@ -31,7 +31,7 @@ const MAX_NUM_ITEMS = NUM_ITEMS_TRANSFER_OWNERSHIP
 # ERRORS
 # =================================================================================================
 
-const ERR_OWNER_CONFIG_UNKNOWN_SELECTOR = "owner config note selector does not match a known action"
+const ERR_OWNER_CONFIG_UNKNOWN_VARIANT = "owner config note variant does not match a known action"
 
 const ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner config note storage item count does not match the selected action"
 
@@ -41,7 +41,7 @@ const ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC = "owner config note must be public"
 # =================================================================================================
 
 #! OwnerConfig script: triggers an `Ownable2Step` management action against the consuming account,
-#! dispatched on a selector stored in the first note storage item.
+#! dispatched on the note variant stored in the first note storage item.
 #!
 #! The selected action and its arguments are read from the note storage (fixed at note creation,
 #! so authorization is bound to the note sender):
@@ -66,7 +66,7 @@ const ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC = "owner config note must be public"
 #! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items exceeds MAX_NUM_ITEMS.
-#! - the selector is not a known action.
+#! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized for the selected action (per the `Ownable2Step` procedures).
 @note_script
@@ -87,12 +87,12 @@ pub proc main(args: NoteArgs)
     push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items]
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items]
 
-    # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_TRANSFER_OWNERSHIP
-    # => [is_transfer, selector, num_storage_items]
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_TRANSFER_OWNERSHIP
+    # => [is_transfer, variant, num_storage_items]
 
     if.true
         drop
@@ -100,8 +100,8 @@ pub proc main(args: NoteArgs)
 
         exec.execute_transfer_ownership
     else
-        dup eq.SELECTOR_ACCEPT_OWNERSHIP
-        # => [is_accept, selector, num_storage_items]
+        dup eq.VARIANT_ACCEPT_OWNERSHIP
+        # => [is_accept, variant, num_storage_items]
 
         if.true
             drop
@@ -109,7 +109,7 @@ pub proc main(args: NoteArgs)
 
             exec.execute_accept_ownership
         else
-            eq.SELECTOR_RENOUNCE_OWNERSHIP assert.err=ERR_OWNER_CONFIG_UNKNOWN_SELECTOR
+            eq.VARIANT_RENOUNCE_OWNERSHIP assert.err=ERR_OWNER_CONFIG_UNKNOWN_VARIANT
             # => [num_storage_items]
 
             exec.execute_renounce_ownership
