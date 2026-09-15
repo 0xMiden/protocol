@@ -59,7 +59,9 @@ fn attachments_defer_nested_verification() {
     }
     .decode_fields()
     .unwrap();
-    assert!(decoded.verify().is_err());
+    let error = decoded.verify().unwrap_err();
+    assert!(error.to_string().starts_with("attachments[0]:"), "{error}");
+    assert!(error_source::<core::num::TryFromIntError>(&error).is_some());
 }
 
 #[test]

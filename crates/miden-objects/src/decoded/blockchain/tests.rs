@@ -243,6 +243,7 @@ fn block_header_protobuf_rejects_upgrade_effective_at_genesis() {
         .unwrap_err();
     let source = error_source::<ProtocolConfigError>(&error).unwrap();
 
+    assert!(error.to_string().starts_with("next_protocol_config:"), "{error}");
     assert_matches!(source, ProtocolConfigError::NextConfigEffectiveAtGenesis);
 }
 

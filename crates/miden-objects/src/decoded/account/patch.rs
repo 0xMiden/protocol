@@ -22,7 +22,7 @@ impl Verify for AccountVaultPatch {
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let mut entries = alloc::collections::BTreeMap::new();
-        for entry in self.entries {
+        for entry in self.entries.into_inner() {
             let (id, value) = entry.verify()?;
             if entries.insert(id, value).is_some() {
                 return Err(VaultPatchError::DuplicateAssetId(id).into());
@@ -55,7 +55,7 @@ impl Verify for StorageMapPatchEntries {
     type Error = StorageMapPatchError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let mut entries = alloc::collections::BTreeMap::new();
-        for entry in self.entries {
+        for entry in self.entries.into_inner() {
             let (key, value) = unwrap_infallible(entry.verify());
             if entries.insert(key, value).is_some() {
                 return Err(StorageMapPatchError::DuplicateKey(key));
@@ -139,11 +139,7 @@ impl Verify for AccountStoragePatch {
     type Verified = miden_protocol::account::AccountStoragePatch;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let slots = self
-            .slots
-            .into_iter()
-            .map(Verify::verify)
-            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+        let slots = self.slots.verify()?;
         Ok(Self::Verified::from_entries(slots)?)
     }
 }
@@ -161,8 +157,8 @@ impl Verify for AccountPatch {
             self.account_id.verify()?,
             self.storage.verify()?,
             self.vault.verify()?,
-            self.code.map(Verify::verify).transpose()?,
-            self.final_nonce,
+            self.code.verify()?,
+            self.final_nonce.into_inner(),
         )?)
     }
 }
