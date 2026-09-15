@@ -170,6 +170,19 @@ The RECIPIENT is not necessarily just an account address. Its pre-image consists
 
 The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
 
+#### Declaring who may consume a note
+
+A note script either restricts consumption to accounts the note commits to, or is open to any consumer by design. Nothing in a script's body distinguishes the second case from a restriction that was simply left out, so every standard note script states its rule on a `Consumers:` line in the doc comment of its `@note_script` procedure.
+
+A note commits to the accounts allowed to consume it in one of two ways:
+
+- as a `NetworkAccountTarget` [attachment](#attachments), which the [config notes](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes) and the agglayer note scripts use.
+- as an account ID in the note's [storage](#storage), which P2ID and P2IDE use. MINT and BURN commit their faucet the same way, as part of the asset held in their storage.
+
+Both are enforced through the shared [`miden::standards::note::note_target`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/note/note_target.masm) procedures. A note that lets its creator take its assets back enforces that separately, through [`miden::standards::note::note_reclaim`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/note/note_reclaim.masm), which checks the reclaimer alongside the block height from which reclaim is allowed.
+
+A note that is open to any consumer states so explicitly, e.g. a SWAP note is filled by whoever provides the requested asset. Some notes' consumption rules are enforced by the account procedure they invoke, e.g. a MINT note is rejected by the faucet it is not addressed to.
+
 #### Note nullifier ensuring private consumption
 
 The `Note` nullifier, computed as:
@@ -245,7 +258,7 @@ The P2IDE note script extends P2ID with additional features including time-locki
 
 ### TX_FEE
 
-The TX_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It adds the note's remaining assets to the consuming account, without restricting who that account is.
+The TX_FEE note script is the canonical way for a transaction to pay its fee to a batch builder. It leaves the note's assets in place for the consuming account to collect, without restricting who that account is.
 
 **Key characteristics:**
 
@@ -254,8 +267,8 @@ The TX_FEE note script is the canonical way for a transaction to pay its fee to 
 - **Note type:** Always public
 - **Assets:** Carries one or more assets of the sender's choosing - the note is unopinionated about which assets are used to pay
 - **Tag:** The unique `0xFEE` tag. Its 18 least significant bits are non-zero, so it can never collide with a default account-target tag (those have their 18 least significant bits set to zero)
-- **Validation:** None - unlike P2ID, there is no target account check, so the note is consumable by any account. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
-- **Requirements:** Consuming account must expose the `miden::standards::wallets::basic::receive_asset` procedure
+- **Validation:** None - unlike P2ID, there is no target account check, so any account may consume the note. In practice, due to the fee incentives, only the batch builder that includes the transaction will actually consume it
+- **Requirements:** The note script does not move the assets, so the consuming account's own code must remove them from the note. Only the account context can do this, via `miden::protocol::input_note::remove_asset` or `remove_all_assets`. A transaction that leaves any of the note's assets uncollected fails the kernel's asset conservation check
 
 **Use case:** Paying transaction fees to whichever account builds the batch, in any asset the batch builder accepts.
 

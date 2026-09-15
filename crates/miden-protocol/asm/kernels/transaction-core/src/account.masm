@@ -1,3 +1,14 @@
+use {
+    AccountId,
+    AccountProcedureRoot,
+    Asset,
+    AssetId,
+    AssetValue,
+    Bool,
+    StorageMapKey,
+    StorageSlotId,
+} from miden::protocol_utils::types
+use {AccountData, Commitment, StorageSlot} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account_update
 use miden::protocol_utils::account_id
 use miden::tx_kernel_core::asset_vault
@@ -206,7 +217,7 @@ const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT = event("miden::protocol::account::push
 #!
 #! Where:
 #! - max_num_storage_slots is the maximum number of account storage slots.
-pub proc get_max_num_storage_slots
+pub proc get_max_num_storage_slots() -> u8
     push.MAX_NUM_STORAGE_SLOTS
 end
 
@@ -217,7 +228,7 @@ end
 #!
 #! Where:
 #! - max_num_procedures is the maximum number of account interface procedures.
-pub proc get_max_num_procedures
+pub proc get_max_num_procedures() -> u16
     push.MAX_NUM_PROCEDURES
 end
 
@@ -238,7 +249,7 @@ pub use {get_account_nonce as get_nonce} from miden::tx_kernel_core::memory
 #!
 #! Panics if:
 #! - the nonce has already been incremented.
-pub proc incr_nonce
+pub proc incr_nonce() -> felt
     exec.account_update::was_nonce_incremented
     # => [was_nonce_incremented]
 
@@ -287,7 +298,7 @@ pub use {get_init_account_commitment as get_initial_commitment} from miden::tx_k
 #!
 #! Where:
 #! - ACCOUNT_COMMITMENT is the commitment of the account data.
-pub proc compute_commitment
+pub proc compute_commitment() -> Commitment
     # if outdated, recompute the storage commitment and store it in the memory
     exec.refresh_storage_commitment
     # => []
@@ -328,7 +339,7 @@ pub use {get_init_account_storage_commitment as get_initial_storage_commitment}
 #!
 #! Where:
 #! - STORAGE_COMMITMENT is the commitment of the active account storage.
-pub proc compute_storage_commitment
+pub proc compute_storage_commitment() -> Commitment
     # if outdated, recompute the storage commitment and store it in the memory
     exec.refresh_storage_commitment
 
@@ -357,7 +368,7 @@ pub use {get_init_native_account_vault_root as get_initial_vault_root}
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-pub proc get_item
+pub proc get_item(slot_id: StorageSlotId) -> word
     # get the active account storage slots section offset and its slot count
     exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
@@ -385,7 +396,7 @@ end
 #!   the first two felts of the hashed slot name.
 #! - is_found is 1 if the slot was found, 0 otherwise.
 #! - VALUE is the value of the item, or the empty word if the slot was not found.
-pub proc find_item
+pub proc find_item(slot_id: StorageSlotId) -> (Bool, word)
     # get the active account storage slots section offset and its slot count
     exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
@@ -419,7 +430,7 @@ end
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
-pub proc has_storage_slot
+pub proc has_storage_slot(slot_id: StorageSlotId) -> Bool
     # get the active account storage slots section offset and its slot count
     exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
@@ -446,7 +457,7 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-pub proc get_typed_item
+pub proc get_typed_item(slot_id: StorageSlotId) -> (word, u8)
     # get the active account storage slots section offset and its slot count
     exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
@@ -475,7 +486,7 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-pub proc get_initial_item
+pub proc get_initial_item(slot_id: StorageSlotId) -> word
     # get the native account initial storage slots section offset and the native slot count
     exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_initial_storage_slots_ptr
@@ -503,7 +514,7 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the storage slot type is not value.
-pub proc set_item
+pub proc set_item(slot_id: StorageSlotId, value: word) -> word
     emit.ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT
     # => [slot_id_suffix, slot_id_prefix, VALUE]
 
@@ -555,7 +566,7 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-pub proc get_map_item
+pub proc get_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
     exec.memory::get_num_storage_slots
     exec.memory::get_account_active_storage_slots_section_ptr
     # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, KEY]
@@ -577,7 +588,7 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-pub proc get_initial_map_item
+pub proc get_initial_map_item(slot_id: StorageSlotId, key: StorageMapKey) -> word
     exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_initial_storage_slots_ptr
     # => [native_initial_storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, KEY]
@@ -603,7 +614,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the storage slot type is not map.
 #! - no map with the root of the slot is found.
-pub proc set_map_item
+pub proc set_map_item(slot_id: StorageSlotId, key: StorageMapKey, new_value: word) -> word
     exec.memory::get_native_num_storage_slots
     exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, num_storage_slots, slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
@@ -635,7 +646,7 @@ end
 #! Where:
 #! - index is the location in memory of the storage slot.
 #! - slot_type is the type of the storage slot.
-pub proc get_native_storage_slot_type
+pub proc get_native_storage_slot_type(index: u8) -> u8
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
@@ -671,7 +682,7 @@ end
 #! - the total value of the fungible asset is greater than or equal to 2^63 after the new asset was
 #!   added.
 #! - the vault already contains the same non-fungible asset.
-pub proc add_asset_to_vault
+pub proc add_asset_to_vault(asset: Asset) -> AssetValue
     # retain the original asset while the callback validates a copy
     dupw.1 dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE]
@@ -720,7 +731,7 @@ end
 #! - the fungible asset is not found in the vault.
 #! - the amount of the fungible asset in the vault is less than the amount to be removed.
 #! - the non-fungible asset is not found in the vault.
-pub proc remove_asset_from_vault
+pub proc remove_asset_from_vault(asset: Asset) -> AssetValue
     # duplicate the asset ID for the later event and delta update
     swapw dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
@@ -756,7 +767,7 @@ end
 #! Where:
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
-pub proc get_asset
+pub proc get_asset(asset_id: AssetId) -> AssetValue
     # get the vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.4
     # => [ASSET_ID, vault_root_ptr]
@@ -779,7 +790,7 @@ end
 #! Where:
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
-pub proc get_initial_asset
+pub proc get_initial_asset(asset_id: AssetId) -> AssetValue
     # get the initial vault root ptr of the native account
     exec.memory::get_init_native_account_vault_root_ptr movdn.4
     # => [ASSET_ID, init_native_vault_root_ptr]
@@ -811,7 +822,7 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
-pub proc authenticate_procedure
+pub proc authenticate_procedure(proc_root: AccountProcedureRoot)
     # verify that the procedure is part of the account code and get its index
     exec.assert_procedure_in_active_account
     # => [proc_idx]
@@ -846,7 +857,7 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the active account's code.
-pub proc assert_procedure_in_active_account
+pub proc assert_procedure_in_active_account(proc_root: AccountProcedureRoot) -> u8
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [proc_idx, PROC_ROOT]
@@ -870,7 +881,7 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not the authentication procedure.
-pub proc assert_auth_procedure
+pub proc assert_auth_procedure(proc_root: AccountProcedureRoot)
     # authentication procedure is always at index 0
     push.0
     # => [auth_proc_idx, PROC_ROOT]
@@ -906,7 +917,7 @@ end
 #! Where:
 #! - ACCOUNT_ID_KEY is the map key constructed from the native account ID.
 #! - SEED is the account seed used to derive the account ID.
-pub proc validate_seed
+pub proc validate_seed()
     # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
     # ---------------------------------------------------------------------------------------------
     # initialize capacity of the hasher and rate1 with the code commitment
@@ -972,7 +983,7 @@ end
 #!    - this ensures sorting and uniqueness among slot IDs.
 #! - any slot has a type that is not a supported storage slot type.
 #! - any slot's reserved element is not zero.
-pub proc validate_storage
+pub proc validate_storage()
     exec.memory::get_native_num_storage_slots
     # => [num_slots]
 
@@ -1042,7 +1053,7 @@ end
 #!
 #! Inputs:  [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix]
 #! Outputs: [is_prev_lt_curr]
-pub proc is_slot_id_lt
+pub proc is_slot_id_lt(prev_slot_id: StorageSlotId, curr_slot_id: StorageSlotId) -> Bool
     movup.2
     # => [curr_slot_id_suffix, prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_prefix]
 
@@ -1086,7 +1097,7 @@ end
 #! - the procedure roots are not sorted.
 #! - the procedure roots are not unique.
 #! - the root of the auth procedure appears at an index other than 0.
-pub proc validate_procedures
+pub proc validate_procedures()
     exec.memory::get_num_account_procedures sub.1
     # => [curr_proc_idx]
 
@@ -1179,7 +1190,7 @@ end
 #! - the computed account storage commitment does not match the provided account storage commitment.
 #! - the foreign account ID obtained from the advice map doesn't match the ID provided to the
 #!   procedure.
-pub proc load_foreign_account
+pub proc load_foreign_account(account_id: AccountId)
     emit.ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT
     # => [account_id_suffix, account_id_prefix]
 
@@ -1263,7 +1274,7 @@ end
 #! Panics if:
 #! - the number of account storage slots exceeded the maximum limit of 255.
 #! - the computed account storage commitment does not match the provided account storage commitment.
-pub proc save_account_storage_data
+pub proc save_account_storage_data(storage_commitment: Commitment)
     # move storage slot data from the advice map to the advice stack
     adv.push_mapvaln
     # OS => [STORAGE_COMMITMENT]
@@ -1333,7 +1344,7 @@ end
 #! Panics if:
 #! - the number of account procedures exceeded the maximum limit of 256.
 #! - the computed account code commitment does not match the provided account code commitment.
-pub proc save_account_procedure_data
+pub proc save_account_procedure_data(code_commitment: Commitment)
     # move procedure data from the advice map to the advice stack
     adv.push_mapvaln
     # OS => [CODE_COMMITMENT]
@@ -1396,7 +1407,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-pub proc insert_new_storage
+pub proc insert_new_storage()
     exec.memory::get_native_num_storage_slots
     # => [num_slots]
 
@@ -1444,7 +1455,7 @@ end
 #!   Operand stack: [slot_idx]
 #!   Advice map: { MAP_ROOT: [MAP_ENTRIES] }
 #! Outputs: []
-proc insert_and_validate_storage_map
+proc insert_and_validate_storage_map(slot_idx: u8)
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     exec.memory::get_native_account_active_storage_slots_ptr
     add
@@ -1541,7 +1552,7 @@ end
 #!   the first two felts of the hashed slot name.
 #! - INITIAL_VALUE is the initial value of the item at the beginning of the transaction.
 #! - CURRENT_VALUE is the current value of the item.
-pub proc get_item_patch
+pub proc get_item_patch(index: u8) -> (word, word, StorageSlotId)
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
@@ -1586,7 +1597,7 @@ end
 #! - index is the index of the slot.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
-pub proc get_native_slot_id
+pub proc get_native_slot_id(index: u8) -> StorageSlotId
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
@@ -1610,7 +1621,7 @@ end
 #! - index is the index of the slot.
 #! - reserved is the reserved element of the slot record, which must be zero per the canonical
 #!   encoding.
-proc get_native_slot_reserved
+proc get_native_slot_reserved(index: u8) -> felt
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
@@ -1635,7 +1646,7 @@ end
 #! - slot_ptr is the pointer to a slot.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
-proc get_slot_id_inner
+proc get_slot_id_inner(slot_ptr: ptr<StorageSlot>) -> StorageSlotId
     dup add.ACCOUNT_SLOT_ID_PREFIX_OFFSET mem_load
     # => [slot_id_prefix, slot_ptr]
 
@@ -1656,7 +1667,7 @@ end
 #! Where:
 #! - slot_ptr is the pointer to a slot.
 #! - VALUE is the new value of the item.
-proc set_item_raw
+proc set_item_raw(slot_ptr: ptr<StorageSlot>, value: word)
     add.ACCOUNT_SLOT_VALUE_OFFSET mem_storew_le dropw
     # => []
 
@@ -1688,7 +1699,7 @@ end
 #! - 0: slot_ptr
 #! - 4..8: OLD_MAP_VALUE
 @locals(8)
-proc set_map_item_raw
+proc set_map_item_raw(slot_ptr: ptr<StorageSlot>, key: StorageMapKey, new_value: word) -> word
     # store slot_ptr until the end of the procedure
     dup loc_store.0
     # => [slot_ptr, KEY, NEW_VALUE]
@@ -1753,7 +1764,7 @@ end
 #! Where:
 #! - slot_ptr is the pointer to a slot.
 #! - VALUE is the value of the item.
-proc get_item_raw
+proc get_item_raw(slot_ptr: ptr<StorageSlot>) -> word
     # offset the pointer to point to the VALUE in the slot
     add.ACCOUNT_SLOT_VALUE_OFFSET
     # => [slot_value_ptr]
@@ -1780,7 +1791,12 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
-proc get_map_item_raw
+proc get_map_item_raw(
+    storage_slots_ptr: ptr<StorageSlot>,
+    num_storage_slots: u8,
+    slot_id: StorageSlotId,
+    key: StorageMapKey
+) -> word
     exec.get_storage_slot_ptr
     # => [slot_ptr, KEY]
 
@@ -1826,7 +1842,11 @@ end
 #! - slot_ptr is the pointer to the resolved storage slot.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
-proc find_storage_slot
+proc find_storage_slot(
+    storage_slots_ptr: ptr<StorageSlot>,
+    num_storage_slots: u8,
+    slot_id: StorageSlotId
+) -> (Bool, ptr<StorageSlot>)
     # construct the end pointer of the storage slots section in which we will search
     swap mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH dup.1 add
     # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_suffix, slot_id_prefix]
@@ -1857,7 +1877,11 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-proc get_storage_slot_ptr
+proc get_storage_slot_ptr(
+    storage_slots_ptr: ptr<StorageSlot>,
+    num_storage_slots: u8,
+    slot_id: StorageSlotId
+) -> ptr<StorageSlot>
     exec.find_storage_slot
     # => [is_found, slot_ptr]
 
@@ -1876,7 +1900,7 @@ end
 #! Where:
 #! - slot_ptr is the pointer to a "current" storage slot in the native account's memory section.
 #! - slot_idx is the index of the storage slot.
-proc slot_ptr_to_index
+proc slot_ptr_to_index(slot_ptr: ptr<StorageSlot>) -> u8
     exec.memory::get_native_account_active_storage_slots_ptr
     sub
     # => [slot_offset]
@@ -1897,7 +1921,7 @@ end
 #!
 #! Panics if:
 #! - the procedure index is out of bounds.
-pub proc get_procedure_root
+pub proc get_procedure_root(index: u8) -> AccountProcedureRoot
     dup exec.memory::get_num_account_procedures
     u32assert2.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
@@ -1928,7 +1952,7 @@ end
 #!
 #! Panics if:
 #! - the maximum allowed number of foreign accounts to be loaded (63) was exceeded.
-pub proc get_account_data_ptr
+pub proc get_account_data_ptr(foreign_account_id: AccountId) -> (Bool, ptr<AccountData>, AccountId)
     # move pointer one account block back so that the first account pointer in the cycle will point
     # to the native account
     push.NATIVE_ACCOUNT_DATA_PTR push.ACCOUNT_DATA_LENGTH sub
@@ -1989,7 +2013,7 @@ end
 #! Panics if:
 #! - the commitment of the loaded foreign account does not match the commitment stored in the
 #!   account tree.
-pub proc validate_active_foreign_account
+pub proc validate_active_foreign_account()
     # get the account database root
     exec.memory::get_account_db_root
     # => [ACCOUNT_DB_ROOT]
@@ -2022,7 +2046,7 @@ end
 #!
 #! Inputs:  [KEY]
 #! Outputs: [HASHED_KEY]
-proc hash_map_key
+proc hash_map_key(key: StorageMapKey) -> Commitment
     exec.poseidon2::hash
     # => [HASHED_KEY]
 end
@@ -2036,7 +2060,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-proc refresh_storage_commitment
+proc refresh_storage_commitment()
     # First we should determine whether the storage commitment should be recomputed. We should do so
     # if the active account is native and the storage commitment is outdated (the dirty flag equals
     # 1). Otherwise the commitment value is guaranteed to be up-to-date.
@@ -2108,7 +2132,7 @@ end
 #!
 #! Panics if:
 #! - the procedure root is not part of the account code.
-pub proc was_procedure_called
+pub proc was_procedure_called(proc_root: AccountProcedureRoot) -> Bool
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [index, PROC_ROOT]
@@ -2141,7 +2165,7 @@ end
 #!
 #! Inputs:  [proc_idx]
 #! Outputs: []
-pub proc set_was_procedure_called
+pub proc set_was_procedure_called(proc_idx: u8)
     exec.memory::get_account_procedures_call_tracking_ptr
     # => [was_called_offset, proc_idx]
 
@@ -2161,7 +2185,7 @@ end
 #! - PROC_ROOT is the hash of the procedure of interest.
 #! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is 
 #!   available on the active account.
-pub proc has_procedure
+pub proc has_procedure(proc_root: AccountProcedureRoot) -> Bool
     # get the end pointer of the procedure section (where we should stop iterating)
     exec.memory::get_num_account_procedures
     exec.memory::get_account_procedure_ptr
@@ -2225,7 +2249,7 @@ end
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #! - ACCOUNT_ID_KEY is the key word built from the provided account ID.
-proc create_id_key
+proc create_id_key(account_id: AccountId) -> Commitment
     push.0.0
     # => [0, 0, account_id_suffix, account_id_prefix]
     # => [ACCOUNT_ID_KEY]

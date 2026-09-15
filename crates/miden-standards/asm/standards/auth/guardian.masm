@@ -92,7 +92,7 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     # Store new scheme id as [scheme_id, 0, 0, 0] in the single-entry map.
     loc_load.0
     # => [scheme_id]
-    
+
     push.0.0.0 movup.3
     # => [NEW_GUARDIAN_SCHEME_ID_WORD]
 
@@ -147,7 +147,7 @@ end
 pub proc verify_signature(msg: word)
     procref.update_guardian_public_key
     # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT, MSG]
-    
+
     exec.native_account::was_procedure_called
     # => [was_update_guardian_public_key_called, MSG]
 

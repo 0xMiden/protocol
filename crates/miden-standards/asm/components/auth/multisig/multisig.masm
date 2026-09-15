@@ -20,6 +20,8 @@ pub use {is_signer} from miden::standards::auth::multisig
 #! a zero verification base fee no note is created. Because the fee is paid before the transaction
 #! summary is created, the fee note and the vault withdrawal funding it are covered by the approver
 #! signatures.
+#! The fee note's serial number uses the block bound by the summary, so it stays unchanged at a
+#! newer execution reference block when the account nonce is unchanged.
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
@@ -47,6 +49,10 @@ pub proc auth_tx_multisig(auth_args: word)
 
     exec.signature::estimate_multisig_authentication_cycles
     # => [num_extra_cycles, CONVERSION_INFO, block_number, SALT]
+
+    # Use the signed block for the fee note and keep it for summary creation.
+    dup.5 movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, block_number, block_number, SALT]
 
     exec.fee::pay_fee drop
     # => [block_number, SALT]

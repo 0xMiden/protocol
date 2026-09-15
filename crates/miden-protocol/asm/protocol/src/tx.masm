@@ -1,7 +1,12 @@
+use {
+    AccountId,
+    AccountProcedureRoot,
+    AssetId,
+    BlockNumber,
+    TransactionScriptRoot,
+} from miden::protocol::types
 use {TX_EXEC_FOREIGN_PROC_OFFSET, TX_GET_BLOCK_COMMITMENT_OFFSET, TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET, TX_GET_BLOCK_TIMESTAMP_OFFSET, TX_GET_EXPIRATION_DELTA_OFFSET, TX_GET_FEE_ASSET_ID_OFFSET, TX_GET_INPUT_NOTES_COMMITMENT_OFFSET, TX_GET_NUM_INPUT_NOTES_OFFSET, TX_GET_NUM_OUTPUT_NOTES_OFFSET, TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET, TX_GET_TX_SCRIPT_ROOT_OFFSET, TX_PREPARE_FPI_OFFSET, TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET, TX_COMPUTE_FEE_OFFSET}
     from miden::protocol::kernel_proc_offsets
-use {AccountId, AccountProcedureRoot, AssetId, BlockNumber, TransactionScriptRoot}
-    from miden::protocol::types
 
 #! Returns the block number of the transaction reference block.
 #!
@@ -261,10 +266,8 @@ end
 pub proc execute_foreign_procedure(
     foreign_account_id: AccountId,
     foreign_proc_root: AccountProcedureRoot,
-    foreign_procedure_inputs : [
-        felt ; 16
-    ]
-) -> [felt ; 16]
+    ...
+) -> ...
     # store the foreign account ID and foreign procedure root to the local memory
     # this will allow us to get the 16th element of the foreign procedure inputs to pass it to the
     # `tx_prepare_fpi` kernel procedure

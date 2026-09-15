@@ -20,24 +20,18 @@ message MastForest {
   bytes encoded = 1;
 }
 
-enum PublicKeyVariant {
-  PUBLIC_KEY_VARIANT_UNSPECIFIED = 0;
-  PUBLIC_KEY_VARIANT_ECDSA_K256_KECCAK = 1;
-}
-
 message PublicKey {
-  PublicKeyVariant variant = 1;
-  bytes encoded = 2;
-}
-
-enum SignatureVariant {
-  SIGNATURE_VARIANT_UNSPECIFIED = 0;
-  SIGNATURE_VARIANT_ECDSA_K256_KECCAK = 1;
+  oneof key {
+    // Canonically serialized ECDSA public key.
+    bytes ecdsa_k256_keccak = 1;
+  }
 }
 
 message Signature {
-  SignatureVariant variant = 1;
-  bytes encoded = 2;
+  oneof signature {
+    // Canonically serialized ECDSA signature; authenticity is checked by its consumer.
+    bytes ecdsa_k256_keccak = 1;
+  }
 }
 
 message MerklePath {

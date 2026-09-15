@@ -1,3 +1,4 @@
+use {Asset, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
@@ -13,8 +14,8 @@ use {NOTE_TYPE_PRIVATE} from miden::protocol::note
 const STORAGE_PTR = 0
 
 # Non-fungible MINT note storage item counts. The layout matches the fungible one: the note
-# carries the full asset (ID and value), and the faucet binding is the component's comparison of
-# the stored ASSET_ID against the asset derived for the active faucet.
+# carries the full asset (ID and value), so the stored ASSET_ID names the faucet the note is for,
+# which the faucet's `mint_and_send` asserts against the asset it derives for itself.
 const NFT_NUM_STORAGE_ITEMS_PRIVATE = 13
 const NFT_MIN_NUM_STORAGE_ITEMS_PUBLIC = 20
 
@@ -41,7 +42,7 @@ const ERR_NON_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "non-fungible M
 #! Outputs: [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #!
 #! Invocation: exec
-proc mint_public
+proc mint_public(num_storage_items: u32) -> (Asset, NoteTag, NoteType, NoteRecipient, [felt; 2])
     # pad the tail of the `mint_and_send` input window, keeping num_storage_items on top
     push.0.0 movup.2
     # => [num_storage_items, pad(2)]
@@ -82,7 +83,7 @@ end
 #! - the number of storage items is not exactly 13.
 #!
 #! Invocation: exec
-proc mint_private
+proc mint_private(num_storage_items: u32) -> (Asset, NoteTag, NoteType, NoteRecipient, [felt; 2])
     eq.NFT_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_NON_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
@@ -117,7 +118,7 @@ end
 #! - the asset stored in the note does not belong to the consuming faucet.
 #!
 #! Invocation: exec
-pub proc mint
+pub proc mint()
     push.STORAGE_PTR exec.active_note::get_storage
     # => [num_storage_items]
 

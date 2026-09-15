@@ -1,8 +1,10 @@
+use {MetadataStringCommitment} from miden::standards::faucets
+use {NoteArgs} from miden::protocol::types
 use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::faucets
 use miden::standards::faucets::fungible
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -37,8 +39,6 @@ const MAX_NUM_ITEMS = NUM_ITEMS_SET_STRING
 
 # ERRORS
 # =================================================================================================
-
-const ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH = "faucet metadata config note attachment target account does not match the consuming account"
 
 const ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT = "faucet metadata config note variant does not match a known action"
 
@@ -78,6 +78,8 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
 #!   the `Authority` and `Pausable` companion components.
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -90,7 +92,7 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 #! - the selected field's mutability flag is not set, or the account is paused.
 #! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
     # => [pad(16)]
 
@@ -100,8 +102,7 @@ pub proc main
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
@@ -165,7 +166,7 @@ end
 #!   `fungible::set_max_supply`).
 #!
 #! Invocation: exec
-proc execute_set_max_supply
+proc execute_set_max_supply(num_storage_items: u32)
     eq.NUM_ITEMS_SET_MAX_SUPPLY
     assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -204,7 +205,7 @@ end
 #! - num_storage_items is not NUM_ITEMS_SET_STRING.
 #!
 #! Invocation: exec
-proc prepare_string_call
+proc prepare_string_call(num_storage_items: u32) -> (MetadataStringCommitment, [felt; 12])
     eq.NUM_ITEMS_SET_STRING
     assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -240,7 +241,7 @@ end
 #!   `faucets::set_description`).
 #!
 #! Invocation: exec
-proc execute_set_description
+proc execute_set_description(num_storage_items: u32)
     exec.prepare_string_call
     # => [DESCRIPTION_COMMITMENT, pad(12)]
 
@@ -263,7 +264,7 @@ end
 #!   `faucets::set_logo_uri`).
 #!
 #! Invocation: exec
-proc execute_set_logo_uri
+proc execute_set_logo_uri(num_storage_items: u32)
     exec.prepare_string_call
     # => [LOGO_URI_COMMITMENT, pad(12)]
 
@@ -286,7 +287,7 @@ end
 #!   `faucets::set_external_link`).
 #!
 #! Invocation: exec
-proc execute_set_external_link
+proc execute_set_external_link(num_storage_items: u32)
     exec.prepare_string_call
     # => [EXTERNAL_LINK_COMMITMENT, pad(12)]
 

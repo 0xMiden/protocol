@@ -1,3 +1,4 @@
+use {Bool, NoteScriptRoot, TransactionScriptRoot} from miden::protocol::types
 # Network-account configuration storage.
 #
 # Owns the standardized `AuthNetworkAccount` slots and provides:
@@ -12,7 +13,6 @@ use miden::protocol::native_account
 use miden::standards::access::authority
 use miden::standards::auth::note_script_allowlist
 use miden::standards::auth::tx_script_allowlist
-use {Bool, NoteScriptRoot, TransactionScriptRoot} from miden::protocol::types
 
 # CONSTANTS
 # =================================================================================================

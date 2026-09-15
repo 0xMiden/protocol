@@ -1,7 +1,9 @@
+use {Commitment} from miden::standards::types
+use {NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::auth::network_account
 use miden::standards::fees::fee_manager
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -32,8 +34,6 @@ const NUM_STORAGE_ITEMS = 5
 const ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_VARIANT = "network account config note variant does not match a known action"
 
 const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage item count of the network account config note does not match the expected number"
-
-const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account config note attachment target account does not match the consuming account"
 
 const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config note must be public"
 
@@ -69,6 +69,8 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 #! - `miden::standards::fees::fee_manager::add_allowed_fee_policy`
 #! - `miden::standards::fees::fee_manager::remove_allowed_fee_policy`
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -80,7 +82,7 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 #! - the caller is not authorized per the installed `Authority` component, as checked by the
 #!   `AuthNetworkAccount` procedures.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     # drop the note script args
     dropw
     # => [pad(16)]
@@ -91,8 +93,7 @@ pub proc main
 
     # bind consumption to the targeted network account: reject if the consuming account is not the
     # note's target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
@@ -177,7 +178,7 @@ end
 #! - num_storage_items is not equal to the expected number.
 #!
 #! Invocation: exec
-proc load_root
+proc load_root(num_storage_items: u32, padding: [felt; 16]) -> (Commitment, [felt; 12])
     eq.NUM_STORAGE_ITEMS
     assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
@@ -200,7 +201,7 @@ end
 #! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
-proc execute_add_allowed_note_script
+proc execute_add_allowed_note_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -222,7 +223,7 @@ end
 #!   `network_account::remove_allowed_note_script`.
 #!
 #! Invocation: exec
-proc execute_remove_allowed_note_script
+proc execute_remove_allowed_note_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -244,7 +245,7 @@ end
 #!   `network_account::add_allowed_tx_script`.
 #!
 #! Invocation: exec
-proc execute_add_allowed_tx_script
+proc execute_add_allowed_tx_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -266,7 +267,7 @@ end
 #!   `network_account::remove_allowed_tx_script`.
 #!
 #! Invocation: exec
-proc execute_remove_allowed_tx_script
+proc execute_remove_allowed_tx_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -288,7 +289,7 @@ end
 #!   `fee_manager::add_allowed_fee_policy`.
 #!
 #! Invocation: exec
-proc execute_add_allowed_fee_policy
+proc execute_add_allowed_fee_policy(num_storage_items: u32)
     exec.load_root
     # => [POLICY_ROOT, pad(12)]
 
@@ -311,7 +312,7 @@ end
 #!   `fee_manager::remove_allowed_fee_policy`.
 #!
 #! Invocation: exec
-proc execute_remove_allowed_fee_policy
+proc execute_remove_allowed_fee_policy(num_storage_items: u32)
     exec.load_root
     # => [POLICY_ROOT, pad(12)]
 

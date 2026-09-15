@@ -5,7 +5,7 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_core::deferred::IntegrityError;
+use miden_core::deferred::{IntegrityError, PrecompileWitnessError};
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -1351,9 +1351,6 @@ pub enum ProposedBatchError {
         source: TransactionVerifierError,
     },
 
-    #[error("transaction {transaction_id} has an outstanding precompile obligation")]
-    IncompleteTransactionProof { transaction_id: TransactionId },
-
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
     )]
@@ -1533,6 +1530,15 @@ pub enum ProvenBatchError {
     BatchKernelExecutionFailed(#[source] ExecutionError),
     #[error("batch kernel proving failed")]
     BatchKernelProvingFailed(#[source] ExecutionError),
+    #[error("precompile witness of transaction {transaction_id} is invalid")]
+    TransactionPrecompileWitnessInvalid {
+        transaction_id: TransactionId,
+        source: PrecompileWitnessError,
+    },
+    #[error("merging the transactions' precompile witnesses failed")]
+    PrecompileWitnessMergeFailed(#[source] PrecompileWitnessError),
+    #[error("precompile proving failed")]
+    PrecompileProvingFailed(#[source] ExecutionError),
     #[error("batch proof contains precompiles")]
     BatchProofContainsPrecompiles,
     #[error("batch kernel produced an invalid output stack")]

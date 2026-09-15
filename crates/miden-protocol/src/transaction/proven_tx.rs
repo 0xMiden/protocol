@@ -1,5 +1,14 @@
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+
+use miden_core::deferred::{
+    DeferredState,
+    IntegrityError,
+    PrecompileRegistry,
+    PrecompileWitness,
+    PrecompileWitnessError,
+};
 
 use super::{InputNote, ToInputNoteCommitments};
 use crate::Word;
@@ -22,7 +31,17 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::ExecutionProof;
+use crate::utils::sync::LazyLock;
+use crate::vm::{ExecutionProof, PrecompileStatus};
+
+// CONSTANTS
+// ================================================================================================
+
+/// The precompile registry every deferred transaction wire is rehydrated against.
+///
+/// Shared, because the registry is fixed and rehydration happens on every transaction of a batch.
+static PRECOMPILE_REGISTRY: LazyLock<Arc<PrecompileRegistry>> =
+    LazyLock::new(|| Arc::new(miden_precompiles::registry()));
 
 // PROVEN TRANSACTION
 // ================================================================================================
@@ -146,6 +165,22 @@ impl ProvenTransaction {
         &self.proof
     }
 
+    /// Returns a singleton precompile witness over the transaction's outstanding precompile claims,
+    /// or `None` if the transaction has no outstanding claims.
+    ///
+    /// A batch merges the witnesses of its transactions to settle their claims with a single
+    /// precompile proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the deferred wire is malformed.
+    /// - its claims do not hold.
+    /// - the deferred state is empty.
+    pub fn precompile_witness(&self) -> Result<Option<PrecompileWitness>, PrecompileWitnessError> {
+        self.deferred_state()?.map(PrecompileWitness::new).transpose()
+    }
+
     /// Returns the number of the reference block the transaction was executed against.
     pub fn ref_block_num(&self) -> BlockNumber {
         self.ref_block_num
@@ -175,6 +210,26 @@ impl ProvenTransaction {
 
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the hydrated deferred state of the transaction's outstanding precompile claims, or
+    /// `None` if the transaction has no outstanding claims.
+    ///
+    /// Rehydration re-evaluates the deferred DAG against the protocol's precompile registry, so it
+    /// establishes that the claims hold natively. It **does not** check them against the
+    /// transaction's VM proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the deferred wire is malformed.
+    /// - its claims do not hold.
+    pub(crate) fn deferred_state(&self) -> Result<Option<DeferredState>, IntegrityError> {
+        let PrecompileStatus::Deferred(wire) = self.proof.precompile() else {
+            return Ok(None);
+        };
+
+        DeferredState::from_wire(Arc::clone(&PRECOMPILE_REGISTRY), wire).map(Some)
+    }
 
     /// Creates a [`ProvenTransaction`] from its raw parts, enforcing all invariants.
     ///

@@ -10,9 +10,9 @@ use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_SPONSORSHIP_MUST_CONTAIN_EXACTLY_ONE_ASSET,
-    ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER,
-    ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED,
-    ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED,
+    ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER,
+    ERR_RECLAIM_DISABLED,
+    ERR_RECLAIM_HEIGHT_NOT_REACHED,
 };
 use miden_standards::note::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -78,9 +78,7 @@ fn setup(reclaim_height: Option<BlockNumber>, reclaimer: Reclaimer) -> anyhow::R
     let mut rng = RandomCoin::new(Word::empty());
 
     let mut builder = MockChain::builder();
-    // The happy-path test proves this account's transaction. Use an auth scheme whose proof does
-    // not contain settled precompile work.
-    let network_account = builder.add_existing_wallet(Auth::basic_falcon())?;
+    let network_account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
     let sponsor = builder.add_existing_wallet(Auth::basic_ecdsa())?;
     let stranger = builder.add_existing_wallet(Auth::basic_ecdsa())?;
 
@@ -151,7 +149,7 @@ async fn network_account_consumes_sponsorship_with_feature_note() -> anyhow::Res
         "the network account should receive the sponsored fee",
     );
 
-    crate::prove_and_verify_transaction(executed).await?;
+    crate::prove_and_verify_transaction_deferred(executed).await?;
 
     Ok(())
 }
@@ -196,11 +194,8 @@ async fn sponsor_path_leaves_assets_in_the_note() -> anyhow::Result<()> {
 /// transaction builder that assembles the transaction) could pocket the fee and never run the
 /// feature note.
 #[rstest]
-#[case::reclaim_disabled(None, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED)]
-#[case::not_the_reclaimer(
-    Some(BlockNumber::from(1u32)),
-    ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER
-)]
+#[case::reclaim_disabled(None, ERR_RECLAIM_DISABLED)]
+#[case::not_the_reclaimer(Some(BlockNumber::from(1u32)), ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER)]
 #[tokio::test]
 async fn sponsorship_cannot_be_consumed_without_feature_note(
     #[case] reclaim_height: Option<BlockNumber>,
@@ -344,7 +339,7 @@ async fn stranger_cannot_consume_sponsorship_without_feature_note() -> anyhow::R
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER);
+    assert_transaction_executor_error!(result, ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER);
 
     Ok(())
 }
@@ -395,7 +390,7 @@ async fn sponsor_cannot_reclaim_before_reclaim_height() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_HEIGHT_NOT_REACHED);
+    assert_transaction_executor_error!(result, ERR_RECLAIM_HEIGHT_NOT_REACHED);
 
     Ok(())
 }
@@ -414,7 +409,7 @@ async fn sponsor_cannot_reclaim_when_reclaim_is_disabled() -> anyhow::Result<()>
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_DISABLED);
+    assert_transaction_executor_error!(result, ERR_RECLAIM_DISABLED);
 
     Ok(())
 }
@@ -463,7 +458,7 @@ async fn sender_cannot_reclaim_when_a_different_reclaimer_is_named() -> anyhow::
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FEE_SPONSORSHIP_RECLAIM_ACCT_IS_NOT_RECLAIMER);
+    assert_transaction_executor_error!(result, ERR_RECLAIM_ACCOUNT_IS_NOT_RECLAIMER);
 
     Ok(())
 }

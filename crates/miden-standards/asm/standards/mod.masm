@@ -13,5 +13,6 @@ pub mod interop
 pub mod note
 pub mod notes
 pub mod tx_scripts
+pub mod types
 pub mod utils
 pub mod wallets

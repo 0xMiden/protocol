@@ -2,26 +2,29 @@ syntax = "proto3";
 package account;
 
 import "primitives.proto";
+import "google/protobuf/empty.proto";
 
 message AccountId {
-  // Exactly 15 bytes in the protocol's canonical AccountId encoding.
-  bytes id = 1;
+  oneof version {
+    AccountIdV1 v1 = 1;
+  }
+}
+
+message AccountIdV1 {
+  primitives.Felt suffix = 1;
+  primitives.Felt prefix = 2;
 }
 
 message AccountStorageHeader {
   message StorageSlot {
     string slot_name = 1;
-    StorageSlotType slot_type = 2;
-    primitives.Word commitment = 3;
+    oneof content {
+      primitives.Word value = 2;
+      primitives.Word map_root = 3;
+    }
   }
 
   repeated StorageSlot slots = 1;
-}
-
-enum StorageSlotType {
-  STORAGE_SLOT_TYPE_UNSPECIFIED = 0;
-  STORAGE_SLOT_TYPE_VALUE = 1;
-  STORAGE_SLOT_TYPE_MAP = 2;
 }
 
 enum AccountVersion {
@@ -78,16 +81,12 @@ message PartialVault {
   repeated primitives.Word asset_ids = 2;
 }
 
-enum StoragePatchOperation {
-  STORAGE_PATCH_OPERATION_UNSPECIFIED = 0;
-  STORAGE_PATCH_OPERATION_CREATE = 1;
-  STORAGE_PATCH_OPERATION_UPDATE = 2;
-  STORAGE_PATCH_OPERATION_REMOVE = 3;
-}
-
 message StorageValuePatch {
-  StoragePatchOperation operation = 1;
-  primitives.Word value = 2;
+  oneof operation {
+    primitives.Word create = 1;
+    primitives.Word update = 2;
+    google.protobuf.Empty remove = 3;
+  }
 }
 
 message StorageMapEntry {
@@ -95,9 +94,16 @@ message StorageMapEntry {
   primitives.Word value = 2;
 }
 
+message StorageMapPatchEntries {
+  repeated StorageMapEntry entries = 1;
+}
+
 message StorageMapPatch {
-  StoragePatchOperation operation = 1;
-  repeated StorageMapEntry entries = 2;
+  oneof operation {
+    StorageMapPatchEntries create = 1;
+    StorageMapPatchEntries update = 2;
+    google.protobuf.Empty remove = 3;
+  }
 }
 
 message StorageSlotPatch {

@@ -3,7 +3,6 @@ extern crate alloc;
 use miden_agglayer::errors::{
     ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN,
     ERR_B2AGG_NOTE_MUST_BE_PUBLIC,
-    ERR_B2AGG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_NOT_REGISTERED,
 };
 use miden_agglayer::testing::create_existing_agglayer_faucet;
@@ -34,6 +33,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::policies::MintPolicy;
+use miden_standards::errors::standards::ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT;
 use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::{
     FeeSponsorshipNote,
@@ -836,23 +836,12 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
 /// 3. Creates a B2AGG note with the user account as sender
 /// 4. The same user account consumes the B2AGG note (triggering reclaim branch)
 /// 5. Verifies that assets are added back to the account and no BURN note is created
+#[rstest::rstest]
+#[case::agglayer(false)]
+#[case::native(true)]
 #[tokio::test]
-async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
+async fn b2agg_note_reclaim_scenario(#[case] native_token: bool) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-
-    // Create a network faucet owner account
-    let faucet_owner_account_id =
-        AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
-
-    // Create a network faucet to provide assets for the B2AGG note
-    let faucet = builder.add_existing_network_faucet(
-        "AGG",
-        1000,
-        faucet_owner_account_id,
-        Some(100),
-        MintPolicy::owner_only(),
-        [],
-    )?;
 
     // Create a faucet manager account
     let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
@@ -881,6 +870,32 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
+
+    let faucet = if native_token {
+        let faucet_owner_account_id =
+            AccountId::builder().account_type(AccountType::Private).build_with_seed([1; 32]);
+        builder.add_existing_network_faucet(
+            "AGG",
+            1000,
+            faucet_owner_account_id,
+            Some(100),
+            MintPolicy::owner_only(),
+            [],
+        )?
+    } else {
+        let faucet = create_existing_agglayer_faucet(
+            builder.rng_mut().draw_word(),
+            "AggLayer Token",
+            "AGG",
+            6,
+            Felt::from(1000u32),
+            Felt::from(100u32),
+            bridge_admin_account_id(),
+            bridge_account.id(),
+        );
+        builder.add_account(faucet.clone())?;
+        faucet
+    };
 
     // Create a user account that will create and consume the B2AGG note
     let mut user_account = builder.add_existing_wallet(Auth::BasicAuth {
@@ -916,13 +931,17 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
-    // The reclaim returns the asset to the user's vault, dispatching the faucet's receive callback,
-    // so the faucet must be available as a foreign account.
-    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    // Reclaiming AggLayer assets must succeed without supplying the faucet as a foreign account.
+    // The generic native faucet still requires its receive callback.
+    let foreign_accounts = if native_token {
+        vec![mock_chain.get_foreign_account_inputs(faucet.id())?]
+    } else {
+        vec![]
+    };
     let mock_tx = mock_chain
         .build_transaction(user_account.id())
         .authenticated_input_note(b2agg_note.id())
-        .foreign_accounts(vec![faucet_inputs])
+        .foreign_accounts(foreign_accounts)
         .build()?;
     let executed_transaction = mock_tx.execute().await?;
 
@@ -964,7 +983,8 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 /// 3. Creates a user account as the sender (creator) of the B2AGG note
 /// 4. Creates a "malicious" account with a bridge interface
 /// 5. Attempts to consume the B2AGG note with the malicious account
-/// 6. Verifies that the transaction fails with ERR_B2AGG_TARGET_ACCOUNT_MISMATCH
+/// 6. Verifies that the transaction fails with
+///    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
 #[tokio::test]
 async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1062,7 +1082,10 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_B2AGG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
 
     Ok(())
 }

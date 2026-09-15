@@ -1,5 +1,62 @@
 # TYPE ALIASES
 # =================================================================================================
+# Semantic aliases for values that protocol procedures move on the operand stack. Names mirror the
+# corresponding Rust types so signatures read as the Rust API does.
 
 # Two-felt identifier (suffix on top of the stack, prefix below).
 pub type AccountId = struct { suffix: felt, prefix: felt }
+
+# Two-felt identifier (suffix on top of the stack, prefix below).
+pub type StorageSlotId = struct { suffix: felt, prefix: felt }
+
+# Word-sized domain values that wrap a `Word` in Rust.
+pub type AssetId = word
+pub type NoteId = word
+pub type AssetValue = word
+pub type AccountProcedureRoot = word
+pub type StorageMapKey = word
+pub type NoteRecipient = word
+pub type NoteMetadata = word
+pub type NoteScriptRoot = word
+pub type TransactionScriptRoot = word
+
+#! Commitment to a block header.
+pub type BlockCommitment = word
+
+# Full asset: the asset ID (an AssetId) on top of the stack, the asset value (an AssetValue)
+# below it.
+pub type Asset = struct {
+    id: AssetId,
+    value: AssetValue,
+}
+
+# Scalar domain values.
+pub type Bool = i1
+pub type AssetAmount = felt
+pub type NoteTag = u32
+# Discriminants match the Rust NoteType representation.
+pub enum NoteType : u8 {
+    PRIVATE = 0,
+    PUBLIC = 1,
+}
+pub type BlockNumber = u32
+
+pub type DoubleWord = struct { lo: word, hi: word }
+
+# Asset class identifier and compact asset metadata fields.
+pub type AssetClass = struct { suffix: felt, prefix: felt }
+pub type AssetMetadata = u8
+# Discriminants match the Rust AssetComposition representation, including reserved custom logic.
+pub enum AssetComposition : u8 {
+    NONE = 0,
+    FUNGIBLE = 1,
+    CUSTOM = 2,
+}
+
+# Commitments to note data.
+pub type NoteAssetsCommitment = word
+pub type NoteStorageCommitment = word
+pub type NoteAttachmentCommitment = word
+pub type NoteAttachmentsCommitment = word
+pub type NoteArgs = word
+pub type NoteSerialNumber = word
