@@ -56,27 +56,9 @@ fn create_multisig_smart_account(
     starting_balance: u64,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
-    create_multisig_smart_account_with_delay_policy(
-        threshold,
-        public_keys,
-        starting_balance,
-        proc_policy_map,
-        DelayedExecutionPolicy::new(30, 2)?,
-    )
-}
-
-/// Like [`create_multisig_smart_account`], but with an explicit [`DelayedExecutionPolicy`] so tests
-/// can configure the propose threshold.
-fn create_multisig_smart_account_with_delay_policy(
-    threshold: u32,
-    public_keys: &[PublicKey],
-    starting_balance: u64,
-    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-    delayed_execution_policy: DelayedExecutionPolicy,
-) -> anyhow::Result<Account> {
     let approvers: Vec<_> = public_keys.iter().map(Approver::from).collect();
     let approver_set = ApproverSet::new(approvers, threshold)?;
-    let config = AuthMultisigSmartConfig::new(approver_set, delayed_execution_policy)
+    let config = AuthMultisigSmartConfig::new(approver_set, DelayedExecutionPolicy::new(30, 2)?)
         .with_proc_policies(proc_policy_map)?;
 
     let asset = FungibleAsset::new(
@@ -1551,21 +1533,21 @@ async fn test_multisig_smart_approval_expires_relative_to_bound_block(
     Ok(())
 }
 
-/// A `propose_threshold` below the account default is what actually makes the timelock cheaper.
+/// The delayed path costs the procedure's `delay_threshold`, not the account default.
 ///
-/// Proposing and executing verify signatures over the *same* commitment, so the signatures gathered
-/// to propose already count towards the execution threshold. That makes the propose threshold the
-/// floor on what a delayed action costs: with it pinned to the default (3 here) a `delay_threshold`
-/// of 1 buys nothing, but lowering it to 1 lets a single approver drive the whole delayed path.
+/// Proposing needs a single approver signature and only starts the timelock, and because it is over
+/// the same commitment that execution verifies, that signature already counts towards the execution
+/// threshold. So on a 3-of-3 account a procedure with `delay_threshold = 1` can be driven through
+/// the whole delayed path by one approver, while the immediate path still costs three signatures.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_propose_threshold_lowers_delayed_path_signature_count(
+async fn test_multisig_smart_delayed_path_costs_delay_threshold(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
-    let mut multisig_account = create_multisig_smart_account_with_delay_policy(
+    let mut multisig_account = create_multisig_smart_account(
         3,
         &public_keys,
         100,
@@ -1573,7 +1555,6 @@ async fn test_multisig_smart_propose_threshold_lowers_delayed_path_signature_cou
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(3, 1)?,
         )],
-        DelayedExecutionPolicy::new(30, 2)?.with_propose_threshold(1)?,
     )?;
     let account_id = multisig_account.id();
     let mut mock_chain =
@@ -1629,7 +1610,7 @@ async fn test_multisig_smart_propose_threshold_lowers_delayed_path_signature_cou
         .unwrap_unauthorized_err();
     let target_commitment = tx_summary.as_ref().to_commitment();
 
-    // A single approver can propose, because `propose_threshold` is 1 rather than the default 3.
+    // A single approver can propose; proposing only starts the timelock.
     let propose_tx = execute_delay_action(
         &mock_chain,
         account_id,
@@ -1678,18 +1659,18 @@ async fn test_multisig_smart_propose_threshold_lowers_delayed_path_signature_cou
     Ok(())
 }
 
-/// A low `propose_threshold` must not weaken execution: it only makes starting the timelock cheap.
-/// The procedure's `delay_threshold` is still enforced when the proposed transaction runs, so a
-/// single approver can open a proposal but cannot execute one that requires three signatures.
+/// The single-signature propose gate must not weaken execution: it only makes starting the timelock
+/// cheap. The procedure's `delay_threshold` is still enforced when the proposed transaction runs,
+/// so a single approver can open a proposal but cannot execute one that requires three signatures.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
-async fn test_multisig_smart_low_propose_threshold_does_not_weaken_execution(
+async fn test_multisig_smart_single_signature_proposal_does_not_weaken_execution(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
-    let mut multisig_account = create_multisig_smart_account_with_delay_policy(
+    let mut multisig_account = create_multisig_smart_account(
         3,
         &public_keys,
         100,
@@ -1697,7 +1678,6 @@ async fn test_multisig_smart_low_propose_threshold_does_not_weaken_execution(
             AuthMultisigSmart::update_delayed_execution_policy_root().as_word(),
             ProcedurePolicy::with_immediate_and_delay_thresholds(3, 3)?,
         )],
-        DelayedExecutionPolicy::new(30, 2)?.with_propose_threshold(1)?,
     )?;
     let account_id = multisig_account.id();
     let mut mock_chain =

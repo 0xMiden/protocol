@@ -13,8 +13,7 @@ use miden::standards::auth::multisig
 # CONSTANTS
 # =================================================================================================
 
-# [min_delay, propose_expiration_delta, propose_threshold, 0]
-# A zero propose_threshold means proposing falls back to the account's default threshold.
+# [min_delay, propose_expiration_delta, 0, 0]
 const DELAY_MODE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::delay_mode_config")
 
 # Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
@@ -34,8 +33,6 @@ const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
 const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16 = "propose_expiration_delta must be u16"
 const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
-const ERR_PROPOSE_THRESHOLD_NOT_U32 = "propose_threshold must be u32"
-const ERR_PROPOSE_THRESHOLD_EXCEEDS_NUM_APPROVERS = "propose_threshold exceeds number of approvers"
 const ERR_TIMESTAMPS_NOT_U32 = "current_timestamp and unlock_timestamp must be u32"
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
 const ERR_TX_NOT_PROPOSED = "tx not proposed"
@@ -49,7 +46,7 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires a 
 
 #! Sets the delayed execution policy used by proposal lifecycle checks.
 #!
-#! Inputs:  [min_delay, propose_expiration_delta, propose_threshold]
+#! Inputs:  [min_delay, propose_expiration_delta]
 #! Outputs: []
 #!
 #! Where:
@@ -57,8 +54,6 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires a 
 #!   recorded and the matching execute call.
 #! - propose_expiration_delta is the block delta applied to proposal transactions so that
 #!   unsatisfied proposals expire after that many blocks.
-#! - propose_threshold is the number of signatures `propose_transaction` requires, or 0 to fall
-#!   back to the account's default threshold.
 #!
 #! Panics if:
 #! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
@@ -69,60 +64,30 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires a 
 #! - `propose_expiration_delta` exceeds `MAX_PROPOSE_EXPIRATION_DELTA` (u16 max), since the kernel's
 #!   `tx::update_expiration_block_delta` only accepts a u16 delta
 #!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16`).
-#! - `propose_threshold` is not a valid `u32` field element (`ERR_PROPOSE_THRESHOLD_NOT_U32`).
-#! - a non-zero `propose_threshold` exceeds the number of approvers, which would make proposing
-#!   impossible (`ERR_PROPOSE_THRESHOLD_EXCEEDS_NUM_APPROVERS`).
 #!
 #! Invocation: call
 @account_procedure
 pub proc update_delayed_execution_policy
     u32assert.err=ERR_MIN_DELAY_NOT_U32
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
-    # => [min_delay, propose_expiration_delta, propose_threshold]
+    # => [min_delay, propose_expiration_delta]
 
-    swap u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
+    # Validate propose_expiration_delta on a copy so the stored layout stays in place; the final
+    # range check consumes the copy.
+    dup.1 u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
-    # => [propose_expiration_delta, min_delay, propose_threshold]
+    # => [propose_expiration_delta, min_delay, propose_expiration_delta]
 
     # The kernel's `tx::update_expiration_block_delta` only accepts a u16 delta, so reject any
     # value above `MAX_PROPOSE_EXPIRATION_DELTA` here rather than bricking the propose flow later.
-    dup u32lte.MAX_PROPOSE_EXPIRATION_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
-    # => [propose_expiration_delta, min_delay, propose_threshold]
+    u32lte.MAX_PROPOSE_EXPIRATION_DELTA assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U16
+    # => [min_delay, propose_expiration_delta]
 
-    swap
-    # => [min_delay, propose_expiration_delta, propose_threshold]
-
-    movup.2 u32assert.err=ERR_PROPOSE_THRESHOLD_NOT_U32
-    # => [propose_threshold, min_delay, propose_expiration_delta]
-
-    dup eq.0
-    # => [is_unset, propose_threshold, min_delay, propose_expiration_delta]
-
-    if.true
-        # Zero means "fall back to the default threshold", so there is nothing to bound.
-        # => [propose_threshold, min_delay, propose_expiration_delta]
-    else
-        # A configured threshold above the approver count could never be met, which would brick the
-        # propose flow and with it the whole delayed-execution path.
-        dup exec.multisig::get_initial_threshold_and_num_approvers drop
-        # => [num_approvers, propose_threshold, propose_threshold, min_delay, propose_expiration_delta]
-
-        swap u32assert2.err=ERR_PROPOSE_THRESHOLD_NOT_U32
-        # => [propose_threshold, num_approvers, propose_threshold, min_delay, propose_expiration_delta]
-
-        u32gte assert.err=ERR_PROPOSE_THRESHOLD_EXCEEDS_NUM_APPROVERS
-        # => [propose_threshold, min_delay, propose_expiration_delta]
-    end
-    # => [propose_threshold, min_delay, propose_expiration_delta]
-
-    movdn.2
-    # => [min_delay, propose_expiration_delta, propose_threshold]
-
-    push.0 movdn.3
-    # => [min_delay, propose_expiration_delta, propose_threshold, 0]
+    push.0.0 movdn.3 movdn.3
+    # => [min_delay, propose_expiration_delta, 0, 0]
 
     push.DELAY_MODE_CONFIG_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, propose_threshold, 0]
+    # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, 0, 0]
 
     exec.native_account::set_item
     # => [OLD_WORD]
@@ -131,46 +96,47 @@ pub proc update_delayed_execution_policy
     # => []
 end
 
-#! Loads the delayed execution policy configuration from `DELAY_MODE_CONFIG_SLOT`.
+#! Loads the delayed execution policy configuration from the initial `DELAY_MODE_CONFIG_SLOT`.
+#!
+#! Reads the transaction's initial storage state, so a policy update earlier in the same
+#! transaction does not affect the proposal that transaction records or consumes.
 #!
 #! Inputs:  []
-#! Outputs: [min_delay, propose_expiration_delta, propose_threshold]
+#! Outputs: [min_delay, propose_expiration_delta]
 #!
 #! Where:
 #! - min_delay is the minimum number of seconds that must elapse between a `propose_transaction`
 #!   call and the matching execute transaction.
 #! - propose_expiration_delta is the block delta applied to proposal transactions so that
 #!   unsatisfied proposals expire after `propose_expiration_delta` blocks.
-#! - propose_threshold is the number of signatures `propose_transaction` requires, or 0 when it
-#!   falls back to the account's default threshold.
 #!
 #! Invocation: exec
-proc get_delayed_execution_config
+proc get_initial_delayed_execution_config
     push.DELAY_MODE_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
     exec.native_account::get_initial_item
-    # => [min_delay, propose_expiration_delta, propose_threshold, 0]
+    # => [min_delay, propose_expiration_delta, 0, 0]
 
-    movup.3 drop
-    # => [min_delay, propose_expiration_delta, propose_threshold]
+    movup.3 drop movup.2 drop
+    # => [min_delay, propose_expiration_delta]
 end
 
-#! Returns `min_delay` from [`DELAY_MODE_CONFIG_SLOT`]
+#! Returns `min_delay` from the initial `DELAY_MODE_CONFIG_SLOT`.
 #!
 #! Inputs:  []
 #! Outputs: [min_delay]
 #!
 #! Invocation: exec
-proc get_min_delay
-    exec.get_delayed_execution_config
-    # => [min_delay, propose_expiration_delta, propose_threshold]
+proc get_initial_min_delay
+    exec.get_initial_delayed_execution_config
+    # => [min_delay, propose_expiration_delta]
 
-    movup.2 drop swap drop
+    swap drop
     # => [min_delay]
 end
 
-#! Returns `propose_expiration_delta` from [`DELAY_MODE_CONFIG_SLOT`].
+#! Returns `propose_expiration_delta` from the initial `DELAY_MODE_CONFIG_SLOT`.
 #!
 #! Callers stage a proposal by piping the returned delta through
 #! `tx::update_expiration_block_delta` so that proposal-bearing transactions expire within the
@@ -180,30 +146,12 @@ end
 #! Outputs: [propose_expiration_delta]
 #!
 #! Invocation: exec
-proc get_propose_expiration_delta
-    exec.get_delayed_execution_config
-    # => [min_delay, propose_expiration_delta, propose_threshold]
+proc get_initial_propose_expiration_delta
+    exec.get_initial_delayed_execution_config
+    # => [min_delay, propose_expiration_delta]
 
-    drop swap drop
+    drop
     # => [propose_expiration_delta]
-end
-
-#! Returns `propose_threshold` from [`DELAY_MODE_CONFIG_SLOT`].
-#!
-#! Inputs:  []
-#! Outputs: [propose_threshold]
-#!
-#! Where:
-#! - propose_threshold is the number of signatures `propose_transaction` requires, or 0 when it
-#!   falls back to the account's default threshold.
-#!
-#! Invocation: exec
-proc get_propose_threshold
-    exec.get_delayed_execution_config
-    # => [min_delay, propose_expiration_delta, propose_threshold]
-
-    drop drop
-    # => [propose_threshold]
 end
 
 # TIMELOCK + PROPOSALS HELPERS
@@ -320,7 +268,7 @@ proc compute_unlock_timestamp
     exec.tx::get_block_timestamp
     # => [proposal_timestamp]
 
-    dup exec.get_min_delay
+    dup exec.get_initial_min_delay
     # => [min_delay, proposal_timestamp, proposal_timestamp]
 
     add
@@ -422,18 +370,16 @@ end
 
 #! Records a new proposal for `TX_SUMMARY_COMMITMENT`.
 #!
-#! Verifies the proposal signatures over `TX_SUMMARY_COMMITMENT` against the approver set and
-#! requires at least the configured `propose_threshold` valid signatures, falling back to
-#! `default_threshold` when no propose threshold is configured. The proposal is written with
-#! `min_cancel_sigs` set to the number of verified signatures, and the current (proposal)
-#! transaction is given the configured `propose_expiration_delta`.
+#! Requires a single valid approver signature over `TX_SUMMARY_COMMITMENT`. Proposing only starts
+#! the timelock; the proposed transaction is authorized when it executes, where the called
+#! procedures' `delay_threshold` (or `default_threshold` when they have no policy) is enforced.
+#! A higher bar here could not be made procedure- or amount-aware, since a proposal carries only
+#! the target's commitment, and it would set a floor on what a delayed action costs: the proposal
+#! signatures are over the same commitment that is verified again at execution, so they already
+#! count towards that threshold.
 #!
-#! Because these signatures are over the same commitment that is verified again when the proposed
-#! transaction executes, they already count towards the execution threshold. The propose threshold
-#! is therefore the floor on what a delayed action costs, and lowering it below the default is what
-#! lets the timelock trade signatures for a delay. Execution is not weakened by a low propose
-#! threshold: the called procedures' `delay_threshold` (or `default_threshold` when they have no
-#! policy) is still enforced when the proposed transaction runs.
+#! The proposal is written with `min_cancel_sigs` set to the number of verified signatures, and the
+#! current (proposal) transaction is given the configured `propose_expiration_delta`.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
@@ -444,48 +390,30 @@ end
 #!
 #! Panics if:
 #! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
-#! - fewer than `default_threshold` signatures verify over `TX_SUMMARY_COMMITMENT`
-#!   (`ERR_PROPOSE_INSUFFICIENT_SIGNATURES`).
+#! - no signature verifies over `TX_SUMMARY_COMMITMENT` (`ERR_PROPOSE_INSUFFICIENT_SIGNATURES`).
 #! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #!
 #! Invocation: call
 @account_procedure
 pub proc propose_transaction
-    # => [TX_SUMMARY_COMMITMENT]
     # Note: a transaction that was already executed can still be proposed here; it is not worth an
     # extra `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing
     # it later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
     dupw exec.is_tx_proposed assertz.err=ERR_TX_ALREADY_PROPOSED
     # => [TX_SUMMARY_COMMITMENT]
 
-    # ---- Verify proposal signatures over the target commitment. ----
-    exec.multisig::get_initial_threshold_and_num_approvers
-    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    # The configured propose threshold overrides the default; 0 means it is not configured. Keeping
-    # this separate from `default_threshold` is what lets the timelock lower the number of
-    # signatures a delayed action costs - the proposal signatures are over the same commitment that
-    # is verified again at execution time, so they are what sets the floor for the delayed path.
-    exec.get_propose_threshold
-    # => [propose_threshold, default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    dup eq.0 movup.2 swap
-    # => [is_unset, default_threshold, propose_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    cdrop
-    # => [required_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
-
-    movdn.5
-    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, required_threshold]
+    # ---- Verify at least one approver signature over the target commitment. ----
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     exec.multisig::verify_signatures
-    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, required_threshold]
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    dup movup.6 u32gte assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
+    dup neq.0 assert.err=ERR_PROPOSE_INSUFFICIENT_SIGNATURES
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     # ---- Bound the proposal transaction's validity window. ----
-    exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
+    exec.get_initial_propose_expiration_delta exec.tx::update_expiration_block_delta
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     # ---- Write the proposal with min_cancel_sigs = num_verified_signatures. ----
