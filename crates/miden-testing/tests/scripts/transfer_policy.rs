@@ -15,7 +15,7 @@ use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Authority;
+use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
@@ -24,8 +24,15 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::errors::standards::ERR_PAUSABLE_IS_PAUSED;
 use miden_standards::note::{MintNote, MintNoteStorage, P2idNote};
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder};
+use miden_testing::{
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_transaction_executor_error,
+};
 
 use super::assert_default_expiration_limit;
 
@@ -79,6 +86,37 @@ fn add_faucet_with_allow_all_transfer(builder: &mut MockChainBuilder) -> anyhow:
                 .active_burn_policy(BurnPolicy::allow_all())
                 .active_send_policy(TransferPolicy::allow_all())
                 .active_receive_policy(TransferPolicy::allow_all())
+                .build(),
+        );
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a fungible faucet whose send and receive policies are registered only as reserved
+/// alternatives, so the asset callbacks are installed while both active roots are empty. The
+/// faucet installs [`Pausable`] in the given state so the dispatcher's pause check is reachable.
+fn add_faucet_with_reserved_only_transfer(
+    builder: &mut MockChainBuilder,
+    pausable: Pausable,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("RSV")?)
+        .symbol("RSV".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([46u8; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_component(pausable)
+        .with_components(
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .allowed_send_policy(TransferPolicy::allow_all())
+                .allowed_receive_policy(TransferPolicy::allow_all())
                 .build(),
         );
 
@@ -208,6 +246,96 @@ async fn send_callback_applies_default_expiration_limit() -> anyhow::Result<()> 
 
     assert_minted_note(&executed, &mint)?;
     assert_default_expiration_limit(&executed);
+
+    Ok(())
+}
+
+/// With no active receive policy the dispatcher takes the empty-root branch. It must still limit
+/// the expiration, otherwise a transfer anchored before `set_receive_policy` activates a policy
+/// would stay valid indefinitely.
+#[tokio::test]
+async fn receive_callback_applies_default_expiration_limit_without_active_policy()
+-> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_reserved_only_transfer(&mut builder, Pausable::unpaused())?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
+    let note =
+        builder.add_p2id_note(faucet.id(), target.id(), &[Asset::from(asset)], NoteType::Public)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let executed = mock_chain
+        .build_transaction(target.id())
+        .authenticated_input_note(note.id())
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    assert_default_expiration_limit(&executed);
+
+    Ok(())
+}
+
+/// With no active send policy the dispatcher takes the empty-root branch. It must still limit the
+/// expiration, otherwise a mint anchored before `set_send_policy` activates a policy would stay
+/// valid indefinitely.
+#[tokio::test]
+async fn send_callback_applies_default_expiration_limit_without_active_policy() -> anyhow::Result<()>
+{
+    let mut builder = MockChain::builder();
+    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_reserved_only_transfer(&mut builder, Pausable::unpaused())?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let mint = build_mint_note(target.id(), faucet.id(), target.id(), 100, 12)?;
+
+    let executed = mock_chain
+        .build_transaction(faucet.id())
+        .unauthenticated_input_note(mint.note.clone())
+        .build()?
+        .execute()
+        .await?;
+
+    assert_minted_note(&executed, &mint)?;
+    assert_default_expiration_limit(&executed);
+
+    Ok(())
+}
+
+/// The pause flag is account-wide, so a paused faucet must reject transfers of its asset even
+/// when no receive policy is active.
+#[tokio::test]
+async fn receive_callback_rejects_paused_faucet_without_active_policy() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_reserved_only_transfer(&mut builder, Pausable::paused())?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
+    let note =
+        builder.add_p2id_note(faucet.id(), target.id(), &[Asset::from(asset)], NoteType::Public)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_transaction(target.id())
+        .authenticated_input_note(note.id())
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
 
     Ok(())
 }
