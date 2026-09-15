@@ -62,39 +62,27 @@ pub trait Eip712TransactionSummary {
 
 impl Eip712TransactionSummary for TransactionSummary {
     fn eip712_hash(&self) -> Eip712Digest {
-        transaction_summary_digest(self.to_commitment())
+        let mut struct_preimage = [0u8; 64];
+        struct_preimage[..32].copy_from_slice(&TRANSACTION_TYPE_HASH);
+        struct_preimage[32..].copy_from_slice(&self.to_commitment().as_bytes());
+        let struct_hash: [u8; 32] = Keccak256::hash(&struct_preimage).into();
+
+        let mut digest_preimage = [0u8; 66];
+        digest_preimage[..2].copy_from_slice(&[0x19, 0x01]);
+        digest_preimage[2..34].copy_from_slice(&DOMAIN_SEPARATOR);
+        digest_preimage[34..].copy_from_slice(&struct_hash);
+
+        Eip712Digest(Keccak256::hash(&digest_preimage).into())
     }
 
     fn eip712_signature_key(&self, public_key: PublicKeyCommitment) -> Word {
-        transaction_summary_signature_key(public_key, self.to_commitment())
+        let raw_signature_key = Hasher::merge(&[public_key.into(), self.to_commitment()]);
+        let domain = Word::new([
+            Felt::new_unchecked(SIGNATURE_KEY_DOMAIN),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+        ]);
+        Hasher::merge(&[raw_signature_key, domain])
     }
-}
-
-fn transaction_summary_digest(tx_summary_hash: Word) -> Eip712Digest {
-    eip712_digest(DOMAIN_SEPARATOR, transaction_struct_hash(tx_summary_hash))
-}
-
-fn eip712_digest(domain_separator: [u8; 32], struct_hash: [u8; 32]) -> Eip712Digest {
-    let mut preimage = [0u8; 66];
-    preimage[..2].copy_from_slice(&[0x19, 0x01]);
-    preimage[2..34].copy_from_slice(&domain_separator);
-    preimage[34..].copy_from_slice(&struct_hash);
-    Eip712Digest(Keccak256::hash(&preimage).into())
-}
-
-fn transaction_struct_hash(tx_summary_hash: Word) -> [u8; 32] {
-    let mut preimage = [0u8; 64];
-    preimage[..32].copy_from_slice(&TRANSACTION_TYPE_HASH);
-    preimage[32..].copy_from_slice(&tx_summary_hash.as_bytes());
-    Keccak256::hash(&preimage).into()
-}
-
-fn transaction_summary_signature_key(
-    public_key: PublicKeyCommitment,
-    tx_summary_hash: Word,
-) -> Word {
-    let raw_signature_key = Hasher::merge(&[public_key.into(), tx_summary_hash]);
-    let domain =
-        Word::new([Felt::new_unchecked(SIGNATURE_KEY_DOMAIN), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
-    Hasher::merge(&[raw_signature_key, domain])
 }

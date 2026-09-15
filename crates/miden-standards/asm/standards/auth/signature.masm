@@ -26,7 +26,7 @@ pub type SignatureSchemeWord = struct {
 # Auth Scheme ID Structure
 const ECDSA_K256_KECCAK_SCHEME_ID=1
 const FALCON_512_POSEIDON2_SCHEME_ID=2
-const ECDSA_K256_KECCAK_SIGNATURE_LENGTH=32
+const ECDSA_K256_KECCAK_SIGNATURE_LENGTH = 32
 
 # Estimated upper bounds on the number of cycles authenticate_transaction takes per signature
 # scheme, for use as the num_extra_cycles input of fee::pay_fee. Measured values (see
@@ -149,16 +149,12 @@ pub proc authenticate_transaction_with_user_params(user_params: [felt; 6], appro
     # AS => []
 end
 
-#! Verifies a signature using the supplied scheme id.
-#!
-#! Supported schemes:
-#! - 1 => ECDSA (ecdsa_k256_keccak)
-#! - 2 => Falcon (falcon512_poseidon2)
-#!
-#! Inputs:  [scheme_id, PK_COMM, MSG]
-#! Outputs: []
-#!
-#! Invocation: exec
+# Verify signature using scheme_id:
+#   1 => ECDSA (ecdsa_k256_keccak)
+#   2 => Falcon (falcon512_poseidon2)
+#
+# Inputs:  [scheme_id, PK_COMM, MSG]
+# Outputs: []
 proc verify_signature_by_scheme(
     scheme_id: SignatureScheme,
     pk_comm: PublicKeyCommitment,
@@ -311,9 +307,6 @@ end
 #! the owner public key mapping - the previous signers must authorize the change to the new signers,
 #! not the new signers authorizing themselves.
 #!
-#! An ECDSA signer without a raw signature may instead provide an EIP-712 transaction-summary
-#! signature. Raw signatures take precedence, and each signer is counted at most once.
-#!
 #! Inputs:  [approver_scheme_id_slot_id_suffix, approver_scheme_id_slot_id_prefix,
 #!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
 #!           num_of_approvers, MSG]
@@ -400,10 +393,17 @@ pub proc verify_signatures(
             swapw
             # => [PK_COMM, MSG, MSG, signer_idx]
 
-            dup.12
-            loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
-            loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-            exec.get_initial_approver_scheme_id
+            dup.12 exec.create_approver_map_key
+            # => [APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
+
+            loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
+            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PK_COMM, MSG, MSG, signer_idx]
+
+            # Get scheme_id for the signer index from initial storage state.
+            exec.native_account::get_initial_map_item
+            # => [[scheme_id, 0, 0, 0], PK_COMM, MSG, MSG, signer_idx]
+
+            movdn.3 drop drop drop
             # OS => [scheme_id, PK_COMM, MSG, MSG, signer_idx]
             # AS => [SIGNATURE]
 
@@ -423,10 +423,16 @@ pub proc verify_signatures(
             # => [has_eip712_signature, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
             if.true
-                dup.12
-                loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
-                loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-                exec.get_initial_approver_scheme_id
+                dup.12 exec.create_approver_map_key
+                # => [APPROVER_MAP_KEY, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+                loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
+                # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+                exec.native_account::get_initial_map_item
+                # => [[scheme_id, 0, 0, 0], EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+                movdn.3 drop drop drop
                 # => [scheme_id, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
 
                 eq.ECDSA_K256_KECCAK_SCHEME_ID
@@ -476,27 +482,6 @@ pub proc verify_signatures(
 
     loc_load.SUCCESSFUL_VERIFICATIONS_LOC
     # => [num_verified_signatures, MSG]
-end
-
-# Returns the initial signature scheme for an approver.
-#
-# Inputs:  [scheme_slot_suffix, scheme_slot_prefix, signer_idx]
-# Outputs: [scheme_id]
-proc get_initial_approver_scheme_id
-    movup.2
-    # => [signer_idx, scheme_slot_suffix, scheme_slot_prefix]
-
-    exec.create_approver_map_key
-    # => [APPROVER_MAP_KEY, scheme_slot_suffix, scheme_slot_prefix]
-
-    movup.5 movup.5
-    # => [scheme_slot_suffix, scheme_slot_prefix, APPROVER_MAP_KEY]
-
-    exec.native_account::get_initial_map_item
-    # => [[scheme_id, 0, 0, 0]]
-
-    movdn.3 drop drop drop
-    # => [scheme_id]
 end
 
 #! Builds the storage map key for a signer index.

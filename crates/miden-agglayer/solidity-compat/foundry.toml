@@ -19,7 +19,4 @@ ffi       = false
 verbosity = 2
 
 # Allow writing test vectors to file
-fs_permissions = [
-  { access = "read-write", path = "test-vectors" },
-  { access = "read-write", path = "../../miden-testing/tests/standards/test-vectors" },
-]
+fs_permissions = [{ access = "read-write", path = "test-vectors" }]

@@ -901,7 +901,8 @@ pub proc rebase_expiration_delta(bound_block: BlockNumber)
     end
 end
 
-#! Authenticates a transaction with threshold signatures.
+#! Authenticate a transaction using the signature scheme specified by scheme_id
+#! with multi-signature support
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
@@ -915,10 +916,9 @@ end
 #! Inputs:
 #!   Operand stack: [block_number, SALT]
 #!   Advice map: {
-#!     h(PK_COMM_0, MSG): SIG_0,
-#!     h(PK_COMM_1, MSG): SIG_1,
-#!     h(h(PK_COMM_i, MSG), [0x323137504945, 0, 0, 0]): EIP712_SIG_i,
-#!     h(PK_COMM_n, MSG): SIG_n
+#!     h(SIG_0, MSG): SIG_0,
+#!     h(SIG_1, MSG): SIG_1,
+#!     h(SIG_n, MSG): SIG_n
 #!   }
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
@@ -926,21 +926,14 @@ end
 #! Where:
 #! - block_number is the number of the block the transaction summary binds.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
-#! - H is Poseidon2.
-#! - PK_COMM is an approver's public-key commitment.
+#! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
-#! - Raw signatures take precedence when both formats are present for an approver, and each
-#!   approver can increase the verified-signature count at most once.
-#! - EIP-712 signatures are accepted only for ECDSA approvers. Unlike raw signatures, they must be
-#!   inserted into the advice map before execution and do not emit an authentication request event.
-#! - h(PK_COMM_i, MSG) is the raw-signature advice-map key.
-#! - A wrapper must call `record_and_assert_new_tx`; this procedure does not record the summary.
+#! - h(SIG_i, MSG) is the hash of the signature and message used as the advice map key.
 #!
 #! Panics if:
 #! - insufficient number of valid signatures (below threshold).
 #! - the approval window ended at or before the transaction reference block, see
 #!   `rebase_expiration_delta`.
-#! - an EIP-712 entry belongs to a non-ECDSA approver or does not contain 32 field elements.
 #!
 #! Invocation: exec
 pub proc auth_tx(block_number: BlockNumber, salt: word)
@@ -983,7 +976,7 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
     push.APPROVER_SCHEME_ID_SLOT[0..2]
     # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    exec.signature::verify_signatures
+    exec.::miden::standards::auth::signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
     # ------ Checking threshold is >= num_verified_signatures ------

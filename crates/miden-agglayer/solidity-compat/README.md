@@ -1,7 +1,8 @@
 # Solidity Compatibility Tests
 
-This directory contains Foundry tests for generating test vectors used to verify compatibility
-between Miden and Solidity reference implementations.
+This directory contains Foundry tests for generating test vectors to verify 
+that the Miden Merkle Tree Frontier implementation is compatible with the Solidity 
+`DepositContractBase.sol` from [agglayer-contracts v2](https://github.com/agglayer/agglayer-contracts).
 
 ## Prerequisites
 
@@ -31,16 +32,12 @@ forge test -vv --match-test test_generateCanonicalZeros
 
 # Generate Merkle Tree Frontier vectors (test-vectors/merkle_tree_frontier_vectors.json)
 forge test -vv --match-test test_generate_MTF_vectors
-
-# Generate the EIP-712 transaction-summary vector
-forge test -vv --match-test test_generateEip712TransactionSummaryVector
 ```
 
 ## Generated Files
 
 - `test-vectors/canonical_zeros.json` - Canonical zeros for each tree height (ZERO_n = keccak256(ZERO_{n-1} || ZERO_{n-1}))
 - `test-vectors/merkle_tree_frontier_vectors.json` - Leaf-root pairs after adding leaves 0..31
-- `../../miden-testing/tests/standards/test-vectors/eip712_transaction_summary.json` - OpenZeppelin-compatible EIP-712 signature
 
 ### Canonical Zeros
 
