@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::format;
 use core::error::Error;
 
@@ -148,9 +149,19 @@ fn stage_error(stage: &'static str, error: impl Error + Send + Sync + 'static) -
 
 /// Checks domain invariants and constructs the verified type using ordinary Rust.
 ///
-/// Verification errors belong to the domain. Unlike decoding errors, their field paths are not
-/// generated: cross-field checks need not correspond to a single wire field.
+/// Verification errors belong to the domain. Cross-field checks need not correspond to a
+/// single wire field.
 /// Types that require external context can implement [`VerifyWith`] instead.
+/// Boxes delegate to the contained verifier, preserving its error type and boxing the output.
+/// Generated decoded records retain collections in [`crate::OptionalField`],
+/// [`crate::RepeatedField`], or [`crate::MapField`]. Calling `verify()` on these fields verifies
+/// their elements with the generated field name and index or key context. These helpers return
+/// [`ConversionError`], preserving the original source, and stop at the first error.
+/// For element verifiers whose error is [`core::convert::Infallible`], the wrappers also provide
+/// `verify_infallible()`, returning the verified collection directly.
+/// Collection-wide invariants remain the responsibility of the containing verifier. Use the
+/// wrappers' `map()` or `try_map()` methods for explicit element conversions; `try_map()` retains
+/// field, index, and key context. Use `into_inner()` for custom collection-wide processing.
 pub trait Verify: Sized {
     type Verified;
     type Error: Error + Send + Sync + 'static;
@@ -165,8 +176,11 @@ pub trait Verify: Sized {
 /// document any trust requirements on the context.
 ///
 /// This capability is independent of [`Verify`]: implementing it does not provide context-free
-/// verification. As with [`Verify`], errors belong to the domain and do not receive generated
-/// wire paths. Implementations are handwritten; decoding does not invoke verification.
+/// verification. Implementations are handwritten; decoding does not invoke verification.
+/// Boxes delegate to the contained verifier without cloning the context or changing its error.
+/// The collection field wrappers also implement this trait, retaining field, index, and key
+/// context as with [`Verify`]. For vectors and maps, context is cloned once per element; pass
+/// `&context` to share a context without cloning its contents.
 pub trait VerifyWith<C>: Sized {
     type Verified;
     type Error: Error + Send + Sync + 'static;
@@ -179,6 +193,9 @@ pub trait VerifyWith<C>: Sized {
 /// This is an explicit, handwritten capability, independent of [`Verify`] and [`VerifyWith`].
 /// Implement it only where the domain API supports unchecked construction. Construction can still
 /// fail on remaining checks or conversions; use [`core::convert::Infallible`] when it cannot fail.
+/// Collection field wrappers implement this capability when their elements do, preserving
+/// presence, order, duplicates, and keys. They stop at the first construction error, retaining
+/// its field, index, or key context. They do not invoke [`Verify`] or check collection invariants.
 ///
 /// # Warning
 ///
@@ -191,4 +208,33 @@ pub trait BuildUnchecked: Sized {
     type Error: Error + Send + Sync + 'static;
 
     fn build_unchecked(self) -> Result<Self::Output, Self::Error>;
+}
+
+impl<S: Verify> Verify for Box<S> {
+    type Verified = Box<S::Verified>;
+    type Error = S::Error;
+
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        (*self).verify().map(Box::new)
+    }
+}
+
+impl<S: VerifyWith<C>, C> VerifyWith<C> for Box<S> {
+    type Verified = Box<S::Verified>;
+    type Error = S::Error;
+
+    fn verify_with(self, context: C) -> Result<Self::Verified, Self::Error> {
+        (*self).verify_with(context).map(Box::new)
+    }
+}
+
+/// Preserves the box and delegates construction; the caller must ensure the invariants
+/// documented by `S`'s `BuildUnchecked` implementation.
+impl<S: BuildUnchecked> BuildUnchecked for Box<S> {
+    type Output = Box<S::Output>;
+    type Error = S::Error;
+
+    fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
+        (*self).build_unchecked().map(Box::new)
+    }
 }
