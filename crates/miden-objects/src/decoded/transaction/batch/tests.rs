@@ -88,10 +88,7 @@ fn proposal_proofs_are_only_checked_by_explicit_verification() {
     assert!(
         matches!(
             error_source::<miden_protocol::errors::ProposedBatchError>(&error),
-            Some(
-                miden_protocol::errors::ProposedBatchError::TransactionVerificationFailed { .. }
-                    | miden_protocol::errors::ProposedBatchError::IncompleteTransactionProof { .. }
-            )
+            Some(miden_protocol::errors::ProposedBatchError::TransactionVerificationFailed { .. })
         ),
         "{error}"
     );
