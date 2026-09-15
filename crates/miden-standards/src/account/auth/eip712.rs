@@ -24,6 +24,12 @@ use miden_protocol::crypto::hash::keccak::Keccak256;
 use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::{Felt, Hasher, Word};
 
+// EIP-191 message prefix.
+const EIP191_PREFIX: u8 = 0x19;
+
+// EIP-191 version byte assigned to EIP-712 typed data.
+const EIP712_VERSION: u8 = 0x01;
+
 // hashStruct(EIP712Domain({ name: "Miden Transaction", version: "1" })).
 const DOMAIN_SEPARATOR: [u8; 32] = [
     0xd2, 0x99, 0x3b, 0x31, 0x72, 0x06, 0xdc, 0x17, 0xb9, 0x59, 0x70, 0x00, 0x08, 0x48, 0x82, 0x92,
@@ -86,7 +92,7 @@ impl Eip712TransactionSummary for TransactionSummary {
         let struct_hash: [u8; 32] = Keccak256::hash(&struct_preimage).into();
 
         let mut digest_preimage = [0u8; 66];
-        digest_preimage[..2].copy_from_slice(&[0x19, 0x01]);
+        digest_preimage[..2].copy_from_slice(&[EIP191_PREFIX, EIP712_VERSION]);
         digest_preimage[2..34].copy_from_slice(&DOMAIN_SEPARATOR);
         digest_preimage[34..].copy_from_slice(&struct_hash);
 

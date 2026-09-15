@@ -19,6 +19,12 @@ const EIP712_TRANSACTION_SUMMARY_VECTOR_JSON: &str =
     include_str!("test-vectors/eip712_transaction_summary.json");
 const METAMASK_VECTOR_JSON: &str = include_str!("test-vectors/eip712_metamask_signature.json");
 
+// EIP-191 message prefix.
+const EIP191_PREFIX: u8 = 0x19;
+
+// EIP-191 version byte assigned to EIP-712 typed data.
+const EIP712_VERSION: u8 = 0x01;
+
 macro_rules! assert_ecdsa_verification_failed {
     ($result:expr) => {
         assert_execution_error!(
@@ -336,7 +342,7 @@ fn alloy_transaction_summary_hash_with_domain(
 
 fn eip712_digest(domain_separator: [u8; 32], struct_hash: [u8; 32]) -> [u8; 32] {
     let mut preimage = [0u8; 66];
-    preimage[..2].copy_from_slice(&[0x19, 0x01]);
+    preimage[..2].copy_from_slice(&[EIP191_PREFIX, EIP712_VERSION]);
     preimage[2..34].copy_from_slice(&domain_separator);
     preimage[34..].copy_from_slice(&struct_hash);
     Keccak256::hash(&preimage).into()
