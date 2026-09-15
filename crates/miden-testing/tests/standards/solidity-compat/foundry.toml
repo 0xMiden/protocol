@@ -12,6 +12,4 @@ remappings = [
   "forge-std/=../../../../miden-agglayer/solidity-compat/lib/forge-std/src/",
 ]
 
-fs_permissions = [
-  { access = "read-write", path = "../test-vectors" },
-]
+fs_permissions = [{ access = "read-write", path = "../test-vectors" }]
