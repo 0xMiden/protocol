@@ -10,7 +10,7 @@ impl Verify for MerklePath {
     type Verified = miden_protocol::crypto::merkle::MerklePath;
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(Self::Verified::new(self.siblings))
+        Ok(Self::Verified::new(self.siblings.into_inner()))
     }
 }
 
@@ -20,7 +20,7 @@ impl Verify for SparseMerklePath {
     type Verified = miden_protocol::crypto::merkle::SparseMerklePath;
     type Error = miden_protocol::crypto::merkle::MerkleError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Self::Verified::from_parts(self.empty_nodes_mask, self.siblings)
+        Self::Verified::from_parts(self.empty_nodes_mask, self.siblings.into_inner())
     }
 }
 
@@ -31,6 +31,9 @@ impl Verify for MmrDelta {
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let forest = miden_protocol::crypto::merkle::mmr::Forest::new(self.forest.try_into()?)?;
-        Ok(Self::Verified { forest, data: self.update_data })
+        Ok(Self::Verified {
+            forest,
+            data: self.update_data.into_inner(),
+        })
     }
 }

@@ -48,7 +48,7 @@ impl Verify for AccountStorageHeader {
     type Verified = miden_protocol::account::AccountStorageHeader;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let slots = self.slots.into_iter().map(Verify::verify).collect::<Result<_, _>>()?;
+        let slots = self.slots.verify()?;
         Ok(Self::Verified::new(slots)?)
     }
 }

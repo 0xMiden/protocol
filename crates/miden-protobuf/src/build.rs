@@ -17,6 +17,10 @@ const OPTIONAL_ATTRIBUTE: &str = "#[proto_decode(optional)]";
 /// must also derive `ProtoDecodeFields` or implement `DecodeMessage` as an atomic adapter.
 /// Real oneofs also derive decoded enums; their exact wire variant names are injected from the
 /// descriptors. Synthetic oneofs used for explicit optional fields are not configured as enums.
+/// Wire and decoded oneofs receive `into_<variant>()` methods returning decoded payloads without
+/// verification. Accessor names use snake case; errors retain the exact wire variant names.
+/// Synthetic map-entry messages are skipped if included in `messages`; Prost generates map fields
+/// for them rather than separate Rust messages.
 /// The derive path is resolved from the consumer's Cargo dependencies, including renamed and
 /// workspace-inherited dependencies. The runtime dependency must enable its `derive` feature.
 pub fn configure_proto_decode_fields<'a>(
@@ -41,6 +45,9 @@ pub fn configure_proto_decode_fields<'a>(
         let optional_fields = explicit_optional_message_fields(descriptors, message)?;
         let descriptor = lookup_message(descriptors, canonical_name)
             .expect("optional field lookup already validated the message");
+        if descriptor.options.as_ref().is_some_and(|options| options.map_entry()) {
+            continue;
+        }
         for (index, oneof) in descriptor.oneof_decl.iter().enumerate() {
             let variants: Vec<_> = descriptor
                 .field

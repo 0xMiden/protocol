@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::vec;
 
 use assert_matches::assert_matches;
@@ -170,7 +171,8 @@ fn partial_vault_rejects_duplicate_asset_ids() {
 #[test]
 fn partial_vault_preserves_invalid_asset_id_source() {
     let mut message: proto::account::PartialVault = PartialVault::new(Word::empty()).into();
-    message.asset_ids = vec![Word::empty().into()];
+    let valid = AssetId::new_fungible(dummy_account_id(9));
+    message.asset_ids = vec![Word::from(valid).into(), Word::empty().into()];
 
     let error = message
         .decode_fields()
@@ -179,6 +181,7 @@ fn partial_vault_preserves_invalid_asset_id_source() {
         .map_err(ConversionError::new)
         .unwrap_err();
 
+    assert!(error.to_string().starts_with("asset_ids[1]:"), "{error}");
     assert_matches!(error_source::<AssetError>(&error), Some(AssetError::UnknownAssetIdVersion(0)));
 }
 
