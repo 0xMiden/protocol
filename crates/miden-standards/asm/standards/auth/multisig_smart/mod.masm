@@ -536,7 +536,7 @@ pub proc auth_tx(block_number: BlockNumber, salt: word)
         # => [execution_mode, TX_SUMMARY_COMMITMENT]
 
         if.true
-            dupw exec.delayed_execution::assert_and_consume_proposal
+            dupw exec.delayed_execution::consume_tx_proposal
             # => [TX_SUMMARY_COMMITMENT]
         end
         # => [TX_SUMMARY_COMMITMENT]

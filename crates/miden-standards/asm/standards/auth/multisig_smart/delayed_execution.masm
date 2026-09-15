@@ -1,7 +1,9 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::protocol::native_account
 use miden::protocol::tx
+use {Bool} from miden::protocol::types
 use miden::standards::auth::multisig
+use {SignatureThreshold} from miden::standards::auth::multisig
 
 # Delayed execution (timelocked transactions) for the multisig smart account.
 #
@@ -70,7 +72,7 @@ const ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION = "delayed execution requires a 
 #!
 #! Invocation: call
 @account_procedure
-pub proc update_delayed_execution_policy
+pub proc update_delayed_execution_policy(min_delay: u32, propose_expiration_delta: u16)
     u32assert.err=ERR_MIN_DELAY_NOT_U32
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
     # => [min_delay, propose_expiration_delta]
@@ -114,7 +116,7 @@ end
 #!   unsatisfied proposals expire after `propose_expiration_delta` blocks.
 #!
 #! Invocation: exec
-proc get_initial_delayed_execution_config
+proc get_initial_delayed_execution_config() -> (u32, u16)
     push.DELAY_MODE_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
@@ -131,7 +133,7 @@ end
 #! Outputs: [min_delay]
 #!
 #! Invocation: exec
-proc get_initial_min_delay
+proc get_initial_min_delay() -> u32
     exec.get_initial_delayed_execution_config
     # => [min_delay, propose_expiration_delta]
 
@@ -149,7 +151,7 @@ end
 #! Outputs: [propose_expiration_delta]
 #!
 #! Invocation: exec
-proc get_initial_propose_expiration_delta
+proc get_initial_propose_expiration_delta() -> u16
     exec.get_initial_delayed_execution_config
     # => [min_delay, propose_expiration_delta]
 
@@ -172,7 +174,7 @@ end
 #! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal, or 0 if no proposal exists.
 #!
 #! Invocation: exec
-proc get_tx_proposal(tx_summary_commitment: word)
+proc get_tx_proposal(tx_summary_commitment: word) -> (u32, u32, SignatureThreshold)
     push.TX_PROPOSALS_SLOT[0..2]
     # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT]
 
@@ -196,7 +198,7 @@ end
 #!   for the commitment), otherwise 0.
 #!
 #! Invocation: exec
-pub proc is_tx_proposed(tx_summary_commitment: word) -> u32
+pub proc is_tx_proposed(tx_summary_commitment: word) -> Bool
     exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
@@ -234,7 +236,12 @@ end
 #! - TX_SUMMARY_COMMITMENT is the block-independent tx-summary commitment used as the proposal map key.
 #!
 #! Invocation: exec
-proc write_tx_proposal
+proc write_tx_proposal(
+    unlock_timestamp: u32,
+    proposal_timestamp: u32,
+    min_cancel_sigs: SignatureThreshold,
+    tx_summary_commitment: word
+)
     push.0
     # => [0, unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
@@ -267,7 +274,7 @@ end
 #! - `proposal_timestamp + min_delay` overflows the `u32` range (`ERR_TIMESTAMPS_NOT_U32`).
 #!
 #! Invocation: exec
-proc compute_unlock_timestamp
+proc compute_unlock_timestamp() -> (u32, u32)
     exec.tx::get_block_timestamp
     # => [proposal_timestamp]
 
@@ -297,7 +304,7 @@ end
 #! - the current block timestamp is less than unlock_timestamp (`ERR_TX_STILL_TIMELOCKED`).
 #!
 #! Invocation: exec
-proc assert_unlock_reached
+proc assert_unlock_reached(unlock_timestamp: u32)
     exec.tx::get_block_timestamp
     # => [current_timestamp, unlock_timestamp]
 
@@ -324,7 +331,7 @@ end
 #! - `assert_unlock_reached` fails.
 #!
 #! Invocation: exec
-proc assert_tx_proposed_and_unlocked
+proc assert_tx_proposed_and_unlocked(tx_summary_commitment: word)
     exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
@@ -374,7 +381,7 @@ end
 #!   was called, otherwise 0.
 #!
 #! Invocation: exec
-pub proc was_propose_or_cancel_called
+pub proc was_propose_or_cancel_called() -> Bool
     procref.propose_transaction
     exec.native_account::was_procedure_called
     # => [propose_called]
@@ -417,7 +424,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc propose_transaction
+pub proc propose_transaction(tx_summary_commitment: word)
     # Note: a transaction that was already executed can still be proposed here; it is not worth an
     # extra `EXECUTED_TXS_SLOT` lookup to reject it, because such a proposal is harmless - executing
     # it later fails in `multisig::assert_new_tx` (the executed-transactions replay guard).
@@ -471,7 +478,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc cancel_transaction_proposal
+pub proc cancel_transaction_proposal(tx_summary_commitment: word)
     dupw exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
@@ -501,7 +508,7 @@ pub proc cancel_transaction_proposal
     # => []
 end
 
-#! Enforces the timelock for a delayed execution and removes the consumed proposal.
+#! Consumes the proposal matching the current transaction, enforcing the timelock.
 #!
 #! Called by the auth procedure when the current transaction matches an existing proposal. Asserts
 #! the transaction bounds its own validity, that the proposal exists and its unlock timestamp has
@@ -513,8 +520,12 @@ end
 #! as long as the transaction can be included. Requiring an expiration is what bounds that window -
 #! `multisig::rebase_expiration_delta` anchors it to the block the summary binds, so an approval
 #! that is never executed stops being executable instead of lingering indefinitely. The expiration
-#! is part of the signed summary, so the approvers pick the window and an executor cannot widen it
-#! without changing the commitment and losing the match.
+#! is part of the signed summary, so changing the expiration changes the commitment.
+#!
+#! The expiration is checked here rather than in `propose_transaction` because a proposal carries
+#! only the target's commitment; asserting it at proposal time would require the summary preimage.
+#! Checking at execution is equivalent for security, since the expiration is committed to: a target
+#! proposed without one is recorded but can never execute.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
 #! Outputs: []
@@ -528,12 +539,9 @@ end
 #! - the proposal unlock timestamp has not been reached (`ERR_TX_STILL_TIMELOCKED`).
 #!
 #! Invocation: exec
-pub proc assert_and_consume_proposal
-    # => [TX_SUMMARY_COMMITMENT]
-
+pub proc consume_tx_proposal(tx_summary_commitment: word)
     # The delta read here is the rebased one, which is zero exactly when the transaction set no
-    # expiration - `rebase_expiration_delta` leaves a zero delta untouched and guarantees a rebased
-    # one is at least 1.
+    # expiration.
     exec.tx::get_expiration_block_delta neq.0
     assert.err=ERR_DELAYED_EXECUTION_REQUIRES_EXPIRATION
     # => [TX_SUMMARY_COMMITMENT]
