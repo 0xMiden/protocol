@@ -11,6 +11,7 @@ use miden_standards::errors::standards::{
     ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
     ERR_RBAC_CONFIG_UNKNOWN_SELECTOR,
+    ERR_SENDER_LACKS_ROLE,
     ERR_SENDER_NOT_ROLE_ADMIN,
 };
 use miden_standards::note::config::{RbacConfig, RbacConfigNote};
@@ -21,7 +22,14 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 // The RBAC account and storage-getter helpers are shared with the parent `rbac` suite, which
 // owns the exhaustive tests of the underlying component. This suite only checks that the
 // RbacConfig note dispatches each action and rejects malformed notes.
-use super::{create_rbac_chain, get_role_admin, is_role_member, role, test_account_id};
+use super::{
+    create_rbac_chain,
+    get_grant_delay,
+    get_role_admin,
+    is_role_member,
+    role,
+    test_account_id,
+};
 use crate::into_private_note;
 
 // HELPERS
@@ -300,5 +308,41 @@ async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC);
+    Ok(())
+}
+
+/// `SetGrantDelay` dispatches to `rbac::set_grant_delay`, which only `ADMIN` may call.
+#[tokio::test]
+async fn set_grant_delay_note_dispatches_and_requires_admin() -> anyhow::Result<()> {
+    let admin = test_account_id(11);
+    let outsider = test_account_id(12);
+    let minter = role("MINTER");
+    let mut rng = RandomCoin::new(Default::default());
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let outsider_note = rbac_config_note(
+        outsider,
+        account.id(),
+        RbacConfig::SetGrantDelay { role: minter.clone(), grant_delay: 3_600 },
+        &mut rng,
+    )?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(outsider_note)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    let admin_note = rbac_config_note(
+        admin,
+        account.id(),
+        RbacConfig::SetGrantDelay { role: minter.clone(), grant_delay: 3_600 },
+        &mut rng,
+    )?;
+    let account = execute_note_and_apply(&mock_chain, &account, admin_note).await?;
+    assert_eq!(get_grant_delay(&account, &minter)?, Felt::from(3_600u32));
+
     Ok(())
 }

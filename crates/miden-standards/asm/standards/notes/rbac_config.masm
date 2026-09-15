@@ -11,12 +11,13 @@ const STORAGE_PTR = 0
 
 # Memory addresses of the RbacConfig note storage. `ROLE_SYMBOL_PTR` is shared by every action;
 # the remaining slots are reused per action (an account ID for grant / revoke, an admin role for
-# set-role-admin).
+# set-role-admin, a delay for set-grant-delay).
 const SELECTOR_PTR = STORAGE_PTR
 const ROLE_SYMBOL_PTR = STORAGE_PTR + 1
 const ACCOUNT_SUFFIX_PTR = STORAGE_PTR + 2
 const ACCOUNT_PREFIX_PTR = STORAGE_PTR + 3
 const ADMIN_ROLE_SYMBOL_PTR = STORAGE_PTR + 2
+const GRANT_DELAY_PTR = STORAGE_PTR + 2
 
 # Config note selectors, stored in the first storage item. Keep in sync with `RbacConfig` on the
 # Rust side.
@@ -24,12 +25,14 @@ const SELECTOR_GRANT_ROLE = 0
 const SELECTOR_REVOKE_ROLE = 1
 const SELECTOR_SET_ROLE_ADMIN = 2
 const SELECTOR_RENOUNCE_ROLE = 3
+const SELECTOR_SET_GRANT_DELAY = 4
 
 # Expected note storage item count per action.
 const NUM_ITEMS_GRANT_ROLE = 4
 const NUM_ITEMS_REVOKE_ROLE = 4
 const NUM_ITEMS_SET_ROLE_ADMIN = 3
 const NUM_ITEMS_RENOUNCE_ROLE = 2
+const NUM_ITEMS_SET_GRANT_DELAY = 3
 
 # Largest storage item count any action uses
 const MAX_NUM_ITEMS = NUM_ITEMS_GRANT_ROLE
@@ -55,13 +58,14 @@ const ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC = "rbac config note must be public"
 #! - `1` RevokeRole:   `[1, role_symbol, account_suffix, account_prefix]`.
 #! - `2` SetRoleAdmin: `[2, role_symbol, admin_role_symbol]`.
 #! - `3` RenounceRole: `[3, role_symbol]`.
+#! - `4` SetGrantDelay: `[4, role_symbol, grant_delay]`.
 #!
 #! All authorization is enforced by the called `rbac` procedures against the note sender
 #! (`active_note::get_sender`); this script only loads the arguments and calls them.
 #!
 #! Requires that the account exposes:
-#! - `miden::standards::access::rbac::{grant_role, revoke_role, set_role_admin, renounce_role}`
-#!   (the `RoleBasedAccessControl` component).
+#! - `miden::standards::access::rbac::{grant_role, revoke_role, set_role_admin, renounce_role,
+#!   set_grant_delay}` (the `RoleBasedAccessControl` component).
 #!
 #! Consumers: target account (attachment)
 #!
@@ -124,10 +128,20 @@ pub proc main(args: NoteArgs)
 
                 exec.execute_set_role_admin
             else
-                eq.SELECTOR_RENOUNCE_ROLE assert.err=ERR_RBAC_CONFIG_UNKNOWN_SELECTOR
-                # => [num_storage_items]
+                dup eq.SELECTOR_RENOUNCE_ROLE
+                # => [is_renounce, selector, num_storage_items]
 
-                exec.execute_renounce_role
+                if.true
+                    drop
+                    # => [num_storage_items]
+
+                    exec.execute_renounce_role
+                else
+                    eq.SELECTOR_SET_GRANT_DELAY assert.err=ERR_RBAC_CONFIG_UNKNOWN_SELECTOR
+                    # => [num_storage_items]
+
+                    exec.execute_set_grant_delay
+                end
             end
         end
     end
@@ -251,6 +265,37 @@ proc execute_renounce_role(num_storage_items: u32)
     # => [role_symbol, pad(15)]
 
     call.rbac::renounce_role
+    # => [pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the SetGrantDelay action: sets the delay between a grant of `role_symbol` and its
+#! activation.
+#!
+#! Inputs:  [num_storage_items]
+#! Outputs: []
+#!
+#! Panics if:
+#! - num_storage_items is not NUM_ITEMS_SET_GRANT_DELAY.
+#! - the note sender does not hold the `ADMIN` role, the role symbol is zero, or the delay is not a
+#!   u32 (per `rbac::set_grant_delay`).
+#!
+#! Invocation: exec
+proc execute_set_grant_delay(num_storage_items: u32)
+    eq.NUM_ITEMS_SET_GRANT_DELAY
+    assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => []
+
+    # build the `set_grant_delay` input window: [role_symbol, grant_delay, pad(14)]
+    padw padw padw push.0.0
+    mem_load.GRANT_DELAY_PTR
+    mem_load.ROLE_SYMBOL_PTR
+    # => [role_symbol, grant_delay, pad(14)]
+
+    call.rbac::set_grant_delay
     # => [pad(16)]
 
     # truncate the called procedure's output window, restoring the base stack
