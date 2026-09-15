@@ -16,6 +16,7 @@ use rstest::rstest;
 use serde::Deserialize;
 
 const SOLIDITY_VECTOR_JSON: &str = include_str!("test-vectors/eip712_transaction_summary.json");
+const METAMASK_VECTOR_JSON: &str = include_str!("test-vectors/eip712_metamask_signature.json");
 
 macro_rules! assert_ecdsa_verification_failed {
     ($result:expr) => {
@@ -48,6 +49,19 @@ struct SolidityVector {
     signature_s: String,
     signature_v: u8,
     struct_hash: String,
+    tx_summary_hash: String,
+}
+
+#[derive(Deserialize)]
+struct WalletSignatureVector {
+    source: String,
+    method: String,
+    domain_name: String,
+    domain_version: String,
+    public_key: String,
+    signature_r: String,
+    signature_s: String,
+    signature_v: u8,
     tx_summary_hash: String,
 }
 
@@ -104,42 +118,17 @@ async fn verifies_generic_eip712_signature() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn rejects_ledger_speculos_signature_from_previous_domain() -> anyhow::Result<()> {
-    let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(
-        "0x0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
-    )?)?;
-    let signature = Signature::from_sec1_bytes_and_recovery_id(
-        hex_to_bytes::<64>(
-            "0x3a260929a57fc23dc0b35b3bd41aa66df2d6cf0aff4914e5caf25f65f2f9f15b\
-             2fedb745401497982d8ee305c490af99440edabfd17ada7acfd527b7342f54b4",
-        )?,
-        0,
-    )?;
-    let tx_summary_hash = Word::new([Felt::new(0xefcd_ab89_6745_2301)?; 4]);
-    let previous_domain_digest =
-        alloy_transaction_summary_hash_with_domain(tx_summary_hash, "Miden Multisig", "1");
-    assert!(public_key.verify_prehash(previous_domain_digest, &signature));
-
-    let result =
-        verify_transaction_summary_signature(tx_summary_hash, &public_key, &signature).await;
-    assert_ecdsa_verification_failed!(result);
-    Ok(())
-}
-
-#[tokio::test]
 async fn verifies_eth_sign_typed_data_v4_signature() -> anyhow::Result<()> {
-    // Generated with @metamask/eth-sig-util from the exact MidenTransaction typed-data object.
-    let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(
-        "0x034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
-    )?)?;
-    let signature = Signature::from_sec1_bytes_and_recovery_id(
-        hex_to_bytes::<64>(
-            "0x13deb6c6f8903c58117a86d11ce7140af8a1d90dc9a25cb03d1c5972deae7ae8\
-             06dda37b581ebcb290000fc2f460c964c5fbca5e6ad4b77109609db80743ca8d",
-        )?,
-        0,
-    )?;
-    let tx_summary_hash = Word::new([Felt::new(0xefcd_ab89_6745_2301)?; 4]);
+    let vector: WalletSignatureVector = serde_json::from_str(METAMASK_VECTOR_JSON)?;
+    let tx_summary_hash = word_from_hex(&vector.tx_summary_hash)?;
+
+    assert_eq!(vector.source, "@metamask/eth-sig-util");
+    assert_eq!(vector.method, "signTypedData V4");
+    assert_eq!(vector.domain_name, "Miden Transaction");
+    assert_eq!(vector.domain_version, "1");
+    let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(&vector.public_key)?)?;
+    let signature =
+        signature_from_parts(&vector.signature_r, &vector.signature_s, vector.signature_v)?;
     let digest = alloy_transaction_summary_hash(tx_summary_hash);
 
     assert!(public_key.verify_prehash(digest, &signature));
@@ -151,12 +140,10 @@ async fn verifies_eth_sign_typed_data_v4_signature() -> anyhow::Result<()> {
 #[tokio::test]
 async fn verifies_foundry_openzeppelin_signature() -> anyhow::Result<()> {
     let vector: SolidityVector = serde_json::from_str(SOLIDITY_VECTOR_JSON)?;
-    let tx_summary_hash = Word::new([Felt::new(0xefcd_ab89_6745_2301)?; 4]);
+    let tx_summary_hash = word_from_hex(&vector.tx_summary_hash)?;
 
     assert_eq!(vector.domain_name, "Miden Transaction");
     assert_eq!(vector.domain_version, "1");
-    assert_eq!(tx_summary_hash.as_bytes(), hex_to_bytes::<32>(&vector.tx_summary_hash)?);
-
     let domain = eip712_domain! {
         name: vector.domain_name.clone(),
         version: vector.domain_version.clone(),
@@ -173,7 +160,8 @@ async fn verifies_foundry_openzeppelin_signature() -> anyhow::Result<()> {
     assert_eq!(digest, hex_to_bytes::<32>(&vector.digest)?);
 
     let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(&vector.public_key)?)?;
-    let signature = signature_from_solidity_vector(&vector)?;
+    let signature =
+        signature_from_parts(&vector.signature_r, &vector.signature_s, vector.signature_v)?;
 
     assert!(public_key.verify_prehash(digest, &signature));
     verify_transaction_summary_signature(tx_summary_hash, &public_key, &signature).await?;
@@ -190,7 +178,8 @@ async fn rejects_foundry_openzeppelin_signature_for_different_domain(
 ) -> anyhow::Result<()> {
     let vector: SolidityVector = serde_json::from_str(SOLIDITY_VECTOR_JSON)?;
     let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(&vector.public_key)?)?;
-    let signature = signature_from_solidity_vector(&vector)?;
+    let signature =
+        signature_from_parts(&vector.signature_r, &vector.signature_s, vector.signature_v)?;
     let struct_hash = hex_to_bytes::<32>(&vector.struct_hash)?;
 
     let domain = eip712_domain! {
@@ -209,9 +198,10 @@ async fn rejects_foundry_openzeppelin_signature_for_different_domain(
 #[tokio::test]
 async fn rejects_mutated_foundry_openzeppelin_inputs() -> anyhow::Result<()> {
     let vector: SolidityVector = serde_json::from_str(SOLIDITY_VECTOR_JSON)?;
-    let tx_summary_hash = Word::new([Felt::new(0xefcd_ab89_6745_2301)?; 4]);
+    let tx_summary_hash = word_from_hex(&vector.tx_summary_hash)?;
     let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(&vector.public_key)?)?;
-    let signature = signature_from_solidity_vector(&vector)?;
+    let signature =
+        signature_from_parts(&vector.signature_r, &vector.signature_s, vector.signature_v)?;
 
     let changed_tx_summary_hash = Word::from([1u32, 0, 0, 0]);
     assert_eq!(
@@ -230,7 +220,8 @@ async fn rejects_mutated_foundry_openzeppelin_inputs() -> anyhow::Result<()> {
             .await;
     assert_ecdsa_verification_failed!(result);
 
-    let mut changed_signature_bytes = signature_bytes_from_solidity_vector(&vector)?;
+    let mut changed_signature_bytes =
+        signature_bytes_from_parts(&vector.signature_r, &vector.signature_s)?;
     changed_signature_bytes[31] ^= 1;
     let changed_signature = Signature::from_sec1_bytes_and_recovery_id(
         changed_signature_bytes,
@@ -346,18 +337,22 @@ fn eip712_digest(domain_separator: [u8; 32], struct_hash: [u8; 32]) -> [u8; 32] 
     Keccak256::hash(&preimage).into()
 }
 
-fn signature_from_solidity_vector(vector: &SolidityVector) -> anyhow::Result<Signature> {
+fn signature_from_parts(r: &str, s: &str, v: u8) -> anyhow::Result<Signature> {
     Signature::from_sec1_bytes_and_recovery_id(
-        signature_bytes_from_solidity_vector(vector)?,
-        solidity_recovery_id(vector.signature_v)?,
+        signature_bytes_from_parts(r, s)?,
+        solidity_recovery_id(v)?,
     )
     .map_err(Into::into)
 }
 
-fn signature_bytes_from_solidity_vector(vector: &SolidityVector) -> anyhow::Result<[u8; 64]> {
+fn word_from_hex(value: &str) -> anyhow::Result<Word> {
+    Word::read_from_bytes(&hex_to_bytes::<32>(value)?).map_err(Into::into)
+}
+
+fn signature_bytes_from_parts(r: &str, s: &str) -> anyhow::Result<[u8; 64]> {
     let mut signature_bytes = [0u8; 64];
-    signature_bytes[..32].copy_from_slice(&hex_to_bytes::<32>(&vector.signature_r)?);
-    signature_bytes[32..].copy_from_slice(&hex_to_bytes::<32>(&vector.signature_s)?);
+    signature_bytes[..32].copy_from_slice(&hex_to_bytes::<32>(r)?);
+    signature_bytes[32..].copy_from_slice(&hex_to_bytes::<32>(s)?);
     Ok(signature_bytes)
 }
 
