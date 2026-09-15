@@ -1,5 +1,7 @@
+use {AuthArgs} from miden::standards::types
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::protocol::tx
 use miden::core::word
 use miden::standards::fee
 
@@ -30,7 +32,7 @@ const NO_AUTH_POST_FEE_CYCLES = 1024
 #!
 #! Invocation: call
 @auth_script
-pub proc auth_no_auth
+pub proc auth_no_auth(auth_args: AuthArgs)
     dropw
     # => [pad(16)]
 
@@ -40,6 +42,9 @@ pub proc auth_no_auth
 
     push.NO_AUTH_POST_FEE_CYCLES
     # => [num_extra_cycles, CONVERSION_INFO, pad(16)]
+
+    exec.tx::get_reference_block_number movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, serial_number_block, pad(16)]
 
     exec.fee::pay_fee drop
     # => [pad(16)]

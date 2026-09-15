@@ -52,9 +52,10 @@ impl<'process> LinkMap<'process> {
 
         let (set_op, entry_ptr) = link_map.compute_set_operation(map_key);
 
-        vec![AdviceMutation::extend_advice_stack(
-            [Felt::from(entry_ptr), Felt::from(set_op as u8)].into_iter().collect(),
-        )]
+        vec![AdviceMutation::extend_advice_stack_with([
+            Felt::from(entry_ptr),
+            Felt::from(set_op as u8),
+        ])]
     }
 
     /// Handles a `LINK_MAP_GET_EVENT` emitted from a VM.
@@ -69,9 +70,10 @@ impl<'process> LinkMap<'process> {
         let link_map = LinkMap::new(map_ptr, &mem_viewer);
         let (get_op, entry_ptr) = link_map.compute_get_operation(map_key);
 
-        vec![AdviceMutation::extend_advice_stack(
-            [Felt::from(entry_ptr), Felt::from(get_op as u8)].into_iter().collect(),
-        )]
+        vec![AdviceMutation::extend_advice_stack_with([
+            Felt::from(entry_ptr),
+            Felt::from(get_op as u8),
+        ])]
     }
 
     /// Returns `true` if the map is empty, `false` otherwise.

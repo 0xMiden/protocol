@@ -1,0 +1,34 @@
+syntax = "proto3";
+package asset;
+
+import "account.proto";
+import "primitives.proto";
+import "google/protobuf/empty.proto";
+
+enum AssetVersion {
+  ASSET_VERSION_UNSPECIFIED = 0;
+  ASSET_VERSION_V1 = 1;
+}
+
+message AssetClass {
+  primitives.Felt suffix = 1;
+  primitives.Felt prefix = 2;
+}
+
+message AssetId {
+  AssetVersion version = 1;
+  account.AccountId faucet_id = 2;
+
+  oneof composition {
+    // Fungible asset IDs have an implicit empty asset class.
+    google.protobuf.Empty fungible = 3;
+    AssetClass non_fungible = 4;
+    // Currently unsupported by the protocol and rejected during verification.
+    AssetClass custom = 5;
+  }
+}
+
+message Asset {
+  AssetId asset_id = 1;
+  primitives.Word value = 2;
+}

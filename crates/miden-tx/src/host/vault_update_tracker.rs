@@ -1,18 +1,12 @@
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::delta::AssetDeltaOperation;
-use miden_protocol::account::{
-    AccountVaultDelta,
-    AccountVaultPatch,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-};
-use miden_protocol::asset::{Asset, AssetId};
+use miden_protocol::account::{AccountVaultDelta, AccountVaultPatch, AssetDelta};
+use miden_protocol::asset::AssetId;
 
 use crate::TransactionKernelError;
-use crate::host::tx_event::{AssetDelta, AssetPatch};
+use crate::host::tx_event::AssetPatch;
 
 /// Keeps track of the updates to an account's vault during transaction execution.
 ///
@@ -30,8 +24,8 @@ use crate::host::tx_event::{AssetDelta, AssetPatch};
 /// unchanged.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct VaultUpdateTracker {
-    /// The latest absolute [`AssetDelta`] reported by the kernel for each touched asset ID.
-    delta: BTreeMap<AssetId, AssetDelta>,
+    /// The [`AssetDelta`]s reported by the kernel, one per touched asset ID.
+    asset_deltas: Vec<AssetDelta>,
     /// For each touched asset ID, the `(initial, final)` absolute values. The initial value is
     /// recorded only on the very first observation and never overwritten; the final value is
     /// updated on every observation.
@@ -49,19 +43,22 @@ impl VaultUpdateTracker {
         Ok(())
     }
 
-    /// Inserts an asset delta.
-    pub fn update_delta(&mut self, delta: AssetDelta) {
-        self.delta.insert(delta.asset.id(), delta);
+    /// Records an asset delta reported by the kernel.
+    pub fn add_delta(&mut self, delta: AssetDelta) {
+        self.asset_deltas.push(delta);
     }
 
     /// Clears the accumulating vault delta.
     pub fn reset_delta(&mut self) {
-        self.delta.clear();
+        self.asset_deltas.clear();
     }
 
     /// Consumes self and returns the vault delta.
     pub fn into_delta(self) -> AccountVaultDelta {
-        self.build_delta()
+        // The kernel uses a map internally so it should never emit more than one delta per asset
+        // ID. The kernel also enforces the maximum number of assets per delta operation.
+        AccountVaultDelta::new(self.asset_deltas)
+            .expect("tx kernel should emit a valid vault delta")
     }
 
     /// Consumes self and returns the normalized vault patch.
@@ -80,43 +77,7 @@ impl VaultUpdateTracker {
             })
             .collect();
 
-        AccountVaultPatch::new(normalized).expect("tx kernel should only emit valid assets")
-    }
-
-    // HELPER FUNCTIONS
-    // ---------------------------------------------------------------------------------------------
-
-    /// Builds an [`AccountVaultDelta`] from the flat per-asset delta map.
-    ///
-    /// TODO(unified_delta): Will be simplified once `AccountVaultDelta` tracks only generic assets.
-    fn build_delta(&self) -> AccountVaultDelta {
-        let mut fungible: BTreeMap<AssetId, i64> = BTreeMap::new();
-        let mut non_fungible: BTreeMap<AssetId, (_, NonFungibleDeltaAction)> = BTreeMap::new();
-
-        for (&asset_id, asset_delta) in &self.delta {
-            match asset_delta.asset {
-                Asset::Fungible(fungible_asset) => {
-                    let amount = fungible_asset.amount().as_i64();
-                    let signed_amount = match asset_delta.delta_op {
-                        AssetDeltaOperation::Add => amount,
-                        AssetDeltaOperation::Remove => -amount,
-                    };
-                    fungible.insert(asset_id, signed_amount);
-                },
-                Asset::NonFungible(non_fungible_asset) => {
-                    let action = match asset_delta.delta_op {
-                        AssetDeltaOperation::Add => NonFungibleDeltaAction::Add,
-                        AssetDeltaOperation::Remove => NonFungibleDeltaAction::Remove,
-                    };
-                    non_fungible.insert(asset_id, (non_fungible_asset, action));
-                },
-            }
-        }
-
-        let fungible = FungibleAssetDelta::new(fungible)
-            .expect("tx kernel should only emit valid fungible asset deltas");
-        let non_fungible = NonFungibleAssetDelta::new(non_fungible);
-
-        AccountVaultDelta::new(fungible, non_fungible)
+        AccountVaultPatch::new(normalized)
+            .expect("vault update events should only be tracked for valid assets")
     }
 }

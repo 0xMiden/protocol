@@ -1,3 +1,4 @@
+use {AccountId, NoteRecipient} from miden::protocol::types
 use {CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT} from agglayer::bridge::bridge_in
 use {CLAIM_PROOF_DATA_KEY_MEM_ADDR} from agglayer::bridge::bridge_in
 use miden::protocol::native_account
@@ -5,11 +6,11 @@ use miden::protocol::note
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
-use miden::standards::note_tag
-use {DEFAULT_TAG} from miden::standards::note_tag
+use miden::standards::note::note_tag
+use {DEFAULT_TAG} from miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use miden::standards::attachments::network_account_target
-use {ALWAYS} from miden::standards::note::execution_hint
+use {ALWAYS} from miden::standards::note::note_execution_hint
 
 # CONSTANTS
 # =================================================================================================
@@ -64,7 +65,7 @@ const UNLOCK_DEST_PREFIX_LOC = 9
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc build_mint_output_note
+pub proc build_mint_output_note(destination_id: AccountId, faucet_id: AccountId)
     # Step 1: Write all 22 MINT note storage items to global memory
     exec.write_mint_note_storage
     # => [faucet_id_suffix, faucet_id_prefix]
@@ -98,7 +99,7 @@ end
 #!
 #! Invocation: exec
 @locals(10)
-pub proc unlock_and_send
+pub proc unlock_and_send(destination_id: AccountId, faucet_id: AccountId)
     # Stash destination to locals so we can reload it later, after `native_account::remove_asset`
     # has consumed the stack copy.
     loc_store.UNLOCK_DEST_SUFFIX_LOC loc_store.UNLOCK_DEST_PREFIX_LOC
@@ -179,7 +180,7 @@ end
 #! Outputs: [faucet_id_suffix, faucet_id_prefix]
 #!
 #! Invocation: exec
-proc write_mint_note_storage
+proc write_mint_note_storage(destination_id: AccountId, faucet_id: AccountId) -> AccountId
     # write P2ID destination first so we can consume destination_id_prefix for the tag.
     # destination_id_suffix [20]
     dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
@@ -250,7 +251,7 @@ end
 #! Outputs: [MINT_RECIPIENT]
 #!
 #! Invocation: exec
-proc build_mint_recipient
+proc build_mint_recipient() -> NoteRecipient
     # Get the MINT note script root
     procref.::miden::standards::notes::mint::main
     # => [MINT_SCRIPT_ROOT]
@@ -281,7 +282,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc create_mint_note_with_attachment
+proc create_mint_note_with_attachment(recipient: NoteRecipient, faucet_id: AccountId)
     # Create the MINT output note targeting the faucet
     push.NOTE_TYPE_PUBLIC
     # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]

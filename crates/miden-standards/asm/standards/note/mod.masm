@@ -1,3 +1,4 @@
+use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
 # miden::standards::note
 #
 # Collects note-related helper procedures that operate on input notes and are candidates for
@@ -9,10 +10,12 @@ use miden::protocol::active_note
 use miden::protocol::input_note
 use miden::protocol::output_note
 
-use {NoteRecipient, NoteScriptRoot} from miden::protocol::types
 
-pub mod execution_hint
 pub mod note_creator
+pub mod note_execution_hint
+pub mod note_reclaim
+pub mod note_tag
+pub mod note_target
 
 # ERRORS
 # =================================================================================================
@@ -41,7 +44,7 @@ const ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH = "recipient preimage from the advice
 #! - the advice-provided storage does not match the note's storage commitment.
 #!
 #! Invocation: exec
-pub proc input_note_get_storage
+pub proc input_note_get_storage(note_index: u16, dest_ptr: ptr<felt>)
     exec.input_note::get_storage_info
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 

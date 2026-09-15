@@ -46,7 +46,7 @@ use miden_standards::errors::standards::{
     ERR_LOGO_URI_NOT_MUTABLE,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{FaucetMetadataConfig, FaucetMetadataConfigNote};
+use miden_standards::note::config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 

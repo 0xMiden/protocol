@@ -1,3 +1,4 @@
+use {Asset, AssetAmount} from miden::protocol::types
 # miden::standards::faucets::policies::burn::min_burn_amount
 #
 # `min_burn_amount` burn policy: rejects burns whose amount is below a configurable minimum.
@@ -40,11 +41,11 @@ const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must meet or 
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_policy
+pub proc check_policy(asset: Asset)
     dropw
     # => [ASSET_VALUE, pad(12)]
 
-    exec.fungible_asset::value_into_amount
+    exec.fungible_asset::value_into_amount_unchecked
     # => [amount, pad(15)]
 
     push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item
@@ -68,7 +69,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_min_burn_amount
+pub proc get_min_burn_amount() -> AssetAmount
     push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item
     # => [min_burn_amount, 0, 0, 0, pad(16)]
 
@@ -88,7 +89,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc set_min_burn_amount
+pub proc set_min_burn_amount(new_min_burn_amount: AssetAmount)
     exec.authority::assert_authorized
     # => [new_min_burn_amount, pad(15)]
 

@@ -19,7 +19,8 @@ use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionScri
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount, SponsorshipPolicy};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
-use miden_standards::account::wallets::{BasicWallet, NoteCreator};
+use miden_standards::account::note_creator::NoteCreator;
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH,
@@ -61,20 +62,20 @@ use crate::scripts::fee_manager::{
 
 /// Returns a fungible asset of `amount` units issued by the fee faucet (the asset the fee policy
 /// manager accepts fees in).
-fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
-    Ok(FungibleAsset::new(fee_faucet_id()?, amount)?.into())
+fn fee_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
+    Ok(FungibleAsset::new(fee_faucet_id()?, amount)?)
 }
 
 /// Returns a fungible asset of `amount` units issued by a faucet other than the fee faucet.
-fn other_asset(amount: u64) -> anyhow::Result<Asset> {
-    Ok(
-        FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, amount)?
-            .into(),
-    )
+fn other_asset(amount: u64) -> anyhow::Result<FungibleAsset> {
+    Ok(FungibleAsset::new(
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
+        amount,
+    )?)
 }
 
 /// The faucet issuing the chain's native fee asset, which the auth procedure's `pay_fee` funds
-/// network-note sponsorships in (via `tx::get_fee_faucet_id`, not the account's configured asset).
+/// network-note sponsorships in (via `tx::get_fee_asset_id`, not the account's configured asset).
 fn native_fee_faucet_id() -> anyhow::Result<AccountId> {
     Ok(ACCOUNT_ID_FEE_FAUCET.try_into()?)
 }
@@ -160,7 +161,7 @@ impl Test {
     /// Use [`TestBuilder::sponsorship`] to add the FEE_SPONSORSHIP notes.
     #[builder]
     fn new(
-        #[builder(field)] sponsorships: Vec<(usize, Asset)>,
+        #[builder(field)] sponsorships: Vec<(usize, FungibleAsset)>,
         /// Fee the fee schedule charges for each feature note. Without this fee the feature note
         /// script root stays unscheduled.
         feature_note_fee: Option<AssetAmount>,
@@ -226,7 +227,7 @@ impl<S: test_builder::State> TestBuilder<S> {
     /// `feature_note_idx`. More than one sponsorship note can pay for the same feature note.
     ///
     /// The notes keep the order in which they were added.
-    fn sponsorship(mut self, feature_note_idx: usize, asset: Asset) -> Self {
+    fn sponsorship(mut self, feature_note_idx: usize, asset: FungibleAsset) -> Self {
         self.sponsorships.push((feature_note_idx, asset));
         self
     }
@@ -845,7 +846,7 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
     let feature_note_a_asset = fee_asset(1)?;
     let feature_note_b_asset = other_asset(1)?;
     let policy = asset_commitment_fee_policy(
-        NoteAssets::new(vec![feature_note_a_asset])?.commitment(),
+        NoteAssets::new(vec![feature_note_a_asset.into()])?.commitment(),
         fee_asset_id,
         other_fee_asset_id,
     )?;
@@ -868,13 +869,13 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
     let feature_note_a = builder.add_p2id_note(
         sponsor.id(),
         network_account.id(),
-        &[feature_note_a_asset],
+        &[feature_note_a_asset.into()],
         NoteType::Public,
     )?;
     let feature_note_b = builder.add_p2id_note(
         sponsor.id(),
         network_account.id(),
-        &[feature_note_b_asset],
+        &[feature_note_b_asset.into()],
         NoteType::Public,
     )?;
 
@@ -974,7 +975,7 @@ fn create_network_notes_tx_script(
         use miden::protocol::output_note
 
         use miden::standards::attachments::network_account_target
-        use miden::standards::note_tag
+        use miden::standards::note::note_tag
 
         use {{NOTE_TYPE_PUBLIC}} from miden::protocol::note
 
@@ -1100,7 +1101,7 @@ impl SponsorshipTest {
                     .sender(feature_note.metadata().sender())
                     .target_account(sponsor.id())
                     .feature_note_id(feature_note.id())
-                    .asset(Asset::from(FungibleAsset::new(sponsor_fee_faucet, FEE_AMOUNT)?))
+                    .asset(FungibleAsset::new(sponsor_fee_faucet, FEE_AMOUNT)?)
                     .generate_serial_number(&mut rng)
                     .build()?,
             );
@@ -1179,15 +1180,17 @@ fn assert_network_note_is_sponsored(
 /// A network note whose target charges its fee in the native fee asset is sponsored by the auth
 /// procedure: the sponsorship note is funded with the fee from the sponsor's vault.
 ///
-/// The sponsor collects nothing, so this also covers [`SponsorshipPolicy::Unlimited`] permitting a
-/// sponsorship that no collected fee backs. Its configured fee asset is not the native one, which
-/// shows that sponsorship notes are always funded in the native fee asset.
+/// The sponsor consumes no input notes and starts with no account changes, so this also pins that
+/// creating an output note is a valid pre-fee effect. It covers [`SponsorshipPolicy::Unlimited`]
+/// permitting a sponsorship that no collected fee backs. Its configured fee asset is not the
+/// native one, which shows that sponsorship notes are always funded in the native fee asset.
 #[tokio::test]
 async fn create_sponsorships_funds_note_in_native_fee_asset() -> anyhow::Result<()> {
     let test = SponsorshipTest::builder()
         .sponsor_fee_faucet(fee_faucet_id()?)
         .sponsorship_policy(SponsorshipPolicy::Unlimited)
         .build()?;
+    assert!(test.input_notes.is_empty());
     let mut sponsor = test.sponsor.clone();
 
     let executed = test.transaction()?.execute().await?;

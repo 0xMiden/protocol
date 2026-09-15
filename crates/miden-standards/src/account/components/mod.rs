@@ -10,12 +10,14 @@ use crate::account::auth::{
     AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
+    AuthTxFeeCollector,
     NoAuth,
 };
 use crate::account::faucets::FungibleFaucet;
 use crate::account::inspection::CodeInspection;
 use crate::account::interface::AccountComponentInterface;
-use crate::account::wallets::{BasicWallet, NoteCreator};
+use crate::account::note_creator::NoteCreator;
+use crate::account::wallets::BasicWallet;
 
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
@@ -36,6 +38,7 @@ pub enum StandardAccountComponent {
     AuthGuardedMultisig,
     AuthNoAuth,
     AuthNetworkAccount,
+    AuthTxFeeCollector,
 }
 
 impl StandardAccountComponent {
@@ -56,6 +59,7 @@ impl StandardAccountComponent {
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
             Self::AuthNoAuth => NoAuth::code(),
             Self::AuthNetworkAccount => AuthNetworkAccount::code(),
+            Self::AuthTxFeeCollector => AuthTxFeeCollector::code(),
         };
 
         code.procedure_roots()
@@ -117,6 +121,9 @@ impl StandardAccountComponent {
                 Self::AuthNetworkAccount => {
                     component_interface_vec.push(AccountComponentInterface::AuthNetworkAccount)
                 },
+                Self::AuthTxFeeCollector => {
+                    component_interface_vec.push(AccountComponentInterface::AuthTxFeeCollector)
+                },
             }
         }
     }
@@ -142,5 +149,6 @@ impl StandardAccountComponent {
         Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
         Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
+        Self::AuthTxFeeCollector.extract_component(procedures_set, component_interface_vec);
     }
 }

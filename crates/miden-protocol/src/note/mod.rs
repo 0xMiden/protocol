@@ -293,3 +293,20 @@ impl Deserializable for Note {
         Ok(Self::with_attachments(assets, partial_metadata, recipient, attachments))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use super::*;
+    use crate::utils::serde::{Deserializable, DeserializationError};
+
+    #[test]
+    fn note_deserialization_rejects_unsupported_version() {
+        let error = Note::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("note version is 0"));
+        });
+    }
+}

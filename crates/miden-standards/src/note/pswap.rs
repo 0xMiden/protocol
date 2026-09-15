@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -252,6 +252,35 @@ impl From<PswapNoteAttachment> for NoteAttachment {
     }
 }
 
+/// Parses a [`NoteAttachment`] carrying [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] into its typed
+/// form.
+impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
+    type Error = NoteError;
+
+    fn try_from(attachment: &NoteAttachment) -> Result<Self, Self::Error> {
+        if attachment.attachment_scheme() != PswapNote::PSWAP_ATTACHMENT_SCHEME {
+            return Err(NoteError::other("attachment scheme is not the PSWAP attachment scheme"));
+        }
+
+        let [word] = attachment.content().as_words() else {
+            return Err(NoteError::other("PSWAP attachment must carry exactly one word"));
+        };
+
+        let amount = AssetAmount::new(word[0].as_canonical_u64())
+            .map_err(|e| NoteError::other_with_source("invalid PSWAP attachment amount", e))?;
+        let order_id = word[1];
+        let depth =
+            u32::try_from(word[PswapNote::PARENT_ATTACHMENT_DEPTH_OFFSET].as_canonical_u64())
+                .map_err(|_| NoteError::other("PSWAP depth does not fit in u32"))?;
+
+        if word[3] != ZERO {
+            return Err(NoteError::other("PSWAP attachment must be zero-padded"));
+        }
+
+        Ok(Self::new(amount, order_id, depth))
+    }
+}
+
 // PSWAP NOTE
 // ================================================================================================
 
@@ -267,6 +296,8 @@ impl From<PswapNoteAttachment> for NoteAttachment {
 /// `[0, 0, 0, 0]`, triggering a full fill). To route a PSWAP note to a network account,
 /// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
 /// via the builder.
+///
+/// Fills are priced against the note's initial offered asset.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {
@@ -290,7 +321,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if the offered and requested assets have the same faucet ID.
+    /// Returns an error if the offered and requested assets have the same faucet ID, or if the
+    /// note carries a malformed [`PswapNote::PSWAP_ATTACHMENT_SCHEME`] attachment.
     pub fn build(self) -> Result<PswapNote, NoteError> {
         let note = self.build_internal();
 
@@ -298,6 +330,12 @@ where
             return Err(NoteError::other(
                 "offered and requested assets must have different faucets",
             ));
+        }
+
+        if let Some(attachment) = note.attachment.as_ref()
+            && attachment.attachment_scheme() == PswapNote::PSWAP_ATTACHMENT_SCHEME
+        {
+            PswapNoteAttachment::try_from(attachment)?;
         }
 
         Ok(note)
@@ -409,14 +447,11 @@ impl PswapNote {
     ///
     /// The next round's `current_depth` is computed as `parent_depth() + 1`, matching the
     /// on-chain `get_current_depth` MASM procedure.
-    pub fn parent_depth(&self) -> u64 {
-        match self.attachment.as_ref() {
-            Some(att) if att.attachment_scheme() == Self::PSWAP_ATTACHMENT_SCHEME => {
-                let attachment_word = att.content().as_words()[0];
-                attachment_word[Self::PARENT_ATTACHMENT_DEPTH_OFFSET].as_canonical_u64()
-            },
-            _ => 0,
-        }
+    pub fn parent_depth(&self) -> u32 {
+        self.attachment
+            .as_ref()
+            .and_then(|attachment| PswapNoteAttachment::try_from(attachment).ok())
+            .map_or(0, |attachment| attachment.depth())
     }
 
     // INSTANCE METHODS
@@ -569,6 +604,22 @@ impl PswapNote {
     // LINEAGE DISCOVERY
     // --------------------------------------------------------------------------------------------
 
+    /// Returns the number of fill rounds between this note and the round `attachment` was
+    /// stamped in.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the attachment was not stamped in a round after this note.
+    fn rounds_since(&self, attachment: &PswapNoteAttachment) -> Result<u32, NoteError> {
+        attachment
+            .depth()
+            .checked_sub(self.parent_depth())
+            .filter(|rounds| *rounds > 0)
+            .ok_or_else(|| {
+                NoteError::other("attachment depth must be greater than this note's depth")
+            })
+    }
+
     /// Reconstructs the depth-`d` payback P2ID [`Note`], so the creator can consume it as an
     /// unauthenticated input note.
     ///
@@ -578,23 +629,21 @@ impl PswapNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if `attachment.depth() == 0` or if the fill amount is not a valid
-    /// asset amount.
+    /// Returns an error if the attachment's depth is not greater than this note's depth,
+    /// or if the attachment's fill amount is not a valid fungible asset amount.
     pub fn payback_note(
         &self,
         consumer_account_id: AccountId,
         attachment: &PswapNoteAttachment,
     ) -> Result<Note, NoteError> {
-        let depth = attachment.depth();
-        if depth == 0 {
-            return Err(NoteError::other("depth must be >= 1"));
-        }
-        let parent_depth = Felt::from(depth - 1);
+        // Payback serial = consumed PSWAP's serial (last element bumped `rounds - 1`
+        // times from this note's) with the first element incremented by one.
+        let rounds = self.rounds_since(attachment)?;
         let p2id_serial = Word::from([
             self.serial_number[0] + ONE,
             self.serial_number[1],
             self.serial_number[2],
-            self.serial_number[3] + parent_depth,
+            self.serial_number[3] + Felt::from(rounds - 1),
         ]);
 
         let recipient =
@@ -632,8 +681,8 @@ impl PswapNote {
     ///
     /// # Errors
     ///
-    /// Returns an error if `attachment.depth() == 0` or if any amount is not a valid asset
-    /// amount.
+    /// Returns an error if `attachment` was not stamped in a round after this note, or if any
+    /// amount is not a valid asset amount.
     pub fn remainder_note(
         &self,
         consumer_account_id: AccountId,
@@ -641,15 +690,13 @@ impl PswapNote {
         remaining_offered: AssetAmount,
         remaining_requested: AssetAmount,
     ) -> Result<Note, NoteError> {
-        let depth = attachment.depth();
-        if depth == 0 {
-            return Err(NoteError::other("depth must be >= 1"));
-        }
+        // Every round bumps the remainder's serial once, so the offset is the round distance.
+        let rounds = self.rounds_since(attachment)?;
         let remainder_serial = Word::from([
             self.serial_number[0],
             self.serial_number[1],
             self.serial_number[2],
-            self.serial_number[3] + Felt::from(depth),
+            self.serial_number[3] + Felt::from(rounds),
         ]);
 
         let min_requested_asset =
@@ -792,7 +839,7 @@ impl PswapNote {
         let recipient =
             P2idNoteStorage::new(self.storage.creator_account_id).into_recipient(p2id_serial_num);
 
-        let current_depth = self.parent_depth() + 1;
+        let current_depth = u64::from(self.parent_depth()) + 1;
         let attachment =
             Self::pswap_output_attachment(fill_amount, self.order_id(), current_depth)?;
 
@@ -841,7 +888,7 @@ impl PswapNote {
             self.serial_number[3] + ONE,
         ]);
 
-        let current_depth = self.parent_depth() + 1;
+        let current_depth = u64::from(self.parent_depth()) + 1;
         let attachment =
             Self::pswap_output_attachment(offered_amount_for_fill, self.order_id(), current_depth)?;
 
@@ -895,12 +942,13 @@ impl TryFrom<&Note> for PswapNote {
         if note.assets().num_assets() != 1 {
             return Err(NoteError::other("PSWAP note must have exactly one asset"));
         }
-        let offered_asset = match note.assets().iter().next().unwrap() {
-            Asset::Fungible(fa) => *fa,
-            Asset::NonFungible(_) => {
-                return Err(NoteError::other("PSWAP note asset must be fungible"));
-            },
-        };
+        let offered_asset = note
+            .assets()
+            .iter()
+            .next()
+            .expect("number of assets should have been validated")
+            .as_fungible()
+            .ok_or_else(|| NoteError::other("PSWAP note asset must be fungible"))?;
 
         let attachment = match note.attachments().num_attachments() {
             0 => None,
@@ -1235,9 +1283,7 @@ mod tests {
         // Payback note must carry the combined 30 of requested asset.
         assert_eq!(payback.assets().num_assets(), 1);
         let payback_asset = payback.assets().iter().next().unwrap();
-        let Asset::Fungible(fa) = payback_asset else {
-            panic!("expected fungible payback asset");
-        };
+        let fa = payback_asset.unwrap_fungible();
         assert_eq!(fa.faucet_id(), requested_faucet);
         assert_eq!(fa.amount().as_u64(), 30);
 
@@ -1273,13 +1319,90 @@ mod tests {
         // Payback note must carry the full 50 of requested asset.
         assert_eq!(payback.assets().num_assets(), 1);
         let payback_asset = payback.assets().iter().next().unwrap();
-        let Asset::Fungible(fa) = payback_asset else {
-            panic!("expected fungible payback asset");
-        };
+        let fa = payback_asset.unwrap_fungible();
         assert_eq!(fa.faucet_id(), requested_faucet);
         assert_eq!(fa.amount().as_u64(), 50);
 
         // Full fill → no remainder note.
         assert!(remainder.is_none(), "full fill must not produce a remainder");
+    }
+
+    /// A depth outside the u32 range the on-chain script enforces must be rejected when the
+    /// note is built, and therefore also when a protocol note is decoded back into a
+    /// [`PswapNote`].
+    #[rstest]
+    #[case::above_u32(Felt::new_unchecked(u64::from(u32::MAX) + 1))]
+    #[case::wraps_the_field(Felt::MAX)]
+    fn pswap_rejects_out_of_range_attachment_depth(#[case] depth: Felt) {
+        let creator_id = dummy_creator_id();
+        let offered_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap();
+        let min_requested_asset = FungibleAsset::new(dummy_faucet_id(0xbb), 50).unwrap();
+
+        let storage = PswapNoteStorage::builder()
+            .min_requested_asset(min_requested_asset)
+            .creator_account_id(creator_id)
+            .build();
+        let attachment = NoteAttachment::with_word(
+            PswapNote::PSWAP_ATTACHMENT_SCHEME,
+            Word::from([ONE, ONE, depth, ZERO]),
+        );
+
+        let result = PswapNote::builder()
+            .sender(creator_id)
+            .storage(storage)
+            .serial_number(RandomCoin::new(Word::default()).draw_word())
+            .note_type(NoteType::Public)
+            .offered_asset(offered_asset)
+            .attachment(attachment)
+            .build();
+
+        assert!(result.is_err(), "an out-of-range depth must not build a PswapNote");
+    }
+
+    /// The lineage helpers offset the serial number by the distance between the note they are
+    /// called on and the attachment's round, so a note that itself sits at a non-zero depth
+    /// reconstructs the same round as the original does.
+    #[test]
+    fn pswap_lineage_helpers_are_relative_to_the_parent_depth() {
+        let creator_id = dummy_creator_id();
+        let consumer_id = dummy_consumer_id();
+        let offered_faucet = dummy_faucet_id(0xaa);
+        let requested_faucet = dummy_faucet_id(0xbb);
+
+        let offered_asset = FungibleAsset::new(offered_faucet, 100).unwrap();
+        let min_requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
+        let (original, _) = build_pswap_note(offered_asset, min_requested_asset, creator_id);
+
+        // Round 1 leaves a remainder sitting at depth 1, which round 2 then consumes.
+        let fill = FungibleAsset::new(requested_faucet, 20).unwrap();
+        let (_, remainder) = original.execute(consumer_id, Some(fill), None).unwrap();
+        let remainder = remainder.expect("partial fill should produce a remainder");
+        assert_eq!(remainder.parent_depth(), 1);
+
+        let (round_two_payback, _) = remainder.execute(consumer_id, Some(fill), None).unwrap();
+        let round_one_attachment = PswapNoteAttachment::try_from(
+            remainder.attachments().expect("remainder carries an attachment"),
+        )
+        .unwrap();
+        let round_two_attachment = PswapNoteAttachment::new(
+            AssetAmount::new(20).unwrap(),
+            round_one_attachment.order_id(),
+            2,
+        );
+
+        assert_eq!(
+            original.payback_note(consumer_id, &round_two_attachment).unwrap().id(),
+            round_two_payback.id(),
+            "the original must reconstruct round 2 from its absolute depth",
+        );
+        assert_eq!(
+            remainder.payback_note(consumer_id, &round_two_attachment).unwrap().id(),
+            round_two_payback.id(),
+            "the round's own parent must reconstruct it as well",
+        );
+        assert!(
+            remainder.payback_note(consumer_id, &round_one_attachment).is_err(),
+            "an attachment from the parent's own round is not a later round",
+        );
     }
 }

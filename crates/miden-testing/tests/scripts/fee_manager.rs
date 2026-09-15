@@ -30,6 +30,8 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
+use super::assert_default_expiration_limit;
+
 // HELPERS
 // ================================================================================================
 
@@ -363,7 +365,7 @@ async fn estimate_note_fee_returns_scheduled_fee(
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(account.id())
         .authenticated_input_note(consumed_note.id())
         .tx_script(tx_script)
@@ -371,6 +373,8 @@ async fn estimate_note_fee_returns_scheduled_fee(
         .build()?
         .execute()
         .await?;
+
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }
@@ -568,13 +572,15 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
 
-    mock_chain
+    let executed = mock_chain
         .build_transaction(native_account.id())
         .foreign_accounts([foreign_account_inputs])
         .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
+
+    assert_default_expiration_limit(&executed);
 
     Ok(())
 }

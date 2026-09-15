@@ -22,6 +22,7 @@ use miden_standards::account::auth::{
     AuthMultisigSmartConfig,
     AuthNetworkAccount,
     AuthSingleSig,
+    AuthTxFeeCollector,
     GuardianConfig,
     SponsorshipPolicy,
 };
@@ -65,6 +66,14 @@ pub enum Auth {
 
     /// Creates a mock authentication mechanism for the account that does nothing.
     Noop,
+
+    /// TX_FEE collector authentication: forwards the single asset of every consumed note into one
+    /// P2ID note for the target given by the auth args, verifies a signature over the
+    /// transaction summary and leaves the account unchanged (the nonce is only incremented when
+    /// the account is created).
+    ///
+    /// Creates a secret key and a [BasicAuthenticator] to sign with, like [`Auth::BasicAuth`].
+    TxFeeCollector { auth_scheme: AuthScheme },
 
     /// Creates a mock authentication mechanism for the account that conditionally succeeds and
     /// conditionally increments the nonce based on the authentication arguments.
@@ -120,19 +129,14 @@ impl Auth {
     ///
     /// The authentication component is always the first component of the returned vector; variants
     /// that expand into multiple components (e.g. [`Auth::NetworkAccount`]) yield their companion
-    /// components after it. The authenticator is only `Some` when [`Auth::BasicAuth`] is passed.
+    /// components after it. The authenticator is only `Some` when [`Auth::BasicAuth`] or
+    /// [`Auth::TxFeeCollector`] is passed.
     pub fn build_components(&self) -> (Vec<AccountComponent>, Option<BasicAuthenticator>) {
         match self {
             Auth::BasicAuth { auth_scheme } => {
-                let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
-                    .expect("failed to create secret key");
-                let pub_key = sec_key.public_key().to_commitment();
-
-                let component = AuthSingleSig::new(Approver::new(pub_key, *auth_scheme)).into();
-                let authenticator = BasicAuthenticator::new(&[sec_key]);
-
-                (vec![component], Some(authenticator))
+                Self::build_single_key_auth(*auth_scheme, |approver| {
+                    AuthSingleSig::new(approver).into()
+                })
             },
             Auth::Multisig { approver_set, proc_threshold_map } => {
                 let config = AuthMultisigConfig::new(approver_set.clone())
@@ -170,6 +174,11 @@ impl Auth {
             },
             Auth::IncrNonce => (vec![IncrNonceAuthComponent.into()], None),
             Auth::Noop => (vec![NoopAuthComponent.into()], None),
+            Auth::TxFeeCollector { auth_scheme } => {
+                Self::build_single_key_auth(*auth_scheme, |approver| {
+                    AuthTxFeeCollector::new(approver).into()
+                })
+            },
             Auth::Conditional => (vec![ConditionalAuthComponent.into()], None),
             Auth::NetworkAccount {
                 allowed_script_roots,
@@ -189,6 +198,23 @@ impl Auth {
                 (components, None)
             },
         }
+    }
+
+    /// Derives a deterministic key pair for `auth_scheme`, builds the single-key auth component
+    /// for it and returns the component with an authenticator that signs with the key.
+    fn build_single_key_auth(
+        auth_scheme: AuthScheme,
+        build_component: impl FnOnce(Approver) -> AccountComponent,
+    ) -> (Vec<AccountComponent>, Option<BasicAuthenticator>) {
+        let mut rng = ChaCha20Rng::from_seed(Default::default());
+        let sec_key = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng)
+            .expect("failed to create secret key");
+        let pub_key = sec_key.public_key().to_commitment();
+
+        let component = build_component(Approver::new(pub_key, auth_scheme));
+        let authenticator = BasicAuthenticator::new(&[sec_key]);
+
+        (vec![component], Some(authenticator))
     }
 }
 

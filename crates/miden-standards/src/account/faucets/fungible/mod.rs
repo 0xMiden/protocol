@@ -14,14 +14,14 @@ use miden_protocol::account::{
     AccountCodeInterface,
     AccountComponent,
     AccountComponentName,
+    AccountId,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
-    AssetCallbackFlag,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, AssetId, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -37,8 +37,10 @@ use super::{
 use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, NetworkAccount};
-use crate::account::fees::FeePolicyManager;
+use crate::account::faucets::registers_owner_only_policy;
+use crate::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use crate::account::policies::TokenPolicyManager;
+use crate::account::wallets::BasicWallet;
 use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
@@ -567,6 +569,12 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// Caller passes a fully-configured [`AuthSingleSig`]. Every authority-gated setter on the faucet
 /// (`mint_and_send`, the metadata setters, the policy setters, and `pause` / `unpause`) requires a
 /// signature.
+///
+/// # Errors
+///
+/// Returns [`FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if `token_policy_manager`
+/// registers an owner-gated mint or burn policy: this factory installs no `Ownable2Step`
+/// component, so such a policy would abort on every dispatch.
 pub fn create_singlesig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -574,12 +582,17 @@ pub fn create_singlesig_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
-    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
     AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_asset_callbacks(asset_callbacks)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -589,6 +602,12 @@ pub fn create_singlesig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a multisig approver set.
+///
+/// # Errors
+///
+/// Returns [`FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if `token_policy_manager`
+/// registers an owner-gated mint or burn policy: this factory installs no `Ownable2Step`
+/// component, so such a policy would abort on every dispatch.
 pub fn create_multisig_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -596,10 +615,17 @@ pub fn create_multisig_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
     AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -609,6 +635,12 @@ pub fn create_multisig_user_fungible_faucet(
 }
 
 /// Creates a new **user-account** fungible faucet authenticated by a guardian-backed multisig.
+///
+/// # Errors
+///
+/// Returns [`FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if `token_policy_manager`
+/// registers an owner-gated mint or burn policy: this factory installs no `Ownable2Step`
+/// component, so such a policy would abort on every dispatch.
 pub fn create_guarded_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -616,10 +648,17 @@ pub fn create_guarded_user_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager) {
+        return Err(FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
     AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_component(auth_component)
         .with_component(faucet)
+        .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
@@ -635,6 +674,13 @@ pub fn create_guarded_user_fungible_faucet(
 ///
 /// In addition to the explicit parameters, [`Pausable`] (slot + `is_paused` view) and
 /// [`PausableManager`] (admin `pause` / `unpause` gated by `access_control`) are bundled.
+///
+/// # Errors
+///
+/// Returns [`FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step`] if `token_policy_manager`
+/// registers an owner-gated mint or burn policy while `access_control` is
+/// [`AccessControl::Rbac`], which installs no `Ownable2Step` component for the policy to read the
+/// owner from.
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -642,17 +688,63 @@ pub fn create_network_fungible_faucet(
     token_policy_manager: TokenPolicyManager,
     fee_policy_manager: FeePolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
+    // TODO: remove with the general component dependency mechanism, see
+    // `super::registers_owner_only_policy`.
+    if registers_owner_only_policy(&token_policy_manager)
+        && !matches!(access_control, AccessControl::Ownable2Step { .. })
+    {
+        return Err(FungibleFaucetError::OwnerOnlyPolicyWithoutOwnable2Step);
+    }
+
     let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
-    let asset_callbacks = AssetCallbackFlag::from(token_policy_manager.has_transfer_policy());
 
     NetworkAccount::builder(init_seed, note_allowlist, fee_policy_manager)
         .expect("MintNote + BurnNote allowlist is non-empty")
-        .with_asset_callbacks(asset_callbacks)
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
+        .map_err(FungibleFaucetError::AccountError)
+}
+
+/// Creates the native fungible faucet for genesis.
+///
+/// The account ID is derived by building a regular network faucet whose fee asset is temporarily
+/// issued by `operator_id`. The fee-asset slot is then set to the asset issued by the faucet
+/// itself. The returned account has nonce `1` and no seed.
+///
+/// The faucet is owned by `operator_id` through [`AccessControl::Ownable2Step`].
+///
+/// # Warning
+///
+/// This account can only be added at genesis. It cannot be deployed in a transaction.
+pub fn create_native_fungible_faucet_for_genesis(
+    init_seed: [u8; 32],
+    faucet: FungibleFaucet,
+    operator_id: AccountId,
+    token_policy_manager: TokenPolicyManager,
+    fee_policy: BasicConstantFeePolicy,
+) -> Result<Account, FungibleFaucetError> {
+    let fee_policy_manager = FeePolicyManager::builder()
+        .fee_faucet_id(operator_id)
+        .active_fee_policy(fee_policy.into())
+        .build();
+    let account = create_network_fungible_faucet(
+        init_seed,
+        faucet,
+        AccessControl::Ownable2Step { owner: operator_id },
+        token_policy_manager,
+        fee_policy_manager,
+    )?;
+
+    let fee_asset_id = AssetId::new_fungible(account.id());
+    let (id, vault, mut storage, code, _nonce, _seed) = account.into_parts();
+    storage
+        .set_item(FeePolicyManager::fee_asset_id_slot(), fee_asset_id.to_word())
+        .map_err(FungibleFaucetError::AccountError)?;
+
+    Account::new(id, vault, storage, code, Felt::ONE, None)
         .map_err(FungibleFaucetError::AccountError)
 }

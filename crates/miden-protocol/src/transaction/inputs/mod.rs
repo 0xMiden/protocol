@@ -1,5 +1,4 @@
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
@@ -7,6 +6,7 @@ use miden_crypto::merkle::NodeIndex;
 use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 
 use super::PartialBlockchain;
+use crate::Word;
 use crate::account::{
     AccountCode,
     AccountHeader,
@@ -25,6 +25,7 @@ use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
+use crate::protocol_config::ProtocolConfig;
 use crate::transaction::{TransactionArgs, TransactionScript};
 use crate::utils::serde::{
     ByteReader,
@@ -33,7 +34,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word};
 
 #[cfg(test)]
 mod tests;
@@ -54,6 +54,8 @@ use crate::vm::AdviceInputs;
 pub struct TransactionInputs {
     account: PartialAccount,
     block_header: BlockHeader,
+    /// The chain's protocol configuration, which `block_header` only commits to.
+    protocol_config: ProtocolConfig,
     blockchain: PartialBlockchain,
     input_notes: InputNotes<InputNote>,
     tx_args: TransactionArgs,
@@ -72,14 +74,78 @@ impl TransactionInputs {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - The protocol config does not match the one committed to by the block header.
     /// - The partial blockchain does not track the block headers required to prove inclusion of any
     ///   authenticated input note.
     pub fn new(
         account: PartialAccount,
         block_header: BlockHeader,
+        protocol_config: ProtocolConfig,
         blockchain: PartialBlockchain,
         input_notes: InputNotes<InputNote>,
     ) -> Result<Self, TransactionInputError> {
+        Self::try_from_parts(
+            account,
+            block_header,
+            protocol_config,
+            blockchain,
+            input_notes,
+            TransactionArgs::default(),
+            AdviceInputs::default(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
+    }
+
+    /// Creates [`TransactionInputs`] from all transaction-input components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as [`Self::new`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_parts(
+        account: PartialAccount,
+        block_header: BlockHeader,
+        protocol_config: ProtocolConfig,
+        blockchain: PartialBlockchain,
+        input_notes: InputNotes<InputNote>,
+        tx_args: TransactionArgs,
+        advice_inputs: AdviceInputs,
+        foreign_account_code: Vec<AccountCode>,
+        foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
+    ) -> Result<Self, TransactionInputError> {
+        Self::validate(&block_header, &protocol_config, &blockchain, &input_notes)?;
+
+        Ok(Self {
+            account,
+            block_header,
+            protocol_config,
+            blockchain,
+            input_notes,
+            tx_args,
+            advice_inputs,
+            foreign_account_code,
+            foreign_account_slot_names,
+        })
+    }
+
+    // VALIDATION
+    // --------------------------------------------------------------------------------------------
+
+    fn validate(
+        block_header: &BlockHeader,
+        protocol_config: &ProtocolConfig,
+        blockchain: &PartialBlockchain,
+        input_notes: &InputNotes<InputNote>,
+    ) -> Result<(), TransactionInputError> {
+        // Check that the protocol config is the one the block header commits to.
+        let protocol_config_commitment = protocol_config.to_commitment();
+        if protocol_config_commitment != block_header.protocol_config_commitment() {
+            return Err(TransactionInputError::InconsistentProtocolConfig {
+                expected: block_header.protocol_config_commitment(),
+                actual: protocol_config_commitment,
+            });
+        }
         // Check that the partial blockchain and block header are consistent.
         if blockchain.chain_length() != block_header.block_num() {
             return Err(TransactionInputError::InconsistentChainLength {
@@ -98,7 +164,7 @@ impl TransactionInputs {
             if let InputNote::Authenticated { note, proof } = note {
                 let note_block_num = proof.location().block_num();
                 let block_header = if note_block_num == block_header.block_num() {
-                    &block_header
+                    block_header
                 } else {
                     blockchain.get_block(note_block_num).ok_or(
                         TransactionInputError::InputNoteBlockNotInPartialBlockchain(note.id()),
@@ -108,27 +174,17 @@ impl TransactionInputs {
             }
         }
 
-        Ok(Self {
-            account,
-            block_header,
-            blockchain,
-            input_notes,
-            tx_args: TransactionArgs::default(),
-            advice_inputs: AdviceInputs::default(),
-            foreign_account_code: Vec::new(),
-            foreign_account_slot_names: BTreeMap::new(),
-        })
+        Ok(())
     }
 
     /// Replaces the transaction inputs and assigns the given asset witnesses.
     pub fn with_asset_witnesses(mut self, witnesses: Vec<AssetWitness>) -> Self {
         for witness in witnesses {
-            self.advice_inputs.store.extend(witness.authenticated_nodes());
-            let smt_proof = SmtProof::from(witness);
-            self.advice_inputs.map.extend([(
-                smt_proof.leaf().hash(),
-                smt_proof.leaf().to_elements().collect::<Arc<[Felt]>>(),
-            )]);
+            let leaf = witness.proof().leaf();
+            let witness_inputs = AdviceInputs::default()
+                .with_merkle_store(witness.authenticated_nodes().collect())
+                .with_map([(leaf.hash(), leaf.to_elements().collect())]);
+            self.advice_inputs.extend(witness_inputs);
         }
 
         self
@@ -174,9 +230,7 @@ impl TransactionInputs {
     /// Note: the advice stack from the provided advice inputs is discarded.
     pub fn set_advice_inputs(&mut self, new_advice_inputs: AdviceInputs) {
         let (_stack, map, store) = new_advice_inputs.into_parts();
-        let mut advice_inputs = AdviceInputs::default().with_merkle_store(store);
-        advice_inputs.map = map;
-        self.advice_inputs = advice_inputs;
+        self.advice_inputs = AdviceInputs::from(map).with_merkle_store(store);
         self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
     }
 
@@ -199,6 +253,11 @@ impl TransactionInputs {
         &self.block_header
     }
 
+    /// Returns the protocol configuration committed to by the referenced block header.
+    pub fn protocol_config(&self) -> &ProtocolConfig {
+        &self.protocol_config
+    }
+
     /// Returns partial blockchain containing authentication paths for all notes consumed by the
     /// transaction.
     pub fn blockchain(&self) -> &PartialBlockchain {
@@ -213,6 +272,21 @@ impl TransactionInputs {
     /// Returns the block number referenced by the inputs.
     pub fn ref_block(&self) -> BlockNumber {
         self.block_header.block_num()
+    }
+
+    /// Returns the commitments of the blocks the transaction authenticates, keyed by block number.
+    ///
+    /// These are the reference block and the blocks tracked by the partial blockchain, i.e.
+    /// exactly the blocks whose commitment the transaction kernel can read.
+    pub fn collect_block_commitments(&self) -> BTreeMap<BlockNumber, Word> {
+        let mut commitments: BTreeMap<BlockNumber, Word> = self
+            .blockchain
+            .block_headers()
+            .map(|header| (header.block_num(), header.commitment()))
+            .collect();
+        commitments.insert(self.ref_block(), self.block_header.commitment());
+
+        commitments
     }
 
     /// Returns the transaction script to be executed.
@@ -253,14 +327,14 @@ impl TransactionInputs {
         let leaf_index = map_key.hash().to_leaf_index();
 
         // Construct sparse Merkle path.
-        let merkle_path = self.advice_inputs.store.get_path(map_root, leaf_index.into())?;
+        let merkle_path = self.advice_inputs.store().get_path(map_root, leaf_index.into())?;
         let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
 
         // Construct SMT leaf.
-        let merkle_node = self.advice_inputs.store.get_node(map_root, leaf_index.into())?;
+        let merkle_node = self.advice_inputs.store().get_node(map_root, leaf_index.into())?;
         let smt_leaf_elements = self
             .advice_inputs
-            .map
+            .map()
             .get(&merkle_node)
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
         let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, leaf_index)?;
@@ -288,14 +362,14 @@ impl TransactionInputs {
         for asset_id in asset_ids {
             let smt_index = asset_id.hash().to_leaf_index();
             // Construct sparse Merkle path.
-            let merkle_path = self.advice_inputs.store.get_path(vault_root, smt_index.into())?;
+            let merkle_path = self.advice_inputs.store().get_path(vault_root, smt_index.into())?;
             let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
 
             // Construct SMT leaf.
-            let merkle_node = self.advice_inputs.store.get_node(vault_root, smt_index.into())?;
+            let merkle_node = self.advice_inputs.store().get_node(vault_root, smt_index.into())?;
             let smt_leaf_elements = self
                 .advice_inputs
-                .map
+                .map()
                 .get(&merkle_node)
                 .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
             let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
@@ -316,13 +390,13 @@ impl TransactionInputs {
         let smt_index: NodeIndex = asset_id.hash().to_leaf_index().into();
 
         // make sure the path is in the Merkle store
-        if !self.advice_inputs.store.has_path(vault_root, smt_index) {
+        if !self.advice_inputs.store().has_path(vault_root, smt_index) {
             return false;
         }
 
         // make sure the node pre-image is in the Merkle store
-        match self.advice_inputs.store.get_node(vault_root, smt_index) {
-            Ok(node) => self.advice_inputs.map.contains_key(&node),
+        match self.advice_inputs.store().get_node(vault_root, smt_index) {
+            Ok(node) => self.advice_inputs.map().contains_key(&node),
             Err(_) => false,
         }
     }
@@ -368,7 +442,7 @@ impl TransactionInputs {
         let account_id_key = AccountIdKey::from(account_id);
         let header_elements = self
             .advice_inputs
-            .map
+            .map()
             .get(&account_id_key.as_word())
             .ok_or(TransactionInputsExtractionError::ForeignAccountNotFound(account_id))?;
 
@@ -401,7 +475,7 @@ impl TransactionInputs {
         // Try to get storage header from advice map using storage commitment as key.
         let storage_header_elements = self
             .advice_inputs
-            .map
+            .map()
             .get(&header.storage_commitment())
             .ok_or(TransactionInputsExtractionError::StorageHeaderNotFound(header.id()))?;
 
@@ -438,7 +512,7 @@ impl TransactionInputs {
         let leaf_index = AccountIdKey::from(header.id()).to_leaf_index().into();
 
         // Get the Merkle path from the merkle store.
-        let merkle_path = self.advice_inputs.store.get_path(account_tree_root, leaf_index)?;
+        let merkle_path = self.advice_inputs.store().get_path(account_tree_root, leaf_index)?;
 
         // Convert the Merkle path to SparseMerklePath.
         let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
@@ -485,6 +559,7 @@ impl Serializable for TransactionInputs {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.account.write_into(target);
         self.block_header.write_into(target);
+        self.protocol_config.write_into(target);
         self.blockchain.write_into(target);
         self.input_notes.write_into(target);
         self.tx_args.write_into(target);
@@ -498,6 +573,7 @@ impl Deserializable for TransactionInputs {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account = PartialAccount::read_from(source)?;
         let block_header = BlockHeader::read_from(source)?;
+        let protocol_config = ProtocolConfig::read_from(source)?;
         let blockchain = PartialBlockchain::read_from(source)?;
         let input_notes = InputNotes::read_from(source)?;
         let tx_args = TransactionArgs::read_from(source)?;
@@ -509,6 +585,7 @@ impl Deserializable for TransactionInputs {
         Ok(TransactionInputs {
             account,
             block_header,
+            protocol_config,
             blockchain,
             input_notes,
             tx_args,

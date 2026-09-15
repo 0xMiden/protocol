@@ -1,9 +1,23 @@
+use {Bool, StorageMapKey, StorageSlotId} from miden::protocol::types
 use miden::core::crypto::dsa::falcon512_poseidon2
 use miden::core::crypto::hashes::poseidon2
 use miden::core::crypto::dsa::ecdsa_k256_keccak
 use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth
+
+# Schemes 1 (ECDSA) and 2 (Falcon) are currently supported.
+pub type SignatureScheme = u8
+pub type PublicKeyCommitment = word
+pub type SignatureMessage = word
+pub type Approver = struct {
+    public_key: PublicKeyCommitment,
+    scheme: SignatureScheme
+}
+pub type SignatureSchemeWord = struct {
+    scheme: SignatureScheme,
+    padding: [felt; 3]
+}
 
 # CONSTANTS
 # =================================================================================================
@@ -48,20 +62,25 @@ const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three
 #! - 2 => falcon512_poseidon2
 #!
 #! It first increments the nonce of the account, independent of whether the account's state has
-#! changed or not. Then it computes and signs the following message (in memory order):
-#! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!  BLOCK_COMMITMENT, [expiration_delta, final_nonce, 0, 0], [0, 0, 0, 0]]
+#! changed or not. Then it computes and signs the following message:
+#! [[version, metadata, final_nonce, 0], [0, 0, 0, 0], ACCOUNT_DELTA_COMMITMENT,
+#!  INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 #!
-#! Including the final_nonce is necessary for replay protection. The reference block commitment is
-#! included to commit to the transaction creator's intended reference block of the transaction
-#! which determines the fee parameters and therefore the fee amount that is deducted. The
-#! expiration block delta is included to commit to the transaction's expiration.
+#! Including the final_nonce is necessary for replay protection. The block commitment is included to
+#! commit to the transaction creator's intended reference block of the transaction which determines
+#! the fee parameters and therefore the fee amount that is deducted. The metadata felt is included to
+#! commit to the bound block number and the transaction's expiration delta; see
+#! `auth::create_tx_summary_with_block`.
+#!
+#! The summary is built and the signature verified by authenticate_transaction_with_user_params
+#! below, which this procedure calls after incrementing the nonce and binding it as the first user
+#! param.
 #!
 #! Inputs:  [PK_COMM, scheme_id]
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc authenticate_transaction
+pub proc authenticate_transaction(approver: Approver)
     # Increment the account's nonce.
     # ---------------------------------------------------------------------------------------------
     # This has to happen before computing the delta commitment, otherwise that procedure will abort
@@ -69,14 +88,38 @@ pub proc authenticate_transaction
     # => [final_nonce, PK_COMM, scheme_id]
 
     # Pass the final nonce as the first user param and zero the remaining ones.
-    push.0.0.0.0.0.0 movup.6
-    # => [user_params(7), PK_COMM, scheme_id]
+    push.0.0.0.0.0 movup.5
+    # => [user_params(6), PK_COMM, scheme_id]
 
+    exec.authenticate_transaction_with_user_params
+    # => []
+end
+
+#! Authenticates a transaction against the provided user params, using the signature
+#! scheme specified by scheme_id.
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_poseidon2
+#!
+#! It computes and signs the following message:
+#! [[version, metadata, user_param0, user_param1],
+#!  [user_param2, user_param3, user_param4, user_param5], ACCOUNT_DELTA_COMMITMENT,
+#!  INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
+#!
+#! Inputs:  [user_params(6), PK_COMM, scheme_id]
+#! Outputs: []
+#!
+#! Where:
+#! - user_params are six arbitrary elements bound by the signature
+#!
+#! Invocation: exec
+pub proc authenticate_transaction_with_user_params(user_params: [felt; 6], approver: Approver)
     # Compute the message that is signed. The summary preimage is inserted into the advice map
     # for extraction by the host.
     # ---------------------------------------------------------------------------------------------
     exec.auth::create_tx_summary
-    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, PK_COMM, scheme_id]
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PK_COMM, scheme_id]
 
     exec.auth::hash_and_insert_tx_summary
     # OS => [MESSAGE, PK_COMM, scheme_id]
@@ -108,7 +151,11 @@ end
 #
 # Inputs:  [scheme_id, PK_COMM, MSG]
 # Outputs: []
-proc verify_signature_by_scheme
+proc verify_signature_by_scheme(
+    scheme_id: SignatureScheme,
+    pk_comm: PublicKeyCommitment,
+    msg: SignatureMessage
+)
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_one, scheme_id, PK_COMM, MESSAGE]
 
@@ -151,7 +198,7 @@ end
 #! - num_cycles is the estimated upper bound on authenticate_transaction's cycle count.
 #!
 #! Invocation: exec
-pub proc estimate_authentication_cycles
+pub proc estimate_authentication_cycles(scheme_id: SignatureScheme) -> u32
     eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_ecdsa]
 
@@ -194,7 +241,7 @@ end
 #! - num_cycles is the estimated upper bound on the authentication flow's cycle count.
 #!
 #! Invocation: exec
-pub proc estimate_multisig_authentication_cycles
+pub proc estimate_multisig_authentication_cycles(num_of_signers: u8) -> u32
     mul.FALCON_512_POSEIDON2_AUTH_CYCLES add.MULTISIG_AUTH_BASE_CYCLES
     # => [num_cycles]
 end
@@ -204,7 +251,7 @@ end
 #! Outputs: [is_supported]
 #!
 #! Invocation: exec
-pub proc is_supported_scheme
+pub proc is_supported_scheme(scheme_id: felt) -> Bool
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_1, scheme_id]
 
@@ -220,7 +267,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc assert_supported_scheme
+pub proc assert_supported_scheme(scheme_id: felt)
     exec.is_supported_scheme
     # => [is_supported]
 
@@ -234,7 +281,7 @@ end
 #! Outputs: [SCHEME_ID_WORD]
 #!
 #! Invocation: exec
-pub proc assert_supported_scheme_word
+pub proc assert_supported_scheme_word(scheme_id_word: word) -> SignatureSchemeWord
     dupw exec.assert_supported_scheme
     # => [0, 0, 0, SCHEME_ID_WORD]
 
@@ -263,7 +310,12 @@ end
 #!
 #! Invocation: exec
 @locals(5)
-pub proc verify_signatures
+pub proc verify_signatures(
+    approver_scheme_id_slot_id: StorageSlotId,
+    approver_pub_key_slot_id: StorageSlotId,
+    num_of_approvers: u8,
+    msg: SignatureMessage
+) -> (u8, SignatureMessage)
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
     # => [approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix, num_of_approvers, MSG]
@@ -390,7 +442,7 @@ end
 #! Outputs: [APPROVER_MAP_KEY]
 #!
 #! Invocation: exec
-pub proc create_approver_map_key
+pub proc create_approver_map_key(key_index: u32) -> StorageMapKey
     push.0.0.0 movup.3
     # => [APPROVER_MAP_KEY]
 end

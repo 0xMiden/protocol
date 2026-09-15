@@ -4,6 +4,7 @@
 #
 # A state guardian can help coordinate state availability for private accounts.
 
+use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth::tx_policy
@@ -91,7 +92,7 @@ pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_p
     # Store new scheme id as [scheme_id, 0, 0, 0] in the single-entry map.
     loc_load.0
     # => [scheme_id]
-    
+
     push.0.0.0 movup.3
     # => [NEW_GUARDIAN_SCHEME_ID_WORD]
 
@@ -112,6 +113,26 @@ end
 # PUBLIC HELPERS
 # =================================================================================================
 
+#! Returns the currently configured guardian public key.
+#!
+#! Reads the current account state, so the result reflects a rotation performed earlier in the same
+#! transaction.
+#!
+#! Inputs:  []
+#! Outputs: [GUARDIAN_PUBLIC_KEY]
+#!
+#! Invocation: exec
+pub proc get_guardian_public_key() -> word
+    push.GUARDIAN_MAP_KEY
+    # => [GUARDIAN_MAP_KEY]
+
+    push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
+    # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, GUARDIAN_MAP_KEY]
+
+    exec.active_account::get_map_item
+    # => [GUARDIAN_PUBLIC_KEY]
+end
+
 #! Conditionally verifies a guardian signature.
 #!
 #! Inputs:  [MSG]
@@ -126,7 +147,7 @@ end
 pub proc verify_signature(msg: word)
     procref.update_guardian_public_key
     # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT, MSG]
-    
+
     exec.native_account::was_procedure_called
     # => [was_update_guardian_public_key_called, MSG]
 

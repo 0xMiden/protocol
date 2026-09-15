@@ -92,22 +92,20 @@ impl OutputNoteBuilder {
     pub fn add_asset(&mut self, asset: Asset) -> Result<(), TransactionKernelError> {
         // Check if an asset issued by the same faucet already exists in the list of assets.
         if let Some(own_asset) = self.assets.iter_mut().find(|a| a.is_same(&asset)) {
-            match own_asset {
-                Asset::Fungible(f_own_asset) => {
-                    // If a fungible asset issued by the same faucet is found, try to add the
-                    // provided asset to it.
-                    let new_asset = f_own_asset
-                        .add(asset.unwrap_fungible())
-                        .map_err(NoteError::AddFungibleAssetBalanceError)
-                        .map_err(TransactionKernelError::FailedToAddAssetToNote)?;
-                    *own_asset = Asset::Fungible(new_asset);
-                },
-                Asset::NonFungible(nf_asset) => {
-                    return Err(TransactionKernelError::FailedToAddAssetToNote(
-                        NoteError::DuplicateNonFungibleAsset(*nf_asset),
-                    ));
-                },
-            }
+            // Only fungible assets compose, so any other asset with the same ID is a duplicate.
+            let (Some(own_fungible_asset), Some(other_fungible_asset)) =
+                (own_asset.as_fungible(), asset.as_fungible())
+            else {
+                return Err(TransactionKernelError::FailedToAddAssetToNote(
+                    NoteError::DuplicateNonFungibleAsset(asset),
+                ));
+            };
+
+            *own_asset = own_fungible_asset
+                .add(other_fungible_asset)
+                .map_err(NoteError::AddFungibleAssetBalanceError)
+                .map_err(TransactionKernelError::FailedToAddAssetToNote)?
+                .into();
         } else {
             // If the asset is not in the list, add it to the list.
             self.assets.push(asset);

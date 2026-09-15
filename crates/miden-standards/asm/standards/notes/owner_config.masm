@@ -1,11 +1,12 @@
+use {NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
 use miden::standards::access::ownable2step
-use miden::standards::attachments::network_account_target
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the OwnerConfig note storage.
@@ -24,14 +25,17 @@ const NUM_ITEMS_TRANSFER_OWNERSHIP = 3
 const NUM_ITEMS_ACCEPT_OWNERSHIP = 1
 const NUM_ITEMS_RENOUNCE_OWNERSHIP = 1
 
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_TRANSFER_OWNERSHIP
+
 # ERRORS
 # =================================================================================================
-
-const ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH = "owner config note attachment target account does not match the consuming account"
 
 const ERR_OWNER_CONFIG_UNKNOWN_SELECTOR = "owner config note selector does not match a known action"
 
 const ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner config note storage item count does not match the selected action"
+
+const ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC = "owner config note must be public"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -53,27 +57,34 @@ const ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "owner config note s
 #! - `miden::standards::access::ownable2step::{transfer_ownership, accept_ownership,
 #!   renounce_ownership}` (the `Ownable2Step` component).
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
 #! - the selector is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized for the selected action (per the `Ownable2Step` procedures).
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
     mem_load.SELECTOR_PTR
@@ -121,7 +132,7 @@ end
 #! - the note sender is not the owner (per `ownable2step::transfer_ownership`).
 #!
 #! Invocation: exec
-proc execute_transfer_ownership
+proc execute_transfer_ownership(num_storage_items: u32)
     eq.NUM_ITEMS_TRANSFER_OWNERSHIP
     assert.err=ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -150,7 +161,7 @@ end
 #! - the note sender is not the nominated owner (per `ownable2step::accept_ownership`).
 #!
 #! Invocation: exec
-proc execute_accept_ownership
+proc execute_accept_ownership(num_storage_items: u32)
     eq.NUM_ITEMS_ACCEPT_OWNERSHIP
     assert.err=ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -177,7 +188,7 @@ end
 #! - the note sender is not the owner (per `ownable2step::renounce_ownership`).
 #!
 #! Invocation: exec
-proc execute_renounce_ownership
+proc execute_renounce_ownership(num_storage_items: u32)
     eq.NUM_ITEMS_RENOUNCE_OWNERSHIP
     assert.err=ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
