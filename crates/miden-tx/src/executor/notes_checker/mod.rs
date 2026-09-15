@@ -1,12 +1,11 @@
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteId};
+use miden_protocol::note::Note;
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -14,7 +13,7 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
 };
-use miden_standards::note::{FeeSponsorshipNote, NoteConsumptionStatus, StandardNote};
+use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
 use super::{ProgramExecutor, TransactionExecutor};
 use crate::auth::TransactionAuthenticator;
@@ -22,184 +21,16 @@ use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
 use crate::{DataStore, NoteCheckerError, TransactionExecutorError};
 
-// CONSTANTS
-// ================================================================================================
+mod checker_utils;
 
-/// Maximum number of notes that can be checked at once.
-///
-/// Fixed at an amount that should keep each run of note consumption checking to a maximum of ~50ms.
-pub const MAX_NUM_CHECKER_NOTES: usize = 20;
-
-// NOTE CONSUMPTION INFO
-// ================================================================================================
-
-/// Represents a successfully consumed note along with the number of cycles it took to execute.
-#[derive(Debug)]
-pub struct SuccessfulNote {
-    note: Note,
-    num_cycles: usize,
-}
-
-impl SuccessfulNote {
-    /// Constructs a new `SuccessfulNote`.
-    pub fn new(note: Note, num_cycles: usize) -> Self {
-        Self { note, num_cycles }
-    }
-
-    /// Returns a reference to the note.
-    pub fn note(&self) -> &Note {
-        &self.note
-    }
-
-    /// Returns the number of cycles consumed during execution.
-    pub fn num_cycles(&self) -> usize {
-        self.num_cycles
-    }
-}
-
-/// Represents a failed note consumption.
-#[derive(Debug)]
-pub struct FailedNote {
-    note: Note,
-    /// The error the failing execution produced.
-    error: Arc<TransactionExecutorError>,
-    /// The number of cycles consumed by the note before it failed.
-    ///
-    /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
-    /// for other error types where the cycle count is not meaningful.
-    num_cycles: Option<usize>,
-    /// The note this one is bound to, when it failed only as collateral of that note's failure.
-    ///
-    /// See [`FailedNote::bundled_with`].
-    bundled_with: Option<NoteId>,
-}
-
-impl FailedNote {
-    /// Constructs a new `FailedNote`.
-    pub fn new(note: Note, error: TransactionExecutorError, num_cycles: Option<usize>) -> Self {
-        Self {
-            note,
-            error: Arc::new(error),
-            num_cycles,
-            bundled_with: None,
-        }
-    }
-
-    /// Returns a reference to the note.
-    pub fn note(&self) -> &Note {
-        &self.note
-    }
-
-    /// Returns a reference to the error.
-    pub fn error(&self) -> &TransactionExecutorError {
-        &self.error
-    }
-
-    /// Returns the number of cycles consumed before failure, if available.
-    ///
-    /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
-    /// for other error types where the cycle count is not meaningful.
-    pub fn num_cycles(&self) -> Option<usize> {
-        self.num_cycles
-    }
-
-    /// Returns the ID of the note this one is bound to, if it failed only because that note did.
-    ///
-    /// Some notes can only be consumed together, e.g. a FEE_SPONSORSHIP note and the feature note
-    /// it pays for. Such notes are tested as one bundle, so rejecting the bundle rejects every note
-    /// in it. This is `Some` for the notes that were not themselves blamed for the failure: they
-    /// may well be consumable in a different set, and [`FailedNote::error`] reports the error that
-    /// rejected the bundle rather than an error attributable to this note.
-    pub fn bundled_with(&self) -> Option<NoteId> {
-        self.bundled_with
-    }
-}
-
-/// Contains information about the successful and failed consumption of notes.
-#[derive(Default, Debug)]
-pub struct NoteConsumptionInfo {
-    successful: Vec<SuccessfulNote>,
-    failed: Vec<FailedNote>,
-}
-
-impl NoteConsumptionInfo {
-    /// Creates a new [`NoteConsumptionInfo`] instance with the given successful notes.
-    pub fn new_successful(successful: Vec<SuccessfulNote>) -> Self {
-        Self { successful, ..Default::default() }
-    }
-
-    /// Creates a new [`NoteConsumptionInfo`] instance with the given successful and failed notes.
-    pub fn new(successful: Vec<SuccessfulNote>, failed: Vec<FailedNote>) -> Self {
-        Self { successful, failed }
-    }
-
-    /// Returns a reference to the successfully consumed notes.
-    pub fn successful(&self) -> &[SuccessfulNote] {
-        &self.successful
-    }
-
-    /// Returns a reference to the failed notes.
-    pub fn failed(&self) -> &[FailedNote] {
-        &self.failed
-    }
-
-    /// Consumes the struct and returns the successful and failed notes.
-    pub fn into_parts(self) -> (Vec<SuccessfulNote>, Vec<FailedNote>) {
-        (self.successful, self.failed)
-    }
-}
-
-// NOTE BUNDLE
-// ================================================================================================
-
-/// A group of input notes that has to be tested for consumability as a unit, such as a feature note
-/// and the notes which sponsor it.
-#[derive(Debug)]
-struct NoteBundle {
-    notes: Vec<Note>,
-}
-
-impl NoteBundle {
-    /// Groups `notes` into bundles that must be consumed together.
-    ///
-    /// A FEE_SPONSORSHIP note joins the bundle of the feature note it sponsors; an unpaired
-    /// sponsorship note forms a bundle of its own, so that it fails alone rather than dropping the
-    /// notes it would otherwise have been grouped with. Every other note type forms a bundle of its
-    /// own.
-    ///
-    /// The feature note is always first in the resulting bundle (if any); bundle preserves the
-    /// relative order of the sponsorship notes in it.
-    fn group(notes: Vec<Note>) -> Vec<Self> {
-        let note_indices: BTreeMap<NoteId, usize> =
-            notes.iter().enumerate().map(|(idx, note)| (note.id(), idx)).collect();
-
-        // Put the feature notes and orphan notes to the values with keys equal to this note index
-        // in the `note_indices`. Sponsorship notes are appended to the values which contain the
-        // corresponding feature note.
-        // Keying by index rather than by note ID keeps the bundles in the caller's order.
-        let mut bundles: BTreeMap<usize, Vec<Note>> = BTreeMap::new();
-        for (idx, note) in notes.into_iter().enumerate() {
-            // A sponsorship is only bundled when the note it sponsors is actually an input;
-            // otherwise it can only be reclaimed, which is something it has to attempt on its own.
-            match FeeSponsorshipNote::try_from(&note)
-                .ok()
-                .and_then(|sponsorship| note_indices.get(&sponsorship.feature_note_id()).copied())
-            {
-                Some(head_idx) => bundles.entry(head_idx).or_default().push(note),
-                // This note heads its own bundle, so it goes first whichever side of the notes
-                // bound to it it arrives on.
-                None => bundles.entry(idx).or_default().insert(0, note),
-            }
-        }
-
-        bundles.into_values().map(|notes| Self { notes }).collect()
-    }
-
-    /// Returns the notes forming the bundle.
-    fn notes(&self) -> &[Note] {
-        &self.notes
-    }
-}
+pub use checker_utils::{
+    FailedNote,
+    MAX_NUM_CHECKER_NOTES,
+    NoteConsumptionInfo,
+    NoteFailure,
+    SuccessfulNote,
+};
+use checker_utils::{NoteBundle, handle_epilogue_error};
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -384,7 +215,13 @@ where
                 }) => {
                     // SAFETY: Failed note index is in bounds of the candidate notes.
                     let failed_note = candidate_notes.remove(failed_note_index);
-                    failed_notes.push(FailedNote::new(failed_note, error, failed_note_cycle_count));
+                    failed_notes.push(FailedNote::new(
+                        failed_note,
+                        NoteFailure::Blamed {
+                            error,
+                            num_cycles: failed_note_cycle_count,
+                        },
+                    ));
 
                     // All possible candidate combinations have been attempted.
                     if candidate_notes.is_empty() {
@@ -476,23 +313,29 @@ where
                             _ => (0, None),
                         };
 
-                        let error = Arc::new(TransactionExecutorError::from(error));
-                        let blamed_id = bundle_notes[blamed_idx].id();
+                        let blamed_note = bundle_notes[blamed_idx].clone();
+                        let blamed_id = blamed_note.id();
 
                         // Record every note of the bundle (overwriting previous failures for the
                         // relevant notes), so the reported notes always account for all inputs.
-                        // The notes that were not blamed are marked as bound to the one that was.
+                        // Only the blamed note owns the error; the rest failed with its bundle.
+                        failed_note_index.insert(
+                            blamed_id,
+                            FailedNote::new(
+                                blamed_note,
+                                NoteFailure::Blamed { error: error.into(), num_cycles },
+                            ),
+                        );
                         for (note_idx, note) in bundle_notes.iter().enumerate() {
-                            let is_blamed = note_idx == blamed_idx;
-                            failed_note_index.insert(
-                                note.id(),
-                                FailedNote {
-                                    note: note.clone(),
-                                    error: Arc::clone(&error),
-                                    num_cycles: is_blamed.then_some(num_cycles).flatten(),
-                                    bundled_with: (!is_blamed).then_some(blamed_id),
-                                },
-                            );
+                            if note_idx != blamed_idx {
+                                failed_note_index.insert(
+                                    note.id(),
+                                    FailedNote::new(
+                                        note.clone(),
+                                        NoteFailure::Collateral { blamed_by: blamed_id },
+                                    ),
+                                );
+                            }
                         }
                     },
                 }
@@ -614,29 +457,5 @@ where
                 }
             },
         }
-    }
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Handle the epilogue error during the note consumption check in the `can_consume` method.
-///
-/// The goal of this helper function is to handle the cases where the account couldn't consume the
-/// note because of some epilogue check failure, e.g. absence of the authenticator.
-fn handle_epilogue_error(epilogue_error: TransactionExecutorError) -> NoteConsumptionStatus {
-    match epilogue_error {
-        // `Unauthorized` is returned for the multisig accounts if the transaction doesn't have
-        // enough signatures.
-        TransactionExecutorError::Unauthorized(_)
-        // `MissingAuthenticator` is returned for the account with the basic auth if the
-        // authenticator was not provided to the executor (UnreachableAuth).
-        | TransactionExecutorError::MissingAuthenticator => {
-            // Both these cases signal that there is a probability that the provided note could be
-            // consumed if the authentication is provided.
-            NoteConsumptionStatus::ConsumableWithAuthorization
-        },
-        // TODO: apply additional checks to get the verbose error reason
-        _ => NoteConsumptionStatus::UnconsumableConditions,
     }
 }

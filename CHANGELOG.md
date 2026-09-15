@@ -16,7 +16,7 @@
 
 ### Fixes
 
-- `NoteConsumptionChecker` now groups input notes into bundles that must be consumed together and searches over those bundles, so a feature note and the `FEE_SPONSORSHIP` notes bound to it are kept as a unit instead of being dropped alongside an unrelated note whose fee is uncovered ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
+- [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
 
 ## v0.17.0-pre.1 (2026-09-05)
 
