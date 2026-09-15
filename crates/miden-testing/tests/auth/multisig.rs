@@ -1,7 +1,6 @@
 use core::num::NonZeroU16;
 
 use miden_core::deferred::PrecompileError;
-use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
@@ -185,9 +184,7 @@ pub(super) fn eip712_signature_witness(
         anyhow::bail!("EIP-712 transaction-summary signatures require an ECDSA public key");
     };
     let signature = signing_key.sign_prehash(tx_summary.eip712_hash().into_bytes());
-    let key = tx_summary.eip712_signature_key(public_key.to_commitment().into());
-
-    Ok((key, encode_signature(public_key, &signature)))
+    Ok(tx_summary.eip712_signature_advice(public_key, &signature))
 }
 
 // ================================================================================================

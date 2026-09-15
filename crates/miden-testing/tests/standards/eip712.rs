@@ -107,8 +107,9 @@ async fn rejects_signature_for_different_domain(
 
 #[tokio::test]
 async fn verifies_generic_eip712_signature() -> anyhow::Result<()> {
-    let domain_separator = [0x11; 32];
-    let struct_hash = [0x22; 32];
+    // Distinct bytes, so a wrong limb or byte order produces a different digest.
+    let domain_separator: [u8; 32] = core::array::from_fn(|i| i as u8);
+    let struct_hash: [u8; 32] = core::array::from_fn(|i| 0x80 | i as u8);
 
     let mut rng = StdRng::from_seed([0x72; 32]);
     let signing_key = SigningKey::with_rng(&mut rng);

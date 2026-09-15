@@ -15,7 +15,11 @@
 //! [`Eip712TransactionSummary::eip712_signature_key`] and contains the encoded secp256k1 public
 //! key followed by the ECDSA signature, as expected by Miden's `ecdsa_k256_keccak` verifier.
 
+use alloc::vec::Vec;
+
+use miden_core_lib::dsa::ecdsa_k256_keccak::encode_signature;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::crypto::hash::keccak::Keccak256;
 use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::{Felt, Hasher, Word};
@@ -58,6 +62,20 @@ pub trait Eip712TransactionSummary {
 
     /// Computes the advice-map key for this transaction summary and public key.
     fn eip712_signature_key(&self, public_key: PublicKeyCommitment) -> Word;
+
+    /// Builds the advice-map entry for an EIP-712 signature over this transaction summary.
+    ///
+    /// The returned tuple contains the advice-map key followed by the encoded public-key and
+    /// signature witness. `signature` must sign the digest returned by [`Self::eip712_hash`] using
+    /// the secret key corresponding to `public_key`.
+    fn eip712_signature_advice(
+        &self,
+        public_key: &PublicKey,
+        signature: &Signature,
+    ) -> (Word, Vec<Felt>) {
+        let key = self.eip712_signature_key(public_key.to_commitment().into());
+        (key, encode_signature(public_key, signature))
+    }
 }
 
 impl Eip712TransactionSummary for TransactionSummary {
