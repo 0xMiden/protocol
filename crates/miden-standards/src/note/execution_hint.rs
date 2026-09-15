@@ -134,14 +134,19 @@ impl NoteExecutionHint {
                 Some(block_num >= hint_block_num.as_u32())
             },
             NoteExecutionHint::OnBlockSlot { round_len, slot_len, slot_offset } => {
-                let round_len_blocks: u32 = 1 << round_len;
-                let slot_len_blocks: u32 = 1 << slot_len;
+                // The lengths are only bounded by their `u8` encoding, so they can exceed what a
+                // u32 round or slot can express. Such a hint cannot be evaluated, so report it as
+                // unknown instead of shifting out of range.
+                let round_len_blocks = 1u32.checked_shl(u32::from(*round_len))?;
+                let slot_len_blocks = 1u32.checked_shl(u32::from(*slot_len))?;
 
                 let block_round_index = block_num / round_len_blocks;
 
-                let slot_start_block =
-                    block_round_index * round_len_blocks + (*slot_offset as u32) * slot_len_blocks;
-                let slot_end_block = slot_start_block + slot_len_blocks;
+                // A slot that starts past the last block never comes around, so saturating here
+                // answers `false` rather than overflowing.
+                let slot_start_block = (block_round_index * round_len_blocks)
+                    .saturating_add(u32::from(*slot_offset).saturating_mul(slot_len_blocks));
+                let slot_end_block = slot_start_block.saturating_add(slot_len_blocks);
 
                 let can_be_consumed = block_num >= slot_start_block && block_num < slot_end_block;
                 Some(can_be_consumed)
@@ -241,6 +246,27 @@ mod tests {
         }
 
         assert_eq!(Felt::from(NoteExecutionHint::always()).as_canonical_u64(), 1);
+    }
+
+    /// Round and slot lengths are only bounded by their `u8` encoding, so a hint can carry a
+    /// length that no u32 round or slot can express. Evaluating such a hint must not shift or
+    /// multiply out of range.
+    #[test]
+    fn out_of_range_block_slot_lengths_are_not_consumable() {
+        // 1 << 33 does not fit into a u32.
+        assert_eq!(NoteExecutionHint::on_block_slot(33, 0, 0).can_be_consumed(100.into()), None);
+        assert_eq!(NoteExecutionHint::on_block_slot(10, 33, 0).can_be_consumed(100.into()), None);
+
+        // Decoding reaches the same state: this is the hint `test_encode_round_trip` round trips.
+        let encoded = Felt::from(NoteExecutionHint::on_block_slot(22, 33, 44));
+        assert_eq!(NoteExecutionHint::from(encoded).can_be_consumed(100.into()), None);
+
+        // In-range lengths with an offset that runs past the end of the block space: the slot
+        // never comes around, so the answer is `false` rather than an overflow.
+        assert_eq!(
+            NoteExecutionHint::on_block_slot(31, 31, 255).can_be_consumed(100.into()),
+            Some(false)
+        );
     }
 
     /// A felt that does not encode a recognized hint decodes as `Unknown`.
