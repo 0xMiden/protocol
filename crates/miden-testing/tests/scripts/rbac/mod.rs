@@ -5,7 +5,9 @@ mod config;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 
+use miden_processor::ExecutionError;
 use miden_processor::crypto::random::RandomCoin;
+use miden_processor::operation::OperationError;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -19,8 +21,10 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, RoleBasedAccessControl, RoleConfig};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
+    ERR_GRANT_DELAY_NOT_U32,
     ERR_INVALID_ROLE_SYMBOL,
     ERR_ROLE_SYMBOL_ZERO,
+    ERR_SENDER_LACKS_ROLE,
     ERR_SENDER_NOT_ROLE_ADMIN,
 };
 use miden_standards::testing::note::NoteBuilder;
@@ -86,6 +90,28 @@ pub(super) fn get_role_config(
 /// Returns the number of accounts holding the role, per on-chain storage.
 pub(super) fn get_role_member_count(account: &Account, role: &RoleSymbol) -> anyhow::Result<Felt> {
     Ok(get_role_config(account, role)?.0)
+}
+
+/// Returns the role's grant delay in seconds, per on-chain storage.
+pub(super) fn get_grant_delay(account: &Account, role: &RoleSymbol) -> anyhow::Result<Felt> {
+    let word = account
+        .storage()
+        .get_map_item(RoleBasedAccessControl::role_config_slot(), role_config_key(role))?;
+    Ok(word[2])
+}
+
+/// Returns the account's `(is_member, active_since)` membership record for the role, per on-chain
+/// storage.
+fn get_membership(
+    account: &Account,
+    role: &RoleSymbol,
+    account_id: AccountId,
+) -> anyhow::Result<(Felt, Felt)> {
+    let word = account.storage().get_map_item(
+        RoleBasedAccessControl::role_membership_slot(),
+        role_membership_key(role, account_id),
+    )?;
+    Ok((word[0], word[1]))
 }
 
 /// Returns the role's delegated admin role symbol, or `Felt::ZERO` when it is unset, per on-chain
@@ -201,6 +227,24 @@ fn revoke_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
         "#,
         account_prefix = account_id.prefix().as_felt(),
         account_suffix = account_id.suffix(),
+        role = Felt::from(role),
+    )
+}
+
+fn set_grant_delay_script(role: &RoleSymbol, grant_delay: u64) -> String {
+    format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.14 push.0 end
+            push.{grant_delay}
+            push.{role}
+            call.rbac::set_grant_delay
+            dropw dropw dropw dropw
+        end
+        "#,
         role = Felt::from(role),
     )
 }
@@ -1238,6 +1282,245 @@ async fn test_rbac_admin_recovers_role_from_dead_admin_chain() -> anyhow::Result
     let regrant_note = build_note(admin, grant_role_script(&mint_admin, mint_admin_member))?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &regrant_note).await?;
     assert!(is_role_member(&updated, &mint_admin, mint_admin_member)?);
+
+    Ok(())
+}
+
+// GRANT DELAYS
+// ================================================================================================
+
+const GRANT_DELAY_SECS: u64 = 3_600;
+
+/// A grant on a role with a delay is recorded immediately but counts as membership only once the
+/// delay has elapsed: until then the member cannot act, and the delegated-admin role it was granted
+/// counts as populated, locking `ADMIN` out of the roles it administers.
+#[tokio::test]
+async fn test_rbac_grant_delay_defers_activation_until_delay_elapses() -> anyhow::Result<()> {
+    let admin = test_account_id(11);
+    let admin_member = test_account_id(13);
+    let member = test_account_id(12);
+
+    let minter = role("MINTER");
+    let minter_admin = role("MINTER_ADMIN");
+
+    let (account, mut mock_chain) = create_rbac_chain(admin)?;
+
+    // ADMIN configures a grant delay on MINTER_ADMIN and delegates MINTER to it.
+    let set_delay_note =
+        build_note(admin, set_grant_delay_script(&minter_admin, GRANT_DELAY_SECS))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &set_delay_note).await?;
+    assert_eq!(get_grant_delay(&account, &minter_admin)?, Felt::from(GRANT_DELAY_SECS as u32));
+
+    let delegate_note = build_note(admin, set_role_admin_script(&minter, Some(&minter_admin)))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &delegate_note).await?;
+
+    // The grant is written with `active_since = now + delay` and caps the tx expiration so the
+    // reference block (and with it `now`) cannot be chosen from far in the past.
+    let granted_at = mock_chain.latest_block_header().timestamp();
+    let grant_note = build_note(admin, grant_role_script(&minter_admin, admin_member))?;
+    let executed = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(grant_note)
+        .build()?
+        .execute()
+        .await?;
+    super::assert_default_expiration_limit(&executed);
+    let mut account = account;
+    account.apply_patch(executed.account_patch())?;
+
+    let active_since = granted_at + GRANT_DELAY_SECS as u32;
+    assert_eq!(
+        get_membership(&account, &minter_admin, admin_member)?,
+        (Felt::ONE, Felt::from(active_since))
+    );
+    assert_eq!(get_role_member_count(&account, &minter_admin)?, Felt::ONE);
+
+    // Pending: `has_role` is false and the member cannot administer MINTER.
+    let has_role_note =
+        build_note(admin, assert_has_role_script(&minter_admin, admin_member, false))?;
+    execute_note_and_apply(&mock_chain, &account, &has_role_note).await?;
+
+    let early_grant = build_note(admin_member, grant_role_script(&minter, member))?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(early_grant)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    // MINTER_ADMIN counts as populated while its only member is pending, so ADMIN is locked out of
+    // MINTER for the duration of the delay.
+    let admin_grant = build_note(admin, grant_role_script(&minter, member))?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(admin_grant)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROLE_ADMIN);
+
+    // Once the delay has elapsed the membership is active.
+    mock_chain.prove_next_block_at(active_since)?;
+
+    let has_role_note =
+        build_note(admin, assert_has_role_script(&minter_admin, admin_member, true))?;
+    execute_note_and_apply(&mock_chain, &account, &has_role_note).await?;
+
+    let grant_note = build_note(admin_member, grant_role_script(&minter, member))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
+    assert!(is_role_member(&account, &minter, member)?);
+
+    Ok(())
+}
+
+/// Re-granting a pending member is a no-op: it neither resets the activation timestamp nor bumps
+/// the member count.
+#[tokio::test]
+async fn test_rbac_regrant_of_pending_member_keeps_activation() -> anyhow::Result<()> {
+    let admin = test_account_id(11);
+    let member = test_account_id(12);
+    let minter = role("MINTER");
+
+    let (account, mut mock_chain) = create_rbac_chain(admin)?;
+
+    let set_delay_note = build_note(admin, set_grant_delay_script(&minter, GRANT_DELAY_SECS))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &set_delay_note).await?;
+
+    let grant_note = build_note(admin, grant_role_script(&minter, member))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
+    let first = get_membership(&account, &minter, member)?;
+    assert_eq!(first.0, Felt::ONE);
+
+    // A later re-grant would compute a later `active_since`; it must leave the record untouched.
+    mock_chain.prove_next_block()?;
+    let regrant_note = build_note(admin, grant_role_script(&minter, member))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &regrant_note).await?;
+
+    assert_eq!(get_membership(&account, &minter, member)?, first);
+    assert_eq!(get_role_member_count(&account, &minter)?, Felt::ONE);
+
+    Ok(())
+}
+
+/// Revoking a pending member cancels the grant before it ever activates.
+#[tokio::test]
+async fn test_rbac_revoke_clears_pending_grant() -> anyhow::Result<()> {
+    let admin = test_account_id(11);
+    let member = test_account_id(12);
+    let minter = role("MINTER");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let set_delay_note = build_note(admin, set_grant_delay_script(&minter, GRANT_DELAY_SECS))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &set_delay_note).await?;
+
+    let grant_note = build_note(admin, grant_role_script(&minter, member))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
+    assert_eq!(get_role_member_count(&account, &minter)?, Felt::ONE);
+
+    let revoke_note = build_note(admin, revoke_role_script(&minter, member))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &revoke_note).await?;
+
+    assert_eq!(get_membership(&account, &minter, member)?, (Felt::ZERO, Felt::ZERO));
+    assert_eq!(get_role_member_count(&account, &minter)?, Felt::ZERO);
+
+    Ok(())
+}
+
+/// Only `ADMIN` sets grant delays: a delegated admin can grant the role but cannot shorten the
+/// delay its grants are subject to.
+#[tokio::test]
+async fn test_rbac_set_grant_delay_requires_admin_role() -> anyhow::Result<()> {
+    let admin = test_account_id(11);
+    let admin_member = test_account_id(13);
+
+    let minter = role("MINTER");
+    let minter_admin = role("MINTER_ADMIN");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let delegate_note = build_note(admin, set_role_admin_script(&minter, Some(&minter_admin)))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &delegate_note).await?;
+    let grant_note = build_note(admin, grant_role_script(&minter_admin, admin_member))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
+
+    // The MINTER_ADMIN member administers MINTER, yet cannot configure its grant delay.
+    let delegate_set_delay = build_note(admin_member, set_grant_delay_script(&minter, 60))?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(delegate_set_delay)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+    assert_eq!(get_grant_delay(&account, &minter)?, Felt::ZERO);
+
+    let admin_set_delay = build_note(admin, set_grant_delay_script(&minter, 60))?;
+    let account = execute_note_and_apply(&mock_chain, &account, &admin_set_delay).await?;
+    assert_eq!(get_grant_delay(&account, &minter)?, Felt::from(60u32));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_rbac_set_grant_delay_rejects_non_u32() -> anyhow::Result<()> {
+    let admin = test_account_id(11);
+    let minter = role("MINTER");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let set_delay_note = build_note(admin, set_grant_delay_script(&minter, 1 << 32))?;
+    let result = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_note(set_delay_note)
+        .build()?
+        .execute()
+        .await;
+    // `u32assert` raises a `U32AssertionFailed` (not a plain `FailedAssertion`), so match the
+    // variant explicitly and assert on its error code.
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::OperationError {
+            err: OperationError::U32AssertionFailed { err_code, .. },
+            ..
+        } if err_code == ERR_GRANT_DELAY_NOT_U32.code()
+    );
+
+    Ok(())
+}
+
+/// A grant on a role without a delay is active at once and does not cap the tx expiration.
+#[tokio::test]
+async fn test_rbac_grant_without_delay_is_active_immediately() -> anyhow::Result<()> {
+    let admin = test_account_id(11);
+    let member = test_account_id(12);
+    let minter = role("MINTER");
+
+    let (account, mock_chain) = create_rbac_chain(admin)?;
+
+    let grant_note = build_note(admin, grant_role_script(&minter, member))?;
+    let executed = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(grant_note)
+        .build()?
+        .execute()
+        .await?;
+    assert!(
+        executed.expiration_block_num().as_u32()
+            > executed.block_header().block_num().as_u32() + super::DEFAULT_EXPIRATION_BLOCK_DELTA,
+        "a grant without a delay should not cap the expiration",
+    );
+    let mut account = account;
+    account.apply_patch(executed.account_patch())?;
+
+    // `active_since = now + 0`, already in the past for the next transaction.
+    assert_eq!(
+        get_membership(&account, &minter, member)?,
+        (Felt::ONE, Felt::from(executed.block_header().timestamp()))
+    );
+    let has_role_note = build_note(admin, assert_has_role_script(&minter, member, true))?;
+    execute_note_and_apply(&mock_chain, &account, &has_role_note).await?;
 
     Ok(())
 }
