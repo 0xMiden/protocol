@@ -253,12 +253,14 @@ impl AssetVault {
     /// - the vault already contains an asset with the same [`AssetId`].
     /// - the maximum number of leaves per asset is exceeded.
     fn add_non_composable_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
-        let old = self.insert_entry(asset.id(), asset.to_value_word())?;
-
-        // if the asset already exists, return an error
-        if old != Smt::EMPTY_VALUE {
+        // Reject the duplicate before inserting. An asset ID does not cover the whole asset, so
+        // inserting first and reporting the error afterwards would replace the asset the vault
+        // already holds with the one that was just rejected.
+        if self.entries.contains_key(&asset.id()) {
             return Err(AssetVaultError::DuplicateNonFungibleAsset(asset));
         }
+
+        self.insert_entry(asset.id(), asset.to_value_word())?;
 
         Ok(asset)
     }
@@ -416,6 +418,33 @@ mod tests {
         let mut vault = AssetVault::default();
         let err = vault.remove_asset(FungibleAsset::mock(50)).unwrap_err();
         assert_matches!(err, AssetVaultError::FungibleAssetNotFound(_));
+    }
+
+    /// The ID of a non-fungible asset is derived from the first two elements of its value, so two
+    /// different assets issued by the same faucet can share an ID. Rejecting the second one must
+    /// leave the asset the vault already holds untouched.
+    #[test]
+    fn duplicate_non_fungible_asset_does_not_mutate_vault() -> anyhow::Result<()> {
+        let faucet_id = NonFungibleAsset::mock_issuer();
+        let asset0 =
+            Asset::from(NonFungibleAsset::from_parts(faucet_id, Word::from([1, 2, 3, 4u32])));
+        let asset1 =
+            Asset::from(NonFungibleAsset::from_parts(faucet_id, Word::from([1, 2, 5, 6u32])));
+        assert_eq!(asset0.id(), asset1.id(), "test requires that these assets share an ID");
+        assert_ne!(asset0, asset1);
+
+        let mut vault = AssetVault::new(&[asset0])?;
+        let root_before = vault.root();
+
+        let err = vault.add_asset(asset1).unwrap_err();
+        assert_matches!(err, AssetVaultError::DuplicateNonFungibleAsset(_));
+
+        // A rejected add must leave the vault exactly as it was.
+        assert_eq!(vault.get(asset0.id()), Some(asset0));
+        assert_eq!(vault.root(), root_before);
+        assert_eq!(vault.num_assets(), 1);
+
+        Ok(())
     }
 
     /// Two non-fungible assets issued by the same faucet share their fourth raw-ID element (the
