@@ -266,18 +266,24 @@ where
         state_commitment: Word,
     ) -> Result<Word, AccountTreeError> {
         let key = AccountIdKey::from(account_id).as_word();
-        // SAFETY: account tree should not contain multi-entry leaves and so the maximum number
-        // of entries per leaf should never be exceeded.
-        let prev_value = self.smt.insert(key, state_commitment)
-            .expect("account tree should always have a single value per key, and hence cannot exceed the maximum leaf number");
 
-        // If the leaf of the account ID now has two or more entries, we've inserted a duplicate
-        // prefix.
-        if self.smt.get_leaf(&key).num_entries() >= 2 {
+        // If there exists a leaf whose key is _not_ the one we're about to overwrite, then we
+        // would insert the new commitment next to an existing account ID with the same prefix,
+        // which is an error. This has to be checked _before_ inserting: reporting it afterwards
+        // would leave the duplicate in the tree, breaking the one-entry-per-leaf invariant that
+        // `account_commitments` and `compute_mutations` rely on.
+        if let SmtLeaf::Single((existing_key, _)) = self.smt.get_leaf(&key)
+            && key != existing_key
+        {
             return Err(AccountTreeError::DuplicateIdPrefix {
                 duplicate_prefix: account_id.prefix(),
             });
         }
+
+        // SAFETY: account tree should not contain multi-entry leaves and so the maximum number
+        // of entries per leaf should never be exceeded.
+        let prev_value = self.smt.insert(key, state_commitment)
+            .expect("account tree should always have a single value per key, and hence cannot exceed the maximum leaf number");
 
         Ok(prev_value)
     }
@@ -528,6 +534,24 @@ pub(super) mod tests {
         assert_matches!(err, AccountTreeError::DuplicateIdPrefix {
           duplicate_prefix
         } if duplicate_prefix == id0.prefix());
+    }
+
+    #[test]
+    fn insert_with_duplicate_prefix_does_not_mutate_tree() {
+        let mut tree = AccountTree::<Smt>::default();
+        let [(id0, commitment0), (id1, commitment1)] = setup_duplicate_prefix_ids();
+
+        tree.insert(id0, commitment0).unwrap();
+        let root_before = tree.root();
+
+        tree.insert(id1, commitment1).unwrap_err();
+
+        // A rejected insert must leave the tree exactly as it was.
+        assert_eq!(tree.root(), root_before);
+        assert_eq!(tree.num_accounts(), 1);
+        assert_eq!(tree.get(id0), commitment0);
+        // Would panic on a multi-entry leaf.
+        assert_eq!(tree.account_commitments().collect::<Vec<_>>(), vec![(id0, commitment0)]);
     }
 
     #[test]
