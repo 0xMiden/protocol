@@ -15,7 +15,7 @@ use rand::rngs::StdRng;
 use rstest::rstest;
 use serde::Deserialize;
 
-const FOUNDRY_OPENZEPPELIN_VECTOR_JSON: &str =
+const EIP712_TRANSACTION_SUMMARY_VECTOR_JSON: &str =
     include_str!("test-vectors/eip712_transaction_summary.json");
 const METAMASK_VECTOR_JSON: &str = include_str!("test-vectors/eip712_metamask_signature.json");
 
@@ -38,7 +38,7 @@ sol! {
 }
 
 #[derive(Deserialize)]
-struct FoundryOpenZeppelinVector {
+struct Eip712TransactionSummaryVector {
     changed_tx_summary_hash: String,
     digest: String,
     different_public_key: String,
@@ -140,7 +140,8 @@ async fn verifies_eth_sign_typed_data_v4_signature() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn verifies_foundry_openzeppelin_signature() -> anyhow::Result<()> {
-    let vector: FoundryOpenZeppelinVector = serde_json::from_str(FOUNDRY_OPENZEPPELIN_VECTOR_JSON)?;
+    let vector: Eip712TransactionSummaryVector =
+        serde_json::from_str(EIP712_TRANSACTION_SUMMARY_VECTOR_JSON)?;
     let tx_summary_hash = word_from_hex(&vector.tx_summary_hash)?;
 
     assert_eq!(vector.domain_name, "Miden Transaction");
@@ -177,7 +178,8 @@ async fn rejects_foundry_openzeppelin_signature_for_different_domain(
     #[case] name: &'static str,
     #[case] version: &'static str,
 ) -> anyhow::Result<()> {
-    let vector: FoundryOpenZeppelinVector = serde_json::from_str(FOUNDRY_OPENZEPPELIN_VECTOR_JSON)?;
+    let vector: Eip712TransactionSummaryVector =
+        serde_json::from_str(EIP712_TRANSACTION_SUMMARY_VECTOR_JSON)?;
     let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(&vector.public_key)?)?;
     let signature =
         signature_from_parts(&vector.signature_r, &vector.signature_s, vector.signature_v)?;
@@ -198,7 +200,8 @@ async fn rejects_foundry_openzeppelin_signature_for_different_domain(
 
 #[tokio::test]
 async fn rejects_mutated_foundry_openzeppelin_inputs() -> anyhow::Result<()> {
-    let vector: FoundryOpenZeppelinVector = serde_json::from_str(FOUNDRY_OPENZEPPELIN_VECTOR_JSON)?;
+    let vector: Eip712TransactionSummaryVector =
+        serde_json::from_str(EIP712_TRANSACTION_SUMMARY_VECTOR_JSON)?;
     let tx_summary_hash = word_from_hex(&vector.tx_summary_hash)?;
     let public_key = PublicKey::read_from_bytes(&hex_to_bytes::<33>(&vector.public_key)?)?;
     let signature =
