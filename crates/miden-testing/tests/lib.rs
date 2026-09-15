@@ -7,9 +7,14 @@ mod scripts;
 mod standards;
 mod wallet;
 
-use miden_protocol::Word;
+use std::iter;
+use std::sync::Arc;
+
+use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::batch::ProposedBatch;
 use miden_protocol::crypto::utils::Serializable;
 use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::note::{
@@ -23,17 +28,38 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::vm::VerificationOutcome;
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain};
-use miden_tx::{LocalTransactionProver, Prover};
+use miden_tx::{ExecutionOptions, LocalTransactionProver, Prover, TransactionProverError};
+use rstest::rstest;
 
 // HELPER FUNCTIONS
 // ================================================================================================
 
-#[cfg(test)]
-pub async fn prove_and_verify_transaction(
+pub async fn prove_and_verify_transaction_deferred(
     executed_transaction: ExecutedTransaction,
 ) -> Result<(), TransactionVerifierError> {
+    let (_, outcome) = prove_and_verify_transaction(executed_transaction).await?;
+    assert!(!outcome.is_complete());
+    Ok(())
+}
+
+/// Proves `executed_transaction` locally, round-trips it and verifies it.
+pub async fn prove_and_verify_transaction_complete(
+    executed_transaction: ExecutedTransaction,
+) -> Result<(), TransactionVerifierError> {
+    let (_, outcome) = prove_and_verify_transaction(executed_transaction).await?;
+    assert!(outcome.is_complete());
+    Ok(())
+}
+
+/// Proves `executed_transaction` locally, round-trips it and verifies it, returning the proven
+/// transaction together with its verification outcome.
+pub async fn prove_and_verify_transaction(
+    executed_transaction: ExecutedTransaction,
+) -> Result<(ProvenTransaction, VerificationOutcome), TransactionVerifierError> {
     use miden_protocol::transaction::TransactionHeader;
 
     let executed_transaction_id = executed_transaction.id();
@@ -55,10 +81,51 @@ pub async fn prove_and_verify_transaction(
     let verifier = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL);
 
     let outcome = verifier.verify(&proven_transaction)?;
-    assert!(
-        outcome.is_complete(),
-        "the local transaction prover must settle precompile work"
-    );
+
+    Ok((proven_transaction, outcome))
+}
+
+/// The local prover leaves precompile claims for the batch prover, so a transaction that
+/// authenticates with ECDSA verifies while its precompile obligation is still outstanding. Falcon
+/// is the control: it verifies in-circuit and uses no precompile, so its proof is complete.
+///
+/// Both must also pass `ProposedBatch::new`, which verifies the proof of every transaction it
+/// batches.
+#[rstest]
+#[case::ecdsa(Auth::basic_ecdsa(), false)]
+#[case::falcon(Auth::basic_falcon(), true)]
+#[tokio::test]
+async fn prove_and_verify_defers_precompile_claims(
+    #[case] auth: Auth,
+    #[case] is_complete: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(auth)?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    let (proven_transaction, outcome) = prove_and_verify_transaction(executed).await?;
+    assert_eq!(outcome.is_complete(), is_complete);
+
+    let transactions = vec![Arc::new(proven_transaction)];
+    let (batch_reference_block, partial_blockchain, unauthenticated_note_proofs) = mock_chain
+        .get_batch_inputs(transactions.iter().map(|tx| tx.ref_block_num()), iter::empty())?;
+
+    let batch = ProposedBatch::new(
+        transactions,
+        batch_reference_block,
+        partial_blockchain,
+        unauthenticated_note_proofs,
+        MIN_PROOF_SECURITY_LEVEL,
+    )?;
+    assert_eq!(batch.transactions().len(), 1);
 
     Ok(())
 }
@@ -113,7 +180,37 @@ async fn transaction_verifier_rejects_settled_precompile_proofs() -> anyhow::Res
     Ok(())
 }
 
-#[cfg(test)]
+/// The prover's [`ExecutionOptions`] reach the VM: an advice size limit far below what the kernel
+/// needs makes proving fail while the initial advice inputs are loaded.
+#[tokio::test]
+async fn custom_execution_options_reach_the_vm() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::basic_ecdsa())?;
+    let note = builder.add_p2any_note(account.id(), NoteType::Public, [])?;
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()?
+        .execute()
+        .await?;
+
+    let prover = LocalTransactionProver::default()
+        .with_execution_options(ExecutionOptions::default().with_max_advice_size_bytes(1));
+
+    let error = prover.prove(executed).unwrap_err();
+    assert_matches::assert_matches!(
+        error,
+        TransactionProverError::TransactionProgramExecutionFailed(ExecutionError::AdviceError {
+            err: AdviceError::SizeBudgetExceeded { .. },
+            ..
+        })
+    );
+
+    Ok(())
+}
+
 pub fn get_note_with_fungible_asset_and_script(
     fungible_asset: FungibleAsset,
     note_script: &str,
@@ -132,7 +229,6 @@ pub fn get_note_with_fungible_asset_and_script(
 
 /// Consumes a single authenticated input note against `account_id` in its own transaction and
 /// commits the resulting block, so the note's effects are visible to subsequent transactions.
-#[cfg(test)]
 pub async fn consume_note(
     mock_chain: &mut MockChain,
     account_id: AccountId,
@@ -154,7 +250,6 @@ pub async fn consume_note(
 /// The typed note builders of the standard config notes fix the note type to
 /// [`NoteType::Public`], so this is how a sender would hand-craft a private note that is
 /// otherwise indistinguishable from a legitimate config note.
-#[cfg(test)]
 pub fn into_private_note(note: Note) -> Note {
     let metadata = PartialNoteMetadata::new(note.metadata().sender(), NoteType::Private)
         .with_tag(note.metadata().tag());

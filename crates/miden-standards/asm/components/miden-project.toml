@@ -11,6 +11,7 @@ members = [
   "auth/network_account",
   "auth/no_auth",
   "auth/singlesig",
+  "auth/tx_fee_collector",
   "faucets/fungible_faucet",
   "faucets/non_fungible_faucet",
   "faucets/policies/burn/allow_all",

@@ -13,11 +13,11 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_P2ID_TARGET_ACCT_MISMATCH;
+use miden_standards::errors::standards::ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT;
 use miden_standards::note::{P2idNote, P2idNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use crate::prove_and_verify_transaction;
+use crate::prove_and_verify_transaction_complete;
 
 /// We test the Pay to script with 2 assets to test the loop inside the script.
 /// So we create a note containing two assets that can only be consumed by the target account.
@@ -88,7 +88,10 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
         .await;
 
     // Check that we got the expected result - TransactionExecutorError
-    assert_transaction_executor_error!(executed_transaction_2, ERR_P2ID_TARGET_ACCT_MISMATCH);
+    assert_transaction_executor_error!(
+        executed_transaction_2,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT
+    );
     Ok(())
 }
 
@@ -142,7 +145,7 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
         executed_transaction.final_account().to_commitment(),
         target_account_after.to_commitment()
     );
-    prove_and_verify_transaction(executed_transaction).await?;
+    prove_and_verify_transaction_complete(executed_transaction).await?;
     Ok(())
 }
 
@@ -183,7 +186,9 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     let resulting_asset = account.vault().assets().next().unwrap();
     assert_eq!(resulting_asset.unwrap_fungible().amount().as_u64(), 123);
 
-    Ok(prove_and_verify_transaction(executed_transaction).await?)
+    prove_and_verify_transaction_complete(executed_transaction).await?;
+
+    Ok(())
 }
 
 /// Consumes two existing notes and creates two other notes in the same transaction

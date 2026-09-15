@@ -1,9 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
+- Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
+- Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
+- Added `LocalTransactionProver::with_execution_options` to configure the `ExecutionOptions` used while proving ([#3860](https://github.com/0xMiden/protocol/pull/3860)).
+- Added `BlockExecutor::with_execution_options` and `BatchExecutor::with_execution_options` to configure the `ExecutionOptions` used while running the batch and block kernels ([#3862](https://github.com/0xMiden/protocol/pull/3862)).
+
+### Changes
+
+- Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
+- [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
+- Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
+- [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
+- Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
+
+### Fixes
+
+- `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
+- The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
+
 ## v0.17.0-pre.1 (2026-09-05)
 
 ### Features
 
+- Added the `AuthTxFeeCollector` auth component, which forwards the single asset of every consumed note into one P2ID note for the target given by the auth args, verifies a signature over the transaction summary and leaves the account unchanged ([#3844](https://github.com/0xMiden/protocol/pull/3844)).
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
 - [BREAKING] AggLayer bridge accounts now map emergency pause to an initial `PAUSER` role, while unpause remains restricted to `ADMIN` ([#3572](https://github.com/0xMiden/protocol/issues/3572)).
@@ -13,6 +37,9 @@
 
 ### Changes
 
+- [BREAKING] TX_FEE notes leave their assets in the note for the consuming account's own code to collect ([#3843](https://github.com/0xMiden/protocol/pull/3843)).
+- Moved `MAX_ASSETS_PER_NOTE` into `miden::protocol_utils::constants` ([#3821](https://github.com/0xMiden/protocol/pull/3821)).
+- [BREAKING] Added a `serial_number_block` argument to `fee::pay_fee` and `fee::create_and_fund_fee_note`. Multisigs use the signed proposal block to keep fee-note serial numbers stable across execution reference blocks; other standard auth components use the execution reference block ([#3836](https://github.com/0xMiden/protocol/issues/3836)).
 - Added a check that the guardian public key is not one of the approver public keys ([#3764](https://github.com/0xMiden/protocol/pull/3764)).
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.31.0 and `midenc-hir-type` to v0.13.0. Execution proofs now include a format version and compatible VM and PVM verifier roots, and protocol deserialization rejects unversioned proof bytes from earlier releases. Verifier outcomes now report separate VM and precompile security parameters ([#3806](https://github.com/0xMiden/protocol/pull/3806)).
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.30.0 and `midenc-hir-type` to v0.12.0. `LocalTransactionProver::new` now takes `miden_prover::Prover`, `CoreLibrary` exposes one merged package, and `TransactionVerifier::verify` now returns `VerificationOutcome` so callers can handle outstanding precompile work ([#3782](https://github.com/0xMiden/protocol/pull/3782)).
@@ -74,6 +101,9 @@
 
 ### Fixes
 
+- The faucet factories now reject a `TokenPolicyManager` whose policies read a storage slot the account does not install ([#3527](https://github.com/0xMiden/protocol/pull/3527)).
+
+## v0.16.0 (2026-08-06)
 - [BREAKING] `NetworkAccountTarget` decoding no longer discards the target account ID when the execution hint slot holds an unrecognized encoding ([#3811](https://github.com/0xMiden/protocol/pull/3811)).
 - Fixed `AuthNetworkAccount` accepting empty fee-only transactions, which let callers drain the account's native fee-asset vault ([#3729](https://github.com/0xMiden/protocol/pull/3729)).
 - [BREAKING] AggLayer bridge token registration now rejects keys owned by another faucet, and token-key cleanup verifies ownership before clearing a mapping ([#3754](https://github.com/0xMiden/protocol/pull/3754)).

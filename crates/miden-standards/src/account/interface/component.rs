@@ -55,6 +55,13 @@ pub enum AccountComponentInterface {
     /// transactions that do not consume an input note, create an output note, or change the
     /// account before fee payment.
     AuthNetworkAccount,
+    /// Exposes procedures from the
+    /// [`AuthTxFeeCollector`][crate::account::auth::AuthTxFeeCollector] module.
+    ///
+    /// This authentication scheme forwards the single asset of every consumed note into one P2ID
+    /// note, verifies a signature over the transaction summary and rejects any transaction that
+    /// changes the account's state.
+    AuthTxFeeCollector,
     /// A non-standard authentication component, holding the account's authentication procedure.
     CustomAuth(AccountProcedureRoot),
     /// A non-standard, custom interface which exposes the contained procedures.
@@ -87,6 +94,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
+            AccountComponentInterface::AuthTxFeeCollector => "Tx Fee Collector Auth".to_string(),
             AccountComponentInterface::CustomAuth(proc_root) => {
                 format!("Custom Auth({})", shortened_mast_root(proc_root))
             },
@@ -108,6 +116,7 @@ impl AccountComponentInterface {
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
                 | AccountComponentInterface::AuthNetworkAccount
+                | AccountComponentInterface::AuthTxFeeCollector
                 | AccountComponentInterface::CustomAuth(_)
         )
     }

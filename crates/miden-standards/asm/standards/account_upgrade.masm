@@ -9,6 +9,9 @@
 use miden::standards::access::authority
 use miden::protocol::native_account
 
+pub type CodeUpgradeCommitment = word
+pub type StorageUpgradeCommitment = word
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -32,7 +35,10 @@ use miden::protocol::native_account
 #!
 #! Invocation: call
 @account_procedure
-pub proc upgrade
+pub proc upgrade(
+    code_upgrade_commitment: CodeUpgradeCommitment,
+    storage_upgrade_commitment: StorageUpgradeCommitment
+)
     exec.authority::assert_authorized
     # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 

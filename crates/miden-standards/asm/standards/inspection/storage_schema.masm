@@ -4,6 +4,8 @@
 
 use miden::protocol::active_account
 
+pub type StorageSchemaCommitment = word
+
 # CONSTANTS
 # =================================================================================================
 
@@ -20,7 +22,7 @@ const SCHEMA_COMMITMENT_SLOT = word("miden::standards::inspection::storage_schem
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_schema_commitment
+pub proc get_schema_commitment() -> StorageSchemaCommitment
     push.SCHEMA_COMMITMENT_SLOT[0..2] exec.active_account::get_item
     # => [SCHEMA_COMMITMENT, pad(16)]
 

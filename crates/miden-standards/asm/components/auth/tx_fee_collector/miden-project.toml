@@ -1,0 +1,13 @@
+[package]
+name              = "miden-standards-auth-tx-fee-collector"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::auth::tx_fee_collector"
+path      = "tx_fee_collector.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

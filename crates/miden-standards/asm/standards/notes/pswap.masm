@@ -1,3 +1,5 @@
+use {Uint64} from miden::standards::types
+use {AccountId, Asset, AssetAmount, Bool, NoteArgs, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
 use miden::core::math::u64
 use miden::core::math::u128
 use miden::protocol::account_id
@@ -126,7 +128,7 @@ const ERR_PSWAP_DEPTH_OVERFLOW="PSWAP lineage depth exceeds u32"
 #! Outputs: [lo, hi]
 #!
 #! Panics if the value exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
-proc assert_valid_asset_amount
+proc assert_valid_asset_amount(value: Uint64) -> Uint64
     dup.1 dup.1
     # => [lo, hi, lo, hi]
 
@@ -163,7 +165,11 @@ end
 @locals(2)
 # CALC_FILL_AMOUNT:      this leg's fill amount
 # CALC_FILL_REFERENCE: max(total_fill, min_requested_amount) — the fill that maps to the whole offered side
-proc calculate_output_amount
+proc calculate_output_amount(
+    offered: AssetAmount,
+    fill_reference: AssetAmount,
+    fill_amount: AssetAmount
+) -> AssetAmount
     movup.2 loc_store.CALC_FILL_AMOUNT
     # => [offered, fill_reference]
 
@@ -208,7 +214,7 @@ end
 #!
 #! Inputs:  [a, b]
 #! Outputs: [max(a, b)]
-proc max
+proc max(a: felt, b: felt) -> felt
     dup.1 dup.1 lt
     # => [b_lt_a, a, b]
     cdrop
@@ -219,7 +225,7 @@ end
 #!
 #! Inputs:  [a, b]
 #! Outputs: [min(a, b)]
-proc min
+proc min(a: felt, b: felt) -> felt
     dup dup.2 lt
     # => [a_lt_b, a, b]
     cdrop
@@ -246,7 +252,14 @@ end
 # P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
 # P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
 # P2ID_AMT_NOTE_FILL         : amt_note_fill
-proc create_p2id_note
+proc create_p2id_note(
+    creator: AccountId,
+    note_type: NoteType,
+    serial_num: NoteSerialNumber,
+    faucet: AccountId,
+    amt_account_fill: AssetAmount,
+    amt_note_fill: AssetAmount
+)
     # Derive P2ID serial: increment least significant element
     movup.3 add.1 movdn.3
     # => [creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM,
@@ -295,7 +308,7 @@ proc create_p2id_note
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
     loc_load.P2ID_AMT_ACCOUNT_FILL neq.0
     # => [has_account_fill]
-    
+
     if.true
         # create the asset
         loc_load.P2ID_AMT_ACCOUNT_FILL
@@ -362,7 +375,14 @@ end
 # REMAINDER_OFFERED_FAUCET_PREFIX : offered_faucet_prefix
 # REMAINDER_AMT_PAYOUT            : amt_payout
 # REMAINDER_AMT_OFFERED           : amt_offered
-proc create_remainder_note
+proc create_remainder_note(
+    offered_faucet: AccountId,
+    amt_payout: AssetAmount,
+    amt_offered: AssetAmount,
+    remaining_requested: AssetAmount,
+    note_type: NoteType,
+    tag: NoteTag
+)
     # Store offered asset info to locals (top element stored first)
     loc_store.REMAINDER_OFFERED_FAUCET_SUFFIX
     loc_store.REMAINDER_OFFERED_FAUCET_PREFIX
@@ -381,7 +401,7 @@ proc create_remainder_note
     # Derive remainder serial: increment most significant element
     exec.active_note::get_serial_number
     # => [s0, s1, s2, s3, SCRIPT_ROOT, note_type, tag]
-    
+
     movup.3 add.1 movdn.3
     # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
 
@@ -452,7 +472,7 @@ end
 #! Inputs: [creator_id_suffix, creator_id_prefix]
 #! Outputs: [is_creator]
 #!
-proc is_consumer_creator
+proc is_consumer_creator(creator_id: AccountId) -> Bool
     exec.active_account::get_id
     # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
 
@@ -471,7 +491,7 @@ end
 #! - the remaining offered asset differs from the asset the note was created with.
 #!
 @locals(16)
-proc load_offered_asset
+proc load_offered_asset() -> Asset
     locaddr.OFFERED_REMAINING_ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets]
 
@@ -507,7 +527,7 @@ end
 #! Inputs: []
 #! Outputs: []
 #!
-proc handle_reclaim
+proc handle_reclaim()
     exec.load_offered_asset
     # => [ASSET_ID, ASSET_VALUE]
 
@@ -530,7 +550,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [order_id]
-proc get_order_id
+proc get_order_id() -> felt
     exec.active_note::get_serial_number
     # => [s0, s1, s2, s3]
 
@@ -557,7 +577,7 @@ end
 #! - the parent depth is not a u32.
 #! - the incremented depth overflows a u32.
 @locals(4)
-proc get_current_depth
+proc get_current_depth() -> u32
     push.PSWAP_ATTACHMENT_SCHEME
     # => [PSWAP_ATTACHMENT_SCHEME]
 
@@ -629,7 +649,7 @@ end
 # EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
 # EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
 # EXEC_AMT_FILL_REFERENCE         : max(total_fill, min_requested_amount)
-proc execute_pswap
+proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmount)
     loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
     # => []
@@ -840,6 +860,9 @@ end
 #! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
 #! - `miden::standards::note::note_creator::create_note` procedure.
 #!
+#! Consumers: unrestricted - any account may fill the order and receive the offered asset in
+#!   exchange for the requested one
+#!
 #! Inputs:  [NOTE_ARGS]
 #! Outputs: []
 #!
@@ -856,7 +879,7 @@ end
 #! - the total fill (account_fill + note_fill) overflows u64 or exceeds the max asset amount.
 #! - the account does not expose `receive_asset` / `move_asset_to_note`.
 @note_script
-pub proc main
+pub proc main(note_args: NoteArgs)
     movdn.3 movdn.3 drop drop
     # => [account_fill_amount, note_fill_amount]
 

@@ -14,7 +14,7 @@ impl Verify for KernelConfig {
     type Verified = miden_protocol::protocol_config::KernelConfig;
     type Error = miden_protocol::errors::ProtocolConfigError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Self::Verified::new(self.main_proc, self.kernel_procs)
+        Self::Verified::new(self.main_proc, self.kernel_procs.into_inner())
     }
 }
 

@@ -49,13 +49,9 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
         let notes = self.input_notes.verify()?;
         let args = self.tx_args.verify()?;
         let advice = self.advice_inputs.verify()?;
-        let code = self
-            .foreign_account_code
-            .into_iter()
-            .map(Verify::verify)
-            .collect::<Result<_, _>>()?;
+        let code = self.foreign_account_code.verify()?;
         let mut names = alloc::collections::BTreeMap::new();
-        for name in self.foreign_account_slot_names {
+        for name in self.foreign_account_slot_names.into_inner() {
             let (id, name) = name.verify()?;
             if names.insert(id, name).is_some() {
                 return Err(TransactionInputsError::DuplicateSlot(id).into());

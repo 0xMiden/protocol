@@ -1,3 +1,4 @@
+use {NoteTag} from miden::protocol::types
 use miden::core::math::u64
 
 # ERRORS
@@ -34,7 +35,7 @@ pub const DEFAULT_TAG = 0
 #! - note_tag is the created note tag.
 #!
 #! Invocation: exec
-pub proc create_account_target
+pub proc create_account_target(account_id_prefix: felt) -> NoteTag
     push.DEFAULT_ACCOUNT_TARGET_TAG_LENGTH
     exec.create_custom_account_target
     # => [note_tag]
@@ -60,7 +61,7 @@ end
 #! - the tag_len exceeds 32.
 #!
 #! Invocation: exec
-pub proc create_custom_account_target
+pub proc create_custom_account_target(tag_len: u8, account_id_prefix: felt) -> NoteTag
     u32assert.err=ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED
     # => [tag_len, account_id_prefix]
 

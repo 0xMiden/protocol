@@ -28,6 +28,6 @@ pub const DEFAULT_EXPIRATION_BLOCK_DELTA = 20
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc apply_default
+pub proc apply_default()
     push.DEFAULT_EXPIRATION_BLOCK_DELTA exec.tx::update_expiration_block_delta
 end

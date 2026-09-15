@@ -15,7 +15,7 @@ impl BuildUnchecked for InputNoteCommitment {
     fn build_unchecked(self) -> Result<Self::Output, Self::Error> {
         Ok(Self::Output::from_parts_unchecked(
             miden_protocol::note::Nullifier::from_raw(self.nullifier),
-            self.header.map(Verify::verify).transpose()?,
+            self.header.verify()?,
         ))
     }
 }
@@ -105,7 +105,7 @@ impl Verify for InputNotes {
     type Verified = miden_protocol::transaction::InputNotes<miden_protocol::transaction::InputNote>;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let notes = self.notes.into_iter().map(Verify::verify).collect::<Result<_, _>>()?;
+        let notes = self.notes.verify()?;
         Ok(Self::Verified::new(notes)?)
     }
 }

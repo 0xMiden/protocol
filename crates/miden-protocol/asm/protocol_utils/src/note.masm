@@ -1,3 +1,5 @@
+use {NoteMetadata, Bool} from miden::protocol_utils::types
+
 # ERRORS
 # =================================================================================================
 
@@ -52,7 +54,7 @@ pub const ATTACHMENT_SCHEME_NONE = 1
 #! Where:
 #! - METADATA is the metadata of a note.
 #! - version is the version of the note metadata encoding.
-pub proc metadata_into_version
+pub proc metadata_into_version(metadata: NoteMetadata) -> u8
     movdn.3 drop drop drop
     # => [sender_id_suffix_type_version]
 
@@ -71,7 +73,7 @@ end
 #! Where:
 #! - METADATA is the metadata of a note.
 #! - reserved_bit is 1 if the reserved bit is set, 0 otherwise.
-proc metadata_into_reserved_bit
+proc metadata_into_reserved_bit(metadata: NoteMetadata) -> Bool
     movdn.3 drop drop drop
     # => [sender_id_suffix_type_version]
 
@@ -96,7 +98,7 @@ end
 #! Panics if:
 #! - the metadata encodes an unknown version.
 #! - the metadata has its reserved bit set.
-pub proc validate_metadata
+pub proc validate_metadata(metadata: NoteMetadata)
     # the version defines how the rest of the metadata is decoded, so assert it first
     dupw exec.metadata_into_version
     # => [version, METADATA]

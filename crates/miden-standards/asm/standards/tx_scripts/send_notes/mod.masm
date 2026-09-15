@@ -5,6 +5,8 @@
 # of output notes. The payload layout and the handling shared by all three live in the private
 # [`send_notes::common`] submodule.
 
+pub type SendNotesPayloadCommitment = word
+
 mod common
 pub mod fungible_faucet
 pub mod non_fungible_faucet

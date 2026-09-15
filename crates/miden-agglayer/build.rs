@@ -326,11 +326,12 @@ fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     zero_constants.push_str(
         "
 use {mem_store_double_word} from miden::standards::utils
+use {Keccak256Digest} from agglayer::types
 
 
 #! Inputs:  [zeros_ptr]
 #! Outputs: []
-pub proc load_zeros_to_memory\n",
+pub proc load_zeros_to_memory(zeros_ptr: ptr<Keccak256Digest>)\n",
     );
 
     for zero_index in 0..32 {

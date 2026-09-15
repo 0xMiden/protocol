@@ -22,7 +22,7 @@ impl Verify for NoteStorage {
     type Verified = miden_protocol::note::NoteStorage;
     type Error = miden_protocol::errors::NoteError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Self::Verified::new(self.items)
+        Self::Verified::new(self.items.into_inner())
     }
 }
 
@@ -33,7 +33,7 @@ impl Verify for NoteAttachment {
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let scheme = miden_protocol::note::NoteAttachmentScheme::new(self.scheme.try_into()?)?;
-        Ok(Self::Verified::with_words(scheme, self.words)?)
+        Ok(Self::Verified::with_words(scheme, self.words.into_inner())?)
     }
 }
 
@@ -53,8 +53,7 @@ impl Verify for NoteAttachments {
     type Verified = miden_protocol::note::NoteAttachments;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let attachments =
-            self.attachments.into_iter().map(Verify::verify).collect::<Result<_, _>>()?;
+        let attachments = self.attachments.verify()?;
         Ok(Self::Verified::new(attachments)?)
     }
 }
@@ -131,11 +130,11 @@ impl Verify for NoteMetadata {
         };
         let partial = PartialNoteMetadata::new(self.sender.verify()?, note_type)
             .with_tag(NoteTag::new(self.tag));
-        if self.attachment_schemes.len() > NoteAttachments::MAX_COUNT {
+        if self.attachment_schemes.as_slice().len() > NoteAttachments::MAX_COUNT {
             return Err(NoteMetadataError::TooManyAttachmentSchemes.into());
         }
         let mut headers = [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT];
-        for (header, raw) in headers.iter_mut().zip(self.attachment_schemes) {
+        for (header, raw) in headers.iter_mut().zip(self.attachment_schemes.into_inner()) {
             let scheme: u16 = raw.try_into()?;
             if scheme != 0 {
                 *header = NoteAttachmentHeader::new(NoteAttachmentScheme::new(scheme)?);
@@ -151,7 +150,7 @@ impl Verify for NoteDetails {
     type Verified = miden_protocol::note::NoteDetails;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        let assets = self.assets.into_iter().map(Verify::verify).collect::<Result<_, _>>()?;
+        let assets = self.assets.verify()?;
         let assets = miden_protocol::note::NoteAssets::new(assets)?;
         Ok(Self::Verified::new(assets, self.recipient.verify()?))
     }
