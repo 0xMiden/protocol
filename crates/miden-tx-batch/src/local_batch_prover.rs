@@ -82,7 +82,7 @@ impl LocalBatchProver {
 
         let proof = self
             .prover
-            .prove(witness)
+            .prove_vm_witness(witness)
             .map_err(|error| ExecutionError::ProvingError(error.to_string()))
             .map_err(ProvenBatchError::BatchKernelProvingFailed)?;
 

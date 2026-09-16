@@ -74,8 +74,10 @@ impl BatchExecutor {
             .execute_for_proving_sync(&BatchKernel::main(), &mut DefaultHost::default())
             .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
+        let (witness, precompile_witness) = witness.into_parts();
+
         // Executing the batch kernel must never require precompiles of its own.
-        if witness.has_precompiles() {
+        if precompile_witness.is_some() {
             return Err(ProvenBatchError::BatchProofContainsPrecompiles);
         }
 
