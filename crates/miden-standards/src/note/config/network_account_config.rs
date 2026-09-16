@@ -73,48 +73,48 @@ pub enum NetworkAccountConfig {
 }
 
 impl NetworkAccountConfig {
-    // SELECTORS
+    // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note selectors stored in the first storage item. Keep in sync with
+    // Config note variants stored in the storage item after the root. Keep in sync with
     // `network_account_config.masm`.
-    const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT: u8 = 0;
-    const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT: u8 = 1;
-    const SELECTOR_ADD_ALLOWED_TX_SCRIPT: u8 = 2;
-    const SELECTOR_REMOVE_ALLOWED_TX_SCRIPT: u8 = 3;
-    const SELECTOR_ADD_ALLOWED_FEE_POLICY: u8 = 4;
-    const SELECTOR_REMOVE_ALLOWED_FEE_POLICY: u8 = 5;
+    const VARIANT_ADD_ALLOWED_NOTE_SCRIPT: u8 = 0;
+    const VARIANT_REMOVE_ALLOWED_NOTE_SCRIPT: u8 = 1;
+    const VARIANT_ADD_ALLOWED_TX_SCRIPT: u8 = 2;
+    const VARIANT_REMOVE_ALLOWED_TX_SCRIPT: u8 = 3;
+    const VARIANT_ADD_ALLOWED_FEE_POLICY: u8 = 4;
+    const VARIANT_REMOVE_ALLOWED_FEE_POLICY: u8 = 5;
 
-    /// Returns the selector and the affected root of this action.
+    /// Returns the variant and the affected root of this action.
     fn parts(self) -> (u8, Word) {
         match self {
             NetworkAccountConfig::AddAllowedNoteScript { script_root } => {
-                (Self::SELECTOR_ADD_ALLOWED_NOTE_SCRIPT, script_root.as_word())
+                (Self::VARIANT_ADD_ALLOWED_NOTE_SCRIPT, script_root.as_word())
             },
             NetworkAccountConfig::RemoveAllowedNoteScript { script_root } => {
-                (Self::SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT, script_root.as_word())
+                (Self::VARIANT_REMOVE_ALLOWED_NOTE_SCRIPT, script_root.as_word())
             },
             NetworkAccountConfig::AddAllowedTxScript { script_root } => {
-                (Self::SELECTOR_ADD_ALLOWED_TX_SCRIPT, script_root.as_word())
+                (Self::VARIANT_ADD_ALLOWED_TX_SCRIPT, script_root.as_word())
             },
             NetworkAccountConfig::RemoveAllowedTxScript { script_root } => {
-                (Self::SELECTOR_REMOVE_ALLOWED_TX_SCRIPT, script_root.as_word())
+                (Self::VARIANT_REMOVE_ALLOWED_TX_SCRIPT, script_root.as_word())
             },
             NetworkAccountConfig::AddAllowedFeePolicy { policy_root } => {
-                (Self::SELECTOR_ADD_ALLOWED_FEE_POLICY, policy_root.as_word())
+                (Self::VARIANT_ADD_ALLOWED_FEE_POLICY, policy_root.as_word())
             },
             NetworkAccountConfig::RemoveAllowedFeePolicy { policy_root } => {
-                (Self::SELECTOR_REMOVE_ALLOWED_FEE_POLICY, policy_root.as_word())
+                (Self::VARIANT_REMOVE_ALLOWED_FEE_POLICY, policy_root.as_word())
             },
         }
     }
 
-    /// Returns the note storage values encoding this action, laid out as `[ROOT, selector]`.
+    /// Returns the note storage values encoding this action, laid out as `[ROOT, variant]`.
     fn to_storage_values(self) -> Vec<Felt> {
-        let (selector, script_root) = self.parts();
+        let (variant, script_root) = self.parts();
         let mut values = Vec::with_capacity(NetworkAccountConfigNote::NUM_STORAGE_ITEMS);
         values.extend_from_slice(script_root.as_elements());
-        values.push(Felt::from(selector));
+        values.push(Felt::from(variant));
         values
     }
 }
@@ -132,7 +132,7 @@ impl From<NetworkAccountConfig> for NoteStorage {
 /// A NetworkAccountConfig note: adds or removes a root from a network account's note-script
 /// allowlist, tx-script allowlist, or allowed fee policy roots map.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the
+/// A single note script dispatches on the note variant in its storage to one of the
 /// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) component's allowlist or
 /// fee-policy procedures. Authorization is enforced by those procedures through the account-wide
 /// [`Authority`](crate::account::access::Authority) component, which the account must install in
@@ -201,7 +201,7 @@ impl NetworkAccountConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a NetworkAccountConfig note: a selector plus the script
+    /// Number of storage items of a NetworkAccountConfig note: a variant plus the script
     /// root word.
     pub const NUM_STORAGE_ITEMS: usize = 5;
 
@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(target.target_id(), account);
     }
 
-    /// Storage is `[ROOT, selector]` with the selector matching the action kind.
+    /// Storage is `[ROOT, variant]` with the variant matching the action kind.
     #[test]
     fn storage_layout() {
         let note_root = note_root(10);
@@ -375,40 +375,40 @@ mod tests {
         let cases = [
             (
                 NetworkAccountConfig::AddAllowedNoteScript { script_root: note_root },
-                NetworkAccountConfig::SELECTOR_ADD_ALLOWED_NOTE_SCRIPT,
+                NetworkAccountConfig::VARIANT_ADD_ALLOWED_NOTE_SCRIPT,
                 note_root.as_word(),
             ),
             (
                 NetworkAccountConfig::RemoveAllowedNoteScript { script_root: note_root },
-                NetworkAccountConfig::SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT,
+                NetworkAccountConfig::VARIANT_REMOVE_ALLOWED_NOTE_SCRIPT,
                 note_root.as_word(),
             ),
             (
                 NetworkAccountConfig::AddAllowedTxScript { script_root: tx_root },
-                NetworkAccountConfig::SELECTOR_ADD_ALLOWED_TX_SCRIPT,
+                NetworkAccountConfig::VARIANT_ADD_ALLOWED_TX_SCRIPT,
                 tx_root.as_word(),
             ),
             (
                 NetworkAccountConfig::RemoveAllowedTxScript { script_root: tx_root },
-                NetworkAccountConfig::SELECTOR_REMOVE_ALLOWED_TX_SCRIPT,
+                NetworkAccountConfig::VARIANT_REMOVE_ALLOWED_TX_SCRIPT,
                 tx_root.as_word(),
             ),
             (
                 NetworkAccountConfig::AddAllowedFeePolicy { policy_root },
-                NetworkAccountConfig::SELECTOR_ADD_ALLOWED_FEE_POLICY,
+                NetworkAccountConfig::VARIANT_ADD_ALLOWED_FEE_POLICY,
                 policy_root.as_word(),
             ),
             (
                 NetworkAccountConfig::RemoveAllowedFeePolicy { policy_root },
-                NetworkAccountConfig::SELECTOR_REMOVE_ALLOWED_FEE_POLICY,
+                NetworkAccountConfig::VARIANT_REMOVE_ALLOWED_FEE_POLICY,
                 policy_root.as_word(),
             ),
         ];
 
-        for (action, selector, root_word) in cases {
+        for (action, variant, root_word) in cases {
             let storage = NoteStorage::from(action);
             let mut expected = Vec::from(root_word.as_elements());
-            expected.push(Felt::from(selector));
+            expected.push(Felt::from(variant));
             assert_eq!(storage.items(), expected.as_slice());
             assert_eq!(storage.items().len(), NetworkAccountConfigNote::NUM_STORAGE_ITEMS);
         }
