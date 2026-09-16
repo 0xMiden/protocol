@@ -146,10 +146,7 @@ procedure_root!(
 /// and the kernel only ever lets a script tighten the current transaction's expiration window
 /// (never extend it), so the worst a caller can do is make their own transaction expire sooner.
 /// Allowlisting a script whose effect depends on its inputs re-opens the very code path the
-/// allowlist exists to constrain. In particular, a script that moves assets out of the vault on
-/// caller-supplied inputs, e.g. through the `move_asset_to_note` procedure of
-/// [`BasicWallet`](crate::account::wallets::BasicWallet), which [`Self::new`] installs, must never
-/// be allowlisted.
+/// allowlist exists to constrain.
 ///
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
 /// off-chain services can identify a network account by checking for this slot.
