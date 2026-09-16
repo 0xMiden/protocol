@@ -45,7 +45,11 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
-use super::multisig::{MultisigAuthArgsExt, build_update_signers_config_vector};
+use super::multisig::{
+    MultisigAuthArgsExt,
+    build_update_signers_config_vector,
+    eip712_signature_witness,
+};
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -238,7 +242,7 @@ async fn test_guarded_multisig_signature_required(
         .unwrap_err()
         .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
-    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary.clone());
 
     let sig_1 = authenticators[0]
         .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
@@ -259,6 +263,19 @@ async fn test_guarded_multisig_signature_required(
         without_guardian_result,
         Err(TransactionExecutorError::Unauthorized(_))
     ));
+
+    let (guardian_eip712_key, guardian_eip712_witness) =
+        eip712_signature_witness(&guardian_secret_key, &guardian_public_key, tx_summary.as_ref())?;
+
+    // Guardian acknowledgements accept the same EIP-712 fallback as multisig approvers.
+    mock_tx_builder
+        .clone()
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
+        .add_advice_map_entry(guardian_eip712_key, guardian_eip712_witness)
+        .build()?
+        .execute()
+        .await?;
 
     let guardian_signature = guardian_authenticator
         .get_signature(guardian_public_key.to_commitment(), &tx_summary_signing)
