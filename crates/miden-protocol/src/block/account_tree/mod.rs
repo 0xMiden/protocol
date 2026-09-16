@@ -260,6 +260,8 @@ where
     ///
     /// Returns an error if:
     /// - the prefix of the account ID already exists in the tree.
+    ///
+    /// The tree is left unmodified when an error is returned.
     pub fn insert(
         &mut self,
         account_id: AccountId,
@@ -267,17 +269,31 @@ where
     ) -> Result<Word, AccountTreeError> {
         let key = AccountIdKey::from(account_id).as_word();
 
-        // If there exists a leaf whose key is _not_ the one we're about to overwrite, then we
-        // would insert the new commitment next to an existing account ID with the same prefix,
-        // which is an error. This has to be checked _before_ inserting: reporting it afterwards
-        // would leave the duplicate in the tree, breaking the one-entry-per-leaf invariant that
-        // `account_commitments` and `compute_mutations` rely on.
-        if let SmtLeaf::Single((existing_key, _)) = self.smt.get_leaf(&key)
-            && key != existing_key
-        {
-            return Err(AccountTreeError::DuplicateIdPrefix {
-                duplicate_prefix: account_id.prefix(),
-            });
+        // Inserting next to an existing account ID with the same prefix is an error, and it has
+        // to be reported _before_ inserting: reporting it afterwards would leave the duplicate in
+        // the tree, breaking the one-entry-per-leaf invariant that `account_commitments` and
+        // `compute_mutations` rely on.
+        //
+        // Matched exhaustively, the same way `compute_mutations` checks the same condition a few
+        // lines below. That one calls a multiple leaf `unreachable!`; here the error is returned
+        // instead, so a tree that somehow already holds one is not grown further.
+        match self.smt.get_leaf(&key) {
+            // Inserting into an empty leaf is valid.
+            SmtLeaf::Empty(_) => (),
+            // If the key matches the existing one we are updating that leaf, which is valid. If
+            // it does not, we would be adding a second account ID under the same prefix.
+            SmtLeaf::Single((existing_key, _)) => {
+                if existing_key != key {
+                    return Err(AccountTreeError::DuplicateIdPrefix {
+                        duplicate_prefix: account_id.prefix(),
+                    });
+                }
+            },
+            SmtLeaf::Multiple(_) => {
+                return Err(AccountTreeError::DuplicateIdPrefix {
+                    duplicate_prefix: account_id.prefix(),
+                });
+            },
         }
 
         // SAFETY: account tree should not contain multi-entry leaves and so the maximum number
