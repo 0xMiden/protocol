@@ -241,6 +241,7 @@ impl P2idNoteStorage {
 
     /// Sets the salt included in the storage commitment.
     ///
+    /// # Privacy
     /// For privacy, sample both elements uniformly at random and keep them secret. The default zero
     /// salt does not prevent target-account enumeration. Salt does not hide account-derived note
     /// tags.
