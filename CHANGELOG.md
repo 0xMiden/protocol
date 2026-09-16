@@ -13,6 +13,7 @@
 
 ### Changes
 
+- [BREAKING] Updated the Miden VM and crypto crate family to v0.33.0. Execution proof and witness transport now use format 2 and reject v0.32.1 artifacts. Deferred proofs carry portable precompile witnesses, batch proving consumes those witnesses in transaction order, and recursive verifier MAST roots change. Routing parameters now support the Eidos sealing-key variants.
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
 - [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
@@ -25,7 +26,7 @@
 
 - [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
-- The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
+- The batch executor now collects the deferred precompile witnesses of its transactions in order so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
 
 ## v0.17.0-pre.1 (2026-09-05)
 

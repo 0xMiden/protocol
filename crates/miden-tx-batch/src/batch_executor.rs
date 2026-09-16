@@ -60,7 +60,7 @@ impl BatchExecutor {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
-        let precompile_witness = Self::merge_precompile_witnesses(&proposed_batch)?;
+        let precompile_witnesses = Self::collect_precompile_witnesses(&proposed_batch);
 
         let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
 
@@ -84,38 +84,18 @@ impl BatchExecutor {
         let batch_outputs = BatchOutputs::parse(witness.claim().stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
-        Ok(ExecutedBatch::new(proposed_batch, witness, precompile_witness, batch_outputs))
+        Ok(ExecutedBatch::new(proposed_batch, witness, precompile_witnesses, batch_outputs))
     }
 
-    /// Merges the outstanding precompile witnesses of the batch's transactions into a single
-    /// witness, or returns `None` if no transaction deferred precompile work.
+    /// Collects the outstanding precompile witnesses in transaction order.
     ///
-    /// The witnesses are merged in transaction order, because their order and duplicates among them
-    /// are significant to the aggregate precompile statement.
-    fn merge_precompile_witnesses(
-        proposed_batch: &ProposedBatch,
-    ) -> Result<Option<PrecompileWitness>, ProvenBatchError> {
-        let witnesses = proposed_batch
+    /// Their order and duplicates are significant to the aggregate precompile statement.
+    fn collect_precompile_witnesses(proposed_batch: &ProposedBatch) -> Vec<PrecompileWitness> {
+        proposed_batch
             .transactions()
             .iter()
-            .filter_map(|transaction| {
-                transaction
-                    .precompile_witness()
-                    .map_err(|source| ProvenBatchError::TransactionPrecompileWitnessInvalid {
-                        transaction_id: transaction.id(),
-                        source,
-                    })
-                    .transpose()
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        if witnesses.is_empty() {
-            return Ok(None);
-        }
-
-        PrecompileWitness::merge(witnesses)
-            .map(Some)
-            .map_err(ProvenBatchError::PrecompileWitnessMergeFailed)
+            .filter_map(|transaction| transaction.precompile_witness().cloned())
+            .collect()
     }
 }
 

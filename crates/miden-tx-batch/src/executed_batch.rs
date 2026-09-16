@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use miden_processor::{ExecutionWitness, PrecompileWitness};
 use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 
@@ -8,29 +10,28 @@ use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 ///
 /// Produced by [`BatchExecutor::execute`](crate::BatchExecutor::execute) and consumed by
 /// [`LocalBatchProver::prove`](crate::LocalBatchProver::prove). It carries the witnesses proving
-/// needs: the batch kernel's execution witness and the merged precompile witness of the batch's
-/// transactions.
+/// needs: the batch kernel's execution witness and the portable precompile witnesses of the
+/// batch's transactions in transaction order.
 pub struct ExecutedBatch {
     proposed_batch: ProposedBatch,
     witness: ExecutionWitness,
-    precompile_witness: Option<PrecompileWitness>,
+    precompile_witnesses: Vec<PrecompileWitness>,
     batch_outputs: BatchOutputs,
 }
 
 impl ExecutedBatch {
-    /// Creates a new [`ExecutedBatch`] from the proposed batch, the execution witness, the merged
-    /// precompile witness of its transactions and the public outputs produced by executing the
-    /// batch kernel over it.
+    /// Creates a new [`ExecutedBatch`] from the proposed batch, its execution and precompile
+    /// witnesses, and the public outputs produced by executing the batch kernel over it.
     pub(crate) fn new(
         proposed_batch: ProposedBatch,
         witness: ExecutionWitness,
-        precompile_witness: Option<PrecompileWitness>,
+        precompile_witnesses: Vec<PrecompileWitness>,
         batch_outputs: BatchOutputs,
     ) -> Self {
         Self {
             proposed_batch,
             witness,
-            precompile_witness,
+            precompile_witnesses,
             batch_outputs,
         }
     }
@@ -40,10 +41,9 @@ impl ExecutedBatch {
         &self.proposed_batch
     }
 
-    /// Returns the merged precompile witness of the batch's transactions, or `None` if no
-    /// transaction in the batch deferred precompile work.
-    pub fn precompile_witness(&self) -> Option<&PrecompileWitness> {
-        self.precompile_witness.as_ref()
+    /// Returns the precompile witnesses of the batch's transactions in transaction order.
+    pub fn precompile_witnesses(&self) -> &[PrecompileWitness] {
+        &self.precompile_witnesses
     }
 
     /// Returns the public outputs produced by the batch kernel.
@@ -53,7 +53,7 @@ impl ExecutedBatch {
 
     /// Consumes the executed batch, returning the proposed batch and the witnesses needed to prove
     /// it.
-    pub(crate) fn into_parts(self) -> (ProposedBatch, ExecutionWitness, Option<PrecompileWitness>) {
-        (self.proposed_batch, self.witness, self.precompile_witness)
+    pub(crate) fn into_parts(self) -> (ProposedBatch, ExecutionWitness, Vec<PrecompileWitness>) {
+        (self.proposed_batch, self.witness, self.precompile_witnesses)
     }
 }

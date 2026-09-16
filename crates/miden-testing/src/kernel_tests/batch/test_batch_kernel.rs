@@ -4,10 +4,8 @@ use std::collections::BTreeMap;
 use std::iter;
 
 use anyhow::Context;
-use assert_matches::assert_matches;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::errors::ProvenBatchError;
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::ProvenTransaction;
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
@@ -179,54 +177,24 @@ async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
         let mut expected_roots = Vec::new();
         for transaction in batch.transactions() {
             expected_roots
-                .extend(transaction.precompile_witness()?.map(|witness| witness.state().root()));
+                .extend(transaction.precompile_witness().map(|witness| witness.root_unchecked()));
         }
         // Pin the count independently, so this fails if transactions stop deferring claims.
         assert_eq!(expected_roots.len(), expected_root_count, "{shape}");
 
         let executed = BatchExecutor::new().execute(batch).context(shape)?;
-        match executed.precompile_witness() {
-            Some(witness) => assert_eq!(witness.roots(), expected_roots, "{shape}"),
-            None => assert!(expected_roots.is_empty(), "{shape}"),
-        }
+        assert_eq!(
+            executed
+                .precompile_witnesses()
+                .iter()
+                .map(|witness| witness.root_unchecked())
+                .collect::<Vec<_>>(),
+            expected_roots,
+            "{shape}"
+        );
 
         LocalBatchProver::default().prove(executed).context(shape)?;
     }
-
-    Ok(())
-}
-
-/// A deferred wire that opens no claims cannot produce a precompile witness, so the executor
-/// rejects the transaction carrying it.
-#[test]
-fn batch_executor_rejects_a_transaction_with_an_empty_deferred_wire() -> anyhow::Result<()> {
-    let mut setup = setup_chain();
-    let block1 = setup.chain.block_header(1);
-    let block2 = setup.chain.prove_next_block()?;
-
-    let tx = MockProvenTxBuilder::with_account(
-        setup.account1.id(),
-        Word::empty(),
-        setup.account1.to_commitment(),
-    )
-    .reference_block(&block1)
-    .authenticated_notes(vec![setup.note1.clone()])
-    .proof(miden_protocol::testing::dummy_deferred_execution_proof())
-    .build()?;
-
-    let batch = ProposedBatch::new_unverified(
-        vec![Arc::new(tx)],
-        block2.header().clone(),
-        setup.chain.latest_partial_blockchain(),
-        BTreeMap::default(),
-    )?;
-
-    let error = match BatchExecutor::new().execute(batch) {
-        Ok(_) => anyhow::bail!("executing a batch with an empty deferred wire should fail"),
-        Err(error) => error,
-    };
-
-    assert_matches!(error, ProvenBatchError::TransactionPrecompileWitnessInvalid { .. });
 
     Ok(())
 }

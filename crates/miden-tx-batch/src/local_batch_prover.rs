@@ -58,7 +58,7 @@ impl LocalBatchProver {
     /// the proposed batch's expected values.
     ///
     /// The precompile claims of the batch's transactions are settled with a single precompile proof
-    /// over their merged witness, unless [`Self::skip_precompile_proof_generation`] was called.
+    /// over their ordered witnesses, unless [`Self::skip_precompile_proof_generation`] was called.
     /// That proof is discarded rather than attached to the returned batch; see [`ProvenBatch`] for
     /// what this does and does not establish.
     ///
@@ -66,18 +66,16 @@ impl LocalBatchProver {
     ///
     /// Returns an error if proof generation fails.
     pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
-        let (proposed_batch, witness, precompile_witness) = executed_batch.into_parts();
+        let (proposed_batch, witness, precompile_witnesses) = executed_batch.into_parts();
 
-        if !self.skip_precompile_proof_generation
-            && let Some(precompile_witness) = precompile_witness
-        {
+        if !self.skip_precompile_proof_generation && !precompile_witnesses.is_empty() {
             // The proof is dropped: the batch kernel cannot verify it yet, and shipping it on the
             // proven batch would add a wire format field that has to be removed again once the
-            // kernel does. The claims themselves were already checked natively when the executor
-            // rehydrated them; proving them adds that the statement holds in-circuit.
+            // kernel does. The VM verifier already checked each witness natively against its
+            // transaction proof; proving them adds that the aggregate statement holds in-circuit.
             let _precompile_proof = self
                 .prover
-                .prove_precompile(&precompile_witness)
+                .prove_precompiles(precompile_witnesses)
                 .map_err(|error| ExecutionError::ProvingError(error.to_string()))
                 .map_err(ProvenBatchError::PrecompileProvingFailed)?;
         }
