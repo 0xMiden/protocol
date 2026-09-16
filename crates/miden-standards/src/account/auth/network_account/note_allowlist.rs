@@ -173,7 +173,6 @@ mod tests {
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
     use crate::account::fees::FeePolicyManager;
-    use crate::account::wallets::BasicWallet;
 
     #[test]
     fn allowlist_storage_slot_contains_expected_entries() {
@@ -241,7 +240,6 @@ mod tests {
                 )
                 .expect("non-empty allowlist should construct"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
 

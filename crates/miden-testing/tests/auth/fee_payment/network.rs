@@ -23,7 +23,6 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT;
 use miden_standards::note::config::NetworkAccountConfigNote;
 use miden_standards::note::{
@@ -81,7 +80,6 @@ async fn execute_network_account_tx(
 
     let account = AccountBuilder::new([9; 32])
         .with_components(auth_component)
-        .with_component(BasicWallet)
         .with_assets(assets)
         .account_type(AccountType::Public)
         .build_existing()?;

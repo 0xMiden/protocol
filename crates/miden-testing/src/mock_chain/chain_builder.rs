@@ -386,8 +386,7 @@ impl MockChainBuilder {
     }
 
     /// Internal helper: adds an existing network-style fungible faucet (Ownable2Step / Rbac).
-    /// Bundles [`PausableManager`] and [`BasicWallet`] to match the
-    /// `create_network_fungible_faucet` factory.
+    /// Bundles [`PausableManager`] to match the `create_network_fungible_faucet` factory.
     fn add_existing_network_fungible_faucet(
         &mut self,
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
@@ -425,7 +424,6 @@ impl MockChainBuilder {
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager)
-            .with_component(BasicWallet)
             .with_assets(assets);
 
         let auth = Auth::NetworkAccount {

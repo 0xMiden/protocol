@@ -672,9 +672,10 @@ pub fn create_guarded_user_fungible_faucet(
 /// in-procedure by the owner / role check installed via `access_control`
 /// ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
 ///
-/// In addition to the explicit parameters, [`Pausable`] (slot + `is_paused` view),
-/// [`PausableManager`] (admin `pause` / `unpause` gated by `access_control`) and [`BasicWallet`]
-/// are bundled; see [`NetworkAccount::builder`] for the default note allowlist.
+/// In addition to the explicit parameters, [`Pausable`] (slot + `is_paused` view) and
+/// [`PausableManager`] (admin `pause` / `unpause` gated by `access_control`) are bundled; see
+/// [`AuthNetworkAccount`](crate::account::auth::AuthNetworkAccount) for the wallet and default note
+/// allowlist that come with the auth component.
 ///
 /// # Errors
 ///

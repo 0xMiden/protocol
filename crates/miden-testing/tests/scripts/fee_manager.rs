@@ -358,7 +358,6 @@ async fn estimate_note_fee_returns_scheduled_fee(
             )?
             .with_allowed_tx_scripts(BTreeSet::from([tx_script.root()])),
         )
-        .with_component(BasicWallet)
         .build_existing()?;
 
     builder.add_account(account.clone())?;
@@ -403,7 +402,6 @@ async fn estimate_note_fee_rejects_non_u32_timeframe_or_priority(
             AuthNetworkAccount::new(BTreeSet::new(), fee_policy_manager(&BTreeSet::new())?)?
                 .with_allowed_tx_scripts(BTreeSet::from([tx_script.root()])),
         )
-        .with_component(BasicWallet)
         .build_existing()?;
 
     let mut builder = MockChain::builder();
@@ -448,7 +446,6 @@ async fn estimate_note_fee_aborts_for_unscheduled_root() -> anyhow::Result<()> {
             AuthNetworkAccount::new(BTreeSet::new(), fee_policy_manager(&BTreeSet::new())?)?
                 .with_allowed_tx_scripts(BTreeSet::from([tx_script.root()])),
         )
-        .with_component(BasicWallet)
         .build_existing()?;
 
     let mut builder = MockChain::builder();
@@ -488,7 +485,6 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     let foreign_account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
         .with_components(AuthNetworkAccount::new(BTreeSet::new(), fee_policy_manager)?)
-        .with_component(BasicWallet)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([2; 32])
@@ -634,7 +630,6 @@ async fn get_fee_asset_id_returns_configured_fee_asset_via_fpi() -> anyhow::Resu
             BTreeSet::new(),
             fee_policy_manager(&BTreeSet::new())?,
         )?)
-        .with_component(BasicWallet)
         .build_existing()?;
 
     let native_account = AccountBuilder::new([2; 32])

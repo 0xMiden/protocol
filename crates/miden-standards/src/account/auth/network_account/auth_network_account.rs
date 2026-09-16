@@ -24,6 +24,7 @@ use super::{
 };
 use crate::account::account_component_code;
 use crate::account::fees::FeePolicyManager;
+use crate::account::wallets::BasicWallet;
 use crate::note::config::NetworkAccountConfigNote;
 use crate::note::{FeeSponsorshipNote, P2idNote};
 use crate::procedure_root;
@@ -147,7 +148,8 @@ procedure_root!(
 /// Allowlisting a script whose effect depends on its inputs re-opens the very code path the
 /// allowlist exists to constrain. In particular, a script that moves assets out of the vault on
 /// caller-supplied inputs, e.g. through the `move_asset_to_note` procedure of
-/// [`BasicWallet`](crate::account::wallets::BasicWallet), must never be allowlisted.
+/// [`BasicWallet`](crate::account::wallets::BasicWallet), which [`Self::new`] installs, must never
+/// be allowlisted.
 ///
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
 /// off-chain services can identify a network account by checking for this slot.
@@ -192,6 +194,8 @@ pub struct AuthNetworkAccount {
     allowed_tx_scripts: NetworkAccountTxScriptAllowlist,
     sponsorship_policy: SponsorshipPolicy,
     policy_manager: FeePolicyManager,
+    /// Whether the component expansion emits [`BasicWallet`]; set by [`Self::new`].
+    installs_wallet: bool,
 }
 
 impl AuthNetworkAccount {
@@ -226,12 +230,10 @@ impl AuthNetworkAccount {
     ///   note it sponsors, and fee collection asserts every consumed note's fee is covered by the
     ///   sponsorships bound to it.
     /// - The [`P2idNote`] script root is added to the note allowlist, so a P2ID note carrying the
-    ///   fee asset can fund the account, e.g. for its account-creating transaction. Consuming one
-    ///   needs the `receive_asset` procedure of
-    ///   [`BasicWallet`](crate::account::wallets::BasicWallet) (see
-    ///   [`NetworkAccount::builder`](crate::account::auth::NetworkAccount::builder)) and a fee
-    ///   schedule entry; unless that entry is zero, a [`FeeSponsorshipNote`] bound to the deposit
-    ///   must cover it.
+    ///   fee asset can fund the account, e.g. for its account-creating transaction. The component
+    ///   expansion installs [`BasicWallet`], whose `receive_asset` procedure the note calls.
+    ///   Consuming one needs a fee schedule entry; unless that entry is zero, a
+    ///   [`FeeSponsorshipNote`] bound to the deposit must cover it.
     /// - The tx-script allowlist contains the [`ExpirationTransactionScript`] root, which the
     ///   network transaction builder attaches to every network transaction, so the account is
     ///   serviceable by the network.
@@ -240,13 +242,16 @@ impl AuthNetworkAccount {
     /// three fee-policy storage slots this component owns. The manager is carried by the component
     /// and the components of its registered policies are emitted alongside it when the component is
     /// expanded (see the [`IntoIterator`] impl), so the caller does not install them separately.
+    /// [`BasicWallet`] is emitted the same way, so callers need not install it again.
     pub fn new(
         mut allowed_notes: BTreeSet<NoteScriptRoot>,
         fee_policy_manager: FeePolicyManager,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
         allowed_notes.extend(Self::default_allowed_note_scripts());
-        Ok(Self::custom(allowed_notes, fee_policy_manager)?
-            .with_allowed_tx_scripts([ExpirationTransactionScript::script_root()]))
+        let mut component = Self::custom(allowed_notes, fee_policy_manager)?
+            .with_allowed_tx_scripts([ExpirationTransactionScript::script_root()]);
+        component.installs_wallet = true;
+        Ok(component)
     }
 
     /// Returns the note script roots added to every standard network account's allowlist.
@@ -259,7 +264,8 @@ impl AuthNetworkAccount {
     }
 
     /// Creates a raw [`AuthNetworkAccount`] component from the given note-script allowlist, with an
-    /// empty tx-script allowlist and without any default configuration.
+    /// empty tx-script allowlist and without any default configuration, including the
+    /// [`BasicWallet`] that [`Self::new`] installs.
     ///
     /// Most callers should use [`Self::new`] to include the defaults.
     pub fn custom(
@@ -271,6 +277,7 @@ impl AuthNetworkAccount {
             allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
             sponsorship_policy: SponsorshipPolicy::default(),
             policy_manager: fee_policy_manager,
+            installs_wallet: false,
         })
     }
 
@@ -432,14 +439,16 @@ impl IntoIterator for AuthNetworkAccount {
     type Item = AccountComponent;
     type IntoIter = alloc::vec::IntoIter<AccountComponent>;
 
-    /// Expands the configuration into its [`AccountComponent`]s: the auth component itself and all
-    /// fee policy components registered with the [`FeePolicyManager`].
+    /// Expands the configuration into its [`AccountComponent`]s: the auth component itself,
+    /// [`BasicWallet`] when built with [`Self::new`], and all fee policy components registered
+    /// with the [`FeePolicyManager`].
     fn into_iter(self) -> Self::IntoIter {
         let Self {
             allowed_notes,
             allowed_tx_scripts,
             sponsorship_policy,
             policy_manager,
+            installs_wallet,
         } = self;
 
         let fee_policy_slots = policy_manager.to_storage_slots();
@@ -458,6 +467,9 @@ impl IntoIterator for AuthNetworkAccount {
                 );
 
         let mut components = vec![auth_component];
+        if installs_wallet {
+            components.push(AccountComponent::from(BasicWallet));
+        }
         components.extend(policy_manager.into_fee_policy_components());
         components.into_iter()
     }
@@ -472,7 +484,6 @@ mod tests {
     use miden_protocol::asset::FungibleAsset;
 
     use super::*;
-    use crate::account::wallets::BasicWallet;
     use crate::note::config::NetworkAccountConfigNote;
 
     #[test]
@@ -480,7 +491,7 @@ mod tests {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
-        let _account = AccountBuilder::new([0; 32])
+        let account = AccountBuilder::new([0; 32])
             .with_components(
                 AuthNetworkAccount::new(
                     BTreeSet::from_iter([root_a, root_b]),
@@ -488,9 +499,27 @@ mod tests {
                 )
                 .expect("non-empty allowlist should construct"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
+
+        // `new` installs the wallet whose `receive_asset` the allowlisted P2ID root calls
+        assert!(account.code().has_procedure(BasicWallet::receive_asset_root().into()));
+    }
+
+    #[test]
+    fn auth_network_account_custom_installs_no_wallet() {
+        let account = AccountBuilder::new([0; 32])
+            .with_components(
+                AuthNetworkAccount::custom(
+                    BTreeSet::from_iter([NoteScriptRoot::from_array([1, 2, 3, 4])]),
+                    FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+                )
+                .expect("non-empty allowlist should construct"),
+            )
+            .build()
+            .expect("account building with AuthNetworkAccount failed");
+
+        assert!(!account.code().has_procedure(BasicWallet::receive_asset_root().into()));
     }
 
     #[test]
@@ -503,7 +532,6 @@ mod tests {
                 )
                 .expect("the default note roots make the allowlist non-empty"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
 
@@ -562,7 +590,6 @@ mod tests {
                 )
                 .expect("config note root makes the allowlist non-empty"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
 
