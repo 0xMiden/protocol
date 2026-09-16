@@ -11,7 +11,7 @@ use miden_protocol::transaction::OrderedTransactionHeaders;
 use crate::decoded::blockchain::test_utils::block_header_with_scheduled_upgrade;
 use crate::decoded::protocol_config::test_utils::dummy_protocol_config;
 use crate::test_utils::error_source;
-use crate::{BuildUnchecked, ConversionError, DecodeMessage, Verify, proto};
+use crate::{BuildUnchecked, ConversionError, DecodeMessage, DecodeMessageExt, Verify, proto};
 
 #[test]
 fn tracked_mmr_leaf_verifies() {
@@ -29,9 +29,7 @@ fn tracked_mmr_leaf_verifies() {
 fn block_number_verifies() {
     assert_eq!(
         proto::blockchain::BlockNumber { block_num: u32::MAX }
-            .decode_fields()
-            .unwrap()
-            .verify()
+            .decode_and_verify()
             .unwrap()
             .as_u32(),
         u32::MAX
@@ -245,6 +243,7 @@ fn block_header_protobuf_rejects_upgrade_effective_at_genesis() {
         .unwrap_err();
     let source = error_source::<ProtocolConfigError>(&error).unwrap();
 
+    assert!(error.to_string().starts_with("next_protocol_config:"), "{error}");
     assert_matches!(source, ProtocolConfigError::NextConfigEffectiveAtGenesis);
 }
 

@@ -39,6 +39,7 @@ use rstest::rstest;
 use super::multisig::{
     MultisigAuthArgsExt,
     build_update_signers_config_vector,
+    eip712_signature_witness,
     setup_keys_and_authenticators_with_scheme,
 };
 
@@ -150,6 +151,56 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     multisig_account.apply_patch(tx_result.as_ref().unwrap().account_patch())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_accepts_raw_and_eip712_signatures() -> anyhow::Result<()> {
+    let (secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 10, vec![])?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mock_chain = mock_chain_builder.build()?;
+    let salt = Word::from([Felt::new_unchecked(2); 4]);
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .authenticated_input_note(note.id())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt,
+        ));
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx_summary_hash = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary.clone());
+    let raw_signature = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+
+    let (signature_key, witness) =
+        eip712_signature_witness(&secret_keys[1], &public_keys[1], tx_summary.as_ref())?;
+
+    mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), tx_summary_hash, raw_signature)
+        .add_advice_map_entry(signature_key, witness)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }

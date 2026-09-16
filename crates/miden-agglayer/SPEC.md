@@ -556,7 +556,10 @@ here. It lives on the bridge in `faucet_metadata_map`, written at registration t
 - `ConstantFeeManager` value slot: the ID of the fee schedule slot it reprices.
 
 `MintOwnerOnly` and `BurnOwnerOnly` gate minting and burning on the bridge as the `Ownable2Step`
-owner. Note repricing is gated by `FEE_MNGR`; other authority-gated configuration falls back to
+owner. AggLayer faucets register no send or receive policies and install no asset callback slots,
+so their account IDs have asset callbacks disabled.
+
+Note repricing is gated by `FEE_MNGR`; other authority-gated configuration falls back to
 `FAUCET_ADMIN`, which cannot mint or change the owner.
 [#2724](https://github.com/0xMiden/protocol/issues/2724) tracks removing the ownership-transfer
 procedures.

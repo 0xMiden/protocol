@@ -455,14 +455,11 @@ async fn test_bridge_in_claim_to_p2id(
     mock_chain.prove_next_block()?;
 
     // Execute the consume transaction for the destination account. Pass the account
-    // directly since the JSON-encoded destination decodes to a private account ID. The
-    // issuing AggLayer faucet must be supplied as a foreign account so the kernel can
-    // dispatch the receive callback when the asset is added to the destination vault.
-    let agglayer_faucet_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    // directly since the JSON-encoded destination decodes to a private account ID. Receiving
+    // AggLayer assets must succeed without supplying the faucet as a foreign account.
     let consume_mock_tx = mock_chain
         .build_transaction(destination_account.clone())
         .unauthenticated_input_note(expected_output_p2id_note)
-        .foreign_accounts(vec![agglayer_faucet_inputs])
         .build()?;
     let consume_executed_transaction = consume_mock_tx.execute().await?;
 

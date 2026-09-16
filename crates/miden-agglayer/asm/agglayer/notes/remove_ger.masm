@@ -1,7 +1,7 @@
 use {NoteArgs} from miden::protocol::types
 use agglayer::bridge::bridge_config
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -14,7 +14,6 @@ const STORAGE_PTR_GER_UPPER = 4
 # =================================================================================================
 
 const ERR_REMOVE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "REMOVE_GER script expects exactly 8 note storage items"
-const ERR_REMOVE_GER_TARGET_ACCOUNT_MISMATCH = "REMOVE_GER note attachment target account does not match consuming account"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -28,6 +27,8 @@ const ERR_REMOVE_GER_TARGET_ACCOUNT_MISMATCH = "REMOVE_GER note attachment targe
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::remove_ger procedure.
+#!
+#! Consumers: target account (attachment)
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -48,8 +49,7 @@ pub proc main(args: NoteArgs)
     # => [pad(16)]
 
     # Ensure note attachment targets the consuming bridge account.
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_REMOVE_GER_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # Load note storage to memory

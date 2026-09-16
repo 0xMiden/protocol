@@ -1,16 +1,16 @@
 //! Schema-shaped records with manually implemented domain construction.
 //!
-//! Decode fields first, then explicitly choose the construction capability. For example, building
-//! a block header does not authenticate it against its parent:
+//! Explicitly choose the construction capability, either after decoding fields or through
+//! [`crate::DecodeMessageExt`]. For example, building a block header does not authenticate it
+//! against its parent:
 //!
 //! ```
-//! use miden_objects::{BuildUnchecked, DecodeMessage, proto};
+//! use miden_objects::{ConversionError, DecodeMessageExt, proto};
 //! use miden_protocol::block::BlockHeader;
 //!
 //! # fn build(message: proto::blockchain::BlockHeader)
-//! #     -> Result<BlockHeader, Box<dyn core::error::Error + Send + Sync>> {
-//! let decoded = message.decode_fields()?;
-//! let header = decoded.build_unchecked()?;
+//! #     -> Result<BlockHeader, ConversionError> {
+//! let header = message.decode_and_build_unchecked()?;
 //! # Ok(header)
 //! # }
 //! ```

@@ -170,6 +170,19 @@ The RECIPIENT is not necessarily just an account address. Its pre-image consists
 
 The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
 
+#### Declaring who may consume a note
+
+A note script either restricts consumption to accounts the note commits to, or is open to any consumer by design. Nothing in a script's body distinguishes the second case from a restriction that was simply left out, so every standard note script states its rule on a `Consumers:` line in the doc comment of its `@note_script` procedure.
+
+A note commits to the accounts allowed to consume it in one of two ways:
+
+- as a `NetworkAccountTarget` [attachment](#attachments), which the [config notes](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes) and the agglayer note scripts use.
+- as an account ID in the note's [storage](#storage), which P2ID and P2IDE use. MINT and BURN commit their faucet the same way, as part of the asset held in their storage.
+
+Both are enforced through the shared [`miden::standards::note::note_target`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/note/note_target.masm) procedures. A note that lets its creator take its assets back enforces that separately, through [`miden::standards::note::note_reclaim`](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/note/note_reclaim.masm), which checks the reclaimer alongside the block height from which reclaim is allowed.
+
+A note that is open to any consumer states so explicitly, e.g. a SWAP note is filled by whoever provides the requested asset. Some notes' consumption rules are enforced by the account procedure they invoke, e.g. a MINT note is rejected by the faucet it is not addressed to.
+
 #### Note nullifier ensuring private consumption
 
 The `Note` nullifier, computed as:

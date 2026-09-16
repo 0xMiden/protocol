@@ -7,10 +7,10 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::note::Note;
 use miden_standards::errors::standards::{
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
     ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC,
-    ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_RBAC_CONFIG_UNKNOWN_SELECTOR,
+    ERR_RBAC_CONFIG_UNKNOWN_VARIANT,
     ERR_SENDER_NOT_ROLE_ADMIN,
 };
 use miden_standards::note::config::{RbacConfig, RbacConfigNote};
@@ -171,14 +171,14 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let admin = test_account_id(41);
     let (account, mock_chain) = create_rbac_chain(admin)?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // selector 99 is not a known action
+    // variant 99 is not a known action
     let note = malformed_rbac_config_note(admin, account.id(), vec![Felt::from(99u32)], &mut rng)?;
     let result = mock_chain
         .build_transaction(account.clone())
@@ -187,18 +187,18 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_UNKNOWN_VARIANT);
     Ok(())
 }
 
-/// A note whose storage item count does not match its selector is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guard.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let admin = test_account_id(41);
     let (account, mock_chain) = create_rbac_chain(admin)?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // GrantRole selector (0) but only one storage item instead of the expected four
+    // GrantRole variant (0) but only one storage item instead of the expected four
     let note = malformed_rbac_config_note(admin, account.id(), vec![Felt::from(0u32)], &mut rng)?;
     let result = mock_chain
         .build_transaction(account.clone())
@@ -268,7 +268,10 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
     Ok(())
 }
 

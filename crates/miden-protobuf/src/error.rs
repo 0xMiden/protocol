@@ -32,6 +32,15 @@ impl ConversionError {
         Self::message(format!("field {}::{field_name} is missing", type_name::<T>()))
     }
 
+    /// Reports a oneof extraction mismatch using exact wire variant names.
+    ///
+    /// The actual variant is added to the field path. No payload is decoded or verified when
+    /// the requested variant does not match.
+    pub fn wrong_variant(expected: &'static str, actual: &'static str) -> Self {
+        Self::message(format!("expected oneof variant `{expected}`, got `{actual}`"))
+            .context(actual)
+    }
+
     pub fn deserialization(
         entity: &'static str,
         source: impl Error + Send + Sync + 'static,
@@ -55,6 +64,32 @@ impl ConversionError {
             message: message.into(),
             source: Box::new(source),
         })
+    }
+
+    /// Converts this input conversion failure into a gRPC `InvalidArgument` status.
+    ///
+    /// The message includes the field path and every source-chain level, even when a source's
+    /// `Display` omits its own cause. Deeper causes are separated by `\ncaused by: `; a cause may
+    /// appear more than once if an outer error already includes it in its display text.
+    /// The original error is also retained as the status's local source.
+    ///
+    /// Available with the optional `tonic` feature, which enables `std` without transport.
+    #[cfg(feature = "tonic")]
+    pub fn into_status(self) -> tonic::Status {
+        use alloc::string::ToString;
+        use alloc::sync::Arc;
+        use core::fmt::Write;
+
+        let mut message = self.to_string();
+        // Display already includes the immediate source; walk the causes it may omit.
+        let mut cause = self.source.source();
+        while let Some(error) = cause {
+            write!(message, "\ncaused by: {error}").expect("writing to a String cannot fail");
+            cause = error.source();
+        }
+        let mut status = tonic::Status::invalid_argument(message);
+        status.set_source(Arc::new(self));
+        status
     }
 }
 

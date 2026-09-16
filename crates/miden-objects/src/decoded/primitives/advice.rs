@@ -24,7 +24,7 @@ impl Verify for AdviceMapEntry {
     type Verified = (miden_protocol::Word, alloc::vec::Vec<miden_protocol::Felt>);
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok((self.key, self.values))
+        Ok((self.key, self.values.into_inner()))
     }
 }
 
@@ -34,7 +34,7 @@ impl Verify for AdviceStack {
     type Verified = miden_protocol::vm::AdviceStack;
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(self.values.into_iter().collect())
+        Ok(self.values.into_inner().into_iter().collect())
     }
 }
 
@@ -45,8 +45,8 @@ impl Verify for AdviceMap {
     type Error = AdviceError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let mut entries = alloc::collections::BTreeMap::new();
-        for entry in self.entries {
-            if entries.insert(entry.key, entry.values).is_some() {
+        for entry in self.entries.into_inner() {
+            if entries.insert(entry.key, entry.values.into_inner()).is_some() {
                 return Err(AdviceError::DuplicateMapKey(entry.key));
             }
         }
@@ -69,7 +69,7 @@ impl Verify for MerkleStore {
     type Error = AdviceError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         let mut nodes = alloc::collections::BTreeMap::new();
-        for node in self.nodes {
+        for node in self.nodes.into_inner() {
             let node = unwrap_infallible(node.verify());
             if nodes.insert(node.value, node.clone()).is_some() {
                 return Err(AdviceError::DuplicateMerkleParent(node.value));

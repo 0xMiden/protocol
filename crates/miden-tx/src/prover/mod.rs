@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_processor::ExecutionOptions;
+use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
@@ -14,7 +14,7 @@ use miden_protocol::transaction::{
 };
 use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::Prover;
-use miden_prover::{ExecutionProof, Word, prove_sync};
+use miden_prover::{ExecutionProof, Word};
 
 use super::TransactionProverError;
 use crate::host::{AccountProcedureIndexMap, ScriptMastForestStore};
@@ -30,26 +30,48 @@ pub use mast_store::TransactionMastStore;
 
 /// Local Transaction prover is a stateless component which is responsible for proving transactions.
 ///
+/// The produced proof covers the VM execution only. Precompile claims are left deferred, because a
+/// batch settles the claims of all its transactions with a single precompile proof.
+///
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
 #[derive(Debug, Clone)]
 pub struct LocalTransactionProver {
     prover: Prover,
+    execution_options: ExecutionOptions,
 }
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
-        Self {
-            prover: Prover::new().with_hash_fn(Poseidon2),
-        }
+        Self::new(Prover::new().with_hash_fn(Poseidon2))
     }
 }
 
 impl LocalTransactionProver {
-    /// Creates a new [LocalTransactionProver] instance.
+    /// Creates a new [LocalTransactionProver] instance with the default [`ExecutionOptions`].
     pub fn new(prover: Prover) -> Self {
-        Self { prover }
+        Self {
+            prover,
+            execution_options: ExecutionOptions::default(),
+        }
+    }
+
+    /// Sets the [`ExecutionOptions`] used while proving and returns the resulting prover.
+    ///
+    /// This lets a caller tune the VM limits enforced during proving, so that proving can use the
+    /// same options as execution.
+    ///
+    /// This will overwrite any previously set options.
+    #[must_use]
+    pub fn with_execution_options(mut self, execution_options: ExecutionOptions) -> Self {
+        self.execution_options = execution_options;
+        self
+    }
+
+    /// Returns the [`ExecutionOptions`] this prover uses.
+    pub fn execution_options(&self) -> ExecutionOptions {
+        self.execution_options
     }
 
     fn build_proven_transaction(
@@ -145,15 +167,23 @@ impl LocalTransactionProver {
 
         let advice_inputs = advice_inputs.into_advice_inputs();
 
-        let (stack_outputs, proof) = prove_sync(
-            &self.prover,
-            &TransactionKernel::main(),
+        let processor = FastProcessor::new_with_options(
             stack_inputs,
             advice_inputs.clone(),
-            &mut host,
-            ExecutionOptions::default(),
+            self.execution_options,
         )
+        .map_err(ExecutionError::advice_error_no_context)
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
+
+        let witness = processor
+            .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
+            .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
+        let stack_outputs = *witness.claim().stack_outputs();
+
+        let proof = self
+            .prover
+            .prove(witness)
+            .map_err(TransactionProverError::TransactionProofGenerationFailed)?;
 
         // Extract transaction outputs and process transaction data.
         let (account_patch, input_notes, output_notes) = host.into_parts();
@@ -226,5 +256,23 @@ impl LocalTransactionProver {
             ref_block.commitment(),
             proof,
         )
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_execution_options_are_used_unless_replaced() {
+        let prover = LocalTransactionProver::default();
+        assert_eq!(prover.execution_options(), ExecutionOptions::default());
+
+        let custom_options = ExecutionOptions::default().with_max_advice_size_bytes(1);
+        let prover = prover.with_execution_options(custom_options);
+        assert_eq!(prover.execution_options(), custom_options);
     }
 }
