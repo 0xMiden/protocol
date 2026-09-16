@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
-use miden_protocol::errors::{AccountIdError, NoteError};
+use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteType};
 
 use crate::note::{NoteExecutionHint, StandardNoteAttachment};
@@ -200,10 +200,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
         let target_id = AccountId::try_from_elements(id_suffix, id_prefix)
             .map_err(NetworkAccountTargetError::DecodeTargetId)?;
 
-        let exec_hint = NoteExecutionHint::try_from(exec_hint.as_canonical_u64())
-            .map_err(NetworkAccountTargetError::DecodeExecutionHint)?;
-
-        NetworkAccountTarget::new(target_id, exec_hint)
+        NetworkAccountTarget::new(target_id, NoteExecutionHint::from(exec_hint))
     }
 }
 
@@ -227,8 +224,6 @@ pub enum NetworkAccountTargetError {
     AttachmentContentNumWordsMismatch(u16),
     #[error("failed to decode target account ID")]
     DecodeTargetId(#[source] AccountIdError),
-    #[error("failed to decode execution hint")]
-    DecodeExecutionHint(#[source] NoteError),
     #[error("network note must be public, but was {0:?}")]
     NoteNotPublic(NoteType),
 }
@@ -241,6 +236,7 @@ mod tests {
     use alloc::vec;
 
     use assert_matches::assert_matches;
+    use miden_protocol::Felt;
     use miden_protocol::account::AccountType;
     use miden_protocol::testing::account_id::AccountIdBuilder;
 
@@ -260,6 +256,33 @@ mod tests {
             network_account_target,
             NetworkAccountTarget::try_from(&NoteAttachment::from(network_account_target))?
         );
+
+        Ok(())
+    }
+
+    /// An execution hint encoding this version does not recognize must not hide the target
+    /// account, since the on-chain check discards the hint felt entirely.
+    #[test]
+    fn unrecognized_execution_hint_preserves_target_id() -> anyhow::Result<()> {
+        let target_id = public_account_id();
+
+        // Tag 7 is above the highest known tag, and a non-zero payload on the `Always` tag is
+        // rejected by `NoteExecutionHint::from_parts`.
+        for raw_hint in [7u64, (1 << 8) | 1] {
+            let raw_hint = Felt::new(raw_hint)?;
+            let mut word = Word::empty();
+            word[0] = target_id.suffix();
+            word[1] = target_id.prefix().as_felt();
+            word[2] = raw_hint;
+            let attachment =
+                NoteAttachment::with_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word);
+
+            let target = NetworkAccountTarget::try_from(&attachment)?;
+            assert_eq!(target.target_id(), target_id);
+            assert_eq!(target.execution_hint(), NoteExecutionHint::Unknown(raw_hint));
+            // Re-encoding is lossless, so the note commitment is unaffected.
+            assert_eq!(NoteAttachment::from(target), attachment);
+        }
 
         Ok(())
     }

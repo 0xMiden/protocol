@@ -1,3 +1,4 @@
+use {Asset} from miden::protocol_utils::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::asset_vault
@@ -33,7 +34,7 @@ const ACCOUNT_VAULT_BEFORE_BURN_ASSET_EVENT =
 #! Panics if:
 #! - the asset issuer is not the faucet the transaction is being executed against.
 #! - the asset is not well formed.
-pub proc mint
+pub proc mint(asset: Asset)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE]
@@ -77,7 +78,7 @@ end
 #!   transaction.
 #! - For non-fungible faucets if the non-fungible asset being burned does not exist or was not
 #!   provided as input to the transaction via a note or the accounts vault.
-pub proc burn
+pub proc burn(asset: Asset)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE]

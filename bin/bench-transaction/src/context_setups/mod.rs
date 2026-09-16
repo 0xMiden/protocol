@@ -31,7 +31,8 @@ use miden_standards::account::auth::SponsorshipPolicy;
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountConfigNote, StandardNote};
+use miden_standards::note::StandardNote;
+use miden_standards::note::config::NetworkAccountConfigNote;
 use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 

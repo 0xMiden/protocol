@@ -1,6 +1,7 @@
+use {AccountProcedureRoot, NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::faucets::policies::policy_manager
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -9,35 +10,35 @@ use miden::standards::faucets::policies::policy_manager
 const STORAGE_PTR = 0
 
 # Memory addresses of the FaucetPolicyConfig note storage. The policy root word comes first so that
-# it is word-aligned and can be loaded with a single `mem_loadw_le`; the selector follows it.
+# it is word-aligned and can be loaded with a single `mem_loadw_le`; the variant follows it.
 const POLICY_ROOT_PTR = STORAGE_PTR
-const SELECTOR_PTR = STORAGE_PTR + 4
+const VARIANT_PTR = STORAGE_PTR + 4
 
-# Config note selectors, stored in the storage item after the policy root. Keep in sync with
+# Config note variants, stored in the storage item after the policy root. Keep in sync with
 # `FaucetPolicyConfig` on the Rust side.
-const SELECTOR_SET_MINT_POLICY = 0
-const SELECTOR_SET_BURN_POLICY = 1
-const SELECTOR_SET_SEND_POLICY = 2
-const SELECTOR_SET_RECEIVE_POLICY = 3
+const VARIANT_SET_MINT_POLICY = 0
+const VARIANT_SET_BURN_POLICY = 1
+const VARIANT_SET_SEND_POLICY = 2
+const VARIANT_SET_RECEIVE_POLICY = 3
 
-# Expected note storage item count: a selector plus the policy root word. Identical for every
+# Expected note storage item count: a variant plus the policy root word. Identical for every
 # action.
 const NUM_ITEMS_SET_POLICY = 5
 
 # ERRORS
 # =================================================================================================
 
-const ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH = "faucet policy config note attachment target account does not match the consuming account"
-
-const ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR = "faucet policy config note selector does not match a known action"
+const ERR_FAUCET_POLICY_CONFIG_UNKNOWN_VARIANT = "faucet policy config note variant does not match a known action"
 
 const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet policy config note storage item count does not match the selected action"
+
+const ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet policy config note must be public"
 
 # NOTE SCRIPT
 # =================================================================================================
 
 #! FaucetPolicyConfig script: triggers a `TokenPolicyManager` policy-switch action against the
-#! consuming faucet, dispatched on a selector stored in the note storage item after the policy root.
+#! consuming faucet, dispatched on the note variant in its storage.
 #!
 #! The selected action and its policy root are read from the note storage and are fixed at note
 #! creation:
@@ -55,37 +56,43 @@ const ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet poli
 #!   set_send_policy, set_receive_policy}` (the `TokenPolicyManager` component), backed by the
 #!   `Authority` companion component.
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items exceeds NUM_ITEMS_SET_POLICY.
-#! - the selector is not a known action.
+#! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the caller is not authorized per the installed `Authority` component, or the policy root is not
 #!   an allowed alternative (per the `TokenPolicyManager` procedures).
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_FAUCET_POLICY_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
     push.NUM_ITEMS_SET_POLICY push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items]
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items]
 
-    # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_SET_MINT_POLICY
-    # => [is_set_mint, selector, num_storage_items]
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_SET_MINT_POLICY
+    # => [is_set_mint, variant, num_storage_items]
 
     if.true
         drop
@@ -93,8 +100,8 @@ pub proc main
 
         exec.execute_set_mint_policy
     else
-        dup eq.SELECTOR_SET_BURN_POLICY
-        # => [is_set_burn, selector, num_storage_items]
+        dup eq.VARIANT_SET_BURN_POLICY
+        # => [is_set_burn, variant, num_storage_items]
 
         if.true
             drop
@@ -102,8 +109,8 @@ pub proc main
 
             exec.execute_set_burn_policy
         else
-            dup eq.SELECTOR_SET_SEND_POLICY
-            # => [is_set_send, selector, num_storage_items]
+            dup eq.VARIANT_SET_SEND_POLICY
+            # => [is_set_send, variant, num_storage_items]
 
             if.true
                 drop
@@ -111,8 +118,8 @@ pub proc main
 
                 exec.execute_set_send_policy
             else
-                eq.SELECTOR_SET_RECEIVE_POLICY
-                assert.err=ERR_FAUCET_POLICY_CONFIG_UNKNOWN_SELECTOR
+                eq.VARIANT_SET_RECEIVE_POLICY
+                assert.err=ERR_FAUCET_POLICY_CONFIG_UNKNOWN_VARIANT
                 # => [num_storage_items]
 
                 exec.execute_set_receive_policy
@@ -135,7 +142,7 @@ end
 #! - num_storage_items is not NUM_ITEMS_SET_POLICY.
 #!
 #! Invocation: exec
-proc load_policy_root_window
+proc load_policy_root_window(num_storage_items: u32) -> (AccountProcedureRoot, [felt; 12])
     eq.NUM_ITEMS_SET_POLICY
     assert.err=ERR_FAUCET_POLICY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -157,7 +164,7 @@ end
 #!   allowed mint policy (per `policy_manager::set_mint_policy`).
 #!
 #! Invocation: exec
-proc execute_set_mint_policy
+proc execute_set_mint_policy(num_storage_items: u32)
     exec.load_policy_root_window
     # => [NEW_POLICY_ROOT, pad(12)]
 
@@ -179,7 +186,7 @@ end
 #!   allowed burn policy (per `policy_manager::set_burn_policy`).
 #!
 #! Invocation: exec
-proc execute_set_burn_policy
+proc execute_set_burn_policy(num_storage_items: u32)
     exec.load_policy_root_window
     # => [NEW_POLICY_ROOT, pad(12)]
 
@@ -201,7 +208,7 @@ end
 #!   allowed send policy (per `policy_manager::set_send_policy`).
 #!
 #! Invocation: exec
-proc execute_set_send_policy
+proc execute_set_send_policy(num_storage_items: u32)
     exec.load_policy_root_window
     # => [NEW_POLICY_ROOT, pad(12)]
 
@@ -223,7 +230,7 @@ end
 #!   allowed receive policy (per `policy_manager::set_receive_policy`).
 #!
 #! Invocation: exec
-proc execute_set_receive_policy
+proc execute_set_receive_policy(num_storage_items: u32)
     exec.load_policy_root_window
     # => [NEW_POLICY_ROOT, pad(12)]
 

@@ -160,7 +160,7 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
         (mock_tx.input_notes().get_note(1).note().id(), note_args[0]),
     ]);
 
-    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().clone().map)
+    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().map().clone())
         .with_note_args(note_args_map);
 
     mock_tx.set_tx_args(tx_args);

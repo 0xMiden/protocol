@@ -1,3 +1,4 @@
+use {NoteArgs} from miden::protocol::types
 use miden::standards::faucets::fungible as fungible
 use miden::standards::faucets::non_fungible as non_fungible
 use miden::standards::inspection::code_inspection
@@ -37,6 +38,8 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #! - either `miden::standards::faucets::fungible::receive_and_burn` or
 #!   `miden::standards::faucets::non_fungible::receive_and_burn`.
 #!
+#! Consumers: target account (enforced by the faucet's `receive_and_burn`)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
@@ -47,7 +50,7 @@ const ERR_BURN_ASSET_MISMATCH = "asset stored in the burn note must match the as
 #! - the note does not carry exactly one asset, or that asset differs from the stored asset.
 #! - any of the validations in the `receive_and_burn` procedure fail.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
     # => [pad(16)]
 

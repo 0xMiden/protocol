@@ -1,3 +1,5 @@
+use {NoteArgs, NoteScriptRoot} from miden::protocol_utils::types
+use {Commitment, InputNoteData, OutputNoteData} from miden::tx_kernel_core::types
 use miden::core::crypto::hashes::poseidon2
 
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
@@ -29,7 +31,7 @@ const OUTPUT_NOTE_HASHING_MEM_DIFF = 1016
 #!
 #! Where:
 #! - active_input_note_ptr is the pointer to the next note to be processed.
-pub proc increment_active_input_note_ptr
+pub proc increment_active_input_note_ptr() -> ptr<InputNoteData>
     # get the active input note pointer
     exec.memory::get_active_input_note_ptr
     # => [orig_input_note_ptr]
@@ -48,7 +50,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-pub proc note_processing_teardown
+pub proc note_processing_teardown()
     # set the active input note pointer to 0
     push.0 exec.memory::set_active_input_note_ptr
     # => []
@@ -64,7 +66,7 @@ end
 #! Where:
 #! - note_script_root_ptr is the memory address where note's script root is stored.
 #! - NOTE_ARGS is the note's arguments.
-pub proc prepare_note
+pub proc prepare_note() -> (ptr<NoteScriptRoot>, NoteArgs, [felt; 11])
     padw padw push.0.0.0
     # => [pad(11)]
 
@@ -94,7 +96,7 @@ end
 #! Where:
 #! - note_ptr is a pointer to the data section of the output note.
 #! - ATTACHMENTS_COMMITMENT is the commitment of the note's attachments.
-pub proc compute_attachments_commitment
+pub proc compute_attachments_commitment(note_ptr: ptr<OutputNoteData>) -> Commitment
     dup exec.memory::get_output_note_num_attachments
     # => [num_attachments, note_ptr]
 
@@ -124,7 +126,7 @@ end
 #! Where:
 #! - note_data_ptr is a pointer to the data section of the output note.
 #! - ASSETS_COMMITMENT is the commitment of the assets of the output note located at note_data_ptr.
-pub proc compute_output_note_assets_commitment
+pub proc compute_output_note_assets_commitment(note_data_ptr: ptr<OutputNoteData>) -> Commitment
     # get the assets commitment dirty flag and decide whether we need to recompute the commitment
     dup exec.memory::get_output_note_dirty_flag
     # => [dirty_flag, note_data_ptr]
@@ -177,7 +179,7 @@ end
 #! Where:
 #! - note_data_ptr is a pointer to the data section of the output note.
 #! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details.
-proc compute_output_note_details_commitment
+proc compute_output_note_details_commitment(note_data_ptr: ptr<OutputNoteData>) -> Commitment
     # compute assets commitment
     dup exec.compute_output_note_assets_commitment
     # => [ASSETS_COMMITMENT, note_data_ptr]
@@ -202,7 +204,7 @@ end
 #!
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the notes output by the transaction.
-pub proc compute_output_notes_commitment
+pub proc compute_output_notes_commitment() -> Commitment
     # get the number of output notes from memory
     exec.memory::get_num_output_notes
     # => [num_notes]

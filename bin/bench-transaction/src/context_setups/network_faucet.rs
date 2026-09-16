@@ -4,10 +4,7 @@
 //! network auth procedure additionally creates a TX_FEE note funded from the native fee asset held
 //! in the faucet's vault.
 
-use std::sync::Arc;
-
 use anyhow::Result;
-use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{AssetId, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::merkle::smt::SmtProof;
@@ -123,17 +120,11 @@ fn add_fee_funded_network_non_fungible_faucet(
 /// empty subtree roots.
 fn minted_asset_witness(faucet: &Account, asset_id: AssetId) -> AdviceInputs {
     let witness = faucet.vault().open(asset_id);
-
-    let mut advice_inputs = AdviceInputs::default();
-    advice_inputs.store.extend(witness.authenticated_nodes());
-
+    let merkle_store = witness.authenticated_nodes().collect();
     let smt_proof = SmtProof::from(witness);
-    advice_inputs.map.extend([(
-        smt_proof.leaf().hash(),
-        smt_proof.leaf().to_elements().collect::<Arc<[Felt]>>(),
-    )]);
-
-    advice_inputs
+    AdviceInputs::default()
+        .with_map([(smt_proof.leaf().hash(), smt_proof.leaf().to_elements().collect())])
+        .with_merkle_store(merkle_store)
 }
 
 // MINT NOTE SETUPS

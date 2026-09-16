@@ -7,8 +7,8 @@
 //! `invoke_send_policy` / `invoke_receive_policy` wrappers whose roots live in the
 //! protocol-reserved callback slots
 //! (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and `..._to_note`); the
-//! kernel `dyncall`s the wrapper, which applies the account-wide pause check and then dispatches to
-//! the active policy root.
+//! kernel `dyncall`s the wrapper, which limits the transaction's expiration, applies the
+//! account-wide pause check and then dispatches to the active policy root.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -194,8 +194,9 @@ struct PolicyConfig {
 /// The component exposes `set_*_policy` and `get_*_policy` for each kind, `execute_*_policy` for
 /// mint / burn, and `invoke_send_policy` / `invoke_receive_policy` for the transfer kinds. The
 /// transfer wrappers double as the protocol-level `on_before_asset_added_to_*` asset callbacks:
-/// the kernel `dyncall`s the wrapper, which applies the account-wide pause check and then
-/// dispatches to the active send / receive policy.
+/// the kernel `dyncall`s the wrapper, which limits the transaction's expiration to the standards
+/// default delta, applies the account-wide pause check and then dispatches to the active send /
+/// receive policy.
 /// Authorization for switching the active policies is delegated to the account-wide
 /// [`Authority`][crate::account::access::Authority] component, which must be installed alongside
 /// this manager.
@@ -215,7 +216,10 @@ struct PolicyConfig {
 /// the flag is an immutable property of the account ID, it applies for the faucet's entire
 /// lifetime, so promoting a reserved policy later via `set_send_policy` / `set_receive_policy`
 /// enforces it against the whole circulating supply rather than only assets minted after the
-/// switch.
+/// switch. A faucet created as
+/// [`AccountType::Private`][miden_protocol::account::AccountType::Private] publishes only its
+/// commitment, so its holders have to obtain the state each of their transactions needs out of
+/// band. The account type is immutable, so that is settled at creation.
 ///
 /// The slots are omitted only when no send or receive policy of any kind is registered, in which
 /// case the faucet's account ID is created with

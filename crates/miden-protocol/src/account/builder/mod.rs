@@ -48,6 +48,13 @@ use crate::{Felt, Word};
 /// installing a callback slot, so that the account retains the ability to add a callback slot via
 /// an account upgrade later. This is particularly useful if new types of callbacks are introduced.
 ///
+/// An enabled flag makes the account's state a required input of every transaction that moves one
+/// of its assets: dispatching a callback starts a foreign context against the issuing account, and
+/// the foreign state is loaded before the callback slot is looked up, so the load happens even when
+/// no callback procedure root is registered. An [`AccountType::Private`] account publishes only its
+/// commitment, so its holders have to obtain that state out of band. Both the account type and the
+/// flag are immutable parts of the [`AccountId`], so this is settled at creation.
+///
 /// [`AccountBuilder::with_component`] (or [`AccountBuilder::with_components`]) must be called at
 /// least once, and exactly one of the added components must be an authentication component (i.e. a
 /// component exporting a procedure marked with the `@auth_script` attribute). The auth component is

@@ -1,3 +1,4 @@
+use {Asset, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::standards::faucets::fungible as fungible
@@ -40,7 +41,7 @@ const ERR_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "fungible MINT scri
 #! Outputs: [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #!
 #! Invocation: exec
-proc mint_public
+proc mint_public(num_storage_items: u32) -> (Asset, NoteTag, NoteType, NoteRecipient, [felt; 2])
     # pad the tail of the `mint_and_send` input window, keeping num_storage_items on top
     push.0.0 movup.2
     # => [num_storage_items, pad(2)]
@@ -84,7 +85,7 @@ end
 #! - the number of storage items is not exactly 13.
 #!
 #! Invocation: exec
-proc mint_private
+proc mint_private(num_storage_items: u32) -> (Asset, NoteTag, NoteType, NoteRecipient, [felt; 2])
     eq.FUNGIBLE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
 
@@ -122,7 +123,7 @@ end
 #! - the asset stored in the note does not belong to the consuming faucet.
 #!
 #! Invocation: exec
-pub proc mint
+pub proc mint()
     push.STORAGE_PTR exec.active_note::get_storage
     # => [num_storage_items]
 

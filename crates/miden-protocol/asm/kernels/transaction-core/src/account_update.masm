@@ -1,3 +1,5 @@
+use {Asset, AssetId, AssetValue, Bool, StorageMapKey} from miden::protocol_utils::types
+use {Commitment, HasherState} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::link_map
@@ -125,7 +127,7 @@ const MAX_ASSETS_PER_DELTA_OP = 1024
 #!
 #! Panics if:
 #! - the vault patch or storage patch is not empty but the nonce increment is zero.
-pub proc compute_patch_commitment
+pub proc compute_patch_commitment() -> Commitment
     # domain-separate the patch commitment through the hasher capacity
     push.0.0.DOMAIN_PATCH.0
     # => [CAPACITY]
@@ -194,7 +196,7 @@ end
 #!
 #! Panics if:
 #! - the vault delta or storage patch is not empty but the nonce increment is zero.
-pub proc compute_delta_commitment
+pub proc compute_delta_commitment() -> Commitment
     # domain-separate the delta commitment through the hasher capacity
     push.0.0.DOMAIN_DELTA.0
     # => [CAPACITY]
@@ -253,7 +255,7 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc commit_storage_patch
+proc commit_storage_patch(state: HasherState) -> HasherState
     exec.memory::get_native_num_storage_slots movdn.12
     # => [RATE0, RATE1, CAPACITY, num_storage_slots]
 
@@ -294,7 +296,7 @@ end
 #!
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc commit_slot_patch
+proc commit_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
     dup exec.account::get_native_storage_slot_type
     # => [storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
@@ -324,7 +326,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [patch_op]
-proc get_storage_slot_patch_op
+proc get_storage_slot_patch_op() -> u8
     # negate the is_new_account flag to get the patch operation
     # `is_new_account` maps to Create = 0
     # `!is_new_account` maps to Update = 1
@@ -335,7 +337,7 @@ end
 #!
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc commit_value_slot_patch
+proc commit_value_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
     exec.account::get_item_patch
     # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
@@ -389,7 +391,7 @@ end
 #! - 3: iter
 #! - 4: num_changed_entries
 @locals(5)
-proc commit_map_slot_patch
+proc commit_map_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
     # initialize num_changed_entries = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's value
@@ -509,7 +511,7 @@ end
 #! - 3: num_removed_assets
 #! - 4..8196: removed_assets (MAX_ASSETS_PER_DELTA_OP * ASSET_SIZE elements)
 @locals(8196)
-proc commit_asset_delta
+proc commit_asset_delta(state: HasherState) -> HasherState
     # initialize num_added_assets = 0 and num_removed_assets = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's values
@@ -662,7 +664,7 @@ end
 #! Where:
 #! - delta_op is the delta operation (DELTA_OP_ADD or DELTA_OP_REMOVE).
 #! - num_assets is the number of assets affected by delta_op (added or removed).
-proc commit_asset_count_trailer
+proc commit_asset_count_trailer(delta_op: u8, num_assets: u32, state: HasherState) -> HasherState
     dup.1 neq.0
     # => [is_non_zero, delta_op, num_assets, RATE0, RATE1, CAPACITY]
 
@@ -702,7 +704,7 @@ end
 #! - 1: iter
 #! - 2: num_changed_assets
 @locals(3)
-proc commit_asset_patch
+proc commit_asset_patch(state: HasherState) -> HasherState
     # initialize num_changed_assets = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's values
@@ -794,7 +796,7 @@ end
 #!
 #! Where:
 #! - was_nonce_incremented is the boolean flag indicating whether the account nonce was incremented.
-pub proc was_nonce_incremented
+pub proc was_nonce_incremented() -> Bool
     exec.memory::get_init_nonce
     # => [init_nonce]
 
@@ -816,7 +818,11 @@ end
 #! - ASSET_ID is the asset ID of the asset that is added.
 #! - INITIAL_ASSET_VALUE is the value of the asset before the update.
 #! - FINAL_ASSET_VALUE is the value of the asset after the update.
-pub proc update_asset
+pub proc update_asset(
+    asset_id: AssetId,
+    initial_asset_value: AssetValue,
+    final_asset_value: AssetValue
+)
     swapw dupw.1 push.ACCOUNT_UPDATE_ASSET_PTR
     # => [asset_delta_map_ptr, ASSET_ID, INITIAL_ASSET_VALUE, ASSET_ID, FINAL_ASSET_VALUE]
 
@@ -876,7 +882,11 @@ end
 #!
 #! Panics if:
 #! - the asset's composition is Custom (not yet supported).
-proc compute_asset_delta
+proc compute_asset_delta(
+    initial_asset_value: AssetValue,
+    final_asset_value: AssetValue,
+    asset_id: AssetId
+) -> (u8, Asset)
     dupw.2
     # => [ASSET_ID, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_ID]
 
@@ -957,7 +967,7 @@ end
 #! - PREV_VALUE is the previous value of the key in the storage map that is being updated.
 #! - NEW_VALUE is the new value of the key in the storage map that is being updated.
 @locals(8)
-pub proc set_map_item
+pub proc set_map_item(slot_index: u8, key: StorageMapKey, prev_value: word, new_value: word)
     # retrieve the link map ptr to the storage map patch for the provided index
     exec.memory::get_account_patch_storage_map_ptr
     # => [account_patch_storage_map_ptr, KEY, PREV_VALUE, NEW_VALUE]

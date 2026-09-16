@@ -15,15 +15,13 @@ use miden_standards::account::fees::{
     FeePolicyManager,
 };
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
-use miden_standards::note::{
-    BurnNote,
+use miden_standards::note::config::{
     ConstantFeePolicyConfigNote,
-    FeeSponsorshipNote,
-    MintNote,
     NetworkAccountConfigNote,
     PauseConfig,
     RbacConfigNote,
 };
+use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote};
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 

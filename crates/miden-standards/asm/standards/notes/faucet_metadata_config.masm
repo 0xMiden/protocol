@@ -1,8 +1,10 @@
+use {MetadataStringCommitment} from miden::standards::faucets
+use {NoteArgs} from miden::protocol::types
 use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::faucets
 use miden::standards::faucets::fungible
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
@@ -13,20 +15,20 @@ const STRING_NUM_ELEMENTS = 28
 # Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
-# Memory addresses of the FaucetMetadataConfig note storage. The selector is one felt padded out to
+# Memory addresses of the FaucetMetadataConfig note storage. The variant is one felt padded out to
 # a full word with three zeros, so the 7-Word string payload of the metadata actions starts
 # word-aligned, as `poseidon2::hash_elements` requires.
-const SELECTOR_PTR = STORAGE_PTR
+const VARIANT_PTR = STORAGE_PTR
 const MAX_SUPPLY_PTR = STORAGE_PTR + 1
 const STRING_PTR = STORAGE_PTR + 4
 const STRING_END_PTR = STORAGE_PTR + 32
 
-# Config note selectors, stored in the first storage item. Keep in sync with
+# Config note variants, stored in the first storage item. Keep in sync with
 # `FaucetMetadataConfig` on the Rust side.
-const SELECTOR_SET_MAX_SUPPLY = 0
-const SELECTOR_SET_DESCRIPTION = 1
-const SELECTOR_SET_LOGO_URI = 2
-const SELECTOR_SET_EXTERNAL_LINK = 3
+const VARIANT_SET_MAX_SUPPLY = 0
+const VARIANT_SET_DESCRIPTION = 1
+const VARIANT_SET_LOGO_URI = 2
+const VARIANT_SET_EXTERNAL_LINK = 3
 
 # Expected note storage item count per action.
 const NUM_ITEMS_SET_MAX_SUPPLY = 2
@@ -38,23 +40,23 @@ const MAX_NUM_ITEMS = NUM_ITEMS_SET_STRING
 # ERRORS
 # =================================================================================================
 
-const ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH = "faucet metadata config note attachment target account does not match the consuming account"
-
-const ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR = "faucet metadata config note selector does not match a known action"
+const ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT = "faucet metadata config note variant does not match a known action"
 
 const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet metadata config note storage item count does not match the selected action"
+
+const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config note must be public"
 
 # NOTE SCRIPT
 # =================================================================================================
 
 #! FaucetMetadataConfig script: triggers a token metadata admin action against the consuming
-#! faucet, dispatched on a selector stored in the first note storage item.
+#! faucet, dispatched on the note variant in its storage.
 #!
 #! The three string setters live in the shared `miden::standards::faucets` module, which both the
-#! `FungibleFaucet` and `NonFungibleFaucet` components re-export, so those selectors work on either
+#! `FungibleFaucet` and `NonFungibleFaucet` components re-export, so those variants work on either
 #! kind of faucet. `SetMaxSupply` is fungible-only: it calls
 #! `miden::standards::faucets::fungible::set_max_supply`, which a non-fungible faucet does not
-#! expose, so that selector aborts there.
+#! expose, so that variant aborts there.
 #!
 #! The selected action and its arguments are read from the note storage and are fixed at note
 #! creation:
@@ -76,37 +78,43 @@ const ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "faucet me
 #!   actions, and `miden::standards::faucets::fungible::set_max_supply` for `SetMaxSupply`, backed by
 #!   the `Authority` and `Pausable` companion components.
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items exceeds MAX_NUM_ITEMS.
-#! - the selector is not a known action.
+#! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the selected field's mutability flag is not set, or the account is paused.
 #! - the caller is not authorized for the selected action per the installed `Authority` component.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_FAUCET_METADATA_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
     push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items]
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items]
 
-    # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_SET_MAX_SUPPLY
-    # => [is_set_max_supply, selector, num_storage_items]
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_SET_MAX_SUPPLY
+    # => [is_set_max_supply, variant, num_storage_items]
 
     if.true
         drop
@@ -114,8 +122,8 @@ pub proc main
 
         exec.execute_set_max_supply
     else
-        dup eq.SELECTOR_SET_DESCRIPTION
-        # => [is_set_description, selector, num_storage_items]
+        dup eq.VARIANT_SET_DESCRIPTION
+        # => [is_set_description, variant, num_storage_items]
 
         if.true
             drop
@@ -123,8 +131,8 @@ pub proc main
 
             exec.execute_set_description
         else
-            dup eq.SELECTOR_SET_LOGO_URI
-            # => [is_set_logo_uri, selector, num_storage_items]
+            dup eq.VARIANT_SET_LOGO_URI
+            # => [is_set_logo_uri, variant, num_storage_items]
 
             if.true
                 drop
@@ -132,8 +140,8 @@ pub proc main
 
                 exec.execute_set_logo_uri
             else
-                eq.SELECTOR_SET_EXTERNAL_LINK
-                assert.err=ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR
+                eq.VARIANT_SET_EXTERNAL_LINK
+                assert.err=ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT
                 # => [num_storage_items]
 
                 exec.execute_set_external_link
@@ -158,7 +166,7 @@ end
 #!   `fungible::set_max_supply`).
 #!
 #! Invocation: exec
-proc execute_set_max_supply
+proc execute_set_max_supply(num_storage_items: u32)
     eq.NUM_ITEMS_SET_MAX_SUPPLY
     assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -197,7 +205,7 @@ end
 #! - num_storage_items is not NUM_ITEMS_SET_STRING.
 #!
 #! Invocation: exec
-proc prepare_string_call
+proc prepare_string_call(num_storage_items: u32) -> (MetadataStringCommitment, [felt; 12])
     eq.NUM_ITEMS_SET_STRING
     assert.err=ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -233,7 +241,7 @@ end
 #!   `faucets::set_description`).
 #!
 #! Invocation: exec
-proc execute_set_description
+proc execute_set_description(num_storage_items: u32)
     exec.prepare_string_call
     # => [DESCRIPTION_COMMITMENT, pad(12)]
 
@@ -256,7 +264,7 @@ end
 #!   `faucets::set_logo_uri`).
 #!
 #! Invocation: exec
-proc execute_set_logo_uri
+proc execute_set_logo_uri(num_storage_items: u32)
     exec.prepare_string_call
     # => [LOGO_URI_COMMITMENT, pad(12)]
 
@@ -279,7 +287,7 @@ end
 #!   `faucets::set_external_link`).
 #!
 #! Invocation: exec
-proc execute_set_external_link
+proc execute_set_external_link(num_storage_items: u32)
     exec.prepare_string_call
     # => [EXTERNAL_LINK_COMMITMENT, pad(12)]
 

@@ -142,7 +142,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
         (mock_tx.input_notes().get_note(1).note().id(), Word::from([92u32; 4])),
     ]);
 
-    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().clone().map)
+    let tx_args = TransactionArgs::new(mock_tx.tx_args().advice_inputs().map().clone())
         .with_tx_script(tx_script)
         .with_note_args(note_args_map.clone());
 
@@ -179,7 +179,7 @@ async fn test_transaction_prologue_rejects_too_many_note_assets() -> anyhow::Res
     let (_, advice_inputs) = TransactionKernel::prepare_inputs(mock_tx.tx_inputs());
     let mut note_data = advice_inputs
         .as_advice_inputs()
-        .map
+        .map()
         .get(&input_notes_commitment)
         .context("input-note advice should be present")?
         .as_ref()
@@ -224,7 +224,7 @@ async fn test_transaction_prologue_verifies_note_storage_against_commitment() ->
     let (_, advice_inputs) = TransactionKernel::prepare_inputs(mock_tx.tx_inputs());
     let note_data = advice_inputs
         .as_advice_inputs()
-        .map
+        .map()
         .get(&input_notes_commitment)
         .context("input-note advice should be present")?
         .as_ref()

@@ -42,6 +42,8 @@ jobs:
         run: make test-release-build
       - name: test
         run: make test-release # runs without debug mode
+      - name: Test protobuf build support
+        run: cargo test -p miden-protobuf --all-features --locked
 
   doc-tests:
     name: doc-tests

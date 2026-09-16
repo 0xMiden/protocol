@@ -2,54 +2,54 @@
 // Values are maxima across the benchmarked paths; see `miden_standards::note::costs` for the
 // caveats on what they do and do not cover.
 
-/// Cycles of consuming a P2ID note: 1 asset 18620, 16 assets 57188 (maximum).
-pub const P2ID_CONSUMPTION_CYCLES: u32 = 57188;
+/// Cycles of consuming a P2ID note: 1 asset 19277, 16 assets 57845 (maximum).
+pub const P2ID_CONSUMPTION_CYCLES: u32 = 57845;
 
-/// Cycles of consuming a P2IDE note: claim 18728, claim with 16 assets 57296 (maximum), reclaim
-/// 18883.
-pub const P2IDE_CONSUMPTION_CYCLES: u32 = 57296;
+/// Cycles of consuming a P2IDE note: claim 19385, claim with 16 assets 57953 (maximum), reclaim
+/// 19540.
+pub const P2IDE_CONSUMPTION_CYCLES: u32 = 57953;
 
-/// Cycles of consuming a SWAP note: public payback 22655 (maximum), private payback 22152.
-pub const SWAP_CONSUMPTION_CYCLES: u32 = 22655;
+/// Cycles of consuming a SWAP note: public payback 23312 (maximum), private payback 22809.
+pub const SWAP_CONSUMPTION_CYCLES: u32 = 23312;
 
-/// Cycles of consuming a PSWAP note: full fill 25485, partial fill 29402 (maximum).
-pub const PSWAP_CONSUMPTION_CYCLES: u32 = 29402;
+/// Cycles of consuming a PSWAP note: full fill 26158, partial fill 30091 (maximum).
+pub const PSWAP_CONSUMPTION_CYCLES: u32 = 30091;
 
-/// Cycles of consuming a MINT note: fungible faucet 34087, non-fungible faucet 37611 (maximum).
-pub const MINT_CONSUMPTION_CYCLES: u32 = 37611;
+/// Cycles of consuming a MINT note: fungible faucet 36601, non-fungible faucet 39863 (maximum).
+pub const MINT_CONSUMPTION_CYCLES: u32 = 39863;
 
 /// Cycles of consuming a BURN note (single benchmarked path).
-pub const BURN_CONSUMPTION_CYCLES: u32 = 28773;
+pub const BURN_CONSUMPTION_CYCLES: u32 = 29465;
 
 /// Cycles of consuming a CONSTANT_FEE_POLICY_CONFIG note (single benchmarked path).
-pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 19906;
+pub const CONSTANT_FEE_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 20740;
 
 /// Cycles of consuming a FAUCET_POLICY_CONFIG note (single benchmarked path).
-pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 27017;
+pub const FAUCET_POLICY_CONFIG_CONSUMPTION_CYCLES: u32 = 27844;
 
 /// Cycles of consuming a FAUCET_METADATA_CONFIG note (single benchmarked path).
-pub const FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES: u32 = 27488;
+pub const FAUCET_METADATA_CONFIG_CONSUMPTION_CYCLES: u32 = 28376;
 
 /// Cycles of consuming a MIN_BURN_AMOUNT_CONFIG note (single benchmarked path).
-pub const MIN_BURN_AMOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 26053;
+pub const MIN_BURN_AMOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 26873;
 
 /// Cycles of consuming an ALLOWLIST_CONFIG note (single benchmarked path).
-pub const ALLOWLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 26799;
+pub const ALLOWLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 27619;
 
 /// Cycles of consuming a BLOCKLIST_CONFIG note (single benchmarked path).
-pub const BLOCKLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 26799;
+pub const BLOCKLIST_CONFIG_CONSUMPTION_CYCLES: u32 = 27619;
 
 /// Cycles of consuming a PAUSE_CONFIG note (single benchmarked path).
-pub const PAUSE_CONFIG_CONSUMPTION_CYCLES: u32 = 18531;
+pub const PAUSE_CONFIG_CONSUMPTION_CYCLES: u32 = 19351;
 
 /// Cycles of consuming an OWNER_CONFIG note (single benchmarked path).
-pub const OWNER_CONFIG_CONSUMPTION_CYCLES: u32 = 18112;
+pub const OWNER_CONFIG_CONSUMPTION_CYCLES: u32 = 18932;
 
 /// Cycles of consuming an RBAC_CONFIG note (single benchmarked path).
-pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 21935;
+pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 22927;
 
 /// Cycles of consuming a NETWORK_ACCOUNT_CONFIG note (single benchmarked path).
-pub const NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 19012;
+pub const NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 19832;
 
 /// Cycles of consuming a FEE_SPONSORSHIP note (single benchmarked path).
-pub const FEE_SPONSORSHIP_CONSUMPTION_CYCLES: u32 = 21472;
+pub const FEE_SPONSORSHIP_CONSUMPTION_CYCLES: u32 = 22171;

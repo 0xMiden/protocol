@@ -20,7 +20,7 @@ In Miden, assets serve as the primary means of expressing and transferring value
    Users can transact freely and privately with no single contract or entity controlling `Asset` transfers. This reduces the risk of censored transactions, resulting in a more open and resilient system.
 
 4. **Fee payment in native asset:**  
-   Transaction fees are denominated in the chain's native asset as defined by the current reference block's fee parameters, and paid in the asset committed via the transaction's auth args (the native asset at rate 1/1, or a different asset at a committed conversion rate). See [Fees](fees.md).
+   Transaction fees are denominated in the chain's native asset as defined by the current reference block's fee parameters, and paid in that same asset: the conversion info committed via the transaction's auth args must name the native fee asset at rate 1/1. See [Fees](fees.md).
 
 ## Native asset
 
@@ -190,6 +190,10 @@ Outputs: [pad(16)]
 
 Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 
+#### Expiration requirement
+
+Asset callbacks execute against the issuing faucet through FPI. Any callback or callback-dispatched policy that reads mutable, security-sensitive state must set an expiration delta in the execution path that reads that state. Standards components can use `miden::standards::expiration::apply_default` for the common expiration delta, and custom callbacks can call `tx::update_expiration_block_delta` directly. For more information, see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).
+
 #### Callback skipping
 
 A callback is not invoked in any of these cases:
@@ -207,3 +211,5 @@ All data structures not following the Miden asset model that can be exchanged.
 :::
 
 Miden is flexible enough to support other `Asset` models. For example, developers can replicate Ethereum’s ERC20 pattern, where fungible `Asset` ownership is recorded in a single account. To transact, users send a note to that account, triggering updates in the global hashmap state.
+
+Alternative or programmable asset models that expose FPI-callable checks follow the same expiration delta rule as native asset callbacks; see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).

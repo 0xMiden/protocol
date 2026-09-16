@@ -341,6 +341,10 @@ impl ProposedBatch {
     /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
     /// execution proof against the transaction kernel.
     ///
+    /// Transactions whose precompile claims are still outstanding are accepted: verification checks
+    /// that their deferred witness matches their VM proof, and the batch prover settles the claims
+    /// of all transactions in the batch with a single precompile proof.
+    ///
     /// # Errors
     ///
     /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
@@ -361,7 +365,9 @@ impl ProposedBatch {
 
         let verifier = TransactionVerifier::new(proof_security_level);
         for tx in batch.transactions() {
-            verifier.verify(tx).map_err(|source| {
+            // The outcome may carry an outstanding precompile obligation, which the batch prover
+            // settles for all transactions at once.
+            let _verification_outcome = verifier.verify(tx).map_err(|source| {
                 ProposedBatchError::TransactionVerificationFailed {
                     transaction_id: tx.id(),
                     source,
@@ -528,15 +534,19 @@ mod tests {
     use anyhow::Context;
     use miden_crypto::merkle::mmr::{Mmr, PartialMmr};
     use miden_crypto::rand::test_utils::rand_value;
-    use miden_verifier::ExecutionProof;
 
     use super::*;
     use crate::Word;
     use crate::account::{AccountType, AccountUpdateDetails};
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
+    use crate::vm::ExecutionProof;
 
-    #[test]
-    fn proposed_batch_serialization() -> anyhow::Result<()> {
+    /// A proposed batch round-trips whether or not its transactions still owe precompile work,
+    /// since settling that work is the batch prover's job.
+    #[rstest::rstest]
+    #[case::complete(crate::testing::dummy_execution_proof())]
+    #[case::deferred(crate::testing::dummy_deferred_execution_proof())]
+    fn proposed_batch_serialization(#[case] proof: ExecutionProof) -> anyhow::Result<()> {
         // create partial blockchain with 3 blocks - i.e., 2 peaks
         let mut mmr = Mmr::default();
         for i in 0..3 {
@@ -563,7 +573,6 @@ mod tests {
         let block_num = reference_block_header.block_num();
         let block_ref = reference_block_header.commitment();
         let expiration_block_num = reference_block_header.block_num() + 1;
-        let proof = ExecutionProof::new_dummy();
 
         let account_update = TxAccountUpdate::new(
             account_id,

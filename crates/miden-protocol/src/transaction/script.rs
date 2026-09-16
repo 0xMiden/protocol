@@ -143,6 +143,11 @@ impl TransactionScript {
         TransactionScriptRoot::from_raw(self.0.digest())
     }
 
+    /// Returns the entrypoint node ID of this transaction script.
+    pub fn entrypoint(&self) -> MastNodeId {
+        self.0.entrypoint()
+    }
+
     /// Returns a new [TransactionScript] with the provided advice map entries merged into the
     /// underlying [MastForest].
     ///
@@ -156,6 +161,24 @@ impl TransactionScript {
 impl PartialEq for TransactionScript {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
+    }
+}
+
+#[cfg(test)]
+mod entrypoint_tests {
+    use alloc::sync::Arc;
+
+    use super::TransactionScript;
+    use crate::Word;
+    use crate::utils::create_external_node_forest;
+
+    #[test]
+    fn entrypoint_returns_the_script_entrypoint() {
+        let (mast, entrypoint) = create_external_node_forest(Word::empty());
+        let script = TransactionScript::from_parts(Arc::new(mast), entrypoint)
+            .expect("test MAST forest should contain its entrypoint");
+
+        assert_eq!(script.entrypoint(), entrypoint);
     }
 }
 

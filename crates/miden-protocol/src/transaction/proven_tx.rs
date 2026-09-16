@@ -1,5 +1,14 @@
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+
+use miden_core::deferred::{
+    DeferredState,
+    IntegrityError,
+    PrecompileRegistry,
+    PrecompileWitness,
+    PrecompileWitnessError,
+};
 
 use super::{InputNote, ToInputNoteCommitments};
 use crate::Word;
@@ -22,7 +31,18 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::ExecutionProof;
+use crate::utils::sync::LazyLock;
+use crate::vm::{ExecutionProof, PrecompileStatus};
+
+// CONSTANTS
+// ================================================================================================
+
+/// The set of precompiles that the protocol supports.
+///
+/// Built once and shared, because the set is fixed and every transaction with outstanding
+/// precompile claims is checked against it.
+static PRECOMPILE_REGISTRY: LazyLock<Arc<PrecompileRegistry>> =
+    LazyLock::new(|| Arc::new(miden_precompiles::registry()));
 
 // PROVEN TRANSACTION
 // ================================================================================================
@@ -146,6 +166,22 @@ impl ProvenTransaction {
         &self.proof
     }
 
+    /// Returns a singleton precompile witness over the transaction's outstanding precompile claims,
+    /// or `None` if the transaction has no outstanding claims.
+    ///
+    /// A batch merges the witnesses of its transactions to settle their claims with a single
+    /// precompile proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the deferred wire is malformed.
+    /// - its claims do not hold.
+    /// - the deferred state is empty.
+    pub fn precompile_witness(&self) -> Result<Option<PrecompileWitness>, PrecompileWitnessError> {
+        self.deferred_state()?.map(PrecompileWitness::new).transpose()
+    }
+
     /// Returns the number of the reference block the transaction was executed against.
     pub fn ref_block_num(&self) -> BlockNumber {
         self.ref_block_num
@@ -175,6 +211,28 @@ impl ProvenTransaction {
 
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
+
+    /// Rebuilds the deferred state of the transaction's outstanding precompile claims, or returns
+    /// `None` if the transaction has no outstanding claims.
+    ///
+    /// [`DeferredState::from_wire`] executes the claims of the deferred DAG against
+    /// [`PRECOMPILE_REGISTRY`] before this method returns. A returned state therefore has claims
+    /// that hold natively. This does not show that these are the claims that the transaction's VM
+    /// proof commits to. [`TransactionVerifier`](crate::transaction::TransactionVerifier) checks
+    /// that separately against the outstanding precompile root of the proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the deferred wire is malformed.
+    /// - its claims do not hold.
+    pub(crate) fn deferred_state(&self) -> Result<Option<DeferredState>, IntegrityError> {
+        let PrecompileStatus::Deferred(wire) = self.proof.precompile() else {
+            return Ok(None);
+        };
+
+        DeferredState::from_wire(Arc::clone(&PRECOMPILE_REGISTRY), wire).map(Some)
+    }
 
     /// Creates a [`ProvenTransaction`] from its raw parts, enforcing all invariants.
     ///
@@ -536,7 +594,6 @@ mod tests {
     use anyhow::Context;
     use assert_matches::assert_matches;
     use miden_crypto::rand::test_utils::rand_value;
-    use miden_verifier::ExecutionProof;
 
     use super::ProvenTransaction;
     use crate::account::{
@@ -729,7 +786,7 @@ mod tests {
         let ref_block_num = BlockNumber::from(1);
         let ref_block_commitment = Word::empty();
         let expiration_block_num = BlockNumber::from(2);
-        let proof = ExecutionProof::new_dummy();
+        let proof = crate::testing::dummy_execution_proof();
 
         let account_update = TxAccountUpdate::new(
             account_id,

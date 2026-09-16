@@ -1,0 +1,224 @@
+# The MASM code of the TX_FEE Collector Authentication Account Component.
+#
+# See the `AuthTxFeeCollector` Rust type's documentation for more details.
+
+use miden::core::crypto::hashes::poseidon2
+use miden::protocol::active_account
+use miden::protocol::asset
+use miden::protocol::input_note
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::protocol::tx
+use miden::standards::auth::signature
+use miden::standards::notes::p2id
+use {AuthArgs} from miden::standards::types
+
+# CONSTANTS
+# =================================================================================================
+
+# The slot in this component's storage layout where the public key commitment is stored.
+const PUBLIC_KEY_COMMITMENT_SLOT = word("miden::standards::auth::tx_fee_collector::pub_key")
+
+# The slot in this component's storage layout where the corresponding signature scheme is stored.
+const SIGNATURE_SCHEME_SLOT = word("miden::standards::auth::tx_fee_collector::signature_scheme")
+
+# The local of forward_note_assets that a consumed note's asset is removed into.
+const ASSET_LOC = 0
+
+# ERRORS
+# =================================================================================================
+
+const ERR_AUTH_TX_FEE_COLLECTOR_ACCOUNT_STATE_CHANGED = "a fee collector account's state must be the one it had at the start of the transaction"
+
+const ERR_AUTH_TX_FEE_COLLECTOR_ACCOUNT_CREATED_WITH_ASSETS = "a fee collector account must hold no assets when it is created"
+
+const ERR_AUTH_TX_FEE_COLLECTOR_NOTE_MUST_CARRY_ONE_ASSET = "every note a fee collector account consumes must carry exactly one asset"
+
+# AUTH PROCEDURE
+# =================================================================================================
+
+#! Forwards the asset of every consumed note into a single P2ID note and authenticates the
+#! transaction with a signature, using the signature scheme stored in the account.
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_poseidon2
+#!
+#! The account is left exactly as the transaction found it: the assets move from the input notes
+#! straight into the P2ID note, the nonce is never incremented (except once, when the account is
+#! created) and no TX_FEE note is created. The account is stateless after deployment, and
+#! transactions against it can be built concurrently.
+#!
+#! The P2ID note goes to the target given by the auth args. Its serial number is
+#! hash(AUTH_ARGS || INPUT_NOTES_COMMITMENT), which is unique per transaction. A transaction
+#! consuming no notes is rejected, except for the one creating the account, which then creates no
+#! P2ID note.
+#!
+#! Replay protection comes from the input notes the signed transaction summary binds; see
+#! signature::authenticate_transaction_with_user_params.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - AUTH_ARGS is [target_id_suffix, target_id_prefix, tag, note_type]: the target account of the
+#!   P2ID note, the note's tag and its type.
+#!
+#! Panics if:
+#! - a consumed note does not carry exactly one asset.
+#! - the P2ID note cannot take an asset: it already holds the maximum number of assets or the same
+#!   non-fungible asset, or a fungible amount would overflow.
+#! - the account already exists and its commitment differs from the one it had at the start of the
+#!   transaction.
+#! - the account is being created and the transaction leaves assets in its vault.
+#! - the signature over the transaction summary does not verify against the stored public key.
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_tx_fee_collector(auth_args: AuthArgs)
+    # => [AUTH_ARGS, pad(12)]
+
+    # Forward the consumed notes' assets, if any notes were consumed.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.tx::get_num_input_notes dup neq.0
+    # => [has_input_notes, num_input_notes, AUTH_ARGS, pad(12)]
+
+    if.true
+        exec.forward_note_assets
+        # => [pad(16)]
+    else
+        drop dropw
+        # => [pad(16)]
+    end
+
+    # Assert the account is unchanged.
+    # ---------------------------------------------------------------------------------------------
+
+    # nonce = 0 means account deployment
+    exec.active_account::get_nonce eq.0
+    # => [is_new_account, pad(16)]
+
+    if.true
+        exec.native_account::incr_nonce drop
+        # => [pad(16)]
+
+        # account creation changes the nonce, so we use the vault check instead of full commitment
+        # check; assets the account holds once created could never be moved out again, since every
+        # later transaction has to leave the account untouched
+        exec.native_account::get_initial_vault_root
+        # => [INITIAL_VAULT_ROOT, pad(16)]
+
+        exec.active_account::get_vault_root
+        # => [CURRENT_VAULT_ROOT, INITIAL_VAULT_ROOT, pad(16)]
+
+        assert_eqw.err=ERR_AUTH_TX_FEE_COLLECTOR_ACCOUNT_CREATED_WITH_ASSETS
+        # => [pad(16)]
+    else
+        exec.native_account::get_initial_commitment
+        # => [INITIAL_COMMITMENT, pad(16)]
+
+        exec.active_account::compute_commitment
+        # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
+
+        # kernel would catch this, but we assert here for a clearer error
+        assert_eqw.err=ERR_AUTH_TX_FEE_COLLECTOR_ACCOUNT_STATE_CHANGED
+        # => [pad(16)]
+    end
+
+    # Fetch the signature scheme from storage.
+    # ---------------------------------------------------------------------------------------------
+
+    push.SIGNATURE_SCHEME_SLOT[0..2] exec.native_account::get_initial_item
+    # => [scheme_id, 0, 0, 0, pad(16)]
+
+    movdn.3 drop drop drop
+    # => [scheme_id, pad(16)]
+
+    # Fetch the public key commitment from storage and verify the signature over the summary.
+    # ---------------------------------------------------------------------------------------------
+
+    push.PUBLIC_KEY_COMMITMENT_SLOT[0..2] exec.native_account::get_initial_item
+    # => [PK_COMM, scheme_id, pad(16)]
+
+    push.0.0.0.0.0.0
+    # => [user_params(6), PK_COMM, scheme_id, pad(16)]
+
+    exec.signature::authenticate_transaction_with_user_params
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Creates the P2ID note for the target given by AUTH_ARGS and moves the single asset of every
+#! input note into it.
+#!
+#! Inputs:  [num_input_notes, AUTH_ARGS]
+#! Outputs: []
+#!
+#! Where:
+#! - num_input_notes is the number of input notes, at least 1.
+#! - AUTH_ARGS is [target_id_suffix, target_id_prefix, tag, note_type], see auth_tx_fee_collector.
+#!
+#! Panics if:
+#! - an input note does not carry exactly one asset.
+#! - the P2ID note cannot take an asset, see auth_tx_fee_collector.
+#!
+#! Invocation: exec
+@locals(8)
+proc forward_note_assets
+    movdn.4
+    # => [AUTH_ARGS, num_input_notes]
+
+    # the serial number is unique per transaction, since no two valid transactions consume the
+    # same notes
+    exec.tx::get_input_notes_commitment
+    # => [INPUT_NOTES_COMMITMENT, AUTH_ARGS, num_input_notes]
+
+    dupw.1 exec.poseidon2::merge
+    # => [SERIAL_NUM, AUTH_ARGS, num_input_notes]
+
+    swapw
+    # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM, num_input_notes]
+
+    exec.p2id::prepare_note
+    # => [tag, note_type, RECIPIENT, num_input_notes]
+
+    exec.output_note::create
+    # => [out_note_idx, num_input_notes]
+
+    swap push.0
+    # => [note_idx = 0, num_input_notes, out_note_idx]
+
+    dup.1 dup.1 neq
+    # => [should_loop, note_idx, num_input_notes, out_note_idx]
+
+    while.true
+        # => [note_idx, num_input_notes, out_note_idx]
+
+        # remove the note's asset; every consumed note carries exactly one
+        dup locaddr.ASSET_LOC exec.input_note::remove_all_assets
+        # => [num_assets, note_idx, num_input_notes, out_note_idx]
+
+        eq.1 assert.err=ERR_AUTH_TX_FEE_COLLECTOR_NOTE_MUST_CARRY_ONE_ASSET
+        # => [note_idx, num_input_notes, out_note_idx]
+
+        # and add it to the P2ID note
+        locaddr.ASSET_LOC exec.asset::load
+        # => [ASSET_ID, ASSET_VALUE, note_idx, num_input_notes, out_note_idx]
+
+        dup.10 movdn.8
+        # => [ASSET_ID, ASSET_VALUE, out_note_idx, note_idx, num_input_notes, out_note_idx]
+
+        exec.output_note::add_asset
+        # => [note_idx, num_input_notes, out_note_idx]
+
+        add.1 dup.1 dup.1 neq
+        # => [should_loop, note_idx + 1, num_input_notes, out_note_idx]
+    end
+    # => [num_input_notes, num_input_notes, out_note_idx]
+
+    drop drop drop
+    # => []
+end

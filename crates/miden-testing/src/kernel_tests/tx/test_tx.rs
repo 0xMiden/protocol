@@ -1007,7 +1007,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
 
     // The summary commitment should have been signed as part of transaction execution and inserted
     // into the advice map.
-    tx.advice_witness().map.get(&signature_key).unwrap();
+    tx.advice_witness().map().get(&signature_key).unwrap();
 
     Ok(())
 }

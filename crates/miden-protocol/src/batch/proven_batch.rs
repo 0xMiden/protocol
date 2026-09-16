@@ -33,6 +33,12 @@ use crate::{
 
 /// A transaction batch with an execution proof.
 /// Currently, this only carries a skeleton proof which does not attest to anything meaningful.
+///
+/// The batch's transactions may carry outstanding precompile claims. The batch prover settles them
+/// with a single precompile proof, but that proof is not part of the proven batch (yet), so a party
+/// that holds only a [`ProvenBatch`] cannot check those claims. This goes away once the batch
+/// kernel verifies the precompile proof in-circuit, in which case the batch proof will recursively
+/// attest to the veracity of the precompile claims.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvenBatch {
     id: BatchId,
@@ -65,8 +71,8 @@ impl ProvenBatch {
     ///
     /// # Errors
     ///
-    /// Returns an error if any local structural limit or invariant is violated, or if the aggregate
-    /// account updates do not match the transaction headers.
+    /// Returns an error if the proof contains precompiles, any local structural limit or invariant
+    /// is violated, or the aggregate account updates do not match the transaction headers.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         reference_block_commitment: Word,
@@ -78,6 +84,10 @@ impl ProvenBatch {
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
+        if proof.has_precompiles() {
+            return Err(ProvenBatchError::BatchProofContainsPrecompiles);
+        }
+
         if transactions.as_slice().is_empty() {
             return Err(ProvenBatchError::EmptyTransactionBatch);
         }
@@ -408,6 +418,11 @@ mod tests {
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         AccountIdBuilder,
     };
+    use crate::testing::{
+        dummy_deferred_execution_proof,
+        dummy_execution_proof,
+        dummy_precompile_execution_proof,
+    };
     use crate::transaction::{
         InputNoteCommitment,
         InputNotes,
@@ -417,7 +432,6 @@ mod tests {
         TransactionHeader,
     };
     use crate::utils::serde::{Deserializable, Serializable};
-    use crate::vm::ExecutionProof;
     use crate::{MAX_ACCOUNTS_PER_BATCH, Word};
 
     fn account_id() -> AccountId {
@@ -520,7 +534,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -538,11 +552,30 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap();
 
         assert_eq!(batch.account_updates().keys().copied().collect::<Vec<_>>(), vec![account_id]);
+    }
+
+    #[test]
+    fn rejects_proofs_with_precompiles() {
+        for proof in [dummy_deferred_execution_proof(), dummy_precompile_execution_proof()] {
+            let error = ProvenBatch::new(
+                Word::empty(),
+                BlockNumber::from(1),
+                vec![private_account_update()],
+                InputNotes::default(),
+                Vec::new(),
+                BlockNumber::from(2),
+                transaction_headers(),
+                proof,
+            )
+            .unwrap_err();
+
+            assert_matches!(error, ProvenBatchError::BatchProofContainsPrecompiles);
+        }
     }
 
     #[test]
@@ -558,7 +591,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -591,7 +624,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -619,7 +652,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -639,7 +672,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -681,7 +714,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -726,7 +759,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -757,7 +790,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -778,7 +811,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap();
 
@@ -807,7 +840,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap();
 
@@ -826,7 +859,7 @@ mod tests {
             output_notes,
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -849,7 +882,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap();
     }
@@ -869,7 +902,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -892,7 +925,7 @@ mod tests {
             vec![output_note.clone(), output_note],
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 
@@ -914,7 +947,7 @@ mod tests {
             output_notes,
             BlockNumber::from(2),
             transaction_headers(),
-            ExecutionProof::new_dummy(),
+            dummy_execution_proof(),
         )
         .unwrap_err();
 

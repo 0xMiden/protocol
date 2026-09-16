@@ -25,6 +25,7 @@ pub struct MockProvenTxBuilder {
     output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
+    proof: ExecutionProof,
 }
 
 impl MockProvenTxBuilder {
@@ -44,7 +45,18 @@ impl MockProvenTxBuilder {
             output_notes: None,
             input_notes: None,
             nullifiers: None,
+            proof: miden_protocol::testing::dummy_execution_proof(),
         }
+    }
+
+    /// Sets the execution proof the transaction carries.
+    ///
+    /// Defaults to [`dummy_execution_proof`](miden_protocol::testing::dummy_execution_proof).
+    #[must_use]
+    pub fn proof(mut self, proof: ExecutionProof) -> Self {
+        self.proof = proof;
+
+        self
     }
 
     /// Adds unauthenticated notes to the transaction.
@@ -130,7 +142,7 @@ impl MockProvenTxBuilder {
             ref_block_num,
             ref_block_commitment,
             self.expiration_block_num,
-            ExecutionProof::new_dummy(),
+            self.proof,
         )
         .context("failed to build proven transaction")
     }

@@ -31,9 +31,9 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::RoleBasedAccessControl;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
-use miden_standards::note::{
+use miden_standards::note::FeeSponsorshipNote;
+use miden_standards::note::config::{
     ConstantFeePolicyConfigNote,
-    FeeSponsorshipNote,
     NetworkAccountConfigNote,
     PauseConfig,
     PauseConfigNote,

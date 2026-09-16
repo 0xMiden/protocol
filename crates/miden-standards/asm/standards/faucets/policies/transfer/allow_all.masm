@@ -1,3 +1,4 @@
+use {Asset} from miden::protocol::types
 # Generic transfer policy procedures shared by policy manager flows.
 
 # POLICY PROCEDURES
@@ -5,8 +6,8 @@
 
 #! Transfer policy that accepts every transfer.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`, which applies the
-#! account-wide pause check.
+#! Invoked as the active send or receive policy via `TokenPolicyManager`, which limits the
+#! transaction's expiration and applies the account-wide pause check.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
 #! Outputs: [pad(16)]
@@ -17,7 +18,7 @@
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_policy
+pub proc check_policy(asset: Asset, custom_data: felt)
     dropw dropw drop
     # => [pad(16)]
 end

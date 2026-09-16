@@ -110,11 +110,12 @@ fn build_registry() -> Result<InMemoryPackageRegistry> {
     // The protocol package declares dependencies on the kernel and core packages, and the agglayer
     // projects depend on the standards package, so all of these must be available in the registry
     // for project dependency resolution to succeed.
-    for package in CoreLibrary::default().packages().into_iter().chain([
+    for package in [
+        CoreLibrary::default().package(),
         ProtocolLib::default().package(),
         TransactionKernel::package(),
         StandardsLib::default().package(),
-    ]) {
+    ] {
         registry.cache_package(package).into_diagnostic()?;
     }
 
@@ -327,11 +328,12 @@ fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     zero_constants.push_str(
         "
 use {mem_store_double_word} from miden::standards::utils
+use {Keccak256Digest} from agglayer::types
 
 
 #! Inputs:  [zeros_ptr]
 #! Outputs: []
-pub proc load_zeros_to_memory\n",
+pub proc load_zeros_to_memory(zeros_ptr: ptr<Keccak256Digest>)\n",
     );
 
     for zero_index in 0..32 {

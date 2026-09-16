@@ -22,7 +22,8 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT;
-use miden_standards::note::{MintNote, MintNoteStorage, NetworkAccountConfigNote, TxFeeNote};
+use miden_standards::note::config::NetworkAccountConfigNote;
+use miden_standards::note::{MintNote, MintNoteStorage, TxFeeNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 

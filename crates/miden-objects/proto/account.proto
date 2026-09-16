@@ -1,0 +1,152 @@
+syntax = "proto3";
+package account;
+
+import "primitives.proto";
+import "google/protobuf/empty.proto";
+
+message AccountId {
+  oneof version {
+    AccountIdV1 v1 = 1;
+  }
+}
+
+message AccountIdV1 {
+  primitives.Felt suffix = 1;
+  primitives.Felt prefix = 2;
+}
+
+message AccountStorageHeader {
+  message StorageSlot {
+    string slot_name = 1;
+    oneof content {
+      primitives.Word value = 2;
+      primitives.Word map_root = 3;
+    }
+  }
+
+  repeated StorageSlot slots = 1;
+}
+
+enum AccountVersion {
+  ACCOUNT_VERSION_UNSPECIFIED = 0;
+  ACCOUNT_VERSION_V1 = 1;
+}
+
+message AccountHeader {
+  AccountVersion version = 1;
+  AccountId account_id = 2;
+  primitives.Word vault_root = 3;
+  primitives.Word storage_commitment = 4;
+  primitives.Word code_commitment = 5;
+  uint64 nonce = 6;
+}
+
+message AccountWitness {
+  AccountId witness_id = 1;
+  primitives.Word commitment = 2;
+  primitives.SparseMerklePath path = 3;
+}
+
+message AccountCode {
+  primitives.MastForest mast = 1;
+  repeated primitives.Word procedure_roots = 2;
+}
+
+message StorageSlotId {
+  primitives.Felt suffix = 1;
+  primitives.Felt prefix = 2;
+}
+
+message PartialAccount {
+  AccountId account_id = 1;
+  primitives.Felt nonce = 2;
+  AccountCode code = 3;
+  PartialStorage storage = 4;
+  PartialVault vault = 5;
+  optional primitives.Word seed = 6;
+}
+
+message PartialStorage {
+  AccountStorageHeader header = 1;
+  repeated PartialStorageMap maps = 2;
+}
+
+message PartialStorageMap {
+  primitives.PartialSmt smt = 1;
+  repeated primitives.Word keys = 2;
+}
+
+message PartialVault {
+  primitives.PartialSmt smt = 1;
+  repeated primitives.Word asset_ids = 2;
+}
+
+message StorageValuePatch {
+  oneof operation {
+    primitives.Word create = 1;
+    primitives.Word update = 2;
+    google.protobuf.Empty remove = 3;
+  }
+}
+
+message StorageMapEntry {
+  primitives.Word key = 1;
+  primitives.Word value = 2;
+}
+
+message StorageMapPatchEntries {
+  repeated StorageMapEntry entries = 1;
+}
+
+message StorageMapPatch {
+  oneof operation {
+    StorageMapPatchEntries create = 1;
+    StorageMapPatchEntries update = 2;
+    google.protobuf.Empty remove = 3;
+  }
+}
+
+message StorageSlotPatch {
+  string slot_name = 1;
+  oneof patch {
+    StorageValuePatch value = 2;
+    StorageMapPatch map = 3;
+  }
+}
+
+message AccountStoragePatch {
+  repeated StorageSlotPatch slots = 1;
+}
+
+message AccountVaultPatchEntry {
+  primitives.Word asset_id = 1;
+  // An empty word removes the asset; any other value must form a valid asset with asset_id.
+  primitives.Word value = 2;
+}
+
+message AccountVaultPatch {
+  repeated AccountVaultPatchEntry entries = 1;
+}
+
+enum AccountPatchVersion {
+  ACCOUNT_PATCH_VERSION_UNSPECIFIED = 0;
+  ACCOUNT_PATCH_VERSION_V1 = 1;
+}
+
+message AccountPatch {
+  AccountPatchVersion version = 1;
+  AccountId account_id = 2;
+  AccountStoragePatch storage = 3;
+  AccountVaultPatch vault = 4;
+  optional AccountCode code = 5;
+  optional primitives.Felt final_nonce = 6;
+}
+
+message PrivateAccountUpdate {}
+
+message AccountUpdateDetails {
+  oneof update {
+    PrivateAccountUpdate private = 1;
+    AccountPatch public = 2;
+  }
+}

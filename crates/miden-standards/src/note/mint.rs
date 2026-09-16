@@ -23,7 +23,7 @@ use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 
 use crate::StandardsLib;
 use crate::note::costs::{MINT_CONSUMPTION_CYCLES, NoteConsumptionCost};
-use crate::note::{NetworkAccountTarget, P2idNote};
+use crate::note::{NetworkAccountTarget, NumStorageItems, P2idNote};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -118,6 +118,20 @@ impl MintNote {
     /// padding(3) + variable output-note storage. The variable portion starts at offset 20
     /// (word-aligned) and may contain zero or more items.
     pub const MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 20;
+
+    /// The numbers of storage items the MINT note script accepts.
+    ///
+    /// A note creating a private output note holds exactly [`Self::NUM_STORAGE_ITEMS_PRIVATE`]
+    /// items, while one creating a public output note holds at least
+    /// [`Self::MIN_NUM_STORAGE_ITEMS_PUBLIC`] and grows with the storage of the output note
+    /// recipient.
+    pub const NUM_STORAGE_ITEMS: NumStorageItems = NumStorageItems::AnyOf(&[
+        NumStorageItems::Exact(Self::NUM_STORAGE_ITEMS_PRIVATE),
+        NumStorageItems::Range {
+            min: Self::MIN_NUM_STORAGE_ITEMS_PUBLIC,
+            max: MAX_NOTE_STORAGE_ITEMS,
+        },
+    ]);
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------

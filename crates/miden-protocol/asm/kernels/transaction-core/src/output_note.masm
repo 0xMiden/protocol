@@ -1,3 +1,14 @@
+use {
+    Asset,
+    NoteAssetsCommitment,
+    NoteAttachmentCommitment,
+    NoteAttachmentsCommitment,
+    NoteMetadata,
+    NoteRecipient,
+    NoteTag,
+    NoteType,
+} from miden::protocol_utils::types
+use {OutputNoteData} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::asset
 use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::tx_kernel_core::asset
@@ -100,7 +111,7 @@ const NOTE_BEFORE_ADD_ATTACHMENT_EVENT = event("miden::protocol::note::before_ad
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
 #! - the number of output notes exceeds the maximum limit of 1024.
-pub proc create
+pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
     emit.NOTE_BEFORE_CREATED_EVENT
     # => [tag, note_type, RECIPIENT]
 
@@ -144,7 +155,7 @@ end
 #! - note_index is the index of the output note whose assets info should be returned.
 #! - num_assets is the number of assets in the specified note.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified note.
-pub proc get_assets_info
+pub proc get_assets_info(note_index: u16) -> (NoteAssetsCommitment, u8)
     # get the note data pointer based on the index of the requested note
     exec.memory::get_output_note_ptr
     # => [note_data_ptr]
@@ -194,7 +205,7 @@ end
 #! Where:
 #! - note_index is the index of the output note whose attachments commitment should be returned.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
-pub proc get_attachments_commitment
+pub proc get_attachments_commitment(note_index: u16) -> NoteAttachmentsCommitment
     # get the note data pointer based on the index of the requested note
     exec.memory::get_output_note_ptr
     # => [note_ptr]
@@ -236,7 +247,7 @@ end
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 16.
-pub proc add_asset
+pub proc add_asset(asset: Asset, note_idx: u16)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE, note_idx]
@@ -302,7 +313,11 @@ end
 #! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
 #! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
 #! - the note already has 4 attachments.
-pub proc add_attachment
+pub proc add_attachment(
+    attachment_scheme: u16,
+    attachment_commitment: NoteAttachmentCommitment,
+    note_idx: u16
+)
     # validate attachment_scheme does not exceed max
     dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
     u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
@@ -378,7 +393,7 @@ end
 #!
 #! Inputs:  [note_index]
 #! Outputs: [note_index]
-pub proc assert_note_index_in_bounds
+pub proc assert_note_index_in_bounds(note_index: u16) -> u16
     # assert that the provided note index is less than the total number of notes
     dup exec.memory::get_num_output_notes
     # => [output_notes_num, note_index, note_index]
@@ -408,7 +423,7 @@ end
 #! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
 #! - the computed hash of fetched elements does not match ATTACHMENT_COMMITMENT.
 @locals(1024)
-proc validate_attachment
+proc validate_attachment(attachment_commitment: NoteAttachmentCommitment) -> u16
     # push the attachment elements from the advice map onto the advice stack
     adv.push_mapvaln
     # OS => [ATTACHMENT_COMMITMENT]
@@ -465,7 +480,7 @@ end
 #! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
 #!   or off-chain).
 #! - NOTE_METADATA is the metadata associated with a note.
-pub proc build_metadata
+pub proc build_metadata(tag: NoteTag, note_type: NoteType) -> NoteMetadata
     # Validate that note type is private (0) or public (1).
     # --------------------------------------------------------------------------------------------
     dup.1
@@ -512,7 +527,11 @@ end
 #! - num_attachments is the number of attachments the note had before this attachment was added.
 #! - attachment_scheme is the user-defined scheme of the attachment.
 #! - note_ptr is the memory address at which the output note data begins.
-proc set_attachment_schemes
+proc set_attachment_schemes(
+    num_attachments: u8,
+    note_ptr: ptr<OutputNoteData>,
+    attachment_scheme: u16
+)
     # the schemes are stored as follows in the third felt:
     # 3rd felt: [
     #   attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
@@ -559,7 +578,7 @@ end
 #!
 #! Where:
 #! - note_idx is the index of the next note to be created.
-proc increment_num_output_notes
+proc increment_num_output_notes() -> u16
     # get the current number of output notes
     exec.memory::get_num_output_notes
     # => [note_idx]
@@ -594,7 +613,7 @@ end
 #! Panics if
 #! - asset is fungible and adding the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
 #! - asset is non-fungible and the note already contains an asset with the same ID.
-proc add_asset_raw
+proc add_asset_raw(asset: Asset, note_ptr: ptr<OutputNoteData>)
     dup.8 exec.memory::get_output_note_asset_data_ptr movdn.8
     # => [ASSET_ID, ASSET_VALUE, asset_ptr, note_ptr]
 

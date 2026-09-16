@@ -57,15 +57,8 @@ use miden_standards::errors::standards::{
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{
-    BurnNote,
-    MinBurnAmountConfigNote,
-    MintNote,
-    MintNoteStorage,
-    NetworkAccountConfigNote,
-    P2idNote,
-    StandardNote,
-};
+use miden_standards::note::config::{MinBurnAmountConfigNote, NetworkAccountConfigNote};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -77,7 +70,7 @@ use miden_testing::{
 };
 use rand::RngExt;
 
-use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction};
+use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction_complete};
 
 // Shared test utilities for faucet tests
 // ================================================================================================
@@ -673,7 +666,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
 
     // Prove, serialize/deserialize and verify the transaction
-    prove_and_verify_transaction(executed_transaction.clone()).await?;
+    prove_and_verify_transaction_complete(executed_transaction.clone()).await?;
 
     Ok(())
 }

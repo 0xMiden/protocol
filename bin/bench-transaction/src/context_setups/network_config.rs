@@ -41,7 +41,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{
+use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
     BlocklistConfig,

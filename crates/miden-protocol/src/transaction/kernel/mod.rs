@@ -392,7 +392,7 @@ impl TransactionKernel {
 
         // parse final account state
         let final_account_data = advice_inputs
-            .map
+            .map()
             .get(&final_account_commitment)
             .ok_or(TransactionOutputError::FinalAccountCommitmentMissingInAdviceMap)?;
 
@@ -423,7 +423,7 @@ impl TransactionKernel {
         advice_inputs: &AdviceInputs,
     ) -> Result<(Word, Word), TransactionOutputError> {
         let account_update_data =
-            advice_inputs.map.get(&account_update_commitment).ok_or_else(|| {
+            advice_inputs.map().get(&account_update_commitment).ok_or_else(|| {
                 TransactionOutputError::AccountUpdateCommitment(
                     "failed to find ACCOUNT_UPDATE_COMMITMENT in advice map".into(),
                 )

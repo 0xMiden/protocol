@@ -20,12 +20,13 @@ use miden_protocol::note::{Note, NoteAssets};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::{
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
     ERR_PAUSABLE_IS_PAUSED,
-    ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH,
     ERR_SENDER_LACKS_ROLE,
 };
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt, PauseConfig};
+use miden_standards::note::config::PauseConfig;
+use miden_standards::note::{NetworkAccountTarget, NetworkNoteExt};
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 
 use super::test_utils::{
@@ -205,7 +206,10 @@ async fn pause_note_targeting_another_account_is_rejected() -> anyhow::Result<()
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSE_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
     assert!(!is_bridge_paused(&mock_chain, setup.bridge.id())?);
     Ok(())
 }

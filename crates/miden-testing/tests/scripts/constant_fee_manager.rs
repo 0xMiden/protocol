@@ -28,7 +28,7 @@ use miden_standards::errors::standards::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT,
     ERR_FUNGIBLE_ASSET_VALUE_MALFORMED,
 };
-use miden_standards::note::ConstantFeePolicyConfigNote;
+use miden_standards::note::config::ConstantFeePolicyConfigNote;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 

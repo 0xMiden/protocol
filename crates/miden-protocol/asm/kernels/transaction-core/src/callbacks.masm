@@ -1,3 +1,4 @@
+use {AccountId, AccountProcedureRoot, Asset, Bool, StorageSlotId} from miden::protocol_utils::types
 use miden::tx_kernel_core::tx
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::account
@@ -47,7 +48,7 @@ const ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE =
 #! Where:
 #! - ASSET_ID is the asset ID of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
-pub proc on_before_asset_added_to_account
+pub proc on_before_asset_added_to_account(asset: Asset)
     # derive the callback flag from the asset metadata, carried in the asset ID
     exec.asset::id_to_has_callbacks
     # => [has_callbacks, ASSET_ID, ASSET_VALUE]
@@ -82,7 +83,7 @@ end
 #! - ASSET_ID is the asset ID of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
 #! - note_idx is the index of the output note the asset is being added to.
-pub proc on_before_asset_added_to_note
+pub proc on_before_asset_added_to_note(asset: Asset, note_idx: u16)
     # derive the callback flag from the asset metadata, carried in the asset ID
     exec.asset::id_to_has_callbacks
     # => [has_callbacks, ASSET_ID, ASSET_VALUE, note_idx]
@@ -102,7 +103,10 @@ end
 #! procedure root from the provided slot ID in the faucet's storage, and invoking it via `dyncall`.
 #!
 #! If the faucet does not have the callback storage slot, or if the slot contains the empty word,
-#! the callback is skipped and its inputs are consumed.
+#! the callback is skipped and its inputs are consumed. Both conditions are evaluated only after the
+#! foreign context has been started, so a faucet whose account ID has the asset callback flag
+#! enabled is loaded as a foreign account on every movement of its assets, even when it registers no
+#! callback procedure root.
 #!
 #! custom_data should be set to 0 for the account callback and to note_idx for the note callback.
 #!
@@ -114,7 +118,7 @@ end
 #! - ASSET_ID is the asset ID of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
 @locals(4)
-proc invoke_callback
+proc invoke_callback(slot_id: StorageSlotId, asset: Asset, custom_data: felt)
     exec.maybe_start_faucet_callback_context
     # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_ID, ASSET_VALUE, custom_data]
 
@@ -176,7 +180,10 @@ end
 #! - should_invoke_callback is 1 if the callback should be invoked, 0 otherwise.
 #! - PROC_ROOT is the procedure root of the callback, or the empty word if not found.
 #! - was_foreign_context_started is 1 if the faucet is not the active account, 0 otherwise.
-proc maybe_start_faucet_callback_context
+proc maybe_start_faucet_callback_context(
+    slot_id: StorageSlotId,
+    asset: Asset
+) -> (Bool, Bool, AccountProcedureRoot, Asset)
     # move slot IDs past ASSET_ID and ASSET_VALUE
     movdn.9 movdn.9
     # => [ASSET_ID, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
@@ -234,7 +241,7 @@ end
 #!
 #! Where:
 #! - was_foreign_context_started is 1 if a foreign context was started, 0 otherwise.
-proc maybe_end_faucet_callback_context
+proc maybe_end_faucet_callback_context(was_foreign_context_started: Bool)
     # if a foreign context was started, end it
     if.true
         exec.tx::end_foreign_context
@@ -246,7 +253,7 @@ end
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [should_start_foreign_context]
-proc should_start_foreign_context
+proc should_start_foreign_context(faucet_id: AccountId) -> Bool
     exec.account::get_id
     # => [active_account_id_suffix, active_account_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
