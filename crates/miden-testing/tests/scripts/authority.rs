@@ -1,4 +1,4 @@
-//! Tests for the `Authority` global emergency switch (`freeze` / `unfreeze`) and the runtime
+//! Tests for the `Authority` global emergency switch (`freeze` / `unfreeze`) and the
 //! procedure role assignment (`set_procedure_role`).
 
 use std::collections::BTreeMap;
@@ -133,8 +133,8 @@ fn build_unfreeze_note(sender: AccountId) -> anyhow::Result<Note> {
     )
 }
 
-/// Builds a note that calls `authority::set_procedure_role`, assigning `role_symbol` (a raw felt,
-/// so non-canonical symbols and the `0` unmap value can be exercised) to `procedure_root`.
+/// Builds a note that calls `authority::set_procedure_role`, assigning `role_symbol`
+/// to `procedure_root`.
 fn build_set_procedure_role_note(
     sender: AccountId,
     role_symbol: Felt,
@@ -498,7 +498,7 @@ async fn freezer_can_freeze_but_cannot_unfreeze_or_authorize() -> anyhow::Result
     Ok(())
 }
 
-// TESTS — RUNTIME PROCEDURE ROLE ASSIGNMENT
+// TESTS — PROCEDURE ROLE ASSIGNMENT
 // ================================================================================================
 
 /// Executes `note` against the faucet and returns the execution result without applying it.
@@ -588,8 +588,8 @@ async fn unmapping_a_procedure_falls_back_to_admin() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Assigning a role nobody holds takes the procedure out of service for everyone, `ADMIN` included,
-/// until it is reassigned.
+/// Assigning a role that no one holds makes this procedure unusable for everyone,
+/// including `ADMIN`, until the role is reassigned.
 #[tokio::test]
 async fn memberless_role_takes_a_procedure_out_of_service() -> anyhow::Result<()> {
     let admin = *ADMIN_ID;
@@ -640,8 +640,7 @@ async fn owner_controlled_authority_rejects_procedure_roles() -> anyhow::Result<
     Ok(())
 }
 
-/// Reassigning `set_procedure_role` itself is refused: pointing it at a memberless role would
-/// lock role management permanently.
+/// Reassigning `set_procedure_role` itself is refused.
 #[tokio::test]
 async fn set_procedure_role_cannot_reassign_itself() -> anyhow::Result<()> {
     let admin = *ADMIN_ID;
@@ -669,7 +668,7 @@ async fn set_procedure_role_cannot_reassign_itself() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Role configuration stays reachable while the account is frozen, like `freeze` / `unfreeze`.
+/// Role configuration stays reachable while the account's procedure surface is frozen.
 #[tokio::test]
 async fn set_procedure_role_works_while_frozen() -> anyhow::Result<()> {
     let admin = *ADMIN_ID;
@@ -696,8 +695,8 @@ async fn set_procedure_role_works_while_frozen() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `set_procedure_role` has its own root, so it can be placed under a dedicated role. Once mapped
-/// it does not fall back to `ADMIN`, and a `FREEZER`-only actor cannot reach it.
+/// `set_procedure_role` is a separate root, so you can restrict it to a dedicated role.
+/// After it is mapped, neither `ADMIN` nor a `FREEZER`-only actor can call it.
 #[tokio::test]
 async fn set_procedure_role_can_carry_its_own_role() -> anyhow::Result<()> {
     let role_mngr = test_account_id(32);

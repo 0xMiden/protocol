@@ -33,8 +33,8 @@ enum Authority : u8 {
 pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_config")
 
 # Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
-# Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0]. Seeded at deployment and rewritten at
-# runtime by `set_procedure_role`.
+# Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
+
 pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
 
 # Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
@@ -91,12 +91,7 @@ end
 #! Assigns the role required to invoke an authority-gated procedure, or clears it.
 #!
 #! Writing `0` unmaps the procedure so it falls back to the `ADMIN` role. Assigning a role that has
-#! no members blocks the procedure for everyone, `ADMIN` included, until it is reassigned. The
-#! previous role is not retained.
-#!
-#! Gated on the emergency authority rather than `assert_authorized`, so role configuration stays
-#! reachable while the account is frozen. The procedure has its own root and may therefore carry
-#! its own role in the map; unmapped, it falls back to `ADMIN`.
+#! no members blocks the procedure for everyone, `ADMIN` included, until it is reassigned.
 #!
 #! Inputs:  [role_symbol, PROCEDURE_ROOT, pad(11)]
 #! Outputs: [pad(16)]
@@ -118,7 +113,7 @@ pub proc set_procedure_role(role_symbol: RoleSymbol, procedure_root: AccountProc
     exec.assert_sender_is_emergency_authority
     # => [role_symbol, PROCEDURE_ROOT, pad(11)]
 
-    # 0 unmaps the procedure; anything else must be a canonical role symbol.
+    # 0 unmaps the procedure, anything else must be a canonical role symbol.
     dup neq.0
     if.true
         dup exec.role_symbol::validate_encoding
@@ -128,9 +123,6 @@ pub proc set_procedure_role(role_symbol: RoleSymbol, procedure_root: AccountProc
     movdn.4
     # => [PROCEDURE_ROOT, role_symbol, pad(11)]
 
-    # Refuse to reassign our own role: pointing this procedure at a memberless role would lock
-    # role management permanently. As a `call` entrypoint, `caller` resolves to our own root, the
-    # same way `assert_authorized_rbac` identifies the gated procedure.
     padw caller
     # => [SELF_ROOT, PROCEDURE_ROOT, role_symbol, pad(11)]
 
@@ -278,7 +270,7 @@ proc assert_sender_is_emergency_authority()
     end
 end
 
-#! Asserts the authority is RbacControlled, the only kind that carries a procedure-roles map.
+#! Asserts the authority is RbacControlled.
 #!
 #! Inputs:  []
 #! Outputs: []
