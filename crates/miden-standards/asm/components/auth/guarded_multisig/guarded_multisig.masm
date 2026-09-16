@@ -2,6 +2,7 @@
 #
 # See the `AuthGuardedMultisig` Rust type's documentation for more details.
 
+use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::guardian
 
@@ -27,37 +28,52 @@ pub use {update_guardian_public_key} from miden::standards::auth::guardian
 #! Outputs:
 #!   Operand stack: []
 #!
+#! Where:
+#! - AUTH_ARGS and its preimage are as described in `multisig::resolve_auth_args`.
+#!
 #! Panics if:
 #! - insufficient number of valid approver or guardian signatures.
-#! - the approval window ended at or before the transaction reference block, see
-#!   `multisig::auth_tx`.
+#! - the approval expired at or before the transaction reference block, see
+#!   `multisig::assert_approval_not_expired`.
 #! - the configured guardian public key is one of the approver public keys.
 #!
 #! Invocation: call
 @auth_script
 pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.multisig::resolve_auth_args
-    # => [CONVERSION_INFO, block_number, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
 
     # this component does not pay the transaction fee yet, so the conversion info is unused
     dropw
-    # => [block_number, SALT]
+    # => [bound_block_num, approval_expiration_block_num, SALT]
+
+    # reject an expired approval before any signature is verified.
+    dup.1 exec.tx::get_reference_block_number
+    # => [reference_block_num, approval_expiration_block_num, bound_block_num, approval_expiration_block_num, SALT]
+
+    exec.multisig::assert_approval_not_expired movdn.6
+    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
 
     exec.multisig::auth_tx
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.guardian::verify_signature
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.guardian::get_guardian_public_key
-    # => [GUARDIAN_PUBLIC_KEY, TX_SUMMARY_COMMITMENT]
+    # => [GUARDIAN_PUBLIC_KEY, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.multisig::assert_not_approver_public_key
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.multisig::record_and_assert_new_tx
+    # => [approval_expiration_delta]
+
+    # apply the approval expiration after tx summary extractions since the host cross-checks
+    # the kernel expiration delta against the transaction summary delta
+    exec.multisig::apply_approval_expiration
     # => []
 end
