@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -18,6 +17,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Hasher, Word};
 
 // Slots and schemas reused from `AuthMultisig` to keep the storage layout in sync. The statics
 // are exposed as `pub(super)` in the sibling `multisig` module; we reference them directly so
@@ -29,21 +29,35 @@ use super::super::multisig::{
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;
+use super::config::DelayedExecutionPolicy;
 use crate::account::account_component_code;
 use crate::account::auth::{Approver, ApproverSet, AuthMultisig};
 use crate::procedure_root;
 
 account_component_code!(MULTISIG_SMART_CODE, "miden-standards-auth-multisig-smart.masp");
 
-// PROCEDURE ROOTS
-// ================================================================================================
-
-/// MASL library namespace used for procedure-root lookups. Distinct from
-/// [`AuthMultisigSmart::NAME`], which mirrors the standards-side MASM module path.
+// The library path the component is compiled under (its project.toml `namespace`), which is what
+// procedure roots are exported under. This differs from [`AuthMultisigSmart::NAME`] by the
+// `components` segment.
 const MULTISIG_SMART_LIBRARY_PATH: &str = "miden::standards::components::auth::multisig_smart";
 
-// Initialize the procedure root of the `set_procedure_policy` procedure only once. It is the only
-// procedure that writes the policy map, so callers configuring policies commonly need its root.
+// Procedure-root statics for the component's control-plane procedures. Callers need these to
+// attach a per-procedure policy to them, which is how an account raises the threshold guarding a
+// sensitive procedure above its default (e.g. requiring 4-of-5 to rotate the approver set).
+procedure_root!(
+    MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
+procedure_root!(
+    MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD,
+    MULTISIG_SMART_LIBRARY_PATH,
+    AuthMultisigSmart::UPDATE_SIGNERS_AND_THRESHOLD_PROC_NAME,
+    AuthMultisigSmart::code()
+);
+
 procedure_root!(
     MULTISIG_SMART_SET_PROCEDURE_POLICY,
     MULTISIG_SMART_LIBRARY_PATH,
@@ -54,11 +68,21 @@ procedure_root!(
 // CONSTANTS
 // ================================================================================================
 
-// Only the smart-specific procedure_policies slot needs its own constant here. The other four
-// slots (threshold config, approver public keys, approver scheme ids, executed transactions) are
-// reused from `AuthMultisig` via the imports above.
+// Only the smart-specific slots need their own constants here. The four slots reused from
+// `AuthMultisig` (threshold config, approver public keys, approver scheme ids, executed
+// transactions) are imported from that sibling module above.
 static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig_smart::procedure_policies")
+        .expect("storage slot name should be valid")
+});
+
+static DELAY_MODE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::delay_mode_config")
+        .expect("storage slot name should be valid")
+});
+
+static TX_PROPOSALS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::tx_proposals")
         .expect("storage slot name should be valid")
 });
 
@@ -70,14 +94,22 @@ static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
 pub struct AuthMultisigSmartConfig {
     approver_set: ApproverSet,
     procedure_policies: Vec<(Word, ProcedurePolicy)>,
+    delayed_execution_policy: DelayedExecutionPolicy,
 }
 
 impl AuthMultisigSmartConfig {
-    /// Creates a new configuration from the given approver set.
-    pub fn new(approver_set: ApproverSet) -> Self {
+    /// Creates a new configuration from the given approver set and delayed execution policy.
+    ///
+    /// `delayed_execution_policy` is required — `AuthMultisigSmart` always runs with a configured
+    /// timelock policy; see [`DelayedExecutionPolicy::new`] for its validation rules.
+    pub fn new(
+        approver_set: ApproverSet,
+        delayed_execution_policy: DelayedExecutionPolicy,
+    ) -> Self {
         Self {
             approver_set,
             procedure_policies: Vec::new(),
+            delayed_execution_policy,
         }
     }
 
@@ -106,6 +138,10 @@ impl AuthMultisigSmartConfig {
     pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
         &self.procedure_policies
     }
+
+    pub fn delayed_execution_policy(&self) -> DelayedExecutionPolicy {
+        self.delayed_execution_policy
+    }
 }
 
 fn validate_proc_policies(
@@ -124,7 +160,9 @@ fn validate_proc_policies(
     }
 
     for (_, policy) in proc_policies {
-        if policy.immediate_threshold() > num_approvers {
+        if let Some(immediate_threshold) = policy.immediate_threshold()
+            && immediate_threshold > num_approvers
+        {
             return Err(AccountError::other(
                 "procedure policy immediate threshold cannot exceed number of approvers",
             ));
@@ -143,10 +181,40 @@ fn validate_proc_policies(
 
 /// An [`AccountComponent`] implementing a multisig auth component with smart-policy slots.
 ///
+/// Procedures whose policy requires delayed execution must first be proposed (recorded in the
+/// proposals map) and can only execute once the timelock has elapsed. Both `propose_transaction`
+/// and the eventual execution verify the approver signatures over the *proposed transaction's*
+/// commitment, so approvers sign the actual transaction they intend to run.
+///
 /// # Auth args
 ///
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
+///
+/// # Security considerations
+///
+/// Two properties follow from verifying proposal signatures over the proposed transaction's
+/// commitment, and callers/operators must account for them:
+///
+/// - A proposal signature is bound to the proposed transaction's commitment, which is a stable,
+///   replayable message. After a proposal is cancelled (its entry removed), the original proposal
+///   signatures can be replayed to re-create the same proposal. There is intentionally no
+///   in-contract protection against this; instead, the cancellation must be re-applied before the
+///   timelock elapses. Re-cancelling is cheap (the cancel signatures are likewise replayable), but
+///   it requires off-chain monitoring of the proposals map. Monitoring is required regardless,
+///   because a semantically-equivalent proposal built with a different salt has a different
+///   commitment and cannot be blocked on-chain either.
+///
+/// - Proposing pre-authorizes execution. Because both proposing and executing verify signatures
+///   over the same (proposed) commitment, an approver's proposal signature also counts toward the
+///   execution threshold and can be reused for it. An approver who signs to propose a transaction
+///   has therefore also contributed a signature usable to execute it; consent cannot be withdrawn
+///   passively, only by cancelling.
+///
+/// - Cancelling requires its own signatures. They are verified over
+///   [`AuthMultisigSmart::cancel_signing_message`], which is domain-separated from the proposed
+///   commitment, so the public proposal signatures cannot be replayed to cancel a proposal; only
+///   approvers who sign the cancel message can veto it.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
     config: AuthMultisigSmartConfig,
@@ -156,23 +224,44 @@ impl AuthMultisigSmart {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::multisig_smart";
 
+    pub const UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME: &'static str =
+        "update_delayed_execution_policy";
+
+    /// The name of the procedure that rotates the approver set and thresholds.
+    pub const UPDATE_SIGNERS_AND_THRESHOLD_PROC_NAME: &'static str = "update_signers_and_threshold";
+
     /// The name of the procedure that edits per-procedure policies.
-    const SET_PROCEDURE_POLICY_PROC_NAME: &'static str = "set_procedure_policy";
+    pub const SET_PROCEDURE_POLICY_PROC_NAME: &'static str = "set_procedure_policy";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &MULTISIG_SMART_CODE
     }
 
-    /// Returns the procedure root of the `set_procedure_policy` account procedure.
-    pub fn set_procedure_policy_root() -> AccountProcedureRoot {
-        *MULTISIG_SMART_SET_PROCEDURE_POLICY
-    }
-
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
     pub fn new(config: AuthMultisigSmartConfig) -> Result<Self, AccountError> {
         validate_proc_policies(config.approvers().len() as u32, config.procedure_policies())?;
         Ok(Self { config })
+    }
+
+    /// Returns the approver list configured for this component.
+    pub fn approvers(&self) -> &[Approver] {
+        self.config.approvers()
+    }
+
+    /// Returns the default approver threshold.
+    pub fn default_threshold(&self) -> u32 {
+        self.config.default_threshold()
+    }
+
+    /// Returns the per-procedure smart policy map.
+    pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
+        self.config.procedure_policies()
+    }
+
+    /// Returns the configured delayed-execution policy.
+    pub fn delayed_execution_policy(&self) -> DelayedExecutionPolicy {
+        self.config.delayed_execution_policy()
     }
 
     pub fn threshold_config_slot() -> &'static StorageSlotName {
@@ -193,6 +282,44 @@ impl AuthMultisigSmart {
 
     pub fn procedure_policies_slot() -> &'static StorageSlotName {
         &PROCEDURE_POLICIES_SLOT_NAME
+    }
+
+    pub fn delay_mode_config_slot() -> &'static StorageSlotName {
+        &DELAY_MODE_CONFIG_SLOT_NAME
+    }
+
+    pub fn tx_proposals_slot() -> &'static StorageSlotName {
+        &TX_PROPOSALS_SLOT_NAME
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the `update_delayed_execution_policy` procedure.
+    pub fn update_delayed_execution_policy_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the `update_signers_and_threshold` procedure.
+    ///
+    /// Use it to key a [`ProcedurePolicy`] that guards approver-set rotation at a higher threshold
+    /// than the account default.
+    pub fn update_signers_and_threshold_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD
+    }
+
+    /// Returns the message approvers sign to cancel the proposal for `tx_summary_commitment`.
+    ///
+    /// Mirrors `cancel_signing_message` in the MASM component: the proposal stays keyed by the raw
+    /// commitment, but cancellation signatures are over its hash so that proposal signatures (which
+    /// are over the commitment itself and also authorize execution) cannot be replayed to cancel.
+    pub fn cancel_signing_message(tx_summary_commitment: Word) -> Word {
+        Hasher::hash_elements(tx_summary_commitment.as_elements())
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the `set_procedure_policy` procedure.
+    ///
+    /// It is the only procedure that writes the policy map, so callers guarding policy edits
+    /// commonly need its root.
+    pub fn set_procedure_policy_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_SET_PROCEDURE_POLICY
     }
 
     pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
@@ -221,11 +348,32 @@ impl AuthMultisigSmart {
             ),
         )
     }
+
+    pub fn delay_mode_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::delay_mode_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Delay-mode config: [min_delay, propose_expiration_delta, 0, 0]",
+                SchemaType::native_word(),
+            ),
+        )
+    }
+
+    pub fn tx_proposals_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::tx_proposals_slot().clone(),
+            StorageSlotSchema::map(
+                "Active tx proposals: tx_summary_commitment => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
+            ),
+        )
+    }
 }
 
 impl From<AuthMultisigSmart> for AccountComponent {
     fn from(multisig: AuthMultisigSmart) -> Self {
-        let mut storage_slots = Vec::with_capacity(5);
+        let mut storage_slots = Vec::with_capacity(7);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
@@ -273,12 +421,33 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
+        // Delay-mode config slot (value: [min_delay, propose_expiration_delta, 0, 0]).
+        let delayed_execution_policy = multisig.config.delayed_execution_policy();
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::delay_mode_config_slot().clone(),
+            Word::from([
+                delayed_execution_policy.min_delay(),
+                delayed_execution_policy.propose_expiration_delta() as u32,
+                0u32,
+                0u32,
+            ]),
+        ));
+
+        // Tx-proposals map slot (TX_SUMMARY_COMMITMENT => [unlock_timestamp, proposal_timestamp,
+        // min_cancel_sigs, 0]). Existence is encoded by `proposal_timestamp != 0`.
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisigSmart::tx_proposals_slot().clone(),
+            StorageMap::default(),
+        ));
+
         let storage_schema = StorageSchema::new(vec![
             AuthMultisigSmart::threshold_config_slot_schema(),
             AuthMultisigSmart::approver_public_keys_slot_schema(),
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
             AuthMultisigSmart::procedure_policies_slot_schema(),
+            AuthMultisigSmart::delay_mode_config_slot_schema(),
+            AuthMultisigSmart::tx_proposals_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
@@ -302,6 +471,10 @@ mod tests {
     use super::*;
     use crate::account::wallets::BasicWallet;
 
+    fn default_delayed_execution_policy() -> DelayedExecutionPolicy {
+        DelayedExecutionPolicy::new(30, 2).expect("default test policy must be valid")
+    }
+
     #[test]
     fn test_multisig_smart_component_setup() {
         let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
@@ -316,7 +489,7 @@ mod tests {
 
         let approver_set =
             ApproverSet::new(approvers, default_threshold).expect("invalid approver set");
-        let config = AuthMultisigSmartConfig::new(approver_set)
+        let config = AuthMultisigSmartConfig::new(approver_set, default_delayed_execution_policy())
             .with_proc_policies(vec![(
                 BasicWallet::receive_asset_root().as_word(),
                 ProcedurePolicy::with_immediate_threshold(receive_asset_immediate_threshold)
@@ -368,10 +541,11 @@ mod tests {
             ProcedurePolicy::with_immediate_threshold(2).expect("procedure policy should be valid");
 
         let approver_set = ApproverSet::new(approvers, 2).expect("invalid approver set");
-        let result = AuthMultisigSmartConfig::new(approver_set).with_proc_policies(vec![
-            (receive_asset_root, policy_one),
-            (receive_asset_root, policy_two),
-        ]);
+        let result = AuthMultisigSmartConfig::new(approver_set, default_delayed_execution_policy())
+            .with_proc_policies(vec![
+                (receive_asset_root, policy_one),
+                (receive_asset_root, policy_two),
+            ]);
 
         assert!(
             result
