@@ -252,6 +252,7 @@ mod tests {
         let mut expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
         expected.insert(crate::note::config::NetworkAccountConfigNote::script_root());
         expected.insert(crate::note::FeeSponsorshipNote::script_root());
+        expected.insert(crate::note::P2idNote::script_root());
         let actual: BTreeSet<NoteScriptRoot> =
             allowlist.allowed_script_roots().iter().copied().collect();
 

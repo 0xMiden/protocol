@@ -12,6 +12,7 @@ use crate::account::auth::network_account::{
     NetworkAccountTxScriptAllowlistError,
 };
 use crate::account::fees::FeePolicyManager;
+use crate::account::wallets::BasicWallet;
 use crate::tx_script::ExpirationTransactionScript;
 
 // NETWORK ACCOUNT
@@ -88,7 +89,9 @@ impl NetworkAccount {
     /// [`ExpirationTransactionScript`] tx-script root, so the built account is serviceable by the
     /// network by construction. The components of the fee policies registered with
     /// `fee_policy_manager` are installed as part of the auth component's expansion, so the active
-    /// policy is dispatchable without the caller installing it separately.
+    /// policy is dispatchable without the caller installing it separately. [`BasicWallet`] is
+    /// installed as well, so the account can receive the assets of the P2ID notes allowlisted by
+    /// default.
     ///
     /// Callers add their functional components to the returned builder and finish with
     /// [`AccountBuilder::build`]; the built account satisfies the [`NetworkAccount`] specification.
@@ -103,7 +106,8 @@ impl NetworkAccount {
 
         Ok(AccountBuilder::new(init_seed)
             .account_type(AccountType::Public)
-            .with_components(auth_component))
+            .with_components(auth_component)
+            .with_component(BasicWallet))
     }
 
     /// Consumes `self` and returns the underlying [`Account`].
@@ -218,6 +222,7 @@ mod tests {
         let mut expected = roots;
         expected.insert(crate::note::config::NetworkAccountConfigNote::script_root());
         expected.insert(FeeSponsorshipNote::script_root());
+        expected.insert(crate::note::P2idNote::script_root());
         assert_eq!(actual, expected);
     }
 
@@ -287,7 +292,6 @@ mod tests {
             FeePolicyManager::mock(FungibleAsset::mock_issuer()),
         )
         .expect("non-empty allowlist")
-        .with_component(BasicWallet)
         .build()
         .expect("account building should succeed");
 

@@ -200,7 +200,6 @@ pub(super) fn build_fee_account_with_switching(
 ) -> anyhow::Result<Account> {
     let fee_policy_manager = fee_policy_manager(&allowed_note_roots)?;
     Ok(NetworkAccount::builder([1; 32], allowed_note_roots, fee_policy_manager)?
-        .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .build_existing()?)
@@ -720,7 +719,6 @@ fn build_mutation_test_account(
 
     let mut account_builder =
         NetworkAccount::builder([1; 32], allowed_note_roots, manager_builder.build())?
-            .with_component(BasicWallet)
             .with_component(Ownable2Step::new(owner))
             .with_component(Authority::OwnerControlled);
 

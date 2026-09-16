@@ -140,7 +140,6 @@ fn network_account(
         .build();
 
     Ok(NetworkAccount::builder([7; 32], allowed_note_roots, fee_policy_manager)?
-        .with_component(BasicWallet)
         .build_existing()?)
 }
 
@@ -862,7 +861,6 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
             .active_fee_policy(policy)
             .build(),
     )?
-    .with_component(BasicWallet)
     .build_existing()?;
 
     builder.add_account(network_account.clone())?;

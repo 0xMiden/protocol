@@ -32,6 +32,7 @@ use miden_standards::account::fees::{
     ConstantFeeManager,
     FeePolicyManager,
 };
+use miden_standards::account::wallets::BasicWallet;
 
 // CONSTANTS
 // ================================================================================================
@@ -201,6 +202,8 @@ fn generate_agglayer_constants(
             .expect("placeholder allowlist is non-empty");
 
         let mut components: Vec<AccountComponent> = auth_component.into_iter().collect();
+        // NetworkAccount::builder installs BasicWallet on every network account
+        components.push(AccountComponent::from(BasicWallet));
         components.push(agglayer_component);
         if component_name == "bridge" {
             components.extend(AccessControl::Rbac {

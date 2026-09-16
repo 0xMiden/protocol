@@ -24,8 +24,8 @@ use super::{
 };
 use crate::account::account_component_code;
 use crate::account::fees::FeePolicyManager;
-use crate::note::FeeSponsorshipNote;
 use crate::note::config::NetworkAccountConfigNote;
+use crate::note::{FeeSponsorshipNote, P2idNote};
 use crate::procedure_root;
 use crate::tx_script::ExpirationTransactionScript;
 
@@ -145,7 +145,9 @@ procedure_root!(
 /// and the kernel only ever lets a script tighten the current transaction's expiration window
 /// (never extend it), so the worst a caller can do is make their own transaction expire sooner.
 /// Allowlisting a script whose effect depends on its inputs re-opens the very code path the
-/// allowlist exists to constrain.
+/// allowlist exists to constrain. In particular, a script that moves assets out of the vault on
+/// caller-supplied inputs, e.g. through the `move_asset_to_note` procedure of
+/// [`BasicWallet`](crate::account::wallets::BasicWallet), must never be allowlisted.
 ///
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
 /// off-chain services can identify a network account by checking for this slot.
@@ -223,6 +225,13 @@ impl AuthNetworkAccount {
     ///   collected. Allowlisting it is safe: the note's own script refuses consumption without the
     ///   note it sponsors, and fee collection asserts every consumed note's fee is covered by the
     ///   sponsorships bound to it.
+    /// - The [`P2idNote`] script root is added to the note allowlist, so a P2ID note carrying the
+    ///   fee asset can fund the account, e.g. for its account-creating transaction. Consuming one
+    ///   needs the `receive_asset` procedure of
+    ///   [`BasicWallet`](crate::account::wallets::BasicWallet) (see
+    ///   [`NetworkAccount::builder`](crate::account::auth::NetworkAccount::builder)) and a fee
+    ///   schedule entry; unless that entry is zero, a [`FeeSponsorshipNote`] bound to the deposit
+    ///   must cover it.
     /// - The tx-script allowlist contains the [`ExpirationTransactionScript`] root, which the
     ///   network transaction builder attaches to every network transaction, so the account is
     ///   serviceable by the network.
@@ -241,8 +250,12 @@ impl AuthNetworkAccount {
     }
 
     /// Returns the note script roots added to every standard network account's allowlist.
-    pub fn default_allowed_note_scripts() -> [NoteScriptRoot; 2] {
-        [NetworkAccountConfigNote::script_root(), FeeSponsorshipNote::script_root()]
+    pub fn default_allowed_note_scripts() -> [NoteScriptRoot; 3] {
+        [
+            NetworkAccountConfigNote::script_root(),
+            FeeSponsorshipNote::script_root(),
+            P2idNote::script_root(),
+        ]
     }
 
     /// Creates a raw [`AuthNetworkAccount`] component from the given note-script allowlist, with an
@@ -502,6 +515,7 @@ mod tests {
             &BTreeSet::from_iter([
                 NetworkAccountConfigNote::script_root(),
                 FeeSponsorshipNote::script_root(),
+                P2idNote::script_root(),
             ]),
             "an empty input should yield an allowlist containing only the default note roots",
         );
