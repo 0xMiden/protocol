@@ -50,7 +50,7 @@ const ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet metadata config no
 # =================================================================================================
 
 #! FaucetMetadataConfig script: triggers a token metadata admin action against the consuming
-#! faucet, dispatched on the note variant stored in the first note storage item.
+#! faucet, dispatched on the note variant in its storage.
 #!
 #! The three string setters live in the shared `miden::standards::faucets` module, which both the
 #! `FungibleFaucet` and `NonFungibleFaucet` components re-export, so those variants work on either

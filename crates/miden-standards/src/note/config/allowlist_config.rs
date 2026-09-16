@@ -66,7 +66,7 @@ impl AllowlistConfig {
     const VARIANT_ALLOW_ACCOUNT: u8 = 0;
     const VARIANT_DISALLOW_ACCOUNT: u8 = 1;
 
-    /// Returns the variant encoding this action in the first storage item.
+    /// Returns the variant encoding this action.
     const fn variant(self) -> u8 {
         match self {
             AllowlistConfig::AllowAccount { .. } => Self::VARIANT_ALLOW_ACCOUNT,

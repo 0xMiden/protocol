@@ -41,7 +41,7 @@ const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config no
 # =================================================================================================
 
 #! NetworkAccountConfig script: mutates a network account's script allowlists and allowed fee policy
-#! roots, dispatched on the note variant stored in the note storage item after the root.
+#! roots, dispatched on the note variant in its storage.
 #!
 #! The selected action and its root are read from the note storage and are fixed at note creation.
 #! The storage is laid out as `[ROOT, variant]`:

@@ -38,8 +38,7 @@ const ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC = "faucet policy config note m
 # =================================================================================================
 
 #! FaucetPolicyConfig script: triggers a `TokenPolicyManager` policy-switch action against the
-#! consuming faucet, dispatched on the note variant stored in the note storage item after the
-#! policy root.
+#! consuming faucet, dispatched on the note variant in its storage.
 #!
 #! The selected action and its policy root are read from the note storage and are fixed at note
 #! creation:

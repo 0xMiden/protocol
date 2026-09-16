@@ -89,7 +89,7 @@ impl FaucetMetadataConfig {
     const VARIANT_SET_LOGO_URI: u8 = 2;
     const VARIANT_SET_EXTERNAL_LINK: u8 = 3;
 
-    /// Returns the variant encoding this action in the first storage item.
+    /// Returns the variant encoding this action.
     const fn variant(&self) -> u8 {
         match self {
             FaucetMetadataConfig::SetMaxSupply { .. } => Self::VARIANT_SET_MAX_SUPPLY,

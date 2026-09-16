@@ -66,7 +66,7 @@ impl BlocklistConfig {
     const VARIANT_BLOCK_ACCOUNT: u8 = 0;
     const VARIANT_UNBLOCK_ACCOUNT: u8 = 1;
 
-    /// Returns the variant encoding this action in the first storage item.
+    /// Returns the variant encoding this action.
     const fn variant(self) -> u8 {
         match self {
             BlocklistConfig::BlockAccount { .. } => Self::VARIANT_BLOCK_ACCOUNT,

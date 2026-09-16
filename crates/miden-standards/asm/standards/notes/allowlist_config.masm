@@ -40,7 +40,7 @@ const ERR_ALLOWLIST_CONFIG_NOTE_IS_NOT_PUBLIC = "allowlist config note must be p
 # =================================================================================================
 
 #! AllowlistConfig script: triggers an `AllowlistManager` admin action against the consuming
-#! account, dispatched on the note variant stored in the first note storage item.
+#! account, dispatched on the note variant in its storage.
 #!
 #! The selected action and its arguments are read from the note storage and are fixed at note
 #! creation:

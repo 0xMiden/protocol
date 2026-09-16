@@ -37,7 +37,7 @@ const ERR_PAUSE_CONFIG_NOTE_IS_NOT_PUBLIC = "pause config note must be public"
 # =================================================================================================
 
 #! PauseConfig script: triggers a `PausableManager` admin action against the consuming account,
-#! dispatched on the note variant stored in the first note storage item.
+#! dispatched on the note variant in its storage.
 #!
 #! The selected action is read from the note storage and is fixed at note creation:
 #! - `0` Pause:   `[0]`.

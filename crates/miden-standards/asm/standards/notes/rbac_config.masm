@@ -47,7 +47,7 @@ const ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC = "rbac config note must be public"
 # =================================================================================================
 
 #! RbacConfig script: triggers a `RoleBasedAccessControl` management action against the consuming
-#! account, dispatched on the note variant stored in the first note storage item.
+#! account, dispatched on the note variant in its storage.
 #!
 #! The selected action and its arguments are read from the note storage (fixed at note creation,
 #! so authorization is bound to the note sender):
