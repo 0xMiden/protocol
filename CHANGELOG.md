@@ -18,6 +18,7 @@
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
 - [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
+- [BREAKING] `AuthNetworkAccount` now expands into `BasicWallet` as well and `AuthNetworkAccount::new` allowlists the P2ID script root by default, so every network account built with `AuthNetworkAccount::new` can be deployed by consuming a P2ID note ([#3893](https://github.com/0xMiden/protocol/pull/3893)).
 - [BREAKING] Multisig approvals now expire through the dedicated `MultisigAuthArgs::with_approval_expiration_delta` ([#3884](https://github.com/0xMiden/protocol/pull/3884)).
 
 ### Fixes

@@ -31,7 +31,6 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::RoleBasedAccessControl;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::errors::standards::ERR_SENDER_LACKS_ROLE;
-use miden_standards::note::FeeSponsorshipNote;
 use miden_standards::note::config::{
     ConstantFeePolicyConfigNote,
     NetworkAccountConfigNote,
@@ -40,6 +39,7 @@ use miden_standards::note::config::{
     RbacConfig,
     RbacConfigNote,
 };
+use miden_standards::note::{FeeSponsorshipNote, P2idNote};
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -278,6 +278,7 @@ fn bridge_allowed_notes_pin() {
         ConstantFeePolicyConfigNote::script_root(),
         NetworkAccountConfigNote::script_root(),
         FeeSponsorshipNote::script_root(),
+        P2idNote::script_root(),
     ]);
     assert_eq!(AggLayerBridge::allowed_notes(), expected);
 
