@@ -1,7 +1,7 @@
 //! Tests for the `ALLOWLIST_CONFIG` standard note, which dispatches the
 //! [`miden_standards::account::policies::AllowlistManager`] admin procedures from a note.
 //!
-//! The suite covers the note itself: that each selector dispatches to the matching procedure, and
+//! The suite covers the note itself: that each variant dispatches to the matching procedure, and
 //! that the script's own guards reject malformed storage. The allowlist semantics (the
 //! `check_policy` predicate, the noop cases) and the `Authority` rejection of an unauthorized
 //! sender are covered by the parent [`super`] suite.
@@ -16,7 +16,7 @@ use miden_standards::account::policies::AllowlistStorage;
 use miden_standards::errors::standards::{
     ERR_ALLOWLIST_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_ALLOWLIST_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_ALLOWLIST_CONFIG_UNKNOWN_SELECTOR,
+    ERR_ALLOWLIST_CONFIG_UNKNOWN_VARIANT,
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
 };
 use miden_standards::note::config::{AllowlistConfig, AllowlistConfigNote};
@@ -158,15 +158,15 @@ async fn rbac_allowlister_can_allow() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    // selector 99 is not a known action
+    // variant 99 is not a known action
     let note = malformed_allowlist_config_note(
         owner_id,
         faucet.id(),
@@ -187,12 +187,12 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_ALLOWLIST_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_ALLOWLIST_CONFIG_UNKNOWN_VARIANT);
 
     Ok(())
 }
 
-/// A note whose storage item count does not match its selector is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guard.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
@@ -200,7 +200,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_allowlist_transfer(&mut builder, owner_id)?;
 
-    // AllowAccount selector (0) but the account prefix is missing
+    // AllowAccount variant (0) but the account prefix is missing
     let note = malformed_allowlist_config_note(
         owner_id,
         faucet.id(),
