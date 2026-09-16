@@ -11,7 +11,7 @@ use {PARTIAL_BLOCKCHAIN_PTR} from miden::tx_kernel_core::memory
 # RE-EXPORTS
 # =================================================================================================
 
-pub use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
 
 # CONSTANTS
 # =================================================================================================
