@@ -256,6 +256,8 @@ impl AuthNetworkAccount {
         [
             NetworkAccountConfigNote::script_root(),
             FeeSponsorshipNote::script_root(),
+            // TODO: replace by the DEPLOY note script once
+            // https://github.com/0xMiden/protocol/issues/3892 lands.
             P2idNote::script_root(),
         ]
     }
@@ -465,6 +467,8 @@ impl IntoIterator for AuthNetworkAccount {
 
         let mut components = vec![auth_component];
         if installs_wallet {
+            // TODO: replace by the Receiver component once
+            // https://github.com/0xMiden/protocol/issues/3892 lands.
             components.push(AccountComponent::from(BasicWallet));
         }
         components.extend(policy_manager.into_fee_policy_components());
