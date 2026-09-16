@@ -8,4 +8,5 @@ mod note;
 mod primitives;
 mod protocol_config;
 mod transaction;
+mod transaction_effects;
 mod transaction_inputs;
