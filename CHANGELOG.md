@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added `set_procedure_role` to `Authority`, so the role required by an authority-gated procedure can be changed on a running RBAC-controlled account instead of being fixed at deployment ([#3XXX](https://github.com/0xMiden/protocol/pull/3XXX)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
 - Added `MockChainBuilder::validator_signing_keys` in `miden-testing` to supply validator keys for genesis and subsequent block signing. The default remains three randomly generated validators.
