@@ -1,7 +1,6 @@
 use alloc::collections::BTreeSet;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::utils::sync::LazyLock;
@@ -62,18 +61,6 @@ impl AllowlistStorage {
     /// Storage slot name for the allowed-accounts map.
     pub fn allowed_accounts_slot() -> &'static StorageSlotName {
         &ALLOWED_ACCOUNTS_SLOT_NAME
-    }
-
-    /// Schema entry for the allowed-accounts map slot (documentation / tooling).
-    pub fn allowed_accounts_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::allowed_accounts_slot().clone(),
-            StorageSlotSchema::map(
-                "Per-account allowed flag; zero word is not allowed, [1,0,0,0] is allowed",
-                SchemaType::native_word(),
-                SchemaType::bool(),
-            ),
-        )
     }
 
     /// Builds the initial `allowed_accounts` [`StorageMap`] from the captured set, marking each

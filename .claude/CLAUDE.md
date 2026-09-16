@@ -42,6 +42,23 @@
 - **Commit authorship:** Always commit as Claude, not as the user. Use: `git -c user.name="Claude (Opus)" -c user.email="noreply@anthropic.com" -c commit.gpgsign=false commit -m "message"`
 - **Commit frequency:** Always commit at the end of each task. Avoid single commits that span multiple unrelated changes.
 - **Responding to PR review:** When addressing review feedback on a pushed PR, add new commits on top of the branch (e.g. `fix: address review comments`). NEVER amend, squash, or otherwise rewrite already-pushed commits to incorporate review changes, and NEVER force-push the branch to do so - this destroys the diff reviewers rely on to see what changed since their review. The only time a force-push is acceptable is when the branch must be rebased onto an updated base (or a PR lower in a stack changed); that is a base update, not a review response, and should be called out explicitly.
+- **Never post to GitHub unprompted:** Never run `gh pr comment`, `gh pr review`, `gh issue comment`, or `git push` unless explicitly asked in that message. When asked to draft review text, output it in chat for the user to paste - never post it.
+
+## Scope Discipline
+
+- Implement the minimum that satisfies the request. Do not add helper abstractions, config knobs, extra bounds/limits, fallback lookups, or "while I was here" refactors.
+- Prefer stdlib primitives over hand-rolled equivalents (e.g. `Read::take` over a custom limited reader).
+- If extra work seems warranted, list it as a suggestion at the end instead of implementing it.
+
+## Explain vs. Act
+
+- When asked "why", "how does X work", or "explain", answer read-only: use Read/Grep only, make no edits and run no build commands unless asked.
+- Cite file:line evidence for each claim rather than summarizing from memory.
+- When told code has changed outside the session, re-read the files from disk instead of relying on earlier copies.
+
+## Build & Formatting
+
+- Formatting must pass nightly rustfmt: run `make format` (i.e. `cargo +nightly fmt --all`) before claiming work is done. Non-nightly formatting fails CI on import ordering.
 
 ## Output Formatting
 

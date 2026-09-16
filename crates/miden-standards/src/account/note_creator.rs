@@ -1,7 +1,7 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // NOTE CREATOR
@@ -65,8 +65,7 @@ impl NoteCreator {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME)
-            .with_description("Note creator component exposing only the create_note procedure")
+        package_metadata(Self::code())
     }
 }
 

@@ -1,7 +1,7 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 
 account_component_code!(NO_AUTH_CODE, "miden-standards-auth-no-auth.masp");
 
@@ -44,7 +44,7 @@ impl NoAuth {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME).with_description("No authentication component")
+        package_metadata(Self::code())
     }
 }
 

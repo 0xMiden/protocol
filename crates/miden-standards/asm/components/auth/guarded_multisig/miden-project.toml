@@ -11,3 +11,57 @@ path      = "guarded_multisig.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Multisig authentication with hybrid signature schemes, guarded by a state guardian"
+name        = "miden::standards::auth::guarded_multisig"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Guardian public key"
+name        = "miden::standards::auth::guardian::pub_key"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Executed transactions"
+name        = "miden::standards::auth::multisig::executed_transactions"
+type        = { key = "word", value = "bool" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Approver public keys"
+name        = "miden::standards::auth::multisig::approver_public_keys"
+type        = { key = "u32", value = "miden::standards::auth::pub_key" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Procedure thresholds"
+name        = "miden::standards::auth::multisig::procedure_thresholds"
+type        = { key = "word", value = "u32" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Guardian scheme ID"
+name        = "miden::standards::auth::guardian::scheme"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Approver scheme IDs"
+name        = "miden::standards::auth::multisig::approver_schemes"
+type        = { key = "u32", value = "miden::standards::auth::scheme" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Threshold configuration"
+name        = "miden::standards::auth::multisig::threshold_config"
+
+# Word layout: [threshold, num_approvers, 0, 0]
+[[package.metadata.account-component.storage.slots.type]]
+name = "threshold"
+type = "u32"
+
+[[package.metadata.account-component.storage.slots.type]]
+name = "num_approvers"
+type = "u32"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"
+
+[[package.metadata.account-component.storage.slots.type]]
+type = "void"

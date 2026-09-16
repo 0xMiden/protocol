@@ -11,3 +11,8 @@ path      = "allow_all.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "`allow_all` mint policy for fungible faucets"
+name        = "miden::standards::faucets::policies::mint::allow_all"
+version     = "1.0.0"
