@@ -151,10 +151,10 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Deserialization does not verify transaction proofs, so the executor must still reject an
-/// invalid portable precompile witness before proof generation can be skipped.
+/// Checked execution rejects an invalid portable precompile witness after deserialization, while
+/// unchecked execution trusts that the caller already verified every transaction.
 #[test]
-fn batch_executor_rejects_invalid_deserialized_precompile_witness() -> anyhow::Result<()> {
+fn batch_executor_checks_deserialized_precompile_witness() -> anyhow::Result<()> {
     let witness = PrecompileWitness::from_entries(vec![PrecompileWitnessEntry::Data {
         tag: Tag::CHUNKS,
         chunks: vec![[Felt::from(10_u32); 8]],
@@ -187,7 +187,7 @@ fn batch_executor_rejects_invalid_deserialized_precompile_witness() -> anyhow::R
     )?;
     let decoded = ProposedBatch::read_from_bytes(&batch.to_bytes())?;
 
-    let error = match BatchExecutor::new().execute(decoded) {
+    let error = match BatchExecutor::new().execute(decoded.clone()) {
         Ok(_) => anyhow::bail!("invalid precompile witness passed batch execution"),
         Err(error) => error,
     };
@@ -196,6 +196,9 @@ fn batch_executor_rejects_invalid_deserialized_precompile_witness() -> anyhow::R
         ProvenBatchError::TransactionPrecompileWitnessInvalid { source, .. }
             if matches!(source.root(), PrecompileError::AssertionFailed)
     );
+
+    let executed = BatchExecutor::new().execute_unchecked(decoded)?;
+    assert_eq!(executed.precompile_witnesses().len(), 1);
 
     Ok(())
 }
