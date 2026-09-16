@@ -7,6 +7,7 @@ mod executed_tx;
 mod fee;
 mod inputs;
 mod kernel;
+mod logs;
 mod ordered_transactions;
 mod outputs;
 mod partial_blockchain;
@@ -22,6 +23,13 @@ pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};
 pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
+pub use logs::{
+    LogTopic,
+    TransactionLog,
+    TransactionLogData,
+    TransactionLogDataError,
+    TransactionLogs,
+};
 pub use ordered_transactions::OrderedTransactionHeaders;
 pub use outputs::{
     OutputNote,
