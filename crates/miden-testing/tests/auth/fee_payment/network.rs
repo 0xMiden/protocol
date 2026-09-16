@@ -254,7 +254,7 @@ async fn network_faucet_deploys_by_consuming_p2id_note() -> anyhow::Result<()> {
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
         .build();
-    // every allowlisted note needs a schedule entry, priced from the benchmarked cost tables
+    // every allowlisted note the account prices needs a schedule entry, taken from the cost tables
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
     let pricer = NetworkNotePricer::builder()
         .fee_parameters(FeeParameters::new(VERIFICATION_BASE_FEE))

@@ -91,7 +91,7 @@ impl NetworkAccount {
     /// `fee_policy_manager` are installed as part of the auth component's expansion, so the active
     /// policy is dispatchable without the caller installing it separately. [`BasicWallet`] is
     /// installed as well, so the account can receive the assets of the P2ID notes allowlisted by
-    /// default.
+    /// default; callers must not install it, or a component sharing its procedures, again.
     ///
     /// Callers add their functional components to the returned builder and finish with
     /// [`AccountBuilder::build`]; the built account satisfies the [`NetworkAccount`] specification.
