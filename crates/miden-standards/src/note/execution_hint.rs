@@ -142,11 +142,17 @@ impl NoteExecutionHint {
 
                 let block_round_index = block_num / round_len_blocks;
 
-                // A slot that starts past the last block never comes around, so saturating here
-                // answers `false` rather than overflowing.
-                let slot_start_block = (block_round_index * round_len_blocks)
-                    .saturating_add(u32::from(*slot_offset).saturating_mul(slot_len_blocks));
-                let slot_end_block = slot_start_block.saturating_add(slot_len_blocks);
+                // Widen to `u64` for the slot bounds. A slot's end can legitimately be `2^32`,
+                // which does not fit a `u32` even though every block number inside the slot does.
+                // Saturating in `u32` would clamp that end to `u32::MAX` and answer `false` for
+                // `BlockNumber::MAX`, which the slot actually contains. Nothing here can overflow
+                // a `u64`: `block_round_index * round_len_blocks` is at most `block_num`, and
+                // `slot_offset` is a `u8` while both lengths are at most `2^31`.
+                let slot_start_block = u64::from(block_round_index) * u64::from(round_len_blocks)
+                    + u64::from(*slot_offset) * u64::from(slot_len_blocks);
+                let slot_end_block = slot_start_block + u64::from(slot_len_blocks);
+
+                let block_num = u64::from(block_num);
 
                 let can_be_consumed = block_num >= slot_start_block && block_num < slot_end_block;
                 Some(can_be_consumed)
@@ -266,6 +272,34 @@ mod tests {
         assert_eq!(
             NoteExecutionHint::on_block_slot(31, 31, 255).can_be_consumed(100.into()),
             Some(false)
+        );
+    }
+
+    /// A slot can end at exactly `2^32`, one past the last block number. That end does not fit a
+    /// `u32` even though every block inside the slot does, so the bounds are computed in `u64`.
+    #[test]
+    fn a_slot_ending_past_the_block_space_still_contains_the_last_block() {
+        let last = BlockNumber::from(u32::MAX);
+
+        // Rounds and slots of a single block, no offset: every block is in its own slot.
+        assert_eq!(NoteExecutionHint::on_block_slot(0, 0, 0).can_be_consumed(last), Some(true));
+
+        // The second slot of a two-block round. The last such slot is `u32::MAX..2^32`.
+        assert_eq!(NoteExecutionHint::on_block_slot(1, 0, 1).can_be_consumed(last), Some(true));
+
+        // 256-block rounds with 128-block slots. The last round is `4294967040..2^32`, so its
+        // second slot is `4294967168..2^32` and holds every block from there to `u32::MAX`.
+        let hint = NoteExecutionHint::on_block_slot(8, 7, 1);
+        assert_eq!(hint.can_be_consumed(last), Some(true));
+        assert_eq!(hint.can_be_consumed(BlockNumber::from(4_294_967_168u32)), Some(true));
+        // One block earlier is still in the first slot of that round.
+        assert_eq!(hint.can_be_consumed(BlockNumber::from(4_294_967_167u32)), Some(false));
+
+        // The block before the last is unaffected either way, so this pins the boundary itself.
+        assert_eq!(
+            NoteExecutionHint::on_block_slot(0, 0, 0)
+                .can_be_consumed(BlockNumber::from(u32::MAX - 1)),
+            Some(true)
         );
     }
 
