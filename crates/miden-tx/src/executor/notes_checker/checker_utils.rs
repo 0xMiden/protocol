@@ -88,6 +88,19 @@ impl FailedNote {
         &self.failure
     }
 
+    /// Returns `true` if the executor blamed this note for the failure.
+    pub fn is_blamed(&self) -> bool {
+        matches!(self.failure, NoteFailure::Blamed { .. })
+    }
+
+    /// Returns `true` if this note was rejected along with the bundle of the note it is bound to.
+    ///
+    /// This is not the negation of [`FailedNote::is_blamed`]: [`NoteFailure`] is non-exhaustive, so
+    /// a note may in future fail for a reason that is neither.
+    pub fn is_collateral(&self) -> bool {
+        matches!(self.failure, NoteFailure::Collateral { .. })
+    }
+
     /// Returns a reference to the error, if this note was the one blamed for the failure. `None`
     /// otherwise.
     pub fn error(&self) -> Option<&TransactionExecutorError> {

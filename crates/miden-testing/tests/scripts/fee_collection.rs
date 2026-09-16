@@ -1523,11 +1523,7 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
     ];
     let info = check_notes(&mock_chain, network_account.id(), notes).await?;
 
-    let blamed: Vec<_> = info
-        .failed()
-        .iter()
-        .filter(|failed| matches!(failed.failure(), NoteFailure::Blamed { .. }))
-        .collect();
+    let blamed: Vec<_> = info.failed().iter().filter(|failed| failed.is_blamed()).collect();
     assert_eq!(blamed.len(), 1, "a rejected bundle should blame exactly one note");
     assert_eq!(
         blamed[0].note().id(),
@@ -1551,6 +1547,10 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
         blamed_by,
         feature_notes[1].id(),
         "collateral should name the note that was blamed"
+    );
+    assert!(
+        collateral_note.is_collateral(),
+        "the sponsorship should be reported as collateral"
     );
     assert!(collateral_note.error().is_none(), "a collateral note has no error of its own");
 
