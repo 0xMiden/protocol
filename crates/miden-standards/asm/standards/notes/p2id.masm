@@ -41,6 +41,11 @@ const SALT_1_PTR = STORAGE_PTR + 3
 #!   account check.
 #! The storage layout is [target_account_id_suffix, target_account_id_prefix, salt_0, salt_1].
 #!
+#! A secret salt makes brute force checks of account IDs against the storage commitment
+#! computationally infeasible. A zero salt does not provide this protection. A PSWAP that stores
+#! the P2ID note's storage commitment instead of the target account ID allows PSWAP fillers to
+#! create private P2ID payback notes without learning the target account ID of the P2ID note.
+#!
 #! Panics if:
 #! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
 #! - Account ID of executing account is not equal to the Account ID specified via note storage.
