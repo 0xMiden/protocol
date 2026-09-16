@@ -65,6 +65,9 @@ pub enum RbacConfig {
     },
     /// Renounce `role` held by the note sender.
     RenounceRole { role: RoleSymbol },
+    /// Set the delay, in seconds, between a grant of `role` and its activation. Only a member of
+    /// the built-in `ADMIN` role is authorized.
+    SetGrantDelay { role: RoleSymbol, grant_delay: u32 },
 }
 
 impl RbacConfig {
@@ -76,6 +79,7 @@ impl RbacConfig {
     const SELECTOR_REVOKE_ROLE: u8 = 1;
     const SELECTOR_SET_ROLE_ADMIN: u8 = 2;
     const SELECTOR_RENOUNCE_ROLE: u8 = 3;
+    const SELECTOR_SET_GRANT_DELAY: u8 = 4;
 
     /// Returns the note storage values encoding this action, laid out as `[selector, ..args]`.
     fn to_storage_values(&self) -> Vec<Felt> {
@@ -105,6 +109,13 @@ impl RbacConfig {
             RbacConfig::RenounceRole { role } => {
                 vec![Felt::from(Self::SELECTOR_RENOUNCE_ROLE), role.as_element()]
             },
+            RbacConfig::SetGrantDelay { role, grant_delay } => {
+                vec![
+                    Felt::from(Self::SELECTOR_SET_GRANT_DELAY),
+                    role.as_element(),
+                    Felt::from(*grant_delay),
+                ]
+            },
         }
     }
 }
@@ -124,14 +135,16 @@ impl From<RbacConfig> for NoteStorage {
 /// the account that consumes it.
 ///
 /// A single note script dispatches on a selector in the note's storage to one of the component's
-/// management procedures (`grant_role`, `revoke_role`, `set_role_admin`, `renounce_role`). All
+/// management procedures (`grant_role`, `revoke_role`, `set_role_admin`, `renounce_role`,
+/// `set_grant_delay`). All
 /// authorization is enforced by those procedures against the note sender, so the note carries no
 /// assets and its authorization is bound to `sender` at creation time.
 ///
 /// The note is always public and tagged for `account` — the account carrying the
 /// `RoleBasedAccessControl` component whose role graph is being managed. The `sender` is the
 /// account authorized for the selected action: a member of the role's effective admin role for
-/// `GrantRole` / `RevokeRole` / `SetRoleAdmin`, or the role holder itself for `RenounceRole`.
+/// `GrantRole` / `RevokeRole` / `SetRoleAdmin`, the role holder itself for `RenounceRole`, or a
+/// member of `ADMIN` for `SetGrantDelay`.
 ///
 /// The note is bound to the target `account` by a [`NetworkAccountTarget`] attachment: the script
 /// asserts that the consuming account matches that target before dispatching, so the note cannot be
@@ -211,9 +224,9 @@ impl RbacConfigNote {
     /// The numbers of storage items the RbacConfig note script accepts.
     ///
     /// The layout is variable: `GrantRole` / `RevokeRole` use 4 items (`[selector, role_symbol,
-    /// account_suffix, account_prefix]`), `SetRoleAdmin` uses 3, and `RenounceRole` uses 2, so
-    /// every size in the range is used by one of the actions. Keep in sync with the `NUM_ITEMS_*`
-    /// constants in `rbac_config.masm`.
+    /// account_suffix, account_prefix]`), `SetRoleAdmin` and `SetGrantDelay` use 3, and
+    /// `RenounceRole` uses 2, so every size in the range is used by one of the actions. Keep in
+    /// sync with the `NUM_ITEMS_*` constants in `rbac_config.masm`.
     pub const NUM_STORAGE_ITEMS: NumStorageItems = NumStorageItems::Range { min: 2, max: 4 };
 
     // PUBLIC ACCESSORS
@@ -516,6 +529,25 @@ mod tests {
                 Felt::from(RbacConfig::SELECTOR_SET_ROLE_ADMIN),
                 minter.as_element(),
                 admin.as_element(),
+            ]
+        );
+    }
+
+    /// `SetGrantDelay` storage is `[selector, role_symbol, grant_delay]`.
+    #[test]
+    fn set_grant_delay_storage_layout() {
+        let minter = role("MINTER");
+        let storage = NoteStorage::from(RbacConfig::SetGrantDelay {
+            role: minter.clone(),
+            grant_delay: 3_600,
+        });
+
+        assert_eq!(
+            storage.items(),
+            &[
+                Felt::from(RbacConfig::SELECTOR_SET_GRANT_DELAY),
+                minter.as_element(),
+                Felt::from(3_600u32),
             ]
         );
     }

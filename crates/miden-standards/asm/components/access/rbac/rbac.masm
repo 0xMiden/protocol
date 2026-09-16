@@ -9,3 +9,5 @@ pub use {set_role_admin} from miden::standards::access::rbac
 pub use {grant_role} from miden::standards::access::rbac
 pub use {revoke_role} from miden::standards::access::rbac
 pub use {renounce_role} from miden::standards::access::rbac
+pub use {set_grant_delay} from miden::standards::access::rbac
+pub use {get_grant_delay} from miden::standards::access::rbac
