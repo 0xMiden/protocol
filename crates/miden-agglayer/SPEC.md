@@ -290,9 +290,7 @@ every feature-note root in the account's deployment allowlist. `FEE_SPONSORSHIP`
 allowlisted and has an explicit zero fee because it never requires a sponsorship of its own.
 `P2ID` is allowlisted by default as well, so a P2ID note carrying the fee asset can fund the
 account, e.g. for its account-creating transaction. The schedule prices it like any other feature
-note, so such a deposit is consumed together with a `FEE_SPONSORSHIP` note bound to it. The
-depositor builds that sponsorship by hand: the sender-side automatic sponsorship prices a note
-through an FPI call into the target account, which fails while the account is not deployed.
+note, so such a deposit is consumed together with a `FEE_SPONSORSHIP` note bound to it.
 
 The bridge's and each faucet's `FEE_MNGR` holders update that account's schedule through
 `CONSTANT_FEE_POLICY_CONFIG` notes. The account's `ADMIN` retains control of fee-policy selection
