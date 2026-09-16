@@ -54,6 +54,13 @@ procedure_root!(
     Authority::code()
 );
 
+procedure_root!(
+    AUTHORITY_SET_PROCEDURE_ROLE,
+    AUTHORITY_LIBRARY_PATH,
+    Authority::SET_PROCEDURE_ROLE_PROC_NAME,
+    Authority::code()
+);
+
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::authority::authority_config")
         .expect("storage slot name should be valid")
@@ -171,11 +178,7 @@ pub enum Authority {
     /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
     /// installed on the account. the MASM helper calls into `rbac::assert_sender_has_role` and will
     /// fail to link otherwise.
-    ///
-    /// No procedure writes this map: it is populated at deployment, and the raw
-    /// [`AccountComponent::new`] route checks only the slot count. The MASM helper therefore holds
-    /// each mapped role to the canonical [`RoleSymbol`] encoding when it reads one, so a value this
-    /// map accepts on-chain is exactly one [`Self::try_from_storage`] can decode off-chain.
+    /// The map is seeded at deployment and can be changed later by `set_procedure_role`
     RbacControlled {
         procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     } = RBAC_CONTROLLED,
@@ -189,6 +192,8 @@ impl Authority {
     const FREEZE_PROC_NAME: &'static str = "freeze";
     /// Name of the owner-gated procedure that unfreezes the authority-gated surface.
     const UNFREEZE_PROC_NAME: &'static str = "unfreeze";
+    /// Name of the procedure that assigns a role to an authority-gated procedure.
+    const SET_PROCEDURE_ROLE_PROC_NAME: &'static str = "set_procedure_role";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -216,6 +221,11 @@ impl Authority {
     /// procedures it bypasses the frozen flag so it can always be toggled.
     pub fn unfreeze_root() -> AccountProcedureRoot {
         *AUTHORITY_UNFREEZE
+    }
+
+    /// Returns the procedure root of `set_procedure_role`.
+    pub fn set_procedure_role_root() -> AccountProcedureRoot {
+        *AUTHORITY_SET_PROCEDURE_ROLE
     }
 
     /// Returns the [`StorageSlotName`] holding the authority configuration.
