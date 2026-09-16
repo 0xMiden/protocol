@@ -5,6 +5,7 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::deferred::PrecompileError;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -1529,6 +1530,19 @@ pub enum ProvenBatchError {
     BatchKernelExecutionFailed(#[source] ExecutionError),
     #[error("batch kernel proving failed")]
     BatchKernelProvingFailed(#[source] ExecutionError),
+    #[error("precompile witness of transaction {transaction_id} is invalid")]
+    TransactionPrecompileWitnessInvalid {
+        transaction_id: TransactionId,
+        source: PrecompileError,
+    },
+    #[error(
+        "precompile witness root of transaction {transaction_id} is {actual}, but its VM proof commits to {expected}"
+    )]
+    TransactionPrecompileRootMismatch {
+        transaction_id: TransactionId,
+        expected: Word,
+        actual: Word,
+    },
     #[error("precompile proving failed")]
     PrecompileProvingFailed(#[source] ExecutionError),
     #[error("batch proof contains precompiles")]

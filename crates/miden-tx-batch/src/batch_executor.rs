@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::{
@@ -46,21 +47,21 @@ impl BatchExecutor {
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
     /// passed to [`LocalBatchProver::prove`](crate::LocalBatchProver::prove).
     ///
-    /// The executed batch carries the merged precompile witness of the batch's transactions, which
-    /// the prover settles with a single precompile proof.
+    /// The executed batch carries the ordered precompile witnesses of the batch's transactions,
+    /// which the prover settles with a single precompile proof.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - more transactions carry outstanding precompile claims than one precompile proof covers;
-    /// - a transaction's deferred precompile witness is invalid or cannot be merged;
+    /// - a transaction's deferred precompile witness is invalid or does not match its VM proof;
     /// - the batch kernel program fails to execute or defers precompile work of its own;
     /// - the kernel output stack fails to parse.
     pub fn execute(
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
-        let precompile_witnesses = Self::collect_precompile_witnesses(&proposed_batch);
+        let precompile_witnesses = Self::collect_precompile_witnesses(&proposed_batch)?;
 
         let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
 
@@ -90,12 +91,36 @@ impl BatchExecutor {
     /// Collects the outstanding precompile witnesses in transaction order.
     ///
     /// Their order and duplicates are significant to the aggregate precompile statement.
-    fn collect_precompile_witnesses(proposed_batch: &ProposedBatch) -> Vec<PrecompileWitness> {
-        proposed_batch
-            .transactions()
-            .iter()
-            .filter_map(|transaction| transaction.precompile_witness().cloned())
-            .collect()
+    fn collect_precompile_witnesses(
+        proposed_batch: &ProposedBatch,
+    ) -> Result<Vec<PrecompileWitness>, ProvenBatchError> {
+        let registry = Arc::new(miden_precompiles::registry());
+        let mut witnesses = Vec::new();
+
+        for transaction in proposed_batch.transactions() {
+            let Some(witness) = transaction.precompile_witness() else {
+                continue;
+            };
+
+            let actual = witness.compute_root(Arc::clone(&registry)).map_err(|source| {
+                ProvenBatchError::TransactionPrecompileWitnessInvalid {
+                    transaction_id: transaction.id(),
+                    source,
+                }
+            })?;
+            let expected = transaction.proof().vm().precompile_root;
+            if actual != expected {
+                return Err(ProvenBatchError::TransactionPrecompileRootMismatch {
+                    transaction_id: transaction.id(),
+                    expected,
+                    actual,
+                });
+            }
+
+            witnesses.push(witness.clone());
+        }
+
+        Ok(witnesses)
     }
 }
 

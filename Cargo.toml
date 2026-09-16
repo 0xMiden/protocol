@@ -60,6 +60,7 @@ miden-crypto           = { default-features = false, git = "https://github.com/0
 miden-crypto-derive    = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "0c817307ff8e78e27675fc5cb8befafe68bf25d4", version = "0.33.0" }
 miden-mast-package     = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "0c817307ff8e78e27675fc5cb8befafe68bf25d4", version = "0.33.0" }
 miden-package-registry = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "0c817307ff8e78e27675fc5cb8befafe68bf25d4", version = "0.33.0" }
+miden-precompiles      = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "0c817307ff8e78e27675fc5cb8befafe68bf25d4", version = "0.33.0" }
 miden-processor        = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "0c817307ff8e78e27675fc5cb8befafe68bf25d4", version = "0.33.0" }
 miden-project          = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "0c817307ff8e78e27675fc5cb8befafe68bf25d4", version = "0.33.0" }
 miden-prover           = { default-features = false, git = "https://github.com/0xMiden/miden-vm", rev = "0c817307ff8e78e27675fc5cb8befafe68bf25d4", version = "0.33.0" }

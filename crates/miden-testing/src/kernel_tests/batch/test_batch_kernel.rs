@@ -4,13 +4,19 @@ use std::collections::BTreeMap;
 use std::iter;
 
 use anyhow::Context;
+use assert_matches::assert_matches;
+use miden_core::deferred::{PrecompileError, PrecompileWitness, PrecompileWitnessEntry, Tag};
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::ProvenBatchError;
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::ProvenTransaction;
-use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::vm::{ExecutionProof, PrecompileStatus};
+use miden_protocol::{Felt, MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch::{BatchExecutor, LocalBatchProver};
+use miden_verifier::{HashFunction, StarkProof, VmProof};
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
 use super::proven_tx_builder::MockProvenTxBuilder;
@@ -145,8 +151,57 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The batch settles the outstanding precompile claims of its transactions: the executor merges one
-/// witness per ECDSA transaction in transaction order, and the prover proves them all at once.
+/// Deserialization does not verify transaction proofs, so the executor must still reject an
+/// invalid portable precompile witness before proof generation can be skipped.
+#[test]
+fn batch_executor_rejects_invalid_deserialized_precompile_witness() -> anyhow::Result<()> {
+    let witness = PrecompileWitness::from_entries(vec![PrecompileWitnessEntry::Data {
+        tag: Tag::CHUNKS,
+        chunks: vec![[Felt::from(10_u32); 8]],
+    }])?;
+    let proof = ExecutionProof::new(
+        VmProof {
+            proof: StarkProof::new(Vec::new(), HashFunction::Blake3_256),
+            precompile_root: witness.root_unchecked(),
+        },
+        PrecompileStatus::Deferred(witness),
+    );
+
+    let mut setup = setup_chain();
+    let block1 = setup.chain.block_header(1);
+    let block2 = setup.chain.prove_next_block()?;
+    let transaction = MockProvenTxBuilder::with_account(
+        setup.account1.id(),
+        Word::empty(),
+        setup.account1.to_commitment(),
+    )
+    .reference_block(&block1)
+    .authenticated_notes(vec![setup.note1.clone()])
+    .proof(proof)
+    .build()?;
+    let batch = ProposedBatch::new_unverified(
+        vec![Arc::new(transaction)],
+        block2.header().clone(),
+        setup.chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+    let decoded = ProposedBatch::read_from_bytes(&batch.to_bytes())?;
+
+    let error = match BatchExecutor::new().execute(decoded) {
+        Ok(_) => anyhow::bail!("invalid precompile witness passed batch execution"),
+        Err(error) => error,
+    };
+    assert_matches!(
+        error,
+        ProvenBatchError::TransactionPrecompileWitnessInvalid { source, .. }
+            if matches!(source.root(), PrecompileError::AssertionFailed)
+    );
+
+    Ok(())
+}
+
+/// The batch settles the outstanding precompile claims of its transactions: the executor collects
+/// one witness per ECDSA transaction in transaction order, and the prover proves them all at once.
 /// Falcon verifies in-circuit and therefore contributes no claim.
 ///
 /// The four transactions are proven once and reused across the batch shapes, because proving them

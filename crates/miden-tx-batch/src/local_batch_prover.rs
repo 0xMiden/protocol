@@ -38,7 +38,7 @@ impl LocalBatchProver {
 
     /// Returns the prover with generation of the batch's precompile proof turned off.
     ///
-    /// The precompile claims are still checked natively when the executor rehydrates them, so the
+    /// The precompile claims are still checked natively when the executor collects them, so the
     /// resulting batch is unchanged; only the in-circuit evidence for those claims is missing.
     ///
     /// This option can be removed once the batch kernel proof recursively verifies the transaction
@@ -71,7 +71,7 @@ impl LocalBatchProver {
         if !self.skip_precompile_proof_generation && !precompile_witnesses.is_empty() {
             // The proof is dropped: the batch kernel cannot verify it yet, and shipping it on the
             // proven batch would add a wire format field that has to be removed again once the
-            // kernel does. The VM verifier already checked each witness natively against its
+            // kernel does. The batch executor already checked each witness natively against its
             // transaction proof; proving them adds that the aggregate statement holds in-circuit.
             let _precompile_proof = self
                 .prover
