@@ -240,6 +240,10 @@ impl P2idNoteStorage {
     }
 
     /// Sets the salt included in the storage commitment.
+    ///
+    /// For privacy, sample both elements uniformly at random and keep them secret. The default zero
+    /// salt does not prevent target-account enumeration. Salt does not hide account-derived note
+    /// tags.
     pub fn with_salt(mut self, salt: [Felt; 2]) -> Self {
         self.salt = salt;
         self
