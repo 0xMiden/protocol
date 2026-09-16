@@ -439,6 +439,52 @@ mod tests {
         }
     }
 
+    /// Tests account ID enumeration against an exposed private P2ID storage commitment.
+    /// This checks a bounded candidate search, not the cost of recovering an unknown salt.
+    #[test]
+    fn private_note_storage_commitment_account_id_search() {
+        let candidates: Vec<_> = (0..16u8)
+            .map(|seed| {
+                AccountId::builder()
+                    .account_type(AccountType::Private)
+                    .build_with_seed([seed; 32])
+            })
+            .collect();
+        let target = candidates[7];
+        let salt_word = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+        let salt = [salt_word[0], salt_word[1]];
+
+        let storage_commitment = |salt| {
+            let note: Note = P2idNote::builder()
+                .sender(sender())
+                .target(target)
+                .salt(salt)
+                .note_type(NoteType::Private)
+                .serial_number(Word::empty())
+                .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
+                .build()
+                .unwrap()
+                .into();
+            note.storage().commitment()
+        };
+        let find_target = |commitment, salt| {
+            candidates.iter().copied().find(|candidate| {
+                NoteStorage::from(P2idNoteStorage::new(*candidate).with_salt(salt)).commitment()
+                    == commitment
+            })
+        };
+
+        let unsalted_commitment = storage_commitment([Felt::ZERO; 2]);
+        let salted_commitment = storage_commitment(salt);
+
+        // With zero salt, checking the candidate account IDs identifies the target.
+        assert_eq!(find_target(unsalted_commitment, [Felt::ZERO; 2]), Some(target));
+        // The same search fails when the note has a secret salt, even with the target in the set.
+        assert_eq!(find_target(salted_commitment, [Felt::ZERO; 2]), None);
+        // Disclosing the salt makes the target identifiable again.
+        assert_eq!(find_target(salted_commitment, salt), Some(target));
+    }
+
     /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.
     #[test]
     fn builder_accumulates_assets() {
