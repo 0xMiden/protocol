@@ -22,7 +22,7 @@
 
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
-- Fixed `NoteExecutionHint::can_be_consumed` panicking in debug and masking the shift in release for an `OnBlockSlot` hint whose round or slot length does not fit a `u32` ([#3869](https://github.com/0xMiden/protocol/pull/3869)).
+- Fixed `NoteExecutionHint::can_be_consumed` overflowing on an `OnBlockSlot` hint. A round or slot length of 32 or more shifted past a `u32`, panicking in debug and masking the shift in release; a large `slot_offset` overflowed the slot arithmetic even for in-range lengths; and the slot bounds are now computed in `u64` so a slot ending at `2^32` still contains `BlockNumber::MAX` ([#3869](https://github.com/0xMiden/protocol/pull/3869)).
 
 ## v0.17.0-pre.1 (2026-09-05)
 
