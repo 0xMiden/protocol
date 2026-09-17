@@ -8,8 +8,7 @@ use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 
 /// A [`ProposedBatch`] whose batch kernel has been executed, but not yet proven.
 ///
-/// Produced by [`BatchExecutor::execute`](crate::BatchExecutor::execute) or
-/// [`BatchExecutor::execute_unchecked`](crate::BatchExecutor::execute_unchecked) and consumed by
+/// Produced by [`BatchExecutor::execute`](crate::BatchExecutor::execute) and consumed by
 /// [`LocalBatchProver::prove`](crate::LocalBatchProver::prove). It carries the witnesses proving
 /// needs: the batch kernel's VM witness and the portable precompile witnesses of the batch's
 /// transactions in transaction order.

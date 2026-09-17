@@ -90,6 +90,7 @@
 - [BREAKING] Multisig approvals now expire through the dedicated `MultisigAuthArgs::with_approval_expiration_delta` ([#3884](https://github.com/0xMiden/protocol/pull/3884)).
 - [BREAKING] `AuthNetworkAccount` now expands into `BasicWallet` as well and `AuthNetworkAccount::new` allowlists the P2ID script root by default, so every network account built with `AuthNetworkAccount::new` can be deployed by consuming a P2ID note ([#3893](https://github.com/0xMiden/protocol/pull/3893)).
 - [BREAKING] Updated the Miden VM and crypto crate family to v0.33.0. Execution proof and witness transport now use format 2 and reject v0.32.1 artifacts. Deferred proofs carry portable precompile witnesses, batch proving consumes those witnesses in transaction order, and recursive verifier MAST roots change. Routing parameters now support the Eidos sealing-key variants ([#3894](https://github.com/0xMiden/protocol/pull/3894)).
+- [BREAKING] Removed the `Serializable` and `Deserializable` implementations for `ProposedBatch` in favor of its protobuf encoding, which verifies the transactions' proofs ([#3895](https://github.com/0xMiden/protocol/pull/3895)).
 - [BREAKING] Incremented the MSRV to 1.98.1.
 
 ### Fixes
