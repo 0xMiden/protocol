@@ -27,12 +27,11 @@ use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::auth::SponsorshipPolicy;
+use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::StandardNote;
-use miden_standards::note::config::NetworkAccountConfigNote;
 use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 
@@ -100,14 +99,16 @@ fn network_auth(allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>) 
 ///
 /// The network account's auth procedure estimates every input note's fee through the active
 /// policy during fee collection, and a constant policy aborts for unscheduled roots - so every
-/// `zero_fee_root` (and the auto-allowlisted NETWORK_ACCOUNT_CONFIG note) is scheduled at an
-/// explicit 0 fee, and each `(root, amount)` in `priced` at its amount.
+/// `zero_fee_root` (and every note `AuthNetworkAccount::new` allowlists by default) is scheduled
+/// at an explicit 0 fee, and each `(root, amount)` in `priced` at its amount.
 fn fee_policy_manager(
     zero_fee_roots: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
 ) -> Result<FeePolicyManager> {
-    let mut policy = BasicConstantFeePolicy::new()
-        .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+    let mut policy = BasicConstantFeePolicy::new();
+    for root in AuthNetworkAccount::default_allowed_note_scripts() {
+        policy = policy.with_fee(root, AssetAmount::ZERO);
+    }
     for root in zero_fee_roots {
         policy = policy.with_fee(root, AssetAmount::ZERO);
     }

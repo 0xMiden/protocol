@@ -40,6 +40,18 @@ message OutputNote {
   }
 }
 
+// A note created by an executed transaction, before proving erases the details of private notes.
+message RawOutputNote {
+  oneof note {
+    note.Note full = 1;
+    note.PartialNote partial = 2;
+  }
+}
+
+message RawOutputNotes {
+  repeated RawOutputNote notes = 1;
+}
+
 message TxAccountUpdate {
   account.AccountId account_id = 1;
   primitives.Word initial_state_commitment = 2;

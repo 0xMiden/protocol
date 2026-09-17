@@ -35,9 +35,9 @@ members = [
 ]
 
 [workspace.package]
-version = "0.16.0"
+version = "0.17.0"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.32" }
-miden-protocol  = { linkage = "dynamic", version = "0.16.0" }
-miden-standards = { linkage = "static", version = "0.16.0" }
+miden-core      = { linkage = "dynamic", version = "0.33" }
+miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
+miden-standards = { linkage = "static", version = "0.17.0" }
