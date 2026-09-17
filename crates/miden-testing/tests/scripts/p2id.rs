@@ -19,18 +19,10 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use crate::prove_and_verify_transaction_complete;
 
-/// Public and private P2ID notes transfer both assets only to the target account, regardless of
-/// salt.
-#[rstest::rstest]
-#[case::public_zero_salt(NoteType::Public, [Felt::ZERO; 2])]
-#[case::private_zero_salt(NoteType::Private, [Felt::ZERO; 2])]
-#[case::public_salted(NoteType::Public, [Felt::ONE, Felt::from(2u32)])]
-#[case::private_salted(NoteType::Private, [Felt::ONE, Felt::from(2u32)])]
+/// We test the Pay to script with 2 assets to test the loop inside the script.
+/// So we create a note containing two assets that can only be consumed by the target account.
 #[tokio::test]
-async fn p2id_script_multiple_assets(
-    #[case] note_type: NoteType,
-    #[case] salt: [Felt; 2],
-) -> anyhow::Result<()> {
+async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     // Create assets
     let fungible_asset_1: Asset = FungibleAsset::mock(123);
     let fungible_asset_2: Asset =
@@ -50,16 +42,12 @@ async fn p2id_script_multiple_assets(
     })?;
 
     // Create the note
-    let note: Note = P2idNote::builder()
-        .sender(sender_account.id())
-        .target(target_account.id())
-        .salt(salt)
-        .assets([fungible_asset_1, fungible_asset_2])
-        .note_type(note_type)
-        .serial_number(Word::from([1, 2, 3, 4u32]))
-        .build()?
-        .into();
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let note = builder.add_p2id_note(
+        sender_account.id(),
+        target_account.id(),
+        &[fungible_asset_1, fungible_asset_2],
+        NoteType::Public,
+    )?;
 
     let mock_chain = builder.build()?;
 

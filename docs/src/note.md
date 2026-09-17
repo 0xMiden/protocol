@@ -227,7 +227,7 @@ The P2ID note script implements a simple pay-to-account-ID pattern. It adds the 
 **Key characteristics:**
 
 - **Purpose:** Direct asset transfer to a specific account ID
-- **Storage:** Requires exactly 4 storage items containing the target account ID and two salt elements. The salt defaults to zero and is included in the storage commitment.
+- **Storage:** Requires exactly 4 storage items containing the target account ID and two salt elements. A random salt kept secret protects the target account ID against guesses using an exposed storage commitment; the default zero salt does not provide this protection.
 - **Validation:** Ensures the consuming account's ID matches the target account ID specified in the note
 - **Requirements:** Target account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
