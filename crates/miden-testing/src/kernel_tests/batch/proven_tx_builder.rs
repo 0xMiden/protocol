@@ -49,13 +49,6 @@ impl MockProvenTxBuilder {
         }
     }
 
-    /// Sets the execution proof the transaction carries.
-    #[must_use]
-    pub fn proof(mut self, proof: ExecutionProof) -> Self {
-        self.proof = proof;
-        self
-    }
-
     /// Adds unauthenticated notes to the transaction.
     #[must_use]
     pub fn authenticated_notes(mut self, notes: Vec<Note>) -> Self {

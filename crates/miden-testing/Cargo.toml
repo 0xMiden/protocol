@@ -45,7 +45,6 @@ miden-assembly  = { workspace = true }
 miden-core      = { workspace = true }
 miden-crypto    = { workspace = true }
 miden-protocol  = { features = ["std"], workspace = true }
-miden-verifier  = { workspace = true }
 primitive-types = { workspace = true }
 rstest          = { workspace = true }
 serde           = { features = ["derive"], workspace = true }

@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::{
@@ -53,34 +52,9 @@ impl BatchExecutor {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - more transactions carry outstanding precompile claims than one precompile proof covers;
-    /// - a transaction's deferred precompile witness is invalid or does not match its VM proof;
     /// - the batch kernel program fails to execute or defers precompile work of its own;
     /// - the kernel output stack fails to parse.
     pub fn execute(
-        &self,
-        proposed_batch: ProposedBatch,
-    ) -> Result<ExecutedBatch, ProvenBatchError> {
-        Self::validate_precompile_witnesses(&proposed_batch)?;
-        self.execute_unchecked(proposed_batch)
-    }
-
-    /// Runs the batch kernel without validating each deferred precompile witness against its
-    /// transaction proof.
-    ///
-    /// Callers must ensure that every transaction in `proposed_batch` has passed
-    /// [`TransactionVerifier::verify`](miden_protocol::transaction::TransactionVerifier::verify).
-    /// [`ProposedBatch::new`] provides this guarantee, but deserialization does not.
-    ///
-    /// All other checks performed by [`Self::execute`] still apply.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - more transactions carry outstanding precompile claims than one precompile proof covers;
-    /// - the batch kernel program fails to execute or defers precompile work of its own;
-    /// - the kernel output stack fails to parse.
-    pub fn execute_unchecked(
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
@@ -111,36 +85,6 @@ impl BatchExecutor {
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
         Ok(ExecutedBatch::new(proposed_batch, witness, precompile_witnesses, batch_outputs))
-    }
-
-    /// Validates each outstanding precompile witness against its transaction proof.
-    fn validate_precompile_witnesses(
-        proposed_batch: &ProposedBatch,
-    ) -> Result<(), ProvenBatchError> {
-        let registry = Arc::new(miden_precompiles::registry());
-
-        for transaction in proposed_batch.transactions() {
-            let Some(witness) = transaction.precompile_witness() else {
-                continue;
-            };
-
-            let actual = witness.compute_root(Arc::clone(&registry)).map_err(|source| {
-                ProvenBatchError::TransactionPrecompileWitnessInvalid {
-                    transaction_id: transaction.id(),
-                    source,
-                }
-            })?;
-            let expected = transaction.proof().vm().precompile_root;
-            if actual != expected {
-                return Err(ProvenBatchError::TransactionPrecompileRootMismatch {
-                    transaction_id: transaction.id(),
-                    expected,
-                    actual,
-                });
-            }
-        }
-
-        Ok(())
     }
 
     /// Collects the outstanding precompile witnesses in transaction order.
