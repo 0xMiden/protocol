@@ -161,3 +161,7 @@ The ability to facilitate both, local and network transactions, **is one of the 
 - When executing a `Transaction` the max number of VM cycles is **$2^{30}$**.
 
 :::
+
+## Transaction logs
+
+See [Transaction logs](transaction_logs.md) for account-emitted logs.

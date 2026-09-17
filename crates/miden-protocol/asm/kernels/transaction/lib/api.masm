@@ -26,6 +26,7 @@ use miden::tx_kernel_core::faucet
 use miden::tx_kernel_core::input_note
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::output_note
+use miden::tx_kernel_core::log
 use miden::tx_kernel_core::tx
 
 use {
@@ -2134,4 +2135,20 @@ proc get_requested_note_ptr(is_active_note: Bool, note_index: u16) -> ptr<InputN
     # on the stack. If it is false, indexed_input_note_ptr remains instead.
     cdrop
     # => [input_note_ptr]
+end
+
+#! Records a log from the authenticated active account.
+#! Inputs: [topic_0, topic_1, PAYLOAD_COMMITMENT, pad(10)]
+#! Outputs: [pad(16)]
+pub proc tx_add_log(topic_0: felt, topic_1: felt, payload_commitment: word, padding: [felt; 10]) -> [felt; 16]
+    exec.authenticate_account_origin
+    exec.log::add_log
+end
+
+#! Returns the current transaction log commitment.
+#! Inputs: [pad(16)]
+#! Outputs: [LOGS_COMMITMENT, pad(12)]
+pub proc tx_get_logs_commitment(padding: [felt; 16]) -> (word, [felt; 12])
+    exec.log::get_commitment
+    swapw dropw
 end

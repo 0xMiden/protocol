@@ -553,3 +553,8 @@ const _: () = assert!(
     (LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR).is_multiple_of(LINK_MAP_ENTRY_SIZE),
     "the link map memory range should cleanly contain a multiple of the entry size"
 );
+
+/// Number of transaction logs collected by the kernel.
+pub const NUM_LOGS_PTR: u32 = 1300;
+/// Secret opening for a private transaction's log commitment.
+pub const LOG_SALT_PTR: u32 = 1308;

@@ -10,7 +10,7 @@ use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
+use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
 
@@ -65,7 +65,9 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>) {
+    pub fn into_parts(
+        self,
+    ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
         self.base_host.into_parts()
     }
 }
@@ -183,6 +185,10 @@ where
 
             TransactionEvent::NoteBeforeAddAsset { note_idx, asset } => {
                 self.base_host.on_note_before_add_asset(note_idx, asset).map(|_| Vec::new())
+            },
+
+            TransactionEvent::TxLogAdded(log) => {
+                self.base_host.on_log_added(log).map(|_| Vec::new())
             },
 
             TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment } => self

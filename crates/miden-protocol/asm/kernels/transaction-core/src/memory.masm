@@ -120,6 +120,9 @@ const MIN_ACCOUNT_STACK_PTR = 1221
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR = 1284
 
+# Transaction log bookkeeping reserves 1300..1312, and the ordered individual log
+# commitments reserve 3000..3256. Their layout is defined in log.masm.
+
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
 

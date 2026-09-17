@@ -33,6 +33,7 @@ use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
     TransactionAdviceInputs,
+    TransactionLogs,
     TransactionSummary,
 };
 use miden_protocol::vm::{AdviceMap, EventId, EventName};
@@ -405,17 +406,19 @@ where
         AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
+        TransactionLogs,
         Vec<AccountCode>,
         BTreeMap<Word, Vec<Felt>>,
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
     ) {
-        let (account_patch, input_notes, output_notes) = self.base_host.into_parts();
+        let (account_patch, input_notes, output_notes, logs) = self.base_host.into_parts();
 
         (
             account_patch,
             input_notes,
             output_notes,
+            logs,
             self.accessed_foreign_account_code,
             self.generated_signatures,
             self.tx_progress,
@@ -588,6 +591,10 @@ where
 
                 TransactionEvent::NoteBeforeAddAsset { note_idx, asset } => {
                     self.base_host.on_note_before_add_asset(note_idx, asset)
+                },
+
+                TransactionEvent::TxLogAdded(log) => {
+                    self.base_host.on_log_added(log).map(|_| Vec::new())
                 },
 
                 TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment } => self
