@@ -298,9 +298,9 @@ end
 
 #! Verify signatures for all required signers in a loop.
 #!
-#! This procedure iterates through the required number of signers, fetches their public keys from
-#! the provided account storage map slot, verifies their signatures against the transaction message,
-#! and returns the number of successfully verified signatures.
+#! This procedure iterates through the required number of signers, fetches their public-key
+#! commitments from the provided account storage map slot, verifies their signatures against the
+#! transaction message, and returns the number of successfully verified signatures.
 #!
 #! For each signer, this procedure checks the advice map for a raw signature first and verifies it
 #! when present. Only when the raw signature is absent does it check for and verify an EIP-712
@@ -314,6 +314,15 @@ end
 #! Inputs:  [scheme_slot_id_{suffix,prefix}, public_key_slot_id_{suffix,prefix},
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
+#!
+#! Where:
+#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map slot
+#!   containing signature scheme IDs.
+#! - public_key_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map
+#!   slot containing public-key commitments.
+#! - num_of_approvers is the number of approvers whose signatures may be verified.
+#! - MSG is the transaction message.
+#! - num_verified_signatures is the number of signatures that were successfully verified.
 #!
 #! Invocation: exec
 @locals(5)
@@ -475,7 +484,8 @@ end
 #! Outputs: [is_verified, MSG, signer_idx]
 #!
 #! Where:
-#! - scheme_slot_id_{suffix,prefix} is the storage map slot containing signature scheme IDs.
+#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map slot
+#!   containing signature scheme IDs.
 #! - RAW_SIGNATURE_KEY is the advice-map key for a raw transaction signature.
 #! - PK_COMM is the signer's public-key commitment.
 #! - MSG is the transaction-summary hash.
