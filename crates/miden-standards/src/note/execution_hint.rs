@@ -134,14 +134,25 @@ impl NoteExecutionHint {
                 Some(block_num >= hint_block_num.as_u32())
             },
             NoteExecutionHint::OnBlockSlot { round_len, slot_len, slot_offset } => {
-                let round_len_blocks: u32 = 1 << round_len;
-                let slot_len_blocks: u32 = 1 << slot_len;
+                // The lengths are only bounded by their `u8` encoding, so they can exceed what a
+                // u32 round or slot can express. Such a hint cannot be evaluated, so report it as
+                // unknown instead of shifting out of range.
+                let round_len_blocks = 1u32.checked_shl(u32::from(*round_len))?;
+                let slot_len_blocks = 1u32.checked_shl(u32::from(*slot_len))?;
 
                 let block_round_index = block_num / round_len_blocks;
 
-                let slot_start_block =
-                    block_round_index * round_len_blocks + (*slot_offset as u32) * slot_len_blocks;
-                let slot_end_block = slot_start_block + slot_len_blocks;
+                // Widen to `u64` for the slot bounds. A slot's end can legitimately be `2^32`,
+                // which does not fit a `u32` even though every block number inside the slot does.
+                // Saturating in `u32` would clamp that end to `u32::MAX` and answer `false` for
+                // `BlockNumber::MAX`, which the slot actually contains. Nothing here can overflow
+                // a `u64`: `block_round_index * round_len_blocks` is at most `block_num`, and
+                // `slot_offset` is a `u8` while both lengths are at most `2^31`.
+                let slot_start_block = u64::from(block_round_index) * u64::from(round_len_blocks)
+                    + u64::from(*slot_offset) * u64::from(slot_len_blocks);
+                let slot_end_block = slot_start_block + u64::from(slot_len_blocks);
+
+                let block_num = u64::from(block_num);
 
                 let can_be_consumed = block_num >= slot_start_block && block_num < slot_end_block;
                 Some(can_be_consumed)
@@ -241,6 +252,55 @@ mod tests {
         }
 
         assert_eq!(Felt::from(NoteExecutionHint::always()).as_canonical_u64(), 1);
+    }
+
+    /// Round and slot lengths are only bounded by their `u8` encoding, so a hint can carry a
+    /// length that no u32 round or slot can express. Evaluating such a hint must not shift or
+    /// multiply out of range.
+    #[test]
+    fn out_of_range_block_slot_lengths_are_not_consumable() {
+        // 1 << 33 does not fit into a u32.
+        assert_eq!(NoteExecutionHint::on_block_slot(33, 0, 0).can_be_consumed(100.into()), None);
+        assert_eq!(NoteExecutionHint::on_block_slot(10, 33, 0).can_be_consumed(100.into()), None);
+
+        // Decoding reaches the same state: this is the hint `test_encode_round_trip` round trips.
+        let encoded = Felt::from(NoteExecutionHint::on_block_slot(22, 33, 44));
+        assert_eq!(NoteExecutionHint::from(encoded).can_be_consumed(100.into()), None);
+
+        // In-range lengths with an offset that runs past the end of the block space: the slot
+        // never comes around, so the answer is `false` rather than an overflow.
+        assert_eq!(
+            NoteExecutionHint::on_block_slot(31, 31, 255).can_be_consumed(100.into()),
+            Some(false)
+        );
+    }
+
+    /// A slot can end at exactly `2^32`, one past the last block number. That end does not fit a
+    /// `u32` even though every block inside the slot does, so the bounds are computed in `u64`.
+    #[test]
+    fn a_slot_ending_past_the_block_space_still_contains_the_last_block() {
+        let last = BlockNumber::from(u32::MAX);
+
+        // Rounds and slots of a single block, no offset: every block is in its own slot.
+        assert_eq!(NoteExecutionHint::on_block_slot(0, 0, 0).can_be_consumed(last), Some(true));
+
+        // The second slot of a two-block round. The last such slot is `u32::MAX..2^32`.
+        assert_eq!(NoteExecutionHint::on_block_slot(1, 0, 1).can_be_consumed(last), Some(true));
+
+        // 256-block rounds with 128-block slots. The last round is `4294967040..2^32`, so its
+        // second slot is `4294967168..2^32` and holds every block from there to `u32::MAX`.
+        let hint = NoteExecutionHint::on_block_slot(8, 7, 1);
+        assert_eq!(hint.can_be_consumed(last), Some(true));
+        assert_eq!(hint.can_be_consumed(BlockNumber::from(4_294_967_168u32)), Some(true));
+        // One block earlier is still in the first slot of that round.
+        assert_eq!(hint.can_be_consumed(BlockNumber::from(4_294_967_167u32)), Some(false));
+
+        // The block before the last is unaffected either way, so this pins the boundary itself.
+        assert_eq!(
+            NoteExecutionHint::on_block_slot(0, 0, 0)
+                .can_be_consumed(BlockNumber::from(u32::MAX - 1)),
+            Some(true)
+        );
     }
 
     /// A felt that does not encode a recognized hint decodes as `Unknown`.
