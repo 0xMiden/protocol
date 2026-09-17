@@ -132,6 +132,9 @@ impl LocalBatchProver {
         proof: ExecutionProof,
     ) -> Result<ProvenBatch, ProvenBatchError> {
         let tx_headers = proposed_batch.transaction_headers();
+        let log_data = miden_protocol::transaction::TransactionLogDataCollection::new(
+            proposed_batch.transactions().iter().map(|tx| tx.log_data().clone()).collect(),
+        )?;
         let (
             _transactions,
             block_header,
@@ -152,6 +155,7 @@ impl LocalBatchProver {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            log_data,
             tx_headers,
             proof,
         )

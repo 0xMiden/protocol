@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::batch::ProvenBatch;
 use crate::crypto::SequentialCommit;
-use crate::transaction::OrderedTransactionHeaders;
+use crate::transaction::{OrderedTransactionHeaders, TransactionLogDataCollection};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -52,6 +52,23 @@ impl OrderedBatches {
                 .into_iter()
                 .flat_map(|batch| batch.into_transactions().into_vec().into_iter())
                 .collect(),
+        )
+    }
+
+    /// Consumes headers and log data together, preserving batch and transaction order.
+    pub fn into_transaction_data(
+        self,
+    ) -> (OrderedTransactionHeaders, TransactionLogDataCollection) {
+        let mut headers = Vec::new();
+        let mut data = Vec::new();
+        for batch in self.0 {
+            let (batch_headers, batch_data) = batch.into_transaction_data();
+            headers.extend(batch_headers.into_vec());
+            data.extend(batch_data.into_vec());
+        }
+        (
+            OrderedTransactionHeaders::new_unchecked(headers),
+            TransactionLogDataCollection::new(data).expect("proposed block checked the log budget"),
         )
     }
 

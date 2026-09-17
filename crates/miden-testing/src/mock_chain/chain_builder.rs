@@ -303,6 +303,9 @@ impl MockChainBuilder {
             block_account_updates,
             output_note_batches,
             created_nullifiers,
+            miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
+                &transactions,
+            ),
             transactions,
         );
 

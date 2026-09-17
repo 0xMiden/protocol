@@ -14,6 +14,7 @@ use crate::transaction::{
     OrderedTransactionHeaders,
     OutputNote,
     TransactionHeader,
+    TransactionLogDataCollection,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -48,6 +49,7 @@ pub struct ProvenBatch {
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<OutputNote>,
     batch_expiration_block_num: BlockNumber,
+    log_data: TransactionLogDataCollection,
     transactions: OrderedTransactionHeaders,
     proof: ExecutionProof,
 }
@@ -81,6 +83,7 @@ impl ProvenBatch {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
+        log_data: TransactionLogDataCollection,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
@@ -134,13 +137,14 @@ impl ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            log_data,
             transactions,
             proof,
         )
     }
 
     /// Creates a new [`ProvenBatch`] from the provided parts without checking any constraints
-    /// except the expiration constraint listed below.
+    /// except the expiration and log-data constraints listed below.
     ///
     /// Callers must ensure that the batch satisfies the structural constraints checked by
     /// [`ProvenBatch::new`].
@@ -148,7 +152,7 @@ impl ProvenBatch {
     /// # Errors
     ///
     /// Returns an error if the batch expiration block number is not greater than the reference
-    /// block number.
+    /// block number, or log data violates its limits, visibility, or header association.
     #[allow(clippy::too_many_arguments)]
     pub fn new_unchecked(
         id: BatchId,
@@ -158,9 +162,12 @@ impl ProvenBatch {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
+        log_data: TransactionLogDataCollection,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
+        log_data.validate_for_batch(&transactions)?;
+
         // Check that the batch expiration block number is greater than the reference block number.
         if batch_expiration_block_num <= reference_block_num {
             return Err(ProvenBatchError::InvalidBatchExpirationBlockNum {
@@ -177,9 +184,22 @@ impl ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            log_data,
             transactions,
             proof,
         })
+    }
+
+    /// Returns log data associated positionally with the ordered transaction headers.
+    pub fn log_data(&self) -> &TransactionLogDataCollection {
+        &self.log_data
+    }
+
+    /// Consumes the ordered headers and their submitted log data together.
+    pub fn into_transaction_data(
+        self,
+    ) -> (OrderedTransactionHeaders, TransactionLogDataCollection) {
+        (self.transactions, self.log_data)
     }
 
     // PUBLIC ACCESSORS
@@ -367,6 +387,7 @@ impl Serializable for ProvenBatch {
         self.batch_expiration_block_num.write_into(target);
         self.transactions.write_into(target);
         self.proof.write_into(target);
+        self.log_data.write_into(target);
     }
 }
 
@@ -380,6 +401,7 @@ impl Deserializable for ProvenBatch {
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
         let transactions = OrderedTransactionHeaders::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
+        let log_data = TransactionLogDataCollection::read_from(source)?;
 
         Self::new(
             reference_block_commitment,
@@ -388,6 +410,7 @@ impl Deserializable for ProvenBatch {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            log_data,
             transactions,
             proof,
         )
@@ -534,6 +557,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
             transactions,
             dummy_execution_proof(),
         )
@@ -552,6 +576,9 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -570,6 +597,9 @@ mod tests {
                 InputNotes::default(),
                 Vec::new(),
                 BlockNumber::from(2),
+                crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                    &(transaction_headers()),
+                ),
                 transaction_headers(),
                 proof,
             )
@@ -591,6 +621,9 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -624,6 +657,9 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -652,6 +688,9 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -672,6 +711,9 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -714,6 +756,9 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -759,6 +804,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
             transactions,
             dummy_execution_proof(),
         )
@@ -790,6 +836,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
             transactions,
             dummy_execution_proof(),
         )
@@ -811,6 +858,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
             transactions,
             dummy_execution_proof(),
         )
@@ -840,6 +888,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
             transactions,
             dummy_execution_proof(),
         )
@@ -859,6 +908,9 @@ mod tests {
             InputNotes::default(),
             output_notes,
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -882,6 +934,7 @@ mod tests {
             InputNotes::default(),
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(&(transactions)),
             transactions,
             dummy_execution_proof(),
         )
@@ -902,6 +955,9 @@ mod tests {
             input_notes,
             Vec::new(),
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -925,6 +981,9 @@ mod tests {
             InputNotes::default(),
             vec![output_note.clone(), output_note],
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
@@ -947,11 +1006,51 @@ mod tests {
             input_notes,
             output_notes,
             BlockNumber::from(2),
+            crate::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(transaction_headers()),
+            ),
             transaction_headers(),
             dummy_execution_proof(),
         )
         .unwrap_err();
 
         assert_matches!(error, ProvenBatchError::NoteCreatedAndConsumed(id) if id == note_id);
+    }
+    #[test]
+    fn private_batch_log_data_roundtrips_and_rejects_missing_openings() {
+        use crate::transaction::{TransactionLogData, TransactionLogDataCollection};
+        let data = TransactionLogData::Private(Word::from([23u32; 4]));
+        let header = TransactionHeader::new(
+            account_id(),
+            Word::from([1u32, 2, 3, 4]),
+            Word::from([5u32, 6, 7, 8]),
+            InputNotes::default(),
+            vec![],
+            data.commitment(),
+        )
+        .unwrap();
+        let headers = OrderedTransactionHeaders::new_unchecked(vec![header]);
+        let logs = TransactionLogDataCollection::new(vec![data]).unwrap();
+        let build = |logs| {
+            ProvenBatch::new(
+                Word::empty(),
+                1u32.into(),
+                vec![private_account_update()],
+                InputNotes::default(),
+                vec![],
+                2u32.into(),
+                logs,
+                headers.clone(),
+                dummy_execution_proof(),
+            )
+        };
+        let batch = build(logs.clone()).unwrap();
+        assert_eq!(ProvenBatch::read_from_bytes(&batch.to_bytes()).unwrap(), batch);
+        assert!(build(TransactionLogDataCollection::default()).is_err());
+        let changed =
+            TransactionLogDataCollection::new(vec![TransactionLogData::Private(Word::empty())])
+                .unwrap();
+        assert!(build(changed).is_err());
+        assert_eq!(batch.log_data(), &logs);
     }
 }

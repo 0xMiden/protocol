@@ -71,6 +71,9 @@ fn proven(proposal: &ProposedBatch) -> ProvenBatch {
         proposal.input_notes().clone(),
         proposal.output_notes().to_vec(),
         proposal.batch_expiration_block_num(),
+        miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
+            &(proposal.transaction_headers()),
+        ),
         proposal.transaction_headers(),
         dummy_execution_proof(),
     )

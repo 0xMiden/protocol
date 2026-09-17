@@ -61,6 +61,7 @@ message BlockBody {
   repeated OutputNoteBatch output_note_batches = 2;
   repeated primitives.Word created_nullifiers = 3;
   repeated transaction.TransactionHeader transactions = 4;
+  bytes log_data = 5;
 }
 
 message SignedBlock {

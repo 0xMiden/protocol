@@ -1178,12 +1178,12 @@ fn read_genesis_block_unchecked<R: ByteReader>(
         )));
     }
 
-    let body = BlockBody::new_unchecked(
-        Vec::<BlockAccountUpdate>::read_from(source)?,
-        Vec::<OutputNoteBatch>::read_from(source)?,
-        Vec::<Nullifier>::read_from(source)?,
-        OrderedTransactionHeaders::read_from(source)?,
-    );
+    let updates = Vec::<BlockAccountUpdate>::read_from(source)?;
+    let notes = Vec::<OutputNoteBatch>::read_from(source)?;
+    let nullifiers = Vec::<Nullifier>::read_from(source)?;
+    let transactions = OrderedTransactionHeaders::read_from(source)?;
+    let log_data = miden_protocol::transaction::TransactionLogDataCollection::read_from(source)?;
+    let body = BlockBody::new_unchecked(updates, notes, nullifiers, log_data, transactions);
     let signatures = BlockSignatures::read_from(source)?;
     let proof = ExecutionProof::read_from(source)?;
 
