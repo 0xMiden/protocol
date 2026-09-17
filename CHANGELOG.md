@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+### Features
+
+- Added `prepare_note_with_salt` and `create_output_note_with_salt` MASM procedures and `generate_salt` helpers on the Rust P2ID builders ([#3897](https://github.com/0xMiden/protocol/pull/3897)).
+
 ### Changes
 
-- [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
+- [BREAKING] Replaced `P2idNoteStorage::with_salt` with the salt setter on `P2idNoteStorage::builder()` ([#3897](https://github.com/0xMiden/protocol/pull/3897)).
 
 ## v0.17.0-rc.5 (2026-09-17)
 
@@ -27,6 +31,7 @@
 
 ### Changes
 
+- [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
 - [BREAKING] TX_FEE notes leave their assets in the note for the consuming account's own code to collect ([#3843](https://github.com/0xMiden/protocol/pull/3843)).
 - Moved `MAX_ASSETS_PER_NOTE` into `miden::protocol_utils::constants` ([#3821](https://github.com/0xMiden/protocol/pull/3821)).
 - [BREAKING] Added a `serial_number_block` argument to `fee::pay_fee` and `fee::create_and_fund_fee_note`. Multisigs use the signed proposal block to keep fee-note serial numbers stable across execution reference blocks; other standard auth components use the execution reference block ([#3836](https://github.com/0xMiden/protocol/issues/3836)).

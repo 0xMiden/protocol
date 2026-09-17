@@ -168,7 +168,7 @@ hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment)
 
 The RECIPIENT is not necessarily just an account address. Its pre-image consists of the note's serial number, script, and storage. The consumer of the note must provide this data so the [transaction prologue](transaction) can recompute the RECIPIENT and verify that it matches the committed note details.
 
-The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
+The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id/script.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
 
 #### Declaring who may consume a note
 
@@ -232,6 +232,10 @@ The P2ID note script implements a simple pay-to-account-ID pattern. It adds the 
 - **Requirements:** Target account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
 **Use case:** Simple, direct payments where you want to send assets to a known account ID.
+
+The Rust `P2idNote` and `P2idNoteStorage` builders accept `.salt(...)` or `.generate_salt(&mut rng)`. For generated salts, use a securely seeded random number generator and keep the salt secret. Salt defaults to zero even for private notes; selecting a private note type does not generate salt. Salt does not hide account-derived note tags.
+
+In MASM, `p2id::prepare_note_with_salt` and `p2id::create_output_note_with_salt` accept `[salt_0, salt_1, target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]` on the stack. The existing `prepare_note` and `create_output_note` procedures use zero salt. `prepare_note_with_salt` returns creation arguments for the caller; `create_output_note_with_salt` creates the note through the account's `create_note` procedure.
 
 ### P2IDE (Pay-to-ID Extended)
 

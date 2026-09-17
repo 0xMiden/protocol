@@ -61,6 +61,12 @@ pub struct P2idNote {
 impl P2idNote {
     /// Builds a new [`P2idNote`].
     ///
+    /// # Privacy
+    ///
+    /// Salt defaults to zero, including for private notes. To protect an exposed storage commitment
+    /// against target-account enumeration, pick the salt at random and keep it secret.
+    /// Salt does not hide account-derived note tags.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -75,13 +81,17 @@ impl P2idNote {
         target: AccountId,
         serial_number: Word,
         #[builder(default)] note_type: NoteType,
-        #[builder(default)] salt: [Felt; 2],
+        /// Salt used in the storage commitment. Defaults to zero.
+        ///
+        /// See [`P2idNote::builder`] for privacy implications.
+        #[builder(default)]
+        salt: [Felt; 2],
     ) -> Result<Self, NoteError> {
         if assets.is_empty() {
             return Err(NoteError::other("a P2ID note must contain at least one asset"));
         }
 
-        let storage = P2idNoteStorage::new(target).with_salt(salt);
+        let storage = P2idNoteStorage::builder().target(target).salt(salt).build();
         let assets = NoteAssets::new(assets)?;
         let attachments = NoteAttachments::new(attachments)?;
 
@@ -197,6 +207,21 @@ where
     }
 }
 
+impl<S: p2id_note_builder::State> P2idNoteBuilder<S>
+where
+    S::Salt: p2id_note_builder::IsUnset,
+{
+    /// Draws two salt elements from `rng` and sets them on the builder.
+    ///
+    /// See [`P2idNote::builder`] for privacy implications.
+    pub fn generate_salt(
+        self,
+        rng: &mut impl FeltRng,
+    ) -> P2idNoteBuilder<p2id_note_builder::SetSalt<S>> {
+        self.salt([rng.draw_element(), rng.draw_element()])
+    }
+}
+
 // CONVERSIONS
 // ================================================================================================
 
@@ -219,11 +244,15 @@ impl From<P2idNote> for Note {
 /// to consume the note. Only the account matching this ID can execute
 /// the note and claim its assets.
 ///
-/// The salt is included in the storage commitment. A random salt kept private prevents the target
-/// account ID from being determined by comparing commitments for candidate account IDs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// See [`P2idNote::builder`] for salt privacy considerations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
 pub struct P2idNoteStorage {
     target: AccountId,
+
+    /// Salt used in the storage commitment. Defaults to zero.
+    ///
+    /// See [`P2idNote::builder`] for privacy implications.
+    #[builder(default)]
     salt: [Felt; 2],
 }
 
@@ -235,19 +264,10 @@ impl P2idNoteStorage {
     pub const NUM_ITEMS: usize = 4;
 
     /// Creates P2ID note storage targeting the given account with a zero salt.
-    pub fn new(target: AccountId) -> Self {
-        Self { target, salt: [Felt::ZERO; 2] }
-    }
-
-    /// Sets the salt included in the storage commitment.
     ///
-    /// # Privacy
-    /// For privacy, sample both elements uniformly at random and keep them secret. The default zero
-    /// salt does not prevent target-account enumeration. Salt does not hide account-derived note
-    /// tags.
-    pub fn with_salt(mut self, salt: [Felt; 2]) -> Self {
-        self.salt = salt;
-        self
+    /// Use [`Self::builder`] to supply a salt.
+    pub fn new(target: AccountId) -> Self {
+        Self::builder().target(target).build()
     }
 
     /// Consumes the storage and returns a P2ID [`NoteRecipient`] with the provided serial number.
@@ -266,6 +286,21 @@ impl P2idNoteStorage {
     /// Returns the salt included in the storage commitment.
     pub fn salt(&self) -> [Felt; 2] {
         self.salt
+    }
+}
+
+impl<S: p2id_note_storage_builder::State> P2idNoteStorageBuilder<S>
+where
+    S::Salt: p2id_note_storage_builder::IsUnset,
+{
+    /// Draws two salt elements from `rng` and sets them on the builder.
+    ///
+    /// See [`P2idNote::builder`] for privacy implications.
+    pub fn generate_salt(
+        self,
+        rng: &mut impl FeltRng,
+    ) -> P2idNoteStorageBuilder<p2id_note_storage_builder::SetSalt<S>> {
+        self.salt([rng.draw_element(), rng.draw_element()])
     }
 }
 
@@ -438,10 +473,44 @@ mod tests {
                 .unwrap()
                 .into();
 
-            assert_eq!(note.recipient(), &storage.with_salt(salt).into_recipient(Word::empty()));
+            assert_eq!(
+                note.recipient(),
+                &P2idNoteStorage::builder()
+                    .target(target())
+                    .salt(salt)
+                    .build()
+                    .into_recipient(Word::empty())
+            );
             assert_ne!(note.recipient().storage().commitment(), recipient.storage().commitment());
             assert_ne!(note.recipient().digest(), recipient.digest());
         }
+    }
+
+    /// Salt and serial-number generation must use separate draws from the caller's RNG.
+    #[test]
+    fn builders_generate_salt_and_serial_number() {
+        let seed = Word::from([1, 2, 3, 4u32]);
+        let mut expected_rng = RandomCoin::new(seed);
+        let expected_salt = [expected_rng.draw_element(), expected_rng.draw_element()];
+        let expected_serial = expected_rng.draw_word();
+
+        let mut rng = RandomCoin::new(seed);
+        let note = P2idNote::builder()
+            .sender(sender())
+            .target(target())
+            .asset(FungibleAsset::new(faucet_a(), 1).unwrap())
+            .generate_salt(&mut rng)
+            .generate_serial_number(&mut rng)
+            .build()
+            .unwrap();
+        assert_eq!(note.storage().salt(), expected_salt);
+        assert_eq!(note.serial_number(), expected_serial);
+
+        let storage = P2idNoteStorage::builder()
+            .target(target())
+            .generate_salt(&mut RandomCoin::new(seed))
+            .build();
+        assert_eq!(storage, note.storage());
     }
 
     /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.
