@@ -50,12 +50,9 @@ impl MockProvenTxBuilder {
     }
 
     /// Sets the execution proof the transaction carries.
-    ///
-    /// Defaults to [`dummy_execution_proof`](miden_protocol::testing::dummy_execution_proof).
     #[must_use]
     pub fn proof(mut self, proof: ExecutionProof) -> Self {
         self.proof = proof;
-
         self
     }
 
