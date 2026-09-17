@@ -14,11 +14,14 @@
 
 ### Changes
 
+- [BREAKING] Updated the Miden VM and crypto crate family to v0.33.0. Execution proof and witness transport now use format 2 and reject v0.32.1 artifacts. Deferred proofs carry portable precompile witnesses, batch proving consumes those witnesses in transaction order, and recursive verifier MAST roots change. Routing parameters now support the Eidos sealing-key variants ([#3894](https://github.com/0xMiden/protocol/pull/3894)).
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
 - [BREAKING] Decoded optional, repeated, and map fields now use `OptionalField`, `RepeatedField`, and `MapField` wrappers. These compose verification and unchecked construction, preserve field/index/key context during conversion, and require an explicit duplicate policy when converting to sets. Migrated `miden-objects` to this collection API ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
 - [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
+- [BREAKING] `AuthNetworkAccount` now expands into `BasicWallet` as well and `AuthNetworkAccount::new` allowlists the P2ID script root by default, so every network account built with `AuthNetworkAccount::new` can be deployed by consuming a P2ID note ([#3893](https://github.com/0xMiden/protocol/pull/3893)).
+- [BREAKING] Multisig approvals now expire through the dedicated `MultisigAuthArgs::with_approval_expiration_delta` ([#3884](https://github.com/0xMiden/protocol/pull/3884)).
 
 ### Fixes
 
