@@ -9,13 +9,9 @@ use crate::utils::serde::{
     Serializable,
 };
 
-/// Log data supplied with a submitted transaction.
+/// Submitted public records or a private commitment, with visibility set by the native account.
 ///
-/// Public data contains full records; private data contains only a commitment. Visibility checks
-/// use the native account, including for foreign-account logs and empty collections.
-///
-/// This type stores private commitments as supplied. Deserialization validates the encoding;
-/// it does not derive a private commitment or verify a transaction proof.
+/// Validating a private commitment requires the transaction proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionLogData {
     /// Complete public records, with their commitment derived from the records.

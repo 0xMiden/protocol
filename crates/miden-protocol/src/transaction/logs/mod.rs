@@ -56,8 +56,7 @@ pub enum TransactionLogDataError {
 
 /// A log emitted by an account during a transaction.
 ///
-/// Stores the full record, including empty payloads. Construction validates the payload size
-/// but does not authenticate the emitter. [`TransactionLogData`] represents submitted log data.
+/// Construction validates payload size; the kernel authenticates the emitter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionLog {
     emitter: AccountId,
@@ -108,9 +107,7 @@ impl TransactionLog {
         Hasher::hash_elements(Word::words_as_elements(&self.payload))
     }
 
-    /// Commits to the emitter, two-felt topic, and payload commitment.
-    ///
-    /// Identical records have identical commitments; their positions are bound by the collection.
+    /// Commits to the emitter, topic, and payload commitment.
     pub fn commitment(&self) -> Word {
         let [topic_0, topic_1] = self.topic.as_elements();
         let metadata =
@@ -144,7 +141,8 @@ impl TransactionLog {
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
 
         let payload = source.read_many_iter::<Word>(num_words)?.collect::<Result<_, _>>()?;
-        Ok(Self { emitter, topic, payload })
+        Self::new(emitter, topic, payload)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -177,9 +175,7 @@ impl Deserializable for TransactionLog {
 
 /// An ordered collection of transaction logs with a cached commitment.
 ///
-/// Empty lists and duplicate logs are allowed. Appending stores the new log's commitment and
-/// invalidates the collection cache. The next commitment request recomputes and caches the hash.
-/// Logs can still be appended after requesting the commitment.
+/// Appending invalidates the cache. Empty lists and duplicate records are allowed.
 ///
 /// # Commitment
 ///
@@ -196,23 +192,6 @@ impl Deserializable for TransactionLog {
 /// duplicate occurrences. The payload hash binds content and length.
 ///
 /// These commitments do not hide predictable private records.
-///
-/// # Example
-///
-/// ```
-/// use miden_protocol::account::AccountId;
-/// use miden_protocol::transaction::{LogTopic, TransactionLog, TransactionLogs};
-/// use miden_protocol::{Felt, Word};
-///
-/// let emitter = AccountId::try_from_elements(Felt::from(256u32), Felt::ONE)?;
-/// let topic = LogTopic::from_name("example::updated");
-/// let log = TransactionLog::new(emitter, topic, vec![Word::from([1u32, 2, 3, 4])])?;
-/// let mut logs = TransactionLogs::default();
-/// logs.try_push(log)?;
-/// assert_eq!(logs.num_logs(), 1);
-/// assert_ne!(logs.commitment(), Word::empty());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 #[derive(Debug, Default)]
 pub struct TransactionLogs {
     logs: Vec<TransactionLog>,

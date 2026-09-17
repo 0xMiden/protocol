@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "block.proto",
         "partial_blockchain.proto",
         "transaction_inputs.proto",
+        "transaction_effects.proto",
         "batch.proto",
     ];
 
@@ -61,8 +62,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.InputNote",
             ".transaction.AuthenticatedInputNote",
             ".transaction.OutputNote",
+            ".transaction.RawOutputNote",
+            ".transaction.RawOutputNotes",
             ".transaction.PublicOutputNote",
             ".note.Note",
+            ".note.PartialNote",
             ".note.PartialNoteMetadata",
             ".blockchain.PartialBlockchain",
             ".blockchain.BlockHeader",
@@ -83,6 +87,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".account.StorageSlotPatch",
             ".account.StorageValuePatch",
             ".transaction.TransactionHeader",
+            ".transaction.TransactionEffects",
+            ".transaction.TransactionEffectsV1",
             ".transaction.PrivateOutputNote",
             ".transaction.InputNoteCommitment",
             ".note.NoteHeader",

@@ -10,9 +10,6 @@ use crate::utils::serde::{
 };
 
 /// An opaque two-felt transaction log topic.
-///
-/// Named topics use the first two felts of MASM `word(name)`. Applications define the payload
-/// schema for each topic. Incompatible schemas should use distinct names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogTopic([Felt; 2]);
 
@@ -26,8 +23,6 @@ impl LogTopic {
     }
 
     /// Derives a topic from the first two elements of a MASM `word(name)` constant.
-    ///
-    /// The name's syntax is not validated.
     pub fn from_name(name: &str) -> Self {
         let word = hash_string_to_word(name);
         Self([word[0], word[1]])
@@ -52,7 +47,7 @@ impl Serializable for LogTopic {
 
 impl Deserializable for LogTopic {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(Self([Felt::read_from(source)?, Felt::read_from(source)?]))
+        Ok(Self::new([Felt::read_from(source)?, Felt::read_from(source)?]))
     }
 
     fn min_serialized_size() -> usize {
