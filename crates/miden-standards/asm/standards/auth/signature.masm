@@ -5,7 +5,7 @@ use miden::core::crypto::dsa::ecdsa_k256_keccak
 use {AUTH_REQUEST_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::standards::auth
-use miden::standards::auth::eip712_transaction_summary
+use miden::standards::auth::eip712
 
 # Schemes 1 (ECDSA) and 2 (Falcon) are currently supported.
 pub type SignatureScheme = u8
@@ -298,31 +298,43 @@ end
 
 #! Verify signatures for all required signers in a loop.
 #!
-#! This procedure iterates through the required number of signers, fetches their public keys from
-#! the provided account storage map slot, verifies their signatures against the transaction message,
-#! and returns the number of successfully verified signatures.
+#! This procedure iterates through the required number of signers, fetches their public-key
+#! commitments from the provided account storage map slot, verifies their signatures against the
+#! transaction message, and returns the number of successfully verified signatures.
+#!
+#! For each signer, this procedure checks the advice map for a raw signature first and verifies it
+#! when present. Only when the raw signature is absent does it check for and verify an EIP-712
+#! signature. If neither signature is present, the signer is skipped.
 #!
 #! Note: Calls `native_account::get_initial_map_item` to access the transaction's initial storage
 #! state rather than the current state. This is crucial when validating transactions that update
 #! the owner public key mapping - the previous signers must authorize the change to the new signers,
 #! not the new signers authorizing themselves.
 #!
-#! Inputs:  [approver_scheme_id_slot_id_suffix, approver_scheme_id_slot_id_prefix,
-#!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
+#! Inputs:  [scheme_slot_id_{suffix,prefix}, public_key_slot_id_{suffix,prefix},
 #!           num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
+#!
+#! Where:
+#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map slot
+#!   containing signature scheme IDs.
+#! - public_key_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map
+#!   slot containing public-key commitments.
+#! - num_of_approvers is the number of approvers whose signatures may be verified.
+#! - MSG is the transaction message.
+#! - num_verified_signatures is the number of signatures that were successfully verified.
 #!
 #! Invocation: exec
 @locals(5)
 pub proc verify_signatures(
-    approver_scheme_id_slot_id: StorageSlotId,
-    approver_pub_key_slot_id: StorageSlotId,
+    scheme_slot_id: StorageSlotId,
+    public_key_slot_id: StorageSlotId,
     num_of_approvers: u8,
     msg: SignatureMessage
 ) -> (u8, SignatureMessage)
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
-    # => [approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix, num_of_approvers, MSG]
+    # => [public_key_slot_id_suffix, public_key_slot_id_prefix, num_of_approvers, MSG]
 
     loc_store.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
     loc_store.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
@@ -415,52 +427,17 @@ pub proc verify_signatures(
             loc_store.SUCCESSFUL_VERIFICATIONS_LOC
             # => [MSG, signer_idx]
         else
-            exec.eip712_transaction_summary::compute_signature_key
-            # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+            loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
+            loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
+            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, SIG_KEY, PK_COMM, MSG, signer_idx]
 
-            adv.has_mapkey
-            adv_push
-            # => [has_eip712_signature, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+            exec.verify_eip712_signature
+            # => [is_verified, MSG, signer_idx]
 
             if.true
-                dup.12 exec.create_approver_map_key
-                # => [APPROVER_MAP_KEY, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-                loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
-                # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-                exec.native_account::get_initial_map_item
-                # => [[scheme_id, 0, 0, 0], EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-                movdn.3 drop drop drop
-                # => [scheme_id, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-                eq.ECDSA_K256_KECCAK_SCHEME_ID
-                assert.err=ERR_EIP712_REQUIRES_ECDSA
-                # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-                adv.push_mapval_count
-                adv_push
-                eq.ECDSA_K256_KECCAK_SIGNATURE_LENGTH assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
-                # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
-
-                adv.push_mapval
-                dropw
-                # OS => [PK_COMM, MSG, signer_idx]
-                # AS => [SIGNATURE]
-
-                dupw.1 swapw
-                # => [PK_COMM, MSG, MSG, signer_idx]
-
-                exec.eip712_transaction_summary::verify
-                # => [MSG, signer_idx]
-
                 loc_load.SUCCESSFUL_VERIFICATIONS_LOC
                 add.1
                 loc_store.SUCCESSFUL_VERIFICATIONS_LOC
-                # => [MSG, signer_idx]
-            else
-                dropw dropw
                 # => [MSG, signer_idx]
             end
         end
@@ -493,4 +470,96 @@ end
 pub proc create_approver_map_key(key_index: u32) -> StorageMapKey
     push.0.0.0 movup.3
     # => [APPROVER_MAP_KEY]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Verifies an EIP-712 transaction-summary signature for a signer when one is present.
+#!
+#! The raw signature key is domain-separated before the advice-map lookup. If no EIP-712 entry is
+#! present, this procedure returns 0 without performing signature verification.
+#!
+#! Inputs:  [scheme_slot_id_{suffix,prefix}, RAW_SIGNATURE_KEY, PK_COMM, MSG, signer_idx]
+#! Outputs: [is_verified, MSG, signer_idx]
+#!
+#! Where:
+#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map slot
+#!   containing signature scheme IDs.
+#! - RAW_SIGNATURE_KEY is the advice-map key for a raw transaction signature.
+#! - PK_COMM is the signer's public-key commitment.
+#! - MSG is the transaction-summary hash.
+#! - signer_idx identifies the signer in the approver maps.
+#! - is_verified is 1 when an EIP-712 signature was present and verified, and 0 when absent.
+#!
+#! Panics if:
+#! - an EIP-712 signature is present for a non-ECDSA approver.
+#! - the EIP-712 signature advice value does not contain exactly 32 field elements.
+#! - the public key or signature is malformed.
+#! - the public-key commitment is invalid.
+#! - signature verification fails.
+#!
+#! Invocation: exec
+proc verify_eip712_signature(
+    scheme_slot_id: StorageSlotId,
+    raw_signature_key: word,
+    public_key_commitment: PublicKeyCommitment,
+    msg: SignatureMessage,
+    signer_idx: u8
+) -> (Bool, SignatureMessage, u8)
+    movdn.5 movdn.5
+    # => [RAW_SIGNATURE_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix, PK_COMM, MSG, signer_idx]
+
+    exec.eip712::transaction_summary::compute_signature_key
+    # => [EIP712_SIG_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix, PK_COMM, MSG, signer_idx]
+
+    adv.has_mapkey
+    adv_push
+    # => [has_eip712_signature, EIP712_SIG_KEY, scheme_slot_id_suffix,
+    #     scheme_slot_id_prefix, PK_COMM, MSG, signer_idx]
+
+    if.true
+        dup.14 exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, EIP712_SIG_KEY, scheme_slot_id_suffix,
+        #     scheme_slot_id_prefix, PK_COMM, MSG, signer_idx]
+
+        movup.9 movup.9
+        # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, EIP712_SIG_KEY,
+        #     PK_COMM, MSG, signer_idx]
+
+        exec.native_account::get_initial_map_item
+        # => [[scheme_id, 0, 0, 0], EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        movdn.3 drop drop drop
+        # => [scheme_id, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        eq.ECDSA_K256_KECCAK_SCHEME_ID
+        assert.err=ERR_EIP712_REQUIRES_ECDSA
+        # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        adv.push_mapval_count
+        adv_push
+        eq.ECDSA_K256_KECCAK_SIGNATURE_LENGTH assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
+        # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        adv.push_mapval
+        dropw
+        # OS => [PK_COMM, MSG, signer_idx]
+        # AS => [SIGNATURE]
+
+        dupw.1 swapw
+        # => [PK_COMM, MSG, MSG, signer_idx]
+
+        exec.eip712::transaction_summary::verify
+        # => [MSG, signer_idx]
+
+        push.1
+        # => [is_verified, MSG, signer_idx]
+    else
+        dropw drop drop dropw
+        # => [MSG, signer_idx]
+
+        push.0
+        # => [is_verified, MSG, signer_idx]
+    end
 end

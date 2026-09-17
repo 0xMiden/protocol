@@ -287,13 +287,13 @@ async fn verify_transaction_summary_signature(
     let public_key_commitment = public_key.to_commitment();
     let script = format!(
         r#"
-            use miden::standards::auth::eip712_transaction_summary
+            use miden::standards::auth::eip712
 
             begin
                 push.9.9.9.9 adv.push_mapval dropw
                 push.{tx_summary_hash}
                 push.{public_key_commitment}
-                exec.eip712_transaction_summary::verify
+                exec.eip712::transaction_summary::verify
             end
         "#
     );
