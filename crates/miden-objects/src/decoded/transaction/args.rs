@@ -48,7 +48,8 @@ impl Verify for TransactionArgs {
             note_args,
             self.advice_inputs.verify()?,
             self.auth_args,
-        ))
+        )
+        .with_log_salt(self.log_salt))
     }
 }
 

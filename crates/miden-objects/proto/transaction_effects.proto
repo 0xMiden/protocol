@@ -25,4 +25,7 @@ message TransactionEffectsV1 {
   blockchain.BlockNumber ref_block_number = 6;
   primitives.Word ref_block_commitment = 7;
   blockchain.BlockNumber expiration_block_num = 8;
+  // Full local records. These effects are not a public submission format.
+  bytes logs = 9;
+  primitives.Word log_salt = 10;
 }
