@@ -12,8 +12,7 @@ use miden_protocol::transaction::{
 use prost::Message;
 
 use crate::decoded::account::test_utils::account_patch;
-use crate::decoded::transaction::TransactionEffectsError;
-use crate::test_utils::{dummy_word, error_source};
+use crate::test_utils::dummy_word;
 use crate::{DecodeMessage, Verify, proto};
 
 fn transaction_effects() -> TransactionEffects {
@@ -45,21 +44,4 @@ fn transaction_effects_roundtrips_through_protobuf() {
     let message = proto::transaction::TransactionEffects::decode(encoded.as_slice()).unwrap();
 
     assert_eq!(message.decode_fields().unwrap().verify().unwrap(), effects);
-}
-
-#[test]
-fn transaction_effects_reject_a_transaction_id_that_does_not_match_the_effects() {
-    use proto::transaction::transaction_effects::Version;
-
-    let effects = transaction_effects();
-    let mut inner = proto::transaction::TransactionEffectsV1::from(&effects);
-    inner.transaction_id =
-        Some(proto::transaction::TransactionId { id: Some(dummy_word(99).into()) });
-    let wire = proto::transaction::TransactionEffects { version: Some(Version::V1(inner)) };
-
-    let error = wire.decode_fields().unwrap().verify().unwrap_err();
-    let mismatch = error_source::<TransactionEffectsError>(&error).unwrap();
-
-    assert!(matches!(mismatch, TransactionEffectsError::IdMismatch { recomputed, .. }
-        if *recomputed == effects.transaction_id()));
 }

@@ -81,7 +81,6 @@ impl_verification_error_from!(
     super::transaction::ProposedBatchError,
     super::transaction::ProvenBatchError,
     super::transaction::TransactionArgsError,
-    super::transaction::TransactionEffectsError,
     super::transaction::TransactionHeaderBuildError,
     super::transaction::TransactionInputsError,
 );

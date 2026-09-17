@@ -13,7 +13,7 @@ pub use core::{
 };
 
 mod effects;
-pub use effects::{TransactionEffects, TransactionEffectsError, TransactionEffectsV1};
+pub use effects::{TransactionEffects, TransactionEffectsV1};
 
 mod args;
 pub use args::{NoteArgument, TransactionArgs, TransactionArgsError, TransactionScript};

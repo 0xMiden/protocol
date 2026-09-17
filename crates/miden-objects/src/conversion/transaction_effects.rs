@@ -11,7 +11,6 @@ mod tests;
 impl From<&TransactionEffects> for proto::transaction::TransactionEffectsV1 {
     fn from(effects: &TransactionEffects) -> Self {
         Self {
-            transaction_id: Some(effects.transaction_id().into()),
             initial_state_commitment: Some(effects.initial_state_commitment().into()),
             final_state_commitment: Some(effects.final_state_commitment().into()),
             account_patch: Some(effects.account_patch().into()),
