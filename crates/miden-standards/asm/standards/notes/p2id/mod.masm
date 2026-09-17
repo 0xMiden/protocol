@@ -1,5 +1,4 @@
 # P2ID note construction helpers and public script entry point.
-# The consumption script lives in the private `script` module.
 
 use {AccountId, NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
 use miden::protocol::note
