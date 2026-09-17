@@ -2,11 +2,18 @@
 
 ## Unreleased
 
+### Features
+
+- Added `prepare_note_with_salt` and `create_output_note_with_salt` MASM procedures and `generate_salt` helpers on the Rust P2ID builders ([#3897](https://github.com/0xMiden/protocol/pull/3897)).
+
+### Changes
+
+- [BREAKING] Replaced `P2idNoteStorage::with_salt` with the salt setter on `P2idNoteStorage::builder()` ([#3897](https://github.com/0xMiden/protocol/pull/3897)).
+
 ## v0.17.0-rc.5 (2026-09-17)
 
 ### Features
 
-- Added `prepare_note_with_salt` and `create_output_note_with_salt` MASM procedures and `generate_salt` helpers on the Rust P2ID builders ([#3897](https://github.com/0xMiden/protocol/pull/3897)).
 - Added the `AuthTxFeeCollector` auth component, which forwards the single asset of every consumed note into one P2ID note for the target given by the auth args, verifies a signature over the transaction summary and leaves the account unchanged ([#3844](https://github.com/0xMiden/protocol/pull/3844)).
 - Added `active_note::get_storage_info` and `active_note::get_bounded_storage`, and switched the standard and agglayer note scripts with a bounded storage layout over to the latter ([#3563](https://github.com/0xMiden/protocol/pull/3563)).
 - [BREAKING] AggLayer bridge and faucet accounts now map note repricing to an initial `FEE_MNGR` role instead of the built-in `ADMIN` role ([#3571](https://github.com/0xMiden/protocol/issues/3571)).
@@ -25,7 +32,6 @@
 ### Changes
 
 - [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
-- [BREAKING] Replaced `P2idNoteStorage::with_salt` with the salt setter on `P2idNoteStorage::builder()` ([#3897](https://github.com/0xMiden/protocol/pull/3897)).
 - [BREAKING] TX_FEE notes leave their assets in the note for the consuming account's own code to collect ([#3843](https://github.com/0xMiden/protocol/pull/3843)).
 - Moved `MAX_ASSETS_PER_NOTE` into `miden::protocol_utils::constants` ([#3821](https://github.com/0xMiden/protocol/pull/3821)).
 - [BREAKING] Added a `serial_number_block` argument to `fee::pay_fee` and `fee::create_and_fund_fee_note`. Multisigs use the signed proposal block to keep fee-note serial numbers stable across execution reference blocks; other standard auth components use the execution reference block ([#3836](https://github.com/0xMiden/protocol/issues/3836)).

@@ -4,6 +4,7 @@ use {AccountId, NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::
 use miden::protocol::note
 use miden::standards::note::note_creator
 use {NUM_STORAGE_ITEMS} from miden::standards::notes::p2id::script
+use {STORAGE_PTR, TARGET_ACCOUNT_ID_SUFFIX_PTR, TARGET_ACCOUNT_ID_PREFIX_PTR} from miden::standards::notes::p2id::script
 
 mod script
 
@@ -12,9 +13,6 @@ pub use {main} from miden::standards::notes::p2id::script
 # CONSTANTS
 # =================================================================================================
 
-const STORAGE_PTR = 0
-const TARGET_ACCOUNT_ID_SUFFIX_PTR = STORAGE_PTR
-const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 const SALT_0_PTR = STORAGE_PTR + 2
 const SALT_1_PTR = STORAGE_PTR + 3
 

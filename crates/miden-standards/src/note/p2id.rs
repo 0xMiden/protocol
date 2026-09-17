@@ -63,9 +63,8 @@ impl P2idNote {
     ///
     /// # Privacy
     ///
-    /// Private notes also default to zero salt. To protect an exposed storage commitment against
-    /// target-account enumeration, use `generate_salt(&mut rng)` with a securely seeded
-    /// random number generator, or supply two uniformly random salt elements and keep them secret.
+    /// Salt defaults to zero, including for private notes. To protect an exposed storage commitment
+    /// against target-account enumeration, pick the salt at random and keep it secret.
     /// Salt does not hide account-derived note tags.
     ///
     /// # Errors
@@ -82,14 +81,9 @@ impl P2idNote {
         target: AccountId,
         serial_number: Word,
         #[builder(default)] note_type: NoteType,
-        /// Salt protecting the target account ID against guesses using an exposed storage
-        /// commitment. Defaults to zero, including for private notes.
+        /// Salt used in the storage commitment. Defaults to zero.
         ///
-        /// # Privacy
-        ///
-        /// Sample both elements uniformly at random and keep them secret, or use
-        /// `generate_salt(&mut rng)` with a securely seeded random number generator.
-        /// Salt does not hide account-derived note tags.
+        /// See [`P2idNote::builder`] for privacy implications.
         #[builder(default)]
         salt: [Felt; 2],
     ) -> Result<Self, NoteError> {
@@ -219,10 +213,7 @@ where
 {
     /// Draws two salt elements from `rng` and sets them on the builder.
     ///
-    /// # Privacy
-    ///
-    /// Use a securely seeded random number generator and keep the resulting salt secret.
-    /// Salt does not hide account-derived note tags.
+    /// See [`P2idNote::builder`] for privacy implications.
     pub fn generate_salt(
         self,
         rng: &mut impl FeltRng,
@@ -253,19 +244,14 @@ impl From<P2idNote> for Note {
 /// to consume the note. Only the account matching this ID can execute
 /// the note and claim its assets.
 ///
-/// The salt is included in the storage commitment. A random salt kept private prevents the target
-/// account ID from being determined by comparing commitments for candidate account IDs.
+/// See [`P2idNote::builder`] for salt privacy considerations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
 pub struct P2idNoteStorage {
     target: AccountId,
 
-    /// Salt protecting the target account ID against guesses using an exposed storage commitment.
+    /// Salt used in the storage commitment. Defaults to zero.
     ///
-    /// # Privacy
-    ///
-    /// For privacy, sample both elements uniformly at random and keep them secret. The default
-    /// zero salt does not prevent target-account enumeration. Salt does not hide
-    /// account-derived note tags.
+    /// See [`P2idNote::builder`] for privacy implications.
     #[builder(default)]
     salt: [Felt; 2],
 }
@@ -279,8 +265,7 @@ impl P2idNoteStorage {
 
     /// Creates P2ID note storage targeting the given account with a zero salt.
     ///
-    /// Use [`Self::builder`] to supply a salt protecting an exposed storage commitment against
-    /// target-account enumeration.
+    /// Use [`Self::builder`] to supply a salt.
     pub fn new(target: AccountId) -> Self {
         Self::builder().target(target).build()
     }
@@ -310,10 +295,7 @@ where
 {
     /// Draws two salt elements from `rng` and sets them on the builder.
     ///
-    /// # Privacy
-    ///
-    /// Use a securely seeded random number generator and keep the resulting salt secret.
-    /// Salt does not hide account-derived note tags.
+    /// See [`P2idNote::builder`] for privacy implications.
     pub fn generate_salt(
         self,
         rng: &mut impl FeltRng,
