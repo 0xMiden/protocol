@@ -2453,8 +2453,10 @@ async fn test_mint_note_output_note_types(
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
-            let recipient = P2idNoteStorage::new(target_account.id())
-                .with_salt(salt)
+            let recipient = P2idNoteStorage::builder()
+                .target(target_account.id())
+                .salt(salt)
+                .build()
                 .into_recipient(serial_num);
             MintNoteStorage::new_public(recipient, mint_asset, output_note_tag)?
         },

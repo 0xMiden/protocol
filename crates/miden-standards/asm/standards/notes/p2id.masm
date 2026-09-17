@@ -75,42 +75,65 @@ end
 
 #! Computes a P2ID recipient with a zero salt and returns the note-creation arguments.
 #!
-#! This procedure handles:
-#! - Writing note storage to memory in the layout [suffix, prefix, 0, 0]
-#! - Obtaining the note script root via procref
-#! - Building the recipient
-#!
-#! Note creation itself is intentionally left to the caller. Use this procedure when the caller is
-#! already inside an account procedure and can create the note directly via
-#! `exec.output_note::create`. Otherwise use `p2id::create_output_note`, which routes creation
-#! through the account's `create_note` procedure and can therefore be used from note or transaction
-#! scripts.
+#! Equivalent to `prepare_note_with_salt` with both salt elements set to zero. Zero salt does not
+#! protect against target-account enumeration using an exposed storage commitment.
 #!
 #! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 #! Outputs: [tag, note_type, RECIPIENT]
 #!
-#! Where:
-#! - target_id_suffix is the suffix felt of the target account ID.
-#! - target_id_prefix is the prefix felt of the target account ID.
-#! - tag is the note tag to be included in the note.
-#! - note_type is the storage type of the note (1 = public, 2 = private).
-#! - SERIAL_NUM is the serial number of the note (4 elements).
-#! - RECIPIENT is the computed recipient digest of the note (4 elements).
-#!
 #! Invocation: exec
-@locals(4)
 pub proc prepare_note(
     target_id: AccountId,
     tag: NoteTag,
     note_type: NoteType,
     serial_num: NoteSerialNumber
 ) -> (NoteTag, NoteType, NoteRecipient)
+    push.0.0
+    exec.prepare_note_with_salt
+end
+
+#! Computes a P2ID recipient with the supplied salt and returns the note-creation arguments.
+#!
+#! This procedure handles:
+#! - Writing note storage to memory in the layout [suffix, prefix, salt_0, salt_1]
+#! - Obtaining the note script root via procref
+#! - Building the recipient
+#!
+#! Note creation itself is intentionally left to the caller. Use this procedure when the caller is
+#! already inside an account procedure and can create the note directly via
+#! `exec.output_note::create`. Otherwise use `p2id::create_output_note_with_salt`, which routes
+#! creation through the account's `create_note` procedure and can therefore be used from note or
+#! transaction scripts.
+#!
+#! Inputs:  [salt_0, salt_1, target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
+#! Outputs: [tag, note_type, RECIPIENT]
+#!
+#! Where:
+#! - salt_0 and salt_1 are the salt elements. For privacy, sample both uniformly at random and
+#!   keep them secret. Salt does not hide account-derived note tags.
+#! - target_id_suffix is the suffix felt of the target account ID.
+#! - target_id_prefix is the prefix felt of the target account ID.
+#! - tag is the note tag to be included in the note.
+#! - note_type is the storage type of the note (1 = public, 0 = private).
+#! - SERIAL_NUM is the serial number of the note (4 elements).
+#! - RECIPIENT is the computed recipient digest of the note (4 elements).
+#!
+#! Invocation: exec
+@locals(4)
+pub proc prepare_note_with_salt(
+    salt_0: felt,
+    salt_1: felt,
+    target_id: AccountId,
+    tag: NoteTag,
+    note_type: NoteType,
+    serial_num: NoteSerialNumber
+) -> (NoteTag, NoteType, NoteRecipient)
+    # => [salt_0, salt_1, target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
+
+    loc_store.SALT_0_PTR loc_store.SALT_1_PTR
     # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
     loc_store.TARGET_ACCOUNT_ID_SUFFIX_PTR loc_store.TARGET_ACCOUNT_ID_PREFIX_PTR
-    # => [tag, note_type, SERIAL_NUM]
-
-    push.0.0 loc_store.SALT_0_PTR loc_store.SALT_1_PTR
     # => [tag, note_type, SERIAL_NUM]
 
     movdn.5 movdn.5
@@ -134,19 +157,41 @@ end
 
 #! Creates a P2ID output note with a zero salt and returns its index.
 #!
+#! Equivalent to `create_output_note_with_salt` with both salt elements set to zero. The account
+#! must expose `miden::standards::note::note_creator::create_note`. Zero salt does not protect
+#! against target-account enumeration using an exposed storage commitment.
+#!
+#! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
+#! Outputs: [note_idx]
+#!
+#! Invocation: exec
+pub proc create_output_note(
+    target_id: AccountId,
+    tag: NoteTag,
+    note_type: NoteType,
+    serial_num: NoteSerialNumber
+) -> u16
+    push.0.0
+    exec.create_output_note_with_salt
+end
+
+#! Creates a P2ID output note with the supplied salt and returns its index.
+#!
 #! Note creation must originate from the account context, so this procedure routes creation through
-#! the account's `create_note` procedure. This lets `p2id::create_output_note` be used from contexts
-#! outside the account code, such as note or transaction scripts. Callers that are already inside an
-#! account procedure should instead use `p2id::prepare_note` together with
+#! the account's `create_note` procedure. This lets `p2id::create_output_note_with_salt` be used
+#! from contexts outside the account code, such as note or transaction scripts. Callers already
+#! inside an account procedure should use `p2id::prepare_note_with_salt` together with
 #! `exec.output_note::create`.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::note::note_creator::create_note` procedure.
 #!
-#! Inputs:  [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
+#! Inputs:  [salt_0, salt_1, target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 #! Outputs: [note_idx]
 #!
 #! Where:
+#! - salt_0 and salt_1 are the salt elements. For privacy, sample both uniformly at random and
+#!   keep them secret. Salt does not hide account-derived note tags.
 #! - target_id_suffix is the suffix felt of the target account ID.
 #! - target_id_prefix is the prefix felt of the target account ID.
 #! - tag is the note tag to be included in the note.
@@ -156,13 +201,15 @@ end
 #! - note_idx is the index of the created note.
 #!
 #! Invocation: exec
-pub proc create_output_note(
+pub proc create_output_note_with_salt(
+    salt_0: felt,
+    salt_1: felt,
     target_id: AccountId,
     tag: NoteTag,
     note_type: NoteType,
     serial_num: NoteSerialNumber
 ) -> u16
-    exec.prepare_note
+    exec.prepare_note_with_salt
     # => [tag, note_type, RECIPIENT]
 
     # pad the stack before `call`

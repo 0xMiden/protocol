@@ -233,6 +233,10 @@ The P2ID note script implements a simple pay-to-account-ID pattern. It adds the 
 
 **Use case:** Simple, direct payments where you want to send assets to a known account ID.
 
+Rust callers can provide a salt through `P2idNote::builder().salt(...)` or `P2idNoteStorage::builder().target(...).salt(...).build()`. Both builders also offer `generate_salt(&mut rng)`; use a securely seeded random number generator and keep the salt private with the note details. Public and private notes both default to zero salt. Choosing a private note type controls publication of the note details; protecting an exposed storage commitment against account-ID guesses also requires a random, secret salt. Salt does not hide account-derived note tags.
+
+In MASM, `p2id::prepare_note_with_salt` and `p2id::create_output_note_with_salt` accept `[salt_0, salt_1, target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]` on the stack. The existing `prepare_note` and `create_output_note` procedures use zero salt. `prepare_note_with_salt` returns creation arguments for the caller; `create_output_note_with_salt` creates the note through the account's `create_note` procedure.
+
 ### P2IDE (Pay-to-ID Extended)
 
 The P2IDE note script extends P2ID with additional features including time-locking and reclaim functionality.

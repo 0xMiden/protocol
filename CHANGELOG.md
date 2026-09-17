@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Features
+
+- Added `prepare_note_with_salt` and `create_output_note_with_salt` MASM procedures and `generate_salt` helpers on the Rust P2ID builders.
+
 ### Changes
 
+- [BREAKING] Replaced `P2idNoteStorage::with_salt` with the salt setter on `P2idNoteStorage::builder()`.
 - [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
 
 ## v0.17.0-rc.5 (2026-09-17)
