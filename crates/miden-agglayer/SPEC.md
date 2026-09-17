@@ -1041,14 +1041,15 @@ deliver minted assets to the recipient.
 |-------|-------|
 | `serial_num` | Derived deterministically from `PROOF_DATA_KEY` (Poseidon2 hash of the CLAIM proof data) |
 | `script` | Standard P2ID script (`miden::standards::notes::p2id::main`) |
-| `storage` | 2 felts -- see layout below |
+| `storage` | 4 felts -- see layout below |
 
-**Storage layout (2 felts):**
+**Storage layout (4 felts):**
 
 | Index | Field | Encoding |
 |-------|-------|----------|
-| 0 | `target_account_id_prefix` | Felt (AccountId prefix) |
-| 1 | `target_account_id_suffix` | Felt (AccountId suffix) |
+| 0 | `target_account_id_suffix` | Felt (AccountId suffix) |
+| 1 | `target_account_id_prefix` | Felt (AccountId prefix) |
+| 2-3 | `salt` | Two zero field elements |
 
 **Consumption:**
 
@@ -1089,9 +1090,9 @@ to mint and distribute assets to the recipient.
 |-------|-------|
 | `serial_num` | Derived from `PROOF_DATA_KEY` (Poseidon2 hash of the CLAIM proof data) |
 | `script` | Standard MINT script (`miden::standards::notes::mint::main`) |
-| `storage` | 22 felts -- see layout below |
+| `storage` | 24 felts -- see layout below |
 
-**Storage layout (22 felts):**
+**Storage layout (24 felts):**
 
 | Index | Field | Encoding |
 |-------|-------|----------|
@@ -1103,12 +1104,13 @@ to mint and distribute assets to the recipient.
 | 17-19 | padding | Zeros so the P2ID storage below stays word-aligned |
 | 20 | `account_id_suffix` | Destination account suffix |
 | 21 | `account_id_prefix` | Destination account prefix |
+| 22-23 | `salt` | Two zero field elements |
 
 **Consumption:**
 
-The standard MINT script for public note creation loads the 22 storage items from the MINT
+The standard MINT script for public note creation loads the 24 storage items from the MINT
 note storage, reconstructs the P2ID `RECIPIENT` from `P2ID_SCRIPT_ROOT`, `SERIAL_NUM`, and
-the P2ID storage at `[20..21]`, and calls the faucet's `mint_and_send` procedure
+the P2ID storage at `[20..23]`, and calls the faucet's `mint_and_send` procedure
 (re-exported from `fungible::mint_and_send`) with the stored `ASSET_ID`, `ASSET_VALUE`,
 `dest_tag`, and `RECIPIENT`.
 
