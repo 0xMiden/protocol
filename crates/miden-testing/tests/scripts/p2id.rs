@@ -1,5 +1,6 @@
-use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountComponent, AccountType};
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
@@ -12,10 +13,11 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT;
 use miden_standards::note::P2idNote;
-use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 
 use crate::prove_and_verify_transaction_complete;
 
@@ -310,6 +312,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 }
 
 /// The MASM constructors must agree with Rust on storage, recipient, and output-note metadata.
+/// Creation runs from a transaction script; preparation runs inside account code.
 #[rstest::rstest]
 #[case::create("create_output_note", None)]
 #[case::create_zero_salt("create_output_note_with_salt", Some([Felt::ZERO; 2]))]
@@ -323,12 +326,45 @@ async fn test_p2id_note_constructors(
     #[case] salt: Option<[Felt; 2]>,
     #[values(NoteType::Public, NoteType::Private)] note_type: NoteType,
 ) -> anyhow::Result<()> {
+    let mut code_builder = CodeBuilder::default();
+    let mut sender_builder = Account::builder([9; 32])
+        .account_type(AccountType::Public)
+        .with_component(BasicWallet)
+        .with_assets([FungibleAsset::mock(100)]);
+    let invoke_constructor = if constructor.starts_with("prepare_note") {
+        let component = AccountComponent::new(
+            CodeBuilder::default().compile_component_code(
+                "p2id_constructor",
+                format!(
+                    r#"
+                    use miden::protocol::output_note
+                    use miden::standards::notes::p2id
+
+                    @account_procedure
+                    pub proc create_note
+                        exec.p2id::{constructor}
+                        exec.output_note::create
+                    end
+                    "#
+                ),
+            )?,
+            vec![],
+            AccountComponentMetadata::mock("p2id_constructor"),
+        )?;
+        code_builder = code_builder.with_dynamically_linked_package(component.component_code())?;
+        sender_builder = sender_builder.with_component(component);
+        "call.::p2id_constructor::create_note\nmovdn.15 dropw dropw dropw drop drop drop".to_owned()
+    } else {
+        format!("exec.p2id::{constructor}")
+    };
+
     let mut builder = MockChain::builder();
-    let sender_account = builder.add_existing_wallet_with_assets(
+    let sender_account = builder.add_account_from_builder(
         Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
-        [FungibleAsset::mock(100)],
+        sender_builder,
+        AccountState::Exists,
     )?;
     let target_account = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -351,17 +387,6 @@ async fn test_p2id_note_constructors(
     let push_salt = salt
         .map(|[salt_0, salt_1]| format!("push.{salt_1}.{salt_0}"))
         .unwrap_or_default();
-    // The prepare procedures return creation arguments; the caller creates the note.
-    let create_note = if constructor.starts_with("prepare_note") {
-        r#"
-            # => [tag, note_type, RECIPIENT]
-            push.0 movdn.6 push.0 movdn.6 padw padw swapdw
-            call.::miden::standards::wallets::basic::create_note
-            movdn.15 dropw dropw dropw drop drop drop
-        "#
-    } else {
-        ""
-    };
     let tx_script_src = format!(
         r#"
         use miden::standards::notes::p2id
@@ -374,8 +399,7 @@ async fn test_p2id_note_constructors(
             push.{target_prefix}
             push.{target_suffix}
             {push_salt}
-            exec.p2id::{constructor}
-            {create_note}
+            {invoke_constructor}
             # => [note_idx]
 
             push.{ASSET_VALUE}
@@ -391,7 +415,7 @@ async fn test_p2id_note_constructors(
         ASSET_ID = asset.to_id_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
-    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
+    let tx_script = code_builder.compile_tx_script(&tx_script_src)?;
     let executed_transaction = mock_chain
         .build_transaction(sender_account.id())
         .tx_script(tx_script)

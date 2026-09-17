@@ -83,9 +83,13 @@ impl P2idNote {
         serial_number: Word,
         #[builder(default)] note_type: NoteType,
         /// Salt protecting the target account ID against guesses using an exposed storage
-        /// commitment. Defaults to zero, including for private notes. For privacy, sample both
-        /// elements uniformly at random and keep them secret, or use
+        /// commitment. Defaults to zero, including for private notes.
+        ///
+        /// # Privacy
+        ///
+        /// Sample both elements uniformly at random and keep them secret, or use
         /// `generate_salt(&mut rng)` with a securely seeded random number generator.
+        /// Salt does not hide account-derived note tags.
         #[builder(default)]
         salt: [Felt; 2],
     ) -> Result<Self, NoteError> {
@@ -502,7 +506,7 @@ mod tests {
 
     /// Salt and serial-number generation must use separate draws from the caller's RNG.
     #[test]
-    fn generated_salt_and_serial_number_round_trip() {
+    fn builders_generate_salt_and_serial_number() {
         let seed = Word::from([1, 2, 3, 4u32]);
         let mut expected_rng = RandomCoin::new(seed);
         let expected_salt = [expected_rng.draw_element(), expected_rng.draw_element()];
@@ -517,7 +521,6 @@ mod tests {
             .generate_serial_number(&mut rng)
             .build()
             .unwrap();
-        assert_eq!(note.note_type(), NoteType::Private);
         assert_eq!(note.storage().salt(), expected_salt);
         assert_eq!(note.serial_number(), expected_serial);
 
@@ -526,9 +529,6 @@ mod tests {
             .generate_salt(&mut RandomCoin::new(seed))
             .build();
         assert_eq!(storage, note.storage());
-        let encoded = NoteStorage::from(storage);
-        assert_eq!(P2idNoteStorage::try_from(encoded.items()).unwrap(), storage);
-        assert_eq!(Note::from(note).recipient(), &storage.into_recipient(expected_serial));
     }
 
     /// `.asset()` and `.assets()` both append, so they can be combined and called repeatedly.

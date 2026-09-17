@@ -11,7 +11,7 @@ const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2ID note expects exactly 4 n
 # =================================================================================================
 
 # The number of storage items of a P2ID note.
-const NUM_STORAGE_ITEMS = 4
+pub const NUM_STORAGE_ITEMS = 4
 
 const STORAGE_PTR = 0
 const TARGET_ACCOUNT_ID_SUFFIX_PTR = STORAGE_PTR

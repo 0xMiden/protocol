@@ -2,7 +2,8 @@
 
 use {AccountId, NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
 use miden::protocol::note
-use miden::standards::wallets::basic as basic_wallet
+use miden::standards::note::note_creator
+use {NUM_STORAGE_ITEMS} from miden::standards::notes::p2id::script
 
 mod script
 
@@ -10,9 +11,6 @@ pub use {main} from miden::standards::notes::p2id::script
 
 # CONSTANTS
 # =================================================================================================
-
-# The number of storage items of a P2ID note.
-const NUM_STORAGE_ITEMS = 4
 
 const STORAGE_PTR = 0
 const TARGET_ACCOUNT_ID_SUFFIX_PTR = STORAGE_PTR
@@ -166,7 +164,7 @@ pub proc create_output_note_with_salt(
     push.0 movdn.6 push.0 movdn.6 padw padw swapdw
     # => [tag, note_type, RECIPIENT, pad(10)]
 
-    call.basic_wallet::create_note
+    call.note_creator::create_note
     # => [note_idx, pad(15)]
 
     movdn.15 dropw dropw dropw drop drop drop
