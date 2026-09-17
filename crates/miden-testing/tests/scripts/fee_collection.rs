@@ -20,7 +20,6 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccount, SponsorshipPolicy};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolicyManager};
 use miden_standards::account::note_creator::NoteCreator;
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH,
@@ -140,7 +139,6 @@ fn network_account(
         .build();
 
     Ok(NetworkAccount::builder([7; 32], allowed_note_roots, fee_policy_manager)?
-        .with_component(BasicWallet)
         .build_existing()?)
 }
 
@@ -410,7 +408,6 @@ async fn collect_rejects_expected_fee_asset_mismatch() -> anyhow::Result<()> {
             fee_policy_manager: FeePolicyManager::mock(fee_faucet_id()?),
             sponsorship_policy: SponsorshipPolicy::default(),
         })
-        .with_component(BasicWallet)
         .with_component(fee_collector_component()?)
         .build_existing()?;
 
@@ -862,7 +859,6 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
             .active_fee_policy(policy)
             .build(),
     )?
-    .with_component(BasicWallet)
     .build_existing()?;
 
     builder.add_account(network_account.clone())?;
@@ -1055,7 +1051,6 @@ impl SponsorshipTest {
         let target = AccountBuilder::new([9; 32])
             .account_type(AccountType::Public)
             .with_components(AuthNetworkAccount::new(BTreeSet::new(), target_fee_policy_manager)?)
-            .with_component(BasicWallet)
             .build_existing()?;
 
         let tx_script = create_network_notes_tx_script(target.id(), num_network_notes)?;

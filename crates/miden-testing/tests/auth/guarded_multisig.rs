@@ -1,3 +1,5 @@
+use core::num::NonZeroU32;
+
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
@@ -296,6 +298,106 @@ async fn test_guarded_multisig_signature_required(
     assert_eq!(
         multisig_account.vault().get_balance(output_note_asset.id())?.as_u64(),
         10 - output_note_asset.unwrap_fungible().amount().as_u64()
+    );
+
+    Ok(())
+}
+
+/// Tests that a guarded multisig whose approval expires still shows the guardian the summary the
+/// approvers signed.
+///
+/// The approval expiration is written to the kernel only after the guardian signature has been
+/// requested, so the summary the host re-derives for that request still matches the kernel state.
+/// Applying it earlier would make the guardian's request fail with an expiration mismatch instead.
+///
+/// **Roles:**
+/// - 2 Approvers (2 signers required)
+/// - 1 Guardian
+/// - 1 Guarded Multisig Contract
+#[tokio::test]
+async fn test_guarded_multisig_approval_expiration_is_applied_after_the_guardian_signature()
+-> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::Falcon512Poseidon2)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let guardian_public_key = guardian_secret_key.public_key();
+    let guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
+
+    let multisig_account = create_guarded_multisig_account(
+        2,
+        &approvers,
+        GuardianConfig::new(Approver::new(
+            guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
+        10,
+        vec![],
+    )?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])?.build()?;
+
+    let salt = Word::from([Felt::from(31u32); 4]);
+    let approval_expiration_delta = NonZeroU32::new(10).unwrap();
+    let signed_block = mock_chain.latest_block_header().block_num();
+    let auth_args = MultisigAuthArgs::new(signed_block, salt)
+        .with_approval_expiration_delta(approval_expiration_delta)?;
+
+    let mock_tx_builder = mock_chain
+        .build_transaction(multisig_account.id())
+        .multisig_auth_args(auth_args);
+
+    let tx_summary = mock_tx_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing_inputs)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing_inputs)
+        .await?;
+
+    // Without the guardian signature the guardian is shown the very summary the approvers signed,
+    // rather than the transaction aborting while re-deriving it.
+    let guardian_summary = mock_tx_builder
+        .clone()
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    assert_eq!(guardian_summary.as_ref().to_commitment(), msg);
+
+    let guardian_signature = guardian_authenticator
+        .get_signature(guardian_public_key.to_commitment(), &signing_inputs)
+        .await?;
+
+    let executed_transaction = mock_tx_builder
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .add_signature(guardian_public_key.to_commitment(), msg, guardian_signature)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(
+        executed_transaction.expiration_block_num(),
+        signed_block + approval_expiration_delta.get()
     );
 
     Ok(())
