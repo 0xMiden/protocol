@@ -150,7 +150,7 @@ const MOCK_ACCOUNT_CODE: &str = "
         exec.native_account::has_state_changed
         # => [has_state_changed, pad(16)]
 
-        exec.sys::truncate_stack
+        swap drop
         # => [has_state_changed, pad(15)]
     end
 
