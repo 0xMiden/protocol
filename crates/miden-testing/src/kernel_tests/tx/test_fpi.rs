@@ -1999,6 +1999,85 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Public commitment APIs reject FPI even when called from a valid foreign account procedure.
+#[rstest::rstest]
+#[case::compute_commitment("compute_commitment")]
+#[case::has_state_changed("has_state_changed")]
+#[tokio::test]
+async fn native_account_commitment_fails_for_foreign_account(
+    #[case] procedure: &str,
+) -> anyhow::Result<()> {
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let foreign_account_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "foreign_account",
+            format!(
+                r#"
+                use miden::core::sys
+                use miden::protocol::native_account
+
+                @account_procedure
+                pub proc test_commitment
+                    # distinguish this procedure from the native account's wrapper
+                    push.1 drop
+                    exec.native_account::{procedure}
+                    exec.sys::truncate_stack
+                end
+                "#,
+            ),
+        )?,
+        vec![],
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
+    let foreign_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(foreign_account_component.clone())
+        .build_existing()?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([native_account.clone(), foreign_account.clone()])?
+            .build()?;
+    mock_chain.prove_next_block()?;
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.clone())?;
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
+        .compile_tx_script(format!(
+            r#"
+            use miden::core::sys
+            use miden::protocol::tx
+
+            @transaction_script
+            pub proc main
+                padw padw padw push.0.0.0
+                procref.::foreign_account::test_commitment
+                push.{foreign_account_id_prefix} push.{foreign_account_id_suffix}
+                exec.tx::execute_foreign_procedure
+                exec.sys::truncate_stack
+            end
+            "#,
+            foreign_account_id_prefix = foreign_account.id().prefix().as_felt(),
+            foreign_account_id_suffix = foreign_account.id().suffix(),
+        ))?;
+
+    let result = mock_chain
+        .build_transaction(native_account.id())
+        .foreign_accounts(vec![foreign_account_inputs])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_NATIVE);
+
+    Ok(())
+}
+
 // HELPER FUNCTIONS
 // ================================================================================================
 

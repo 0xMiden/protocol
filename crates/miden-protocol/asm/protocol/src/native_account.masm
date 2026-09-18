@@ -8,9 +8,8 @@ use {
     StorageMapKey,
     StorageSlotId,
 } from miden::protocol::types
-use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET}
+use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET}
     from miden::protocol::kernel_proc_offsets
-use miden::protocol::active_account
 use miden::core::word
 
 # NATIVE ACCOUNT PROCEDURES
@@ -82,6 +81,35 @@ end
 
 # COMMITMENTS
 # -------------------------------------------------------------------------------------------------
+
+#! Computes and returns commitment to the state of the native account.
+#!
+#! Inputs:  []
+#! Outputs: [ACCOUNT_COMMITMENT]
+#!
+#! Where:
+#! - ACCOUNT_COMMITMENT is the commitment of the account data.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
+#!
+#! Invocation: exec
+pub proc compute_commitment() -> word
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.ACCOUNT_COMPUTE_COMMITMENT_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [ACCOUNT_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [ACCOUNT_COMMITMENT]
+end
 
 #! Computes the commitment to the native account's delta.
 #!
@@ -192,7 +220,7 @@ end
 #!
 #! Unlike compute_delta_commitment, this procedure may be called before the authentication
 #! procedure increments the nonce. It first reads the initial commitment, which also verifies that
-#! the native account is active, and then compares it with the active account's current commitment.
+#! the native account is active, and then compares it with the native account's current commitment.
 #!
 #! Inputs:  []
 #! Outputs: [has_state_changed]
@@ -206,7 +234,7 @@ pub proc has_state_changed() -> Bool
     exec.get_initial_commitment
     # => [INITIAL_COMMITMENT]
 
-    exec.active_account::compute_commitment
+    exec.compute_commitment
     # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT]
 
     exec.word::eq not
