@@ -1,5 +1,6 @@
 use {Uint64} from miden::standards::types
-use {AccountId, Asset, AssetAmount, Bool, NoteArgs, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
+use {AccountId, Asset, AssetAmount, NoteArgs, NoteTag, NoteType} from miden::protocol::types
+use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
 use miden::protocol::account_id
@@ -10,14 +11,14 @@ use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
 use {MAX_AMOUNT as FUNGIBLE_ASSET_MAX_AMOUNT} from miden::standards::assets::fungible_asset
-use miden::standards::note::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic as wallet
 
 # CONSTANTS
 # =================================================================================================
 
-const NUM_STORAGE_ITEMS=7
+const PRIVATE_NUM_STORAGE_ITEMS=10
+const PUBLIC_NUM_STORAGE_ITEMS=14
 const MAX_U32=0x0000000100000000
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
@@ -28,39 +29,35 @@ const PSWAP_ATTACHMENT_SCHEME = 3
 # The number of words in the PswapAttachment.
 const PSWAP_ATTACHMENT_NUM_WORDS = 1
 
-# Note storage layout (7 felts, loaded at STORAGE_PTR by get_bounded_storage):
-# - requested_faucet_suffix    [0]  : 1 felt
-# - requested_faucet_prefix    [1]  : 1 felt
-# - min_requested_amount       [2]  : 1 felt
-# - min_fill_step              [3]  : 1 felt
-# - payback_note_type          [4]  : 1 felt
-# - creator_id_suffix          [5]  : 1 felt
-# - creator_id_prefix          [6]  : 1 felt
-#
-# Where:
-# - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
-# - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
-#   (AccountIdPrefix as Felt)
-# - min_requested_amount: Minimum amount of the requested fungible asset (Felt)
-# - min_fill_step: Minimum per-fill amount of the requested asset (Felt); 0 disables the floor
-# - payback_note_type: The NoteType used for the P2ID payback note
-# - creator_id_suffix: The suffix of the creator's AccountId (Felt)
-# - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
-#
-# The payback note tag is derived at runtime from the creator's account ID
-# (via note_tag::create_account_target) rather than stored.
-#
-# The remainder PSWAP note's own tag is not stored — it is lifted from the
-# active note's metadata at remainder-creation time (same asset pair => same
-# tag), saving one storage slot.
+# Storage: requested faucet suffix/prefix/amount [0..3), minimum fill [3],
+# payback recipient (private) or serial (public) [4..8), payback type [8], tag [9].
+# Public mode appends complete P2ID storage [10..14).
 const STORAGE_PTR = 0
-const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR
-const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 1
-const MIN_REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 2
-const MIN_FILL_STEP_ITEM = STORAGE_PTR + 3
-const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
-const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 5
-const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
+const REQUESTED_FAUCET_SUFFIX_ITEM = 0
+const REQUESTED_FAUCET_PREFIX_ITEM = 1
+const MIN_REQUESTED_AMOUNT_ITEM = 2
+const MIN_FILL_STEP_ITEM = 3
+const PAYBACK_WORD_PTR = 4
+const PAYBACK_NOTE_TYPE_ITEM = 8
+const PAYBACK_TAG_ITEM = 9
+const PUBLIC_P2ID_STORAGE_PTR = 10
+const PUBLIC_P2ID_PREFIX_ITEM = PUBLIC_P2ID_STORAGE_PTR + 1
+const PUBLIC_P2ID_SALT_0_ITEM = PUBLIC_P2ID_STORAGE_PTR + 2
+const PUBLIC_P2ID_SALT_1_ITEM = PUBLIC_P2ID_STORAGE_PTR + 3
+
+# Scratch memory is disjoint from either storage layout. P2ID storage must be word-aligned.
+const STORAGE_LENGTH_PTR = 16
+const ACTION_PTR = 17
+const PAYBACK_RECIPIENT_PTR = 20
+const P2ID_STORAGE_PTR = 24
+const P2ID_PREFIX_PTR = P2ID_STORAGE_PTR + 1
+const P2ID_SALT_0_PTR = P2ID_STORAGE_PTR + 2
+const P2ID_SALT_1_PTR = P2ID_STORAGE_PTR + 3
+const CANCEL_SERIAL_PTR = 28
+const P2ID_NUM_STORAGE_ITEMS = 4
+
+# Domain separator for cancellation advice; ASCII "PSWAPCAN". Matches Rust.
+const CANCEL_ADVICE_DOMAIN = 0x505357415043414e
 
 # Local memory offsets
 # =================================================================================================
@@ -107,7 +104,13 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 # ERRORS
 # =================================================================================================
 
-const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
+const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP storage length does not match payback visibility"
+const ERR_PSWAP_INVALID_PAYBACK_TYPE="PSWAP payback type must be public or private"
+const ERR_PSWAP_INVALID_PAYBACK_TAG="PSWAP payback tag must fit in u32"
+const ERR_PSWAP_INVALID_ACCOUNT_ID="PSWAP account ID version is unsupported"
+const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or reserved value"
+const ERR_PSWAP_INVALID_CANCEL_ADVICE="PSWAP cancellation requires a serial and optional two-element salt"
+const ERR_PSWAP_INVALID_PAYBACK_OPENING="PSWAP cancellation opening does not match the payback recipient"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
@@ -232,55 +235,90 @@ proc min(a: felt, b: felt) -> felt
     # => [min(a, b)]
 end
 
+# PAYBACK PREPARATION
+# =================================================================================================
+
+#! Checks the canonical account ID encoding supported by this script version.
+proc validate_account_id(account_id: AccountId)
+    dup.1 u32split swap drop u32and.0x0f eq.1 assert.err=ERR_PSWAP_INVALID_ACCOUNT_ID
+    exec.account_id::validate_structure
+end
+
+#! Loads and validates either storage layout. Private recipient digests remain opaque.
+proc load_storage()
+    push.PUBLIC_NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    dup push.PRIVATE_NUM_STORAGE_ITEMS gte assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
+    dup mem_store.STORAGE_LENGTH_PTR
+
+    mem_load.PAYBACK_NOTE_TYPE_ITEM dup eq.0 swap eq.1 or
+    assert.err=ERR_PSWAP_INVALID_PAYBACK_TYPE
+
+    mem_load.PAYBACK_NOTE_TYPE_ITEM
+    if.true
+        push.PUBLIC_NUM_STORAGE_ITEMS
+    else
+        push.PRIVATE_NUM_STORAGE_ITEMS
+    end
+    assert_eq.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
+
+    mem_load.PAYBACK_TAG_ITEM u32assert.err=ERR_PSWAP_INVALID_PAYBACK_TAG drop
+    mem_load.REQUESTED_FAUCET_PREFIX_ITEM mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
+    exec.validate_account_id
+    mem_load.MIN_REQUESTED_AMOUNT_ITEM lte.FUNGIBLE_ASSET_MAX_AMOUNT
+    assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+    mem_load.MIN_FILL_STEP_ITEM lte.FUNGIBLE_ASSET_MAX_AMOUNT
+    assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+end
+
+#! Normalizes either payback mode to one fixed recipient, cached for fills and cancellation.
+#! Only public mode registers full recipient details for output creation.
+proc prepare_payback()
+    mem_load.PAYBACK_NOTE_TYPE_ITEM
+    if.true
+        # Copy the unaligned public P2ID storage into an aligned scratch word.
+        mem_load.PUBLIC_P2ID_STORAGE_PTR mem_store.P2ID_STORAGE_PTR
+        mem_load.PUBLIC_P2ID_PREFIX_ITEM mem_store.P2ID_PREFIX_PTR
+        mem_load.PUBLIC_P2ID_SALT_0_ITEM mem_store.P2ID_SALT_0_PTR
+        mem_load.PUBLIC_P2ID_SALT_1_ITEM mem_store.P2ID_SALT_1_PTR
+        mem_load.P2ID_PREFIX_PTR mem_load.P2ID_STORAGE_PTR exec.validate_account_id
+
+        procref.p2id::main
+        padw mem_loadw_le.PAYBACK_WORD_PTR
+        push.P2ID_NUM_STORAGE_ITEMS push.P2ID_STORAGE_PTR
+        exec.note::compute_and_store_recipient
+    else
+        padw mem_loadw_le.PAYBACK_WORD_PTR
+    end
+    # => [RECIPIENT]
+    mem_storew_le.PAYBACK_RECIPIENT_PTR dropw
+end
+
 # P2ID NOTE CREATION PROCEDURE
 # =================================================================================================
 
-#! Creates a P2ID output note for the swap creator.
-#!
-#! Derives a unique serial number by incrementing the least significant element
-#! of the provided serial, creates the output note using p2id::create_output_note, sets the
-#! attachment, and adds the requested assets (from the consumer's account vault
-#! and/or from another note in the same transaction).
-#!
-#! Inputs: [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
-#!          faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+#! Creates a payback with the order's fixed recipient, type and discovery tag.
+#! Inputs: [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
-#!
 @locals(5)
-# P2ID_NOTE_IDX              : note_idx
-# P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
-# P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
-# P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
-# P2ID_AMT_NOTE_FILL         : amt_note_fill
 proc create_p2id_note(
-    creator: AccountId,
-    note_type: NoteType,
-    serial_num: NoteSerialNumber,
     faucet: AccountId,
     amt_account_fill: AssetAmount,
     amt_note_fill: AssetAmount
 )
-    # Derive P2ID serial: increment least significant element
-    movup.3 add.1 movdn.3
-    # => [creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM,
-    #     faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
-
-    # Derive the payback tag from the creator's account ID prefix
-    dup.1
-    # => [creator_prefix, creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM, ...]
-    exec.note_tag::create_account_target
-    # => [tag, creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM, ...]
-    movdn.2
-    # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM, ...]
-
-    exec.p2id::create_output_note
-    # => [note_idx, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
-
-    loc_store.P2ID_NOTE_IDX
     loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
     loc_store.P2ID_REQUESTED_FAUCET_PREFIX
     loc_store.P2ID_AMT_ACCOUNT_FILL
     loc_store.P2ID_AMT_NOTE_FILL
+
+    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
+    mem_load.PAYBACK_NOTE_TYPE_ITEM mem_load.PAYBACK_TAG_ITEM
+    # => [tag, note_type, RECIPIENT]
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    call.wallet::create_note
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [note_idx]
+
+    loc_store.P2ID_NOTE_IDX
     # => []
 
     # The add cannot overflow: `execute_pswap` overflow-checks and validates the fill sum first.
@@ -406,7 +444,7 @@ proc create_remainder_note(
     # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
 
     # Build recipient from all note storage items (now with updated requested amount)
-    push.NUM_STORAGE_ITEMS push.STORAGE_PTR
+    mem_load.STORAGE_LENGTH_PTR push.STORAGE_PTR
     # => [storage_ptr, num_storage_items, SERIAL_NUM', SCRIPT_ROOT, note_type, tag]
 
     exec.note::compute_and_store_recipient
@@ -467,17 +505,36 @@ proc create_remainder_note(
     # => []
 end
 
-#! Checks if the currently consuming account is the creator of the note.
-#!
-#! Inputs: [creator_id_suffix, creator_id_prefix]
-#! Outputs: [is_creator]
-#!
-proc is_consumer_creator(creator_id: AccountId) -> Bool
-    exec.active_account::get_id
-    # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
+#! Reconstructs the P2ID recipient using the executing account as its target.
+#! Advice contains the four-element serial, optionally followed by two salt elements.
+proc authenticate_cancel()
+    # key = hash(RECIPIENT, CANCEL_ADVICE_DOMAIN).
+    push.0.0.0.CANCEL_ADVICE_DOMAIN
+    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
+    exec.poseidon2::merge
+    adv.push_mapvaln
+    adv_push
+    dup eq.4 dup.1 eq.6 or assert.err=ERR_PSWAP_INVALID_CANCEL_ADVICE
+    eq.6 movdn.4 dropw
+    # => [has_salt]
 
-    exec.account_id::eq
-    # => [is_creator]
+    padw adv_loadw mem_storew_le.CANCEL_SERIAL_PTR dropw
+    if.true
+        adv_push mem_store.P2ID_SALT_0_PTR
+        adv_push mem_store.P2ID_SALT_1_PTR
+    else
+        push.0 mem_store.P2ID_SALT_0_PTR
+        push.0 mem_store.P2ID_SALT_1_PTR
+    end
+    exec.active_account::get_id
+    mem_store.P2ID_STORAGE_PTR mem_store.P2ID_PREFIX_PTR
+
+    push.P2ID_NUM_STORAGE_ITEMS push.P2ID_STORAGE_PTR exec.note::compute_storage_commitment
+    procref.p2id::main
+    padw mem_loadw_le.CANCEL_SERIAL_PTR
+    exec.note::compute_recipient
+    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
+    assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_OPENING
 end
 
 #! Loads the note's single offered asset, asserting it equals the amount the note was created with.
@@ -520,9 +577,9 @@ proc load_offered_asset() -> Asset
     # => [ASSET_ID, ASSET_VALUE]
 end
 
-#! Reclaims the note's remaining assets back to the creator's vault.
+#! Reclaims the note's remaining assets into the authenticated payback target's vault.
 #!
-#! Called when the consumer IS the creator (cancel/reclaim path).
+#! Called only after authenticate_cancel succeeds.
 #!
 #! Inputs: []
 #! Outputs: []
@@ -544,9 +601,8 @@ end
 
 #! Returns the PSWAP order_id, taken from the active note's serial[1].
 #!
-#! serial[1] is stable across every payback and remainder in the PSWAP note chain:
-#! the payback bumps serial[0] and the remainder bumps serial[3], so the creator's
-#! serial[1] carries through every note in the chain unchanged.
+#! serial[1] is stable across PSWAP remainders, which only bump serial[3]. Paybacks use an
+#! independent fixed serial; their attachments carry this order ID.
 #!
 #! Inputs:  []
 #! Outputs: [order_id]
@@ -615,7 +671,7 @@ end
 
 #! Executes the partially-fillable swap.
 #!
-#! Sends offered tokens to consumer, requested tokens to creator via P2ID,
+#! Sends offered tokens to consumer, requested tokens to the fixed P2ID recipient,
 #! and creates a remainder note if partially filled.
 #!
 #! `min_requested_amount` is a minimum, not an exact target. With `total_fill = account_fill +
@@ -758,12 +814,7 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM
     mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
-    exec.active_note::get_serial_number
-    mem_load.PAYBACK_NOTE_TYPE_ITEM
-    mem_load.PSWAP_CREATOR_PREFIX_ITEM
-    mem_load.PSWAP_CREATOR_SUFFIX_ITEM
-    # => [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
-    #     faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+    # => [faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
     exec.create_p2id_note
     # => []
@@ -841,76 +892,37 @@ proc execute_pswap(account_fill_amount: AssetAmount, note_fill_amount: AssetAmou
 
 end
 
-#! Partially-fillable swap note script: exchanges a portion of the offered asset for a
-#! proportional amount of the requested asset, producing a P2ID payback note for the creator
-#! and, on partial fills, a remainder PSWAP note carrying the unfilled balance.
+#! Partially-fillable swap with a fixed P2ID payback recipient per order.
 #!
-#! The consumer specifies two fill amounts via `NOTE_ARGS`:
-#! - `account_fill_amount`: portion of the requested asset debited from the consumer's vault.
-#! - `note_fill_amount`:    portion of the requested asset sourced from another note in the
-#!                          same transaction (cross-swap / net-zero flow, no vault debit).
+#! NOTE_ARGS in Rust element order are [account_fill, note_fill, action, reserved].
+#! Action 0 fills; all-zero arguments perform a full fill. Action 1 cancels, requires zero
+#! fill amounts, verifies the P2ID opening supplied as advice, and refunds its target account.
+#! The reserved element is zero. A fill by the payback target never implicitly cancels.
 #!
-#! At least one of the two must be non-zero. If both are zero — which is the default in network
-#! transactions where the executor does not provide note_args — the script falls back to a full fill
-#! (`account_fill_amount = min_requested_amount`). If the consuming account is the note's creator,
-#! the script reclaims the offered asset back to the creator's vault instead.
-#!
-#! Requires that the account exposes:
-#! - `miden::standards::wallets::basic::receive_asset` procedure.
-#! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
-#! - `miden::standards::note::note_creator::create_note` procedure.
-#!
-#! Consumers: unrestricted - any account may fill the order and receive the offered asset in
-#!   exchange for the requested one
-#!
-#! Inputs:  [NOTE_ARGS]
-#! Outputs: []
-#!
-#! Where NOTE_ARGS = [account_fill_amount, note_fill_amount, 0, 0] (top of stack first).
-#!
-#! See the `# Note storage layout` block near the top of this file for the full
-#! storage layout consumed by this script.
-#!
-#! Panics if:
-#! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
-#! - the note does not hold exactly one offered asset at consumption time.
-#! - the offered asset remaining in the note differs from the asset the note was created with (i.e.
-#!   it was partially removed before the script ran).
-#! - the total fill (account_fill + note_fill) overflows u64 or exceeds the max asset amount.
-#! - the account does not expose `receive_asset` / `move_asset_to_note`.
+#! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
+#! Cancellation requires receive_asset. Public and private paybacks share both execution paths.
+#! Consumers: any account can fill; only the P2ID payback target can cancel.
 @note_script
 pub proc main(note_args: NoteArgs)
-    movdn.3 movdn.3 drop drop
-    # => [account_fill_amount, note_fill_amount]
+    movup.3 eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
+    movup.2 dup mem_store.ACTION_PTR
+    dup eq.0 swap eq.1 or assert.err=ERR_PSWAP_INVALID_ACTION
+    # => [account_fill, note_fill]
 
-    # Load all note storage items to memory starting at address 0
-    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
-    # => [num_storage_items, account_fill_amount, note_fill_amount]
+    exec.load_storage
+    exec.prepare_payback
 
-    eq.NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
-    # => [account_fill_amount, note_fill_amount]
-
-    dup.1 eq.0 dup.1 eq.0 and
-    # => [both_zero, account_fill_amount, note_fill_amount]
+    mem_load.ACTION_PTR
     if.true
-        drop mem_load.MIN_REQUESTED_AMOUNT_ITEM
-        # => [account_fill_amount, note_fill_amount]
-    end
-    # => [account_fill_amount, note_fill_amount]
-
-    mem_load.PSWAP_CREATOR_PREFIX_ITEM mem_load.PSWAP_CREATOR_SUFFIX_ITEM
-    # => [creator_id_suffix, creator_id_prefix, account_fill_amount, note_fill_amount]
-
-    exec.is_consumer_creator
-    # => [is_creator, account_fill_amount, note_fill_amount]
-
-    if.true
-        drop drop
+        eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
+        eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
+        exec.authenticate_cancel
         exec.handle_reclaim
-        # => []
     else
+        dup.1 eq.0 dup.1 eq.0 and
+        if.true
+            drop mem_load.MIN_REQUESTED_AMOUNT_ITEM
+        end
         exec.execute_pswap
-        # => []
     end
-    # => []
 end
