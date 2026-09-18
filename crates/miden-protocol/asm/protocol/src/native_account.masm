@@ -92,7 +92,7 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
-#! - the current active account is not the native account of the transaction.
+#! - the active account is not the native account.
 #!
 #! Invocation: exec
 pub proc compute_commitment() -> word

@@ -168,7 +168,7 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
-#! - the current active account is not the native account of the transaction.
+#! - the active account is not the native account.
 #!
 #! Invocation: dynexec
 pub proc account_compute_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
