@@ -219,8 +219,7 @@ end
 #! Returns true if the native account's state has changed since the transaction began.
 #!
 #! Unlike compute_delta_commitment, this procedure may be called before the authentication
-#! procedure increments the nonce. It first reads the initial commitment, which also verifies that
-#! the native account is active, and then compares it with the native account's current commitment.
+#! procedure increments the nonce. It compares the native account's initial and current commitments.
 #!
 #! Inputs:  []
 #! Outputs: [has_state_changed]
