@@ -4,6 +4,7 @@
 
 ### Changes
 
+- [BREAKING] PSWAP now uses a fixed P2ID payback recipient per order, with an explicit discovery tag and separate private/public payback storage layouts (10/14 elements). Fill simulation returns partial private outputs without their openings. Cancellation is explicit and refunds only the authenticated payback target; zero-salt cancellation advice needs only the payback serial. This changes the PSWAP script root and Rust APIs; legacy notes require their original script and cannot be parsed with the new layout ([#3909](https://github.com/0xMiden/protocol/issues/3909)).
 - [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
 
 ## v0.17.0-rc.5 (2026-09-17)

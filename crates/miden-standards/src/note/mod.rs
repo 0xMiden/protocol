@@ -45,7 +45,7 @@ mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
 mod pswap;
-pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
+pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage, PswapPayback};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
@@ -193,7 +193,10 @@ impl StandardNote {
             Self::P2ID => NumStorageItems::Exact(P2idNote::NUM_STORAGE_ITEMS),
             Self::P2IDE => NumStorageItems::Exact(P2ideNote::NUM_STORAGE_ITEMS),
             Self::SWAP => NumStorageItems::Exact(SwapNote::NUM_STORAGE_ITEMS),
-            Self::PSWAP => NumStorageItems::Exact(PswapNote::NUM_STORAGE_ITEMS),
+            Self::PSWAP => NumStorageItems::AnyOf(&[
+                NumStorageItems::Exact(PswapNoteStorage::PRIVATE_NUM_STORAGE_ITEMS),
+                NumStorageItems::Exact(PswapNoteStorage::PUBLIC_NUM_STORAGE_ITEMS),
+            ]),
             Self::MINT => MintNote::NUM_STORAGE_ITEMS,
             Self::BURN => NumStorageItems::Exact(BurnNote::NUM_STORAGE_ITEMS),
             Self::CONSTANT_FEE_POLICY_CONFIG => {

@@ -26,9 +26,11 @@ use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_in
 use miden_standards::note::{
     FeeSponsorshipNote,
     P2idNote,
+    P2idNoteStorage,
     P2ideNote,
     PswapNote,
     PswapNoteStorage,
+    PswapPayback,
     SwapNote,
 };
 use miden_testing::{Auth, MockTransaction};
@@ -206,7 +208,10 @@ pub fn tx_consume_swap_note_network(payback_note_type: NoteType) -> Result<MockT
 ///
 /// A partial fill delivers half of the requested amount (the note sets no `min_fill_step` floor)
 /// and re-creates a residual PSWAP note carrying the unfilled remainder.
-pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<MockTransaction> {
+pub fn tx_consume_pswap_note_network(
+    full_fill: bool,
+    payback_note_type: NoteType,
+) -> Result<MockTransaction> {
     const OFFERED_AMOUNT: u64 = 100;
     const REQUESTED_AMOUNT: u64 = 50;
 
@@ -232,9 +237,21 @@ pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<MockTransaction>
         [fill_asset.into(), super::fee_funding_asset()?],
     )?;
 
+    let payback_serial = builder.rng_mut().draw_word();
+    let payback_storage = P2idNoteStorage::new(creator_account.id());
+    let payback = match payback_note_type {
+        NoteType::Private => PswapPayback::Private {
+            recipient: payback_storage.into_recipient(payback_serial).digest(),
+        },
+        NoteType::Public => PswapPayback::Public {
+            serial_number: payback_serial,
+            storage: payback_storage,
+        },
+    };
     let storage = PswapNoteStorage::builder()
         .min_requested_asset(min_requested_asset)
-        .creator_account_id(creator_account.id())
+        .payback(payback)
+        .payback_note_tag(miden_protocol::note::NoteTag::new(0))
         .build();
     let pswap = PswapNote::builder()
         .sender(creator_account.id())
@@ -252,7 +269,7 @@ pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<MockTransaction>
     // residual PSWAP note carrying the remainder.
     let (payback_note, remainder_pswap) =
         pswap.execute(consumer_account.id(), Some(fill_asset), None)?;
-    let mut expected_output_notes = vec![RawOutputNote::Full(payback_note)];
+    let mut expected_output_notes = vec![payback_note];
     if let Some(remainder) = remainder_pswap {
         expected_output_notes.push(RawOutputNote::Full(Note::from(remainder)));
     }
