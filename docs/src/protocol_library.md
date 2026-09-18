@@ -62,8 +62,6 @@ Native account procedures can be used to write to storage, add or remove assets 
 
 Notice that the initial-state getters can only be executed against the native account: invoking them against the foreign account (during FPI) panics. Foreign accounts are immutable, so in order to read their (initial) values, the corresponding getters from the `active_account` module should be used.
 
-`compute_commitment` and `has_state_changed` also require the native account to be active and must be invoked from account context. Both procedures panic during FPI.
-
 | Procedure                      | Description                    | Context                        |
 | ------------------------------ | ------------------------------ | ------------------------------ |
 | `get_id`                       | Returns the ID of the native account of the transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[account_id_suffix, account_id_prefix]`                                                              | Any              |
