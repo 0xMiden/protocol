@@ -1,3 +1,5 @@
+use {Keccak256Digest, NetworkId, ConvertedAsset, LeafData} from agglayer::types
+use {Asset, AssetId, NoteSerialNumber} from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::active_account
 use miden::protocol::asset
@@ -6,9 +8,8 @@ use miden::protocol::note
 use miden::standards::assets::fungible_asset
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
-use {DEFAULT_TAG} from miden::standards::note_tag
-use {ALWAYS} from miden::standards::note::execution_hint
-use {MemoryAddress} from miden::protocol::types
+use {DEFAULT_TAG} from miden::standards::note::note_tag
+use {ALWAYS} from miden::standards::note::note_execution_hint
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
 use miden::standards::access::pausable
@@ -115,7 +116,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=8
 #! Invocation: call
 @locals(15)
 @account_procedure
-pub proc bridge_out
+pub proc bridge_out(asset: Asset, dest_network_id: NetworkId, dest_address: EthereumAddress)
     exec.pausable::assert_not_paused
 
     exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
@@ -264,7 +265,7 @@ end
 #! - the destination network ID equals the bridge's configured network ID.
 #!
 #! Invocation: exec
-proc assert_destination_id_not_miden_id
+proc assert_destination_id_not_miden_id(dest_network_id: NetworkId)
     # change the endianness to BE to compare it with the network ID
     exec.utils::swap_u32_bytes
     # => [destination_network_id_be]
@@ -295,8 +296,8 @@ end
 #! - The faucet is not registered in the faucet registry.
 #!
 #! Invocation: exec
-proc convert_asset
-    swapw exec.fungible_asset::value_into_amount movdn.4
+proc convert_asset(asset: Asset) -> ConvertedAsset
+    swapw exec.fungible_asset::value_into_amount_unchecked movdn.4
     # => [ASSET_ID, amount]
 
     exec.asset::id_into_faucet_id
@@ -346,7 +347,7 @@ end
 #! ]
 #!
 #! Invocation: exec
-proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
+proc add_leaf_bridge(leaf_data_start_ptr: ptr<LeafData>)
     exec.leaf_utils::compute_leaf_value
     # => [LEAF_VALUE_LO, LEAF_VALUE_HI]
 
@@ -408,7 +409,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc load_let_frontier_selective
+proc load_let_frontier_selective()
     # 1. Load num_leaves from its value slot
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.active_account::get_item
@@ -460,7 +461,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc save_let_root_and_num_leaves
+proc save_let_root_and_num_leaves(root: Keccak256Digest, new_leaf_count: u32)
     # 1. Save root lo word to its value slot
     push.LET_ROOT_LO_SLOT[0..2]
     exec.native_account::set_item
@@ -514,7 +515,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc save_let_frontier_selective
+proc save_let_frontier_selective()
     # Get old_num_leaves = new_num_leaves - 1
     push.LET_FRONTIER_MEM_PTR mem_load sub.1
     # => [old_num_leaves]
@@ -557,7 +558,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddress)
+proc write_address_to_memory(mem_ptr: ptr<EthereumAddress>, address: EthereumAddress)
     dup movdn.6 mem_store movup.4 add.1
     # => [mem_ptr+1, address(4)]
 
@@ -587,7 +588,7 @@ end
 #! - num_leaves is the number of leaves in the Local Exit Tree, post-append.
 #!
 #! Invocation: exec
-proc compute_burn_note_serial_num
+proc compute_burn_note_serial_num(asset_id: AssetId) -> NoteSerialNumber
     exec.active_note::get_serial_number
     # => [B2AGG_SERIAL_NUM, ASSET_ID]
 
@@ -617,7 +618,7 @@ end
 #!
 #! Invocation: exec
 @locals(14)
-proc create_burn_note
+proc create_burn_note(asset: Asset)
     swapw dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID]
 
@@ -691,7 +692,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc lock_asset
+proc lock_asset(asset: Asset)
     exec.native_account::add_asset
     # => [FINAL_ASSET_VALUE]
 

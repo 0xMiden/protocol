@@ -2,7 +2,11 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
-use miden_agglayer::testing::{bridge_admin_account_id, create_existing_bridge_account_with_roles};
+use miden_agglayer::testing::{
+    bridge_admin_account_id,
+    create_existing_agglayer_faucet,
+    create_existing_bridge_account_with_roles,
+};
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -14,7 +18,6 @@ use miden_agglayer::{
     MetadataHash,
     RemoveGerNote,
     UpdateGerNote,
-    create_existing_agglayer_faucet,
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
@@ -24,11 +27,11 @@ use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::auth::SponsorshipPolicy;
+use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::{NetworkAccountConfigNote, StandardNote};
+use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 
@@ -96,14 +99,16 @@ fn network_auth(allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>) 
 ///
 /// The network account's auth procedure estimates every input note's fee through the active
 /// policy during fee collection, and a constant policy aborts for unscheduled roots - so every
-/// `zero_fee_root` (and the auto-allowlisted NETWORK_ACCOUNT_CONFIG note) is scheduled at an
-/// explicit 0 fee, and each `(root, amount)` in `priced` at its amount.
+/// `zero_fee_root` (and every note `AuthNetworkAccount::new` allowlists by default) is scheduled
+/// at an explicit 0 fee, and each `(root, amount)` in `priced` at its amount.
 fn fee_policy_manager(
     zero_fee_roots: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
 ) -> Result<FeePolicyManager> {
-    let mut policy = BasicConstantFeePolicy::new()
-        .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+    let mut policy = BasicConstantFeePolicy::new();
+    for root in AuthNetworkAccount::default_allowed_note_scripts() {
+        policy = policy.with_fee(root, AssetAmount::ZERO);
+    }
     for root in zero_fee_roots {
         policy = policy.with_fee(root, AssetAmount::ZERO);
     }
@@ -272,7 +277,6 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
         "
         use miden::core::sys
         use miden::standards::wallets::basic as basic_wallet
-        use miden::standards::note::note_creator
 
         @transaction_script
         pub proc main
@@ -286,7 +290,7 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
             push.{tag}
             # => [tag, note_type, RECIPIENT, pad(16)]
 
-            call.note_creator::create_note
+            call.basic_wallet::create_note
             # => [note_idx, pad(21)]
 
             # move the asset to the note
@@ -443,6 +447,8 @@ fn setup_bridge_fixture(
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin_account_id(),
+        bridge_admin_account_id(),
         MIDEN_NETWORK_ID,
     );
 
@@ -494,6 +500,7 @@ pub async fn tx_consume_claim_note(
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT
+    let token_name = "AggLayer Token";
     let token_symbol = "AGG";
     let decimals = 8u8;
     let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
@@ -505,10 +512,12 @@ pub async fn tx_consume_claim_note(
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
+        token_name,
         token_symbol,
         decimals,
         max_supply,
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;
@@ -701,16 +710,22 @@ pub async fn tx_consume_b2agg_note(
 
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "AggLayer Token",
         "AGG",
         8,
         FungibleAsset::MAX_AMOUNT.into(),
         Felt::new_unchecked(bridge_amount),
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
-    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     let config_note = ConfigAggBridgeNote::create(
         ConversionMetadata {
             faucet_account_id: faucet.id(),
@@ -785,10 +800,12 @@ fn setup_faucet_registration(
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
+        "AggLayer Token",
         "AGG",
         8,
         FungibleAsset::MAX_AMOUNT.into(),
         Felt::ZERO,
+        bridge_admin_account_id(),
         bridge_account.id(),
     );
     builder.add_account(agglayer_faucet.clone())?;

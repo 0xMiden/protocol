@@ -4,14 +4,15 @@ use miden_protocol::errors::AccountError;
 /// Defines which execution modes a procedure policy supports and the corresponding threshold
 /// values for each mode.
 ///
-/// A procedure can require the immediate threshold, the delayed threshold, or support both.
+/// A procedure can require the immediate threshold only, or support both the immediate and the
+/// delayed threshold. There is deliberately no delay-only mode: delayed execution is not
+/// implemented yet and policy enforcement always runs in immediate mode, so a delay-only policy
+/// would make its procedure permanently uncallable. A delay-only mode can be added once the
+/// delayed execution path exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcedurePolicyExecutionMode {
     ImmediateOnly {
         immediate_threshold: u32,
-    },
-    DelayOnly {
-        delay_threshold: u32,
     },
     ImmediateOrDelay {
         immediate_threshold: u32,
@@ -35,8 +36,8 @@ pub enum ProcedurePolicyNoteRestriction {
 ///
 /// A procedure policy can override the default multisig requirements for a specific procedure.
 /// It specifies:
-/// - an execution mode, which determines whether the procedure can be executed immediately, after a
-///   delay, or both
+/// - an execution mode, which determines whether the procedure can be executed immediately only, or
+///   immediately and after a delay
 /// - note restrictions, which limit whether a transaction invoking the procedure may consume input
 ///   notes or create output notes
 ///
@@ -49,7 +50,8 @@ pub enum ProcedurePolicyNoteRestriction {
 /// - Immediate threshold: the number of signatures required to authorize immediate execution.
 /// - Delayed threshold: the number of signatures required to authorize a delayed action.
 ///
-/// The thresholds for immediate and delayed execution may differ.
+/// The thresholds for immediate and delayed execution may differ. Every policy must define an
+/// immediate threshold, see [`ProcedurePolicyExecutionMode`].
 ///
 /// The policy is encoded into the procedure-policy storage word as:
 /// `[immediate_threshold, delayed_threshold, note_restrictions, 0]`.
@@ -75,13 +77,6 @@ impl ProcedurePolicy {
     pub fn with_immediate_threshold(immediate_threshold: u32) -> Result<Self, AccountError> {
         Self::new(
             ProcedurePolicyExecutionMode::ImmediateOnly { immediate_threshold },
-            ProcedurePolicyNoteRestriction::None,
-        )
-    }
-
-    pub fn with_delay_threshold(delay_threshold: u32) -> Result<Self, AccountError> {
-        Self::new(
-            ProcedurePolicyExecutionMode::DelayOnly { delay_threshold },
             ProcedurePolicyNoteRestriction::None,
         )
     }
@@ -112,14 +107,13 @@ impl ProcedurePolicy {
         self.note_restrictions
     }
 
-    pub const fn immediate_threshold(&self) -> Option<u32> {
+    pub const fn immediate_threshold(&self) -> u32 {
         match self.execution_mode {
             ProcedurePolicyExecutionMode::ImmediateOnly { immediate_threshold } => {
-                Some(immediate_threshold)
+                immediate_threshold
             },
-            ProcedurePolicyExecutionMode::DelayOnly { .. } => None,
             ProcedurePolicyExecutionMode::ImmediateOrDelay { immediate_threshold, .. } => {
-                Some(immediate_threshold)
+                immediate_threshold
             },
         }
     }
@@ -127,7 +121,6 @@ impl ProcedurePolicy {
     pub const fn delay_threshold(&self) -> Option<u32> {
         match self.execution_mode {
             ProcedurePolicyExecutionMode::ImmediateOnly { .. } => None,
-            ProcedurePolicyExecutionMode::DelayOnly { delay_threshold } => Some(delay_threshold),
             ProcedurePolicyExecutionMode::ImmediateOrDelay { delay_threshold, .. } => {
                 Some(delay_threshold)
             },
@@ -142,13 +135,6 @@ impl ProcedurePolicy {
                 if immediate_threshold == 0 {
                     return Err(AccountError::other(
                         "procedure policy immediate threshold must be at least 1",
-                    ));
-                }
-            },
-            ProcedurePolicyExecutionMode::DelayOnly { delay_threshold } => {
-                if delay_threshold == 0 {
-                    return Err(AccountError::other(
-                        "procedure policy delay threshold must be at least 1",
                     ));
                 }
             },
@@ -177,7 +163,7 @@ impl ProcedurePolicy {
     }
 
     pub fn to_word(self) -> Word {
-        let immediate_threshold = self.immediate_threshold().unwrap_or(0);
+        let immediate_threshold = self.immediate_threshold();
         let delay_threshold = self.delay_threshold().unwrap_or(0);
 
         Word::from([immediate_threshold, delay_threshold, self.note_restrictions as u32, 0])
@@ -221,14 +207,27 @@ mod tests {
                 .to_string()
                 .contains("delay threshold cannot exceed immediate threshold")
         );
+
+        // A delay-only policy would be enforced in immediate mode and brick its procedure.
+        assert!(
+            ProcedurePolicy::with_immediate_and_delay_thresholds(0, 2)
+                .unwrap_err()
+                .to_string()
+                .contains("immediate and delayed thresholds must both be at least 1")
+        );
     }
 
     #[test]
     fn procedure_policy_thresholds_are_exposed_with_getters() {
-        let procedure_policy = ProcedurePolicy::with_delay_threshold(2).unwrap();
+        let procedure_policy = ProcedurePolicy::with_immediate_and_delay_thresholds(3, 2).unwrap();
 
-        assert_eq!(procedure_policy.immediate_threshold(), None);
+        assert_eq!(procedure_policy.immediate_threshold(), 3);
         assert_eq!(procedure_policy.delay_threshold(), Some(2));
+
+        let immediate_only_policy = ProcedurePolicy::with_immediate_threshold(3).unwrap();
+
+        assert_eq!(immediate_only_policy.immediate_threshold(), 3);
+        assert_eq!(immediate_only_policy.delay_threshold(), None);
     }
 
     #[test]

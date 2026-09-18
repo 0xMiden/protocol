@@ -651,8 +651,8 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
             dropw dropw dropw dropw
         end
         "#,
-        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
-        mock_map_slot = &*MOCK_MAP_SLOT,
+        mock_value_slot0 = *MOCK_VALUE_SLOT0,
+        mock_map_slot = *MOCK_MAP_SLOT,
     );
 
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script_src)?;
@@ -1040,11 +1040,11 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
 
         # Build the tx summary.
         # Replace AUTH_ARGS with all-zero user params.
-        dropw padw push.0.0.0
-        # => [user_params(7), pad(12)]
+        dropw padw push.0.0
+        # => [user_params(6), pad(12)]
 
         exec.::miden::standards::auth::create_tx_summary
-        # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(12)]
+        # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(12)]
 
         exec.::miden::standards::auth::hash_and_insert_tx_summary
         # => [TX_SUMMARY_COMMITMENT, pad(12)]
@@ -1191,11 +1191,11 @@ const DELTA_CHECK_AUTH_CODE: &str = r#"
         dup
         if.true
             # Replace AUTH_ARGS with all-zero user params.
-            dropw padw push.0.0.0
-            # => [user_params(7), pad(12)]
+            dropw padw push.0.0
+            # => [user_params(6), pad(12)]
 
             exec.::miden::standards::auth::create_tx_summary
-            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, PARAMS_HEAD, PARAMS_TAIL, pad(12)]
+            # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(12)]
 
             exec.::miden::standards::auth::hash_and_insert_tx_summary
             # => [TX_SUMMARY_COMMITMENT, pad(12)]

@@ -32,4 +32,7 @@ jobs:
         with:
           mode: "dry-run"
           verify-branch-head: "false"
+          # Honour the same escape hatch as the publish workflow so an intended root change does
+          # not fail every push to the release branch.
+          skip-masm-root-check-for-version: ${{ vars.SKIP_MASM_ROOT_CHECK_FOR_VERSION }}
           # ref left blank: uses the pushed ref

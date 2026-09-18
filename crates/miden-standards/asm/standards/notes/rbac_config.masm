@@ -1,28 +1,29 @@
+use {NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
 use miden::standards::access::rbac
-use miden::standards::attachments::network_account_target
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the RbacConfig note storage. `ROLE_SYMBOL_PTR` is shared by every action;
 # the remaining slots are reused per action (an account ID for grant / revoke, an admin role for
 # set-role-admin).
-const SELECTOR_PTR = STORAGE_PTR
+const VARIANT_PTR = STORAGE_PTR
 const ROLE_SYMBOL_PTR = STORAGE_PTR + 1
 const ACCOUNT_SUFFIX_PTR = STORAGE_PTR + 2
 const ACCOUNT_PREFIX_PTR = STORAGE_PTR + 3
 const ADMIN_ROLE_SYMBOL_PTR = STORAGE_PTR + 2
 
-# Config note selectors, stored in the first storage item. Keep in sync with `RbacConfig` on the
+# Config note variants, stored in the first storage item. Keep in sync with `RbacConfig` on the
 # Rust side.
-const SELECTOR_GRANT_ROLE = 0
-const SELECTOR_REVOKE_ROLE = 1
-const SELECTOR_SET_ROLE_ADMIN = 2
-const SELECTOR_RENOUNCE_ROLE = 3
+const VARIANT_GRANT_ROLE = 0
+const VARIANT_REVOKE_ROLE = 1
+const VARIANT_SET_ROLE_ADMIN = 2
+const VARIANT_RENOUNCE_ROLE = 3
 
 # Expected note storage item count per action.
 const NUM_ITEMS_GRANT_ROLE = 4
@@ -30,20 +31,23 @@ const NUM_ITEMS_REVOKE_ROLE = 4
 const NUM_ITEMS_SET_ROLE_ADMIN = 3
 const NUM_ITEMS_RENOUNCE_ROLE = 2
 
+# Largest storage item count any action uses
+const MAX_NUM_ITEMS = NUM_ITEMS_GRANT_ROLE
+
 # ERRORS
 # =================================================================================================
 
-const ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH = "rbac config note attachment target account does not match the consuming account"
-
-const ERR_RBAC_CONFIG_UNKNOWN_SELECTOR = "rbac config note selector does not match a known action"
+const ERR_RBAC_CONFIG_UNKNOWN_VARIANT = "rbac config note variant does not match a known action"
 
 const ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "rbac config note storage item count does not match the selected action"
+
+const ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC = "rbac config note must be public"
 
 # NOTE SCRIPT
 # =================================================================================================
 
 #! RbacConfig script: triggers a `RoleBasedAccessControl` management action against the consuming
-#! account, dispatched on a selector stored in the first note storage item.
+#! account, dispatched on the note variant in its storage.
 #!
 #! The selected action and its arguments are read from the note storage (fixed at note creation,
 #! so authorization is bound to the note sender):
@@ -59,35 +63,42 @@ const ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "rbac config note sto
 #! - `miden::standards::access::rbac::{grant_role, revoke_role, set_role_admin, renounce_role}`
 #!   (the `RoleBasedAccessControl` component).
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
-#! - the selector is not a known action.
+#! - the number of storage items exceeds MAX_NUM_ITEMS.
+#! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
 #! - the note sender is not authorized for the selected action (per the `rbac` procedures).
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_RBAC_CONFIG_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # bind consumption to the targeted account: reject if the consuming account is not the note's
     # target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_RBAC_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.MAX_NUM_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items]
 
-    mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items]
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items]
 
-    # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_GRANT_ROLE
-    # => [is_grant, selector, num_storage_items]
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_GRANT_ROLE
+    # => [is_grant, variant, num_storage_items]
 
     if.true
         drop
@@ -95,8 +106,8 @@ pub proc main
 
         exec.execute_grant_role
     else
-        dup eq.SELECTOR_REVOKE_ROLE
-        # => [is_revoke, selector, num_storage_items]
+        dup eq.VARIANT_REVOKE_ROLE
+        # => [is_revoke, variant, num_storage_items]
 
         if.true
             drop
@@ -104,8 +115,8 @@ pub proc main
 
             exec.execute_revoke_role
         else
-            dup eq.SELECTOR_SET_ROLE_ADMIN
-            # => [is_set_role_admin, selector, num_storage_items]
+            dup eq.VARIANT_SET_ROLE_ADMIN
+            # => [is_set_role_admin, variant, num_storage_items]
 
             if.true
                 drop
@@ -113,7 +124,7 @@ pub proc main
 
                 exec.execute_set_role_admin
             else
-                eq.SELECTOR_RENOUNCE_ROLE assert.err=ERR_RBAC_CONFIG_UNKNOWN_SELECTOR
+                eq.VARIANT_RENOUNCE_ROLE assert.err=ERR_RBAC_CONFIG_UNKNOWN_VARIANT
                 # => [num_storage_items]
 
                 exec.execute_renounce_role
@@ -137,7 +148,7 @@ end
 #!   account ID is invalid (per `rbac::grant_role`).
 #!
 #! Invocation: exec
-proc execute_grant_role
+proc execute_grant_role(num_storage_items: u32)
     eq.NUM_ITEMS_GRANT_ROLE
     assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -168,7 +179,7 @@ end
 #!   account does not hold the role (per `rbac::revoke_role`).
 #!
 #! Invocation: exec
-proc execute_revoke_role
+proc execute_revoke_role(num_storage_items: u32)
     eq.NUM_ITEMS_REVOKE_ROLE
     assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -200,7 +211,7 @@ end
 #!   zero (per `rbac::set_role_admin`).
 #!
 #! Invocation: exec
-proc execute_set_role_admin
+proc execute_set_role_admin(num_storage_items: u32)
     eq.NUM_ITEMS_SET_ROLE_ADMIN
     assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []
@@ -229,7 +240,7 @@ end
 #! - the role symbol is zero, or the note sender does not hold the role (per `rbac::renounce_role`).
 #!
 #! Invocation: exec
-proc execute_renounce_role
+proc execute_renounce_role(num_storage_items: u32)
     eq.NUM_ITEMS_RENOUNCE_ROLE
     assert.err=ERR_RBAC_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => []

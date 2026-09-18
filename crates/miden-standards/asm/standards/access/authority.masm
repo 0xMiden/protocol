@@ -1,3 +1,4 @@
+use {Bool} from miden::protocol::types
 # miden::standards::access::authority
 #
 # Single source of truth for the account-wide authority. Components that gate state-mutating
@@ -8,6 +9,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
+use miden::standards::access::role_symbol
 
 # TYPE ALIASES
 # =================================================================================================
@@ -56,7 +58,7 @@ const ERR_AUTHORITY_FROZEN = "authority is frozen"
 #!
 #! Invocation: call
 @account_procedure
-pub proc freeze
+pub proc freeze()
     exec.assert_sender_is_emergency_authority
     # => [pad(16)]
 
@@ -74,7 +76,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc unfreeze
+pub proc unfreeze()
     exec.assert_sender_is_emergency_authority
     # => [pad(16)]
 
@@ -95,6 +97,10 @@ end
 #!   [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
 #!   installed on the account; otherwise linking the account fails.
 #!
+#! This procedure never panics under AuthControlled so the account's auth component is the sole
+#! gate and MUST authenticate every authority-gated procedure root, otherwise those procedures are
+#! permissionless.
+#!
 #! Because the calling procedure is identified via `caller`, `assert_authorized` MUST be invoked
 #! with `exec` (inlined) from the gated procedure, and the gated procedure MUST be a `call`
 #! entrypoint so that `caller` resolves to the gated procedure's own root.
@@ -111,7 +117,7 @@ end
 #! - the authority is an unknown value.
 #!
 #! Invocation: exec
-pub proc assert_authorized
+pub proc assert_authorized()
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
     # => [authority, is_frozen, 0, 0]
 
@@ -172,7 +178,7 @@ end
 #! - the authority is AuthControlled or an unknown value.
 #!
 #! Invocation: exec
-proc assert_sender_is_emergency_authority
+proc assert_sender_is_emergency_authority()
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
     # => [authority, is_frozen, 0, 0]
 
@@ -209,7 +215,7 @@ end
 #! - frozen_flag is the new emergency-switch state (0 = not frozen, 1 = frozen).
 #!
 #! Invocation: exec
-proc write_frozen_flag
+proc write_frozen_flag(frozen_flag: Bool)
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
     # => [authority, old_is_frozen, 0, 0, frozen_flag]
 
@@ -236,11 +242,12 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - a role is configured for the procedure and it is not a valid role symbol encoding.
 #! - a role is configured for the procedure and the sender does not hold it.
 #! - no role is configured for the procedure and the sender does not hold ADMIN.
 #!
 #! Invocation: exec
-proc assert_authorized_rbac
+proc assert_authorized_rbac()
     # Resolve the calling procedure's root and look up its assigned role in the map.
     padw caller
     # => [CALLER_ROOT]
@@ -265,9 +272,12 @@ proc assert_authorized_rbac
         exec.rbac::assert_sender_is_admin
         # => []
     else
-        # Assert the sender holds the configured role.
         # => [mapped_role]
 
+        dup exec.role_symbol::validate_encoding
+        # => [mapped_role]
+
+        # Assert the sender holds the configured role.
         exec.rbac::assert_sender_has_role
         # => []
     end

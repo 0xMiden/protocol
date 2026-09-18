@@ -20,7 +20,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountType,
-    AssetCallbackFlag,
     RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
@@ -41,8 +40,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{
+use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
     BlocklistConfig,
@@ -101,7 +99,6 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
@@ -221,7 +218,6 @@ pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransactio
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
@@ -362,7 +358,6 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
-        .with_asset_callbacks(AssetCallbackFlag::from(token_policy_manager.has_transfer_policy()))
         .with_components(token_policy_manager)
         .with_component(list.manager())
         .with_assets([super::fee_funding_asset()?]);
@@ -541,7 +536,6 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
         .account_type(AccountType::Public)
         .with_components(auth_components)
         .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(BasicWallet)
         .with_assets([super::fee_funding_asset()?])
         .build_existing()?;
     builder.add_account(account.clone())?;
@@ -584,7 +578,6 @@ pub fn tx_consume_constant_fee_policy_config_note_network() -> Result<MockTransa
 
     let account_builder = AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_component(ConstantFeeManager::for_basic_constant_fee_policy())

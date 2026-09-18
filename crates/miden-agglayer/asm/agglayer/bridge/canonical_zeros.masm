@@ -102,11 +102,12 @@ const ZERO_31_L = [2340505732, 1648733876, 2660540036, 3759582231]
 const ZERO_31_R = [2389186238, 4049365781, 1653344606, 2840985724]
 
 use {mem_store_double_word} from miden::standards::utils
+use {Keccak256Digest} from agglayer::types
 
 
 #! Inputs:  [zeros_ptr]
 #! Outputs: []
-pub proc load_zeros_to_memory
+pub proc load_zeros_to_memory(zeros_ptr: ptr<Keccak256Digest>)
 	push.ZERO_0_R.ZERO_0_L exec.mem_store_double_word dropw dropw add.8
 	push.ZERO_1_R.ZERO_1_L exec.mem_store_double_word dropw dropw add.8
 	push.ZERO_2_R.ZERO_2_L exec.mem_store_double_word dropw dropw add.8

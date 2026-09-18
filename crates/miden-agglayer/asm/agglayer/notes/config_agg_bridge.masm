@@ -1,7 +1,8 @@
+use {NoteArgs} from miden::protocol::types
 use agglayer::bridge::bridge_config
+use miden::standards::note::note_target
 use miden::standards::utils
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 
 # CONSTANTS
 # =================================================================================================
@@ -33,7 +34,6 @@ const METADATA_HASH_HI_3 = 17
 # =================================================================================================
 
 const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 18 note storage items"
-const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 
 #! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry,
 #! token registry, and faucet metadata map.
@@ -50,6 +50,8 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::register_faucet procedure.
 #! - agglayer::bridge_config::store_faucet_metadata_hash procedure.
+#!
+#! Consumers: target account (attachment)
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -74,17 +76,17 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! - The note does not contain exactly 18 storage items.
 #! - The account does not expose the register_faucet or store_faucet_metadata_hash procedures.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     dropw
     # => [pad(16)]
 
     # Ensure note attachment targets the consuming bridge account.
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # Load note storage to memory
-    push.STORAGE_START_PTR exec.active_note::get_storage
+    push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS push.STORAGE_START_PTR
+    exec.active_note::get_bounded_storage
     # => [num_storage_items, pad(16)]
 
     # Validate the number of storage items

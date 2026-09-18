@@ -5,6 +5,7 @@ pub mod faucets;
 pub mod fees;
 pub mod inspection;
 pub mod interface;
+pub mod note_creator;
 pub mod policies;
 pub mod upgrade;
 pub mod wallets;

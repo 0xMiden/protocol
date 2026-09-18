@@ -1,3 +1,5 @@
+use {TokenSymbol} from miden::standards::faucets
+use {Asset, AssetAmount, Bool, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 # miden::standards::faucets::fungible
 #
 # Fungible faucet logic: token config slot (supply, max_supply, decimals, symbol) and its
@@ -17,6 +19,13 @@ use miden::standards::assets::fungible_asset
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::faucets
 use miden::standards::access::pausable
+
+pub type TokenConfig = struct {
+    supply: AssetAmount,
+    max_supply: AssetAmount,
+    decimals: u8,
+    symbol: TokenSymbol
+}
 
 # =================================================================================================
 # CONSTANTS — slot names
@@ -40,7 +49,8 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds max supply"
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
-const ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
+const ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO = "the amount to mint is zero"
+const ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
 
 # =================================================================================================
@@ -57,7 +67,7 @@ const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceed
 #!   (word[0] on top, little-endian).
 #!
 #! Invocation: exec
-proc get_token_config_internal
+proc get_token_config_internal() -> TokenConfig
     push.TOKEN_CONFIG_SLOT[0..2]
     exec.active_account::get_item
 end
@@ -68,7 +78,7 @@ end
 #! Outputs: [is_max_supply_mutable]
 #!
 #! Invocation: exec
-proc is_max_supply_mutable_internal
+proc is_max_supply_mutable_internal() -> Bool
     exec.faucets::get_mutability_config_word
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop drop drop
@@ -86,7 +96,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_token_config
+pub proc get_token_config() -> TokenConfig
     exec.get_token_config_internal
     swapw dropw
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
@@ -99,7 +109,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_max_supply
+pub proc get_max_supply() -> AssetAmount
     exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     swap movdn.4 dropw
@@ -113,7 +123,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_decimals
+pub proc get_decimals() -> u8
     exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     movup.2 movdn.4 dropw
@@ -127,7 +137,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_token_symbol
+pub proc get_token_symbol() -> TokenSymbol
     exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     movup.3 movdn.4 dropw
@@ -141,7 +151,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc get_token_supply
+pub proc get_token_supply() -> AssetAmount
     exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     movdn.4 dropw
@@ -155,7 +165,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc is_max_supply_mutable
+pub proc is_max_supply_mutable() -> Bool
     exec.is_max_supply_mutable_internal
     # => [is_max_supply_mutable, pad(16)]
     swap drop
@@ -180,7 +190,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc set_max_supply
+pub proc set_max_supply(new_max_supply: AssetAmount)
     # 1. Check max supply mutability
     exec.is_max_supply_mutable_internal
     # => [is_max_supply_mutable, new_max_supply, pad(15)]
@@ -246,6 +256,8 @@ end
 #!
 #! Panics if:
 #! - active mint policy validation fails.
+#! - the active mint policy modified the tag, note_type, or RECIPIENT.
+#! - the amount to mint, after the mint policy ran, is zero.
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
 #! - the token supply exceeds the maximum supply.
 #! - the maximum supply exceeds the maximum representable fungible asset amount.
@@ -255,31 +267,41 @@ end
 #! Invocation: call
 @locals(8)
 @account_procedure
-pub proc mint_and_send
+pub proc mint_and_send(
+    asset: Asset,
+    tag: NoteTag,
+    note_type: NoteType,
+    recipient: NoteRecipient
+) -> u16
     # save the MINT note's ASSET_ID in a local so it survives the mint policy and supply
     # checks; it is compared against the asset derived for the active faucet before minting
     loc_storew_le.MINT_ASSET_ID_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # Run the active mint policy over the full asset value word. The policy may adjust the asset
-    # value and the output note's tag, type, and recipient.
+    # value. The output note's tag, type, and recipient are passed for inspection only and the
+    # manager asserts the policy returned them unchanged.
     exec.policy_manager::execute_mint_policy
-    # => [NEW_ASSET_VALUE, new_tag, new_note_type, NEW_RECIPIENT, pad(6)]
+    # => [NEW_ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
     # ASSET_VALUE for a fungible asset is `[amount, 0, 0, 0]`. Keep amount, drop the rest.
     movdn.3 drop drop drop
-    # => [amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+    # => [new_amount, tag, note_type, RECIPIENT, pad(9)]
+
+    # Reject a zero amount.
+    dup neq.0 assert.err=ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO
+    # => [new_amount, tag, note_type, RECIPIENT, pad(9)]
 
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
 
     push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [token_supply, max_supply, decimals, token_symbol, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [token_supply, max_supply, decimals, token_symbol, new_amount, tag, note_type, RECIPIENT]
 
     # store a copy of the current slot content for the token_supply update later
     loc_storew_le.TOKEN_CONFIG_SLOT_LOCAL
     swap movup.2 drop movup.2 drop
-    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
     #
@@ -298,43 +320,43 @@ pub proc mint_and_send
     # ---------------------------------------------------------------------------------------------
 
     dup.1 dup.1
-    # => [max_supply, token_supply, max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # assert that token_supply <= max_supply
     lte assert.err=ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY
-    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
     dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
-    # => [max_supply, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_supply, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     dup.2 swap dup.2
-    # => [token_supply, max_supply, new_amount, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [token_supply, max_supply, new_amount, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # compute maximum amount that can be minted, max_mint_amount = max_supply - token_supply
     sub
-    # => [max_mint_amount, new_amount, token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [max_mint_amount, new_amount, token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # assert amount <= max_mint_amount
     lte assert.err=ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
-    # => [token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [token_supply, new_amount, tag, note_type, RECIPIENT]
 
     # Compute the new token_supply and update in storage.
     # ---------------------------------------------------------------------------------------------
 
     dup.1 add
-    # => [new_token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [new_token_supply, new_amount, tag, note_type, RECIPIENT]
 
     padw loc_loadw_le.TOKEN_CONFIG_SLOT_LOCAL
-    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, new_amount, tag, note_type, RECIPIENT]
 
     drop movup.3
-    # => [[new_token_supply, max_supply, decimals, token_symbol], new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [[new_token_supply, max_supply, decimals, token_symbol], new_amount, tag, note_type, RECIPIENT]
 
     # update the token config slot with the new supply
     push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
-    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT]
+    # => [new_amount, tag, note_type, RECIPIENT]
 
     # Create a new note.
     # ---------------------------------------------------------------------------------------------
@@ -362,7 +384,7 @@ pub proc mint_and_send
     padw loc_loadw_le.MINT_ASSET_ID_LOCAL dupw.1
     # => [ASSET_ID, NOTE_ASSET_ID, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
-    assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    assert_eqw.err=ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1
@@ -393,6 +415,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the supplied asset is not a well-formed fungible asset.
 #! - active burn policy validation fails.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
@@ -400,7 +423,12 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc receive_and_burn
+pub proc receive_and_burn(asset: Asset)
+    # validate the asset to burn is well-formed before processing it
+    # note that the asset's origin is validated by the kernel
+    exec.fungible_asset::validate
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
     # the burn policy consumes the asset, so keep a copy for the burn itself
     dupw.1 dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, pad(8)]
@@ -411,7 +439,7 @@ pub proc receive_and_burn
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    exec.fungible_asset::to_amount movdn.8
+    exec.fungible_asset::to_amount_unchecked movdn.8
     # => [ASSET_ID, ASSET_VALUE, amount, pad(8)]
 
     # burn the asset

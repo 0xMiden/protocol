@@ -23,6 +23,7 @@ use miden_protocol::errors::{
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
+use miden_prover::ProverError;
 use thiserror::Error;
 
 // NOTE EXECUTION ERROR
@@ -164,6 +165,8 @@ pub enum TransactionProverError {
     // case, the diagnostic is lost if the execution error is not explicitly unwrapped.
     #[error("failed to execute transaction kernel program:\n{}", PrintDiagnostic::new(.0))]
     TransactionProgramExecutionFailed(ExecutionError),
+    #[error("failed to generate transaction proof")]
+    TransactionProofGenerationFailed(#[source] ProverError),
     /// Custom error variant for errors not covered by the other variants.
     #[error("{error_msg}")]
     Other {
@@ -224,6 +227,8 @@ pub enum TransactionKernelError {
         "transaction summary binds expiration delta {actual} but the transaction's expiration delta is {expected}"
     )]
     TransactionSummaryExpirationDeltaMismatch { expected: u16, actual: u16 },
+    #[error("transaction summary binds block {0}, which the transaction does not authenticate")]
+    TransactionSummaryUnknownBlockNumber(BlockNumber),
     #[error("failed to construct transaction summary")]
     TransactionSummaryConstructionFailed(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("asset data extracted from the stack by event handler `{handler}` is not well formed")]

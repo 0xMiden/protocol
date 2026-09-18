@@ -908,7 +908,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
 async fn test_get_asset_info() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let fungible_asset_0 = Asset::Fungible(
+    let fungible_asset_0 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("id should be valid"),
             5,
@@ -918,7 +918,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     // create the second asset with the different faucet ID to increase the number of assets in the
     // output note to 2.
-    let fungible_asset_1 = Asset::Fungible(
+    let fungible_asset_1 = Asset::from(
         FungibleAsset::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).expect("id should be valid"),
             5,
@@ -1272,7 +1272,7 @@ async fn test_add_attachment_with_invalid_num_elements_fails(
     let code = format!(
         "
         use miden::protocol::output_note
-        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use {{DEFAULT_TAG}} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1305,7 +1305,7 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
 
     let code = "
         use miden::protocol::output_note
-        use {DEFAULT_TAG} from miden::standards::note_tag
+        use {DEFAULT_TAG} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 
@@ -1579,6 +1579,27 @@ async fn test_network_note() -> anyhow::Result<()> {
         .build()?;
     let try_from_note = AccountTargetNetworkNote::try_from(valid_note)?;
     assert_eq!(try_from_note.target_account_id(), target_id);
+
+    // --- Unrecognized execution hint: still a network note ---
+    // The on-chain targeting path discards the hint felt, so a hint encoding this version does not
+    // recognize must not hide the note from routing.
+    let raw_hint = Felt::new(7)?;
+    let mut unknown_hint_word = Word::empty();
+    unknown_hint_word[0] = target_id.suffix();
+    unknown_hint_word[1] = target_id.prefix().as_felt();
+    unknown_hint_word[2] = raw_hint;
+    let unknown_hint_note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .attachment(NoteAttachment::with_word(
+            NetworkAccountTarget::ATTACHMENT_SCHEME,
+            unknown_hint_word,
+        ))
+        .build()?;
+
+    assert!(unknown_hint_note.is_network_note());
+    let unknown_hint_note = unknown_hint_note.into_account_target_network_note()?;
+    assert_eq!(unknown_hint_note.target_account_id(), target_id);
+    assert_eq!(unknown_hint_note.execution_hint(), NoteExecutionHint::Unknown(raw_hint));
 
     // --- Invalid: note with default (empty) attachment ---
     let non_network_note =
@@ -1982,7 +2003,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
     let code = format!(
         "
         use miden::protocol::output_note
-        use {{DEFAULT_TAG}} from miden::standards::note_tag
+        use {{DEFAULT_TAG}} from miden::standards::note::note_tag
         use miden::tx_kernel_core::prologue
         use mock::util
 

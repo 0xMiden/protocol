@@ -12,18 +12,13 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word, ZERO};
+use crate::{Felt, Hasher, Word, ZERO};
 
 mod delta_op;
 pub use delta_op::AssetDeltaOperation;
 
 mod vault;
-pub use vault::{
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-};
+pub use vault::{AccountVaultDelta, AssetDelta};
 
 // ACCOUNT DELTA
 // ================================================================================================
@@ -67,8 +62,21 @@ impl AccountDelta {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Domain separator for the account delta commitment header.
-    const DOMAIN: Felt = Felt::new_unchecked(1);
+    /// Domain separator for the account delta commitment.
+    ///
+    /// It is placed in the capacity word of the hasher rather than in the hashed elements, so that
+    /// it stays fixed even as the layout of those elements evolves across versions. The value is
+    /// allocated from the range that the [Poseidon2 domain registry][registry] delegates to this
+    /// repository.
+    ///
+    /// [registry]: https://github.com/0xMiden/crypto/blob/main/docs/registry/poseidon2-domains.toml
+    const DOMAIN: Felt = Felt::new_unchecked(0x02_0001);
+
+    /// Version 1 of the account delta commitment layout.
+    ///
+    /// The version occupies the first element of the commitment header, so a reader can get it
+    /// before it interprets the rest of the commitment.
+    const VERSION_1: u8 = 1;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -175,22 +183,24 @@ impl AccountDelta {
     /// ## Computation
     ///
     /// The delta commitment is a sequential hash over a vector of field elements which starts out
-    /// empty and is appended to in the following way. Whenever sorting is expected, it is that
-    /// of a [`Word`].
+    /// empty and is appended to in the following way. If no asset or storage elements were
+    /// appended, the commitment is defined as the empty word. Whenever sorting is expected, it
+    /// is that of a [`Word`]. The hash is domain-separated by the delta's `DOMAIN`, which is
+    /// placed in the capacity word of the hasher.
     ///
-    /// - Append `[[domain = 1, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
+    /// - Append `[[version = 1, nonce_delta, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
-    ///   id, `nonce_delta` is the value by which the nonce was incremented, and `domain = 1`
-    ///   identifies the header as the start of an account delta commitment.
+    ///   id, `nonce_delta` is the value by which the nonce was incremented, and `version` is the
+    ///   version of this layout.
     /// - Asset Delta
     ///   - For each **added** asset, sorted by its asset ID:
     ///     - Append `[ASSET_ID, ASSET_VALUE]`.
-    ///   - Append `[domain = 3, delta_op = 1, num_added_assets, 0]` if `num_added_assets != 0`
+    ///   - Append `[domain = 1, delta_op = 1, num_added_assets, 0]` if `num_added_assets != 0`
     ///     where `num_added_assets` is the number of added assets and `delta_op` is set to `1`
     ///     indicating asset addition.
     ///   - For each **removed** asset, sorted by its asset ID:
     ///     - Append `[ASSET_ID, ASSET_VALUE]`.
-    ///   - Append `[domain = 3, delta_op = 2, num_removed_assets, 0]` if `num_removed_assets != 0`
+    ///   - Append `[domain = 1, delta_op = 2, num_removed_assets, 0]` if `num_removed_assets != 0`
     ///     where `num_removed_assets` is the number of removed assets and `delta_op` is set to `2`
     ///     indicating asset removal.
     ///   - Note that the domain is the same independent of asset addition or removal, since the
@@ -200,13 +210,13 @@ impl AccountDelta {
     ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
     ///   slot type:
     ///   - Value Slot
-    ///     - Append `[[domain = 5, patch_op, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
+    ///     - Append `[[domain = 2, patch_op, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
     ///       `NEW_VALUE` is the new value of the slot.
     ///   - Map Slot
     ///     - For each key-value pair, sorted by key, whose new value is different from the previous
     ///       value in the map:
     ///       - Append `[KEY, NEW_VALUE]`.
-    ///     - The map trailer is constructed as `[[domain = 6, patch_op, slot_id_suffix,
+    ///     - The map trailer is constructed as `[[domain = 3, patch_op, slot_id_suffix,
     ///       slot_id_prefix], [num_changed_entries, 0, 0, 0]]`, where `num_changed_entries` is the
     ///       number of key-value pairs appended above. Whether the trailer is included depends on
     ///       `patch_op`:
@@ -251,7 +261,8 @@ impl AccountDelta {
     ///   hasher, domain separators are used to disambiguate. For each changed asset and each
     ///   changed slot in the delta, a domain separator is hashed into the delta. The domain
     ///   separator is always at the same index in each layout so it cannot be maliciously crafted
-    ///   (see below for an example).
+    ///   (see below for an example). These separators only need to be unique _within_ a delta or
+    ///   patch, since the `DOMAIN` of a delta and of a patch already separate the two objects.
     /// - Storage value slots:
     ///   - since value slots are only included in the patch if their value has changed when the
     ///     operation is `Update`, there is no ambiguity between a value slot being set to
@@ -268,9 +279,9 @@ impl AccountDelta {
     ///
     /// ```text
     /// [
-    ///   ID_AND_NONCE, EMPTY_WORD,
+    ///   METADATA, EMPTY_WORD,
     ///   [ASSET_ID, ASSET_VALUE],
-    ///   [[domain = 3, delta_op = 1, num_added_assets = 1, 0], EMPTY_WORD],
+    ///   [[domain = 1, delta_op = 1, num_added_assets = 1, 0], EMPTY_WORD],
     ///   [/* no removed assets delta */],
     ///   [/* no storage patch */]
     /// ]
@@ -278,10 +289,10 @@ impl AccountDelta {
     ///
     /// ```text
     /// [
-    ///   ID_AND_NONCE, EMPTY_WORD,
+    ///   METADATA, EMPTY_WORD,
     ///   [/* no asset delta */],
-    ///   [[domain = 5, patch_op, slot_id_suffix0, slot_id_prefix0], NEW_VALUE]
-    ///   [[domain = 5, patch_op, slot_id_suffix1, slot_id_prefix1], NEW_VALUE]
+    ///   [[domain = 2, patch_op, slot_id_suffix0, slot_id_prefix0], NEW_VALUE]
+    ///   [[domain = 2, patch_op, slot_id_suffix1, slot_id_prefix1], NEW_VALUE]
     /// ]
     /// ```
     ///
@@ -290,8 +301,9 @@ impl AccountDelta {
     ///   in the asset ID or `num_added_assets` and the fixed 0.
     /// - This leaves only the domain separator and the patch_op to differentiate these two deltas.
     ///
-    /// The delta and patch headers further use distinct domain separators (1 and 2 respectively),
-    /// so a delta and a patch with otherwise identical bodies can never collide.
+    /// A delta and a patch have identically shaped headers, so their element sequences can be made
+    /// to match. They cannot collide because the delta and the patch commitment use distinct hasher
+    /// capacity domains.
     ///
     /// ### Number of Changed Entries
     ///
@@ -299,19 +311,19 @@ impl AccountDelta {
     ///
     /// ```text
     /// [
-    ///   ID_AND_NONCE, EMPTY_WORD,
+    ///   METADATA, EMPTY_WORD,
     ///   [/* no asset delta */],
-    ///   [domain = 6, patch_op, slot_id_suffix = 20, slot_id_prefix = 21, num_changed_entries = 0, 0, 0, 0]
-    ///   [domain = 6, patch_op, slot_id_suffix = 42, slot_id_prefix = 43, num_changed_entries = 0, 0, 0, 0]
+    ///   [domain = 3, patch_op, slot_id_suffix = 20, slot_id_prefix = 21, num_changed_entries = 0, 0, 0, 0]
+    ///   [domain = 3, patch_op, slot_id_suffix = 42, slot_id_prefix = 43, num_changed_entries = 0, 0, 0, 0]
     /// ]
     /// ```
     ///
     /// ```text
     /// [
-    ///   ID_AND_NONCE, EMPTY_WORD,
+    ///   METADATA, EMPTY_WORD,
     ///   [/* no asset delta */],
     ///   [KEY0, VALUE0],
-    ///   [domain = 6, patch_op, slot_id_suffix = 42, slot_id_prefix = 43, num_changed_entries = 1, 0, 0, 0]
+    ///   [domain = 3, patch_op, slot_id_suffix = 42, slot_id_prefix = 43, num_changed_entries = 1, 0, 0, 0]
     /// ]
     /// ```
     ///
@@ -383,6 +395,20 @@ impl TryFrom<&AccountDelta> for Account {
 impl SequentialCommit for AccountDelta {
     type Commitment = Word;
 
+    /// Computes the commitment to the delta, domain-separated by its `DOMAIN`.
+    ///
+    /// See [AccountDelta::to_commitment()] for more details.
+    fn to_commitment(&self) -> Word {
+        let elements = self.to_elements();
+
+        // An empty delta produces no elements and its commitment is defined as the empty word.
+        if elements.is_empty() {
+            return Word::empty();
+        }
+
+        Hasher::hash_elements_in_domain(&elements, Self::DOMAIN)
+    }
+
     /// Reduces the delta to a sequence of field elements.
     ///
     /// See [AccountDelta::to_commitment()] for more details.
@@ -395,9 +421,9 @@ impl SequentialCommit for AccountDelta {
         // Minor optimization: At least 24 elements are always added.
         let mut elements = Vec::with_capacity(24);
 
-        // ID and Nonce
+        // Metadata
         elements.extend_from_slice(&[
-            Self::DOMAIN,
+            Felt::from(Self::VERSION_1),
             self.nonce_delta,
             self.account_id.suffix(),
             self.account_id.prefix().as_felt(),
@@ -497,8 +523,10 @@ mod tests {
         Account,
         AccountCode,
         AccountId,
+        AccountPatch,
         AccountStorage,
         AccountType,
+        AccountVaultPatch,
         StorageMapKey,
         StorageMapPatch,
         StorageSlotName,
@@ -510,6 +538,7 @@ mod tests {
         NonFungibleAsset,
         NonFungibleAssetDetails,
     };
+    use crate::crypto::SequentialCommit;
     use crate::errors::AccountDeltaError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
@@ -517,7 +546,50 @@ mod tests {
         AccountIdBuilder,
     };
     use crate::utils::serde::Serializable;
-    use crate::{ONE, Word, ZERO};
+    use crate::{Felt, ONE, Word, ZERO};
+
+    #[test]
+    fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
+        let empty_delta = AccountDelta::new(
+            AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?,
+            AccountStoragePatch::new(),
+            AccountVaultDelta::default(),
+            None,
+            ZERO,
+        )?;
+        assert_eq!(empty_delta.to_commitment(), Word::empty());
+
+        Ok(())
+    }
+
+    /// A delta and a patch that reduce to identical element sequences still commit to different
+    /// words, because they use distinct hasher domains.
+    #[test]
+    fn account_delta_commitment_domain_separation() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let nonce = Felt::from(2u8);
+
+        let delta = AccountDelta::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultDelta::default(),
+            None,
+            nonce,
+        )?;
+        let patch = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            None,
+            Some(nonce),
+        )?;
+
+        assert_eq!(delta.to_elements(), patch.to_elements());
+        assert_ne!(delta.to_commitment(), Word::empty());
+        assert_ne!(delta.to_commitment(), patch.to_commitment());
+
+        Ok(())
+    }
 
     #[test]
     fn account_delta_nonce_validation() {

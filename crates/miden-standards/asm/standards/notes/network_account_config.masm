@@ -1,48 +1,50 @@
+use {Commitment} from miden::standards::types
+use {NoteArgs} from miden::protocol::types
 use miden::protocol::active_note
-use miden::standards::attachments::network_account_target
 use miden::standards::auth::network_account
 use miden::standards::fees::fee_manager
+use miden::standards::note::note_target
 
 # CONSTANTS
 # =================================================================================================
 
-# Memory base at which the note storage is written by `active_note::get_storage`.
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
 const STORAGE_PTR = 0
 
 # Memory addresses of the NetworkAccountConfig note storage. The root word occupies the first four
-# items with the selector after it.
+# items with the variant after it.
 const ROOT_PTR = STORAGE_PTR
-const SELECTOR_PTR = STORAGE_PTR + 4
+const VARIANT_PTR = STORAGE_PTR + 4
 
-# Config note selectors, stored in the storage item after the script root. Keep in sync with
+# Config note variants, stored in the storage item after the script root. Keep in sync with
 # `NetworkAccountConfig` on the Rust side.
-const SELECTOR_ADD_ALLOWED_NOTE_SCRIPT = 0
-const SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT = 1
-const SELECTOR_ADD_ALLOWED_TX_SCRIPT = 2
-const SELECTOR_REMOVE_ALLOWED_TX_SCRIPT = 3
-const SELECTOR_ADD_ALLOWED_FEE_POLICY = 4
-const SELECTOR_REMOVE_ALLOWED_FEE_POLICY = 5
+const VARIANT_ADD_ALLOWED_NOTE_SCRIPT = 0
+const VARIANT_REMOVE_ALLOWED_NOTE_SCRIPT = 1
+const VARIANT_ADD_ALLOWED_TX_SCRIPT = 2
+const VARIANT_REMOVE_ALLOWED_TX_SCRIPT = 3
+const VARIANT_ADD_ALLOWED_FEE_POLICY = 4
+const VARIANT_REMOVE_ALLOWED_FEE_POLICY = 5
 
-# Expected note storage item count: a selector plus the root word. Identical for every action.
+# Expected note storage item count: a variant plus the root word. Identical for every action.
 const NUM_STORAGE_ITEMS = 5
 
 # ERRORS
 # =================================================================================================
 
-const ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_SELECTOR = "network account config note selector does not match a known action"
+const ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_VARIANT = "network account config note variant does not match a known action"
 
 const ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "storage item count of the network account config note does not match the expected number"
 
-const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account config note attachment target account does not match the consuming account"
+const ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC = "network account config note must be public"
 
 # NOTE SCRIPT
 # =================================================================================================
 
 #! NetworkAccountConfig script: mutates a network account's script allowlists and allowed fee policy
-#! roots, dispatched on a selector stored in the first note storage item.
+#! roots, dispatched on the note variant in its storage.
 #!
-#! The selected action and its root are read from the note storage. They are fixed at note creation,
-#! so authorization is bound to the note sender. The storage is laid out as `[ROOT, selector]`:
+#! The selected action and its root are read from the note storage and are fixed at note creation.
+#! The storage is laid out as `[ROOT, variant]`:
 #! - `[ROOT, 0]` AddAllowedNoteScript.
 #! - `[ROOT, 1]` RemoveAllowedNoteScript.
 #! - `[ROOT, 2]` AddAllowedTxScript.
@@ -51,7 +53,7 @@ const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account conf
 #! - `[ROOT, 5]` RemoveAllowedFeePolicy.
 #!
 #! Authorization is enforced by the called `AuthNetworkAccount` procedures via the account-wide
-#! `Authority` component, which resolves the note sender against the configured owner or role.
+#! `Authority` component.
 #!
 #! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
 #! script asserts the consuming account matches that target before doing anything else, so the note
@@ -67,36 +69,43 @@ const ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH = "network account conf
 #! - `miden::standards::fees::fee_manager::add_allowed_fee_policy`
 #! - `miden::standards::fees::fee_manager::remove_allowed_fee_policy`
 #!
+#! Consumers: target account (attachment)
+#!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
-#! - the selector is not a known action.
+#! - the variant is not a known action.
 #! - the number of storage items does not match the selected action.
-#! - the note sender is not authorized (per the `AuthNetworkAccount` procedures).
+#! - the caller is not authorized per the installed `Authority` component, as checked by the
+#!   `AuthNetworkAccount` procedures.
 @note_script
-pub proc main
+pub proc main(args: NoteArgs)
     # drop the note script args
     dropw
     # => [pad(16)]
 
+    exec.active_note::is_public
+    assert.err=ERR_NETWORK_ACCOUNT_CONFIG_NOTE_IS_NOT_PUBLIC
+    # => [pad(16)]
+
     # bind consumption to the targeted network account: reject if the consuming account is not the
     # note's target account
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_NETWORK_ACCOUNT_CONFIG_TARGET_ACCOUNT_MISMATCH
+    exec.note_target::assert_active_account_is_network_target_account
     # => [pad(16)]
 
     # write the note storage to memory starting at STORAGE_PTR
-    push.STORAGE_PTR exec.active_note::get_storage
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
     # => [num_storage_items, pad(16)]
 
-    mem_load.SELECTOR_PTR
-    # => [selector, num_storage_items, pad(16)]
+    mem_load.VARIANT_PTR
+    # => [variant, num_storage_items, pad(16)]
 
-    # dispatch on the selector to the matching action procedure
-    dup eq.SELECTOR_ADD_ALLOWED_NOTE_SCRIPT
-    # => [is_add_note, selector, num_storage_items, pad(16)]
+    # dispatch on the variant to the matching action procedure
+    dup eq.VARIANT_ADD_ALLOWED_NOTE_SCRIPT
+    # => [is_add_note, variant, num_storage_items, pad(16)]
 
     if.true
         drop
@@ -104,8 +113,8 @@ pub proc main
 
         exec.execute_add_allowed_note_script
     else
-        dup eq.SELECTOR_REMOVE_ALLOWED_NOTE_SCRIPT
-        # => [is_remove_note, selector, num_storage_items, pad(16)]
+        dup eq.VARIANT_REMOVE_ALLOWED_NOTE_SCRIPT
+        # => [is_remove_note, variant, num_storage_items, pad(16)]
 
         if.true
             drop
@@ -113,8 +122,8 @@ pub proc main
 
             exec.execute_remove_allowed_note_script
         else
-            dup eq.SELECTOR_ADD_ALLOWED_TX_SCRIPT
-            # => [is_add_tx, selector, num_storage_items, pad(16)]
+            dup eq.VARIANT_ADD_ALLOWED_TX_SCRIPT
+            # => [is_add_tx, variant, num_storage_items, pad(16)]
 
             if.true
                 drop
@@ -122,8 +131,8 @@ pub proc main
 
                 exec.execute_add_allowed_tx_script
             else
-                dup eq.SELECTOR_REMOVE_ALLOWED_TX_SCRIPT
-                # => [is_remove_tx, selector, num_storage_items, pad(16)]
+                dup eq.VARIANT_REMOVE_ALLOWED_TX_SCRIPT
+                # => [is_remove_tx, variant, num_storage_items, pad(16)]
 
                 if.true
                     drop
@@ -131,8 +140,8 @@ pub proc main
 
                     exec.execute_remove_allowed_tx_script
                 else
-                    dup eq.SELECTOR_ADD_ALLOWED_FEE_POLICY
-                    # => [is_add_fee, selector, num_storage_items, pad(16)]
+                    dup eq.VARIANT_ADD_ALLOWED_FEE_POLICY
+                    # => [is_add_fee, variant, num_storage_items, pad(16)]
 
                     if.true
                         drop
@@ -140,8 +149,8 @@ pub proc main
 
                         exec.execute_add_allowed_fee_policy
                     else
-                        eq.SELECTOR_REMOVE_ALLOWED_FEE_POLICY
-                        assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_SELECTOR
+                        eq.VARIANT_REMOVE_ALLOWED_FEE_POLICY
+                        assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNKNOWN_VARIANT
                         # => [num_storage_items, pad(16)]
 
                         exec.execute_remove_allowed_fee_policy
@@ -169,7 +178,7 @@ end
 #! - num_storage_items is not equal to the expected number.
 #!
 #! Invocation: exec
-proc load_root
+proc load_root(num_storage_items: u32, padding: [felt; 16]) -> (Commitment, [felt; 12])
     eq.NUM_STORAGE_ITEMS
     assert.err=ERR_NETWORK_ACCOUNT_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
@@ -189,10 +198,10 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not equal to the expected number.
-#! - the note sender is not authorized.
+#! - the caller is not authorized per the installed `Authority` component.
 #!
 #! Invocation: exec
-proc execute_add_allowed_note_script
+proc execute_add_allowed_note_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -210,10 +219,11 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not equal to the expected number.
-#! - the note sender is not authorized (per `network_account::remove_allowed_note_script`).
+#! - the caller is not authorized per the installed `Authority` component, as checked by
+#!   `network_account::remove_allowed_note_script`.
 #!
 #! Invocation: exec
-proc execute_remove_allowed_note_script
+proc execute_remove_allowed_note_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -231,10 +241,11 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not equal to the expected number.
-#! - the note sender is not authorized (per `network_account::add_allowed_tx_script`).
+#! - the caller is not authorized per the installed `Authority` component, as checked by
+#!   `network_account::add_allowed_tx_script`.
 #!
 #! Invocation: exec
-proc execute_add_allowed_tx_script
+proc execute_add_allowed_tx_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -252,10 +263,11 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not equal to the expected number.
-#! - the note sender is not authorized (per `network_account::remove_allowed_tx_script`).
+#! - the caller is not authorized per the installed `Authority` component, as checked by
+#!   `network_account::remove_allowed_tx_script`.
 #!
 #! Invocation: exec
-proc execute_remove_allowed_tx_script
+proc execute_remove_allowed_tx_script(num_storage_items: u32)
     exec.load_root
     # => [SCRIPT_ROOT, pad(12)]
 
@@ -273,10 +285,11 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not equal to the expected number.
-#! - the note sender is not authorized (per `fee_manager::add_allowed_fee_policy`).
+#! - the caller is not authorized per the installed `Authority` component, as checked by
+#!   `fee_manager::add_allowed_fee_policy`.
 #!
 #! Invocation: exec
-proc execute_add_allowed_fee_policy
+proc execute_add_allowed_fee_policy(num_storage_items: u32)
     exec.load_root
     # => [POLICY_ROOT, pad(12)]
 
@@ -295,10 +308,11 @@ end
 #!
 #! Panics if:
 #! - num_storage_items is not equal to the expected number.
-#! - the note sender is not authorized (per `fee_manager::remove_allowed_fee_policy`).
+#! - the caller is not authorized per the installed `Authority` component, as checked by
+#!   `fee_manager::remove_allowed_fee_policy`.
 #!
 #! Invocation: exec
-proc execute_remove_allowed_fee_policy
+proc execute_remove_allowed_fee_policy(num_storage_items: u32)
     exec.load_root
     # => [POLICY_ROOT, pad(12)]
 

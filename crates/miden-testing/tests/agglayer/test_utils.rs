@@ -1,6 +1,5 @@
 extern crate alloc;
 
-use miden_agglayer::agglayer_package;
 pub use miden_agglayer::testing::{
     ClaimDataSource,
     LEAF_VALUE_VECTORS_JSON,
@@ -12,8 +11,8 @@ pub use miden_agglayer::testing::{
     bridge_admin_account_id,
     create_existing_bridge_account_with_roles,
 };
+use miden_agglayer::{AggLayerBridge, AggLayerFaucet, BridgeRoles, agglayer_package};
 use miden_core_lib::CoreLibrary;
-use miden_crypto::Felt;
 use miden_crypto::hash::keccak::Keccak256;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::utils::bytes_to_packed_u32_elements;
@@ -26,14 +25,21 @@ use miden_processor::{
     StackInputs,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountBuilder, AccountId};
+use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset, TokenSymbol};
+use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::note::{Note, NoteScriptRoot};
+use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{ProtocolLib, Word};
+use miden_protocol::{Felt, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 use miden_standards::account::access::PausableStorage;
+use miden_standards::account::faucets::TokenName;
+use miden_standards::note::{FeeSponsorshipNote, StandardNote};
 use miden_testing::{Auth, MockChain, MockChainBuilder};
+use miden_tx::NetworkNotePricer;
 
 // TEST NETWORK ID
 // ================================================================================================
@@ -41,6 +47,8 @@ use miden_testing::{Auth, MockChain, MockChainBuilder};
 /// The AggLayer network ID encoded as `destination_network` in the bundled Solidity-generated claim
 /// test vectors.
 pub const MIDEN_NETWORK_ID: u32 = 77;
+
+pub const VERIFICATION_BASE_FEE: u32 = 500;
 
 // KECCAK-256
 // ================================================================================================
@@ -82,6 +90,115 @@ pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+pub fn fee_faucet_id() -> AccountId {
+    ACCOUNT_ID_FEE_FAUCET
+        .try_into()
+        .expect("mock-chain fee faucet ID should be valid")
+}
+
+pub fn network_note_pricer(verification_base_fee: u32) -> NetworkNotePricer {
+    NetworkNotePricer::builder()
+        .fee_parameters(FeeParameters::new(verification_base_fee))
+        .fee_asset_id(AssetId::new_fungible(fee_faucet_id()))
+        .build()
+}
+
+pub fn find_output_note(
+    executed: &ExecutedTransaction,
+    script_root: NoteScriptRoot,
+) -> Option<&RawOutputNote> {
+    executed.output_notes().iter().find(|note| {
+        note.recipient().map(|recipient| recipient.script().root()) == Some(script_root)
+    })
+}
+
+pub fn add_fee_sponsorship(
+    builder: &mut MockChainBuilder,
+    feature_note: &Note,
+    target: AccountId,
+    verification_base_fee: u32,
+) -> anyhow::Result<Option<Note>> {
+    if verification_base_fee == 0 {
+        return Ok(None);
+    }
+
+    let fee = network_note_pricer(verification_base_fee).price(feature_note.script().root())?;
+    let sponsorship: Note = FeeSponsorshipNote::builder()
+        .sender(feature_note.metadata().sender())
+        .target_account(target)
+        .feature_note_id(feature_note.id())
+        .asset(FungibleAsset::new(fee_faucet_id(), fee.as_u64())?)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
+    Ok(Some(sponsorship))
+}
+
+pub fn assert_transaction_paid_fee(executed: &ExecutedTransaction) {
+    assert!(executed.compute_fee().as_u64() > 0, "transaction fee should be non-zero");
+    assert!(
+        find_output_note(executed, StandardNote::TX_FEE.script_root()).is_some(),
+        "fee-enabled transaction should emit a TX_FEE note"
+    );
+}
+
+pub fn create_existing_priced_bridge(
+    seed: Word,
+    bridge_admin: AccountId,
+    faucet_manager: AccountId,
+    ger_injector: AccountId,
+    ger_remover: AccountId,
+    verification_base_fee: u32,
+) -> anyhow::Result<Account> {
+    let roles = BridgeRoles::new(
+        [faucet_manager].into(),
+        [ger_injector].into(),
+        [ger_remover].into(),
+        [bridge_admin].into(),
+        [bridge_admin].into(),
+    )?;
+    let pricer = network_note_pricer(verification_base_fee);
+    let fee_policy = pricer.basic_constant_fee_policy(AggLayerBridge::allowed_notes())?;
+    Ok(AggLayerBridge::account_builder(
+        seed,
+        bridge_admin,
+        roles,
+        MIDEN_NETWORK_ID,
+        pricer.fee_asset_id().faucet_id(),
+        fee_policy,
+    )
+    .build_existing()?)
+}
+
+pub fn priced_faucet_builder(
+    seed: Word,
+    token_name: &str,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    initial_supply: Felt,
+    bridge_account_id: AccountId,
+    verification_base_fee: u32,
+) -> anyhow::Result<AccountBuilder> {
+    let pricer = network_note_pricer(verification_base_fee);
+    let fee_policy = pricer.basic_constant_fee_policy(AggLayerFaucet::allowed_notes())?;
+    let faucet_admin = bridge_admin_account_id();
+    Ok(AggLayerFaucet::account_builder(
+        seed,
+        TokenName::new(token_name)?,
+        TokenSymbol::new(token_symbol)?,
+        decimals,
+        AssetAmount::try_from(max_supply)?,
+        AssetAmount::try_from(initial_supply)?,
+        faucet_admin,
+        faucet_admin,
+        bridge_account_id,
+        pricer.fee_asset_id().faucet_id(),
+        fee_policy,
+    ))
+}
 
 /// Execute a program with a default host and optional advice inputs.
 pub async fn execute_program_with_default_host(
@@ -127,11 +244,9 @@ pub struct BridgeSetup {
     pub faucet_manager: Account,
     pub ger_injector: Account,
     pub ger_remover: Account,
+    pub pauser: Account,
 }
 
-/// Creates the faucet manager, GER injector, and GER remover wallets, builds the bridge account
-/// wired to those roles (with the fixed [`bridge_admin_account_id`] as the `ADMIN` member), and
-/// registers the bridge account with the builder.
 pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetup> {
     let faucet_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
@@ -142,13 +257,19 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
     let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
+    let pauser = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
+    let bridge_admin = bridge_admin_account_id();
     let bridge = create_existing_bridge_account_with_roles(
         builder.rng_mut().draw_word(),
-        bridge_admin_account_id(),
+        bridge_admin,
         faucet_manager.id(),
         ger_injector.id(),
         ger_remover.id(),
+        bridge_admin,
+        pauser.id(),
         MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge.clone())?;
@@ -158,5 +279,6 @@ pub fn setup_bridge(builder: &mut MockChainBuilder) -> anyhow::Result<BridgeSetu
         faucet_manager,
         ger_injector,
         ger_remover,
+        pauser,
     })
 }

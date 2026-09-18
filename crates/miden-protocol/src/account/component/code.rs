@@ -134,11 +134,11 @@ mod tests {
 
         assert!(component_code.mast_forest().advice_map().is_empty());
 
-        // Empty advice map should be a no-op (digest stays the same)
+        // Empty advice map should be a no-op (commitment stays the same)
         let cloned = component_code.clone();
-        let original_digest = cloned.as_package().digest();
+        let original_commitment = cloned.as_package().commitment();
         let component_code = component_code.with_advice_map(AdviceMap::default());
-        assert_eq!(original_digest, component_code.as_package().digest());
+        assert_eq!(original_commitment, component_code.as_package().commitment());
 
         // Non-empty advice map should add entries
         let key = Word::from([10u32, 20, 30, 40]);

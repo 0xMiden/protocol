@@ -242,7 +242,7 @@ mod tests {
         let note_storage = NoteStorage::new(vec![target.prefix().into()]).unwrap();
         let recipient = NoteRecipient::new(serial_num, script, note_storage);
 
-        let asset = Asset::Fungible(FungibleAsset::new(faucet, 100).unwrap());
+        let asset = Asset::from(FungibleAsset::new(faucet, 100).unwrap());
         let metadata =
             PartialNoteMetadata::new(faucet, NoteType::Public).with_tag(NoteTag::from(123));
 

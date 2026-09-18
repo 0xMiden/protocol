@@ -110,6 +110,49 @@ const RBAC_CONTROLLED: u8 = 2;
 /// This flag has no effect under [`Authority::AuthControlled`], where `freeze` / `unfreeze` panic
 /// (there is no owner and no role graph).
 ///
+/// # Freeze-only actor (incident-response "panic button")
+///
+/// A second actor that can freeze the account in an incident but can never re-open it, or authorize
+/// anything else, needs no dedicated component: it is a plain [`Authority::RbacControlled`] role
+/// assignment. Map `freeze` to a role of its own, map `unfreeze` to a *different* role, and grant
+/// the incident responder only the former:
+///
+/// ```no_run
+/// use std::collections::BTreeMap;
+///
+/// use miden_protocol::account::{AccountBuilder, RoleSymbol};
+/// use miden_standards::account::access::{AccessControl, Authority};
+/// # let admin: miden_protocol::account::AccountId = unimplemented!();
+/// # let init_seed = [0u8; 32];
+///
+/// let procedure_roles = BTreeMap::from([
+///     (Authority::freeze_root(), RoleSymbol::new("FREEZER")?),
+///     (Authority::unfreeze_root(), RoleSymbol::new("UNFREEZER")?),
+/// ]);
+///
+/// AccountBuilder::new(init_seed).with_components(AccessControl::Rbac { admin, procedure_roles });
+///
+/// // Then grant `FREEZER` to the incident responder and `UNFREEZER` to the recovery authority
+/// // through the `RoleBasedAccessControl` component's `grant_role`.
+/// # Ok::<(), miden_protocol::errors::RoleSymbolError>(())
+/// ```
+///
+/// This yields the intended asymmetry: freezing is available to the `FREEZER`, re-opening is not.
+/// A compromised freeze-only actor can at worst deny service by freezing the account; it can never
+/// keep the account open, grant roles, move assets, or invoke any other gated procedure.
+///
+/// Two things to get right when wiring this up:
+///
+/// - Map `unfreeze` explicitly, or leave it unmapped and keep the freeze-only actor out of `ADMIN`.
+///   An unmapped procedure falls back to the `ADMIN` role, so a freeze-only actor that also holds
+///   `ADMIN` could re-open the account and defeat the asymmetry.
+/// - The pattern requires `RbacControlled`. Under [`Authority::OwnerControlled`] the owner is the
+///   only emergency authority, and under [`Authority::AuthControlled`] there is no switch at all,
+///   so an account that wants a freeze-only actor must use RBAC.
+///
+/// The same shape generalizes to any "can stop, cannot start" authority: give the cancelling or
+/// pausing procedure its own role and keep the resuming procedure on a separate one.
+///
 /// Storage layout:
 /// - Value slot: `[authority, is_frozen, 0, 0]`.
 /// - Map slot (only under RBAC): `procedure_root` → `[role_symbol, 0, 0, 0]`.
@@ -128,6 +171,11 @@ pub enum Authority {
     /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
     /// installed on the account. the MASM helper calls into `rbac::assert_sender_has_role` and will
     /// fail to link otherwise.
+    ///
+    /// No procedure writes this map: it is populated at deployment, and the raw
+    /// [`AccountComponent::new`] route checks only the slot count. The MASM helper therefore holds
+    /// each mapped role to the canonical [`RoleSymbol`] encoding when it reads one, so a value this
+    /// map accepts on-chain is exactly one [`Self::try_from_storage`] can decode off-chain.
     RbacControlled {
         procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     } = RBAC_CONTROLLED,

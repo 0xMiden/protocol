@@ -55,12 +55,12 @@ pub enum AccessControl {
     /// for the administration model.
     ///
     /// `procedure_roles` assigns a role to individual authority-gated procedures, keyed by
-    /// procedure root (e.g. `PausableManager::pause_root()` → `PAUSER`, `unpause_root()` →
-    /// `UNPAUSER`, and optionally `Authority::freeze_root()` → `FREEZER`). A gated procedure
-    /// without an entry in `procedure_roles` falls back to the `ADMIN` role. The emergency
-    /// `freeze` / `unfreeze` switch resolves its role the same way, defaulting to `ADMIN`. Role
-    /// membership is managed through the standard RBAC API on the [`RoleBasedAccessControl`]
-    /// component.
+    /// procedure root (e.g. [`PausableManager::pause_root`] → `PAUSER`,
+    /// [`PausableManager::unpause_root`] → `UNPAUSER`, and optionally [`Authority::freeze_root`] →
+    /// `FREEZER` with [`Authority::unfreeze_root`] → `UNFREEZER`). A gated procedure without an
+    /// entry in `procedure_roles` falls back to the `ADMIN` role. The emergency `freeze` /
+    /// `unfreeze` switch resolves its role the same way, defaulting to `ADMIN`. Role membership is
+    /// managed through the standard RBAC API on the [`RoleBasedAccessControl`] component.
     Rbac {
         admin: AccountId,
         procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,

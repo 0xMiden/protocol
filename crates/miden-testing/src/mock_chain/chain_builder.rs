@@ -27,10 +27,9 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
-    AssetCallbackFlag,
     StorageSlot,
 };
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
@@ -39,42 +38,35 @@ use miden_protocol::block::{
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
-    BlockProof,
     BlockSignatures,
     Blockchain,
     FeeParameters,
     OutputNoteBatch,
     ProvenBlock,
-    ValidatorKeys,
+    ValidatorConfig,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
+use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
-use miden_standards::account::auth::SponsorshipPolicy;
+use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::{BasicWallet, NoteCreator};
-use miden_standards::note::{
-    BurnNote,
-    MintNote,
-    NetworkAccountConfigNote,
-    P2idNote,
-    P2ideNote,
-    SwapNote,
-    TxFeeNote,
-};
+use miden_standards::account::wallets::BasicWallet;
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
 
@@ -131,6 +123,7 @@ pub struct MockChainBuilder {
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
     notes: Vec<RawOutputNote>,
     rng: RandomCoin,
+    validator_signing_keys: Option<Vec<SigningKey>>,
     // Fee parameters.
     fee_faucet_id: AccountId,
     verification_base_fee: u32,
@@ -146,6 +139,9 @@ impl MockChainBuilder {
     /// overwritten using [`Self::fee_faucet_id`].
     ///
     /// The `verification_base_fee` is initialized to 0 which means no fees are required by default.
+    ///
+    /// By default, three random validator signing keys are generated when building the chain.
+    /// Use [`Self::validator_signing_keys`] to supply the keys instead.
     pub fn new() -> Self {
         let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into().expect("account ID should be valid");
 
@@ -154,6 +150,7 @@ impl MockChainBuilder {
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
             rng: RandomCoin::new(Default::default()),
+            validator_signing_keys: None,
             fee_faucet_id,
             verification_base_fee: 0,
         }
@@ -197,6 +194,19 @@ impl MockChainBuilder {
         self
     }
 
+    /// Sets the validator signing keys for genesis and subsequent blocks, until validator rotation.
+    ///
+    /// By default, three random keys are generated. Supplied keys may be in any order; the genesis
+    /// [`ValidatorConfig`] and signatures follow the config's canonical public key order. All keys
+    /// must sign each block.
+    ///
+    /// [`Self::build`] returns an error if the set is empty, contains duplicate keys, or exceeds
+    /// [`ValidatorConfig::MAX_VALIDATORS`].
+    pub fn validator_signing_keys(mut self, keys: Vec<SigningKey>) -> Self {
+        self.validator_signing_keys = Some(keys);
+        self
+    }
+
     /// Consumes the builder, creates the genesis block of the chain and returns the [`MockChain`].
     pub fn build(self) -> anyhow::Result<MockChain> {
         // Create the genesis block, consisting of the provided accounts and notes.
@@ -206,13 +216,17 @@ impl MockChainBuilder {
             .map(|account| {
                 let account_id = account.id();
                 let account_commitment = account.to_commitment();
-                let account_patch = AccountPatch::try_from(account)
-                    .expect("chain builder should only store existing accounts without seeds");
-                let update_details = AccountUpdateDetails::Public(account_patch);
+                let update_details = if account_id.is_private() {
+                    AccountUpdateDetails::Private
+                } else {
+                    let account_patch = AccountPatch::try_from(account)
+                        .expect("chain builder should only store existing accounts without seeds");
+                    AccountUpdateDetails::Public(account_patch)
+                };
 
                 BlockAccountUpdate::new(account_id, account_commitment, update_details)
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         let account_tree = AccountTree::with_entries(
             block_account_updates
@@ -248,7 +262,6 @@ impl MockChainBuilder {
         let note_tree = BlockNoteTree::from_note_batches(&output_note_batches)
             .context("failed to create block note tree")?;
 
-        let version = 0;
         let prev_block_commitment = Word::empty();
         let block_num = BlockNumber::from(0u32);
         let chain_commitment = Blockchain::new().commitment();
@@ -256,17 +269,22 @@ impl MockChainBuilder {
         let nullifier_root = NullifierTree::<Smt>::default().root();
         let note_root = note_tree.root();
         let tx_commitment = transactions.commitment();
-        let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
-        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
-        let validator_secret_keys: Vec<SigningKey> =
-            (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect();
-        let validator_keys =
-            ValidatorKeys::new(validator_secret_keys.iter().map(|sk| sk.public_key()).collect())
-                .expect("randomly generated genesis validator keys should be distinct");
+        let fee_parameters = FeeParameters::new(self.verification_base_fee);
+        let protocol_config = ProtocolConfig::current(AssetId::new_fungible(self.fee_faucet_id))
+            .context("failed to build the genesis protocol config")?;
+        let validator_secret_keys = self
+            .validator_signing_keys
+            .unwrap_or_else(|| (0..DEFAULT_VALIDATOR_COUNT).map(|_| random_secret_key()).collect());
+        let quorum = u16::try_from(validator_secret_keys.len())
+            .context("genesis validator count exceeds u16::MAX")?;
+        let validator_config = ValidatorConfig::new(
+            validator_secret_keys.iter().map(|signer| signer.public_key()).collect(),
+            quorum,
+        )
+        .context("failed to build the genesis validator config")?;
 
         let header = BlockHeader::new(
-            version,
             prev_block_commitment,
             block_num,
             chain_commitment,
@@ -274,9 +292,10 @@ impl MockChainBuilder {
             nullifier_root,
             note_root,
             tx_commitment,
-            tx_kernel_commitment,
-            validator_keys.clone(),
+            validator_config.clone(),
             fee_parameters,
+            protocol_config.to_commitment(),
+            None,
             timestamp,
         );
 
@@ -290,8 +309,8 @@ impl MockChainBuilder {
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
         let signatures = BlockSignatures::new(
-            validator_keys
-                .as_keys()
+            validator_config
+                .keys()
                 .iter()
                 .map(|key| {
                     let signer = validator_secret_keys
@@ -303,7 +322,7 @@ impl MockChainBuilder {
                 .collect(),
         )
         .expect("signature count same as validator key count");
-        let block_proof = BlockProof::new_dummy();
+        let block_proof = miden_protocol::testing::dummy_execution_proof();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
         MockChain::from_genesis_block(
@@ -311,6 +330,7 @@ impl MockChainBuilder {
             account_tree,
             self.account_authenticators,
             validator_secret_keys,
+            protocol_config,
             full_notes,
         )
     }
@@ -385,10 +405,12 @@ impl MockChainBuilder {
             basic_constant_fee_policy =
                 basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
         }
-        // `with_allowed_notes` always allowlists the config note, which the network auth flow
-        // prices if it is ever consumed, so schedule it too.
-        basic_constant_fee_policy = basic_constant_fee_policy
-            .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+        // `AuthNetworkAccount::new` allowlists its default notes on top, which the network auth
+        // flow prices if they are ever consumed, so schedule them too.
+        for note_script in AuthNetworkAccount::default_allowed_note_scripts() {
+            basic_constant_fee_policy =
+                basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+        }
 
         let fee_policy_manager = FeePolicyManager::builder()
             .active_fee_policy(basic_constant_fee_policy.into())
@@ -399,9 +421,6 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
-            .with_asset_callbacks(AssetCallbackFlag::from(
-                token_policy_manager.has_transfer_policy(),
-            ))
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager)
@@ -457,7 +476,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -491,7 +509,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Enabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused());
 
@@ -642,7 +659,6 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_asset_callbacks(AssetCallbackFlag::Disabled)
             .with_components(token_policy_manager)
             .with_component(Pausable::unpaused())
             .with_component(PausableManager);
@@ -821,7 +837,8 @@ impl MockChainBuilder {
     /// Creates a new TX_FEE note from the provided parameters and adds it to the list of genesis
     /// notes.
     ///
-    /// In the created [`MockChain`], the note will be immediately spendable by any account.
+    /// In the created [`MockChain`], the note can be consumed right away by an account whose own
+    /// code collects its assets.
     pub fn add_tx_fee_note(
         &mut self,
         sender_account_id: AccountId,

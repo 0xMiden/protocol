@@ -19,7 +19,7 @@ async fn test_note_tag_account_target(#[case] tag_len: u8) -> anyhow::Result<()>
     let code = format!(
         "
         use miden::core::sys
-        use miden::standards::note_tag
+        use miden::standards::note::note_tag
 
         begin
             push.{id_prefix}
@@ -53,7 +53,7 @@ async fn test_note_tag_account_target_fails_for_large_tag_len() -> anyhow::Resul
     let code = format!(
         "
         use miden::core::sys
-        use miden::standards::note_tag
+        use miden::standards::note::note_tag
 
         begin
             # account ID prefix doesn't matter for this test

@@ -1,3 +1,6 @@
+use alloc::string::ToString;
+use core::fmt;
+
 use super::errors::{AssetError, TokenSymbolError};
 use super::utils::serde::{
     ByteReader,
@@ -11,6 +14,9 @@ use crate::account::AccountId;
 
 mod asset_amount;
 pub use asset_amount::AssetAmount;
+
+mod asset_value;
+pub use asset_value::AssetValue;
 
 mod fungible;
 
@@ -35,21 +41,29 @@ pub use vault::{AssetClass, AssetId, AssetIdHash, AssetVault, AssetWitness, Part
 // ASSET
 // ================================================================================================
 
-/// A fungible or a non-fungible asset.
+/// Assets are encoded as an [`AssetId`] and an [`AssetValue`], each encodable as one word.
 ///
-/// All assets are encoded as the asset ID of the asset and its value, each represented as one word
-/// (4 elements). This makes it is easy to determine the type of an asset both inside and outside
-/// Miden VM. Specifically:
+/// The [`AssetId`] uniquely identifies the asset and contains the [`AccountId`] of the issuer and
+/// the [`AssetClass`], which can further divide a single account's assets into different classes.
+/// It also contains the [`AssetComposition`],  which describes how assets compose, meaning whether
+/// they can be merged or split. For example, cominbing two fungible assets with the same ID and
+/// amounts 3 and 4 into a single one with amount 7 is called "merging". Splitting would be the
+/// reverse operation.
 ///
-/// The asset ID of an asset contains the [`AssetComposition`] which describes how assets compose,
-/// meaning whether they can be merged or split.
+/// It is impossible to find a collision between two fungible assets issued by different faucets as
+/// the faucet ID is part of the asset's ID and the protocol's
+/// [`AccountTree`](crate::block::account_tree::AccountTree) guarantees that account IDs are
+/// globally unique.
 ///
-/// This property guarantees that there can never be a collision between a fungible and a
-/// non-fungible asset.
+/// Assets are generally opaque to the protocol, with the [`FungibleAsset]` being the exception.
+/// It is built-in in the sense that the tx kernel knows how to merge and split such assets without
+/// requiring a procedure call to the issuing account, which improves performance.
 ///
-/// The methodology for constructing fungible and non-fungible assets is described below.
+/// ## Fungible assets
 ///
-/// # Fungible assets
+/// All assets carrying [`AssetComposition::Fungible`] are interpreted as a fungible
+/// asset, and this composition allows merging and splitting of assets.
+///
 ///
 /// - A fungible asset's value layout is: `[amount, 0, 0, 0]`.
 /// - A fungible asset's ID layout is: `[0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix]`.
@@ -60,75 +74,49 @@ pub use vault::{AssetClass, AssetId, AssetIdHash, AssetVault, AssetWitness, Part
 /// - the remaining elements in the value word must be zero.
 /// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
 /// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetComposition`]). See [`AssetId`] for more details on the ID's layout.
+///   asset metadata, which is the encoding version together with the [`AssetComposition`]. See
+///   [`AssetId`] for more details on the ID's layout.
 /// - the asset class limbs must be zero, which means two instances of the same fungible asset have
 ///   the same asset ID and will be merged together when stored in the same account's vault.
-///
-/// It is impossible to find a collision between two fungible assets issued by different faucets as
-/// the faucet ID is part of the asset's ID and this is guaranteed to be different for each
-/// faucet as per the faucet creation logic.
-///
-/// # Non-fungible assets
-///
-/// - A non-fungible asset's data layout is:      `[hash0, hash1, hash2, hash3]`.
-/// - A non-fungible asset's ID layout is: `[hash0, hash1, faucet_id_suffix_and_metadata,
-///   faucet_id_prefix]`.
-///
-/// Where:
-/// - the 4 elements of non-fungible asset values are computed by hashing the asset data. This
-///   compresses an asset of an arbitrary length to 4 field elements.
-/// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
-/// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
-///   asset metadata ([`AssetComposition`]). See [`AssetId`] for more details on the ID's layout.
-/// - The asset class limbs are set to hashes from the asset's value (`hash0` and `hash1`).
-///
-/// It is impossible to find a collision between two non-fungible assets issued by different faucets
-/// as the faucet ID is part of the asset's ID and this is guaranteed to be different as per
-/// the faucet creation logic.
-///
-/// The collision resistance of non-fungible assets issued by the same faucet is ~2^64, due to the
-/// 128-bit asset class that is unique per non-fungible asset. In other words, two non-fungible
-/// assets issued by the same faucet are very unlikely to have the same asset ID and thus should
-/// not collide when stored in the same account's vault.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Asset {
-    Fungible(FungibleAsset),
-    NonFungible(NonFungibleAsset),
+pub struct Asset {
+    id: AssetId,
+    value: AssetValue,
 }
 
 impl Asset {
     /// Creates an asset from the provided ID and value.
     ///
+    /// The value of a fungible asset is validated, see [`FungibleAsset::from_id_and_value`]. The
+    /// value of any other asset is opaque to the protocol and therefore not validated.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - [`FungibleAsset::from_id_and_value`] or [`NonFungibleAsset::from_id_and_value`] fails.
-    pub fn from_id_and_value(id: AssetId, value: Word) -> Result<Self, AssetError> {
-        match id.composition() {
-            AssetComposition::Fungible => {
-                FungibleAsset::from_id_and_value(id, value).map(Asset::Fungible)
-            },
-            AssetComposition::None => {
-                NonFungibleAsset::from_id_and_value(id, value).map(Asset::NonFungible)
-            },
-            AssetComposition::Custom => {
-                Err(AssetError::UnsupportedAssetComposition(AssetComposition::Custom))
-            },
+    /// - The asset is fungible and [`FungibleAsset::from_id_and_value`] fails.
+    pub fn new(id: AssetId, value: Word) -> Result<Self, AssetError> {
+        // An AssetId cannot be constructed with a Custom composition, so only the fungible case
+        // needs to be validated here.
+        if id.composition().is_fungible() {
+            FungibleAsset::from_id_and_value(id, value)?;
         }
+
+        // TODO: Propagate the AssetValue type through the Asset API and beyond.
+        Ok(Self { id, value: AssetValue::from_raw(value) })
     }
 
     /// Creates an asset from the provided ID and value.
     ///
-    /// Prefer [`Self::from_id_and_value`] for more type safety.
+    /// Prefer [`Self::new`] for more type safety.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The provided ID does not contain a valid faucet ID.
-    /// - [`Self::from_id_and_value`] fails.
+    /// - [`Self::new`] fails.
     pub fn from_id_and_value_words(id: Word, value: Word) -> Result<Self, AssetError> {
         let asset_id = AssetId::try_from(id)?;
-        Self::from_id_and_value(asset_id, value)
+        Self::new(asset_id, value)
     }
 
     /// Returns true if this asset is the same as the specified asset.
@@ -138,30 +126,29 @@ impl Asset {
         self.id() == other.id()
     }
 
-    /// Returns true if this asset is a fungible asset.
+    /// Returns true if this asset has [`AssetComposition::Fungible`], `false` otherwise.
     pub fn is_fungible(&self) -> bool {
-        matches!(self, Self::Fungible(_))
+        self.id.composition().is_fungible()
     }
 
-    /// Returns true if this asset is a non fungible asset.
+    /// Returns true if this asset has [`AssetComposition::None`], `false` otherwise.
     pub fn is_non_fungible(&self) -> bool {
-        matches!(self, Self::NonFungible(_))
+        self.id.composition().is_none()
     }
 
     /// Returns the ID of the faucet that issued this asset.
     pub fn faucet_id(&self) -> AccountId {
-        match self {
-            Self::Fungible(asset) => asset.faucet_id(),
-            Self::NonFungible(asset) => asset.faucet_id(),
-        }
+        self.id.faucet_id()
     }
 
     /// Returns the [`AssetId`] which uniquely identifies this asset in the account vault.
     pub fn id(&self) -> AssetId {
-        match self {
-            Self::Fungible(asset) => asset.id(),
-            Self::NonFungible(asset) => asset.id(),
-        }
+        self.id
+    }
+
+    /// Returns the [`AssetValue`] of this asset.
+    pub fn value(&self) -> AssetValue {
+        self.value
     }
 
     /// Returns the asset's [`AssetId`] encoded to a [`Word`].
@@ -171,10 +158,7 @@ impl Asset {
 
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
-        match self {
-            Asset::Fungible(fungible_asset) => fungible_asset.to_value_word(),
-            Asset::NonFungible(non_fungible_asset) => non_fungible_asset.to_value_word(),
-        }
+        self.value.as_word()
     }
 
     /// Returns the asset encoded as elements.
@@ -188,28 +172,25 @@ impl Asset {
         elements
     }
 
-    /// Returns the inner [`FungibleAsset`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the asset is non-fungible.
-    pub fn unwrap_fungible(&self) -> FungibleAsset {
-        match self {
-            Asset::Fungible(asset) => *asset,
-            Asset::NonFungible(_) => panic!("the asset is non-fungible"),
-        }
+    /// Returns this asset as a [`FungibleAsset`], or `None` if the asset is not a valid fungible
+    /// asset.
+    pub fn as_fungible(&self) -> Option<FungibleAsset> {
+        FungibleAsset::from_id_and_value(self.id, self.to_value_word()).ok()
     }
 
-    /// Returns the inner [`NonFungibleAsset`].
+    /// Returns this asset as a [`FungibleAsset`].
     ///
     /// # Panics
     ///
-    /// Panics if the asset is fungible.
-    pub fn unwrap_non_fungible(&self) -> NonFungibleAsset {
-        match self {
-            Asset::Fungible(_) => panic!("the asset is fungible"),
-            Asset::NonFungible(asset) => *asset,
-        }
+    /// Panics if the asset is not fungible.
+    pub fn unwrap_fungible(&self) -> FungibleAsset {
+        self.as_fungible().expect("the asset should be fungible")
+    }
+}
+
+impl fmt::Display for Asset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Asset(id: {}, value: {})", self.id, self.value)
     }
 }
 
@@ -218,32 +199,22 @@ impl Asset {
 
 impl Serializable for Asset {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            Asset::Fungible(fungible_asset) => fungible_asset.write_into(target),
-            Asset::NonFungible(non_fungible_asset) => non_fungible_asset.write_into(target),
-        }
+        target.write(self.id);
+        target.write(self.value);
     }
 
     fn get_size_hint(&self) -> usize {
-        match self {
-            Asset::Fungible(fungible_asset) => fungible_asset.get_size_hint(),
-            Asset::NonFungible(non_fungible_asset) => non_fungible_asset.get_size_hint(),
-        }
+        self.id.get_size_hint() + self.value.get_size_hint()
     }
 }
 
 impl Deserializable for Asset {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        // All assets have their composition serialized as the first byte, so we can use it to
-        // inspect what type of asset it is.
-        let composition: AssetComposition = source.read()?;
-        match composition {
-            AssetComposition::Fungible => FungibleAsset::deserialize_body(source).map(Asset::from),
-            AssetComposition::None => NonFungibleAsset::deserialize_body(source).map(Asset::from),
-            AssetComposition::Custom => Err(DeserializationError::InvalidValue(
-                "Custom asset composition is not supported".into(),
-            )),
-        }
+        let id: AssetId = source.read()?;
+        let value: AssetValue = source.read()?;
+
+        Asset::new(id, value.as_word())
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -334,17 +305,6 @@ mod tests {
         Ok(())
     }
 
-    /// Asserts that every fully-serialized asset leads with an [`AssetComposition`] byte that
-    /// reflects the asset variant. Asset deserialization relies on this discriminator.
-    #[test]
-    fn test_composition_byte_is_serialized_first() {
-        let fungible_bytes = FungibleAsset::mock(300).to_bytes();
-        assert_eq!(fungible_bytes[0], AssetComposition::Fungible.as_u8());
-
-        let non_fungible_bytes = NonFungibleAsset::mock(&[0xaa, 0xbb]).to_bytes();
-        assert_eq!(non_fungible_bytes[0], AssetComposition::None.as_u8());
-    }
-
     /// `Asset::from_id_and_value` must reject a [`AssetComposition::Custom`] asset ID with
     /// `UnsupportedAssetComposition`.
     #[test]
@@ -357,6 +317,26 @@ mod tests {
         .unwrap_err();
 
         assert_matches!(err, AssetError::UnsupportedAssetComposition(AssetComposition::Custom));
+
+        Ok(())
+    }
+
+    /// Roundtrip an asset with composition `None` through the `Asset` type.
+    #[test]
+    fn test_opaque_asset_roundtrip() -> anyhow::Result<()> {
+        let asset_id = AssetId::new(
+            AssetClass::new(Felt::from(1u32), Felt::from(2u32)),
+            ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
+            AssetComposition::None,
+        )?;
+        let value = Word::from([7, 8, 9, 10u32]);
+        let asset = Asset::new(asset_id, value)?;
+
+        assert_eq!(asset.id(), asset_id);
+        assert_eq!(asset.to_value_word(), value);
+        assert_eq!(asset, Asset::read_from_bytes(&asset.to_bytes()).unwrap());
+        assert_eq!(asset.to_bytes().len(), asset.get_size_hint());
+        assert_eq!(asset, Asset::from_id_and_value_words(asset.to_id_word(), value)?);
 
         Ok(())
     }

@@ -2,6 +2,7 @@
 #
 # See the `AuthMultisigSmart` Rust type's documentation for more details.
 
+use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::multisig_smart
 
@@ -14,21 +15,44 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig_sma
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! Inputs:
-#!   Operand stack: [SALT]
+#!   Operand stack: [AUTH_ARGS]
+#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
 #! Outputs:
 #!   Operand stack: []
 #!
+#! Where:
+#! - AUTH_ARGS and its preimage are as described in `multisig::resolve_auth_args`.
+#!
+#! Panics if:
+#! - insufficient number of valid signatures (below threshold).
+#! - the approval expired at or before the transaction reference block, see
+#!   `multisig::assert_approval_not_expired`.
+#!
 #! Invocation: call
 @auth_script
-pub proc auth_tx_multisig_smart(salt: word)
-    # zero the leading user params (not exposed through this component's interface); the SALT
-    # occupies the trailing four
-    push.0.0.0
-    # => [0, 0, 0, SALT]
+pub proc auth_tx_multisig_smart(auth_args: word)
+    exec.multisig::resolve_auth_args
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+
+    # this component does not pay the transaction fee yet, so the conversion info is unused
+    dropw
+    # => [bound_block_num, approval_expiration_block_num, SALT]
+
+    # reject an expired approval before any signature is verified.
+    dup.1 exec.tx::get_reference_block_number
+    # => [reference_block_num, approval_expiration_block_num, bound_block_num, approval_expiration_block_num, SALT]
+
+    exec.multisig::assert_approval_not_expired movdn.6
+    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
 
     exec.multisig_smart::auth_tx
-    # => [TX_SUMMARY_COMMITMENT]
+    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.multisig::record_and_assert_new_tx
+    # => [approval_expiration_delta]
+
+    # apply the approval expiration after tx summary extractions since the host cross-checks
+    # the kernel expiration delta against the transaction summary delta
+    exec.multisig::apply_approval_expiration
     # => []
 end

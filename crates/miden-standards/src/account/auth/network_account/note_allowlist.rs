@@ -173,7 +173,6 @@ mod tests {
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
     use crate::account::fees::FeePolicyManager;
-    use crate::account::wallets::BasicWallet;
 
     #[test]
     fn allowlist_storage_slot_contains_expected_entries() {
@@ -241,7 +240,6 @@ mod tests {
                 )
                 .expect("non-empty allowlist should construct"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
 
@@ -250,8 +248,9 @@ mod tests {
 
         // The map's ordering is determined by the StorageMapKey, so compare as sets.
         let mut expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
-        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        expected.insert(crate::note::config::NetworkAccountConfigNote::script_root());
         expected.insert(crate::note::FeeSponsorshipNote::script_root());
+        expected.insert(crate::note::P2idNote::script_root());
         let actual: BTreeSet<NoteScriptRoot> =
             allowlist.allowed_script_roots().iter().copied().collect();
 

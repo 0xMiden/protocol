@@ -88,7 +88,7 @@ pub const TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET = 50
 
 # block info
 pub const TX_GET_BLOCK_COMMITMENT_OFFSET = 51
-pub const TX_GET_BLOCK_NUMBER_OFFSET = 52
+pub const TX_GET_REFERENCE_BLOCK_NUMBER_OFFSET = 52
 pub const TX_GET_BLOCK_TIMESTAMP_OFFSET = 53
 
 # foreign context
@@ -104,4 +104,4 @@ pub const TX_GET_TX_SCRIPT_ROOT_OFFSET = 58
 
 # fee
 pub const TX_COMPUTE_FEE_OFFSET = 59
-pub const TX_GET_FEE_FAUCET_ID_OFFSET = 60 # accessor
+pub const TX_GET_FEE_ASSET_ID_OFFSET = 60 # accessor
