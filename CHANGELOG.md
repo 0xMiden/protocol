@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Added a per-procedure pause to the `Authority` component ([#3855](https://github.com/0xMiden/protocol/pull/3855)).
+
 ### Changes
 
 - [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).

@@ -54,6 +54,20 @@ procedure_root!(
     Authority::code()
 );
 
+procedure_root!(
+    AUTHORITY_PAUSE_PROCEDURE,
+    AUTHORITY_LIBRARY_PATH,
+    Authority::PAUSE_PROCEDURE_PROC_NAME,
+    Authority::code()
+);
+
+procedure_root!(
+    AUTHORITY_UNPAUSE_PROCEDURE,
+    AUTHORITY_LIBRARY_PATH,
+    Authority::UNPAUSE_PROCEDURE_PROC_NAME,
+    Authority::code()
+);
+
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::authority::authority_config")
         .expect("storage slot name should be valid")
@@ -61,6 +75,11 @@ static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 
 static AUTHORITY_PROCEDURE_ROLES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::authority::procedure_roles")
+        .expect("storage slot name should be valid")
+});
+
+static AUTHORITY_PAUSED_PROCEDURES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::authority::paused_procedures")
         .expect("storage slot name should be valid")
 });
 
@@ -94,6 +113,18 @@ const RBAC_CONTROLLED: u8 = 2;
 /// the procedure's [`AccountProcedureRoot`] (e.g. `pause` → `PAUSER`, `unpause` → `UNPAUSER`). At
 /// runtime `assert_authorized` identifies the calling procedure via the `caller` instruction and
 /// looks up its role. A procedure without a mapping falls back to the `ADMIN` role check.
+///
+/// # Per-procedure pause
+///
+/// Independently of `is_frozen`, a single gated procedure can be taken offline by writing its
+/// [`AccountProcedureRoot`] into the paused-procedures map via `pause_procedure`, and brought back
+/// with `unpause_procedure`. `assert_authorized` resolves the calling procedure via `caller` and
+/// panics while its entry is set, leaving every other gated procedure working. A procedure with no
+/// entry is not paused, so an account that pauses nothing behaves exactly as before.
+///
+/// Both mutators are gated on the same emergency authority as `freeze` / `unfreeze` and read
+/// neither the frozen flag nor the pause map. An entry written for one of their own roots is
+/// stored but never read, so `unpause_procedure` cannot be locked out.
 ///
 /// # Emergency switch (`is_frozen`)
 ///
@@ -156,6 +187,7 @@ const RBAC_CONTROLLED: u8 = 2;
 /// Storage layout:
 /// - Value slot: `[authority, is_frozen, 0, 0]`.
 /// - Map slot (only under RBAC): `procedure_root` → `[role_symbol, 0, 0, 0]`.
+/// - Map slot: `procedure_root` → `[is_paused, 0, 0, 0]`.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -189,6 +221,10 @@ impl Authority {
     const FREEZE_PROC_NAME: &'static str = "freeze";
     /// Name of the owner-gated procedure that unfreezes the authority-gated surface.
     const UNFREEZE_PROC_NAME: &'static str = "unfreeze";
+    /// Name of the owner-gated procedure that pauses a single authority-gated procedure.
+    const PAUSE_PROCEDURE_PROC_NAME: &'static str = "pause_procedure";
+    /// Name of the owner-gated procedure that unpauses a single authority-gated procedure.
+    const UNPAUSE_PROCEDURE_PROC_NAME: &'static str = "unpause_procedure";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -223,9 +259,24 @@ impl Authority {
         &AUTHORITY_SLOT_NAME
     }
 
+    /// Returns the procedure root of `pause_procedure`.
+    pub fn pause_procedure_root() -> AccountProcedureRoot {
+        *AUTHORITY_PAUSE_PROCEDURE
+    }
+
+    /// Returns the procedure root of `unpause_procedure`.
+    pub fn unpause_procedure_root() -> AccountProcedureRoot {
+        *AUTHORITY_UNPAUSE_PROCEDURE
+    }
+
     /// Returns the [`StorageSlotName`] holding the per-procedure role map (RBAC only).
     pub fn procedure_roles_slot() -> &'static StorageSlotName {
         &AUTHORITY_PROCEDURE_ROLES_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] holding the per-procedure pause map.
+    pub fn paused_procedures_slot() -> &'static StorageSlotName {
+        &AUTHORITY_PAUSED_PROCEDURES_SLOT_NAME
     }
 
     /// Reads the authority configuration from account storage.
@@ -258,6 +309,27 @@ impl Authority {
         Ok(word[1] != Felt::ZERO)
     }
 
+    /// Reads the pause state of a single authority-gated procedure from account storage.
+    pub fn try_read_procedure_paused(
+        storage: &AccountStorage,
+        procedure_root: &AccountProcedureRoot,
+    ) -> Result<bool, AuthorityError> {
+        let word = storage
+            .get_map_item(
+                Self::paused_procedures_slot(),
+                StorageMapKey::new(procedure_root.as_word()),
+            )
+            .map_err(|_| AuthorityError::MissingPausedProceduresSlot)?;
+
+        // Enforce the canonical encoding on read: the reserved felts must be zero and the flag
+        // must be a boolean - the exact form the MASM write path always produces.
+        if word[1..4].iter().any(|felt| *felt != Felt::ZERO) || word[0].as_canonical_u64() > 1 {
+            return Err(AuthorityError::NonCanonicalConfig);
+        }
+
+        Ok(word[0] != Felt::ZERO)
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this configuration.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
         let mut slots = vec![(
@@ -283,6 +355,15 @@ impl Authority {
                 ),
             ));
         }
+
+        slots.push((
+            AUTHORITY_PAUSED_PROCEDURES_SLOT_NAME.clone(),
+            StorageSlotSchema::map(
+                "Per-procedure pause flag (procedure root -> is_paused)",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
+            ),
+        ));
 
         let storage_schema = StorageSchema::new(slots).expect("storage schema should be valid");
 
@@ -377,6 +458,12 @@ impl From<Authority> for AccountComponent {
             ));
         }
 
+        // Every account starts with nothing paused; entries are written by `pause_procedure`.
+        slots.push(StorageSlot::with_map(
+            AUTHORITY_PAUSED_PROCEDURES_SLOT_NAME.clone(),
+            StorageMap::new(),
+        ));
+
         AccountComponent::new(Authority::code().clone(), slots, metadata).expect(
             "authority component should satisfy the requirements of a valid account component",
         )
@@ -404,6 +491,8 @@ pub enum AuthorityError {
     MissingStorageSlot(#[source] AccountError),
     #[error("authority procedure-roles slot is missing or not a map")]
     MissingProcedureRolesSlot,
+    #[error("authority paused-procedures slot is missing or not a map")]
+    MissingPausedProceduresSlot,
 }
 
 #[cfg(test)]
@@ -414,6 +503,9 @@ mod tests {
 
     /// Procedure-root key of the single entry inserted by [`rbac_storage_with_role_value`].
     const ROLE_KEY_WORD: [u32; 4] = [1, 2, 3, 4];
+
+    /// Procedure-root key of the single entry inserted by [`storage_with_paused_value`].
+    const PAUSED_KEY_WORD: [u32; 4] = [5, 6, 7, 8];
 
     /// Builds account storage whose authority value slot holds `word`.
     fn storage_with_config(word: Word) -> AccountStorage {
@@ -432,6 +524,19 @@ mod tests {
         let map = StorageMap::with_entries([(key, role_value)]).expect("map should be valid");
         let roles = StorageSlot::with_map(Authority::procedure_roles_slot().clone(), map);
         AccountStorage::new(vec![config, roles]).expect("storage should be valid")
+    }
+
+    /// Builds account storage whose paused-procedures map holds `value` for
+    /// [`PAUSED_KEY_WORD`].
+    fn storage_with_paused_value(value: Word) -> AccountStorage {
+        let config = StorageSlot::with_value(
+            Authority::authority_slot().clone(),
+            Word::from([u32::from(AUTH_CONTROLLED), 0, 0, 0]),
+        );
+        let key = StorageMapKey::new(Word::from(PAUSED_KEY_WORD));
+        let map = StorageMap::with_entries([(key, value)]).expect("map should be valid");
+        let paused = StorageSlot::with_map(Authority::paused_procedures_slot().clone(), map);
+        AccountStorage::new(vec![config, paused]).expect("storage should be valid")
     }
 
     #[test]
@@ -480,6 +585,37 @@ mod tests {
             Authority::try_read_frozen(&storage),
             Err(AuthorityError::NonCanonicalConfig)
         ));
+    }
+
+    #[test]
+    fn procedure_pause_state_is_read_per_procedure() {
+        let paused_root = AccountProcedureRoot::from_raw(Word::from(PAUSED_KEY_WORD));
+        let unmapped_root = AccountProcedureRoot::from_raw(Word::from(ROLE_KEY_WORD));
+
+        let storage = storage_with_paused_value(Word::from([1u32, 0, 0, 0]));
+        assert!(Authority::try_read_procedure_paused(&storage, &paused_root).unwrap());
+
+        // A procedure with no entry reads the zero word and is therefore not paused.
+        assert!(!Authority::try_read_procedure_paused(&storage, &unmapped_root).unwrap());
+    }
+
+    #[test]
+    fn non_canonical_pause_state_is_rejected() {
+        let root = AccountProcedureRoot::from_raw(Word::from(PAUSED_KEY_WORD));
+
+        // word[2] carries unexpected trailing data.
+        let storage = storage_with_paused_value(Word::from([1u32, 0, 7, 0]));
+        assert_matches!(
+            Authority::try_read_procedure_paused(&storage, &root),
+            Err(AuthorityError::NonCanonicalConfig)
+        );
+
+        // is_paused (word[0]) must be 0 or 1; 2 is non-canonical.
+        let storage = storage_with_paused_value(Word::from([2u32, 0, 0, 0]));
+        assert_matches!(
+            Authority::try_read_procedure_paused(&storage, &root),
+            Err(AuthorityError::NonCanonicalConfig)
+        );
     }
 
     #[test]
