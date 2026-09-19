@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Added Rust transaction log types with two-felt named topics, bounded serialization, cached two-stage commitments, and separate public/private submission data ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+
 ### Changes
 
 - [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
