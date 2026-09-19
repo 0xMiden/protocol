@@ -9,3 +9,12 @@ pub const WORD_NUM_ELEMENTS = 4
 
 #! The maximum expiration block delta a transaction can set.
 pub const MAX_EXPIRATION_BLOCK_DELTA = 65535
+
+#! The maximum number of logs emitted by one transaction.
+pub const MAX_LOGS_PER_TX = 64
+
+#! The maximum number of words in one log payload.
+pub const MAX_LOG_PAYLOAD_WORDS = 256
+
+#! The maximum number of payload words across all logs in one transaction.
+pub const MAX_LOG_PAYLOAD_WORDS_PER_TX = 512

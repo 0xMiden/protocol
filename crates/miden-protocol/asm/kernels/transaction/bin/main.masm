@@ -59,7 +59,7 @@ const EPILOGUE_END_EVENT = event("miden::protocol::tx::epilogue_end")
 #! ]
 #! Outputs: [
 #!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num,
-#!   pad(7)
+#!   LOGS_COMMITMENT, pad(3)
 #! ]
 #!
 #! Where:
@@ -73,7 +73,7 @@ const EPILOGUE_END_EVENT = event("miden::protocol::tx::epilogue_end")
 #!   patch commitment.
 #! - tx_expiration_block_num is the transaction expiration block number.
 @locals(1)
-proc main(block_commitment: Commitment, initial_account_commitment: Commitment, input_notes_commitment: Commitment, account_id: AccountId, block_num: BlockNumber, padding: [felt; 1]) -> (Commitment, Commitment, BlockNumber, [felt; 7])
+proc main(block_commitment: Commitment, initial_account_commitment: Commitment, input_notes_commitment: Commitment, account_id: AccountId, block_num: BlockNumber, padding: [felt; 1]) -> (Commitment, Commitment, BlockNumber, Commitment, [felt; 3])
     # Prologue
     # ---------------------------------------------------------------------------------------------
     emit.PROLOGUE_START_EVENT
@@ -172,16 +172,12 @@ proc main(block_commitment: Commitment, initial_account_commitment: Commitment, 
 
     # execute the transaction epilogue
     exec.epilogue::finalize_transaction
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, pad(16)]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, LOGS_COMMITMENT, pad(16)]
 
-    # truncate the stack to contain 16 elements in total
-    # the epilogue leaves 9 output elements on top of the 16 padding elements (depth 25), so drop
-    # the 9 deepest padding elements: two full words followed by a single element
-    repeat.2
-        movupw.3 dropw
+    # Remove the deepest padding elements below the thirteen transaction outputs.
+    repeat.13
+        movup.15 drop
     end
-    movup.15 drop
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, pad(7)]
 
     emit.EPILOGUE_END_EVENT
 end
