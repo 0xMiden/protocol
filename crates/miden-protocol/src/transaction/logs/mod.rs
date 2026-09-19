@@ -6,6 +6,9 @@ use alloc::vec::Vec;
 use crate::account::AccountId;
 use crate::utils::sync::OnceLockCompat;
 
+mod collection;
+pub use collection::TransactionLogDataCollection;
+
 mod topic;
 pub use topic::LogTopic;
 
@@ -52,6 +55,15 @@ pub enum TransactionLogDataError {
     /// A private collection has no secret opening.
     #[error("private transaction logs require a nonzero secret salt")]
     MissingPrivateSalt,
+    /// There must be exactly one log-data entry for each transaction header.
+    #[error("log data and transaction header counts differ")]
+    AssociationCount,
+    /// An entry does not open the commitment in the corresponding header.
+    #[error("log commitment mismatch at transaction index {0}")]
+    CommitmentMismatch(usize),
+    /// Aggregate log data exceeds the batch or block resource budget.
+    #[error("aggregate transaction log data exceeds its resource budget")]
+    AggregateBudget,
 }
 
 // TRANSACTION LOG

@@ -67,6 +67,9 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
             vec![],
             vec![],
             vec![],
+            miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
+                &(OrderedTransactionHeaders::new_unchecked(vec![])),
+            ),
             OrderedTransactionHeaders::new_unchecked(vec![]),
         )
         .unwrap();
@@ -89,9 +92,16 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     let (child_signers, child_keys) = ValidatorConfig::random_with_signers(1);
     let parent = header_for(0, Word::empty(), parent_keys.clone());
     let header = header_for(1, parent.commitment(), child_keys.clone());
-    let body =
-        BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))
-            .unwrap();
+    let body = BlockBody::new(
+        vec![],
+        vec![],
+        vec![],
+        miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
+            &(OrderedTransactionHeaders::new_unchecked(vec![])),
+        ),
+        OrderedTransactionHeaders::new_unchecked(vec![]),
+    )
+    .unwrap();
     let block = SignedBlock::new(
         header.clone(),
         body.clone(),
@@ -156,17 +166,30 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
 }
 
 #[test]
-fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
-    let expected =
-        BlockBody::new(vec![], vec![], vec![], OrderedTransactionHeaders::new_unchecked(vec![]))
-            .unwrap();
+fn empty_protobuf_block_body_requires_explicit_log_data() {
+    assert!(proto::blockchain::BlockBody::default().decode_fields().is_err());
+    let expected = BlockBody::new(
+        vec![],
+        vec![],
+        vec![],
+        miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
+            &(OrderedTransactionHeaders::new_unchecked(vec![])),
+        ),
+        OrderedTransactionHeaders::new_unchecked(vec![]),
+    )
+    .unwrap();
 
     assert_eq!(
-        proto::blockchain::BlockBody::default()
-            .decode_fields()
-            .unwrap()
-            .build_unchecked()
-            .unwrap(),
+        proto::blockchain::BlockBody {
+            log_data: miden_protocol::utils::serde::Serializable::to_bytes(
+                &miden_protocol::transaction::TransactionLogDataCollection::default()
+            ),
+            ..Default::default()
+        }
+        .decode_fields()
+        .unwrap()
+        .build_unchecked()
+        .unwrap(),
         expected
     );
 }

@@ -178,6 +178,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         >)])
         .to_string(),
     );
+    for field in [".transaction.ProvenBatch.log_data", ".blockchain.BlockBody.log_data"] {
+        prost.field_attribute(
+            field,
+            quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::transaction::TransactionLogDataCollection
+        >)])
+            .to_string(),
+        );
+    }
     prost.compile_fds(descriptors)?;
     Ok(())
 }

@@ -13,6 +13,7 @@ use miden_protocol::account::{
     AccountDelta,
     AccountType,
 };
+use miden_protocol::block::ProvenBlock;
 use miden_protocol::errors::{MasmError, TransactionVerifierError, tx_kernel};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
@@ -486,8 +487,12 @@ async fn foreign_logs_use_the_emitter_and_native_visibility(
             .verify(&proven)?
             .is_complete()
     );
+    let expected_data = proven.log_data().clone();
     chain.add_pending_proven_transaction(proven);
-    chain.prove_next_block()?;
+    let block = chain.prove_next_block()?;
+    assert_eq!(block.body().log_data().as_slice(), &[expected_data]);
+    let copy = ProvenBlock::read_from_bytes(&block.to_bytes())?;
+    assert_eq!(copy.body().log_data(), block.body().log_data());
     Ok(())
 }
 

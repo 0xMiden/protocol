@@ -32,6 +32,9 @@ fn block_body_and_transaction_header_roundtrip() {
         vec![account_update],
         vec![],
         vec![],
+        miden_protocol::transaction::TransactionLogDataCollection::empty_for_headers(
+            &(OrderedTransactionHeaders::new_unchecked(vec![transaction.clone()])),
+        ),
         OrderedTransactionHeaders::new_unchecked(vec![transaction]),
     )
     .unwrap();
