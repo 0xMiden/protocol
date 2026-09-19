@@ -81,6 +81,8 @@ exec.mem::pipe_preimage_to_memory
 
 ### Content-addressed keys and missing entries
 
+Illustrative fragments (with the key already on the operand stack):
+
 ```masm
 # Good: key the advice map entry by the commitment itself
 push.NOTE_DATA_COMMITMENT
@@ -90,12 +92,13 @@ adv.push_mapval
 push.0x1234_5678_0000_0001
 adv.push_mapval
 
-# Good: a missing required entry is an error
+# Good: move the advice-stack presence flag before asserting it
 adv.has_mapkey
+adv_push
 assert.err=ERR_MISSING_REQUIRED_ADVICE
 
-# Bad: silent zero on missing key
-adv.push_mapval                         # no-op if key absent; proceed as if zero
+# A direct lookup also errors if the key is absent; it never substitutes a default
+adv.push_mapval
 ```
 
 For the Rust analog (returning `Err` on bad/missing external input rather than panicking or defaulting), see `return-error-not-panic`.
