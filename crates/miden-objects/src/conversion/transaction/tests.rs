@@ -74,6 +74,88 @@ fn transaction_args_roundtrip_normalizes_note_args_order() {
 }
 
 #[test]
+fn submitted_logs_and_headers_roundtrip_without_private_records() {
+    use miden_protocol::account::{
+        AccountId,
+        AccountIdVersion,
+        AccountPatch,
+        AccountType,
+        AssetCallbackFlag,
+    };
+    use miden_protocol::transaction::{
+        InputNoteCommitment,
+        LogTopic,
+        OutputNote,
+        ProvenTransaction,
+        TransactionHeader,
+        TransactionLog,
+        TransactionLogData,
+        TransactionLogs,
+        TxAccountUpdate,
+    };
+
+    use crate::BuildUnchecked;
+
+    for account_type in [AccountType::Public, AccountType::Private] {
+        let account = AccountId::dummy(
+            [73; 15],
+            AccountIdVersion::Version1,
+            account_type,
+            AssetCallbackFlag::Disabled,
+        );
+        let patch = AccountPatch::empty(account);
+        let patch_commitment = patch.to_commitment();
+        let details = if account_type.is_public() {
+            AccountUpdateDetails::Public(patch)
+        } else {
+            AccountUpdateDetails::Private
+        };
+        let logs = TransactionLogs::new(vec![
+            TransactionLog::new(
+                account,
+                LogTopic::from_name("example::updated"),
+                vec![dummy_word(731)],
+            )
+            .unwrap(),
+        ])
+        .unwrap();
+        let salt = dummy_word(913);
+        let data = if account_type.is_public() {
+            TransactionLogData::Public(logs.clone())
+        } else {
+            TransactionLogData::Private(logs.commitment_for_account(account, salt).unwrap())
+        };
+        let update =
+            TxAccountUpdate::new(account, dummy_word(1), dummy_word(2), patch_commitment, details)
+                .unwrap();
+        let tx = ProvenTransaction::new(
+            update,
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<OutputNote>::new(),
+            2u32.into(),
+            dummy_word(3),
+            3u32.into(),
+            miden_protocol::testing::dummy_execution_proof(),
+        )
+        .unwrap()
+        .with_log_data(data)
+        .unwrap();
+        let message = proto::transaction::ProvenTransaction::from(&tx);
+        assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), tx);
+        let header = TransactionHeader::from(&tx);
+        let message = proto::transaction::TransactionHeader::from(&header);
+        assert_eq!(message.decode_fields().unwrap().build_unchecked().unwrap(), header);
+        if account_type.is_private() {
+            use miden_protocol::utils::serde::Serializable;
+            let bytes = proto::transaction::ProvenTransaction::from(&tx).encode_to_vec();
+            for secret in [logs.to_bytes(), salt.to_bytes()] {
+                assert!(!bytes.windows(secret.len()).any(|window| window == secret));
+            }
+        }
+    }
+}
+
+#[test]
 fn raw_output_notes_roundtrip_through_protobuf() {
     use miden_protocol::note::PartialNote;
     use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};

@@ -164,6 +164,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         >)])
         .to_string(),
     );
+    prost.field_attribute(
+        ".transaction.ProvenTransaction.log_data",
+        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::transaction::TransactionLogData
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".transaction.TransactionEffectsV1.logs",
+        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::transaction::TransactionLogs
+        >)])
+        .to_string(),
+    );
     prost.compile_fds(descriptors)?;
     Ok(())
 }
