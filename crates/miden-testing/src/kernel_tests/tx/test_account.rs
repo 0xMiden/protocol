@@ -99,8 +99,6 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         r#"
         use miden::core::word
 
-        use miden::protocol::active_account
-        use miden::protocol::native_account
         use mock::account as mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -170,6 +168,99 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("failed to execute transaction: {err}"))?;
+
+    Ok(())
+}
+
+/// State changes are visible before authentication increments the nonce, and reverting storage
+/// restores the initial commitment.
+#[tokio::test]
+async fn has_state_changed() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let mock_map_slot = &*MOCK_MAP_SLOT;
+    let key = StorageMapKey::from_array([1, 2, 3, 4]);
+    let original_value = account.storage().get_map_item(mock_map_slot, key)?;
+    let changed_value = Word::from([2, 3, 4, 5u32]);
+    assert_ne!(original_value, changed_value);
+
+    let tx_script = format!(
+        r#"
+        use mock::account as mock_account
+
+        const MOCK_MAP_SLOT = word("{mock_map_slot}")
+
+        @transaction_script
+        pub proc main
+            call.mock_account::has_state_changed
+            assertz.err="the native account should initially be unchanged"
+            dropw dropw dropw drop drop drop
+
+            push.{changed_value} push.{key} push.MOCK_MAP_SLOT[0..2]
+            call.mock_account::set_map_item
+            dropw dropw dropw dropw
+
+            call.mock_account::has_state_changed
+            assert.err="storage changes should be detected before incrementing the nonce"
+            dropw dropw dropw drop drop drop
+
+            push.{original_value} push.{key} push.MOCK_MAP_SLOT[0..2]
+            call.mock_account::set_map_item
+            dropw dropw dropw dropw
+
+            call.mock_account::has_state_changed
+            assertz.err="restoring storage should restore the initial commitment"
+            dropw dropw dropw drop drop drop
+        end
+        "#,
+    );
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
+
+    TestTransactionBuilder::new(account)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// Native-account commitment APIs still require an account procedure as their caller.
+#[rstest::rstest]
+#[case::compute_commitment("compute_commitment")]
+#[case::has_state_changed("has_state_changed")]
+#[tokio::test]
+async fn native_account_commitment_from_tx_script_is_rejected(
+    #[case] procedure: &str,
+) -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        r#"
+        use miden::core::sys
+        use miden::protocol::native_account
+
+        @transaction_script
+        pub proc main
+            # keep this script's root distinct from the mock account's wrapper
+            push.1 drop
+            exec.native_account::{procedure}
+            exec.sys::truncate_stack
+        end
+        "#,
+    ))?;
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::UnknownAccountProcedure(_))
+            )
+    );
 
     Ok(())
 }

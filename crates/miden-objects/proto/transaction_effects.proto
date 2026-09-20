@@ -1,0 +1,28 @@
+syntax = "proto3";
+package transaction;
+
+import "account.proto";
+import "block_number.proto";
+import "primitives.proto";
+import "transaction.proto";
+import "transaction_inputs.proto";
+
+message TransactionEffects {
+  oneof version {
+    TransactionEffectsV1 v1 = 1;
+  }
+}
+
+// The effects of an executed transaction, without the inputs required to re-execute it.
+//
+// The transaction ID is not transmitted since it is recomputed from the other fields on decoding.
+message TransactionEffectsV1 {
+  primitives.Word initial_state_commitment = 1;
+  primitives.Word final_state_commitment = 2;
+  account.AccountPatch account_patch = 3;
+  InputNotes input_notes = 4;
+  RawOutputNotes output_notes = 5;
+  blockchain.BlockNumber ref_block_number = 6;
+  primitives.Word ref_block_commitment = 7;
+  blockchain.BlockNumber expiration_block_num = 8;
+}
