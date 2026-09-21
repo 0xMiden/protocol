@@ -10,6 +10,7 @@
 - Added type signatures where missing throughout the protocol and standards Miden Assembly libraries
 - [BREAKING] Every note script now states who may consume it on a `Consumers:` line and enforces that through the new `miden::standards::note::note_target` and `miden::standards::note::note_reclaim` modules, whose shared error constants replace the per-note target-account and reclaim ones ([#3820](https://github.com/0xMiden/protocol/pull/3820)).
 - Improved Protobuf conversion ergonomics with `decode_and_verify`, `decode_and_verify_with`, and `decode_and_build_unchecked` helpers, combining field decoding and domain construction without repetitive error mapping ([#3857](https://github.com/0xMiden/protocol/pull/3857)).
+- [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
 - [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
 
 ## v0.17.0-rc.5 (2026-09-17)
