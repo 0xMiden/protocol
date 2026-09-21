@@ -69,6 +69,8 @@ pub mod primitives;
 
 pub mod account;
 
+pub mod account_file;
+
 pub mod asset;
 
 pub mod transaction;
@@ -76,3 +78,5 @@ pub mod transaction;
 pub mod blockchain;
 
 pub mod note;
+
+pub mod note_file;
