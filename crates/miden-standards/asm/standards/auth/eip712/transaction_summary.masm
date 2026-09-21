@@ -41,7 +41,7 @@ const VERIFY_PUBLIC_KEY_COMMITMENT_LOC = 0
 #! - EIP712_SIGNATURE_KEY is the domain-separated advice-map key for an EIP-712 signature.
 #!
 #! Invocation: exec
-pub proc compute_signature_key(raw_signature_key: word) -> word
+proc compute_signature_key(raw_signature_key: word) -> word
     push.0.0.0.SIGNATURE_KEY_DOMAIN
     # => [EIP712_DOMAIN, RAW_SIGNATURE_KEY]
 
@@ -167,7 +167,7 @@ end
 #!
 #! Invocation: exec
 @locals(4)
-pub proc verify(public_key_commitment: word, tx_summary_hash: word)
+proc verify(public_key_commitment: word, tx_summary_hash: word)
     loc_storew_le.VERIFY_PUBLIC_KEY_COMMITMENT_LOC dropw
     # => [TX_SUMMARY_HASH]
 

@@ -472,6 +472,3 @@ pub proc create_approver_map_key(key_index: u32) -> StorageMapKey
     push.0.0.0 movup.3
     # => [APPROVER_MAP_KEY]
 end
-
-# HELPER PROCEDURES
-# =================================================================================================

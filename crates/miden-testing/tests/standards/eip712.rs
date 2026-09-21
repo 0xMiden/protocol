@@ -283,27 +283,21 @@ async fn verify_transaction_summary_signature(
     public_key: &PublicKey,
     signature: &Signature,
 ) -> Result<(), ExecError> {
-    let witness = encode_signature(public_key, signature);
-    let public_key_commitment = public_key.to_commitment();
-    let script = format!(
-        r#"
-            use miden::standards::auth::eip712
+    let domain = eip712_domain! {
+        name: "Miden Transaction",
+        version: "1",
+    };
+    let transaction = MidenTransaction {
+        txSummaryHash: tx_summary_hash.as_bytes().into(),
+    };
 
-            begin
-                push.9.9.9.9 adv.push_mapval dropw
-                push.{tx_summary_hash}
-                push.{public_key_commitment}
-                exec.eip712::transaction_summary::verify
-            end
-        "#
-    );
-    let advice = AdviceInputs::default().with_map([(Word::from([9u32; 4]), witness)]);
-
-    CodeExecutor::with_default_host()
-        .extend_advice_inputs(advice)
-        .run(&script)
-        .await
-        .map(|_| ())
+    verify_eip712_signature(
+        domain.separator().into(),
+        transaction.eip712_hash_struct().into(),
+        public_key,
+        signature,
+    )
+    .await
 }
 
 fn push_u32_limbs(limbs: &[Felt]) -> String {
