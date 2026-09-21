@@ -6,3 +6,11 @@ column_width          = 120
 reorder_arrays        = true
 reorder_inline_tables = true
 reorder_keys          = true
+
+# Storage slot schemas in component manifests are positional (they describe a word layout), so their
+# arrays must not be reordered.
+[[rule]]
+include = ["**/miden-project.toml"]
+
+[rule.formatting]
+reorder_arrays = false

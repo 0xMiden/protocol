@@ -70,23 +70,13 @@ type        = "word"
 [[package.metadata.account-component.storage.slots]]
 description = "Mutability config"
 name        = "miden::standards::faucets::mutability_config"
-
 # Word layout: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-[[package.metadata.account-component.storage.slots.type]]
-name = "is_description_mutable"
-type = "bool"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "is_logo_uri_mutable"
-type = "bool"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "is_external_link_mutable"
-type = "bool"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "is_max_supply_mutable"
-type = "bool"
+type = [
+  { name = "is_description_mutable", type = "bool" },
+  { name = "is_logo_uri_mutable", type = "bool" },
+  { name = "is_external_link_mutable", type = "bool" },
+  { name = "is_max_supply_mutable", type = "bool" },
+]
 
 [[package.metadata.account-component.storage.slots]]
 description = "External link chunk 4"
@@ -126,22 +116,13 @@ type        = "word"
 [[package.metadata.account-component.storage.slots]]
 description = "Token config"
 name        = "miden::standards::faucets::fungible::token_config"
-
 # Word layout: [token_supply, max_supply, decimals, symbol]
-[[package.metadata.account-component.storage.slots.type]]
-default-value = "0x0"
-name          = "token_supply"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "max_supply"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "decimals"
-type = "u8"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "symbol"
-type = "miden::standards::faucets::fungible::token_symbol"
+type = [
+  { default-value = "0x0", name = "token_supply", type = "felt" },
+  { name = "max_supply", type = "felt" },
+  { name = "decimals", type = "u8" },
+  { name = "symbol", type = "miden::standards::faucets::fungible::token_symbol" },
+]
 
 [[package.metadata.account-component.storage.slots]]
 description = "Description chunk 1"

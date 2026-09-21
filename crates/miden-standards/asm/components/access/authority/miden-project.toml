@@ -25,18 +25,5 @@ type        = { key = "word", value = "miden::standards::access::role_symbol" }
 [[package.metadata.account-component.storage.slots]]
 description = "Authority configuration"
 name        = "miden::standards::access::authority::authority_config"
-
 # Word layout: [authority, is_frozen, 0, 0]
-[[package.metadata.account-component.storage.slots.type]]
-name = "authority"
-type = "u8"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "is_frozen"
-type = "u8"
-
-[[package.metadata.account-component.storage.slots.type]]
-type = "void"
-
-[[package.metadata.account-component.storage.slots.type]]
-type = "void"
+type = [{ name = "authority", type = "u8" }, { name = "is_frozen", type = "u8" }, { type = "void" }, { type = "void" }]

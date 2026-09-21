@@ -20,16 +20,10 @@ version     = "1.0.0"
 [[package.metadata.account-component.storage.slots]]
 description = "Ownership data (owner and nominated owner)"
 name        = "miden::standards::access::ownable2step::owner_config"
-
 # Word layout: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
-[[package.metadata.account-component.storage.slots.type]]
-name = "owner_suffix"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "owner_prefix"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "nominated_suffix"
-
-[[package.metadata.account-component.storage.slots.type]]
-name = "nominated_prefix"
+type = [
+  { name = "owner_suffix", type = "felt" },
+  { name = "owner_prefix", type = "felt" },
+  { name = "nominated_suffix", type = "felt" },
+  { name = "nominated_prefix", type = "felt" },
+]
