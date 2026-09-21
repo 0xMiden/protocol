@@ -67,7 +67,7 @@ impl Verify for PartialMmr {
             return Err(PartialMmrError::LeafOrder.into());
         }
 
-        if let Some(last_leaf) = leaves.iter().last() {
+        if let Some(last_leaf) = leaves.last() {
             let last_position = usize::try_from(last_leaf.position)?;
             if last_position >= size {
                 return Err(PartialMmrError::Position { position: last_position, size }.into());
