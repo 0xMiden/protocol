@@ -2,13 +2,18 @@ use alloc::string::ToString;
 
 use miden_protocol::Word;
 use miden_protocol::account::{
+    Account,
     AccountHeader,
     AccountId,
     AccountIdV1,
+    AccountStorage,
     AccountStorageHeader,
     PartialAccount,
     PartialStorage,
     PartialStorageMap,
+    StorageMap,
+    StorageSlot,
+    StorageSlotContent,
     StorageSlotId,
     StorageSlotType,
 };
@@ -204,5 +209,92 @@ impl From<&AccountWitness> for proto::account::AccountWitness {
 impl From<AccountWitness> for proto::account::AccountWitness {
     fn from(witness: AccountWitness) -> Self {
         (&witness).into()
+    }
+}
+
+// STORAGE MAP
+// ================================================================================================
+
+impl From<&StorageMap> for proto::account::StorageMap {
+    fn from(map: &StorageMap) -> Self {
+        Self {
+            entries: map
+                .entries()
+                .map(|(key, value)| proto::account::StorageMapEntry {
+                    key: Some(Word::from(*key).into()),
+                    value: Some(value.into()),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<StorageMap> for proto::account::StorageMap {
+    fn from(map: StorageMap) -> Self {
+        (&map).into()
+    }
+}
+
+// STORAGE SLOT
+// ================================================================================================
+
+impl From<&StorageSlot> for proto::account::StorageSlot {
+    fn from(slot: &StorageSlot) -> Self {
+        use proto::account::storage_slot::StorageSlotContent as WireStorageSlotContent;
+
+        let content = match slot.content() {
+            StorageSlotContent::Value(value) => WireStorageSlotContent::Value(value.into()),
+            StorageSlotContent::Map(map) => WireStorageSlotContent::Map(map.into()),
+        };
+        Self {
+            slot_name: slot.name().to_string(),
+            storage_slot_content: Some(content),
+        }
+    }
+}
+
+impl From<StorageSlot> for proto::account::StorageSlot {
+    fn from(slot: StorageSlot) -> Self {
+        (&slot).into()
+    }
+}
+
+// ACCOUNT STORAGE
+// ================================================================================================
+
+impl From<&AccountStorage> for proto::account::AccountStorage {
+    fn from(storage: &AccountStorage) -> Self {
+        Self {
+            slots: storage.slots().iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<AccountStorage> for proto::account::AccountStorage {
+    fn from(storage: AccountStorage) -> Self {
+        (&storage).into()
+    }
+}
+
+// ACCOUNT
+// ================================================================================================
+
+impl From<&Account> for proto::account::Account {
+    fn from(account: &Account) -> Self {
+        Self {
+            version: proto::account::AccountVersion::V1 as i32,
+            account_id: Some(account.id().into()),
+            nonce: Some(account.nonce().into()),
+            code: Some(account.code().into()),
+            storage: Some(account.storage().into()),
+            vault: Some(account.vault().into()),
+            seed: account.seed().map(Into::into),
+        }
+    }
+}
+
+impl From<Account> for proto::account::Account {
+    fn from(account: Account) -> Self {
+        (&account).into()
     }
 }

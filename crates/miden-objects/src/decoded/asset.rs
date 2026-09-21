@@ -62,3 +62,26 @@ impl Verify for Asset {
         Ok(Self::Verified::new(self.asset_id.verify()?, self.value)?)
     }
 }
+
+pub use proto::asset::DecodedAssetVault as AssetVault;
+
+impl Verify for AssetVault {
+    type Verified = miden_protocol::asset::AssetVault;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        let assets = self.assets.verify()?;
+        // The asset vault constructor skips an empty asset value. Reject it here for a
+        // clear error.
+        if let Some(asset) = assets.iter().find(|asset| asset.to_value_word().is_empty()) {
+            return Err(AssetVaultEntryError::EmptyValue(asset.id()).into());
+        }
+        Ok(Self::Verified::new(&assets)?)
+    }
+}
+
+/// An invariant of a single vault entry, distinct from the domain's `AssetVaultError`.
+#[derive(Debug, thiserror::Error)]
+pub enum AssetVaultEntryError {
+    #[error("asset {0} has an empty value word")]
+    EmptyValue(miden_protocol::asset::AssetId),
+}
