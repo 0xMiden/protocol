@@ -34,4 +34,5 @@ assert_matches = { workspace = true }
 miden-protocol = { features = ["testing"], workspace = true }
 rand           = { workspace = true }
 rand_chacha    = { workspace = true }
+rstest         = { workspace = true }
 tempfile       = { version = "3.19" }
