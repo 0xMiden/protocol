@@ -17,6 +17,10 @@ impl From<&AuthSecretKey> for proto::account_file::AuthSecretKey {
         let key = match secret_key {
             AuthSecretKey::Falcon512Poseidon2(key) => Key::Falcon512Poseidon2(key.to_bytes()),
             AuthSecretKey::EcdsaK256Keccak(key) => Key::EcdsaK256Keccak(key.to_bytes()),
+            // `AuthSecretKey` is `non_exhaustive`, but it should evolve together with this crate.
+            _ => unreachable!(
+                "every auth secret key scheme should have a corresponding protobuf variant"
+            ),
         };
         Self { key: Some(key) }
     }
