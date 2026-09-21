@@ -127,6 +127,7 @@ impl Deserializable for AuthScheme {
 
 /// Secret keys of the standard [`AuthScheme`]s available in the Miden protocol.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum AuthSecretKey {
     Falcon512Poseidon2(falcon512_poseidon2::SecretKey) = FALCON512_POSEIDON2,
