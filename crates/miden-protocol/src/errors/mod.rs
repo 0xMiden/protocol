@@ -579,6 +579,8 @@ pub enum StorageMapError {
     },
     #[error("map key {key} is not present in provided SMT proof")]
     MissingKey { key: StorageMapKey },
+    #[error("maximum number of storage map leaf entries exceeded")]
+    MaxLeafEntriesExceeded(#[source] MerkleError),
 }
 
 // BATCH ACCOUNT UPDATE ERROR
