@@ -69,6 +69,17 @@ message Note {
   NoteAttachments note_attachments = 3;
 }
 
+// A note whose recipient is known only by its commitment.
+//
+// The note header, and the attachment schemes and commitment of its metadata, are derived from the
+// other fields, so they are not transmitted.
+message PartialNote {
+  PartialNoteMetadata metadata = 1;
+  primitives.Word recipient_digest = 2;
+  repeated asset.Asset assets = 3;
+  NoteAttachments attachments = 4;
+}
+
 message NoteInclusionProof {
   NoteId note_id = 1;
   blockchain.BlockNumber block_num = 2;

@@ -158,7 +158,7 @@ pub proc account_get_initial_commitment(padding: [felt; 16]) -> (Commitment, [fe
     # => [INIT_COMMITMENT, pad(12)]
 end
 
-#! Computes commitment to the state of the active account.
+#! Computes commitment to the state of the native account.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [ACCOUNT_COMMITMENT, pad(12)]
@@ -168,14 +168,18 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - the active account is not the native account.
 #!
 #! Invocation: dynexec
 pub proc account_compute_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
 
-    # compute the active account commitment
+    # compute the native account commitment
     exec.account::compute_commitment
     # => [ACCOUNT_COMMITMENT, pad(16)]
 

@@ -62,6 +62,7 @@ impl_verification_error_from!(
     miden_protocol::errors::StorageSlotNameError,
     miden_protocol::errors::TransactionHeaderError,
     miden_protocol::errors::TransactionInputError,
+    miden_protocol::errors::TransactionOutputError,
     miden_protocol::errors::ValidatorConfigError,
     miden_protocol::utils::serde::DeserializationError,
     super::account::AccountHeaderError,

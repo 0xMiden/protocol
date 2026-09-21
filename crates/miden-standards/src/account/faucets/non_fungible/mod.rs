@@ -502,9 +502,10 @@ pub fn create_user_non_fungible_faucet(
 /// installed via `access_control` ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
 ///
 /// The factory builds the account via [`NetworkAccount::builder`] with a note allowlist covering
-/// the faucet's own [`MintNote`] and [`BurnNote`] scripts; the builder also allowlists the
-/// canonical expiration setter
-/// ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
+/// the faucet's own [`MintNote`] and [`BurnNote`] scripts. The auth component installs
+/// [`BasicWallet`](crate::account::wallets::BasicWallet) and allowlists the P2ID script root, so
+/// the faucet can be funded by a P2ID note; the builder also allowlists the canonical expiration
+/// setter ([`ExpirationTransactionScript`](crate::tx_script::ExpirationTransactionScript)) so the
 /// network can bound its own transactions' expiry.
 ///
 /// # Errors
