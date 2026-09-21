@@ -3,39 +3,40 @@ use alloc::vec;
 
 use assert_matches::assert_matches;
 use prost::Message;
+use rstest::rstest;
 
 use crate::account_file::AccountFile;
 use crate::decoded::account::test_utils::{auth_secret_keys, mock_account};
 use crate::{DecodeMessage, Verify, proto};
 
-#[test]
-fn account_file_protobuf_requires_a_known_version() {
-    // Field 2 represents an unknown future version. It must not default to V1.
-    for bytes in [&[][..], &[0x12, 0][..]] {
-        let wire = proto::account_file::AccountFile::decode(bytes).unwrap();
+#[rstest]
+#[case::no_version(&[])]
+// Field 2 represents an unknown future version. It must not default to V1.
+#[case::unknown_future_version(&[0x12, 0])]
+fn account_file_protobuf_requires_a_known_version(#[case] bytes: &[u8]) {
+    let wire = proto::account_file::AccountFile::decode(bytes).unwrap();
 
-        let error = wire.decode_fields().unwrap_err();
+    let error = wire.decode_fields().unwrap_err();
 
-        assert_eq!(
-            error.to_string(),
-            "version: field miden_objects::proto::account_file::AccountFile::version is missing"
-        );
-    }
+    assert_eq!(
+        error.to_string(),
+        "version: field miden_objects::proto::account_file::AccountFile::version is missing"
+    );
 }
 
-#[test]
-fn auth_secret_key_protobuf_requires_a_known_scheme() {
-    // Field 3 represents an unknown future scheme. It must not default to a known one.
-    for bytes in [&[][..], &[0x1a, 0][..]] {
-        let wire = proto::account_file::AuthSecretKey::decode(bytes).unwrap();
+#[rstest]
+#[case::no_scheme(&[])]
+// Field 3 represents an unknown future scheme. It must not default to a known one.
+#[case::unknown_future_scheme(&[0x1a, 0])]
+fn auth_secret_key_protobuf_requires_a_known_scheme(#[case] bytes: &[u8]) {
+    let wire = proto::account_file::AuthSecretKey::decode(bytes).unwrap();
 
-        let error = wire.decode_fields().unwrap_err();
+    let error = wire.decode_fields().unwrap_err();
 
-        assert_eq!(
-            error.to_string(),
-            "key: field miden_objects::proto::account_file::AuthSecretKey::key is missing"
-        );
-    }
+    assert_eq!(
+        error.to_string(),
+        "key: field miden_objects::proto::account_file::AuthSecretKey::key is missing"
+    );
 }
 
 #[test]
