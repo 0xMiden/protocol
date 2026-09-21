@@ -9,6 +9,7 @@
 ### Changes
 
 - [BREAKING] Moved `AccountFile` from `miden-protocol` and `NoteFile` from `miden-standards` into `miden-objects` and switched both to Protobuf serialization ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
+- [BREAKING] Added fixed private P2ID recipients with secret serials to PSWAP to prevent payback nullifier derivation. Updated private storage and Rust APIs; public paybacks and creator reclaim retain their existing behavior ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
 - [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
 - [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
 - [BREAKING] `StorageMap` now drops an entry whose value is empty, which the sparse Merkle tree already treats as absent, so a removed RBAC role no longer fails account reconstruction, and reports an overfull leaf through the new `StorageMapError::MaxLeafEntriesExceeded` instead of panicking ([#3916](https://github.com/0xMiden/protocol/pull/3916)).

@@ -26,6 +26,8 @@ pub enum ExecutionBenchmark {
     ConsumeSwapPrivatePaybackNetwork,
     ConsumePswapFullFillNetwork,
     ConsumePswapPartialFillNetwork,
+    ConsumePswapFullFillPublicPaybackNetwork,
+    ConsumePswapPartialFillPublicPaybackNetwork,
     ConsumeMintFungibleNetwork,
     ConsumeMintNonFungibleNetwork,
     ConsumeBurnNetwork,
@@ -75,6 +77,8 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeSwapPrivatePaybackNetwork,
             ExecutionBenchmark::ConsumePswapFullFillNetwork,
             ExecutionBenchmark::ConsumePswapPartialFillNetwork,
+            ExecutionBenchmark::ConsumePswapFullFillPublicPaybackNetwork,
+            ExecutionBenchmark::ConsumePswapPartialFillPublicPaybackNetwork,
             ExecutionBenchmark::ConsumeMintFungibleNetwork,
             ExecutionBenchmark::ConsumeMintNonFungibleNetwork,
             ExecutionBenchmark::ConsumeBurnNetwork,
@@ -164,6 +168,12 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumePswapPartialFillNetwork => {
                 write!(f, "consume PSWAP note (partial fill, network account)")
+            },
+            ExecutionBenchmark::ConsumePswapFullFillPublicPaybackNetwork => {
+                write!(f, "consume PSWAP note (full fill, public payback, network account)")
+            },
+            ExecutionBenchmark::ConsumePswapPartialFillPublicPaybackNetwork => {
+                write!(f, "consume PSWAP note (partial fill, public payback, network account)")
             },
             ExecutionBenchmark::ConsumeMintFungibleNetwork => {
                 write!(f, "consume MINT note (fungible faucet, network account)")

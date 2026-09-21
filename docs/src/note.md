@@ -94,7 +94,7 @@ Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
   consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
-- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note storage contains the receiver account ID and a zero salt. The receiver only needs to know the exact amount that was filled to derive the full note for consumption. This amount can be encoded in a public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
+- Communicate the details needed to reconstruct a _private_ note without disclosing its secret recipient opening. For example, the owner of a PSWAP order retains the complete private P2ID recipient, including its independent secret serial and target account storage. Public fill attachments provide the amount, order ID, and depth needed to reconstruct each payback and verify its note ID. The secret serial must not be derived from the public PSWAP serial.
 
 ## Note Lifecycle
 
@@ -315,11 +315,22 @@ The SWAP note script implements atomic asset swapping functionality.
 
 **Use case:** Decentralized asset trading where two parties want to exchange different assets atomically.
 
+### PSWAP
+
+PSWAP exchanges part or all of one fungible asset for another. A partial fill creates a P2ID payback and a remainder PSWAP with the same payback configuration. The PSWAP's visibility is independent of its paybacks' visibility.
+
+- **Public paybacks:** the order stores the original creator's account ID. Each fill creates a public, zero-salt P2ID for that creator, using the consumed PSWAP serial with its first element incremented. The creator can reclaim an unspent order or remainder directly into its vault.
+- **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Use a fresh secret serial for each independent order, unrelated to its PSWAP serial, to prevent observers from deriving payback nullifiers. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
+- **Storage:** 7 elements for public paybacks or 10 for private paybacks. Both begin with requested faucet suffix, prefix, amount, minimum fill step, and payback type. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
+
+Consume reconstructed private paybacks with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Orders with private paybacks can be filled but do not yet support cancellation.
+
 ### Choosing the Right Note Type
 
 - **Use P2ID** for simple, direct payments to known accounts
 - **Use P2IDE** when you need time-locks, escrow functionality, or reclaim capabilities
 - **Use SWAP** for atomic asset exchanges between parties
+- **Use PSWAP** for orders that can be filled partially
 - **Create custom scripts** for specialized use cases not covered by standard types
 
 These standard note types provide a foundation for common operations while maintaining the flexibility to create custom note scripts for specialized requirements.
