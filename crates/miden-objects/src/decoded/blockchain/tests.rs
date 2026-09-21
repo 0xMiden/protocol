@@ -14,18 +14,6 @@ use crate::test_utils::error_source;
 use crate::{BuildUnchecked, ConversionError, DecodeMessage, DecodeMessageExt, Verify, proto};
 
 #[test]
-fn tracked_mmr_leaf_verifies() {
-    let decoded = proto::blockchain::TrackedMmrLeaf {
-        position: 2,
-        leaf: Some(Word::empty().into()),
-        path: vec![],
-    }
-    .decode_fields()
-    .unwrap();
-    assert_eq!(decoded.verify().unwrap(), (2, Word::empty(), vec![]));
-}
-
-#[test]
 fn block_number_verifies() {
     assert_eq!(
         proto::blockchain::BlockNumber { block_num: u32::MAX }
@@ -257,4 +245,87 @@ fn next_protocol_config_defers_effective_block_validation() {
     .decode_fields()
     .unwrap();
     assert!(decoded.verify().is_err());
+}
+
+fn partial_blockchain() -> miden_protocol::transaction::PartialBlockchain {
+    use miden_protocol::block::BlockHeader;
+    use miden_protocol::crypto::merkle::mmr::PartialMmr;
+
+    let headers = [BlockHeader::mock(0, None, None, &[]), BlockHeader::mock(1, None, None, &[])];
+    let mut mmr = PartialMmr::default();
+    for header in &headers {
+        mmr.add(header.commitment(), true).unwrap();
+    }
+    miden_protocol::transaction::PartialBlockchain::new(mmr, headers).unwrap()
+}
+
+#[test]
+fn partial_blockchain_round_trip() {
+    use prost::Message;
+
+    let expected = partial_blockchain();
+    let wire: proto::blockchain::PartialBlockchain = (&expected).into();
+    let bytes = wire.encode_to_vec();
+    let actual = proto::blockchain::PartialBlockchain::decode(bytes.as_slice())
+        .unwrap()
+        .decode_fields()
+        .unwrap()
+        .build_unchecked()
+        .unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn partial_blockchain_requires_mmr() {
+    let error = proto::blockchain::PartialBlockchain::default().decode_fields().unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        ConversionError::missing_field::<proto::blockchain::PartialBlockchain>("mmr")
+            .context("mmr")
+            .to_string()
+    );
+}
+
+#[test]
+fn partial_blockchain_rejects_duplicate_or_unordered_headers() {
+    for duplicate in [false, true] {
+        let mut wire: proto::blockchain::PartialBlockchain = (&partial_blockchain()).into();
+        if duplicate {
+            wire.block_headers[1] = wire.block_headers[0].clone();
+        } else {
+            wire.block_headers.swap(0, 1);
+        }
+        let error = wire.decode_fields().unwrap().build_unchecked().unwrap_err();
+        assert_matches!(
+            error_source::<super::PartialBlockchainError>(&error),
+            Some(super::PartialBlockchainError::HeaderOrder)
+        );
+    }
+}
+
+#[test]
+fn partial_blockchain_checks_header_membership() {
+    use miden_protocol::errors::PartialBlockchainError;
+
+    let mut wire: proto::blockchain::PartialBlockchain = (&partial_blockchain()).into();
+    wire.block_headers[0].account_root = Some(Word::from([42u32, 0, 0, 0]).into());
+    let error = wire.decode_fields().unwrap().build_unchecked().unwrap_err();
+    assert_matches!(
+        error_source::<PartialBlockchainError>(&error),
+        Some(PartialBlockchainError::BlockHeaderCommitmentMismatch { block_num, .. })
+        if *block_num == BlockNumber::GENESIS
+    );
+}
+
+#[test]
+fn partial_blockchain_verifies_nested_mmr() {
+    use crate::decoded::primitives::PartialMmrError;
+
+    let mut wire: proto::blockchain::PartialBlockchain = (&partial_blockchain()).into();
+    wire.mmr.as_mut().unwrap().tracked_leaves[0].position = 2;
+    let error = wire.decode_fields().unwrap().build_unchecked().unwrap_err();
+    assert_matches!(
+        error_source::<PartialMmrError>(&error),
+        Some(PartialMmrError::Position { position: 2, size: 2 })
+    );
 }

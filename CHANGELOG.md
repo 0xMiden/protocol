@@ -6,6 +6,7 @@
 
 - [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
 - [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
+- [BREAKING] Extracted the Protobuf MMR representation from `PartialBlockchain` into a standalone `primitives.PartialMmr` message.
 
 ## v0.17.0-rc.5 (2026-09-17)
 

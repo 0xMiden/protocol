@@ -37,3 +37,52 @@ impl Verify for MmrDelta {
         })
     }
 }
+
+pub use proto::primitives::DecodedTrackedMmrLeaf as TrackedMmrLeaf;
+
+impl Verify for TrackedMmrLeaf {
+    type Verified = (u64, miden_protocol::Word, alloc::vec::Vec<miden_protocol::Word>);
+    type Error = core::convert::Infallible;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok((self.position, self.leaf, self.path.into_inner()))
+    }
+}
+
+pub use proto::primitives::DecodedPartialMmr as PartialMmr;
+
+/// Checks reconstruction against the supplied peaks without authenticating those peaks.
+impl Verify for PartialMmr {
+    type Verified = miden_protocol::crypto::merkle::mmr::PartialMmr;
+    type Error = VerificationError;
+
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        use miden_protocol::crypto::merkle::MerklePath;
+        use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
+
+        let size = usize::try_from(self.forest)?;
+        let peaks = MmrPeaks::new(Forest::new(size)?, self.peaks.into_inner())?;
+        let mut mmr = PartialMmr::from_peaks(peaks);
+        let mut previous = None;
+        for tracked in self.tracked_leaves.into_inner() {
+            let position = usize::try_from(tracked.position)?;
+            if position >= size {
+                return Err(PartialMmrError::Position { position, size }.into());
+            }
+            if previous.is_some_and(|previous| position <= previous) {
+                return Err(PartialMmrError::LeafOrder.into());
+            }
+            previous = Some(position);
+            mmr.track(position, tracked.leaf, &MerklePath::new(tracked.path.into_inner()))?;
+        }
+        Ok(mmr)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum PartialMmrError {
+    #[error("tracked leaf position {position} is outside forest of size {size}")]
+    Position { position: usize, size: usize },
+    #[error("tracked leaf positions must be unique and strictly increasing")]
+    LeafOrder,
+}
