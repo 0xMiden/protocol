@@ -21,7 +21,7 @@ use miden_standards::note::config::{
     PauseConfig,
     RbacConfigNote,
 };
-use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote};
+use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote, P2idNote};
 use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -85,6 +85,7 @@ fn faucet_allowed_notes_pin() {
         RbacConfigNote::script_root(),
         NetworkAccountConfigNote::script_root(),
         FeeSponsorshipNote::script_root(),
+        P2idNote::script_root(),
     ]);
     assert_eq!(AggLayerFaucet::allowed_notes(), expected);
 }
