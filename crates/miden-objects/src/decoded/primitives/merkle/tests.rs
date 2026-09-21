@@ -109,7 +109,7 @@ fn partial_mmr_rejects_out_of_range_position() {
     use crate::decoded::primitives::PartialMmrError;
 
     let mut message = tracked_partial_mmr();
-    message.tracked_leaves[0].position = message.forest;
+    message.tracked_leaves[6].position = message.forest;
     let error = message.decode_fields().unwrap().verify().unwrap_err();
     assert_matches!(
         crate::test_utils::error_source::<PartialMmrError>(&error),

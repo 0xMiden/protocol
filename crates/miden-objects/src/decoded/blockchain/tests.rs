@@ -322,7 +322,7 @@ fn partial_blockchain_verifies_nested_mmr() {
     use crate::decoded::primitives::PartialMmrError;
 
     let mut wire: proto::blockchain::PartialBlockchain = (&partial_blockchain()).into();
-    wire.mmr.as_mut().unwrap().tracked_leaves[0].position = 2;
+    wire.mmr.as_mut().unwrap().tracked_leaves[1].position = 2;
     let error = wire.decode_fields().unwrap().build_unchecked().unwrap_err();
     assert_matches!(
         error_source::<PartialMmrError>(&error),

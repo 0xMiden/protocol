@@ -61,17 +61,22 @@ impl Verify for PartialMmr {
 
         let size = usize::try_from(self.forest)?;
         let peaks = MmrPeaks::new(Forest::new(size)?, self.peaks.into_inner())?;
+        let leaves = self.tracked_leaves.into_inner();
+
+        if !leaves.is_sorted_by(|a, b| a.position < b.position) {
+            return Err(PartialMmrError::LeafOrder.into());
+        }
+
+        if let Some(last_leaf) = leaves.iter().last() {
+            let last_position = usize::try_from(last_leaf.position)?;
+            if last_position >= size {
+                return Err(PartialMmrError::Position { position: last_position, size }.into());
+            }
+        }
+
         let mut mmr = PartialMmr::from_peaks(peaks);
-        let mut previous = None;
-        for tracked in self.tracked_leaves.into_inner() {
+        for tracked in leaves {
             let position = usize::try_from(tracked.position)?;
-            if position >= size {
-                return Err(PartialMmrError::Position { position, size }.into());
-            }
-            if previous.is_some_and(|previous| position <= previous) {
-                return Err(PartialMmrError::LeafOrder.into());
-            }
-            previous = Some(position);
             mmr.track(position, tracked.leaf, &MerklePath::new(tracked.path.into_inner()))?;
         }
         Ok(mmr)
