@@ -45,7 +45,6 @@ Active account procedures can be used to read from storage, fetch or compute com
 | -------------------------------- | ----------------------------- | ----------------------------- |
 | `get_id`                         | Returns the ID of the active account.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[account_id_suffix, account_id_prefix]`                                                                                | Any              |
 | `get_nonce`                      | Returns the nonce of the active account. Always returns the initial nonce as it can only be incremented in auth procedures.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[nonce]`                         | Account          |
-| `compute_commitment`             | Computes and returns the account commitment from account data stored in memory.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[ACCOUNT_COMMITMENT]`                                                         | Account          |
 | `get_code_commitment`            | Gets the account code commitment of the active account.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[CODE_COMMITMENT]`                                                                                   | Account          |
 | `compute_storage_commitment`     | Computes the latest account storage commitment of the active account.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[STORAGE_COMMITMENT]`                                                                  | Account          |
 | `get_item`                       | Gets an item from the account storage.<br/><br/>**Inputs:** `[slot_id_suffix, slot_id_prefix]`<br/>**Outputs:** `[VALUE]`                                                                                                          | Account          |
@@ -59,7 +58,7 @@ Active account procedures can be used to read from storage, fetch or compute com
 
 ## Native account Procedures (`miden::protocol::native_account`)
 
-Native account procedures can be used to write to storage, add or remove assets from the vault and compute delta commitment of the native account. They also expose the initial (beginning-of-transaction) state of the native account. 
+Native account procedures can be used to write to storage, add or remove assets from the vault and compute the state and delta commitments of the native account. They also expose the initial (beginning-of-transaction) state of the native account.
 
 Notice that the initial-state getters can only be executed against the native account: invoking them against the foreign account (during FPI) panics. Foreign accounts are immutable, so in order to read their (initial) values, the corresponding getters from the `active_account` module should be used.
 
@@ -67,6 +66,7 @@ Notice that the initial-state getters can only be executed against the native ac
 | ------------------------------ | ------------------------------ | ------------------------------ |
 | `get_id`                       | Returns the ID of the native account of the transaction.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[account_id_suffix, account_id_prefix]`                                                              | Any              |
 | `incr_nonce`                   | Increments the nonce of the native account by one and returns the new nonce. Can only be called from auth procedures.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[final_nonce]`                                        | Auth             |
+| `compute_commitment`           | Computes and returns the native account's current state commitment.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[ACCOUNT_COMMITMENT]` | Native & Account |
 | `compute_delta_commitment`     | Computes the commitment to the native account's delta. Can only be called from auth procedures.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[DELTA_COMMITMENT]`                                           | Auth             |
 | `has_state_changed`            | Returns whether the native account's current commitment differs from its initial commitment. Unlike `compute_delta_commitment`, this can be called before the nonce is incremented.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[has_state_changed]` | Native & Account |
 | `set_item`                     | Sets an item in the native account storage.<br/><br/>**Inputs:** `[slot_id_suffix, slot_id_prefix, VALUE]`<br/>**Outputs:** `[OLD_VALUE]`                                                                                                 | Native & Account |
