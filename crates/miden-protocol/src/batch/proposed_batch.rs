@@ -139,6 +139,10 @@ impl ProposedBatch {
             }
         }
 
+        crate::transaction::TransactionLogDataCollection::validate_batch_budget(
+            transactions.iter().map(|tx| tx.log_data()),
+        )?;
+
         // Verify block header and partial blockchain match.
         // --------------------------------------------------------------------------------------------
 

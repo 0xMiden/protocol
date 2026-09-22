@@ -80,6 +80,7 @@ impl crate::BuildUnchecked for ProvenBatch {
             miden_protocol::transaction::InputNotes::new_unchecked(inputs),
             outputs,
             unwrap_infallible(self.expiration_block_num.verify()),
+            self.log_data.into_inner(),
             miden_protocol::transaction::OrderedTransactionHeaders::new_unchecked(transactions),
             self.proof,
         )?)

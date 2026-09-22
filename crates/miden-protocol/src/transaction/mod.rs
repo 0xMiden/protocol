@@ -29,6 +29,7 @@ pub use logs::{
     LogTopic,
     TransactionLog,
     TransactionLogData,
+    TransactionLogDataCollection,
     TransactionLogDataError,
     TransactionLogs,
 };

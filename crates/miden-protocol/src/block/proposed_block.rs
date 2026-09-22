@@ -159,6 +159,9 @@ impl ProposedBlock {
         }
 
         check_duplicate_batches(&batches)?;
+        crate::transaction::TransactionLogDataCollection::validate_block_budget(
+            batches.iter().flat_map(|batch| batch.log_data().as_slice()),
+        )?;
 
         // Check timestamp increases monotonically.
         // --------------------------------------------------------------------------------------------

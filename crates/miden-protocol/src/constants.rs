@@ -84,3 +84,20 @@ pub const MAX_INPUT_NOTES_PER_BLOCK: usize = MAX_OUTPUT_NOTES_PER_BLOCK;
 pub const MAX_ACCOUNTS_PER_BLOCK: usize = MAX_ACCOUNTS_PER_BATCH * MAX_BATCHES_PER_BLOCK;
 const _: () = assert!(MAX_ACCOUNTS_PER_BLOCK >= MAX_ACCOUNTS_PER_BATCH);
 const _: () = assert!(MAX_ACCOUNTS_PER_BLOCK >= MAX_BATCHES_PER_BLOCK);
+
+/// Maximum transaction log-data entries per batch, including empty and private entries.
+pub const MAX_LOG_DATA_TRANSACTIONS_PER_BATCH: usize = 1024;
+/// Maximum transaction log-data entries per block.
+pub const MAX_LOG_DATA_TRANSACTIONS_PER_BLOCK: usize = 65536;
+/// Maximum public records in a batch.
+pub const MAX_PUBLIC_LOGS_PER_BATCH: usize = 4096;
+/// Maximum public records in a block.
+pub const MAX_PUBLIC_LOGS_PER_BLOCK: usize = 65536;
+/// Maximum public payload words in a batch (2 MiB).
+pub const MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BATCH: usize = 65536;
+/// Maximum public payload words in a block (16 MiB).
+pub const MAX_PUBLIC_LOG_PAYLOAD_WORDS_PER_BLOCK: usize = 524288;
+/// Maximum serialized log-data collection per batch, including metadata (4 MiB).
+pub const MAX_LOG_DATA_BYTES_PER_BATCH: usize = 4 * 1024 * 1024;
+/// Maximum serialized log-data collection per block, including metadata (32 MiB).
+pub const MAX_LOG_DATA_BYTES_PER_BLOCK: usize = 32 * 1024 * 1024;

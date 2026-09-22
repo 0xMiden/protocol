@@ -4,6 +4,7 @@
 
 ### Features
 
+- Preserve ordered public logs and private commitments in batches and blocks, with bounded encodings and aggregate limits.
 - Added canonical protobuf transport for transaction log records, commitments, and private execution openings.
 - [BREAKING] Added authenticated transaction logging with FPI emitter attribution and log commitments bound to proofs, transaction IDs, and signing summaries.
 - Added private transaction-log openings and local execution records.
