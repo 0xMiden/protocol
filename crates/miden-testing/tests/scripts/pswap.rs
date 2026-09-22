@@ -6,14 +6,16 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
+    AccountBuilder,
     AccountComponent,
     AccountId,
     AccountType,
     AccountVaultPatch,
 };
-use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -39,6 +41,7 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_INVALID_ACTION,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
     ERR_PSWAP_OFFERED_ASSET_ALTERED,
+    ERR_PSWAP_OUTPUT_ALTERED,
     ERR_PSWAP_PARENT_DEPTH_NOT_U32,
 };
 use miden_standards::note::{
@@ -872,6 +875,210 @@ fn build_private_pswap_note(
     let note = Note::from(pswap.clone());
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     Ok((pswap, note, recipient))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OutputMutation {
+    None,
+    ExtraAsset,
+    BalanceIncrease,
+    Attachment,
+}
+
+fn build_pswap_for_sealing_test(
+    builder: &mut MockChainBuilder,
+    sender: AccountId,
+    offered: FungibleAsset,
+    requested: FungibleAsset,
+    payback_type: NoteType,
+    note_type: NoteType,
+) -> anyhow::Result<Note> {
+    let payback = match payback_type {
+        NoteType::Public => PswapPayback::Public { creator_account_id: sender },
+        NoteType::Private => {
+            let recipient =
+                P2idNoteStorage::new(sender).into_recipient(builder.rng_mut().draw_word());
+            PswapPayback::private(&recipient, NoteTag::new(1234))?
+        },
+    };
+    let pswap = PswapNote::builder()
+        .sender(sender)
+        .storage(
+            PswapNoteStorage::builder()
+                .min_requested_asset(requested)
+                .payback(payback)
+                .build(),
+        )
+        .serial_number(builder.rng_mut().draw_word())
+        .note_type(note_type)
+        .offered_asset(offered)
+        .build()?;
+    let note = Note::from(pswap);
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    Ok(note)
+}
+
+/// Issuer callbacks run before sealing, so PSWAP must verify the completed payback and remainder.
+#[rstest]
+#[case::unchanged(OutputMutation::None)]
+#[case::extra_asset(OutputMutation::ExtraAsset)]
+#[case::balance_increase(OutputMutation::BalanceIncrease)]
+#[case::attachment(OutputMutation::Attachment)]
+#[tokio::test]
+async fn pswap_checks_output_after_asset_callback(
+    #[case] mutation: OutputMutation,
+    #[values(NoteType::Public, NoteType::Private)] payback_type: NoteType,
+    #[values(false, true)] remainder_callback: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let other_issuer = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(100))?;
+    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let extra = FungibleAsset::new(other_issuer.id(), 1)?;
+    let mutation_code = match mutation {
+        OutputMutation::None => String::from("drop"),
+        OutputMutation::ExtraAsset => format!(
+            "push.{} push.{} call.wallet::move_asset_to_note dropw dropw dropw dropw",
+            extra.to_value_word(),
+            extra.to_id_word(),
+        ),
+        OutputMutation::BalanceIncrease => String::from(
+            "push.1 exec.active_account::get_id exec.fungible_asset::create
+             call.wallet::move_asset_to_note dropw dropw dropw dropw",
+        ),
+        OutputMutation::Attachment => {
+            String::from("push.1.2.3.4.5 exec.output_note::add_word_attachment")
+        },
+    };
+    let code = CodeBuilder::default().compile_component_code(
+        "tests::pswap_callback",
+        format!(
+            "use miden::protocol::active_account
+            use miden::protocol::output_note
+            use miden::standards::assets::fungible_asset
+            use miden::standards::wallets::basic as wallet
+
+            @account_procedure
+            pub proc on_before_asset_added_to_note
+                # The nested one-unit insertion must not trigger another mutation.
+                exec.fungible_asset::to_amount_unchecked eq.1
+                if.true
+                    dropw dropw drop
+                else
+                    dropw dropw
+                    {mutation_code}
+                end
+            end",
+        ),
+    )?;
+    let root = code
+        .as_package()
+        .get_procedure_root_by_path("tests::pswap_callback::on_before_asset_added_to_note")
+        .unwrap();
+    let callback = AccountComponent::new(
+        code,
+        AssetCallbacks::new().on_before_asset_added_to_note(root).into_storage_slots(),
+        AccountComponentMetadata::new("tests::pswap_callback"),
+    )?;
+    let mut filler = builder.add_account_from_builder(
+        BASIC_AUTH,
+        AccountBuilder::new([92; 32])
+            .account_type(AccountType::Public)
+            .with_component(BasicWallet)
+            .with_component(callback),
+        AccountState::Exists,
+    )?;
+    let (offered_id, requested_id) = if remainder_callback {
+        (filler.id(), other_issuer.id())
+    } else {
+        (other_issuer.id(), filler.id())
+    };
+    let offered = FungibleAsset::new(offered_id, 50)?;
+    let requested = FungibleAsset::new(requested_id, 25)?;
+    filler.vault_mut().add_asset(requested.into())?;
+    filler.vault_mut().add_asset(extra.into())?;
+    builder.add_account(filler.clone())?;
+    let note = build_pswap_for_sealing_test(
+        &mut builder,
+        alice.id(),
+        offered,
+        requested,
+        payback_type,
+        NoteType::Public,
+    )?;
+    let chain = builder.build()?;
+    let result = chain
+        .build_transaction(filler)
+        .authenticated_input_note(note.id())
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_args(10, 0)?)]))
+        .build()?
+        .execute()
+        .await;
+    if matches!(mutation, OutputMutation::None) {
+        result?;
+    } else {
+        assert_transaction_executor_error!(result, ERR_PSWAP_OUTPUT_ALTERED);
+    }
+    Ok(())
+}
+
+/// Output contents remain fixed after a fill, even when the filler has assets left in its vault.
+#[rstest]
+#[case::full_payback(25, 0)]
+#[case::partial_payback(10, 0)]
+#[case::remainder(10, 1)]
+#[tokio::test]
+async fn pswap_rejects_later_output_mutation(
+    #[case] fill_amount: u64,
+    #[case] output_index: u32,
+    #[values(false, true)] attachment: bool,
+    #[values(NoteType::Public, NoteType::Private)] payback_type: NoteType,
+    #[values(NoteType::Public, NoteType::Private)] note_type: NoteType,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(26))?;
+    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let bob = builder.add_account_from_builder(
+        BASIC_AUTH,
+        AccountBuilder::new([91; 32])
+            .account_type(AccountType::Private)
+            .with_component(BasicWallet)
+            .with_assets([FungibleAsset::new(requested.id(), 26)?.into()]),
+        AccountState::Exists,
+    )?;
+    let note = build_pswap_for_sealing_test(
+        &mut builder,
+        alice.id(),
+        FungibleAsset::new(offered.id(), 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        payback_type,
+        note_type,
+    )?;
+    let extra = FungibleAsset::new(requested.id(), 1)?;
+    let mutation = if attachment {
+        format!(
+            "push.{output_index}.1.2.3.4.5 exec.::miden::protocol::output_note::add_word_attachment"
+        )
+    } else {
+        format!(
+            "push.0.0.0.0.0.0.0.{output_index} push.{} push.{} call.::miden::standards::wallets::basic::move_asset_to_note dropw dropw dropw dropw",
+            extra.to_value_word(),
+            extra.to_id_word(),
+        )
+    };
+    let script = CodeBuilder::default()
+        .compile_tx_script(format!("@transaction_script pub proc main {mutation} end",))?;
+    let chain = builder.build()?;
+    let result = chain
+        .build_transaction(bob)
+        .authenticated_input_note(note.id())
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_args(fill_amount, 0)?)]))
+        .tx_script(script)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
+    Ok(())
 }
 
 #[rstest]

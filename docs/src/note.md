@@ -323,6 +323,8 @@ PSWAP exchanges part or all of one fungible asset for another. A partial fill cr
 - **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Use a fresh secret serial for each independent order, unrelated to its PSWAP serial, to prevent observers from deriving payback nullifiers. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
 - **Storage:** 7 elements for public paybacks or 10 for private paybacks. Both begin with requested faucet suffix, prefix, amount, minimum fill step, and payback type. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
 
+PSWAP verifies the completed payback and remainder after asset callbacks and seals both outputs before returning. This applies to public and private notes: subsequent asset or attachment additions fail the transaction.
+
 Consume reconstructed private paybacks with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Orders with private paybacks can be filled but do not yet support cancellation.
 
 ### Choosing the Right Note Type

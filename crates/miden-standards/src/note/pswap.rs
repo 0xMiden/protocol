@@ -335,6 +335,8 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// payback to the original creator (public paybacks) or a fixed private recipient. Orders with
 /// public paybacks are reclaimed when the stored creator account consumes them. Orders with
 /// private paybacks can be filled but do not yet support cancellation.
+/// Payback and remainder outputs are verified and sealed before the script returns, regardless of
+/// their visibility. Later asset or attachment additions fail the transaction.
 ///
 /// # Private paybacks
 ///
