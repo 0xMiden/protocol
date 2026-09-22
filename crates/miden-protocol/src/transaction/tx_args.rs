@@ -45,6 +45,7 @@ pub struct TransactionArgs {
     note_args: BTreeMap<NoteId, Word>,
     advice_inputs: AdviceInputs,
     auth_args: Word,
+    log_salt: Word,
 }
 
 impl TransactionArgs {
@@ -77,6 +78,7 @@ impl TransactionArgs {
             note_args,
             advice_inputs,
             auth_args,
+            log_salt: EMPTY_WORD,
         }
     }
 
@@ -121,6 +123,19 @@ impl TransactionArgs {
     pub fn with_auth_args(mut self, auth_args: Word) -> Self {
         self.auth_args = auth_args;
         self
+    }
+
+    /// Sets the private log opening; see
+    /// [`TransactionLogs::commitment_for_account`](crate::transaction::TransactionLogs::commitment_for_account).
+    #[must_use]
+    pub fn with_log_salt(mut self, salt: Word) -> Self {
+        self.log_salt = salt;
+        self
+    }
+
+    /// Returns the private log opening used by the transaction kernel.
+    pub fn log_salt(&self) -> Word {
+        self.log_salt
     }
 
     // PUBLIC ACCESSORS
@@ -251,6 +266,7 @@ impl Serializable for TransactionArgs {
         self.note_args.write_into(target);
         self.advice_inputs.write_into(target);
         self.auth_args.write_into(target);
+        self.log_salt.write_into(target);
     }
 }
 
@@ -261,14 +277,10 @@ impl Deserializable for TransactionArgs {
         let note_args = BTreeMap::<NoteId, Word>::read_from(source)?;
         let advice_inputs = AdviceInputs::read_from(source)?;
         let auth_args = Word::read_from(source)?;
+        let log_salt = Word::read_from(source)?;
 
-        Ok(Self {
-            tx_script,
-            tx_script_args,
-            note_args,
-            advice_inputs,
-            auth_args,
-        })
+        Ok(Self::from_parts(tx_script, tx_script_args, note_args, advice_inputs, auth_args)
+            .with_log_salt(log_salt))
     }
 }
 
@@ -289,7 +301,8 @@ mod tests {
 
     #[test]
     fn test_tx_args_serialization() {
-        let tx_args = TransactionArgs::new(AdviceMap::default());
+        let tx_args =
+            TransactionArgs::new(AdviceMap::default()).with_log_salt(Word::from([1u32, 2, 3, 4]));
         let bytes: std::vec::Vec<u8> = tx_args.to_bytes();
         let decoded = TransactionArgs::read_from_bytes(&bytes).unwrap();
 
