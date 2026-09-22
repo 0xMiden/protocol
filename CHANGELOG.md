@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added the `Scheduler` component: a mandatory waiting period in front of flagged authority-gated procedures, keyed by the id of the administrative note that carries them out, with proposer / `CANCELLER` cancellation ([#3XXX](https://github.com/0xMiden/protocol/pull/3XXX)).
 - Added `set_procedure_role` to `Authority` ([#3885](https://github.com/0xMiden/protocol/pull/3885)).
 - Added `HashMap` and `BTreeMap` field decoding in `miden-protobuf`, including message and enum values with map keys preserved in conversion errors ([#3870](https://github.com/0xMiden/protocol/pull/3870)).
 - Added boxed/recursive message decoding and generated oneof `into_<variant>()` accessors, and optional tonic integration through `ConversionError::into_status()` in `miden-protobuf` ([#3871](https://github.com/0xMiden/protocol/pull/3871)).
