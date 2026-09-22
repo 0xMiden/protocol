@@ -354,7 +354,7 @@ const OUTPUT_NOTE_ATTACHMENT_3_OFFSET = 28
 const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 32
 const OUTPUT_NOTE_ASSETS_OFFSET = 36
 
-# The output note sealed flag is stored immediately after the space reserved for assets in memory.
+# The sealed flag is stored after the reserved asset array in output note memory.
 const OUTPUT_NOTE_SEALED_FLAG_OFFSET = OUTPUT_NOTE_ASSETS_OFFSET + MAX_ASSETS_PER_NOTE * WORD_NUM_ELEMENTS * 2
 
 # LINK MAP MEMORY
