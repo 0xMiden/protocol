@@ -1,4 +1,4 @@
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::auth::AuthScheme;
@@ -2180,14 +2180,15 @@ async fn test_sealed_output_note_mutations(
 }
 
 /// A note script can seal a private output before returning control to the transaction script.
+/// Both account procedures and direct transaction-script mutations must respect the seal.
 #[rstest]
-#[case::unchanged("")]
-#[case::asset(
-    "push.0 push.{asset_value} push.{asset_id} call.::miden::standards::wallets::basic::move_asset_to_note"
-)]
-#[case::attachment("push.0 push.1.2.3.4 push.5 exec.output_note::add_word_attachment")]
+#[case::unchanged(OutputNoteMutation::None)]
+#[case::asset_via_account(OutputNoteMutation::Asset)]
+#[case::attachment_via_tx_script(OutputNoteMutation::Attachment)]
 #[tokio::test]
-async fn test_private_output_sealed_by_note_script(#[case] mutation: &str) -> anyhow::Result<()> {
+async fn test_private_output_sealed_by_note_script(
+    #[case] mutation: OutputNoteMutation,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account =
         builder.add_existing_wallet_with_assets(Auth::IncrNonce, [FungibleAsset::mock(20)])?;
@@ -2221,9 +2222,18 @@ async fn test_private_output_sealed_by_note_script(#[case] mutation: &str) -> an
         .build()?;
     builder.add_output_note(RawOutputNote::Full(input_note.clone()));
     let chain = builder.build()?;
-    let mutation_code = mutation
-        .replace("{asset_value}", &asset.to_value_word().to_string())
-        .replace("{asset_id}", &asset.to_id_word().to_string());
+    let mutation_code = match mutation {
+        OutputNoteMutation::None => String::new(),
+        OutputNoteMutation::Asset => format!(
+            "push.0 push.{asset_value} push.{asset_id}
+            call.::miden::standards::wallets::basic::move_asset_to_note",
+            asset_value = asset.to_value_word(),
+            asset_id = asset.to_id_word(),
+        ),
+        OutputNoteMutation::Attachment => {
+            String::from("push.0 push.1.2.3.4 push.5 exec.output_note::add_word_attachment")
+        },
+    };
     let tx_script = CodeBuilder::default().compile_tx_script(format!(
         "use miden::protocol::output_note
         @transaction_script
@@ -2244,7 +2254,7 @@ async fn test_private_output_sealed_by_note_script(#[case] mutation: &str) -> an
         .build()?
         .execute()
         .await;
-    if mutation.is_empty() {
+    if matches!(mutation, OutputNoteMutation::None) {
         let executed = result?;
         assert_eq!(executed.output_notes().get_note(0).id(), expected_note.id());
         let proven = LocalTransactionProver::default().prove(executed)?;
@@ -2261,6 +2271,13 @@ async fn test_private_output_sealed_by_note_script(#[case] mutation: &str) -> an
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+#[derive(Debug, Clone, Copy)]
+enum OutputNoteMutation {
+    None,
+    Asset,
+    Attachment,
+}
 
 /// Returns a `masm` code which creates an output note and adds some assets to it.
 ///
