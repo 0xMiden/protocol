@@ -130,12 +130,6 @@ impl From<&NoteDetails> for proto::note::NoteDetails {
 // NOTE
 // ================================================================================================
 
-impl From<&Note> for proto::note::Note {
-    fn from(note: &Note) -> Self {
-        Self::from(note.clone())
-    }
-}
-
 impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
         Self::from(&note)
