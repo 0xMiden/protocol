@@ -1,6 +1,9 @@
+#[cfg(feature = "std")]
 use assert_matches::assert_matches;
 
-use super::{AccountFile, AccountFileError};
+use super::AccountFile;
+#[cfg(feature = "std")]
+use super::AccountFileError;
 use crate::decoded::account::test_utils::{auth_secret_keys, mock_account};
 
 fn account_file() -> AccountFile {

@@ -1,6 +1,9 @@
+#[cfg(feature = "std")]
 use assert_matches::assert_matches;
 
-use super::{NoteFile, NoteFileError};
+use super::NoteFile;
+#[cfg(feature = "std")]
+use super::NoteFileError;
 use crate::decoded::note_file::test_utils::note_files;
 
 #[test]
