@@ -1575,8 +1575,8 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     # => [pad(16)]
 end
 
-#! Permanently prevents changes to the specified output note's assets and attachments.
-#! Sealing an already sealed note has no effect.
+#! Prevents further changes to the specified output note's assets and attachments.
+#! Sealing is idempotent.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [pad(16)]

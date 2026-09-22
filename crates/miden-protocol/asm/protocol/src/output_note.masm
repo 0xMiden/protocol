@@ -57,10 +57,10 @@ pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> 
     # => [note_idx]
 end
 
-#! Permanently prevents changes to an output note's assets and attachments.
+#! Prevents further changes to an output note's assets and attachments.
 #!
-#! Call this after fully populating an output whose final NoteId must remain fixed. Sealing is
-#! transaction-local and does not change the note's contents or ID. Repeated sealing has no effect.
+#! Call this after fully populating an output whose final NoteId must remain fixed.
+#! Sealing is idempotent.
 #! Callers must verify any required contents after asset callbacks and before sealing.
 #!
 #! Inputs:  [note_index]

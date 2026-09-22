@@ -354,7 +354,7 @@ const OUTPUT_NOTE_ATTACHMENT_3_OFFSET = 28
 const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 32
 const OUTPUT_NOTE_ASSETS_OFFSET = 36
 
-# Sealing is transaction-local state, stored after the maximum-sized asset array.
+# The output note sealed flag is stored immediately after the space reserved for assets in memory.
 const OUTPUT_NOTE_SEALED_FLAG_OFFSET = OUTPUT_NOTE_ASSETS_OFFSET + MAX_ASSETS_PER_NOTE * WORD_NUM_ELEMENTS * 2
 
 # LINK MAP MEMORY
@@ -2156,7 +2156,7 @@ pub proc get_output_note_sealed_flag(output_note_data_ptr: ptr<OutputNoteData>) 
     add.OUTPUT_NOTE_SEALED_FLAG_OFFSET mem_load
 end
 
-#! Permanently seals an output note for the remainder of the transaction.
+#! Seals an output note for the remainder of the transaction.
 #!
 #! Inputs:  [output_note_data_ptr]
 #! Outputs: []
