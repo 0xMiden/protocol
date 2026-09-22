@@ -22,6 +22,7 @@ message TransactionHeader {
   primitives.Word final_state_commitment = 4;
   repeated InputNoteCommitment input_notes = 5;
   repeated note.NoteHeader output_notes = 6;
+  primitives.Word logs_commitment = 7;
 }
 
 message PublicOutputNote {
@@ -68,6 +69,8 @@ message ProvenTransaction {
   primitives.Word reference_block_commitment = 5;
   blockchain.BlockNumber expiration_block_num = 6;
   primitives.ExecutionProof proof = 7;
+  // Canonical bounded TransactionLogData encoding. Private data contains only a commitment.
+  bytes log_data = 8;
 }
 
 message TransactionScript {
@@ -86,4 +89,6 @@ message TransactionArgs {
   repeated NoteArgument note_args = 3;
   primitives.AdviceInputs advice_inputs = 4;
   primitives.Word auth_args = 5;
+  // Private witness data. Do not include this in a submitted transaction.
+  primitives.Word log_salt = 6;
 }

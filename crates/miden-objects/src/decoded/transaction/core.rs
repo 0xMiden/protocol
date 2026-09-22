@@ -35,7 +35,7 @@ impl BuildUnchecked for TransactionHeader {
             self.final_state_commitment,
             input_notes,
             output_notes,
-            miden_protocol::Word::empty(),
+            self.logs_commitment,
         )?;
         if header.id() != transmitted {
             return Err(TransactionHeaderBuildError::IdMismatch {
@@ -90,6 +90,7 @@ impl crate::BuildUnchecked for ProvenTransaction {
             self.reference_block_commitment,
             unwrap_infallible(self.expiration_block_num.verify()),
             self.proof,
-        )?)
+        )?
+        .with_log_data(self.log_data.into_inner())?)
     }
 }
