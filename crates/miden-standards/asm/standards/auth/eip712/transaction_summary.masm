@@ -28,7 +28,7 @@ const ERR_EIP712_INVALID_SIGNATURE_LENGTH = "EIP-712 signature advice value must
 # local memory address for the public-key commitment
 const VERIFY_PUBLIC_KEY_COMMITMENT_LOC = 0
 
-# PUBLIC INTERFACE
+# PROCEDURES
 # =================================================================================================
 
 #! Computes the advice-map key for an EIP-712 transaction-summary signature.
