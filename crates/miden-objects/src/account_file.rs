@@ -12,9 +12,6 @@ use crate::{ConversionError, DecodeMessageExt, proto};
 #[cfg(test)]
 mod tests;
 
-/// The marker that starts every account file.
-const MAGIC: [u8; 4] = *b"acct";
-
 // ACCOUNT FILE
 // ================================================================================================
 
@@ -59,12 +56,9 @@ impl AccountFile {
     // SERIALIZATION
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the encoded file: MAGIC bytes, then the Protobuf message.
+    /// Returns the encoded file as a Protobuf message.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::from(MAGIC);
-        prost::Message::encode(&proto::account_file::AccountFile::from(self), &mut bytes)
-            .expect("a Vec never runs out of capacity");
-        bytes
+        prost::Message::encode_to_vec(&proto::account_file::AccountFile::from(self))
     }
 
     /// Decodes an [`AccountFile`] from the provided bytes.
@@ -74,16 +68,9 @@ impl AccountFile {
     ///
     /// # Errors
     ///
-    /// Returns an error if the bytes do not start with the MAGIC bytes, or if the message that
-    /// follows is not a valid account file.
+    /// Returns an error if the bytes are not a valid account file.
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, AccountFileError> {
-        let (magic, payload) =
-            bytes.split_at_checked(MAGIC.len()).ok_or(AccountFileError::InvalidMagic)?;
-        if magic != MAGIC {
-            return Err(AccountFileError::InvalidMagic);
-        }
-
-        <proto::account_file::AccountFile as prost::Message>::decode(payload)
+        <proto::account_file::AccountFile as prost::Message>::decode(bytes)
             .map_err(|error| AccountFileError::Decode(ConversionError::new(error)))?
             .decode_and_verify()
             .map_err(AccountFileError::Decode)
@@ -114,8 +101,6 @@ impl AccountFile {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AccountFileError {
-    #[error("invalid account file marker")]
-    InvalidMagic,
     #[error("failed to decode the account file")]
     Decode(#[source] ConversionError),
     #[cfg(feature = "std")]
