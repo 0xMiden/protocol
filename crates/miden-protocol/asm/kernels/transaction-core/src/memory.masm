@@ -354,6 +354,9 @@ const OUTPUT_NOTE_ATTACHMENT_3_OFFSET = 28
 const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 32
 const OUTPUT_NOTE_ASSETS_OFFSET = 36
 
+# Sealing is transaction-local state, stored after the maximum-sized asset array.
+const OUTPUT_NOTE_SEALED_FLAG_OFFSET = OUTPUT_NOTE_ASSETS_OFFSET + MAX_ASSETS_PER_NOTE * WORD_NUM_ELEMENTS * 2
+
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
 
@@ -2143,6 +2146,22 @@ end
 #! - dirty_flag is the flag indicating whether the assets commitment is outdated.
 pub proc set_output_note_dirty_flag(output_note_data_ptr: ptr<OutputNoteData>, dirty_flag: Bool)
     add.OUTPUT_NOTE_DIRTY_FLAG_OFFSET mem_store
+end
+
+#! Returns whether the output note has been sealed against further mutations.
+#!
+#! Inputs:  [output_note_data_ptr]
+#! Outputs: [sealed]
+pub proc get_output_note_sealed_flag(output_note_data_ptr: ptr<OutputNoteData>) -> Bool
+    add.OUTPUT_NOTE_SEALED_FLAG_OFFSET mem_load
+end
+
+#! Permanently seals an output note for the remainder of the transaction.
+#!
+#! Inputs:  [output_note_data_ptr]
+#! Outputs: []
+pub proc seal_output_note(output_note_data_ptr: ptr<OutputNoteData>)
+    push.1 swap add.OUTPUT_NOTE_SEALED_FLAG_OFFSET mem_store
 end
 
 #! Returns a pointer to the output note asset data.
