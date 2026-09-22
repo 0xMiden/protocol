@@ -535,6 +535,7 @@ impl PswapNote {
     ///
     /// Returns an error if:
     /// - Both assets are `None`.
+    /// - A fill asset does not match the order's requested faucet.
     /// - The fill amount is zero.
     /// - The combined fill amount overflows or exceeds the maximum fungible asset amount.
     pub fn execute(
@@ -558,6 +559,9 @@ impl PswapNote {
                 ));
             },
         };
+        if payback_asset.faucet_id() != self.storage.requested_faucet_id() {
+            return Err(NoteError::other("fill asset must match the order's requested faucet"));
+        }
         let fill_amount = payback_asset.amount().as_u64();
 
         let total_offered_amount = self.offered_asset.amount().as_u64();
@@ -1047,6 +1051,8 @@ impl NoteConsumptionCost for PswapNote {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
@@ -1308,6 +1314,32 @@ mod tests {
                 );
             } else {
                 assert!(remainder.is_none(), "full fill must complete the swap with no remainder");
+            }
+        }
+    }
+
+    #[test]
+    fn pswap_execute_rejects_wrong_fill_asset() {
+        let offered = FungibleAsset::new(dummy_faucet_id(0xaa), 100).unwrap();
+        let requested = FungibleAsset::new(dummy_faucet_id(0xbb), 50).unwrap();
+        let wrong_fill = FungibleAsset::new(dummy_faucet_id(0xcc), 10).unwrap();
+        let (mut pswap, _) = build_pswap_note(offered, requested, dummy_creator_id());
+        let private_recipient =
+            P2idNoteStorage::new(dummy_creator_id()).into_recipient(Word::empty());
+        for payback in [
+            public_payback(dummy_creator_id()),
+            PswapPayback::private(&private_recipient, NoteTag::new(0)).unwrap(),
+        ] {
+            pswap.storage.payback = payback;
+            for (account_fill, note_fill) in [
+                (Some(wrong_fill), None),
+                (None, Some(wrong_fill)),
+                (Some(wrong_fill), Some(wrong_fill)),
+            ] {
+                let err = pswap.execute(dummy_consumer_id(), account_fill, note_fill).unwrap_err();
+                assert!(
+                    err.to_string().contains("fill asset must match the order's requested faucet")
+                );
             }
         }
     }
