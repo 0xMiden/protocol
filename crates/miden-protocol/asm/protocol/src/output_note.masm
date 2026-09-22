@@ -72,15 +72,16 @@ end
 #!
 #! Invocation: exec
 pub proc seal(note_index: u16)
-    push.0.0 movup.2
-    push.OUTPUT_NOTE_SEAL_OFFSET
-    padw swapw padw padw swapdw
+    # Pad above the caller's remaining stack before bringing the note index to the top.
+    padw padw padw push.0.0
+    movup.14 push.OUTPUT_NOTE_SEAL_OFFSET
     # => [offset, note_index, pad(14)]
 
     syscall.exec_kernel_proc
     # => [pad(16)]
 
     dropw dropw dropw dropw
+    # => []
 end
 
 #! Returns the information about assets in the output note with the specified index.

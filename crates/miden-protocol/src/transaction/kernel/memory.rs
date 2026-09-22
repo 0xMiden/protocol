@@ -522,7 +522,7 @@ pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 32;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
 /// Transaction-local sealing flag, after the maximum-sized asset array.
 pub const OUTPUT_NOTE_SEALED_FLAG_OFFSET: MemoryOffset =
-    OUTPUT_NOTE_ASSETS_OFFSET + crate::MAX_ASSETS_PER_NOTE as MemoryOffset * ASSET_SIZE;
+    OUTPUT_NOTE_ASSETS_OFFSET + (crate::MAX_ASSETS_PER_NOTE * WORD_SIZE * 2) as MemoryOffset;
 
 // ASSETS
 // ------------------------------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note. Sealing is optional and does not change note contents or IDs; the kernel commitment changes.
+- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note.
 
 ## v0.17.0-rc.6 (2026-09-22)
 

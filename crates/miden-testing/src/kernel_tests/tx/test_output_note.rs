@@ -82,11 +82,8 @@ use crate::{
 };
 
 /// Recomputing an output note's ID in MASM must match `Note::id()` in Rust.
-#[rstest]
-#[case::unsealed(false)]
-#[case::sealed(true)]
 #[tokio::test]
-async fn compute_note_id_matches_rust(#[case] seal: bool) -> anyhow::Result<()> {
+async fn compute_note_id_matches_rust() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(150);
     let account = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [asset])?;
@@ -110,7 +107,6 @@ async fn compute_note_id_matches_rust(#[case] seal: bool) -> anyhow::Result<()> 
 
         @transaction_script
         pub proc main
-            {seal_note}
             push.0
             exec.output_note::compute_note_id
             # => [NOTE_ID]
@@ -120,11 +116,6 @@ async fn compute_note_id_matches_rust(#[case] seal: bool) -> anyhow::Result<()> 
         end
         "#,
         EXPECTED_NOTE_ID = expected_note.id().as_word(),
-        seal_note = if seal {
-            "push.0 exec.output_note::seal push.0 exec.output_note::seal"
-        } else {
-            ""
-        },
     );
     let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?;
 
@@ -2201,9 +2192,12 @@ async fn test_private_output_sealed_by_note_script(#[case] mutation: &str) -> an
     let account =
         builder.add_existing_wallet_with_assets(Auth::IncrNonce, [FungibleAsset::mock(20)])?;
     let asset = FungibleAsset::mock(10);
+    let attachment_word = Word::from([3, 4, 5, 6u32]);
+    let attachment_scheme = NoteAttachmentScheme::new(10)?;
     let expected_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::empty()))
         .note_type(NoteType::Private)
         .add_assets([asset])
+        .attachment(NoteAttachment::with_word(attachment_scheme, attachment_word))
         .build()?;
     let input_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::empty()))
         .dynamically_linked_packages(CodeBuilder::mock_packages())
@@ -2212,10 +2206,17 @@ async fn test_private_output_sealed_by_note_script(#[case] mutation: &str) -> an
             @note_script
             pub proc main
                 {}
+                dup push.{attachment_word} push.{attachment_scheme}
+                exec.output_note::add_word_attachment
+                # Keep a nonzero word below the index to check stack preservation and idempotence.
+                push.91.92.93.94 movup.4
+                dup exec.output_note::seal
                 exec.output_note::seal
+                push.91.92.93.94 assert_eqw
                 exec.::miden::core::sys::truncate_stack
             end",
             create_output_note(&expected_note),
+            attachment_scheme = attachment_scheme.as_u16(),
         ))
         .build()?;
     builder.add_output_note(RawOutputNote::Full(input_note.clone()));
@@ -2227,12 +2228,13 @@ async fn test_private_output_sealed_by_note_script(#[case] mutation: &str) -> an
         "use miden::protocol::output_note
         @transaction_script
         pub proc main
-            # Resealing preserves data below the argument and must not unseal the output.
-            push.91.92.93.94 push.0 exec.output_note::seal
-            push.91.92.93.94 assert_eqw
+            # Reading the commitment must preserve the seal established by the note script.
+            push.0 exec.output_note::compute_note_id
+            push.{expected_note_id} assert_eqw
             {mutation_code}
             exec.::miden::core::sys::truncate_stack
         end",
+        expected_note_id = expected_note.id().as_word(),
     ))?;
     let result = chain
         .build_transaction(account.id())
