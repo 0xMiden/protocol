@@ -104,6 +104,9 @@ impl NoteFile {
 
     /// Decodes a [`NoteFile`] from the provided bytes.
     ///
+    /// The encoded note carries its script, whose size is unbounded. A caller that decodes
+    /// untrusted bytes must cap their length first.
+    ///
     /// # Errors
     ///
     /// Returns an error if the bytes do not start with the MAGIC bytes, or if the message that
