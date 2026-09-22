@@ -1,5 +1,5 @@
 use assert_matches::assert_matches;
-use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{AssetVault, FungibleAsset, NonFungibleAsset};
 use prost::Message;
 
 use crate::{DecodeMessage, Verify, proto};
@@ -34,4 +34,15 @@ fn non_fungible_asset_roundtrips_through_structured_protobuf() {
     );
     let encoded = proto::asset::Asset::decode(encoded.encode_to_vec().as_slice()).unwrap();
     assert_eq!(encoded.decode_fields().unwrap().verify().unwrap(), asset);
+}
+
+#[test]
+fn asset_vault_roundtrips_through_protobuf() {
+    let vault = AssetVault::mock();
+
+    let encoded = proto::asset::AssetVault::from(&vault);
+    assert_eq!(encoded.assets.len(), vault.num_assets());
+
+    let encoded = proto::asset::AssetVault::decode(encoded.encode_to_vec().as_slice()).unwrap();
+    assert_eq!(encoded.decode_fields().unwrap().verify().unwrap(), vault);
 }

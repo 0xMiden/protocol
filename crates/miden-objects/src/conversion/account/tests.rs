@@ -1,4 +1,5 @@
 use alloc::vec;
+use alloc::vec::Vec;
 
 use miden_protocol::account::{
     AccountCode,
@@ -10,6 +11,7 @@ use miden_protocol::account::{
     StorageMap,
     StorageMapKey,
     StorageSlot,
+    StorageSlotContent,
     StorageSlotHeader,
     StorageSlotId,
     StorageSlotName,
@@ -24,6 +26,8 @@ use prost::Message;
 use crate::decoded::account::test_utils::{
     account_header,
     dummy_account_id,
+    mock_account,
+    mock_new_account,
     partial_account,
     private_account_id,
 };
@@ -174,4 +178,53 @@ fn partial_account_encoding_canonicalizes_map_like_fields() {
     let keys = &message.storage.unwrap().maps[0].keys;
 
     assert_eq!(keys, &vec![Word::from(key_a).into(), Word::from(key_b).into()]);
+}
+
+#[test]
+fn account_roundtrips_through_protobuf() {
+    let account = mock_account();
+
+    let encoded = proto::account::Account::from(&account);
+    assert_eq!(encoded.version, proto::account::AccountVersion::V1 as i32);
+
+    let wire = proto::account::Account::decode(encoded.encode_to_vec().as_slice()).unwrap();
+
+    assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), account);
+}
+
+#[test]
+fn account_storage_roundtrips_through_protobuf() {
+    let storage = AccountStorage::mock();
+    // The mock storage covers both slot contents, which are encoded through different oneof arms.
+    let contents: Vec<_> = storage.slots().iter().map(StorageSlot::content).collect();
+    assert!(contents.iter().any(|content| matches!(content, StorageSlotContent::Value(_))));
+    assert!(contents.iter().any(|content| matches!(content, StorageSlotContent::Map(_))));
+
+    let encoded = proto::account::AccountStorage::from(&storage);
+    let wire = proto::account::AccountStorage::decode(encoded.encode_to_vec().as_slice()).unwrap();
+
+    assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), storage);
+}
+
+#[test]
+fn storage_map_roundtrips_through_protobuf() {
+    let map = AccountStorage::mock_map();
+
+    let encoded = proto::account::StorageMap::from(&map);
+    assert_eq!(encoded.entries.len(), map.num_entries());
+
+    let wire = proto::account::StorageMap::decode(encoded.encode_to_vec().as_slice()).unwrap();
+    assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), map);
+}
+
+#[test]
+fn new_account_roundtrips_through_protobuf_with_its_seed() {
+    let account = mock_new_account();
+    assert!(account.is_new());
+
+    let encoded = proto::account::Account::from(&account);
+    assert!(encoded.seed.is_some(), "a new account must carry its seed");
+
+    let wire = proto::account::Account::decode(encoded.encode_to_vec().as_slice()).unwrap();
+    assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), account);
 }

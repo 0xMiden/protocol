@@ -5,19 +5,25 @@ pub(crate) mod test_utils;
 
 mod core;
 pub use core::{
+    Account,
     AccountCode,
     AccountHeader,
     AccountHeaderError,
     AccountId,
     AccountIdV1,
+    AccountVersionError,
     AccountWitness,
 };
 
 mod storage;
 pub use storage::{
+    AccountStorage,
     AccountStorageHeader,
     AccountStorageHeaderStorageSlot,
+    StorageMap,
     StorageMapEntry,
+    StorageMapEntryError,
+    StorageSlot,
     StorageSlotId,
 };
 
