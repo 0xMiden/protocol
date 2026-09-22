@@ -2718,6 +2718,10 @@ dependencies = [
  "prost-build",
  "protox",
  "quote",
+ "rand 0.10.2",
+ "rand_chacha 0.10.0",
+ "rstest",
+ "tempfile",
  "thiserror",
 ]
 
@@ -2896,7 +2900,6 @@ dependencies = [
  "rstest",
  "semver 1.0.28",
  "serde",
- "tempfile",
  "thiserror",
  "toml",
 ]
