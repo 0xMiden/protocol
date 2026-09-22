@@ -448,100 +448,100 @@
     }
   },
   "consume PSWAP note (full fill, network account)": {
-    "prologue": 4138,
-    "notes_processing": 6836,
+    "prologue": 4128,
+    "notes_processing": 7491,
     "note_execution": {
-      "0x1c623bc2e36e1588edbcc090e7fc88fa00183e251dfced080586a8451b366679": 6794
+      "0x6fe3243c0edf5ed6efcce3915918fde9931d5eccb2b705cd532327dc30fbfe35": 7449
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 14795,
-      "auth_procedure": 10351
+      "total": 14718,
+      "auth_procedure": 10359
     },
     "trace": {
-      "core_rows": 25854,
-      "chiplets_rows": 11638,
-      "poseidon2_permutation_rows": 30880,
-      "range_rows": 1953,
+      "core_rows": 26422,
+      "chiplets_rows": 11823,
+      "poseidon2_permutation_rows": 31472,
+      "range_rows": 2019,
       "chiplets_shape": {
-        "hasher_rows": 8736,
+        "hasher_rows": 8880,
         "bitwise_rows": 1416,
-        "memory_rows": 1484,
+        "memory_rows": 1525,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (partial fill, network account)": {
-    "prologue": 4138,
-    "notes_processing": 9360,
+    "prologue": 4128,
+    "notes_processing": 10671,
     "note_execution": {
-      "0x1c623bc2e36e1588edbcc090e7fc88fa00183e251dfced080586a8451b366679": 9318
+      "0x6fe3243c0edf5ed6efcce3915918fde9931d5eccb2b705cd532327dc30fbfe35": 10629
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16212,
-      "auth_procedure": 10555
+      "total": 16050,
+      "auth_procedure": 10563
     },
     "trace": {
-      "core_rows": 29795,
-      "chiplets_rows": 13421,
-      "poseidon2_permutation_rows": 32736,
-      "range_rows": 2097,
+      "core_rows": 30934,
+      "chiplets_rows": 13781,
+      "poseidon2_permutation_rows": 33408,
+      "range_rows": 2131,
       "chiplets_shape": {
-        "hasher_rows": 9960,
+        "hasher_rows": 10240,
         "bitwise_rows": 1808,
-        "memory_rows": 1651,
+        "memory_rows": 1731,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (full fill, public payback, network account)": {
-    "prologue": 4129,
-    "notes_processing": 7546,
+    "prologue": 4119,
+    "notes_processing": 8201,
     "note_execution": {
-      "0x61fb055e1d569d1291a5a1c16d20961903bd97858e0fd5a7b0353a0c88349b51": 7504
+      "0x5a89df6f19d7a1da846b687902bbaab9c9ba4114742e900305eeff434827f234": 8159
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 14795,
-      "auth_procedure": 10351
+      "total": 14718,
+      "auth_procedure": 10359
     },
     "trace": {
-      "core_rows": 26555,
-      "chiplets_rows": 11832,
-      "poseidon2_permutation_rows": 31376,
-      "range_rows": 1993,
+      "core_rows": 27123,
+      "chiplets_rows": 12017,
+      "poseidon2_permutation_rows": 31968,
+      "range_rows": 2083,
       "chiplets_shape": {
-        "hasher_rows": 8880,
+        "hasher_rows": 9024,
         "bitwise_rows": 1448,
-        "memory_rows": 1502,
+        "memory_rows": 1543,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (partial fill, public payback, network account)": {
-    "prologue": 4129,
-    "notes_processing": 10063,
+    "prologue": 4119,
+    "notes_processing": 11374,
     "note_execution": {
-      "0x61fb055e1d569d1291a5a1c16d20961903bd97858e0fd5a7b0353a0c88349b51": 10021
+      "0x5a89df6f19d7a1da846b687902bbaab9c9ba4114742e900305eeff434827f234": 11332
     },
     "tx_script_processing": 41,
     "epilogue": {
-      "total": 16212,
-      "auth_procedure": 10555
+      "total": 16050,
+      "auth_procedure": 10563
     },
     "trace": {
-      "core_rows": 30489,
-      "chiplets_rows": 13613,
-      "poseidon2_permutation_rows": 33168,
-      "range_rows": 2153,
+      "core_rows": 31628,
+      "chiplets_rows": 13981,
+      "poseidon2_permutation_rows": 33840,
+      "range_rows": 2203,
       "chiplets_shape": {
-        "hasher_rows": 10104,
+        "hasher_rows": 10392,
         "bitwise_rows": 1840,
-        "memory_rows": 1667,
+        "memory_rows": 1747,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }
