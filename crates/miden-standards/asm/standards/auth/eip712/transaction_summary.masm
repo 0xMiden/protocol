@@ -167,7 +167,7 @@ end
 #!
 #! Invocation: exec
 @locals(4)
-proc verify(public_key_commitment: word, tx_summary_hash: word)
+pub proc verify(public_key_commitment: word, tx_summary_hash: word)
     loc_storew_le.VERIFY_PUBLIC_KEY_COMMITMENT_LOC dropw
     # => [TX_SUMMARY_HASH]
 
