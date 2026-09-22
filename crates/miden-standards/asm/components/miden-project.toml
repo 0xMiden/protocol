@@ -5,6 +5,8 @@ members = [
   "access/pausable",
   "access/pausable_manager",
   "access/rbac",
+  "access/scheduler",
+  "access/scheduler_manager",
   "auth/guarded_multisig",
   "auth/multisig",
   "auth/multisig_smart",
