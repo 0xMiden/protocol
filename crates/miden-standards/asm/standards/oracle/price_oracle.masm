@@ -49,7 +49,7 @@ pub const ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT = word("miden::standards::oracle::
 #! - the active rate provider aborts.
 #!
 #! Invocation: call
-@locals(4) # rate provider procedure root
+@locals(4)
 @account_procedure
 pub proc get_conversion_rate(source: AssetId, target: AssetId) -> (Bool, ConversionRate)
     push.ACTIVE_RATE_PROVIDER_PROC_ROOT_SLOT[0..2] exec.active_account::get_item

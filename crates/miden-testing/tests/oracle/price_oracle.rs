@@ -275,23 +275,8 @@ async fn swapping_the_rate_provider_keeps_the_interface_reachable() -> anyhow::R
         .await?;
 
     // swap the rate provider
-    let swap = CodeBuilder::default().compile_tx_script(format!(
-        r#"
-        use miden::core::sys
-        use miden::standards::oracle::price_oracle
-
-        @transaction_script
-        pub proc main
-            push.{next_root}
-            # => [RATE_PROVIDER_PROC_ROOT, ...]
-
-            call.price_oracle::set_rate_provider
-
-            exec.sys::truncate_stack
-        end
-        "#,
-        next_root = *next_root.mast_root(),
-    ))?;
+    let swap = CodeBuilder::default()
+        .compile_tx_script(set_rate_provider_tx_script_code(*next_root.mast_root()))?;
     let executed = mock_chain
         .build_transaction(oracle.id())
         .tx_script(swap)

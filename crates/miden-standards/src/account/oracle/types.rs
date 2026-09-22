@@ -53,17 +53,17 @@ impl ConversionRate {
     }
 
     /// Returns the rate an oracle reports for a pair it cannot price.
-    pub const fn unpriced() -> Self {
+    pub fn unpriced() -> Self {
         Self { num: Felt::ZERO, den: Felt::ZERO }
     }
 
     /// Returns the numerator of the rate.
-    pub const fn num(&self) -> Felt {
+    pub fn num(&self) -> Felt {
         self.num
     }
 
     /// Returns the denominator of the rate, which is zero exactly when the pair cannot be priced.
-    pub const fn den(&self) -> Felt {
+    pub fn den(&self) -> Felt {
         self.den
     }
 
