@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Added private PSWAP cancellation through a separate account, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+
 ### Changes
 
 - [BREAKING] Added fixed private P2ID recipients with secret serials to PSWAP, with updated private storage and Rust APIs. PSWAP now verifies and seals public and private paybacks and remainders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).

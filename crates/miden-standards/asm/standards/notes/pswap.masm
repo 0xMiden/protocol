@@ -22,8 +22,10 @@ const PRIVATE_NUM_STORAGE_ITEMS=10
 const PUBLIC_NUM_STORAGE_ITEMS=7
 const MAX_U32=0x0000000100000000
 
-# Only the fill action is supported. Public paybacks retain automatic creator reclaim.
+# Actions encoded in the note arguments. Public paybacks only accept ACTION_FILL, with
+# automatic reclaim when the original creator consumes the order.
 const ACTION_FILL = 0
+const ACTION_CANCEL = 1
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
 # Carries the word [amount, order_id, depth, 0]. Mirrors
@@ -61,7 +63,7 @@ const PSWAP_ATTACHMENT_NUM_WORDS = 1
 # - creator_id_suffix: The suffix of the original creator's AccountId (Felt)
 # - creator_id_prefix: The prefix of the original creator's AccountId (AccountIdPrefix as Felt)
 # - payback_recipient: Digest of the fixed private P2ID recipient (Word); its preimage is
-#   retained by the owner to reconstruct and consume paybacks
+#   retained by the owner and supplied privately for cancellation
 # - payback_tag: Explicit discovery tag for private payback notes (NoteTag as Felt, fits in u32)
 #
 # For public payback notes, the tag is derived at runtime from the creator's account ID
@@ -92,6 +94,9 @@ const P2ID_PREFIX_PTR = P2ID_STORAGE_PTR + 1
 const P2ID_SALT_0_PTR = P2ID_STORAGE_PTR + 2
 const P2ID_SALT_1_PTR = P2ID_STORAGE_PTR + 3
 const P2ID_NUM_STORAGE_ITEMS = 4
+
+# Domain separator for cancellation advice; ASCII "PSWAPCAN". Matches Rust.
+const CANCEL_ADVICE_DOMAIN = 0x505357415043414e
 
 # Local memory offsets
 # =================================================================================================
@@ -145,6 +150,8 @@ const ERR_PSWAP_INVALID_PAYBACK_TYPE="PSWAP payback type must be public or priva
 const ERR_PSWAP_INVALID_PAYBACK_TAG="PSWAP payback tag must fit in u32"
 const ERR_PSWAP_INVALID_ACCOUNT_ID="PSWAP account ID version is unsupported"
 const ERR_PSWAP_INVALID_ACTION="PSWAP note arguments contain an invalid action or reserved value"
+const ERR_PSWAP_INVALID_CANCEL_ADVICE="PSWAP cancellation requires a serial and complete P2ID storage"
+const ERR_PSWAP_INVALID_PAYBACK_OPENING="PSWAP cancellation opening does not match the payback recipient"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
@@ -640,6 +647,76 @@ proc create_remainder_note(
 
 end
 
+#! Verifies a private recipient opening independently of the executing account.
+#! Advice is the four-element serial followed by canonical P2ID storage (target ID and salt).
+#!
+#! Inputs: []
+#! Outputs: []
+proc authenticate_cancel()
+    push.0.0.0.CANCEL_ADVICE_DOMAIN
+    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
+    exec.poseidon2::merge
+    # => [CANCEL_ADVICE_KEY]
+
+    adv.push_mapvaln
+    adv_push
+    eq.8 assert.err=ERR_PSWAP_INVALID_CANCEL_ADVICE
+    dropw
+    # => []
+
+    padw adv_loadw
+    # => [SERIAL_NUM]
+
+    padw adv_loadw mem_storew_le.P2ID_STORAGE_PTR dropw
+    mem_load.P2ID_PREFIX_PTR mem_load.P2ID_STORAGE_PTR exec.validate_account_id
+    # => [SERIAL_NUM]
+
+    push.P2ID_NUM_STORAGE_ITEMS push.P2ID_STORAGE_PTR exec.note::compute_storage_commitment
+    # => [STORAGE_COMMITMENT, SERIAL_NUM]
+
+    procref.p2id::main
+    movupw.2
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    exec.note::compute_recipient
+    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
+    # => [EXPECTED_RECIPIENT, RECIPIENT]
+
+    assert_eqw.err=ERR_PSWAP_INVALID_PAYBACK_OPENING
+    # => []
+
+end
+
+#! Returns the full remaining order balance in a private P2ID to its committed recipient.
+#! The refund has no fill attachment. Fees must be funded separately.
+#!
+#! Inputs: []
+#! Outputs: []
+@locals(8)
+proc refund_private()
+    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
+    push.0 mem_load.PAYBACK_TAG_ITEM
+    # => [tag, private_type, RECIPIENT]
+
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    call.wallet::create_note
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [note_idx]
+
+    exec.load_offered_asset
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+
+    locaddr.0 exec.asset::store
+    dup locaddr.0 exec.asset::load
+    exec.output_note::add_asset
+    # => [note_idx]
+
+    push.0 locaddr.0 exec.asset::load
+    exec.seal_output_note
+    # => []
+
+end
+
 #! Loads the note's single offered asset, asserting it equals the amount the note was created with.
 #!
 #! Inputs: []
@@ -1007,20 +1084,26 @@ end
 # ACTION SELECTION
 # =================================================================================================
 
-#! Validates the note arguments and returns the two fill amounts.
-#! The reserved element must be zero, and only ACTION_FILL is supported.
+#! Validates the note arguments and returns the action followed by the two fill amounts.
+#! The reserved element must be zero, and the action must be ACTION_FILL or ACTION_CANCEL.
 #!
 #! Inputs: [account_fill, note_fill, action, reserved]
-#! Outputs: [account_fill, note_fill]
-proc parse_note_args(note_args: NoteArgs) -> (AssetAmount, AssetAmount)
+#! Outputs: [action, account_fill, note_fill]
+proc parse_note_args(note_args: NoteArgs) -> (u32, AssetAmount, AssetAmount)
     movup.3
     # => [reserved, account_fill, note_fill, action]
 
     eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
     # => [account_fill, note_fill, action]
 
-    movup.2 eq.ACTION_FILL assert.err=ERR_PSWAP_INVALID_ACTION
-    # => [account_fill, note_fill]
+    movup.2
+    # => [action, account_fill, note_fill]
+
+    dup eq.ACTION_FILL dup.1 eq.ACTION_CANCEL or
+    # => [is_valid_action, action, account_fill, note_fill]
+
+    assert.err=ERR_PSWAP_INVALID_ACTION
+    # => [action, account_fill, note_fill]
 
 end
 
@@ -1037,25 +1120,31 @@ end
 #! Partially-fillable swap with public creator paybacks or fixed private P2ID paybacks.
 #!
 #! NOTE_ARGS in Rust element order are [account_fill, note_fill, action, reserved].
-#! Only action 0 (fill) is supported, and the reserved element must be zero. Orders with public
-#! paybacks retain automatic creator-account reclaim. All-zero fill amounts select a full fill
-#! for other callers. Orders with private paybacks can be filled but do not support cancellation.
+#! Action 0 fills; orders with public paybacks retain automatic creator-account reclaim.
+#! All-zero amounts select a full fill for other callers. Action 1 cancels orders with private
+#! paybacks using a secret P2ID opening and refunds the full remaining balance to that recipient.
+#! The reserved element is zero. Private cancellation requires zero fill amounts.
 #!
 #! Filling requires basic-wallet create_note, move_asset_to_note and receive_asset procedures.
-#! Public reclaim requires receive_asset. Consumers: any compatible account may fill.
+#! Private cancellation requires create_note; public reclaim requires receive_asset.
+#! Consumers: any compatible account may fill or prove a private cancellation opening.
 @note_script
 pub proc main(note_args: NoteArgs)
     exec.parse_note_args
-    # => [account_fill, note_fill]
+    # => [action, account_fill, note_fill]
 
     exec.load_storage
-    # => [account_fill, note_fill]
+    # => [action, account_fill, note_fill]
 
     mem_load.PAYBACK_NOTE_TYPE_ITEM
-    # => [payback_note_type, account_fill, note_fill]
+    # => [payback_note_type, action, account_fill, note_fill]
 
     if.true
-        # The original creator reclaims public-payback orders; other accounts fill them.
+        # Public paybacks only accept the fill action. The original creator reclaims the
+        # order; other accounts fill it.
+        eq.ACTION_FILL assert.err=ERR_PSWAP_INVALID_ACTION
+        # => [account_fill, note_fill]
+
         exec.active_account::get_id
         mem_load.PUBLIC_CREATOR_SUFFIX_ITEM eq
         swap mem_load.PUBLIC_CREATOR_PREFIX_ITEM eq and
@@ -1068,6 +1157,20 @@ pub proc main(note_args: NoteArgs)
             exec.fill
         end
     else
-        exec.fill
+        eq.ACTION_CANCEL
+        # => [is_cancel, account_fill, note_fill]
+
+        if.true
+            # Cancellation refunds the entire remainder and requires both fill amounts to be zero.
+            eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
+            eq.0 assert.err=ERR_PSWAP_INVALID_ACTION
+            # => []
+
+            exec.prepare_payback
+            exec.authenticate_cancel
+            exec.refund_private
+        else
+            exec.fill
+        end
     end
 end

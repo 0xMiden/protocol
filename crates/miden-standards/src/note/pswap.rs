@@ -23,7 +23,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, ONE, Word, ZERO};
+use miden_protocol::{Felt, Hasher, ONE, Word, ZERO};
 
 use crate::StandardsLib;
 use crate::note::costs::{NoteConsumptionCost, PSWAP_CONSUMPTION_CYCLES};
@@ -334,9 +334,11 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// is re-created as a remainder note with an updated serial number. Every fill sends a P2ID
 /// payback to the original creator (public paybacks) or a fixed private recipient. Orders with
 /// public paybacks are reclaimed when the stored creator account consumes them. Orders with
-/// private paybacks can be filled but do not yet support cancellation.
-/// Payback and remainder outputs are verified and sealed before the script returns, regardless of
-/// their visibility. Later asset or attachment additions fail the transaction.
+/// private paybacks can be cancelled by any compatible account using [`Self::create_cancel_args`]
+/// and [`Self::cancellation_advice`]; all remaining assets are returned in a private P2ID to the
+/// committed recipient.
+/// Payback, remainder, and refund outputs are verified and sealed before the script returns,
+/// regardless of their visibility. Later asset or attachment additions fail the transaction.
 ///
 /// # Private paybacks
 ///
@@ -344,6 +346,11 @@ impl TryFrom<&NoteAttachment> for PswapNoteAttachment {
 /// [`Self::payback_note`]. Use an independent random serial and a discovery tag that does not
 /// encode the target account. Consume reconstructed private paybacks with inclusion proofs;
 /// unauthenticated consumption exposes their headers and links them to the consuming account.
+/// To avoid linking cancellation to the target, execute and prove locally through a public
+/// no-auth account. Fund its fee separately, for example with a private funding note consumed with
+/// an inclusion proof in the same transaction. The refund contains the full remaining order
+/// balance. Fee estimation and private fee change are client responsibilities. This design does
+/// not hide private data from parties given the full execution witness, including remote provers.
 ///
 /// The note can be consumed both in local transactions (where the consumer provides
 /// fill amounts via note_args) and in network transactions (where note_args default to
@@ -400,6 +407,10 @@ impl PswapNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
+    /// Domain separator for cancellation advice; ASCII "PSWAPCAN".
+    const CANCEL_ADVICE_DOMAIN: Word =
+        Word::new([Felt::new_unchecked(0x505357415043414e), ZERO, ZERO, ZERO]);
+
     /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
     /// remainder PSWAP).
     pub const PSWAP_ATTACHMENT_SCHEME: NoteAttachmentScheme =
@@ -449,6 +460,59 @@ impl PswapNote {
         let note_fill = Felt::try_from(note_fill)
             .map_err(|e| NoteError::other_with_source("note_fill is not a valid felt", e))?;
         Ok(Word::from([account_fill, note_fill, ZERO, ZERO]))
+    }
+
+    /// Selects cancellation for orders with private paybacks.
+    /// Orders with public paybacks retain creator-account reclaim.
+    pub fn create_cancel_args() -> Word {
+        Word::new([ZERO, ZERO, ONE, ZERO])
+    }
+
+    /// Returns cancellation advice for a private-payback order: the four-element serial followed
+    /// by the complete P2ID storage (target account ID and two salt elements, including zero salt).
+    ///
+    /// Knowledge of this opening authorizes cancellation through any compatible account, but
+    /// the refund is forced to the committed recipient. Keep it secret and prove locally.
+    /// Public-payback orders instead use the existing creator-account reclaim path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for public paybacks or an opening that does not match the order's P2ID
+    /// recipient.
+    pub fn cancellation_advice(
+        &self,
+        recipient: &NoteRecipient,
+    ) -> Result<(Word, Vec<Felt>), NoteError> {
+        self.validate_private_payback_recipient(recipient)?;
+        let key = Hasher::merge(&[recipient.digest(), Self::CANCEL_ADVICE_DOMAIN]);
+        let mut values = recipient.serial_num().as_elements().to_vec();
+        values.extend_from_slice(recipient.storage().items());
+        Ok((key, values))
+    }
+
+    /// Reconstructs the private cancellation refund of this unspent PSWAP or remainder.
+    ///
+    /// The refund contains the full offered asset, uses the order's private recipient/tag, and
+    /// has no fill attachment. The sender is the account executing cancellation. Verify its ID
+    /// against the actual output and consume it with an inclusion proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for public paybacks or an opening that does not match the order's P2ID
+    /// recipient.
+    pub fn refund_note(
+        &self,
+        cancelling_account_id: AccountId,
+        recipient: &NoteRecipient,
+    ) -> Result<Note, NoteError> {
+        self.validate_private_payback_recipient(recipient)?;
+        Ok(Note::with_attachments(
+            NoteAssets::new(vec![self.offered_asset.into()])?,
+            PartialNoteMetadata::new(cancelling_account_id, NoteType::Private)
+                .with_tag(self.storage.payback_note_tag()),
+            recipient.clone(),
+            NoteAttachments::default(),
+        ))
     }
 
     /// Returns the account ID of the note sender.
