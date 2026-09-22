@@ -1,0 +1,14 @@
+{
+  "changed_tx_summary_hash": "0x0100000000000000000000000000000000000000000000000000000000000000",
+  "different_public_key": "0x02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+  "digest": "0xf9a8d508052b86648521d4e701982acc3c038334ba5d55ca7f83cce48026955a",
+  "domain_name": "Miden Transaction",
+  "domain_separator": "0xd2993b317206dc17b9597000084882924311d236aaa8fccd54d6ce4faacec6b7",
+  "domain_version": "1",
+  "public_key": "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+  "signature_r": "0x07a637fee34810dd5dab31c5bfd3590d8be7fbcf71b4dd6c6fb05479b839ab08",
+  "signature_s": "0x1748b52e46bab91eda8a692fd52d2f157b0ae723c91aa9d2448e6dd2c9dc3b7b",
+  "signature_v": 28,
+  "struct_hash": "0xc48aba1228069580470fa3dc1f91b1ec2a97413e59c6a343aa755cbaf662257b",
+  "tx_summary_hash": "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}

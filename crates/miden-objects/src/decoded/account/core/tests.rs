@@ -8,7 +8,7 @@ use miden_protocol::errors::AccountIdError;
 use miden_protocol::{Felt, Word};
 use prost::Message;
 
-use crate::decoded::account::test_utils::{account_header, private_account_id};
+use crate::decoded::account::test_utils::{account_header, mock_account, private_account_id};
 use crate::decoded::primitives::test_utils::corrupt_node_hash;
 use crate::test_utils::error_source;
 use crate::{ConversionError, DecodeMessage, Verify, proto};
@@ -206,4 +206,34 @@ fn account_code_validates_its_forest() {
         error_source::<MastForestError>(&wire.decode_fields().unwrap().verify().unwrap_err()),
         Some(MastForestError::HashMismatch { .. })
     ));
+}
+
+#[test]
+fn account_rejects_a_seed_on_an_existing_account() {
+    let account = mock_account();
+    assert!(!account.is_new());
+    let wire = proto::account::Account {
+        seed: Some(Word::empty().into()),
+        ..proto::account::Account::from(&account)
+    };
+
+    let error = wire.decode_fields().unwrap().verify().unwrap_err();
+
+    assert_matches!(
+        error_source::<miden_protocol::errors::AccountError>(&error),
+        Some(miden_protocol::errors::AccountError::ExistingAccountWithSeed)
+    );
+}
+
+#[test]
+fn account_protobuf_rejects_unspecified_version_after_decoding() {
+    let wire = proto::account::Account {
+        version: proto::account::AccountVersion::Unspecified as i32,
+        ..proto::account::Account::from(&mock_account())
+    };
+
+    let decoded = wire.decode_fields().unwrap();
+
+    assert_eq!(decoded.version, proto::account::AccountVersion::Unspecified);
+    assert_eq!(decoded.verify().unwrap_err().to_string(), "account version is unspecified");
 }

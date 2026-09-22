@@ -83,9 +83,6 @@ pub use storage::{
 mod header;
 pub use header::AccountHeader;
 
-mod file;
-pub use file::AccountFile;
-
 mod partial;
 pub use partial::PartialAccount;
 

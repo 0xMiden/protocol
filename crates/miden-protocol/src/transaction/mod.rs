@@ -3,6 +3,7 @@ use super::note::{NoteId, Nullifier};
 use super::vm::AdviceInputs;
 use super::{Felt, Hasher, WORD_SIZE, Word, ZERO};
 
+mod effects;
 mod executed_tx;
 mod fee;
 mod inputs;
@@ -18,6 +19,7 @@ mod tx_header;
 mod tx_summary;
 mod verifier;
 
+pub use effects::TransactionEffects;
 pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};
 pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
