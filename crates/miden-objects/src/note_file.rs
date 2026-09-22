@@ -12,9 +12,6 @@ use crate::{ConversionError, DecodeMessageExt, proto};
 #[cfg(test)]
 mod tests;
 
-/// The marker that starts every note file.
-const MAGIC: [u8; 4] = *b"note";
-
 // NOTE SYNC HINT
 // ================================================================================================
 
@@ -94,28 +91,21 @@ impl NoteFile {
     // SERIALIZATION
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the encoded file: the MAGIC bytes then the Protobuf message.
+    /// Returns the encoded file as a Protobuf message.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::from(MAGIC);
-        prost::Message::encode(&proto::note_file::NoteFile::from(self), &mut bytes)
-            .expect("a Vec never runs out of capacity");
-        bytes
+        prost::Message::encode_to_vec(&proto::note_file::NoteFile::from(self))
     }
 
     /// Decodes a [`NoteFile`] from the provided bytes.
     ///
+    /// The encoded note carries its script, whose size is unbounded. A caller that decodes
+    /// untrusted bytes must cap their length first.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the bytes do not start with the MAGIC bytes, or if the message that
-    /// follows is not a valid note file.
+    /// Returns an error if the bytes are not a valid note file.
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, NoteFileError> {
-        let (magic, payload) =
-            bytes.split_at_checked(MAGIC.len()).ok_or(NoteFileError::InvalidMagic)?;
-        if magic != MAGIC {
-            return Err(NoteFileError::InvalidMagic);
-        }
-
-        <proto::note_file::NoteFile as prost::Message>::decode(payload)
+        <proto::note_file::NoteFile as prost::Message>::decode(bytes)
             .map_err(|error| NoteFileError::Decode(ConversionError::new(error)))?
             .decode_and_verify()
             .map_err(NoteFileError::Decode)
@@ -162,8 +152,6 @@ impl From<NoteId> for NoteFile {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum NoteFileError {
-    #[error("invalid note file marker")]
-    InvalidMagic,
     #[error("failed to decode the note file")]
     Decode(#[source] ConversionError),
     #[cfg(feature = "std")]

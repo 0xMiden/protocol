@@ -138,11 +138,16 @@ impl From<&Note> for proto::note::Note {
 
 impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
-        let (assets, metadata, recipient, attachments) = note.into_parts();
+        Self::from(&note)
+    }
+}
+
+impl From<&Note> for proto::note::Note {
+    fn from(note: &Note) -> Self {
         Self {
-            metadata: Some(metadata.into_partial_metadata().into()),
-            note_details: Some(NoteDetails::new(assets, recipient).into()),
-            note_attachments: Some(attachments.into()),
+            metadata: Some((*note.metadata().partial_metadata()).into()),
+            note_details: Some(note.details().into()),
+            note_attachments: Some(note.attachments().into()),
         }
     }
 }

@@ -81,6 +81,7 @@ impl_verification_error_from!(
     super::note::NoteMetadataError,
     super::note_file::CommittedNoteError,
     super::primitives::AdviceError,
+    super::primitives::PartialMmrError,
     super::primitives::PartialSmtError,
     super::transaction::ForeignAccountSlotNameError,
     super::transaction::InputNoteError,
