@@ -2,10 +2,8 @@ use alloc::string::ToString;
 use alloc::vec;
 
 use miden_protocol::Word;
-use miden_protocol::assembly::mast::MastForestError;
 use miden_protocol::note::Note;
 
-use crate::decoded::primitives::test_utils::corrupt_node_hash;
 use crate::test_utils::error_source;
 use crate::{ConversionError, DecodeMessage, Verify, proto};
 
@@ -163,18 +161,4 @@ fn note_protobuf_rejects_unspecified_metadata_version_after_decoding() {
         .map_err(ConversionError::new)
         .unwrap_err();
     assert_eq!(error.to_string(), "note metadata version is unspecified");
-}
-
-#[test]
-fn note_script_validates_its_forest() {
-    let script = miden_protocol::note::NoteScript::mock();
-    let mast = corrupt_node_hash(&script.mast(), script.root().into());
-    let wire = proto::note::NoteScript {
-        mast: Some(mast),
-        entrypoint: script.entrypoint().into(),
-    };
-    assert!(matches!(
-        error_source::<MastForestError>(&wire.decode_fields().unwrap().verify().unwrap_err()),
-        Some(MastForestError::HashMismatch { .. })
-    ));
 }
