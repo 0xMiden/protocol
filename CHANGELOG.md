@@ -8,7 +8,7 @@
 
 ### Fixes
 
-- PSWAP verifies and seals its payback and remainder outputs to reject asset and attachment mutations. This changes the PSWAP script root; existing notes retain their original script.
+- Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
 
 ## v0.17.0-rc.6 (2026-09-22)
 

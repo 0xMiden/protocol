@@ -149,6 +149,9 @@ fn assert_output_note(output_notes: &RawOutputNotes, expected: &Note) {
 // ================================================================================================
 
 /// A filler cannot append a different asset or increase the balance after PSWAP creates an output.
+/// The order offers 50 USDC for 25 ETH: filling 25 completes it, while filling 10 leaves a
+/// remainder. Output 0 is the payback; output 1 is the remainder. The filler has spare assets for
+/// either attack.
 #[rstest]
 #[case::full_payback(25, 0)]
 #[case::partial_payback(10, 0)]
@@ -219,7 +222,10 @@ async fn pswap_rejects_later_asset_addition(
     Ok(())
 }
 
-/// Sealing must follow content validation because issuer callbacks run while the output is mutable.
+/// Asset callbacks must not alter the payback or remainder before it is sealed.
+/// The filler is also the asset issuer, so its callback runs with the native account active and can
+/// mutate outputs. Exercise the requested asset's callback for paybacks and the offered asset's
+/// callback for remainders; the unchanged case verifies that ordinary callbacks still succeed.
 #[rstest]
 #[case::unchanged(OutputMutation::None)]
 #[case::extra_asset(OutputMutation::ExtraAsset)]

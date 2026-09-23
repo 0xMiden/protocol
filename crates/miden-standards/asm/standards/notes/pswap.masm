@@ -7,6 +7,7 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
+use {ASSET_SIZE} from miden::protocol::asset
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
@@ -234,17 +235,17 @@ proc min(a: felt, b: felt) -> felt
     # => [min(a, b)]
 end
 
-# P2ID NOTE CREATION PROCEDURE
+# OUTPUT NOTE VALIDATION AND SEALING
 # =================================================================================================
 
-#! Verifies the completed output after asset callbacks, then seals it.
-#! The expected attachment is already present and append-only; checking the packed schemes rejects
-#! any extra attachments. The output must contain exactly the expected asset and amount.
+#! Checks that the completed output contains exactly the expected asset and PSWAP attachment, then
+#! seals it. Call after asset callbacks finish. The expected attachment is already present and
+#! append-only, so checking the packed schemes rejects any extra attachments.
 #!
-#! Inputs: [ASSET_ID, ASSET_VALUE, note_idx]
+#! Inputs: [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 #! Outputs: []
 @locals(8)
-proc seal_output_note(asset: Asset, note_idx: u16)
+proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
     locaddr.0 exec.asset::store
     # => [note_idx]
 
@@ -258,13 +259,16 @@ proc seal_output_note(asset: Asset, note_idx: u16)
     movup.4 eq.1 assert.err=ERR_PSWAP_OUTPUT_ALTERED
     # => [ASSETS_COMMITMENT, note_idx]
 
-    locaddr.0 add.8 locaddr.0 exec.poseidon2::hash_double_words
+    locaddr.0 add.ASSET_SIZE locaddr.0 exec.poseidon2::hash_double_words
     # => [EXPECTED_ASSETS_COMMITMENT, ASSETS_COMMITMENT, note_idx]
 
     assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
     exec.output_note::seal
     # => []
 end
+
+# P2ID NOTE CREATION PROCEDURE
+# =================================================================================================
 
 #! Creates a P2ID output note for the swap creator.
 #!
@@ -388,7 +392,7 @@ proc create_p2id_note(
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
     loc_load.P2ID_REQUESTED_FAUCET_PREFIX loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
     exec.fungible_asset::create
-    exec.seal_output_note
+    exec.validate_and_seal_output_note
     # => []
 end
 
@@ -508,7 +512,7 @@ proc create_remainder_note(
     loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
     loc_load.REMAINDER_OFFERED_FAUCET_PREFIX loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
     exec.fungible_asset::create
-    exec.seal_output_note
+    exec.validate_and_seal_output_note
     # => []
 end
 
