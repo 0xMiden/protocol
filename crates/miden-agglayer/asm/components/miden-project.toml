@@ -5,7 +5,7 @@ members = ["bridge"]
 version = "0.17.0"
 
 [workspace.dependencies]
-miden-agglayer  = { linkage = "static", version = "0.17.0" }
+miden-agglayer  = { linkage = "dynamic", version = "0.17.0" }
 miden-core      = { linkage = "dynamic", version = "0.33" }
 miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
 miden-standards = { linkage = "dynamic", version = "0.17.0" }
