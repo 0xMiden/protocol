@@ -75,6 +75,7 @@ pub const OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET = 43
 pub const OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET = 44
 pub const OUTPUT_NOTE_ADD_ASSET_OFFSET = 45
 pub const OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET = 46
+pub const OUTPUT_NOTE_SEAL_OFFSET = 61
 
 ### Tx ##########################################
 

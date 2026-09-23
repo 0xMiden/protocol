@@ -492,6 +492,10 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 48;
 // ┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
 // 36      40              36 + 8n  40 + 8n
 //
+// The output note sealed flag is stored at offset 164, immediately after the space reserved for assets.
+// It starts at zero. Once set to one, asset and attachment mutations are rejected; the flag is
+// excluded from note commitments and serialization.
+//
 // The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
 // note is outdated. It holds 1 if some changes were made to the note assets since the last
 // re-computation, and 0 otherwise.
@@ -516,6 +520,9 @@ pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 24;
 pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 28;
 pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 32;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
+/// Offset for the output note sealed flag, immediately after the space reserved for assets.
+pub const OUTPUT_NOTE_SEALED_FLAG_OFFSET: MemoryOffset =
+    OUTPUT_NOTE_ASSETS_OFFSET + (crate::MAX_ASSETS_PER_NOTE * WORD_SIZE * 2) as MemoryOffset;
 
 // ASSETS
 // ------------------------------------------------------------------------------------------------
