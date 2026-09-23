@@ -1912,11 +1912,16 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `native_account::get_initial_item` cannot be called against a foreign account: it is a
-/// native-account-only procedure, so invoking it from an FPI context must fail via
+/// Native-only procedures, including output note sealing, cannot be called from a foreign account.
+/// Invoking them from an FPI context must fail via
 /// `memory::assert_native_account` with `ERR_ACCOUNT_IS_NOT_NATIVE`.
+#[rstest::rstest]
+#[case::get_initial_item("push.MOCK_VALUE_SLOT0[0..2] exec.native_account::get_initial_item")]
+#[case::seal_output_note("push.0 exec.::miden::protocol::output_note::seal")]
 #[tokio::test]
-async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
+async fn native_only_procedure_fails_for_foreign_account(
+    #[case] native_call: &str,
+) -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(rand::random())
         .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
@@ -1925,7 +1930,7 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
 
     let mock_value_slot0 = AccountStorage::mock_value_slot0();
 
-    // Foreign procedure that attempts to call the native-only get_initial_item.
+    // Foreign procedure that attempts to call a native-only API.
     let foreign_account_code_source = format!(
         r#"
         use miden::protocol::native_account
@@ -1934,9 +1939,8 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
         @account_procedure
-        pub proc test_get_initial_item
-            push.MOCK_VALUE_SLOT0[0..2]
-            exec.native_account::get_initial_item
+        pub proc test_native_only_procedure
+            {native_call}
             exec.sys::truncate_stack
         end
     "#,
@@ -1969,9 +1973,9 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            # attempt to call the native-only get_initial_item on a foreign account
+            # attempt to call the native-only procedure on a foreign account
             padw padw padw push.0.0.0
-            procref.::foreign_account::test_get_initial_item
+            procref.::foreign_account::test_native_only_procedure
             push.{foreign_account_id_prefix} push.{foreign_account_id_suffix}
             exec.tx::execute_foreign_procedure
 

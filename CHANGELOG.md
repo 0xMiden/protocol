@@ -5,6 +5,7 @@
 ### Features
 
 - Added private PSWAP cancellation through a separate account, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
 
 ### Changes
 

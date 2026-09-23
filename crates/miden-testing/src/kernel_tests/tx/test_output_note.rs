@@ -14,6 +14,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED,
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE,
     ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS,
+    ERR_OUTPUT_NOTE_IS_SEALED,
     ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
@@ -54,7 +55,7 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_RECIPIENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
-use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
+use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionVerifier};
 use miden_protocol::{Felt, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{
@@ -66,6 +67,7 @@ use miden_standards::note::{
 };
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
+use miden_tx::LocalTransactionProver;
 use rstest::rstest;
 
 use super::{TestSetup, setup_test};
@@ -775,6 +777,12 @@ async fn test_add_assets_around_max_per_note(
 
             {add_assets_code}
 
+            # Sealing must not overlap even the maximum-sized asset array or affect its ID.
+            push.0 exec.output_note::compute_note_id
+            push.0 exec.output_note::seal
+            push.0 exec.output_note::compute_note_id
+            assert_eqw
+
             # truncate the stack
             exec.sys::truncate_stack
         end
@@ -789,7 +797,13 @@ async fn test_add_assets_around_max_per_note(
         let exec_output = mock_tx.execute_code(&code).await;
         assert_execution_error!(exec_output, ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT);
     } else {
-        mock_tx.execute_code(&code).await?;
+        let output = mock_tx.execute_code(&code).await?;
+        for (index, asset) in assets.iter().enumerate() {
+            let ptr =
+                OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + index as u32 * ASSET_SIZE;
+            assert_eq!(output.get_kernel_mem_word(ptr), asset.to_id_word());
+            assert_eq!(output.get_kernel_mem_word(ptr + ASSET_VALUE_OFFSET), asset.to_value_word());
+        }
     }
     Ok(())
 }
@@ -2051,6 +2065,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
 /// procedure under test with index 1, which is out of bounds. The bounds assertion fires before
 /// any parameter validation, so dummy values are sufficient.
 #[rstest]
+#[case::seal(0, "seal")]
 #[case::add_asset(8, "add_asset")]
 #[case::get_assets_info(0, "get_assets_info")]
 #[case::get_assets(1, "get_assets")]
@@ -2111,8 +2126,158 @@ async fn test_output_note_index_out_of_bounds(
     Ok(())
 }
 
-// HELPER FUNCTIONS
+/// A sealed note cannot be changed, while a different output remains mutable.
+#[rstest]
+#[case::merge_asset_sealed(true, Some(FungibleAsset::mock(10)))]
+#[case::append_asset_sealed(true, Some(NonFungibleAsset::mock(&[1, 2, 3])))]
+#[case::attachment_sealed(true, None)]
+#[case::merge_asset_other_note(false, Some(FungibleAsset::mock(10)))]
+#[case::append_asset_other_note(false, Some(NonFungibleAsset::mock(&[1, 2, 3])))]
+#[case::attachment_other_note(false, None)]
+#[tokio::test]
+async fn test_sealed_output_note_mutations(
+    #[case] mutate_sealed: bool,
+    #[case] added_asset: Option<Asset>,
+) -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let asset = FungibleAsset::mock(10);
+    let mutation = if let Some(added_asset) = added_asset {
+        format!(
+            "push.{} push.{} exec.output_note::add_asset",
+            added_asset.to_value_word(),
+            added_asset.to_id_word()
+        )
+    } else {
+        String::from("push.1.2.3.4 push.5 exec.output_note::add_word_attachment")
+    };
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use miden::tx_kernel_core::prologue
+        use mock::util
+        begin
+            exec.prologue::prepare_transaction
+            repeat.2
+                exec.util::create_default_note
+                push.{asset_value} push.{asset_id} exec.output_note::add_asset
+            end
+            push.0 exec.output_note::seal
+            push.{index}
+            {mutation}
+        end
+        ",
+        index = if mutate_sealed { 0 } else { 1 },
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+    );
+    let result = mock_tx.execute_code(&code).await;
+    if mutate_sealed {
+        assert_execution_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
+    } else {
+        result?;
+    }
+    Ok(())
+}
+
+/// A note script can seal a private output before returning control to the transaction script.
+/// Both account procedures and direct transaction-script mutations must respect the seal.
+#[rstest]
+#[case::unchanged(OutputNoteMutation::None)]
+#[case::asset_via_account(OutputNoteMutation::Asset)]
+#[case::attachment_via_tx_script(OutputNoteMutation::Attachment)]
+#[tokio::test]
+async fn test_private_output_sealed_by_note_script(
+    #[case] mutation: OutputNoteMutation,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account =
+        builder.add_existing_wallet_with_assets(Auth::IncrNonce, [FungibleAsset::mock(20)])?;
+    let asset = FungibleAsset::mock(10);
+    let attachment_word = Word::from([3, 4, 5, 6u32]);
+    let attachment_scheme = NoteAttachmentScheme::new(10)?;
+    let expected_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::empty()))
+        .note_type(NoteType::Private)
+        .add_assets([asset])
+        .attachment(NoteAttachment::with_word(attachment_scheme, attachment_word))
+        .build()?;
+    let input_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::empty()))
+        .dynamically_linked_packages(CodeBuilder::mock_packages())
+        .code(format!(
+            "use miden::protocol::output_note
+            @note_script
+            pub proc main
+                {}
+                dup push.{attachment_word} push.{attachment_scheme}
+                exec.output_note::add_word_attachment
+                # Keep a nonzero word below the index to check stack preservation and idempotence.
+                push.91.92.93.94 movup.4
+                dup exec.output_note::seal
+                exec.output_note::seal
+                push.91.92.93.94 assert_eqw
+                exec.::miden::core::sys::truncate_stack
+            end",
+            create_output_note(&expected_note),
+            attachment_scheme = attachment_scheme.as_u16(),
+        ))
+        .build()?;
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
+    let chain = builder.build()?;
+    let mutation_code = match mutation {
+        OutputNoteMutation::None => String::new(),
+        OutputNoteMutation::Asset => format!(
+            "push.0 push.{asset_value} push.{asset_id}
+            call.::miden::standards::wallets::basic::move_asset_to_note",
+            asset_value = asset.to_value_word(),
+            asset_id = asset.to_id_word(),
+        ),
+        OutputNoteMutation::Attachment => {
+            String::from("push.0 push.1.2.3.4 push.5 exec.output_note::add_word_attachment")
+        },
+    };
+    let tx_script = CodeBuilder::default().compile_tx_script(format!(
+        "use miden::protocol::output_note
+        @transaction_script
+        pub proc main
+            # Reading the commitment must preserve the seal established by the note script.
+            push.0 exec.output_note::compute_note_id
+            push.{expected_note_id} assert_eqw
+            {mutation_code}
+            exec.::miden::core::sys::truncate_stack
+        end",
+        expected_note_id = expected_note.id().as_word(),
+    ))?;
+    let result = chain
+        .build_transaction(account.id())
+        .authenticated_input_note(input_note.id())
+        .expected_output_note(RawOutputNote::Full(expected_note.clone()))
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+    if matches!(mutation, OutputNoteMutation::None) {
+        let executed = result?;
+        assert_eq!(executed.output_notes().get_note(0).id(), expected_note.id());
+        let proven = LocalTransactionProver::default().prove(executed)?;
+        assert!(
+            TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL)
+                .verify(&proven)?
+                .is_complete()
+        );
+    } else {
+        assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
+    }
+    Ok(())
+}
+
+// HELPERS
 // ================================================================================================
+
+#[derive(Debug, Clone, Copy)]
+enum OutputNoteMutation {
+    None,
+    Asset,
+    Attachment,
+}
 
 /// Returns a `masm` code which creates an output note and adds some assets to it.
 ///
