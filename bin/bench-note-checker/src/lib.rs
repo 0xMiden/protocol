@@ -129,7 +129,7 @@ pub async fn run_mixed_notes_check(setup: &MixedNotesSetup) -> anyhow::Result<()
 
     // Create executor and checker.
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let checker = NoteConsumptionChecker::new(&executor);
+    let checker = NoteConsumptionChecker::new(&executor, None);
 
     let result = checker
         .check_notes_consumability(setup.target_account_id, block_ref, setup.notes.clone(), tx_args)

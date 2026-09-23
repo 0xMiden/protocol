@@ -15,6 +15,14 @@
 - [BREAKING] Extracted the Protobuf MMR representation from `PartialBlockchain` into a standalone `primitives.PartialMmr` message.
 
 ## v0.17.0-rc.5 (2026-09-17)
+### Fixes
+
+- [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
+- [BREAKING] `NoteConsumptionChecker::new` now takes the asset the checked account collects fees in, and rejects a `FEE_SPONSORSHIP` note carrying another asset, or one whose feature note is absent and which the account may not reclaim, without executing it. Such a note is reported as `NoteFailure::Rejected` ([#3888](https://github.com/0xMiden/protocol/issues/3888)).
+- `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
+- The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
+
+## v0.17.0-pre.1 (2026-09-05)
 
 ### Features
 
