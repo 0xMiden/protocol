@@ -6,17 +6,15 @@ use miden_protocol::assembly::mast::MastForestError;
 use crate::decoded::primitives::test_utils::corrupt_node_hash;
 use crate::{DecodeMessage, Verify, proto};
 
-#[test]
-fn mast_forest_decode_and_verify() {
-    let mast = miden_protocol::MastForest::new();
-    assert_eq!(
-        proto::primitives::MastForest::from(&mast)
-            .decode_fields()
-            .unwrap()
-            .verify()
-            .unwrap(),
-        mast
-    );
+#[rstest::rstest]
+#[case::empty(miden_protocol::MastForest::new())]
+#[case::account_code(miden_protocol::account::AccountCode::mock().mast().as_ref().clone())]
+fn mast_forest_decode_and_verify(#[case] mast: miden_protocol::MastForest) {
+    let wire = proto::primitives::MastForest::from(&mast);
+    let mut hashless = vec![];
+    mast.write_hashless(&mut hashless);
+    assert_eq!(wire.encoded, hashless);
+    assert_eq!(wire.decode_fields().unwrap().verify().unwrap(), mast);
 }
 
 #[test]
