@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_processor::operation::OperationError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -15,7 +16,10 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
-use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_IS_SEALED;
+use miden_protocol::errors::tx_kernel::{
+    ERR_OUTPUT_NOTE_IS_SEALED,
+    ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
+};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -28,17 +32,28 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, RawOutputNotes};
+use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, AccountIdBuilder};
+use miden_protocol::transaction::{
+    ExecutedTransaction,
+    OutputNote,
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionHeader,
+};
 use miden_protocol::{Felt, ONE, Word, ZERO};
+use miden_standards::account::auth::NoAuth;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT,
     ERR_PSWAP_ATTACHMENT_INCORRECT_NUMBER_OF_WORDS,
     ERR_PSWAP_DEPTH_OVERFLOW,
     ERR_PSWAP_FILL_BELOW_MINIMUM,
     ERR_PSWAP_FILL_SUM_OVERFLOW,
+    ERR_PSWAP_INVALID_ACCOUNT_ID,
     ERR_PSWAP_INVALID_ACTION,
+    ERR_PSWAP_INVALID_CANCEL_ADVICE,
+    ERR_PSWAP_INVALID_PAYBACK_OPENING,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
     ERR_PSWAP_OFFERED_ASSET_ALTERED,
     ERR_PSWAP_OUTPUT_ALTERED,
@@ -50,8 +65,10 @@ use miden_standards::note::{
     PswapNoteAttachment,
     PswapNoteStorage,
     PswapPayback,
+    TxFeeNote,
 };
 use miden_standards::testing::note::NoteBuilder;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{
     AccountState,
     Auth,
@@ -829,11 +846,11 @@ async fn pswap_note_creator_reclaim_test(
         assert_eq!(note.metadata().sender(), bob.id());
         assert_eq!(public_target(pswap.storage()), alice.id());
     }
-    // Only the fill action is supported; public creator reclaim remains implicit.
+    // A caller cannot invoke the private cancellation action on public-payback orders.
     let result = chain
         .build_transaction(bob.id())
         .authenticated_input_note(note.id())
-        .extend_note_args(BTreeMap::from([(note.id(), Word::new([ZERO, ZERO, ONE, ZERO]))]))
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
         .build()?
         .execute()
         .await;
@@ -846,6 +863,9 @@ async fn pswap_note_creator_reclaim_test(
         .await?;
     assert_eq!(tx.output_notes().num_notes(), 0);
     assert_vault_patch(tx.account_patch().vault(), [*pswap.offered_asset()]);
+    let public_recipient = P2idNoteStorage::new(alice.id()).into_recipient(Word::empty());
+    let err = pswap.cancellation_advice(&public_recipient).unwrap_err();
+    assert!(err.to_string().contains("recipient opening is only used for private paybacks"));
     Ok(())
 }
 
@@ -1081,6 +1101,437 @@ async fn pswap_rejects_later_output_mutation(
     Ok(())
 }
 
+/// A cancellation refund is immutable before the transaction script starts.
+#[rstest]
+#[tokio::test]
+async fn pswap_rejects_later_refund_mutation(
+    #[values(false, true)] attachment: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(51))?;
+    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
+    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let extra = FungibleAsset::new(offered.id(), 1)?;
+    let router = AccountBuilder::new([93; 32])
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_assets([extra.into()])
+        .build_existing()?;
+    builder.add_account(router.clone())?;
+    let (pswap, note, recipient) = build_private_pswap_note(
+        &mut builder,
+        alice.id(),
+        alice.id(),
+        FungibleAsset::new(offered.id(), 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        [ZERO; 2],
+    )?;
+    let (key, advice) = pswap.cancellation_advice(&recipient)?;
+    let mutation = if attachment {
+        "push.0.1.2.3.4.5 exec.::miden::protocol::output_note::add_word_attachment".to_owned()
+    } else {
+        format!(
+            "push.0.0.0.0.0.0.0.0 push.{} push.{} call.::miden::standards::wallets::basic::move_asset_to_note dropw dropw dropw dropw",
+            extra.to_value_word(),
+            extra.to_id_word()
+        )
+    };
+    let script = CodeBuilder::default()
+        .compile_tx_script(format!("@transaction_script pub proc main {mutation} end"))?;
+    let chain = builder.build()?;
+    let result = chain
+        .build_transaction(router.id())
+        .authenticated_input_note(note.id())
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
+        .add_advice_map_entry(key, advice)
+        .tx_script(script)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
+    Ok(())
+}
+
+/// The router creates an order for Alice, Bob fills half, and Alice cancels the remainder
+/// through the router before collecting both private P2ID notes in her private account.
+///
+/// Router funding is a fixture; the proposed order-creation note is separate work. Fees are
+/// disabled here and covered by `pswap_prove_private_cancel_with_fee_input`.
+#[tokio::test]
+async fn pswap_private_router_half_fill_cancel_and_collect() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let usdc = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(100))?;
+    let eth = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(40))?;
+    let mut alice = builder.add_account_from_builder(
+        BASIC_AUTH,
+        AccountBuilder::new([76; 32])
+            .account_type(AccountType::Private)
+            .with_component(BasicWallet),
+        AccountState::Exists,
+    )?;
+    let mut bob = builder
+        .add_existing_wallet_with_assets(BASIC_AUTH, [FungibleAsset::new(eth.id(), 40)?.into()])?;
+    let mut router = AccountBuilder::new([77; 32])
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_assets([FungibleAsset::new(usdc.id(), 100)?.into()])
+        .build_existing()?;
+    builder.add_account(router.clone())?;
+    let recipient = P2idNoteStorage::new(alice.id())
+        .with_salt([ONE, Felt::from(7u32)])
+        .into_recipient(builder.rng_mut().draw_word());
+    let pswap = PswapNote::builder()
+        .sender(router.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .min_requested_asset(FungibleAsset::new(eth.id(), 40)?)
+                .payback(PswapPayback::private(&recipient, NoteTag::new(0))?)
+                .build(),
+        )
+        .serial_number(builder.rng_mut().draw_word())
+        .note_type(NoteType::Public)
+        .offered_asset(FungibleAsset::new(usdc.id(), 100)?)
+        .build()?;
+    let order = Note::from(pswap.clone());
+    let mut chain = builder.build()?;
+
+    // Create the public order in a router transaction. Its sender is the router, while the
+    // private payback commits to Alice through an independently sampled secret serial number.
+    let script =
+        SendNotesTransactionScript::new(&router.code_interface(), &[order.clone().into()])?;
+    let tx = chain
+        .build_transaction(router.id())
+        .send_notes_script(&script)
+        .expected_output_notes(vec![RawOutputNote::Full(order.clone())])
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(tx.output_notes().num_notes(), 1);
+    assert_output_note(tx.output_notes(), order.id());
+    assert_eq!(tx.output_notes().get_note(0).metadata().sender(), router.id());
+    assert_vault_patch(tx.account_patch().vault(), [FungibleAsset::new(usdc.id(), 0)?]);
+    router.apply_patch(tx.account_patch())?;
+    assert_eq!(router.vault().num_assets(), 0);
+    chain.add_pending_executed_transaction(&tx)?;
+    chain.prove_next_block()?;
+
+    // Bob pays 20 ETH for 50 USDC without receiving Alice's recipient preimage.
+    let (expected_payback, remainder) =
+        pswap.execute(bob.id(), Some(FungibleAsset::new(eth.id(), 20)?), None)?;
+    let remainder = remainder.expect("a half fill must leave a remainder");
+    let remainder_note = Note::from(remainder.clone());
+    let tx = chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(order.id())
+        .extend_note_args(BTreeMap::from([(order.id(), PswapNote::create_args(20, 0)?)]))
+        .expected_output_notes(vec![expected_payback, RawOutputNote::Full(remainder_note.clone())])
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(tx.output_notes().num_notes(), 2);
+    let payback_output = tx.output_notes().get_note(0);
+    assert_eq!(payback_output.metadata().note_type(), NoteType::Private);
+    let attachment = PswapNoteAttachment::try_from(
+        payback_output
+            .attachments()
+            .get(0)
+            .expect("payback must have a fill attachment"),
+    )?;
+    let payback = pswap.payback_note(bob.id(), &attachment, Some(&recipient))?;
+    assert_eq!(payback.id(), payback_output.id());
+    assert_output_note(tx.output_notes(), remainder_note.id());
+    assert_eq!(remainder.offered_asset().amount().as_u64(), 50);
+    assert_eq!(remainder.storage().min_requested_amount(), 20);
+    assert_vault_patch(
+        tx.account_patch().vault(),
+        [FungibleAsset::new(usdc.id(), 50)?, FungibleAsset::new(eth.id(), 20)?],
+    );
+    bob.apply_patch(tx.account_patch())?;
+    chain.add_pending_executed_transaction(&tx)?;
+    chain.prove_next_block()?;
+
+    // Alice supplies the preimage locally to cancel through the same public router. All
+    // remaining USDC goes directly to her committed P2ID recipient, never to the router vault.
+    let (key, advice) = remainder.cancellation_advice(&recipient)?;
+    let refund = remainder.refund_note(router.id(), &recipient)?;
+    let tx = chain
+        .build_transaction(router.id())
+        .authenticated_input_note(remainder_note.id())
+        .extend_note_args(BTreeMap::from([(remainder_note.id(), PswapNote::create_cancel_args())]))
+        .add_advice_map_entry(key, advice)
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(tx.output_notes().num_notes(), 1);
+    assert_output_note(tx.output_notes(), refund.id());
+    assert_eq!(tx.account_patch().vault().num_assets(), 0);
+    router.apply_patch(tx.account_patch())?;
+    assert_eq!(router.vault().num_assets(), 0);
+    chain.add_pending_executed_transaction(&tx)?;
+    chain.prove_next_block()?;
+    let (proven, outcome) = crate::prove_and_verify_transaction(tx).await?;
+    assert!(outcome.is_complete());
+    let private_refund = proven.output_notes().get_note(0);
+    assert!(matches!(private_refund, OutputNote::Private(_)));
+    assert!(private_refund.recipient().is_none());
+    assert!(proven.input_notes().iter().all(|note| note.header().is_none()));
+
+    // Alice consumes both private P2ID notes together: the paid half and the unfilled half.
+    // The payback and refund share a recipient but remain distinct, spendable notes.
+    assert_eq!(payback.recipient(), refund.recipient());
+    assert_ne!(payback.nullifier(), refund.nullifier());
+    let tx = chain
+        .build_transaction(alice.clone())
+        .authenticated_input_note_with_details(payback)
+        .authenticated_input_note_with_details(refund)
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(tx.output_notes().num_notes(), 0);
+    assert_vault_patch(
+        tx.account_patch().vault(),
+        [FungibleAsset::new(usdc.id(), 50)?, FungibleAsset::new(eth.id(), 20)?],
+    );
+    alice.apply_patch(tx.account_patch())?;
+    chain.add_pending_executed_transaction(&tx)?;
+    chain.prove_next_block()?;
+    let (proven, outcome) = crate::prove_and_verify_transaction(tx).await?;
+    assert!(outcome.is_complete());
+    assert_eq!(proven.input_notes().num_notes(), 2);
+    assert!(proven.input_notes().iter().all(|note| note.header().is_none()));
+
+    // Alice and Bob now each hold half of each original asset; the router retains nothing.
+    for account in [&alice, &bob] {
+        assert_eq!(account.vault().num_assets(), 2);
+        assert_eq!(account.vault().get_balance(AssetId::new_fungible(usdc.id()))?.as_u64(), 50);
+        assert_eq!(account.vault().get_balance(AssetId::new_fungible(eth.id()))?.as_u64(), 20);
+    }
+    Ok(())
+}
+
+/// A public no-auth account cancels the order and refunds its private target account.
+/// Incorrect openings are rejected, and only the target can consume the refund.
+#[rstest]
+#[tokio::test]
+async fn pswap_private_cancel_through_no_auth(
+    #[values(false, true)] salted: bool,
+    #[values(false, true)] cancel_remainder: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
+    let mut alice = builder.add_account_from_builder(
+        BASIC_AUTH,
+        AccountBuilder::new([73; 32])
+            .account_type(AccountType::Private)
+            .with_component(BasicWallet),
+        AccountState::Exists,
+    )?;
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(requested.id(), 25)?.into()],
+    )?;
+    let router = AccountBuilder::new([74; 32])
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .build_existing()?;
+    builder.add_account(router.clone())?;
+    let salt = if salted { [ONE, Felt::from(7u32)] } else { [ZERO; 2] };
+    let (mut pswap, mut note, recipient) = build_private_pswap_note(
+        &mut builder,
+        bob.id(),
+        alice.id(),
+        FungibleAsset::new(offered.id(), 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        salt,
+    )?;
+    // Create an earlier output to ensure the refund uses the actual output-note index.
+    let dummy = NoteBuilder::new(router.id(), SmallRng::seed_from_u64(7777)).build()?;
+    let spawn = builder.add_spawn_note([&dummy])?;
+    let mut chain = builder.build()?;
+    let mut existing_payback = None;
+    if cancel_remainder {
+        let (_, remainder) =
+            pswap.execute(bob.id(), Some(FungibleAsset::new(requested.id(), 10)?), None)?;
+        let attachment = PswapNoteAttachment::new(AssetAmount::new(10)?, pswap.order_id(), 1);
+        existing_payback = Some(pswap.payback_note(bob.id(), &attachment, Some(&recipient))?);
+        let tx = chain
+            .build_transaction(bob.id())
+            .authenticated_input_note(note.id())
+            .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_args(10, 0)?)]))
+            .build()?
+            .execute()
+            .await?;
+        chain.add_pending_executed_transaction(&tx)?;
+        chain.prove_next_block()?;
+        pswap = remainder.unwrap();
+        note = Note::from(pswap.clone());
+    }
+    let (key, advice) = pswap.cancellation_advice(&recipient)?;
+    assert_eq!(advice.len(), 8);
+    let args = BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]);
+
+    // The public order alone is insufficient to cancel, even through a no-auth account.
+    let result = chain
+        .build_transaction(router.id())
+        .authenticated_input_note(note.id())
+        .extend_note_args(args.clone())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError {
+            err: AdviceError::MapKeyNotFound { key: missing_key },
+            ..
+        } if missing_key == key
+    );
+
+    let mut wrong_serial = advice.clone();
+    wrong_serial[0] += ONE;
+    let mut wrong_target = advice.clone();
+    wrong_target[4] = bob.id().suffix();
+    wrong_target[5] = bob.id().prefix().as_felt();
+    let mut wrong_salt = advice.clone();
+    wrong_salt[6] += ONE;
+    for wrong in [wrong_serial, wrong_target, wrong_salt] {
+        let result = chain
+            .build_transaction(router.id())
+            .authenticated_input_note(note.id())
+            .extend_note_args(args.clone())
+            .add_advice_map_entry(key, wrong)
+            .build()?
+            .execute()
+            .await;
+        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_PAYBACK_OPENING);
+    }
+    let refund = pswap.refund_note(router.id(), &recipient)?;
+    let tx = chain
+        .build_transaction(router.id())
+        .authenticated_input_notes([spawn.id(), note.id()])
+        .extend_note_args(args)
+        .add_advice_map_entry(key, advice)
+        .expected_output_notes(vec![
+            RawOutputNote::Full(dummy.clone()),
+            RawOutputNote::Full(refund.clone()),
+        ])
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(tx.output_notes().num_notes(), 2);
+    assert_output_note(tx.output_notes(), dummy.id());
+    assert_eq!(tx.output_notes().get_note(0).assets().num_assets(), 0);
+    assert_output_note(tx.output_notes(), refund.id());
+    assert_eq!(tx.output_notes().get_note(1).metadata().note_type(), NoteType::Private);
+    assert!(refund.attachments().is_empty());
+    assert_eq!(tx.account_patch().vault().num_assets(), 0);
+    chain.add_pending_executed_transaction(&tx)?;
+    chain.prove_next_block()?;
+
+    let result = chain
+        .build_transaction(router.id())
+        .authenticated_input_note_with_details(refund.clone())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_TARGET_ACCOUNT);
+    let tx = chain
+        .build_transaction(alice.clone())
+        .authenticated_input_note_with_details(refund)
+        .build()?
+        .execute()
+        .await?;
+    assert_vault_patch(tx.account_patch().vault(), [*pswap.offered_asset()]);
+    alice.apply_patch(tx.account_patch())?;
+    chain.add_pending_executed_transaction(&tx)?;
+    chain.prove_next_block()?;
+    if let Some(payback) = existing_payback {
+        let tx = chain
+            .build_transaction(alice)
+            .authenticated_input_note_with_details(payback)
+            .build()?
+            .execute()
+            .await?;
+        assert_vault_patch(tx.account_patch().vault(), [FungibleAsset::new(requested.id(), 10)?]);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn pswap_rejects_invalid_cancel_arguments_and_advice() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
+    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let (pswap, note, recipient) = build_private_pswap_note(
+        &mut builder,
+        alice.id(),
+        alice.id(),
+        FungibleAsset::new(offered.id(), 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        [ZERO; 2],
+    )?;
+    let (key, advice) = pswap.cancellation_advice(&recipient)?;
+    let chain = builder.build()?;
+    for args in [
+        [ZERO, ZERO, Felt::from(2u32), ZERO],
+        [ZERO, ZERO, ZERO, ONE],
+        [ONE, ZERO, ONE, ZERO],
+        [ZERO, ONE, ONE, ZERO],
+    ] {
+        let result = chain
+            .build_transaction(alice.id())
+            .authenticated_input_note(note.id())
+            .extend_note_args(BTreeMap::from([(note.id(), Word::new(args))]))
+            .add_advice_map_entry(key, advice.clone())
+            .build()?
+            .execute()
+            .await;
+        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_ACTION);
+    }
+    // Cancellation advice is exactly two words: serial number and P2ID storage.
+    for len in [0, 7, 9] {
+        let result = chain
+            .build_transaction(alice.id())
+            .authenticated_input_note(note.id())
+            .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
+            .add_advice_map_entry(key, vec![ZERO; len])
+            .build()?
+            .execute()
+            .await;
+        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_CANCEL_ADVICE);
+    }
+    let result = chain
+        .build_transaction(alice.id())
+        .authenticated_input_note(note.id())
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError {
+            err: AdviceError::MapKeyNotFound { key: missing_key },
+            ..
+        } if missing_key == key
+    );
+    let mut malformed = advice;
+    malformed[5] = Felt::from(2u32);
+    let result = chain
+        .build_transaction(alice.id())
+        .authenticated_input_note(note.id())
+        .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_cancel_args())]))
+        .add_advice_map_entry(key, malformed)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_ACCOUNT_ID);
+    Ok(())
+}
+
 #[rstest]
 #[tokio::test]
 async fn pswap_private_target_can_fill_without_cancelling(
@@ -1102,20 +1553,6 @@ async fn pswap_private_target_can_fill_without_cancelling(
         [ZERO; 2],
     )?;
     let chain = builder.build()?;
-    for invalid_args in [
-        [ZERO, ZERO, ONE, ZERO],
-        [ZERO, ZERO, Felt::from(2u32), ZERO],
-        [ZERO, ZERO, ZERO, ONE],
-    ] {
-        let result = chain
-            .build_transaction(alice.id())
-            .authenticated_input_note(note.id())
-            .extend_note_args(BTreeMap::from([(note.id(), Word::new(invalid_args))]))
-            .build()?
-            .execute()
-            .await;
-        assert_transaction_executor_error!(result, ERR_PSWAP_INVALID_ACTION);
-    }
     let args = if zero_args {
         Word::empty()
     } else {
@@ -1134,6 +1571,142 @@ async fn pswap_private_target_can_fill_without_cancelling(
         tx.account_patch().vault(),
         [FungibleAsset::new(offered.id(), 50)?, FungibleAsset::new(requested.id(), 0)?],
     );
+    Ok(())
+}
+
+/// An initially empty public no-auth account funds cancellation from an authenticated private
+/// P2ID input. The order refund is complete, unused fee funds return privately, and the final
+/// transaction is proved locally. The offered asset may itself be the native fee asset.
+#[rstest]
+#[tokio::test]
+async fn pswap_prove_private_cancel_with_fee_input(
+    #[values(false, true)] offered_is_fee_asset: bool,
+) -> anyhow::Result<()> {
+    const FEE_BUDGET: u64 = 1_000_000;
+    let fee_faucet: AccountId = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let mut builder = MockChain::builder().verification_base_fee(500);
+    let offered_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let requested = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
+    let offered_id = if offered_is_fee_asset {
+        fee_faucet
+    } else {
+        offered_faucet.id()
+    };
+    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let router = AccountBuilder::new([75; 32])
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .build_existing()?;
+    builder.add_account(router.clone())?;
+    let (pswap, order, recipient) = build_private_pswap_note(
+        &mut builder,
+        router.id(),
+        alice.id(),
+        FungibleAsset::new(offered_id, 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        [ONE, ONE],
+    )?;
+    let funding_recipient =
+        P2idNoteStorage::new(router.id()).into_recipient(builder.rng_mut().draw_word());
+    let funding = Note::new(
+        NoteAssets::new(vec![FungibleAsset::new(fee_faucet, FEE_BUDGET)?.into()])?,
+        PartialNoteMetadata::new(alice.id(), NoteType::Private).with_tag(NoteTag::new(0)),
+        funding_recipient,
+    );
+    builder.add_output_note(RawOutputNote::Full(funding.clone()));
+    let change_recipient =
+        P2idNoteStorage::new(alice.id()).into_recipient(builder.rng_mut().draw_word());
+    let chain = builder.build()?;
+    let (key, advice) = pswap.cancellation_advice(&recipient)?;
+    let args = BTreeMap::from([(order.id(), PswapNote::create_cancel_args())]);
+    let refund = pswap.refund_note(router.id(), &recipient)?;
+
+    // The order balance cannot be used to cover cancellation fees, even when it is the fee asset.
+    let result = chain
+        .build_transaction(router.id())
+        .authenticated_input_note(order.id())
+        .extend_note_args(args.clone())
+        .add_advice_map_entry(key, advice.clone())
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(
+        result,
+        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
+    );
+
+    // An unauthenticated funding input is valid, but reveals the funding note ID and sender.
+    let linked = chain
+        .build_transaction(router.id())
+        .authenticated_input_note(order.id())
+        .unauthenticated_input_note(funding.clone())
+        .extend_note_args(args.clone())
+        .add_advice_map_entry(key, advice.clone())
+        .build()?
+        .execute()
+        .await?;
+    let header = TransactionHeader::from(&linked);
+    let revealed = header
+        .input_notes()
+        .iter()
+        .find(|n| n.nullifier() == funding.nullifier())
+        .unwrap();
+    assert_eq!(revealed.header().unwrap().id(), funding.id());
+    assert_eq!(revealed.header().unwrap().metadata().sender(), alice.id());
+
+    // Model client fee/change estimation, including the cost of the private change output.
+    // Re-execution must stabilize before submitting a transaction with no shared-vault surplus.
+    let mut reserved_fee = 100_000;
+    let mut final_tx = None;
+    for _ in 0..5 {
+        let change = Note::new(
+            NoteAssets::new(vec![
+                FungibleAsset::new(fee_faucet, FEE_BUDGET - reserved_fee)?.into(),
+            ])?,
+            PartialNoteMetadata::new(router.id(), NoteType::Private).with_tag(NoteTag::new(0)),
+            change_recipient.clone(),
+        );
+        let script =
+            SendNotesTransactionScript::new(&router.code_interface(), &[change.clone().into()])?;
+        let tx = chain
+            .build_transaction(router.id())
+            .authenticated_input_note(order.id())
+            .authenticated_input_note_with_details(funding.clone())
+            .extend_note_args(args.clone())
+            .add_advice_map_entry(key, advice.clone())
+            .send_notes_script(&script)
+            .build()?
+            .execute()
+            .await?;
+        let fee_note =
+            tx.output_notes().iter().find(|n| n.metadata().tag() == TxFeeNote::TAG).unwrap();
+        let paid = fee_note.assets().iter().next().unwrap().unwrap_fungible().amount().as_u64();
+        assert!(paid > 0);
+        if reserved_fee == paid {
+            assert_output_note(tx.output_notes(), refund.id());
+            assert_output_note(tx.output_notes(), change.id());
+            assert_eq!(tx.output_notes().num_notes(), 3);
+            assert_eq!(tx.account_patch().vault().num_assets(), 0);
+            final_tx = Some(tx);
+            break;
+        }
+        reserved_fee = paid;
+    }
+    let tx = final_tx.expect("fee calculation should converge with the final output set");
+    assert!(
+        TransactionHeader::from(&tx)
+            .input_notes()
+            .iter()
+            .all(|note| note.header().is_none())
+    );
+    let (proven, outcome) = crate::prove_and_verify_transaction(tx).await?;
+    assert!(outcome.is_complete());
+    let private_refund = proven.output_notes().iter().find(|n| n.id() == refund.id()).unwrap();
+    assert!(matches!(private_refund, OutputNote::Private(_)));
+    assert!(private_refund.recipient().is_none());
+    assert!(private_refund.assets().is_none());
+    assert!(proven.input_notes().iter().all(|note| note.header().is_none()));
     Ok(())
 }
 
@@ -2767,10 +3340,13 @@ async fn pswap_multi_word_attachment_is_rejected() -> anyhow::Result<()> {
 /// A PSWAP note offers 1000 USDC for a minimum of 100 ETH. The consuming account exposes an
 /// `@account_procedure` performing indexed input-note asset removal (`input_note::remove_asset`),
 /// permitted only from the native-account context. An earlier helper input note (index 0) calls it
-/// to drain 900 USDC out of the PSWAP note (index 1) before the PSWAP script runs. A partial fill
-/// must then abort with `ERR_PSWAP_OFFERED_ASSET_ALTERED`.
+/// to drain 900 USDC out of the PSWAP note (index 1) before the PSWAP script runs. Both a partial
+/// fill and a private cancellation must then abort with `ERR_PSWAP_OFFERED_ASSET_ALTERED`.
+#[rstest]
 #[tokio::test]
-async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()> {
+async fn pswap_note_offered_asset_drain_is_rejected_test(
+    #[values(false, true)] cancel: bool,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 10_000, Some(1_000))?;
@@ -2829,13 +3405,26 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
     // Alice's PSWAP note offers 1000 USDC for a minimum of 100 ETH.
     let offered_asset = FungibleAsset::new(usdc_faucet.id(), 1_000)?;
     let min_requested_asset = FungibleAsset::new(eth_faucet.id(), 100)?;
-    let (_, pswap_note) = build_pswap_note(
-        &mut builder,
-        alice,
-        offered_asset,
-        min_requested_asset,
-        NoteType::Public,
-    )?;
+    let (pswap_note, cancellation_advice) = if cancel {
+        let (pswap, note, recipient) = build_private_pswap_note(
+            &mut builder,
+            alice,
+            alice,
+            offered_asset,
+            min_requested_asset,
+            [ZERO; 2],
+        )?;
+        (note, Some(pswap.cancellation_advice(&recipient)?))
+    } else {
+        let (_, note) = build_pswap_note(
+            &mut builder,
+            alice,
+            offered_asset,
+            min_requested_asset,
+            NoteType::Public,
+        )?;
+        (note, None)
+    };
 
     // Helper note (input note index 0) that drains 900 of the 1000 offered USDC out of the PSWAP
     // note (input note index 1) via the consuming account's procedure.
@@ -2873,17 +3462,19 @@ async fn pswap_note_offered_asset_drain_is_rejected_test() -> anyhow::Result<()>
 
     let mock_chain = builder.build()?;
 
-    // A 50-of-100 ETH partial fill, which exercises the remainder-note pricing path.
-    let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), PswapNote::create_args(50, 0)?);
-
-    let result = mock_chain
+    let args = if cancel {
+        PswapNote::create_cancel_args()
+    } else {
+        PswapNote::create_args(50, 0)?
+    };
+    let mut tx_builder = mock_chain
         .build_transaction(consumer.id())
         .authenticated_input_notes([helper_note_id, pswap_note.id()])
-        .extend_note_args(note_args_map)
-        .build()?
-        .execute()
-        .await;
+        .extend_note_args(BTreeMap::from([(pswap_note.id(), args)]));
+    if let Some((key, advice)) = cancellation_advice {
+        tx_builder = tx_builder.add_advice_map_entry(key, advice);
+    }
+    let result = tx_builder.build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_PSWAP_OFFERED_ASSET_ALTERED);
 

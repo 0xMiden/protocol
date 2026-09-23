@@ -323,9 +323,15 @@ PSWAP exchanges part or all of one fungible asset for another. A partial fill cr
 - **Private paybacks:** the order stores a P2ID recipient commitment and discovery tag. Use a fresh secret serial for each independent order, unrelated to its PSWAP serial, to prevent observers from deriving payback nullifiers. Fillers need only the commitment; the owner retains the full recipient to reconstruct paybacks from their fill attachments.
 - **Storage:** 7 elements for public paybacks or 10 for private paybacks. Both begin with requested faucet suffix, prefix, amount, minimum fill step, and payback type. Public mode appends the original creator ID; private mode appends the recipient commitment and tag.
 
-PSWAP verifies the completed payback and remainder after asset callbacks and seals both outputs before returning. This applies to public and private notes: subsequent asset or attachment additions fail the transaction.
+PSWAP verifies each completed payback, remainder, or refund after asset callbacks and seals it before returning. This applies to public and private notes: subsequent asset or attachment additions fail the transaction.
 
-Consume reconstructed private paybacks with inclusion proofs; unauthenticated inputs expose their note ID and sender. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data. Orders with private paybacks can be filled but do not yet support cancellation.
+For private cancellation, use note arguments `[0, 0, 1, 0]` in Rust element order and supply the recipient opening (serial, target account ID, and salt) as private advice. The script verifies the opening and returns the full remaining offered asset in a private P2ID to the same recipient, with no fill attachment. Anyone holding the opening can cancel; only the target account can consume the refund.
+
+To avoid linking cancellation to the target, build and prove locally through a public account with `NoAuth` and the required wallet procedures. Fund fees separately, for example with a private P2ID consumed in the same transaction, and explicitly return unused funding in a private change note. The order is refunded in full; `NoAuth` does not return fee change automatically.
+
+Consume private funding notes, paybacks, and refunds with inclusion proofs; unauthenticated inputs expose their note ID and sender. If funding must be created first, wait for its inclusion. Use discovery tags that do not identify the target and verify reconstructed note IDs against chain data.
+
+The public account and order consumption remain visible. Remote provers given the execution witness learn the opening, and timing or funding may still correlate transactions. Order creation must also avoid identifying the user's main account when that privacy is required.
 
 ### Choosing the Right Note Type
 

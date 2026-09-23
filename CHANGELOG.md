@@ -2,13 +2,14 @@
 
 ## Unreleased
 
+### Features
+
+- Added private PSWAP cancellation through a separate account, with verified and sealed refunds ([#3911](https://github.com/0xMiden/protocol/pull/3911)).
+- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
+
 ### Changes
 
 - [BREAKING] Added fixed private P2ID recipients with secret serials to PSWAP, with updated private storage and Rust APIs. PSWAP now verifies and seals public and private paybacks and remainders ([#3918](https://github.com/0xMiden/protocol/pull/3918)).
-
-### Features
-
-- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
 
 ## v0.17.0-rc.6 (2026-09-22)
 
