@@ -6,6 +6,10 @@
 
 - Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
 
+### Fixes
+
+- PSWAP verifies and seals its payback and remainder outputs to reject asset and attachment mutations. This changes the PSWAP script root; existing notes retain their original script.
+
 ## v0.17.0-rc.6 (2026-09-22)
 
 ### Features

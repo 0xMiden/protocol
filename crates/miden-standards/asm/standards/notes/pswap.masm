@@ -1,5 +1,6 @@
 use {Uint64} from miden::standards::types
 use {AccountId, Asset, AssetAmount, Bool, NoteArgs, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
+use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::math::u128
 use miden::protocol::account_id
@@ -110,6 +111,7 @@ const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_OFFERED_ASSET_ALTERED="PSWAP offered asset differs from the asset the note was created with"
+const ERR_PSWAP_OUTPUT_ALTERED="PSWAP output was altered before sealing"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
@@ -235,12 +237,41 @@ end
 # P2ID NOTE CREATION PROCEDURE
 # =================================================================================================
 
+#! Verifies the completed output after asset callbacks, then seals it.
+#! The expected attachment is already present and append-only; checking the packed schemes rejects
+#! any extra attachments. The output must contain exactly the expected asset and amount.
+#!
+#! Inputs: [ASSET_ID, ASSET_VALUE, note_idx]
+#! Outputs: []
+@locals(8)
+proc seal_output_note(asset: Asset, note_idx: u16)
+    locaddr.0 exec.asset::store
+    # => [note_idx]
+
+    dup exec.output_note::get_metadata
+    # => [METADATA, note_idx]
+
+    drop drop drop eq.PSWAP_ATTACHMENT_SCHEME assert.err=ERR_PSWAP_OUTPUT_ALTERED
+    # => [note_idx]
+
+    dup exec.output_note::get_assets_info
+    movup.4 eq.1 assert.err=ERR_PSWAP_OUTPUT_ALTERED
+    # => [ASSETS_COMMITMENT, note_idx]
+
+    locaddr.0 add.8 locaddr.0 exec.poseidon2::hash_double_words
+    # => [EXPECTED_ASSETS_COMMITMENT, ASSETS_COMMITMENT, note_idx]
+
+    assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+    exec.output_note::seal
+    # => []
+end
+
 #! Creates a P2ID output note for the swap creator.
 #!
 #! Derives a unique serial number by incrementing the least significant element
 #! of the provided serial, creates the output note using p2id::create_output_note, sets the
 #! attachment, and adds the requested assets (from the consumer's account vault
-#! and/or from another note in the same transaction).
+#! and/or from another note in the same transaction), then verifies and seals the output.
 #!
 #! Inputs: [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
 #!          faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
@@ -352,6 +383,13 @@ proc create_p2id_note(
         # => []
     end
     # => []
+
+    loc_load.P2ID_NOTE_IDX
+    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    loc_load.P2ID_REQUESTED_FAUCET_PREFIX loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+    exec.fungible_asset::create
+    exec.seal_output_note
+    # => []
 end
 
 # REMAINDER NOTE CREATION PROCEDURE
@@ -362,7 +400,7 @@ end
 #! Updates the requested amount in note storage, builds a new remainder recipient
 #! (using the active note's script root and a serial derived by incrementing the
 #! most significant element of the active note's serial number), creates the output
-#! note, sets the attachment, and adds the remaining offered asset.
+#! note, sets the attachment, adds the remaining offered asset, then verifies and seals the output.
 #!
 #! Inputs:  [offered_faucet_suffix, offered_faucet_prefix,
 #!           amt_payout, amt_offered,
@@ -464,6 +502,13 @@ proc create_remainder_note(
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
+    # => []
+
+    loc_load.REMAINDER_NOTE_IDX
+    loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
+    loc_load.REMAINDER_OFFERED_FAUCET_PREFIX loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
+    exec.fungible_asset::create
+    exec.seal_output_note
     # => []
 end
 
