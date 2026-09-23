@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.17.0-rc.7 (TBD)
+
+### Changes
+
+- [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
+
 ## v0.17.0-rc.6 (2026-09-22)
 
 ### Features
