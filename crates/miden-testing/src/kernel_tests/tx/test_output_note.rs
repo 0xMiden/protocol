@@ -2269,7 +2269,7 @@ async fn test_private_output_sealed_by_note_script(
     Ok(())
 }
 
-// HELPER FUNCTIONS
+// HELPERS
 // ================================================================================================
 
 #[derive(Debug, Clone, Copy)]

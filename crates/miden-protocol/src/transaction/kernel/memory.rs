@@ -520,7 +520,7 @@ pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 24;
 pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 28;
 pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 32;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
-/// Output note sealed flag, immediately after the space reserved for assets.
+/// Offset for the output note sealed flag, immediately after the space reserved for assets.
 pub const OUTPUT_NOTE_SEALED_FLAG_OFFSET: MemoryOffset =
     OUTPUT_NOTE_ASSETS_OFFSET + (crate::MAX_ASSETS_PER_NOTE * WORD_SIZE * 2) as MemoryOffset;
 
