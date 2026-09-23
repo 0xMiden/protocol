@@ -16,7 +16,14 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
-use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
+use miden_protocol::transaction::{
+    InputNote,
+    InputNotes,
+    RawOutputNote,
+    TransactionArgs,
+    TransactionInputs,
+    TransactionScript,
+};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
@@ -73,6 +80,7 @@ pub struct MockTransactionBuilder<'chain> {
     input: MockTransactionInput,
     reference_block: Option<BlockNumber>,
     authenticated_notes: Vec<NoteId>,
+    authenticated_note_details: Vec<Note>,
     unauthenticated_notes: Vec<Note>,
     authenticator: Option<BasicAuthenticator>,
     advice_inputs: AdviceInputs,
@@ -104,6 +112,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             input,
             reference_block: None,
             authenticated_notes: Vec::new(),
+            authenticated_note_details: Vec::new(),
             unauthenticated_notes: Vec::new(),
             authenticator,
             advice_inputs: AdviceInputs::default(),
@@ -126,6 +135,15 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// in [`Self::build`].
     pub fn authenticated_input_note(mut self, note_id: NoteId) -> Self {
         self.authenticated_notes.push(note_id);
+        self
+    }
+
+    /// Adds an authenticated input with locally retained details, including private notes.
+    ///
+    /// The chain supplies the inclusion proof at build time. The supplied note must already be
+    /// committed; its details are never inserted into public chain state.
+    pub fn authenticated_input_note_with_details(mut self, note: Note) -> Self {
+        self.authenticated_note_details.push(note);
         self
     }
 
@@ -307,6 +325,23 @@ impl<'chain> MockTransactionBuilder<'chain> {
             "reference block {reference_block} is out of range (latest {latest_block})",
         );
 
+        let mut required_blocks = self.required_blocks;
+        let mut retained_inputs = Vec::new();
+        for note in self.authenticated_note_details {
+            let committed = self
+                .chain
+                .committed_notes()
+                .get(&note.id())
+                .with_context(|| format!("note with id {} not found", note.id()))?;
+            let proof = committed.inclusion_proof().clone();
+            anyhow::ensure!(
+                proof.location().block_num() <= reference_block,
+                "note was created after the reference block",
+            );
+            required_blocks.insert(proof.location().block_num());
+            retained_inputs.push(InputNote::Authenticated { note, proof });
+        }
+
         let mut tx_inputs = self
             .chain
             .get_transaction_inputs_at(
@@ -314,9 +349,21 @@ impl<'chain> MockTransactionBuilder<'chain> {
                 &account,
                 &self.authenticated_notes,
                 &self.unauthenticated_notes,
-                self.required_blocks,
+                required_blocks,
             )
             .context("failed to resolve transaction inputs from mock chain")?;
+
+        if !retained_inputs.is_empty() {
+            let mut input_notes = tx_inputs.input_notes().iter().cloned().collect::<Vec<_>>();
+            input_notes.extend(retained_inputs);
+            tx_inputs = TransactionInputs::new(
+                tx_inputs.account().clone(),
+                tx_inputs.block_header().clone(),
+                tx_inputs.protocol_config().clone(),
+                tx_inputs.blockchain().clone(),
+                InputNotes::new(input_notes)?,
+            )?;
+        }
 
         let mut tx_args = TransactionArgs::default().with_note_args(self.note_args);
         if let Some(tx_script) = self.tx_script {

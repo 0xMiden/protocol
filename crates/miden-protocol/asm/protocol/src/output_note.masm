@@ -13,7 +13,7 @@ use miden::protocol::note
 use miden::protocol::note_internal
 use miden::core::crypto::hashes::poseidon2
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
-use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET}
+use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET, OUTPUT_NOTE_SEAL_OFFSET}
     from miden::protocol::kernel_proc_offsets
 
 # PROCEDURES
@@ -55,6 +55,33 @@ pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> 
     # remove excess PADs from the stack
     swapdw dropw dropw movdn.7 dropw drop drop drop
     # => [note_idx]
+end
+
+#! Prevents further changes to an output note's assets and attachments.
+#!
+#! Call this after fully populating an output whose final NoteId must remain fixed.
+#! Sealing is idempotent.
+#! Callers must verify any required contents after asset callbacks and before sealing.
+#!
+#! Inputs:  [note_index]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the active account is not the native account.
+#! - the note index is greater or equal to the total number of output notes.
+#!
+#! Invocation: exec
+pub proc seal(note_index: u16)
+    # Pad above the caller's remaining stack before bringing the note index to the top.
+    padw padw padw push.0.0
+    movup.14 push.OUTPUT_NOTE_SEAL_OFFSET
+    # => [offset, note_index, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
 end
 
 #! Returns the information about assets in the output note with the specified index.
@@ -177,6 +204,8 @@ end
 #! - ASSET_ID is the asset ID of the asset to add.
 #! - ASSET_VALUE is the value of the asset to add.
 #!
+#! Panics if the output note is sealed or does not exist, or the active account is foreign.
+#!
 #! Invocation: exec
 pub proc add_asset(asset: Asset, note_idx: u16)
     push.OUTPUT_NOTE_ADD_ASSET_OFFSET
@@ -218,6 +247,7 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #! - the attachment scheme is 0 or exceeds 65534.
 #! - the note already has 4 attachments.
 #! - the number of words in the attachment exceeds 256.
@@ -260,6 +290,7 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #! - the attachment scheme is 0 or exceeds 65534.
 #! - the note already has 4 attachments.
 #! - the total number of attachment words in the note exceeds 512.
@@ -319,6 +350,7 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #! - the attachment scheme is 0 or exceeds 65534.
 #! - the note already has 4 attachments.
 #! - the number of words in the attachment exceeds 256.
