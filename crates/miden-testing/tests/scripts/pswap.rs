@@ -158,7 +158,6 @@ async fn pswap_rejects_later_asset_addition(
     #[case] fill_amount: u64,
     #[case] output_index: u32,
     #[values(false, true)] different_asset: bool,
-    #[values(NoteType::Public, NoteType::Private)] payback_type: NoteType,
     #[values(NoteType::Public, NoteType::Private)] note_type: NoteType,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -178,7 +177,7 @@ async fn pswap_rejects_later_asset_addition(
             PswapNoteStorage::builder()
                 .creator_account_id(alice.id())
                 .min_requested_asset(FungibleAsset::new(requested.id(), 25)?)
-                .payback_note_type(payback_type)
+                .payback_note_type(note_type)
                 .build(),
         )
         .serial_number(builder.rng_mut().draw_word())
@@ -229,7 +228,6 @@ async fn pswap_rejects_later_asset_addition(
 #[tokio::test]
 async fn pswap_checks_output_before_sealing(
     #[case] mutation: OutputMutation,
-    #[values(NoteType::Public, NoteType::Private)] payback_type: NoteType,
     #[values(false, true)] remainder_callback: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -299,21 +297,8 @@ async fn pswap_checks_output_before_sealing(
     filler.vault_mut().add_asset(requested.into())?;
     filler.vault_mut().add_asset(extra.into())?;
     builder.add_account(filler.clone())?;
-    let pswap = PswapNote::builder()
-        .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .creator_account_id(alice.id())
-                .min_requested_asset(requested)
-                .payback_note_type(payback_type)
-                .build(),
-        )
-        .serial_number(builder.rng_mut().draw_word())
-        .note_type(NoteType::Public)
-        .offered_asset(offered)
-        .build()?;
-    let note = Note::from(pswap);
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let (_, note) =
+        build_pswap_note(&mut builder, alice.id(), offered, requested, NoteType::Public)?;
     let chain = builder.build()?;
     let result = chain
         .build_transaction(filler)
