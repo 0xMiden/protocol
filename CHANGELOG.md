@@ -10,6 +10,20 @@
 
 - [BREAKING] Replaced `P2idNoteStorage::with_salt` with the salt setter on `P2idNoteStorage::builder()` ([#3897](https://github.com/0xMiden/protocol/pull/3897)).
 
+## v0.17.0-rc.6 (2026-09-22)
+
+### Features
+
+- Added canonical Protobuf representations for `Account`, `AccountStorage`, `StorageSlot`, `StorageMap` and `AssetVault` ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
+
+### Changes
+
+- [BREAKING] Moved `AccountFile` from `miden-protocol` and `NoteFile` from `miden-standards` into `miden-objects` and switched both to Protobuf serialization ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
+- [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
+- [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
+- [BREAKING] `StorageMap` now drops an entry whose value is empty, which the sparse Merkle tree already treats as absent, so a removed RBAC role no longer fails account reconstruction, and reports an overfull leaf through the new `StorageMapError::MaxLeafEntriesExceeded` instead of panicking ([#3916](https://github.com/0xMiden/protocol/pull/3916)).
+- [BREAKING] Extracted the Protobuf MMR representation from `PartialBlockchain` into a standalone `primitives.PartialMmr` message.
+
 ## v0.17.0-rc.5 (2026-09-17)
 
 ### Features
@@ -31,7 +45,6 @@
 
 ### Changes
 
-- [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
 - [BREAKING] TX_FEE notes leave their assets in the note for the consuming account's own code to collect ([#3843](https://github.com/0xMiden/protocol/pull/3843)).
 - Moved `MAX_ASSETS_PER_NOTE` into `miden::protocol_utils::constants` ([#3821](https://github.com/0xMiden/protocol/pull/3821)).
 - [BREAKING] Added a `serial_number_block` argument to `fee::pay_fee` and `fee::create_and_fund_fee_note`. Multisigs use the signed proposal block to keep fee-note serial numbers stable across execution reference blocks; other standard auth components use the execution reference block ([#3836](https://github.com/0xMiden/protocol/issues/3836)).
