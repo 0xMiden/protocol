@@ -2150,7 +2150,7 @@ end
 #!
 #! Inputs:  [output_note_data_ptr]
 #! Outputs: [sealed]
-pub proc get_output_note_sealed_flag(output_note_data_ptr: ptr<OutputNoteData>) -> Bool
+pub proc is_output_note_sealed(output_note_data_ptr: ptr<OutputNoteData>) -> Bool
     add.OUTPUT_NOTE_SEALED_FLAG_OFFSET mem_load
 end
 

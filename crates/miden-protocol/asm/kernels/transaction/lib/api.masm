@@ -1589,8 +1589,13 @@ end
 pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
     exec.memory::assert_native_account
     exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
     exec.memory::get_output_note_ptr
+    # => [note_ptr, pad(15)]
+
     exec.memory::seal_output_note
+    # => [pad(16)]
 end
 
 #! Returns whether the specified output note is sealed against asset and attachment changes.
@@ -1604,8 +1609,13 @@ end
 #! Invocation: dynexec
 pub proc output_note_is_sealed(note_idx: u16, padding: [felt; 15]) -> (Bool, [felt; 15])
     exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
     exec.memory::get_output_note_ptr
-    exec.memory::get_output_note_sealed_flag
+    # => [note_ptr, pad(15)]
+
+    exec.memory::is_output_note_sealed
+    # => [is_sealed, pad(15)]
 end
 
 #! Adds an attachment to the note specified by the index.
