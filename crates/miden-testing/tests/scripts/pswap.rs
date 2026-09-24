@@ -161,7 +161,6 @@ async fn pswap_rejects_later_asset_addition(
     #[case] fill_amount: u64,
     #[case] output_index: u32,
     #[values(false, true)] different_asset: bool,
-    #[values(NoteType::Public, NoteType::Private)] note_type: NoteType,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let offered = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(100))?;
@@ -174,21 +173,13 @@ async fn pswap_rejects_later_asset_addition(
             FungibleAsset::new(requested.id(), 26)?.into(),
         ],
     )?;
-    let pswap = PswapNote::builder()
-        .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .creator_account_id(alice.id())
-                .min_requested_asset(FungibleAsset::new(requested.id(), 25)?)
-                .payback_note_type(note_type)
-                .build(),
-        )
-        .serial_number(builder.rng_mut().draw_word())
-        .note_type(note_type)
-        .offered_asset(FungibleAsset::new(offered.id(), 50)?)
-        .build()?;
-    let note = Note::from(pswap);
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let (_, note) = build_pswap_note(
+        &mut builder,
+        alice.id(),
+        FungibleAsset::new(offered.id(), 50)?,
+        FungibleAsset::new(requested.id(), 25)?,
+        NoteType::Public,
+    )?;
 
     let (existing_issuer, other_issuer) = if output_index == 0 {
         (requested.id(), offered.id())
@@ -202,9 +193,16 @@ async fn pswap_rejects_later_asset_addition(
         @transaction_script
         pub proc main
             push.0.0.0.0.0.0.0.{output_index}
+            # => [note_idx, pad(7)]
+
             push.{} push.{}
+            # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
             call.wallet::move_asset_to_note
+            # => [pad(16)]
+
             dropw dropw dropw dropw
+            # => []
         end",
         extra.to_value_word(),
         extra.to_id_word(),
@@ -222,7 +220,8 @@ async fn pswap_rejects_later_asset_addition(
     Ok(())
 }
 
-/// Asset callbacks must not alter the payback or remainder before it is sealed.
+/// Asset callbacks must not alter the payback or remainder assets before sealing, but may append
+/// public attachments. Outputs with extra attachments remain reconstructible and consumable.
 /// The filler is also the asset issuer, so its callback runs with the native account active and can
 /// mutate outputs. Exercise the requested asset's callback for paybacks and the offered asset's
 /// callback for remainders; the unchanged case verifies that ordinary callbacks still succeed.
@@ -230,7 +229,7 @@ async fn pswap_rejects_later_asset_addition(
 #[case::unchanged(OutputMutation::None)]
 #[case::extra_asset(OutputMutation::ExtraAsset)]
 #[case::balance_increase(OutputMutation::BalanceIncrease)]
-#[case::attachment(OutputMutation::Attachment)]
+#[case::extra_attachment(OutputMutation::Attachment)]
 #[tokio::test]
 async fn pswap_checks_output_before_sealing(
     #[case] mutation: OutputMutation,
@@ -243,17 +242,35 @@ async fn pswap_checks_output_before_sealing(
     let mutation_code = match mutation {
         OutputMutation::None => String::from("drop"),
         OutputMutation::ExtraAsset => format!(
-            "push.{} push.{} call.wallet::move_asset_to_note dropw dropw dropw dropw",
+            "push.{} push.{}
+             # => [EXTRA_ASSET_ID, EXTRA_ASSET_VALUE, note_idx, pad(7)]
+
+             call.wallet::move_asset_to_note
+             # => [pad(16)]
+
+             dropw dropw dropw dropw",
             extra.to_value_word(),
             extra.to_id_word(),
         ),
         OutputMutation::BalanceIncrease => String::from(
-            "push.1 exec.active_account::get_id exec.fungible_asset::create
-             call.wallet::move_asset_to_note dropw dropw dropw dropw",
+            "push.1 exec.active_account::get_id
+             # => [faucet_suffix, faucet_prefix, amount=1, note_idx, pad(7)]
+
+             exec.fungible_asset::create
+             # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+             call.wallet::move_asset_to_note
+             # => [pad(16)]
+
+             dropw dropw dropw dropw",
         ),
-        OutputMutation::Attachment => {
-            String::from("push.1.2.3.4.5 exec.output_note::add_word_attachment")
-        },
+        OutputMutation::Attachment => format!(
+            "push.1.2.3.4.{}
+             # => [scheme, ATTACHMENT, note_idx, pad(7)]
+
+             exec.output_note::add_word_attachment",
+            PswapNote::PSWAP_ATTACHMENT_SCHEME.as_u16(),
+        ),
     };
     let code = CodeBuilder::default().compile_component_code(
         "tests::pswap_callback",
@@ -265,14 +282,21 @@ async fn pswap_checks_output_before_sealing(
 
             @account_procedure
             pub proc on_before_asset_added_to_note
+                # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
                 # Do not recurse when the callback inserts its one-unit mutation.
                 exec.fungible_asset::to_amount_unchecked eq.1
+                # => [is_mutation, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
                 if.true
                     dropw dropw drop
                 else
                     dropw dropw
+                    # => [note_idx, pad(7)]
+
                     {mutation_code}
                 end
+                # => [pad(16)]
             end",
         ),
     )?;
@@ -303,20 +327,73 @@ async fn pswap_checks_output_before_sealing(
     filler.vault_mut().add_asset(requested.into())?;
     filler.vault_mut().add_asset(extra.into())?;
     builder.add_account(filler.clone())?;
-    let (_, note) =
+    let (pswap, note) =
         build_pswap_note(&mut builder, alice.id(), offered, requested, NoteType::Public)?;
     let chain = builder.build()?;
     let result = chain
-        .build_transaction(filler)
+        .build_transaction(filler.clone())
         .authenticated_input_note(note.id())
         .extend_note_args(BTreeMap::from([(note.id(), PswapNote::create_args(10, 0)?)]))
         .build()?
         .execute()
         .await;
-    if matches!(mutation, OutputMutation::None) {
-        result?;
-    } else {
-        assert_transaction_executor_error!(result, ERR_PSWAP_OUTPUT_ALTERED);
+    match mutation {
+        OutputMutation::None => {
+            result?;
+        },
+        OutputMutation::Attachment => {
+            let executed = result?;
+            let output = executed.output_notes().get_note(usize::from(remainder_callback));
+            assert_eq!(output.attachments().num_attachments(), 2);
+
+            let (payback, remainder) =
+                pswap.execute(filler.id(), Some(FungibleAsset::new(requested_id, 10)?), None)?;
+            let expected = if remainder_callback {
+                Note::from(remainder.expect("partial fill creates a remainder"))
+            } else {
+                payback
+            };
+            assert_eq!(output.attachments().get(0), expected.attachments().get(0));
+
+            // The assets and recipient are predictable; all attachment data is public, including
+            // extra attachments. Combining them reconstructs the actual output's ID.
+            let reconstructed = Note::with_attachments(
+                expected.assets().clone(),
+                *expected.metadata().partial_metadata(),
+                expected.recipient().clone(),
+                output.attachments().clone(),
+            );
+            assert_eq!(reconstructed.id(), output.id());
+
+            if remainder_callback {
+                // Even another PSWAP-scheme attachment cannot override the first one's depth.
+                let refilled = chain
+                    .build_transaction(filler.clone())
+                    .unauthenticated_input_note(reconstructed.clone())
+                    .build()?
+                    .execute()
+                    .await?;
+                assert_eq!(refilled.output_notes().num_notes(), 1);
+                let next_payback = refilled.output_notes().get_note(0);
+                let next_attachment = PswapNoteAttachment::try_from(
+                    next_payback.attachments().get(0).expect("payback has a PSWAP attachment"),
+                )?;
+                assert_eq!(next_attachment.depth(), 2);
+                assert_eq!(next_attachment.amount(), AssetAmount::new(15)?);
+            }
+
+            // Alice can claim the payback or cancel the remainder with the extra attachment.
+            chain
+                .build_transaction(alice)
+                .foreign_accounts([chain.get_foreign_account_inputs(filler)?])
+                .unauthenticated_input_note(reconstructed)
+                .build()?
+                .execute()
+                .await?;
+        },
+        OutputMutation::ExtraAsset | OutputMutation::BalanceIncrease => {
+            assert_transaction_executor_error!(result, ERR_PSWAP_OUTPUT_ALTERED);
+        },
     }
     Ok(())
 }

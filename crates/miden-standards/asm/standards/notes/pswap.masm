@@ -7,7 +7,6 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
-use {ASSET_SIZE} from miden::protocol::asset
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::assets::fungible_asset
@@ -238,31 +237,45 @@ end
 # OUTPUT NOTE VALIDATION AND SEALING
 # =================================================================================================
 
-#! Checks that the completed output contains exactly the expected asset and PSWAP attachment, then
-#! seals it. Call after asset callbacks finish. The expected attachment is already present and
-#! append-only, so checking the packed schemes rejects any extra attachments.
+#! Checks the completed output's asset and first attachment scheme, then seals it. Call after all
+#! asset callbacks finish. Callbacks cannot replace the asset argument today, but a native issuer's
+#! callback can add to the output's balance without changing its asset count, so the full asset
+#! commitment must still be checked.
+#!
+#! The PSWAP attachment is added before callbacks and is append-only, so checking its first scheme
+#! is defensive. Additional public attachments are allowed.
 #!
 #! Inputs: [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 #! Outputs: []
-@locals(8)
 proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
-    locaddr.0 exec.asset::store
-    # => [note_idx]
+    exec.poseidon2::merge
+    # => [EXPECTED_ASSETS_COMMITMENT, note_idx]
+
+    movup.4
+    # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
 
     dup exec.output_note::get_metadata
-    # => [METADATA, note_idx]
+    # => [METADATA, note_idx, EXPECTED_ASSETS_COMMITMENT]
 
-    drop drop drop eq.PSWAP_ATTACHMENT_SCHEME assert.err=ERR_PSWAP_OUTPUT_ALTERED
-    # => [note_idx]
+    exec.note::metadata_into_attachment_schemes
+    # => [scheme_0, scheme_1, scheme_2, scheme_3, note_idx, EXPECTED_ASSETS_COMMITMENT]
+
+    eq.PSWAP_ATTACHMENT_SCHEME assert.err=ERR_PSWAP_OUTPUT_ALTERED
+    drop drop drop
+    # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
 
     dup exec.output_note::get_assets_info
-    movup.4 eq.1 assert.err=ERR_PSWAP_OUTPUT_ALTERED
-    # => [ASSETS_COMMITMENT, note_idx]
+    # => [ASSETS_COMMITMENT, num_assets, note_idx, EXPECTED_ASSETS_COMMITMENT]
 
-    locaddr.0 add.ASSET_SIZE locaddr.0 exec.poseidon2::hash_double_words
-    # => [EXPECTED_ASSETS_COMMITMENT, ASSETS_COMMITMENT, note_idx]
+    movup.4 eq.1 assert.err=ERR_PSWAP_OUTPUT_ALTERED
+    # => [ASSETS_COMMITMENT, note_idx, EXPECTED_ASSETS_COMMITMENT]
+
+    movup.4 movdn.8
+    # => [ASSETS_COMMITMENT, EXPECTED_ASSETS_COMMITMENT, note_idx]
 
     assert_eqw.err=ERR_PSWAP_OUTPUT_ALTERED
+    # => [note_idx]
+
     exec.output_note::seal
     # => []
 end
@@ -389,9 +402,17 @@ proc create_p2id_note(
     # => []
 
     loc_load.P2ID_NOTE_IDX
+    # => [note_idx]
+
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    # => [total_fill, note_idx]
+
     loc_load.P2ID_REQUESTED_FAUCET_PREFIX loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+    # => [requested_faucet_suffix, requested_faucet_prefix, total_fill, note_idx]
+
     exec.fungible_asset::create
+    # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
     exec.validate_and_seal_output_note
     # => []
 end
@@ -509,9 +530,17 @@ proc create_remainder_note(
     # => []
 
     loc_load.REMAINDER_NOTE_IDX
+    # => [note_idx]
+
     loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
+    # => [remainder_amount, note_idx]
+
     loc_load.REMAINDER_OFFERED_FAUCET_PREFIX loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
+    # => [offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
+
     exec.fungible_asset::create
+    # => [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
+
     exec.validate_and_seal_output_note
     # => []
 end
