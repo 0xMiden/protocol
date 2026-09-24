@@ -14,6 +14,10 @@
 - [BREAKING] `StorageMap` now drops an entry whose value is empty, which the sparse Merkle tree already treats as absent, so a removed RBAC role no longer fails account reconstruction, and reports an overfull leaf through the new `StorageMapError::MaxLeafEntriesExceeded` instead of panicking ([#3916](https://github.com/0xMiden/protocol/pull/3916)).
 - [BREAKING] Extracted the Protobuf MMR representation from `PartialBlockchain` into a standalone `primitives.PartialMmr` message.
 
+### Fixes
+
+- [BREAKING] `AuthGuardedMultisig` now pays the transaction fee ([#3931](https://github.com/0xMiden/protocol/pull/3931)).
+
 ## v0.17.0-rc.5 (2026-09-17)
 
 ### Features
