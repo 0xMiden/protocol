@@ -15,23 +15,10 @@ use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator
 use rstest::rstest;
 
 use super::super::multisig::{MultisigAuthArgsExt, setup_keys_and_authenticators_with_scheme};
-use super::{
-    FALCON_512_POSEIDON2_AUTH_CYCLES,
-    MULTISIG_AUTH_BASE_CYCLES,
-    PAY_FEE_CYCLES,
-    VERIFICATION_BASE_FEE,
-    assert_single_fee_note,
-};
+use super::{VERIFICATION_BASE_FEE, assert_single_fee_note, multisig_auth_estimate};
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-/// The cycle estimate the multisig auth component passes to `pay_fee` for the given number of
-/// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
-/// procedure cycles.
-fn multisig_auth_estimate(num_signers: usize) -> usize {
-    num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
-}
 
 /// Builds an [`ApproverSet`] of `num_approvers` signers of the given scheme with the given
 /// threshold, along with the (public key, authenticator) pairs of the first `threshold` signers.
