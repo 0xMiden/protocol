@@ -474,29 +474,23 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 48;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────────────┬──────────┬───────────┬─────────────────────────────────┬
-// │ NOTE DETAILS │ METADATA │ RECIPIENT │ [dirty_flag, sealed_flag, 0, 0] │
-// │  COMMITMENT  │          │           │                                 │
-// ├──────────────┼──────────┼───────────┼─────────────────────────────────┼
-// 0              4          8           12
+// | Offset  | Section                                                  |
+// | ------- | -------------------------------------------------------- |
+// | 0       | NOTE DETAILS COMMITMENT                                  |
+// | 4       | METADATA                                                 |
+// | 8       | RECIPIENT                                                |
+// | 12      | [dirty_flag, sealed_flag, 0, 0]                          |
+// | 16      | [num_assets, num_attachments, total_attachment_words, 0] |
+// | 20      | ATTACHMENT 0                                             |
+// | 24      | ATTACHMENT 1                                             |
+// | 28      | ATTACHMENT 2                                             |
+// | 32      | ATTACHMENT 3                                             |
+// | 36      | ASSETS COMMITMENT                                        |
+// | 40 + 8i | ASSET KEY i                                              |
+// | 44 + 8i | ASSET VALUE i                                            |
+// | 40 + 8n | PADDING                                                  |
 //
-// ┬─────────────────────────────────┬
-// │ [num_assets, num_attachments,   │
-// │  total_attachment_words, 0]     │
-// ┼─────────────────────────────────┼
-// 16
-//
-// ┬────────────┬────────────┬────────────┬────────────┬────────────┬
-// │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │   ASSETS   │
-// │      0     │      1     │      2     │      3     │ COMMITMENT │
-// ┼────────────┼────────────┼────────────┼────────────┼────────────┼
-// 20           24           28           32           36
-//
-// ┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
-// │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
-// │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
-// ┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 40      44              40 + 8n  44 + 8n
+// Offsets are measured in field elements, where n = num_assets and 0 <= i < n.
 //
 // The sealed flag starts at zero. Once set to one, asset and attachment mutations are rejected; it is
 // excluded from note commitments and serialization.
