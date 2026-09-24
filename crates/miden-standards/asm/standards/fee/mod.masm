@@ -286,15 +286,20 @@ pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, asset: Asset
     u32assert
     # => [serial_number_block, ASSET_ID, ASSET_VALUE]
 
-    # check the balance first, so an underfunded account fails with a fee error rather than the
-    # vault's generic withdrawal error
-    dup.4 dup.4 dup.4 dup.4 exec.fungible_asset::get_active_account_balance
-    # => [balance, serial_number_block, ASSET_ID, ASSET_VALUE]
+    # first, check the account has sufficient balance to pay the fee
+    movdn.8 dupw.1 dupw.1
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, serial_number_block]
 
-    dup.9 dup.9 dup.9 dup.9 exec.fungible_asset::value_into_amount_unchecked
-    # => [fee_amount, balance, serial_number_block, ASSET_ID, ASSET_VALUE]
+    exec.fungible_asset::get_active_account_balance movdn.4
+    # => [ASSET_VALUE, balance, ASSET_ID, ASSET_VALUE, serial_number_block]
+
+    exec.fungible_asset::value_into_amount_unchecked
+    # => [fee_amount, balance, ASSET_ID, ASSET_VALUE, serial_number_block]
 
     gte assert.err=ERR_FEE_INSUFFICIENT_BALANCE
+    # => [ASSET_ID, ASSET_VALUE, serial_number_block]
+
+    movup.8
     # => [serial_number_block, ASSET_ID, ASSET_VALUE]
 
     # derive the note's serial number
