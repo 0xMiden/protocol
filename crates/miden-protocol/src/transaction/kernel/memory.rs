@@ -474,26 +474,31 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 48;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────────────┬──────────┬───────────┬───────────────────────────────────────────┬
-// │ NOTE DETAILS │ METADATA │ RECIPIENT │ [dirty_flag, num_assets,                  │
-// │  COMMITMENT  │          │           │  num_attachments, total_attachment_words] │
-// ├──────────────┼──────────┼───────────┼───────────────────────────────────────────┼
+// ┌──────────────┬──────────┬───────────┬─────────────────────────────────┬
+// │ NOTE DETAILS │ METADATA │ RECIPIENT │ [dirty_flag, sealed_flag, 0, 0] │
+// │  COMMITMENT  │          │           │                                 │
+// ├──────────────┼──────────┼───────────┼─────────────────────────────────┼
 // 0              4          8           12
+//
+// ┬─────────────────────────────────┬
+// │ [num_assets, num_attachments,   │
+// │  total_attachment_words, 0]     │
+// ┼─────────────────────────────────┼
+// 16
 //
 // ┬────────────┬────────────┬────────────┬────────────┬────────────┬
 // │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │   ASSETS   │
 // │      0     │      1     │      2     │      3     │ COMMITMENT │
 // ┼────────────┼────────────┼────────────┼────────────┼────────────┼
-// 16           20           24           28           32
+// 20           24           28           32           36
 //
 // ┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
 // │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
 // │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
 // ┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 36      40              36 + 8n  40 + 8n
+// 40      44              40 + 8n  44 + 8n
 //
-// The output note sealed flag is stored at offset 164, immediately after the space reserved for assets.
-// It starts at zero. Once set to one, asset and attachment mutations are rejected; the flag is
+// The sealed flag starts at zero. Once set to one, asset and attachment mutations are rejected; it is
 // excluded from note commitments and serialization.
 //
 // The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
@@ -511,18 +516,16 @@ pub const OUTPUT_NOTE_DETAILS_COMMITMENT_OFFSET: MemoryOffset = 0;
 pub const OUTPUT_NOTE_METADATA_OFFSET: MemoryOffset = 4;
 pub const OUTPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 8;
 pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 12;
-pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 13;
-pub const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET: MemoryOffset = 14;
-pub const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET: MemoryOffset = 15;
-pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 16;
-pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 20;
-pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 24;
-pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 28;
-pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 32;
-pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
-/// Offset for the output note sealed flag, immediately after the space reserved for assets.
-pub const OUTPUT_NOTE_SEALED_FLAG_OFFSET: MemoryOffset =
-    OUTPUT_NOTE_ASSETS_OFFSET + (crate::MAX_ASSETS_PER_NOTE * WORD_SIZE * 2) as MemoryOffset;
+pub const OUTPUT_NOTE_SEALED_FLAG_OFFSET: MemoryOffset = 13;
+pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 16;
+pub const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET: MemoryOffset = 17;
+pub const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET: MemoryOffset = 18;
+pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 20;
+pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 24;
+pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 28;
+pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 32;
+pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 36;
+pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 40;
 
 // ASSETS
 // ------------------------------------------------------------------------------------------------
