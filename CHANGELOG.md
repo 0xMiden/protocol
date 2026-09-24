@@ -7,6 +7,10 @@
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
 
+### Fixes
+
+- Fee payment now fails with `ERR_FEE_INSUFFICIENT_BALANCE` when the account holds less of the fee asset than the fee, instead of the vault's generic withdrawal error ([#3930](https://github.com/0xMiden/protocol/pull/3930)).
+
 ## v0.17.0-rc.6 (2026-09-22)
 
 ### Features
