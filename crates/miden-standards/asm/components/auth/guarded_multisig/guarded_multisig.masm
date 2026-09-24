@@ -59,36 +59,40 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.multisig::assert_approval_not_expired movdn.10
     # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
 
+    # check a guardian rotation before the fee note exists, since a rotation must not create notes
+    exec.guardian::assert_rotation_policy movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
     # Pay the transaction fee before the summary is created so that the TX_FEE note and the
     # vault withdrawal funding it are covered by the approver and guardian signatures.
     # ---------------------------------------------------------------------------------------------
 
     exec.multisig::get_initial_threshold_and_num_approvers drop
-    # => [num_of_approvers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    # => [num_of_approvers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
     # count the guardian as a signer; this overestimates a guardian rotation, which skips it
     add.1
-    # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
     exec.signature::estimate_multisig_authentication_cycles
-    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
     # use the signed block for the fee note.
     dup.5 movdn.5
-    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
     exec.fee::pay_fee drop
-    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
 
     # Authenticate the transaction with the approvers and the guardian and record it for replay
     # protection.
     # ---------------------------------------------------------------------------------------------
 
     exec.multisig::auth_tx
-    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
+    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta, is_rotation]
 
-    dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
+    dupw movup.9
+    # => [is_rotation, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
