@@ -91,12 +91,7 @@ impl Verify for Account {
     type Verified = miden_protocol::account::Account;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        match self.version {
-            proto::account::AccountVersion::V1 => {},
-            proto::account::AccountVersion::Unspecified => {
-                return Err(AccountVersionError::Unspecified.into());
-            },
-        }
+        self.version.ensure_specified()?;
         Ok(Self::Verified::new(
             self.account_id.verify()?,
             self.vault.verify()?,
@@ -108,7 +103,17 @@ impl Verify for Account {
     }
 }
 
-/// The message format version of an [`Account`], distinct from the domain's `AccountIdVersion`.
+impl proto::account::AccountVersion {
+    pub(super) fn ensure_specified(self) -> Result<(), AccountVersionError> {
+        match self {
+            Self::V1 => Ok(()),
+            Self::Unspecified => Err(AccountVersionError::Unspecified),
+        }
+    }
+}
+
+/// The message format version of an [`Account`] or [`PartialAccount`](super::PartialAccount),
+/// distinct from the domain's `AccountIdVersion`.
 #[derive(Debug, thiserror::Error)]
 pub enum AccountVersionError {
     #[error("account version is unspecified")]
