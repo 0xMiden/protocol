@@ -2066,6 +2066,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
 /// any parameter validation, so dummy values are sufficient.
 #[rstest]
 #[case::seal(0, "seal")]
+#[case::is_sealed(0, "is_sealed")]
 #[case::add_asset(8, "add_asset")]
 #[case::get_assets_info(0, "get_assets_info")]
 #[case::get_assets(1, "get_assets")]
@@ -2162,6 +2163,7 @@ async fn test_sealed_output_note_mutations(
                 push.{asset_value} push.{asset_id} exec.output_note::add_asset
             end
             push.0 exec.output_note::seal
+            push.1 exec.output_note::is_sealed assertz
             push.{index}
             {mutation}
         end
@@ -2211,8 +2213,11 @@ async fn test_private_output_sealed_by_note_script(
                 exec.output_note::add_word_attachment
                 # Keep a nonzero word below the index to check stack preservation and idempotence.
                 push.91.92.93.94 movup.4
+                dup exec.output_note::is_sealed assertz
                 dup exec.output_note::seal
-                exec.output_note::seal
+                dup exec.output_note::is_sealed assert
+                dup exec.output_note::seal
+                exec.output_note::is_sealed assert
                 push.91.92.93.94 assert_eqw
                 exec.::miden::core::sys::truncate_stack
             end",
@@ -2241,6 +2246,7 @@ async fn test_private_output_sealed_by_note_script(
             # Reading the commitment must preserve the seal established by the note script.
             push.0 exec.output_note::compute_note_id
             push.{expected_note_id} assert_eqw
+            push.0 exec.output_note::is_sealed assert
             {mutation_code}
             exec.::miden::core::sys::truncate_stack
         end",
