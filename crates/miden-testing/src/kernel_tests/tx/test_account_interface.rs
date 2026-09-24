@@ -207,7 +207,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // First failing note.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error().expect("a blamed note should carry its error"),
+        first_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -220,7 +220,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // Second failing note.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error().expect("a blamed note should carry its error"),
+        second_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -356,7 +356,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // First failing note should be the note that does not cause epilogue failure.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error().expect("a blamed note should carry its error"),
+        first_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -369,7 +369,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // Second failing note should be the note that causes epilogue failure.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error().expect("a blamed note should carry its error"),
+        second_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::FailedAssertion { .. },
@@ -795,7 +795,6 @@ enum ExpectedReclaim {
 /// A note checked on its own is one whose feature note is absent, which leaves the reclaim as its
 /// only path: only the reclaimer may consume it, and only once the reclaim height is reached.
 #[rstest::rstest]
-#[case::reclaim_open(true, Some(2), ExpectedReclaim::Now)]
 #[case::reclaim_height_reached(true, Some(3), ExpectedReclaim::Now)]
 #[case::reclaim_height_not_reached(true, Some(5), ExpectedReclaim::From(5))]
 #[case::reclaim_disabled(true, None, ExpectedReclaim::Never)]

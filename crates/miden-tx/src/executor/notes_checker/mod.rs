@@ -50,12 +50,6 @@ pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor> {
     tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
     /// The asset the target account collects fees in, which every FEE_SPONSORSHIP note it consumes
     /// has to carry.
-    ///
-    /// This is the asset configured on the account's fee manager, not the chain's transaction fee
-    /// asset ([`ProtocolConfig::fee_asset_id`](miden_protocol::protocol_config::ProtocolConfig::fee_asset_id)):
-    /// an account is free to collect fees in another asset than the one transaction fees are paid
-    /// in. It is `None` for an account that collects no fees and so has no such asset, in which
-    /// case the assets of sponsorship notes are left unchecked.
     collected_fee_asset_id: Option<AssetId>,
 }
 
@@ -65,11 +59,12 @@ where
     AUTH: TransactionAuthenticator + Sync,
     EXEC: ProgramExecutor,
 {
-    /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
+    /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor and
+    /// fee asset ID.
     ///
-    /// `collected_fee_asset_id` is the asset the checked account collects fees in, which the
-    /// checker holds every FEE_SPONSORSHIP note against. Pass `None` for an account that collects
-    /// no fees, such as a regular wallet, which has no such asset to check against.
+    /// `collected_fee_asset_id` is the asset the checked account collects fees in. Pass `None` for
+    /// an account that collects no fees, such as a regular wallet, which has no such asset to check
+    /// against.
     pub fn new(
         tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
         collected_fee_asset_id: Option<AssetId>,
@@ -104,8 +99,7 @@ where
     ///
     /// FEE_SPONSORSHIP notes the target account cannot consume at all are rejected up front, before
     /// anything is executed: one carrying an asset other than the account's fee asset, and one
-    /// whose feature note is absent and which the account may not reclaim. See
-    /// [`reject_unconsumable_sponsorships`].
+    /// whose feature note is absent and which the account may not reclaim.
     ///
     /// Returns a list of successfully consumed notes and a list of failed notes.
     pub async fn check_notes_consumability(

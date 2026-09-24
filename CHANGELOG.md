@@ -18,7 +18,7 @@
 ### Fixes
 
 - [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
-- [BREAKING] `NoteConsumptionChecker::new` now takes the asset the checked account collects fees in, and rejects a `FEE_SPONSORSHIP` note carrying another asset, or one whose feature note is absent and which the account may not reclaim, without executing it. Such a note is reported as `NoteFailure::Rejected` ([#3888](https://github.com/0xMiden/protocol/issues/3888)).
+- [BREAKING] `NoteConsumptionChecker::new` now takes the account's fee asset, and the checker rejects unconsumable `FEE_SPONSORSHIP` notes without executing them. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
 

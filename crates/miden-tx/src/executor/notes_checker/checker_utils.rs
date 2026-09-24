@@ -70,7 +70,6 @@ pub enum NoteFailure {
     },
     /// The note was rejected by static analysis and never executed.
     Rejected {
-        /// Why the note cannot be consumed.
         reason: Box<dyn Error + Send + Sync + 'static>,
     },
 }
@@ -118,7 +117,7 @@ impl FailedNote {
 
     /// Returns a reference to the error, if this note was the one blamed for the failure. `None`
     /// otherwise.
-    pub fn error(&self) -> Option<&TransactionExecutorError> {
+    pub fn execution_error(&self) -> Option<&TransactionExecutorError> {
         match &self.failure {
             NoteFailure::Blamed { error, .. } => Some(error),
             NoteFailure::Collateral { .. } | NoteFailure::Rejected { .. } => None,
@@ -234,32 +233,35 @@ pub(super) enum SponsorshipRejection {
     )]
     WrongFeeAsset { expected: AssetId, actual: AssetId },
     #[error(
-        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, by account {reclaimer}"
+        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, but the native account {native_account} is not the reclaimer account {reclaimer}"
     )]
-    NotReclaimer { reclaimer: AccountId },
+    NotReclaimer {
+        native_account: AccountId,
+        reclaimer: AccountId,
+    },
     #[error(
         "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, and reclaim is disabled"
     )]
     ReclaimDisabled,
     #[error(
-        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed, which is possible from block {0}"
+        "FEE_SPONSORSHIP note whose feature note is absent can only be reclaimed: reclaim block is {reclaim_height}, but the current block is {current_height}"
     )]
-    ReclaimHeightNotReached(BlockNumber),
+    ReclaimHeightNotReached {
+        reclaim_height: BlockNumber,
+        current_height: BlockNumber,
+    },
 }
 
 /// Rejects the FEE_SPONSORSHIP notes among `bundles` that `native_account_id` cannot consume at
-/// `block_ref`, so that they do not have to be executed to be ruled out.
+/// `block_ref`.
 ///
-/// [`NoteBundle::group`] has already decided the only question the rules turn on: a sponsorship
-/// heads a bundle exactly when the feature note it names is absent from the inputs, and sits in a
-/// bundle's tail exactly when that note is present. The two cases are consumed in entirely
-/// different ways, and so are checked against different rules:
-///
-/// - A sponsorship heading a bundle can only be reclaimed, which requires reclaim to be enabled,
-///   its height to have been reached, and the reclaiming account to be the named reclaimer. The
-///   asset a reclaim returns is not constrained, so the fee asset is not checked here.
-/// - A sponsorship in a tail will be consumed as a sponsorship, and fee collection accepts only the
-///   asset the account collects fees in.
+/// This procedure checks the following:
+/// - If a bundle has only a sponsorship note. In that case the note can only be reclaimed, which
+///   requires reclaim to be enabled, its height to have been reached, and the reclaiming account to
+///   be the named reclaimer. The asset a reclaim returns is not constrained, so the fee asset is
+///   not checked here.
+/// - If a bundle contains a feature note. In that case all the sponsorship notes should have the
+///   fee asset the account collects fees in.
 ///
 /// `collected_fee_asset_id` is `None` for an account that collects no fees and therefore has no
 /// such asset; the fee asset check is then skipped.
@@ -278,11 +280,17 @@ pub(super) fn reject_unconsumable_sponsorships(
             .expect("a bundle holds at least the note heading it");
 
         // A sponsorship only heads a bundle when the feature note it names is not an input.
-        if let Ok(sponsorship) = FeeSponsorshipNote::try_from(head)
-            && let Some(reason) =
+        if let Ok(sponsorship) = FeeSponsorshipNote::try_from(head) {
+            assert!(
+                bound_notes.is_empty(),
+                "a bundle headed by a sponsorship note should contain only that note"
+            );
+
+            if let Some(reason) =
                 reject_orphan_sponsorship(&sponsorship, native_account_id, block_ref)
-        {
-            rejected.push(FailedNote::new(head.clone(), NoteFailure::from(reason)));
+            {
+                rejected.push(FailedNote::new(head.clone(), NoteFailure::from(reason)));
+            }
         }
 
         for note in bound_notes {
@@ -311,8 +319,8 @@ pub(super) fn sponsorship_consumption_status(
 
     let status = match reject_orphan_sponsorship(&sponsorship, native_account_id, block_ref) {
         None => NoteConsumptionStatus::ConsumableWithAuthorization,
-        Some(SponsorshipRejection::ReclaimHeightNotReached(height)) => {
-            NoteConsumptionStatus::ConsumableAfter(height)
+        Some(SponsorshipRejection::ReclaimHeightNotReached { reclaim_height, .. }) => {
+            NoteConsumptionStatus::ConsumableAfter(reclaim_height)
         },
         Some(reason) => NoteConsumptionStatus::NeverConsumable(Box::new(reason)),
     };
@@ -331,13 +339,19 @@ fn reject_orphan_sponsorship(
     block_ref: BlockNumber,
 ) -> Option<SponsorshipRejection> {
     if sponsorship.reclaimer() != native_account_id {
-        return Some(SponsorshipRejection::NotReclaimer { reclaimer: sponsorship.reclaimer() });
+        return Some(SponsorshipRejection::NotReclaimer {
+            native_account: native_account_id,
+            reclaimer: sponsorship.reclaimer(),
+        });
     }
 
     match sponsorship.reclaim_height() {
         None => Some(SponsorshipRejection::ReclaimDisabled),
-        Some(height) if block_ref < height => {
-            Some(SponsorshipRejection::ReclaimHeightNotReached(height))
+        Some(reclaim_height) if block_ref < reclaim_height => {
+            Some(SponsorshipRejection::ReclaimHeightNotReached {
+                reclaim_height,
+                current_height: block_ref,
+            })
         },
         Some(_) => None,
     }
