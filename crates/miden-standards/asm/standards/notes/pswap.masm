@@ -237,13 +237,13 @@ end
 # OUTPUT NOTE VALIDATION AND SEALING
 # =================================================================================================
 
-#! Checks the completed output's asset and first attachment scheme, then seals it. Call after all
-#! asset callbacks finish. Callbacks cannot replace the asset argument today, but a native issuer's
+#! Checks the completed output's asset, then seals it. Call after all asset callbacks finish.
+#! Callbacks cannot replace the asset argument today, but a native issuer's
 #! callback can add to the output's balance without changing its asset count, so the full asset
 #! commitment must still be checked.
 #!
-#! The PSWAP attachment is added before callbacks and is append-only, so checking its first scheme
-#! is defensive. Additional public attachments are allowed.
+#! The PSWAP attachment is added before callbacks and cannot be replaced or removed.
+#! Additional public attachments are allowed before sealing.
 #!
 #! Inputs: [EXPECTED_ASSET_ID, EXPECTED_ASSET_VALUE, note_idx]
 #! Outputs: []
@@ -252,16 +252,6 @@ proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
     # => [EXPECTED_ASSETS_COMMITMENT, note_idx]
 
     movup.4
-    # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
-
-    dup exec.output_note::get_metadata
-    # => [METADATA, note_idx, EXPECTED_ASSETS_COMMITMENT]
-
-    exec.note::metadata_into_attachment_schemes
-    # => [scheme_0, scheme_1, scheme_2, scheme_3, note_idx, EXPECTED_ASSETS_COMMITMENT]
-
-    eq.PSWAP_ATTACHMENT_SCHEME assert.err=ERR_PSWAP_OUTPUT_ALTERED
-    drop drop drop
     # => [note_idx, EXPECTED_ASSETS_COMMITMENT]
 
     dup exec.output_note::get_assets_info

@@ -623,8 +623,8 @@ impl PswapNote {
     /// Reconstructs the depth-`d` payback P2ID [`Note`], so the creator can consume it as an
     /// unauthenticated input note.
     ///
-    /// The returned note includes only the supplied PSWAP attachment. If asset callbacks added
-    /// other attachments, use [`Note::with_attachments`] with the returned assets, partial
+    /// The returned note includes only the supplied PSWAP attachment. If the output contains
+    /// additional attachments, use [`Note::with_attachments`] with the returned assets, partial
     /// metadata, and recipient plus the output's complete public attachment list to reconstruct
     /// its ID.
     ///
@@ -673,7 +673,7 @@ impl PswapNote {
     /// Reconstructs the depth-`d` remainder PSWAP [`Note`] in this lineage.
     ///
     /// Called on the original PSWAP, this returns the remainder produced in round `depth`, with
-    /// only the supplied PSWAP attachment. If asset callbacks added other attachments, use
+    /// only the supplied PSWAP attachment. If the output contains additional attachments, use
     /// [`Note::with_attachments`] with the returned assets, partial metadata, and recipient plus
     /// the output's complete public attachment list to reconstruct its ID.
     ///
@@ -936,7 +936,7 @@ impl From<PswapNote> for Note {
 
 /// Parses a protocol [`Note`] back into a [`PswapNote`] by deserializing its storage.
 ///
-/// This wrapper supports at most one attachment. Notes with additional callback attachments can
+/// This wrapper supports at most one attachment. Notes with additional attachments can
 /// still be consumed through the generic [`Note`] API, but cannot be represented as a
 /// [`PswapNote`].
 impl TryFrom<&Note> for PswapNote {
