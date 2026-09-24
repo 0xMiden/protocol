@@ -499,10 +499,10 @@ impl PublicOutputNote {
             return Err(OutputNoteError::NoteIsPrivate(note.id()));
         }
 
-        // Remove debug info from the note script (if any)
-        note.clear_debug_info();
+        // Drop package-owned debug info so it does not inflate the serialized note size.
+        note.strip_package_debug_info();
 
-        // Check the size limit after stripping decorators
+        // Check the size limit after stripping package debug info.
         let note_size = note.get_size_hint();
         if note_size > NOTE_MAX_SIZE as usize {
             return Err(OutputNoteError::NoteSizeLimitExceeded { note_id: note.id(), note_size });

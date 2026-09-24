@@ -199,9 +199,11 @@ impl Note {
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Reduces the size of the note script by stripping all debug info from it.
-    pub fn clear_debug_info(&mut self) {
-        self.details.clear_debug_info();
+    /// Drops package-owned debug information from the note script, if any.
+    ///
+    /// See [`NoteScript::strip_package_debug_info`].
+    pub fn strip_package_debug_info(&mut self) {
+        self.details.strip_package_debug_info();
     }
 
     /// Consumes self and returns the underlying parts of the [`Note`].

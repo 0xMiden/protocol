@@ -85,9 +85,11 @@ impl NoteRecipient {
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Removes debug info associated with the script, if any.
-    pub fn clear_debug_info(&mut self) {
-        self.script.clear_debug_info();
+    /// Drops package-owned debug information from the note script, if any.
+    ///
+    /// See [`NoteScript::strip_package_debug_info`].
+    pub fn strip_package_debug_info(&mut self) {
+        self.script.strip_package_debug_info();
     }
 
     /// Consumes self and returns the underlying parts of the [`NoteRecipient`].

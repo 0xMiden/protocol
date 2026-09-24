@@ -173,8 +173,10 @@ impl MastForestScript {
         self.entrypoint
     }
 
-    /// Removes debug info from this program, if any.
-    pub fn clear_debug_info(&mut self) {
+    /// Drops package-owned debug information from this program, if any.
+    ///
+    /// This does not compact or otherwise rewrite the underlying [`MastForest`].
+    pub fn strip_package_debug_info(&mut self) {
         self.package_debug_info = None;
     }
 

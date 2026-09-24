@@ -158,9 +158,14 @@ impl NoteScript {
         self.0.entrypoint()
     }
 
-    /// Removes debug info from this note script, if any.
-    pub fn clear_debug_info(&mut self) {
-        self.0.clear_debug_info();
+    /// Drops package-owned debug information from this note script, if any.
+    ///
+    /// This does not compact or otherwise rewrite the underlying [`MastForest`]. MAST compaction is
+    /// no longer required for note scripts; use this only when serialized size should omit package
+    /// debug info (for example before checking [`NOTE_MAX_SIZE`](crate::constants::NOTE_MAX_SIZE)
+    /// for public output notes).
+    pub fn strip_package_debug_info(&mut self) {
+        self.0.strip_package_debug_info();
     }
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the

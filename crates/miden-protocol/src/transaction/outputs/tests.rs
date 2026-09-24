@@ -137,8 +137,9 @@ fn private_note_header(attachments: &NoteAttachments) -> NoteHeader {
 }
 
 // Construct a public note whose serialized size exceeds NOTE_MAX_SIZE by building a MastForest with
-// many reachable external nodes. External nodes carry no debug info, so `minify_script()` (called
-// inside `PublicOutputNote::new()`) cannot shrink them below the limit.
+// many reachable external nodes. External nodes carry no package debug info, so
+// `strip_package_debug_info()` (called inside `PublicOutputNote::new()`) cannot shrink them below
+// the limit.
 #[test]
 fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     let sender_id = ACCOUNT_ID_SENDER.try_into().unwrap();
@@ -196,12 +197,12 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
         computed_note_size > NOTE_MAX_SIZE as usize,
         "Expected note size ({computed_note_size}) to exceed NOTE_MAX_SIZE ({NOTE_MAX_SIZE})"
     );
-    let mut minified_note = oversized_note.clone();
-    minified_note.clear_debug_info();
-    let minified_note_size = minified_note.get_size_hint();
+    let mut stripped_note = oversized_note.clone();
+    stripped_note.strip_package_debug_info();
+    let stripped_note_size = stripped_note.get_size_hint();
     assert!(
-        minified_note_size > NOTE_MAX_SIZE as usize,
-        "Expected minified note size ({minified_note_size}) to exceed NOTE_MAX_SIZE ({NOTE_MAX_SIZE})"
+        stripped_note_size > NOTE_MAX_SIZE as usize,
+        "Expected stripped note size ({stripped_note_size}) to exceed NOTE_MAX_SIZE ({NOTE_MAX_SIZE})"
     );
 
     // Creating a PublicOutputNote should fail with size limit error
