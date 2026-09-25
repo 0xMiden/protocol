@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Added a per-procedure pause to the `Authority` component ([#3855](https://github.com/0xMiden/protocol/pull/3855)).
+
 ### Changes
 
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).

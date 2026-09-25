@@ -5,13 +5,16 @@
 # `miden::standards::access::authority` and is `exec`'d inline by gating procedures within
 # the active account's context. This component exposes `get_authority` as a call-padded
 # accessor so other accounts can read this account's authority, and re-exports the owner-gated
-# emergency switch (`freeze` / `unfreeze`) as `call` entrypoints.
+# emergency switch (`freeze` / `unfreeze`) and per-procedure pause (`pause_procedure` /
+# `unpause_procedure`) as `call` entrypoints.
 
 use miden::protocol::active_account
 use {AUTHORITY_SLOT} from miden::standards::access::authority
 
 pub use {freeze} from miden::standards::access::authority
 pub use {unfreeze} from miden::standards::access::authority
+pub use {pause_procedure} from miden::standards::access::authority
+pub use {unpause_procedure} from miden::standards::access::authority
 
 #! Returns the authority discriminator stored on the account.
 #!

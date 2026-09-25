@@ -1,15 +1,21 @@
-use {Bool} from miden::protocol::types
+use {AccountProcedureRoot, Bool} from miden::protocol::types
 # miden::standards::access::authority
 #
 # Single source of truth for the account-wide authority. Components that gate state-mutating
 # procedures (TokenPolicyManager `set_*_policy`, fungible token metadata `set_*` procedures,
 # future NFT metadata setters, ...) all consult this slot via `assert_authorized`.
+#
+# Two independent checks precede authorization: the account-wide `is_frozen` emergency switch,
+# and a per-procedure pause keyed by procedure root. A gated procedure runs only when the account
+# is not frozen and that procedure is not itself paused.
 
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
 use miden::standards::access::rbac
 use miden::standards::access::role_symbol
+use {ONE_WORD, ZERO_WORD} from miden::standards::utils
 
 # TYPE ALIASES
 # =================================================================================================
@@ -35,15 +41,24 @@ pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_
 # Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
 pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
 
+# Map slot holding the per-procedure pause.
+# Map entries: [PROCEDURE_ROOT] -> [is_paused, 0, 0, 0].
+pub const AUTHORITY_PAUSED_PROCEDURES_SLOT = word("miden::standards::access::authority::paused_procedures")
+
 # Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
 const UNFROZEN = 0
 const FROZEN = 1
+
+# Per-procedure pause states written to `AUTHORITY_PAUSED_PROCEDURES_SLOT`.
+const PAUSED_WORD = ONE_WORD
+const UNPAUSED_WORD = ZERO_WORD
 
 # ERRORS
 # =================================================================================================
 
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 const ERR_AUTHORITY_FROZEN = "authority is frozen"
+const ERR_AUTHORITY_PROCEDURE_PAUSED = "authority-gated procedure is paused"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -84,6 +99,48 @@ pub proc unfreeze()
     # => [pad(16)]
 end
 
+#! Pauses a single authority-gated procedure.
+#!
+#! Inputs:  [PROCEDURE_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - PROCEDURE_ROOT is the root of the gated procedure to pause.
+#!
+#! Panics if:
+#! - the note sender is not the account's emergency authority.
+#!
+#! Invocation: call
+@account_procedure
+pub proc pause_procedure(procedure_root: AccountProcedureRoot)
+    exec.assert_sender_is_emergency_authority
+    # => [PROCEDURE_ROOT, pad(12)]
+
+    push.PAUSED_WORD exec.write_procedure_pause_state
+    # => [pad(16)]
+end
+
+#! Unpauses a single authority-gated procedure.
+#!
+#! Inputs:  [PROCEDURE_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - PROCEDURE_ROOT is the root of the gated procedure to unpause.
+#!
+#! Panics if:
+#! - the note sender is not the account's emergency authority.
+#!
+#! Invocation: call
+@account_procedure
+pub proc unpause_procedure(procedure_root: AccountProcedureRoot)
+    exec.assert_sender_is_emergency_authority
+    # => [PROCEDURE_ROOT, pad(12)]
+
+    push.UNPAUSED_WORD exec.write_procedure_pause_state
+    # => [pad(16)]
+end
+
 # PUBLIC HELPERS
 # =================================================================================================
 
@@ -97,9 +154,13 @@ end
 #!   [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
 #!   installed on the account; otherwise linking the account fails.
 #!
-#! This procedure never panics under AuthControlled so the account's auth component is the sole
-#! gate and MUST authenticate every authority-gated procedure root, otherwise those procedures are
-#! permissionless.
+#! Before dispatching on the authority, two checks are applied: the account-wide `is_frozen`
+#! emergency switch, and the calling procedure's own entry in the paused-procedures map. Both
+#! apply under every authority kind, including AuthControlled.
+#!
+#! Apart from those two checks this procedure never panics under AuthControlled, so the account's
+#! auth component is the sole gate and MUST authenticate every authority-gated procedure root,
+#! otherwise those procedures are permissionless.
 #!
 #! Because the calling procedure is identified via `caller`, `assert_authorized` MUST be invoked
 #! with `exec` (inlined) from the gated procedure, and the gated procedure MUST be a `call`
@@ -109,6 +170,8 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - the account's authority-gated surface is frozen.
+#! - the calling procedure is paused.
 #! - the authority is OwnerControlled and the sender is not the registered owner.
 #! - the authority is RbacControlled, a role is configured for the procedure, and the sender does
 #!   not hold it.
@@ -123,6 +186,10 @@ pub proc assert_authorized()
 
     # Emergency switch: while frozen, block every gated procedure before any role/owner dispatch.
     dup.1 assertz.err=ERR_AUTHORITY_FROZEN
+    # => [authority, is_frozen, 0, 0]
+
+    # Per-procedure pause: block this procedure alone when it is paused.
+    exec.assert_caller_not_paused
     # => [authority, is_frozen, 0, 0]
 
     dup eq.AUTH_CONTROLLED
@@ -161,11 +228,12 @@ end
 
 #! Asserts the sender may toggle the emergency switch.
 #!
-#! Reads only the authority discriminant, so it bypasses the frozen flag and the authority can
-#! always toggle it. Dispatch:
+#! Reads only the authority discriminant, so it bypasses both the frozen flag and the per-procedure
+#! pause: the authority can always toggle either one. Dispatch:
 #! - OwnerControlled → the Ownable2Step owner.
-#! - RbacControlled  → the caller procedure's configured role in the procedure-roles map (freeze
-#!   and unfreeze may carry distinct roles, e.g. FREEZER / UNFREEZER), or ADMIN when unmapped.
+#! - RbacControlled  → the caller procedure's configured role in the procedure-roles map (each of
+#!   `freeze`, `unfreeze`, `pause_procedure` and `unpause_procedure` may carry a distinct role,
+#!   e.g. FREEZER / UNFREEZER), or ADMIN when unmapped.
 #! - AuthControlled  → panics (no owner slot and no role graph).
 #!
 #! Inputs:  []
@@ -229,6 +297,56 @@ proc write_frozen_flag(frozen_flag: Bool)
     # => [OLD_AUTHORITY_WORD]
 
     dropw
+    # => []
+end
+
+#! Writes a procedure's pause state into the paused-procedures map.
+#!
+#! Inputs:  [PAUSE_STATE, PROCEDURE_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - PAUSE_STATE is [1, 0, 0, 0] to pause the procedure and [0, 0, 0, 0] to unpause it.
+#! - PROCEDURE_ROOT is the root of the gated procedure the state applies to.
+#!
+#! Invocation: exec
+proc write_procedure_pause_state(pause_state: word, procedure_root: AccountProcedureRoot)
+    swapw
+    # => [PROCEDURE_ROOT, PAUSE_STATE, pad(12)]
+
+    push.AUTHORITY_PAUSED_PROCEDURES_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, PROCEDURE_ROOT, PAUSE_STATE, pad(12)]
+
+    exec.native_account::set_map_item
+    # => [OLD_PAUSE_STATE, pad(12)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Asserts the calling procedure is not individually paused.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the calling procedure is paused.
+#!
+#! Invocation: exec
+proc assert_caller_not_paused()
+    padw caller
+    # => [CALLER_ROOT]
+
+    push.AUTHORITY_PAUSED_PROCEDURES_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, CALLER_ROOT]
+
+    exec.active_account::get_map_item
+    # => [is_paused, 0, 0, 0]
+
+    exec.word::eqz
+    # => [is_not_paused]
+
+    assert.err=ERR_AUTHORITY_PROCEDURE_PAUSED
     # => []
 end
 
