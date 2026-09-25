@@ -21,8 +21,15 @@ use miden::core::mem
 use miden::core::word
 use {ACCOUNT_PROCEDURE_DATA_LENGTH, EMPTY_SMT_ROOT, STORAGE_SLOT_TYPE_MAP, STORAGE_SLOT_TYPE_VALUE}
     from miden::tx_kernel_core::constants
-use {ACCOUNT_DATA_LENGTH, ACCT_ID_PREFIX_OFFSET, ACCT_ID_SUFFIX_OFFSET, MAX_FOREIGN_ACCOUNT_PTR, NATIVE_ACCOUNT_DATA_PTR}
-    from miden::tx_kernel_core::memory
+use {
+    ACCOUNT_DATA_LENGTH,
+    ACCT_ID_PREFIX_OFFSET,
+    ACCT_ID_SUFFIX_OFFSET,
+    CODE_SECTION_NUM_PROCEDURES_OFFSET,
+    CODE_SECTION_PROCEDURES_OFFSET,
+    MAX_FOREIGN_ACCOUNT_PTR,
+    NATIVE_ACCOUNT_DATA_PTR,
+} from miden::tx_kernel_core::memory
 
 # Re-exported for testing purposes.
 pub use {validate as validate_id} from miden::protocol_utils::account_id
@@ -96,6 +103,12 @@ const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT =
 const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT =
     "failed to read an account map item from a non-map storage slot"
 
+const ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED = "account storage upgrades are not supported"
+
+const ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT = "a new account cannot be upgraded"
+
+const ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET = "an account code upgrade is already pending"
+
 const ERR_FOREIGN_ACCOUNT_ID_MISMATCH =
     "foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
 
@@ -113,6 +126,9 @@ const MIN_NUM_PROCEDURES = 2
 
 # The maximum number of account interface procedures.
 const MAX_NUM_PROCEDURES = 256
+
+# The local memory offset at which account::upgrade loads the new code section.
+const UPGRADE_CODE_SECTION_LOC = 0
 
 # Depth of the account database tree.
 const ACCOUNT_TREE_DEPTH = 64
@@ -206,6 +222,9 @@ const ACCOUNT_AFTER_INCREMENT_NONCE_EVENT = event("miden::protocol::account::aft
 # Event emitted to push the index of the account procedure at the top of the operand stack onto
 # the advice stack.
 const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT = event("miden::protocol::account::push_procedure_index")
+
+# Event emitted after an account upgrade was initialized and before it is stored.
+const ACCOUNT_UPGRADE_INITIALIZED_EVENT = event("miden::protocol::account::upgrade_initialized")
 
 # CONSTANT ACCESSORS
 # =================================================================================================
@@ -899,6 +918,88 @@ pub proc assert_auth_procedure(proc_root: AccountProcedureRoot)
     # => []
 end
 
+#! Initializes an upgrade of the native account's code, which the epilogue applies after the
+#! authentication procedure.
+#!
+#! The new code is validated here rather than in the epilogue, so that the work after the
+#! authentication procedure does not depend on the number of new procedures.
+#!
+#! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
+#!
+#! Inputs:
+#!   Operand stack: [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+#!   Advice map: {
+#!     NEW_CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
+#! - STORAGE_UPGRADE_COMMITMENT is reserved for storage upgrades and must be empty.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
+#!
+#! Panics if:
+#! - STORAGE_UPGRADE_COMMITMENT is not empty.
+#! - the native account is new.
+#! - a code upgrade is already pending.
+#! - the number of new procedures is less than 2 or more than 256.
+#! - the new procedures do not match NEW_CODE_COMMITMENT.
+#! - the new procedures are not sorted and unique, or the auth procedure root is duplicated.
+#!
+#! Locals:
+#! - 0..1028: the new code section, whose length is
+#!   CODE_SECTION_PROCEDURES_OFFSET + MAX_NUM_PROCEDURES * ACCOUNT_PROCEDURE_DATA_LENGTH.
+@locals(1028)
+pub proc upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Commitment)
+    swapw exec.word::testz assert.err=ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED swapw
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    # a new account's code is already part of its creation, so upgrading it is meaningless
+    exec.memory::is_new_account assertz.err=ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    exec.memory::has_code_upgrade assertz.err=ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    # store the empty word if the new code is the current code, so that the upgrade is a no-op
+    dupw exec.memory::get_account_code_commitment exec.word::eq
+    # => [is_current_code, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    padw movup.4
+    # => [is_current_code, EMPTY_WORD, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    # If is_current_code EMPTY_WORD remains.
+    # If !is_current_code NEW_CODE_COMMITMENT remains.
+    cdropw
+    # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
+    # the advice map has no entry for the empty word, so a no-op upgrade skips the validation
+    exec.word::testz not
+    # => [has_code_upgrade, NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
+    if.true
+        dupw locaddr.UPGRADE_CODE_SECTION_LOC exec.save_account_procedure_data
+        # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
+        locaddr.UPGRADE_CODE_SECTION_LOC exec.validate_procedures
+        # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+    end
+    # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
+    emit.ACCOUNT_UPGRADE_INITIALIZED_EVENT
+    # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
+    exec.memory::set_code_upgrade_commitment
+    # => [STORAGE_UPGRADE_COMMITMENT]
+
+    # TODO(storage_upgrades): applying a storage upgrade must validate the new storage like the
+    # prologue does for a new account, including prologue::validate_asset_callbacks. A code upgrade
+    # does not need the asset callbacks check, since it changes neither the storage nor the ID.
+    exec.memory::set_storage_upgrade_commitment
+    # => []
+end
+
 # VALIDATION
 # -------------------------------------------------------------------------------------------------
 
@@ -1090,68 +1191,80 @@ end
 #!
 #! This procedure is public so it can be tested.
 #!
-#! Inputs:  []
+#! Inputs:  [code_section_ptr]
 #! Outputs: []
+#!
+#! Where:
+#! - code_section_ptr is the memory pointer to a code section saved by save_account_procedure_data.
 #!
 #! Panics if:
 #! - the procedure roots are not sorted.
 #! - the procedure roots are not unique.
 #! - the root of the auth procedure appears at an index other than 0.
-pub proc validate_procedures()
-    exec.memory::get_num_account_procedures sub.1
-    # => [curr_proc_idx]
+pub proc validate_procedures(code_section_ptr: ptr<felt>)
+    dup add.CODE_SECTION_NUM_PROCEDURES_OFFSET mem_load
+    # => [num_procs, code_section_ptr]
+
+    swap add.CODE_SECTION_PROCEDURES_OFFSET
+    # => [auth_proc_ptr, num_procs]
+
+    # the procedure at index 1 ends the loop, since it has no predecessor to be compared against
+    dup add.ACCOUNT_PROCEDURE_DATA_LENGTH movdn.2
+    # => [auth_proc_ptr, num_procs, proc_1_ptr]
+
+    swap sub.1 mul.ACCOUNT_PROCEDURE_DATA_LENGTH dup.1 add
+    # => [curr_proc_ptr, auth_proc_ptr, proc_1_ptr]
 
     # keep the auth procedure root on the stack since every procedure is compared against it
-    push.0 exec.get_procedure_root
-    # => [AUTH_PROC_ROOT, curr_proc_idx]
+    swap padw movup.4 mem_loadw_le
+    # => [AUTH_PROC_ROOT, curr_proc_ptr, proc_1_ptr]
 
-    dup.4 exec.get_procedure_root
-    # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+    padw dup.8 mem_loadw_le
+    # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_ptr, proc_1_ptr]
 
     # save_account_procedure_data guarantees that the account has at least MIN_NUM_PROCEDURES
-    # procedures, so curr_proc_idx is at least 1. the procedure at index 1 is handled after the loop
-    # because it has no predecessor to be compared against.
-    dup.8 neq.1
-    # => [should_loop, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+    # procedures, so curr_proc_ptr is at least proc_1_ptr
+    dup.9 dup.9 neq
+    # => [should_loop, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_ptr, proc_1_ptr]
 
     while.true
         # assert the current proc root is not the auth proc root
         exec.word::test_eq
-        # => [is_auth_proc_dup, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+        # => [is_auth_proc_dup, CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_ptr, proc_1_ptr]
 
         assertz.err=ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED
-        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_idx]
+        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, curr_proc_ptr, proc_1_ptr]
 
         # step to the preceding procedure, whose root becomes the current one of the next iteration
-        movup.8 sub.1 movdn.8
-        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+        movup.8 sub.ACCOUNT_PROCEDURE_DATA_LENGTH movdn.8
+        # => [CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_ptr, proc_1_ptr]
 
-        dup.8 exec.get_procedure_root
-        # => [PREV_PROC_ROOT, CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+        padw dup.12 mem_loadw_le
+        # => [PREV_PROC_ROOT, CURR_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_ptr, proc_1_ptr]
 
         dupw movupw.2
-        # => [CURR_PROC_ROOT, PREV_PROC_ROOT, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+        # => [CURR_PROC_ROOT, PREV_PROC_ROOT, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_ptr, proc_1_ptr]
 
         # word::lt returns whether PREV_PROC_ROOT is strictly less than CURR_PROC_ROOT, so this
         # rejects duplicates as well as procedures that are out of order
         exec.word::lt
-        # => [is_prev_lt_curr, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+        # => [is_prev_lt_curr, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_ptr, proc_1_ptr]
 
         assert.err=ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE
-        # => [PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+        # => [PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_ptr, proc_1_ptr]
 
-        # continue if prev_proc_idx != 1
-        dup.8 neq.1
-        # => [should_continue, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_idx]
+        # continue if prev_proc_ptr != proc_1_ptr
+        dup.8 dup.10 neq
+        # => [should_continue, PREV_PROC_ROOT, AUTH_PROC_ROOT, prev_proc_ptr, proc_1_ptr]
     end
-    # => [PROC_ROOT_1, AUTH_PROC_ROOT, proc_idx = 1]
+    # => [PROC_ROOT_1, AUTH_PROC_ROOT, proc_1_ptr, proc_1_ptr]
 
     # the procedure at index 1 is the only one the loop did not compare against the auth procedure
     exec.word::eq
-    # => [is_auth_proc_dup, proc_idx]
+    # => [is_auth_proc_dup, proc_1_ptr, proc_1_ptr]
 
     assertz.err=ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED
-    drop
+    drop drop
     # => []
 end
 
@@ -1240,6 +1353,7 @@ pub proc load_foreign_account(account_id: AccountId)
     # AS => []
 
     # save the account procedure data into the memory
+    exec.memory::get_active_account_code_section_ptr
     exec.save_account_procedure_data
     # OS => [STORAGE_COMMITMENT]
     # AS => []
@@ -1325,11 +1439,11 @@ pub proc save_account_storage_data(storage_commitment: Commitment)
     # OS => []
 end
 
-#! Saves account procedure data into memory and validates that the code commitment matches the
-#! sequential procedure root.
+#! Saves account procedure data into the code section at code_section_ptr and validates that the
+#! code commitment matches the sequential procedure root.
 #!
 #! Inputs:
-#!   Operand stack: [CODE_COMMITMENT]
+#!   Operand stack: [code_section_ptr, CODE_COMMITMENT]
 #!   Advice map: {
 #!     CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
 #!   }
@@ -1337,48 +1451,52 @@ end
 #!   Operand stack: []
 #!
 #! Where:
-#! - CODE_COMMITMENT is the commitment of the active account's code.
+#! - code_section_ptr is the memory pointer to the code section the procedures are saved to.
+#! - CODE_COMMITMENT is the commitment of the account code.
 #! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the account laid out as
 #!   [ACCOUNT_PROCEDURE_DATA].
 #!
 #! Panics if:
 #! - the number of account procedures exceeded the maximum limit of 256.
 #! - the computed account code commitment does not match the provided account code commitment.
-pub proc save_account_procedure_data(code_commitment: Commitment)
+pub proc save_account_procedure_data(code_section_ptr: ptr<felt>, code_commitment: Commitment)
+    movdn.4
+    # OS => [CODE_COMMITMENT, code_section_ptr]
+
     # move procedure data from the advice map to the advice stack
     adv.push_mapvaln
-    # OS => [CODE_COMMITMENT]
+    # OS => [CODE_COMMITMENT, code_section_ptr]
     # AS => [account_procedure_data_len, [ACCOUNT_PROCEDURE_DATA]]
 
     # push the length of the account procedure data onto the operand stack and compute the number of
     # procedures from it
     adv_push div.ACCOUNT_PROCEDURE_DATA_LENGTH
-    # OS => [num_procs, CODE_COMMITMENT]
+    # OS => [num_procs, CODE_COMMITMENT, code_section_ptr]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
     # make sure number of procedures is a valid u32, so we can use u32 operations for validation
     u32assert.err=ERR_ACCOUNT_TOO_MANY_PROCEDURES
-    # OS => [num_procs, CODE_COMMITMENT]
+    # OS => [num_procs, CODE_COMMITMENT, code_section_ptr]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
     # assert the account has at least the minimum number of procedures
     dup u32gte.MIN_NUM_PROCEDURES assert.err=ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES
-    # OS => [num_procs, CODE_COMMITMENT]
+    # OS => [num_procs, CODE_COMMITMENT, code_section_ptr]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
     # assert the account does not exceed the maximum number of procedures
     dup u32lte.MAX_NUM_PROCEDURES assert.err=ERR_ACCOUNT_TOO_MANY_PROCEDURES
-    # OS => [num_procs, CODE_COMMITMENT]
+    # OS => [num_procs, CODE_COMMITMENT, code_section_ptr]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
-    # store number of procedures in memory
-    dup exec.memory::set_num_account_procedures
-    # OS => [num_procs, CODE_COMMITMENT]
+    # store number of procedures in the code section
+    dup dup.6 add.CODE_SECTION_NUM_PROCEDURES_OFFSET mem_store
+    # OS => [num_procs, CODE_COMMITMENT, code_section_ptr]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
     # setup start ptr and num procedures for reading from advice stack
-    exec.memory::get_account_procedures_section_ptr swap
-    # OS => [num_procs, account_proc_ptr, CODE_COMMITMENT]
+    movup.5 add.CODE_SECTION_PROCEDURES_OFFSET swap
+    # OS => [num_procs, procedures_ptr, CODE_COMMITMENT]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
     # read the data from advice stack to memory and hash

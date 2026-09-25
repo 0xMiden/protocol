@@ -36,8 +36,8 @@ mod builder;
 pub use builder::AccountBuilder;
 
 pub mod code;
-pub use code::AccountCode;
 pub use code::procedure::AccountProcedureRoot;
+pub use code::{AccountCode, AccountCodeUpgrade};
 
 pub mod component;
 pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
@@ -48,6 +48,7 @@ pub use interface::{AccountCodeInterface, AccountComponentName};
 mod patch;
 pub(crate) use patch::validate_new_public_account;
 pub use patch::{
+    AccountCodePatch,
     AccountPatch,
     AccountStoragePatch,
     AccountUpdateDetails,
@@ -299,15 +300,13 @@ impl Account {
     // DATA MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the provided patch to this account. This sets account vault, storage, and nonce to
-    /// the values specified by the patch.
+    /// Applies the provided patch to this account. This sets account code, vault, storage, and
+    /// nonce to the values specified by the patch.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The patch's account ID does not match this account's ID.
-    /// - The patch carries account code, i.e. represents a newly created account. Such patches can
-    ///   be converted to accounts directly and cannot be applied to an existing account.
     /// - Applying the vault sub-patch to the vault of this account fails.
     /// - Applying the storage sub-patch to the storage of this account fails.
     /// - The nonce specified in the provided patch is not strictly greater than the current account
@@ -320,10 +319,6 @@ impl Account {
             });
         }
 
-        if patch.is_full_state() {
-            return Err(AccountError::ApplyFullStatePatchToAccount);
-        }
-
         self.vault
             .apply_patch(patch.vault())
             .map_err(AccountError::AssetVaultUpdateError)?;
@@ -332,6 +327,11 @@ impl Account {
 
         if let Some(new_nonce) = patch.final_nonce() {
             self.set_nonce(new_nonce)?;
+        }
+
+        // Replace the code last, so that a patch rejected above cannot change it.
+        if let Some(code) = patch.code().as_code() {
+            self.code = code.clone();
         }
 
         Ok(())
@@ -428,10 +428,15 @@ impl TryFrom<Account> for AccountDelta {
         let nonce_delta = nonce;
 
         // SAFETY: As checked earlier, the nonce delta should be greater than 0 allowing for
-        // non-empty state changes. The storage patch consists of `Create` slot patches only, so the
-        // full state delta validation passes.
-        let delta = AccountDelta::new(id, storage_patch, vault_delta, Some(code), nonce_delta)
-            .expect("full state delta from account contains only create patches");
+        // non-empty state changes.
+        let delta = AccountDelta::new(
+            id,
+            storage_patch,
+            vault_delta,
+            AccountCodePatch::new(Some(code)),
+            nonce_delta,
+        )
+        .expect("delta from an account with a non-zero nonce should be valid");
 
         Ok(delta)
     }
@@ -475,8 +480,14 @@ impl TryFrom<Account> for AccountPatch {
         // checked above, the nonce is guaranteed to be greater than zero, so the patch can
         // represent non-empty state changes and the `final_nonce == 1` invariant is satisfied
         // by passing the account code.
-        let patch = AccountPatch::new(id, storage_patch, vault_patch, Some(code), Some(nonce))
-            .expect("non-seeded account should yield a valid patch");
+        let patch = AccountPatch::new(
+            id,
+            storage_patch,
+            vault_patch,
+            AccountCodePatch::new(Some(code)),
+            Some(nonce),
+        )
+        .expect("non-seeded account should yield a valid patch");
 
         Ok(patch)
     }
@@ -610,6 +621,7 @@ mod tests {
     use crate::account::{
         Account,
         AccountBuilder,
+        AccountCodePatch,
         AccountIdVersion,
         AccountPatch,
         AccountType,
@@ -722,21 +734,25 @@ mod tests {
     }
 
     #[test]
-    fn apply_patch_rejects_new_account_patch() -> anyhow::Result<()> {
+    fn apply_patch_replaces_code() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
         let init_nonce = Felt::from(1_u32);
         let mut account = build_account(vec![], init_nonce, vec![]);
+        let new_code =
+            AccountCode::from_components(&[NoopAuthComponent.into(), AddComponent.into()])?;
+        assert_ne!(account.code(), &new_code);
 
         let patch = AccountPatch::new(
             account_id,
             AccountStoragePatch::new(),
             AccountVaultPatch::default(),
-            Some(AccountCode::mock()),
+            AccountCodePatch::new(Some(new_code.clone())),
             Some(Felt::from(2_u32)),
         )?;
 
-        let err = account.apply_patch(&patch).unwrap_err();
-        assert_matches!(err, AccountError::ApplyFullStatePatchToAccount);
+        account.apply_patch(&patch)?;
+        assert_eq!(account.code(), &new_code);
+        assert_eq!(account.nonce(), Felt::from(2_u32));
 
         Ok(())
     }
@@ -752,7 +768,7 @@ mod tests {
             account_id,
             AccountStoragePatch::new(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(Felt::from(init_nonce - 1)),
         )?;
         let err = account.apply_patch(&patch_smaller).unwrap_err();
@@ -772,7 +788,7 @@ mod tests {
             other_account_id,
             AccountStoragePatch::default(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(Felt::from(2_u32)),
         )?;
 
@@ -790,7 +806,7 @@ mod tests {
             id,
             AccountStoragePatch::default(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             None,
         )?;
         let init_account = build_account(vec![], nonce, vec![]);
@@ -813,7 +829,7 @@ mod tests {
             id,
             AccountStoragePatch::default(),
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(final_nonce),
         )?;
 
@@ -836,7 +852,8 @@ mod tests {
     ) -> AccountDelta {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
-        AccountDelta::new(id, storage_patch, vault_delta, None, nonce_delta).unwrap()
+        AccountDelta::new(id, storage_patch, vault_delta, AccountCodePatch::default(), nonce_delta)
+            .unwrap()
     }
 
     pub fn build_account_patch(
@@ -847,7 +864,14 @@ mod tests {
     ) -> AccountPatch {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
         let vault_patch = AccountVaultPatch::from_iters(added_assets, removed_assets);
-        AccountPatch::new(id, storage_patch, vault_patch, None, Some(final_nonce)).unwrap()
+        AccountPatch::new(
+            id,
+            storage_patch,
+            vault_patch,
+            AccountCodePatch::default(),
+            Some(final_nonce),
+        )
+        .unwrap()
     }
 
     pub fn build_account(

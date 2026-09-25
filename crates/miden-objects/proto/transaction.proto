@@ -86,4 +86,5 @@ message TransactionArgs {
   repeated NoteArgument note_args = 3;
   primitives.AdviceInputs advice_inputs = 4;
   primitives.Word auth_args = 5;
+  optional account.AccountCodeUpgrade account_code_upgrade = 6;
 }

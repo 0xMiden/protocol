@@ -6,7 +6,7 @@ use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::{BaseHost, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
-use miden_protocol::account::{AccountPatch, PartialAccount};
+use miden_protocol::account::{AccountCodeUpgrade, AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
@@ -48,7 +48,8 @@ where
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-    ) -> Self {
+        account_code_upgrade: Option<AccountCodeUpgrade>,
+    ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
@@ -56,9 +57,10 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-        );
+            account_code_upgrade,
+        )?;
 
-        Self { base_host }
+        Ok(Self { base_host })
     }
 
     // PUBLIC ACCESSORS
@@ -165,6 +167,10 @@ where
 
             TransactionEvent::AccountPushProcedureIndex { code_commitment, procedure_root } => {
                 self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
+            },
+
+            TransactionEvent::AccountUpgradeInitialized { new_code_commitment } => {
+                self.base_host.on_account_upgrade_initialized(new_code_commitment)
             },
 
             TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {

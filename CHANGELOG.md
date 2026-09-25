@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3948](https://github.com/0xMiden/protocol/pull/3948)).
 - Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
 
 ### Changes

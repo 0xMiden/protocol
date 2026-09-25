@@ -230,8 +230,11 @@ mod tests {
     use super::BatchAccountUpdate;
     use crate::account::{
         Account,
+        AccountCode,
+        AccountCodePatch,
         AccountId,
         AccountPatch,
+        AccountStoragePatch,
         AccountType,
         AccountUpdateDetails,
         AccountVaultPatch,
@@ -264,7 +267,7 @@ mod tests {
             account_id,
             storage,
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(Felt::from(final_nonce)),
         )
         .unwrap()
@@ -347,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_rejects_full_state_commitment_mismatch_atomically() {
+    fn merge_rejects_creation_commitment_mismatch_atomically() {
         let account = Account::builder([9; 32])
             .account_type(AccountType::Public)
             .with_component(NoopAuthComponent)
@@ -383,6 +386,50 @@ mod tests {
                 && actual_account_commitment == account_commitment
         );
         assert_eq!(update, original_update);
+    }
+
+    /// A creation patch merged with a later code upgrade creates the account with the upgraded
+    /// code.
+    #[test]
+    fn merge_creation_with_code_upgrade() -> anyhow::Result<()> {
+        let account = Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        let upgraded_code = AccountCode::mock();
+        assert_ne!(account.code(), &upgraded_code);
+
+        let upgrade_patch = AccountPatch::new(
+            account.id(),
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            AccountCodePatch::new(Some(upgraded_code.clone())),
+            Some(account.nonce() + Felt::ONE),
+        )?;
+        let mut upgraded_account = account.clone();
+        upgraded_account.apply_patch(&upgrade_patch)?;
+
+        let creation_tx = proven_transaction(
+            account.id(),
+            Word::empty(),
+            account.to_commitment(),
+            AccountPatch::try_from(account.clone())?,
+        );
+        let upgrade_tx = proven_transaction(
+            account.id(),
+            account.to_commitment(),
+            upgraded_account.to_commitment(),
+            upgrade_patch,
+        );
+        let mut update = BatchAccountUpdate::from_transaction(&creation_tx);
+
+        update.merge_proven_tx(&upgrade_tx)?;
+
+        assert_eq!(update.details().unwrap_public().code().as_code(), Some(&upgraded_code));
+        update.validate()?;
+
+        Ok(())
     }
 
     #[test]

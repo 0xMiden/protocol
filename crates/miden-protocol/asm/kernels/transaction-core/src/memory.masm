@@ -27,6 +27,7 @@ use {
     StorageSlot,
 } from miden::tx_kernel_core::types
 use miden::core::mem
+use miden::core::word
 use {ACCOUNT_PROCEDURE_DATA_LENGTH, MAX_ASSETS_PER_NOTE, NOTE_MEM_SIZE, WORD_NUM_ELEMENTS}
     from miden::tx_kernel_core::constants
 
@@ -259,6 +260,11 @@ const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_
 # The length of the memory interval that the account data occupies.
 pub const ACCOUNT_DATA_LENGTH = 8192
 
+# The offsets within an account code section, which is laid out as
+# [[num_procedures, 0, 0, 0], PROC_ROOT_0, PROC_ROOT_1, ...].
+pub const CODE_SECTION_NUM_PROCEDURES_OFFSET = 0
+pub const CODE_SECTION_PROCEDURES_OFFSET = WORD_NUM_ELEMENTS
+
 # The offsets at which the account data is stored relative to the start of the account data segment.
 pub const ACCT_METADATA_OFFSET = 0
 pub const ACCT_VERSION_OFFSET = 0
@@ -269,8 +275,9 @@ const ACCT_VAULT_ROOT_OFFSET = 4
 const ACCT_STORAGE_COMMITMENT_OFFSET = 8
 const ACCT_CODE_COMMITMENT_OFFSET = 12
 const ACCT_CORE_DATA_SECTION_END_OFFSET = 16
-const ACCT_NUM_PROCEDURES_OFFSET = 28
-const ACCT_PROCEDURES_SECTION_OFFSET = 32
+const ACCT_CODE_SECTION_OFFSET = 28
+const ACCT_NUM_PROCEDURES_OFFSET = ACCT_CODE_SECTION_OFFSET + CODE_SECTION_NUM_PROCEDURES_OFFSET
+const ACCT_PROCEDURES_SECTION_OFFSET = ACCT_CODE_SECTION_OFFSET + CODE_SECTION_PROCEDURES_OFFSET
 const ACCT_PROCEDURES_CALL_TRACKING_OFFSET = 1060
 const ACCT_NUM_STORAGE_SLOTS_OFFSET = 1316
 # Offset at which a copy of the initial account's storage slot section is kept. This section is
@@ -1324,6 +1331,17 @@ pub proc set_num_account_procedures(num_procedures: u16)
     mem_store
 end
 
+#! Returns the memory pointer to the active account's code section.
+#!
+#! Inputs:  []
+#! Outputs: [code_section_ptr]
+#!
+#! Where:
+#! - code_section_ptr is the memory pointer to the code section of the active account.
+pub proc get_active_account_code_section_ptr() -> ptr<felt>
+    exec.get_active_account_data_ptr add.ACCT_CODE_SECTION_OFFSET
+end
+
 #! Returns the memory pointer to the account procedures section.
 #!
 #! Inputs:  []
@@ -1383,6 +1401,27 @@ end
 pub proc set_account_storage_commitment(storage_commitment: Commitment) -> Commitment
     exec.get_active_account_data_ptr add.ACCT_STORAGE_COMMITMENT_OFFSET
     mem_storew_le
+end
+
+#! Returns the native account code upgrade commitment.
+#!
+#! Inputs:  []
+#! Outputs: [CODE_UPGRADE_COMMITMENT]
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the new account code, or the empty word if no
+#!   code upgrade is pending.
+pub proc get_code_upgrade_commitment() -> Commitment
+    padw mem_loadw_le.CODE_UPGRADE_COMMITMENT_PTR
+end
+
+#! Returns 1 if a code upgrade of the native account is pending, 0 otherwise.
+#!
+#! Inputs:  []
+#! Outputs: [has_code_upgrade]
+pub proc has_code_upgrade() -> Bool
+    exec.get_code_upgrade_commitment exec.word::eqz not
+    # => [has_code_upgrade]
 end
 
 #! Sets the native account code upgrade commitment.

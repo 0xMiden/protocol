@@ -25,6 +25,9 @@ use crate::package::{loaded_mast_forest, package_debug_info};
 pub mod procedure;
 use procedure::{AccountProcedureRoot, PrintableProcedure};
 
+mod upgrade;
+pub use upgrade::AccountCodeUpgrade;
+
 // ACCOUNT CODE
 // ================================================================================================
 

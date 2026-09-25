@@ -100,6 +100,10 @@ pub enum TransactionExecutorError {
     },
     #[error("failed to create transaction inputs")]
     InvalidTransactionInputs(#[source] TransactionInputError),
+    // It is boxed to avoid triggering clippy::result_large_err for functions that return this
+    // type.
+    #[error("failed to construct transaction host")]
+    TransactionHostConstructionFailed(#[source] Box<TransactionKernelError>),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(&'static str),
     #[error(
@@ -155,6 +159,8 @@ impl TransactionExecutorError {
 
 #[derive(Debug, Error)]
 pub enum TransactionProverError {
+    #[error("failed to construct transaction host")]
+    TransactionHostConstructionFailed(#[source] TransactionKernelError),
     #[error("failed to construct transaction outputs")]
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
     #[error("failed to shrink output note")]
@@ -209,6 +215,16 @@ pub enum TransactionKernelError {
     AccountDeltaRemoveAssetFailed(#[source] AccountDeltaError),
     #[error("failed to add asset to note")]
     FailedToAddAssetToNote(#[source] NoteError),
+    #[error(
+        "transaction initialized an upgrade to account code {0} but the transaction arguments do not provide the new code"
+    )]
+    AccountCodeUpgradeMissing(Word),
+    #[error(
+        "transaction initialized an upgrade to account code {expected} but the transaction arguments provide code {actual}"
+    )]
+    AccountCodeUpgradeCommitmentMismatch { expected: Word, actual: Word },
+    #[error("account code upgrade is not allowed for new accounts")]
+    AccountCodeUpgradeNotAllowedForNewAccount,
     #[error("note storage has commitment {actual} but expected commitment {expected}")]
     InvalidNoteStorage { expected: Word, actual: Word },
     #[error(

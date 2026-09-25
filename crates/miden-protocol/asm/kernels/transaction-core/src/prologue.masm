@@ -403,7 +403,8 @@ end
 #!
 #! Validating storage and procedures for new accounts is sufficient because the storage and code
 #! commitments of an existing account are bound to its committed state, which was produced by the
-#! transaction that created the account and therefore already passed this validation.
+#! transaction that created the account or upgraded its code and therefore already passed this
+#! validation.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -448,6 +449,7 @@ proc validate_new_account()
 
     # Assert the account procedures are sorted and unique.
     # ---------------------------------------------------------------------------------------------
+    exec.memory::get_active_account_code_section_ptr
     exec.account::validate_procedures
     # => []
 
@@ -569,6 +571,7 @@ proc process_account_data()
 
     # validates and stores account procedures in memory.
     exec.memory::get_account_code_commitment
+    exec.memory::get_active_account_code_section_ptr
     exec.account::save_account_procedure_data
     # => [ACCOUNT_COMMITMENT]
 

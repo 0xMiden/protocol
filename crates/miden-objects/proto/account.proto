@@ -52,6 +52,10 @@ message AccountCode {
   repeated primitives.Word procedure_roots = 2;
 }
 
+message AccountCodeUpgrade {
+  AccountCode code = 1;
+}
+
 message StorageSlotId {
   primitives.Felt suffix = 1;
   primitives.Felt prefix = 2;
@@ -129,6 +133,11 @@ message AccountVaultPatch {
   repeated AccountVaultPatchEntry entries = 1;
 }
 
+message AccountCodePatch {
+  // The code of a new or upgraded account, absent if the code did not change.
+  optional AccountCode code = 1;
+}
+
 enum AccountPatchVersion {
   ACCOUNT_PATCH_VERSION_UNSPECIFIED = 0;
   ACCOUNT_PATCH_VERSION_V1 = 1;
@@ -139,7 +148,7 @@ message AccountPatch {
   AccountId account_id = 2;
   AccountStoragePatch storage = 3;
   AccountVaultPatch vault = 4;
-  optional AccountCode code = 5;
+  AccountCodePatch code = 5;
   optional primitives.Felt final_nonce = 6;
 }
 

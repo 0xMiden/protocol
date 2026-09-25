@@ -98,7 +98,7 @@ impl StorageSlotPatch {
 
 impl From<StorageSlotContent> for StorageSlotPatch {
     /// Converts a slot's content into a [`StorageSlotPatch`] that creates the slot. Used when
-    /// building a full state patch from an existing account.
+    /// building a creation patch from an existing account.
     fn from(content: StorageSlotContent) -> Self {
         match content {
             StorageSlotContent::Value(value) => {

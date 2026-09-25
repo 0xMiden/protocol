@@ -224,11 +224,42 @@ proc execute_auth_procedure()
     emit.EPILOGUE_AUTH_PROC_END_EVENT
 end
 
+# ACCOUNT UPGRADE
+# =================================================================================================
+
+#! Applies a pending code upgrade of the native account, if any.
+#!
+#! The upgrade is applied after the auth procedure so that the account is authenticated by the code
+#! it had at the start of the transaction. account::upgrade already validated the new code, and the
+#! new procedures are not loaded into account memory since nothing after the auth procedure reads
+#! them. This means the procedure runs in constant time which keeps the epilogue cycle estimation
+#! simple.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc apply_code_upgrade()
+    exec.memory::get_account_code_commitment
+    exec.memory::get_code_upgrade_commitment
+    # => [UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
+
+    exec.memory::has_code_upgrade
+    # => [has_code_upgrade, UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
+
+    # If has_code_upgrade UPGRADE_CODE_COMMITMENT remains.
+    # If !has_code_upgrade CURRENT_CODE_COMMITMENT remains.
+    cdropw
+    # => [CODE_COMMITMENT]
+
+    exec.memory::set_account_code_commitment dropw
+    # => []
+end
+
 # TRANSACTION EPILOGUE PROCEDURE
 # =================================================================================================
 
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
+#! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
@@ -270,6 +301,11 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber)
     exec.memory::get_native_account_nonce
     # => [nonce]
     eq.0 assertz.err=ERR_EPILOGUE_NONCE_CANNOT_BE_0
+
+    # ------ Apply the account code upgrade ------
+
+    exec.apply_code_upgrade
+    # => []
 
     # ------ Assert assets are preserved ------
 

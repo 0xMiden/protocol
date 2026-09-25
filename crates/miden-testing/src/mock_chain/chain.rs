@@ -1000,20 +1000,18 @@ impl MockChain {
         for account_update in proven_block.body().updated_accounts() {
             match account_update.details() {
                 AccountUpdateDetails::Public(account_patch) => {
-                    if account_patch.is_full_state() {
-                        let account = Account::try_from(account_patch)
-                            .context("failed to convert full state patch into full account")?;
-                        self.committed_accounts.insert(account.id(), account.clone());
-                    } else {
-                        let committed_account = self
-                            .committed_accounts
-                            .get_mut(&account_update.account_id())
-                            .ok_or_else(|| {
-                                anyhow::anyhow!("account patch in block for non-existent account")
-                            })?;
-                        committed_account
+                    // The mock chain holds every committed public account, so a patch for an
+                    // unknown account must create it.
+                    match self.committed_accounts.get_mut(&account_update.account_id()) {
+                        Some(committed_account) => committed_account
                             .apply_patch(account_patch)
-                            .context("failed to apply account patch")?;
+                            .context("failed to apply account patch")?,
+                        None => {
+                            let account = account_patch
+                                .try_to_new_account()
+                                .context("failed to convert creation patch into account")?;
+                            self.committed_accounts.insert(account.id(), account);
+                        },
                     }
                 },
                 // No state to keep for private accounts other than the commitment on the account

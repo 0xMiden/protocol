@@ -7,6 +7,7 @@ mod core;
 pub use core::{
     Account,
     AccountCode,
+    AccountCodeUpgrade,
     AccountHeader,
     AccountHeaderError,
     AccountId,
@@ -29,6 +30,7 @@ pub use storage::{
 
 mod patch;
 pub use patch::{
+    AccountCodePatch,
     AccountPatch,
     AccountPatchError,
     AccountStoragePatch,

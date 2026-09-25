@@ -1,4 +1,4 @@
-use crate::account::{Account, AccountId, AccountPatch};
+use crate::account::{AccountId, AccountPatch};
 use crate::errors::{
     AccountPatchError,
     AccountUpdateDetailsValidationError,
@@ -129,8 +129,8 @@ pub(crate) fn validate_new_public_account(
     patch: &AccountPatch,
     final_state_commitment: Word,
 ) -> Result<(), NewPublicAccountValidationError> {
-    let account = Account::try_from(patch).map_err(|source| {
-        NewPublicAccountValidationError::RequiresFullStatePatch { id: patch.id(), source }
+    let account = patch.try_to_new_account().map_err(|source| {
+        NewPublicAccountValidationError::NotACreationPatch { id: patch.id(), source }
     })?;
     let account_commitment = account.to_commitment();
     if account_commitment != final_state_commitment {
@@ -190,6 +190,7 @@ mod tests {
     use super::AccountUpdateDetails;
     use crate::account::{
         AccountCode,
+        AccountCodePatch,
         AccountId,
         AccountPatch,
         AccountStoragePatch,
@@ -206,7 +207,7 @@ mod tests {
     fn account_update_details_size_hint() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
 
-        // A full state patch may only create slots, so build it with create ops.
+        // A creation patch may only create slots, so build it with create ops.
         let storage_patch = AccountStoragePatch::builder()
             .create_value(StorageSlotName::mock(2), Word::from([1, 1, 1, 1u32]))
             .create_value(StorageSlotName::mock(3), Word::from([1, 1, 0, 1u32]))
@@ -224,7 +225,7 @@ mod tests {
             account_id,
             storage_patch,
             vault_patch,
-            Some(AccountCode::mock()),
+            AccountCodePatch::new(Some(AccountCode::mock())),
             Some(ONE),
         )?;
 

@@ -27,10 +27,9 @@ procedure_root!(
 /// [`crate::account::access::Authority`] component via `exec.authority::assert_authorized`.
 ///
 /// The procedure wraps the protocol `native_account::upgrade` kernel procedure, letting an account
-/// record the commitments describing an upgrade of its own code and storage. It is currently a
-/// no-op beyond storing the two commitments in kernel memory; the actual upgrade application is not
-/// yet implemented and the commitment formats are not yet defined. `assert_authorized` is the hook
-/// where any stronger authorization gate would live once upgrades are enabled.
+/// replace its own code. Storage upgrades are not yet supported.
+///
+/// The account's authority must authorize every upgrade.
 ///
 /// `UpgradeManager` works with every standard access scheme that installs an [`Authority`]
 /// component.
@@ -67,7 +66,7 @@ impl UpgradeManager {
 impl From<UpgradeManager> for AccountComponent {
     fn from(_: UpgradeManager) -> Self {
         let metadata = AccountComponentMetadata::new(UpgradeManager::NAME)
-            .with_description("Code and storage upgrades for accounts.");
+            .with_description("Code upgrades for accounts");
 
         AccountComponent::new(UpgradeManager::code().clone(), vec![], metadata).expect(
             "upgrade manager component should satisfy the requirements of a valid account component",

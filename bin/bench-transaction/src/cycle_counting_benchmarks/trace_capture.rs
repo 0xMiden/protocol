@@ -57,7 +57,7 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
 
     let block_commitments = tx_inputs.collect_block_commitments();
 
-    let (partial_account, _ref_block, _blockchain, input_notes, _tx_args) = tx_inputs.into_parts();
+    let (partial_account, _ref_block, _blockchain, input_notes, tx_args) = tx_inputs.into_parts();
     let mut host = TransactionProverHost::new(
         &partial_account,
         input_notes,
@@ -65,7 +65,9 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
         mast_store.as_ref(),
         script_mast_store,
         account_procedure_index_map,
-    );
+        tx_args.account_code_upgrade().cloned(),
+    )
+    .context("failed to construct transaction prover host")?;
 
     let advice_inputs = tx_advice_inputs.into_advice_inputs();
     let program = TransactionKernel::main();

@@ -8,7 +8,7 @@ use {
     StorageMapKey,
     StorageSlotId,
 } from miden::protocol::types
-use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET}
+use {ACCOUNT_ADD_ASSET_OFFSET, ACCOUNT_COMPUTE_COMMITMENT_OFFSET, ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET, ACCOUNT_GET_CODE_UPGRADE_COMMITMENT_OFFSET, ACCOUNT_GET_ID_OFFSET, ACCOUNT_GET_INITIAL_ASSET_OFFSET, ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_ITEM_OFFSET, ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET, ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET, ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET, ACCOUNT_INCR_NONCE_OFFSET, ACCOUNT_REMOVE_ASSET_OFFSET, ACCOUNT_SET_ITEM_OFFSET, ACCOUNT_SET_MAP_ITEM_OFFSET, ACCOUNT_UPGRADE_OFFSET, ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET}
     from miden::protocol::kernel_proc_offsets
 use miden::core::word
 
@@ -153,38 +153,75 @@ pub proc compute_delta_commitment() -> word
     # => [DELTA_COMMITMENT]
 end
 
-#! Records the commitments describing an upgrade of the native account's code and storage.
+#! Initializes an upgrade of the native account's code to the code with the given commitment.
 #!
-#! This procedure is currently a no-op beyond storing the two commitments in kernel memory; the
-#! actual application of the upgrade is not yet implemented, and the commitment formats are not yet
-#! defined.
+#! The new code is validated the same way as the code of a new account when the upgrade is
+#! initialized. The new code becomes active after the current authentication procedure has run, so
+#! the account's code does not change during the transaction and the current auth procedure
+#! authenticates the upgrade.
 #!
-#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+#! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
+#!
+#! Inputs:  [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
-#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
+#! - STORAGE_UPGRADE_COMMITMENT is reserved for storage upgrades and must be empty.
 #!
 #! Panics if:
 #! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the account context.
+#! - STORAGE_UPGRADE_COMMITMENT is not empty.
+#! - the native account is new.
+#! - a code upgrade is already pending.
+#! - the new code is not valid account code.
 #!
 #! Invocation: exec
-pub proc upgrade(code_upgrade_commitment: word, storage_upgrade_commitment: word)
+pub proc upgrade(new_code_commitment: word, storage_upgrade_commitment: word)
     # pad the stack
     padw push.0.0.0 push.ACCOUNT_UPGRADE_OFFSET
     swapdw
-    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, offset, pad(7)]
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, offset, pad(7)]
 
     movup.8
-    # => [offset, CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(7)]
+    # => [offset, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(7)]
 
     syscall.exec_kernel_proc
     # => [pad(16)]
 
     # clean the stack
     dropw dropw dropw dropw
+end
+
+#! Returns the commitment to the pending code upgrade of the native account.
+#!
+#! Inputs:  []
+#! Outputs: [NEW_CODE_COMMITMENT]
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code, or the empty word if no code
+#!   upgrade is pending.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
+#!
+#! Invocation: exec
+pub proc get_code_upgrade_commitment() -> word
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.ACCOUNT_GET_CODE_UPGRADE_COMMITMENT_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [NEW_CODE_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [NEW_CODE_COMMITMENT]
 end
 
 #! Returns the commitment of the native account at the beginning of the transaction.
@@ -220,6 +257,8 @@ end
 #!
 #! Unlike compute_delta_commitment, this procedure may be called before the authentication
 #! procedure increments the nonce. It compares the native account's initial and current commitments.
+#! A pending code upgrade also counts as a state change, since it changes the account's code after
+#! the authentication procedure.
 #!
 #! Inputs:  []
 #! Outputs: [has_state_changed]
@@ -237,6 +276,12 @@ pub proc has_state_changed() -> Bool
     # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT]
 
     exec.word::eq not
+    # => [has_commitment_changed]
+
+    exec.get_code_upgrade_commitment exec.word::eqz not
+    # => [is_code_upgrade_pending, has_commitment_changed]
+
+    or
     # => [has_state_changed]
 end
 

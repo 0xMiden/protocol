@@ -228,43 +228,74 @@ pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [
     # => [ACCOUNT_COMMITMENT, pad(12)]
 end
 
-#! Records the commitments describing an upgrade of the native account's code and storage.
+#! Initializes an upgrade of the native account's code, which the epilogue applies after the
+#! authentication procedure.
 #!
-#! This procedure is currently a no-op beyond storing the two commitments in kernel memory.
+#! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
 #!
-#! Inputs:  [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
-#! Outputs: [pad(16)]
+#! Inputs:
+#!   Operand stack: [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+#!   Advice map: {
+#!     NEW_CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: [pad(16)]
 #!
 #! Where:
-#! - CODE_UPGRADE_COMMITMENT is the commitment to the account code upgrade.
-#! - STORAGE_UPGRADE_COMMITMENT is the commitment to the account storage upgrade.
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
+#! - STORAGE_UPGRADE_COMMITMENT is reserved for storage upgrades and must be empty.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the account context.
+#! - the current active account is not the native account of the transaction.
+#! - STORAGE_UPGRADE_COMMITMENT is not empty.
+#! - the native account is new.
+#! - a code upgrade is already pending.
+#! - the new code is not valid account code.
+#!
+#! Invocation: dynexec
+pub proc account_upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Commitment, padding: [felt; 8]) -> [felt; 16]
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    exec.account::upgrade
+    # => [pad(16)]
+end
+
+#! Returns the commitment to the pending code upgrade of the native account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [NEW_CODE_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code, or the empty word if no code
+#!   upgrade is pending.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #!
 #! Invocation: dynexec
-pub proc account_upgrade(code_upgrade_commitment: Commitment, storage_upgrade_commitment: Commitment, padding: [felt; 8]) -> [felt; 16]
-    # TODO(code_upgrades): Account upgrades must ensure the same conditions hold for an upgraded
-    # account as validated in account::{validate_storage, validate_procedures}.
-    # The same applies to the asset callback rule validated in
-    # prologue::validate_asset_callbacks: an upgrade must reject adding an asset callback slot to an
-    # account whose asset callback flag is disabled. Such a callback is not invalid, it simply could
-    # never be invoked, since the flag is immutable, which leaves the account looking configured
-    # while nothing is enforced - the state the creation-time check rejects.
+pub proc account_get_code_upgrade_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
-
-    exec.memory::set_code_upgrade_commitment
-    # => [STORAGE_UPGRADE_COMMITMENT, pad(12)]
-
-    exec.memory::set_storage_upgrade_commitment
     # => [pad(16)]
+
+    exec.memory::get_code_upgrade_commitment
+    # => [NEW_CODE_COMMITMENT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [NEW_CODE_COMMITMENT, pad(12)]
 end
 
 #! Returns the ID of the specified account.

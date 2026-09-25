@@ -12,6 +12,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountCode,
+    AccountCodePatch,
     AccountComponent,
     AccountDelta,
     AccountStorage,
@@ -977,7 +978,7 @@ async fn tx_summary_commitment_is_signed_by_auth_singlesig(
         account.id(),
         AccountStoragePatch::default(),
         AccountVaultDelta::default(),
-        None,
+        AccountCodePatch::default(),
         nonce_delta,
     )?;
     let expected_summary = TransactionSummary::new(

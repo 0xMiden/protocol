@@ -38,6 +38,16 @@ pub enum VaultPatchError {
     DuplicateAssetId(miden_protocol::asset::AssetId),
 }
 
+pub use proto::account::DecodedAccountCodePatch as AccountCodePatch;
+
+impl Verify for AccountCodePatch {
+    type Verified = miden_protocol::account::AccountCodePatch;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(self.code.verify()?))
+    }
+}
+
 pub use proto::account::DecodedPrivateAccountUpdate as PrivateAccountUpdate;
 
 impl Verify for PrivateAccountUpdate {
