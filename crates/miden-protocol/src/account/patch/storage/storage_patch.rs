@@ -36,10 +36,10 @@ pub struct AccountStoragePatch {
 
 impl AccountStoragePatch {
     /// Domain separator for value storage slots in delta and patch commitments.
-    const DOMAIN_VALUE: Felt = Felt::new_unchecked(5);
+    const DOMAIN_VALUE: Felt = Felt::new_unchecked(2);
 
     /// Domain separator for map storage slots in delta and patch commitments.
-    const DOMAIN_MAP: Felt = Felt::new_unchecked(6);
+    const DOMAIN_MAP: Felt = Felt::new_unchecked(3);
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -100,8 +100,11 @@ impl AccountStoragePatch {
         self.patches.len()
     }
 
-    /// Returns an iterator over the slot patches.
-    pub(crate) fn slots(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageSlotPatch)> {
+    /// Returns an iterator over the slot patches in ascending slot ID order.
+    ///
+    /// The order is guaranteed by the [`BTreeMap`] backing this patch, whose keys are ordered by
+    /// their slot IDs.
+    pub fn slots(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageSlotPatch)> {
         self.patches.iter()
     }
 

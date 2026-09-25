@@ -7,8 +7,6 @@ pub mod faucet_policy_config
 pub mod fee_sponsorship
 pub mod min_burn_amount_config
 pub mod mint
-pub mod mint_fungible
-pub mod mint_non_fungible
 pub mod network_account_config
 pub mod owner_config
 pub mod p2id

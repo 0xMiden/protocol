@@ -41,9 +41,10 @@ static TX_FEE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// A TX_FEE note: the canonical way for a transaction to pay its fee to a batch builder.
 ///
-/// Unlike a [`P2idNote`](crate::note::P2idNote), the note does not restrict who can consume it:
-/// any account (i.e. whichever account builds the batch) can consume the note and claim its
-/// assets. The note is completely unopinionated about which assets are used to pay the fee.
+/// The note does not restrict who can consume it: any account (i.e. whichever account builds the
+/// batch) can consume the note. Its script leaves the assets in the note, so the consuming
+/// account's own code must move them out. The note is completely unopinionated about which assets
+/// are used to pay the fee.
 ///
 /// TX_FEE notes are always [public](NoteType::Public), carry no storage and no attachments, and
 /// are tagged with the unique [`TxFeeNote::TAG`].
@@ -139,23 +140,26 @@ impl TxFeeNote {
     /// Derives the serial number that `miden::standards::fee::pay_fee` uses for
     /// the TX_FEE note it creates during a transaction.
     ///
-    /// The serial number is `hash(FEE_DOMAIN || [ref_block_num, initial_nonce,
+    /// The serial number is `hash(FEE_DOMAIN || [serial_number_block, initial_nonce,
     /// account_id_suffix, account_id_prefix])` with the FEE domain tag `[0xFEE, 0, 0, 0]`. It is
     /// unique per (account, nonce) pair and lets clients precompute the note's recipient before
     /// executing the transaction, while the domain tag separates it from serial numbers derived
     /// from similar tuples in other contexts.
+    ///
+    /// For multisigs, `serial_number_block` is the block bound by the signed summary. Other
+    /// standard auth components use the execution reference block.
     ///
     /// This derivation must be kept in sync with `create_and_fund_fee_note` in the
     /// `miden::standards::fee` MASM module.
     pub fn derive_serial_number(
         sender: AccountId,
         initial_nonce: Felt,
-        ref_block_num: BlockNumber,
+        serial_number_block: BlockNumber,
     ) -> Word {
         // Domain-separation tag for the fee note's serial number ("fee" in hex).
         let fee_domain = Word::from([Felt::from(Self::TAG_ID), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
         let tuple = Word::from([
-            Felt::from(ref_block_num.as_u32()),
+            Felt::from(serial_number_block.as_u32()),
             initial_nonce,
             sender.suffix(),
             sender.prefix().as_felt(),

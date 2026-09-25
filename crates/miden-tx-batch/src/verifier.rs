@@ -2,7 +2,7 @@ use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
-use miden_verifier::{ExecutionClaim, verify};
+use miden_verifier::{ExecutionClaim, VerificationError, Verifier};
 
 use crate::BatchVerifierError;
 
@@ -24,6 +24,8 @@ use crate::BatchVerifierError;
 /// commits to, so a `ProvenBatch` whose contents were mutated would still verify. This verifier
 /// must therefore not be relied on at a trust boundary until the kernel verification logic that
 /// emits and binds the real commitments lands.
+///
+/// The proof also does not cover the precompile claims of the batch's transactions.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
     proof_security_level: u32,
@@ -40,9 +42,14 @@ impl BatchVerifier {
     ///
     /// # Errors
     /// Returns an error if:
+    /// - The batch proof contains precompile work.
     /// - Batch proof verification fails.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
+        if batch.proof().has_precompiles() {
+            return Err(BatchVerifierError::BatchProofContainsPrecompiles);
+        }
+
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
@@ -59,14 +66,20 @@ impl BatchVerifier {
             stack_inputs,
             stack_outputs,
         );
-        let proof_security_level = verify(batch.proof().clone(), claim)
-            .map_err(BatchVerifierError::BatchVerificationFailed)?;
-
-        if proof_security_level < self.proof_security_level {
-            return Err(BatchVerifierError::InsufficientProofSecurityLevel {
-                actual: proof_security_level,
-                expected_minimum: self.proof_security_level,
-            });
+        let outcome = Verifier::new()
+            .with_min_conjectured_security_level_per_stark(self.proof_security_level)
+            .verify(&claim, batch.proof())
+            .map_err(|error| match error {
+                VerificationError::InsufficientSecurityLevel { actual, required } => {
+                    BatchVerifierError::InsufficientProofSecurityLevel {
+                        actual,
+                        expected_minimum: required,
+                    }
+                },
+                error => BatchVerifierError::BatchVerificationFailed(error),
+            })?;
+        if !outcome.is_complete() {
+            return Err(BatchVerifierError::IncompleteProof);
         }
 
         Ok(())

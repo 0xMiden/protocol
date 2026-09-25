@@ -1,0 +1,81 @@
+# Shared representations used by the transaction kernel's internal interfaces.
+
+pub use {AccountProcedureRoot} from ::miden::protocol_utils::types
+
+use {AccountId, StorageSlotId} from ::miden::protocol_utils::types
+
+#! A cryptographic commitment or Merkle root.
+pub type Commitment = word
+
+#! Poseidon2 sponge state in operand-stack order.
+pub type HasherState = struct { rate0: word, rate1: word, capacity: word }
+
+#! Account header in memory and operand-stack order.
+pub type AccountMetadata = struct {
+    version: u8,
+    nonce: felt,
+    id: AccountId,
+}
+
+#! A storage slot's metadata followed by its value or map root.
+pub type StorageSlot = struct {
+    reserved: felt,
+    slot_type: u8,
+    id: StorageSlotId,
+    value: word,
+}
+
+#! The fixed header at the beginning of an account's memory segment.
+pub type AccountData = struct {
+    metadata: AccountMetadata,
+    vault_root: Commitment,
+    storage_commitment: Commitment,
+    code_commitment: Commitment,
+}
+
+#! The fixed header at the beginning of an input note's memory segment.
+pub type InputNoteData = struct {
+    details_commitment: Commitment,
+    serial_number: word,
+    script_root: word,
+    storage_commitment: Commitment,
+    assets_commitment: Commitment,
+    metadata: word,
+    attachments_commitment: Commitment,
+    recipient: word,
+    id: word,
+    args: word,
+    num_storage_items: u16,
+    storage_padding: [felt; 3],
+    num_assets: u8,
+    assets_padding: [felt; 3],
+}
+
+#! The fixed header at the beginning of an output note's memory segment.
+pub type OutputNoteData = struct {
+    details_commitment: Commitment,
+    metadata: word,
+    recipient: word,
+    # Each flag/count occupies a separate felt in kernel memory.
+    dirty: i1,
+    dirty_padding: [u8; 3],
+    num_assets: u8,
+    num_assets_padding: [u8; 3],
+    num_attachments: u8,
+    num_attachments_padding: [u8; 3],
+    total_attachment_words: u16,
+    total_attachment_words_padding: [u8; 2],
+    attachment_commitments: [Commitment; 4],
+    assets_commitment: Commitment,
+}
+
+#! A sorted link-map entry, including the ownership and linkage metadata.
+pub type LinkMapEntry = struct {
+    map: ptr<ptr<LinkMapEntry>>,
+    previous: ptr<LinkMapEntry>,
+    next: ptr<LinkMapEntry>,
+    reserved: felt,
+    key: word,
+    value0: word,
+    value1: word,
+}

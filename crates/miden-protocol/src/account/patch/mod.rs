@@ -14,6 +14,7 @@ pub use storage::{
     StorageValuePatch,
 };
 pub use update_details::AccountUpdateDetails;
+pub(crate) use update_details::validate_new_public_account;
 pub use vault::AccountVaultPatch;
 
 use crate::account::{Account, AccountCode, AccountId, AccountStorage};
@@ -27,7 +28,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word};
+use crate::{Felt, Hasher, Word};
 
 /// An [`AccountPatch`] describes the new absolute state of an account after one or more
 /// transactions, in contrast to an [`AccountDelta`](crate::account::AccountDelta), which describes
@@ -78,8 +79,18 @@ impl AccountPatch {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Domain separator for the account patch commitment header.
-    const DOMAIN: Felt = Felt::new_unchecked(2);
+    /// Domain separator for the account patch commitment.
+    ///
+    /// See [`AccountDelta::DOMAIN`](crate::account::AccountDelta) for why it lives in the capacity
+    /// word and where the value is allocated from.
+    const DOMAIN: Felt = Felt::new_unchecked(0x02_0000);
+
+    /// Version 1 of the account patch commitment layout.
+    ///
+    /// The version occupies the first element of the commitment header, so a reader can get it
+    /// before it interprets the rest of the commitment. Version 0 is unused, which means an
+    /// all-zero word is never a valid header.
+    const VERSION_1: u8 = 1;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -313,35 +324,37 @@ impl AccountPatch {
     /// ## Computation
     ///
     /// The patch commitment is a sequential hash over a vector of field elements which starts out
-    /// empty and is appended to in the following way. Whenever sorting is expected, it is that
-    /// of a [`Word`].
+    /// empty and is appended to in the following way. If no asset or storage elements were
+    /// appended, the commitment is defined as the empty word. Whenever sorting is expected, it is
+    /// that of a [`Word`]. The hash is domain-separated by the patch's `DOMAIN`, which is
+    /// placed in the capacity word of the hasher. This is what distinguishes a patch commitment
+    /// from a delta commitment, whose headers are otherwise identically shaped.
     ///
-    /// - Append `[[domain = 2, final_nonce, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
+    /// - Append `[[version = 1, final_nonce, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
-    ///   id, `final_nonce` is the new nonce of the account, and `domain = 2` identifies the header
-    ///   as the start of an account patch commitment (distinguishing it from a delta commitment,
-    ///   which uses `domain = 1`).
+    ///   id, `final_nonce` is the new nonce of the account, and `version` is the version of this
+    ///   layout.
     /// - Asset Patch
     ///   - For each asset whose value has changed compared to the initial state of the transaction,
     ///     including if it was removed, sorted by its asset ID:
     ///     - Append `[ASSET_ID, ASSET_VALUE_OR_EMPTY_WORD]` which are the key and either the value
     ///       of the asset (for updates) or the empty word (for removals).
-    ///     - Append `[[domain = 4, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
-    ///       `num_changed_assets` is the number of assets that were appended. Note that this is a
-    ///       distinct domain from the delta asset domain (`3`), so an asset delta and an asset
-    ///       patch can never produce the same commitment.
+    ///     - Append `[[domain = 1, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
+    ///       `num_changed_assets` is the number of assets that were appended. This is the same
+    ///       domain as the delta asset section uses, since the capacity domain already prevents an
+    ///       asset delta and an asset patch from producing the same commitment.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. `patch_op` is the
     ///   [`StoragePatchOperation`](crate::account::StoragePatchOperation) of the slot patch and
     ///   `slot_id_{suffix, prefix}` is the identifier of the slot. For each slot, depending on its
     ///   slot type:
     ///   - Value Slot
-    ///     - Append `[[domain = 5, patch_op, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
+    ///     - Append `[[domain = 2, patch_op, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
     ///       `NEW_VALUE` is the new value of the slot.
     ///   - Map Slot
     ///     - For each key-value pair, sorted by key, whose new value is different from the previous
     ///       value in the map:
     ///       - Append `[KEY, NEW_VALUE]`.
-    ///     - The map trailer is constructed as `[[domain = 6, patch_op, slot_id_suffix,
+    ///     - The map trailer is constructed as `[[domain = 3, patch_op, slot_id_suffix,
     ///       slot_id_prefix], [num_changed_entries, 0, 0, 0]]`, where `num_changed_entries` is the
     ///       number of key-value pairs appended above. Whether the trailer is included depends on
     ///       `patch_op`:
@@ -404,6 +417,20 @@ impl TryFrom<&AccountPatch> for Account {
 impl SequentialCommit for AccountPatch {
     type Commitment = Word;
 
+    /// Computes the commitment to the patch, domain-separated by its `DOMAIN`.
+    ///
+    /// See [AccountPatch::to_commitment()] for more details.
+    fn to_commitment(&self) -> Word {
+        let elements = self.to_elements();
+
+        // An empty patch produces no elements and its commitment is defined as the empty word.
+        if elements.is_empty() {
+            return Word::empty();
+        }
+
+        Hasher::hash_elements_in_domain(&elements, Self::DOMAIN)
+    }
+
     /// Reduces the patch to a sequence of field elements.
     ///
     /// See [AccountPatch::to_commitment()] for more details.
@@ -416,10 +443,10 @@ impl SequentialCommit for AccountPatch {
         // Minor optimization: At least 8 elements are always added.
         let mut elements = Vec::with_capacity(8);
 
-        // ID and Nonce
+        // Metadata
         let final_nonce = self.final_nonce.expect("non-empty patches should have a new nonce set");
         elements.extend_from_slice(&[
-            Self::DOMAIN,
+            Felt::from(Self::VERSION_1),
             final_nonce,
             self.account_id.suffix(),
             self.account_id.prefix().as_felt(),

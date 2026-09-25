@@ -1,4 +1,10 @@
-use miden_verifier::{ExecutionClaim, verify};
+use miden_verifier::{
+    ExecutionClaim,
+    PrecompileStatus,
+    VerificationError,
+    VerificationOutcome,
+    Verifier,
+};
 
 use crate::errors::TransactionVerifierError;
 use crate::transaction::{ProvenTransaction, TransactionKernel};
@@ -24,13 +30,26 @@ impl TransactionVerifier {
         Self { tx_program_info, proof_security_level }
     }
 
-    /// Verifies the provided [`ProvenTransaction`] against the transaction kernel.
+    /// Verifies the provided [`ProvenTransaction`] against the transaction kernel and returns its
+    /// verification outcome.
+    ///
+    /// A verified transaction may still have an outstanding precompile obligation. Callers must
+    /// inspect the returned [`VerificationOutcome`] and handle that obligation if present.
     ///
     /// # Errors
     /// Returns an error if:
+    /// - The proof contains settled precompile work.
     /// - Transaction verification fails.
+    /// - A deferred precompile witness is invalid or does not match the VM proof.
     /// - The security level of the verified proof is insufficient.
-    pub fn verify(&self, transaction: &ProvenTransaction) -> Result<(), TransactionVerifierError> {
+    pub fn verify(
+        &self,
+        transaction: &ProvenTransaction,
+    ) -> Result<VerificationOutcome, TransactionVerifierError> {
+        if matches!(transaction.proof().precompile(), PrecompileStatus::Proven(_)) {
+            return Err(TransactionVerifierError::TransactionProofContainsPrecompiles);
+        }
+
         // build stack inputs and outputs
         let stack_inputs = TransactionKernel::build_input_stack(
             transaction.account_id(),
@@ -52,17 +71,19 @@ impl TransactionVerifier {
             stack_inputs,
             stack_outputs,
         );
-        let proof_security_level = verify(transaction.proof().clone(), claim)
-            .map_err(TransactionVerifierError::TransactionVerificationFailed)?;
+        let outcome = Verifier::new()
+            .with_min_conjectured_security_level_per_stark(self.proof_security_level)
+            .verify(&claim, transaction.proof())
+            .map_err(|error| match error {
+                VerificationError::InsufficientSecurityLevel { actual, required } => {
+                    TransactionVerifierError::InsufficientProofSecurityLevel {
+                        actual,
+                        expected_minimum: required,
+                    }
+                },
+                error => TransactionVerifierError::TransactionVerificationFailed(error),
+            })?;
 
-        // check security level
-        if proof_security_level < self.proof_security_level {
-            return Err(TransactionVerifierError::InsufficientProofSecurityLevel {
-                actual: proof_security_level,
-                expected_minimum: self.proof_security_level,
-            });
-        }
-
-        Ok(())
+        Ok(outcome)
     }
 }

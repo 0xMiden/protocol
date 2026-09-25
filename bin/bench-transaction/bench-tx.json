@@ -1,1007 +1,1074 @@
 {
   "consume single P2ID note with Falcon signing": {
-    "prologue": 3754,
-    "notes_processing": 2161,
+    "prologue": 5329,
+    "notes_processing": 2173,
     "note_execution": {
-      "0x5cbede6b9f04c8219271e3221e97adaa749f01afe9888a9924d52307ccb22b1c": 2119
+      "0x2c9c34dd842e62ecbcff648456c2117bb7c97c3d88fcc7362c6c05ef390a6eca": 2131
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 73710,
-      "auth_procedure": 72598
+      "total": 73822,
+      "auth_procedure": 72685
     },
     "trace": {
-      "core_rows": 79711,
-      "chiplets_rows": 11195,
-      "range_rows": 20245,
+      "core_rows": 81409,
+      "chiplets_rows": 11494,
+      "poseidon2_permutation_rows": 55344,
+      "range_rows": 20723,
       "chiplets_shape": {
-        "hasher_rows": 8168,
-        "bitwise_rows": 584,
-        "memory_rows": 2380,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8648,
+        "bitwise_rows": 656,
+        "memory_rows": 2188,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume single P2ID note with ECDSA signing": {
-    "prologue": 3754,
-    "notes_processing": 2161,
+    "prologue": 5329,
+    "notes_processing": 2173,
     "note_execution": {
-      "0x747a592f85aaf459c7a36387a89ef937b2d88941e2b535fe49b20ae9fb1e71a4": 2119
+      "0x4b2d93086545f178da64d8e64e5a41f9a0adf7bb11e1395c6ae8f3ecebd48e4a": 2131
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 6072,
-      "auth_procedure": 4960
+      "total": 5917,
+      "auth_procedure": 4780
     },
     "trace": {
-      "core_rows": 12073,
-      "chiplets_rows": 5452,
-      "range_rows": 1543,
+      "core_rows": 13504,
+      "chiplets_rows": 5838,
+      "poseidon2_permutation_rows": 19632,
+      "range_rows": 2003,
       "chiplets_shape": {
-        "hasher_rows": 3816,
-        "bitwise_rows": 840,
-        "memory_rows": 733,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 4192,
+        "bitwise_rows": 848,
+        "memory_rows": 796,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume two P2ID notes with Falcon signing": {
-    "prologue": 5025,
-    "notes_processing": 4504,
+    "prologue": 5646,
+    "notes_processing": 4528,
     "note_execution": {
-      "0x0ff983e6b5e8a0a04e7375b87d8e811ad51de36406f871e1d9d4e219f0f8abfb": 2334,
-      "0x60bba08165a03bfcf1febebf16679a0661b4d2672d9341545034f86c5c03a295": 2119
+      "0x69ad3e4f07a768c13690ceed06044be91b5c791edfb4d4387895e61103375faa": 2131,
+      "0xa92c16255ced9dd3afc3ea0fd807f29dc23a7e5d0ad5bfb7cc77e62fd360e66f": 2346
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 73638,
-      "auth_procedure": 72562
+      "total": 73750,
+      "auth_procedure": 72649
     },
     "trace": {
-      "core_rows": 83253,
-      "chiplets_rows": 13219,
-      "range_rows": 20293,
+      "core_rows": 84009,
+      "chiplets_rows": 13401,
+      "poseidon2_permutation_rows": 55600,
+      "range_rows": 20489,
       "chiplets_shape": {
-        "hasher_rows": 9704,
-        "bitwise_rows": 928,
-        "memory_rows": 2524,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 10072,
+        "bitwise_rows": 1032,
+        "memory_rows": 2295,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume two P2ID notes with ECDSA signing": {
-    "prologue": 5025,
-    "notes_processing": 4504,
+    "prologue": 5646,
+    "notes_processing": 4528,
     "note_execution": {
-      "0x0ff983e6b5e8a0a04e7375b87d8e811ad51de36406f871e1d9d4e219f0f8abfb": 2334,
-      "0x60bba08165a03bfcf1febebf16679a0661b4d2672d9341545034f86c5c03a295": 2119
+      "0x69ad3e4f07a768c13690ceed06044be91b5c791edfb4d4387895e61103375faa": 2131,
+      "0xa92c16255ced9dd3afc3ea0fd807f29dc23a7e5d0ad5bfb7cc77e62fd360e66f": 2346
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 6000,
-      "auth_procedure": 4924
+      "total": 5845,
+      "auth_procedure": 4744
     },
     "trace": {
-      "core_rows": 15615,
-      "chiplets_rows": 7476,
-      "range_rows": 1487,
+      "core_rows": 16104,
+      "chiplets_rows": 7737,
+      "poseidon2_permutation_rows": 19888,
+      "range_rows": 1365,
       "chiplets_shape": {
-        "hasher_rows": 5352,
-        "bitwise_rows": 1184,
-        "memory_rows": 877,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 5608,
+        "bitwise_rows": 1224,
+        "memory_rows": 903,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "create single P2ID note with Falcon signing": {
-    "prologue": 1881,
+    "prologue": 2080,
     "notes_processing": 35,
     "note_execution": {},
-    "tx_script_processing": 1844,
+    "tx_script_processing": 1883,
     "epilogue": {
-      "total": 75244,
-      "auth_procedure": 73205
+      "total": 75355,
+      "auth_procedure": 73269
     },
     "trace": {
-      "core_rows": 79048,
-      "chiplets_rows": 10846,
-      "range_rows": 20363,
+      "core_rows": 79397,
+      "chiplets_rows": 10830,
+      "poseidon2_permutation_rows": 53248,
+      "range_rows": 20473,
       "chiplets_shape": {
-        "hasher_rows": 7944,
-        "bitwise_rows": 544,
-        "memory_rows": 2295,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8192,
+        "bitwise_rows": 584,
+        "memory_rows": 2052,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "create single P2ID note with ECDSA signing": {
-    "prologue": 1881,
+    "prologue": 2080,
     "notes_processing": 35,
     "note_execution": {},
-    "tx_script_processing": 1844,
+    "tx_script_processing": 1883,
     "epilogue": {
-      "total": 7606,
-      "auth_procedure": 5567
+      "total": 7450,
+      "auth_procedure": 5364
     },
     "trace": {
-      "core_rows": 11410,
-      "chiplets_rows": 5103,
-      "range_rows": 1341,
+      "core_rows": 11492,
+      "chiplets_rows": 5166,
+      "poseidon2_permutation_rows": 17488,
+      "range_rows": 1215,
       "chiplets_shape": {
-        "hasher_rows": 3592,
-        "bitwise_rows": 800,
-        "memory_rows": 648,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 3728,
+        "bitwise_rows": 776,
+        "memory_rows": 660,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume CLAIM note (L1 to Miden)": {
-    "prologue": 3957,
-    "notes_processing": 28344,
+    "prologue": 5059,
+    "notes_processing": 28104,
     "note_execution": {
-      "0xbdfc5507d93648b80a38dc73a200a09635e05ad56f11c8faf6d5403cb0d393ee": 28302
+      "0xe5bd6a41e7df4ce84754b47bcfdf6a0983ce9906cf4d938d329244e8c41ae6a4": 28062
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 16518,
-      "auth_procedure": 11600
+      "total": 17439,
+      "auth_procedure": 12170
     },
     "trace": {
-      "core_rows": 48905,
-      "chiplets_rows": 19128,
-      "range_rows": 3425,
+      "core_rows": 50687,
+      "chiplets_rows": 20460,
+      "poseidon2_permutation_rows": 41872,
+      "range_rows": 3549,
       "chiplets_shape": {
-        "hasher_rows": 12312,
-        "bitwise_rows": 2752,
-        "memory_rows": 4001,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 13352,
+        "bitwise_rows": 2816,
+        "memory_rows": 4290,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume CLAIM note (L2 to Miden)": {
-    "prologue": 3957,
-    "notes_processing": 38506,
+    "prologue": 5059,
+    "notes_processing": 38074,
     "note_execution": {
-      "0xee8c28c427c5a7b02c43ee3512550d029ad914f8ccd4770e62abbf7ad18dc631": 38464
+      "0xca51be4e4e01350d922889d1d090862193a47e6a3c8d90950efd4517247c4160": 38032
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 16518,
-      "auth_procedure": 11600
+      "total": 17439,
+      "auth_procedure": 12170
     },
     "trace": {
-      "core_rows": 59067,
-      "chiplets_rows": 21878,
-      "range_rows": 3585,
+      "core_rows": 60657,
+      "chiplets_rows": 23018,
+      "poseidon2_permutation_rows": 44016,
+      "range_rows": 3785,
       "chiplets_shape": {
-        "hasher_rows": 13864,
-        "bitwise_rows": 3008,
-        "memory_rows": 4943,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 14712,
+        "bitwise_rows": 3072,
+        "memory_rows": 5232,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume B2AGG note (bridge-out)": {
-    "prologue": 4881,
-    "notes_processing": 116251,
+    "prologue": 5366,
+    "notes_processing": 116358,
     "note_execution": {
-      "0x747971468f66129ecef049ba8c86fa71f87ce9730dcb5c49939446186373d21e": 116209
+      "0x8836876b2130ae395929f920b3752ee47ade043551d8cd5ce3aef70708db9b28": 116316
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 26285,
-      "auth_procedure": 11685
+      "total": 27228,
+      "auth_procedure": 12255
     },
     "trace": {
-      "core_rows": 147503,
-      "chiplets_rows": 69206,
-      "range_rows": 4685,
+      "core_rows": 149037,
+      "chiplets_rows": 70879,
+      "poseidon2_permutation_rows": 113472,
+      "range_rows": 5789,
       "chiplets_shape": {
-        "hasher_rows": 55352,
-        "bitwise_rows": 3528,
-        "memory_rows": 10263,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 56912,
+        "bitwise_rows": 3616,
+        "memory_rows": 10349,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume B2AGG note (bridge-out, 2^31 leaves)": {
-    "prologue": 4881,
-    "notes_processing": 114554,
+    "prologue": 5366,
+    "notes_processing": 114667,
     "note_execution": {
-      "0x747971468f66129ecef049ba8c86fa71f87ce9730dcb5c49939446186373d21e": 114512
+      "0x8836876b2130ae395929f920b3752ee47ade043551d8cd5ce3aef70708db9b28": 114625
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 25997,
-      "auth_procedure": 11685
+      "total": 26940,
+      "auth_procedure": 12255
     },
     "trace": {
-      "core_rows": 145518,
-      "chiplets_rows": 68227,
-      "range_rows": 4657,
+      "core_rows": 147058,
+      "chiplets_rows": 69900,
+      "poseidon2_permutation_rows": 114864,
+      "range_rows": 5753,
       "chiplets_shape": {
-        "hasher_rows": 54504,
-        "bitwise_rows": 3528,
-        "memory_rows": 10132,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 56056,
+        "bitwise_rows": 3616,
+        "memory_rows": 10226,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume B2AGG note (bridge-out, 2^31-1 leaves)": {
-    "prologue": 4881,
-    "notes_processing": 60205,
+    "prologue": 5366,
+    "notes_processing": 60498,
     "note_execution": {
-      "0x747971468f66129ecef049ba8c86fa71f87ce9730dcb5c49939446186373d21e": 60163
+      "0x8836876b2130ae395929f920b3752ee47ade043551d8cd5ce3aef70708db9b28": 60456
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 17357,
-      "auth_procedure": 11685
+      "total": 18300,
+      "auth_procedure": 12255
     },
     "trace": {
-      "core_rows": 82529,
-      "chiplets_rows": 38249,
-      "range_rows": 3559,
+      "core_rows": 84249,
+      "chiplets_rows": 40042,
+      "poseidon2_permutation_rows": 51296,
+      "range_rows": 4759,
       "chiplets_shape": {
-        "hasher_rows": 28456,
-        "bitwise_rows": 3528,
-        "memory_rows": 6202,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 29888,
+        "bitwise_rows": 3616,
+        "memory_rows": 6536,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume P2ID note (network account)": {
-    "prologue": 3719,
-    "notes_processing": 2161,
+    "prologue": 4129,
+    "notes_processing": 2173,
     "note_execution": {
-      "0x9ffdc9ed78028f7eda93f7c44287cb1f719d69069d2d8669025fc760c7da567a": 2119
+      "0xa52e5fa62429d86c1671460c74fbe1b81c83f0badb946ea1e3de9ec4e82391d6": 2131
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 12541,
-      "auth_procedure": 9367
+      "total": 13096,
+      "auth_procedure": 9833
     },
     "trace": {
-      "core_rows": 18507,
-      "chiplets_rows": 8127,
-      "range_rows": 1467,
+      "core_rows": 19483,
+      "chiplets_rows": 8823,
+      "poseidon2_permutation_rows": 26496,
+      "range_rows": 1627,
       "chiplets_shape": {
-        "hasher_rows": 6144,
-        "bitwise_rows": 824,
-        "memory_rows": 1096,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 6736,
+        "bitwise_rows": 936,
+        "memory_rows": 1149,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume P2ID note (16 assets, network account)": {
-    "prologue": 12314,
-    "notes_processing": 29805,
+    "prologue": 12574,
+    "notes_processing": 29817,
     "note_execution": {
-      "0x27098731a1d1d6d12551117a4e3c77fa946491a977105e8d33f70a367fbceda7": 29763
+      "0x4f05c2331f0d0183dbf136193d5411849c4f8b41f09fcd15f9e881c2529789ce": 29775
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15020,
-      "auth_procedure": 9686
+      "total": 15575,
+      "auth_procedure": 10152
     },
     "trace": {
-      "core_rows": 57225,
-      "chiplets_rows": 32864,
-      "range_rows": 3635,
+      "core_rows": 58051,
+      "chiplets_rows": 33279,
+      "poseidon2_permutation_rows": 42992,
+      "range_rows": 3911,
       "chiplets_shape": {
-        "hasher_rows": 24416,
-        "bitwise_rows": 5504,
-        "memory_rows": 2881,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 25192,
+        "bitwise_rows": 5136,
+        "memory_rows": 2949,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume P2IDE note (claim, network account)": {
-    "prologue": 3719,
-    "notes_processing": 2286,
+    "prologue": 4129,
+    "notes_processing": 2267,
     "note_execution": {
-      "0x05847ac68b2b527d6932ebc07325c6e4346cacba2c8eca17334cabaed180fe50": 2244
+      "0xc267763a81902fb261e5ef0309da62172afb9e63f3e3595100e6dd059e484d24": 2225
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 12541,
-      "auth_procedure": 9367
+      "total": 13096,
+      "auth_procedure": 9833
     },
     "trace": {
-      "core_rows": 18632,
-      "chiplets_rows": 8155,
-      "range_rows": 1497,
+      "core_rows": 19577,
+      "chiplets_rows": 8851,
+      "poseidon2_permutation_rows": 26544,
+      "range_rows": 1569,
       "chiplets_shape": {
-        "hasher_rows": 6168,
-        "bitwise_rows": 824,
-        "memory_rows": 1100,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 6760,
+        "bitwise_rows": 936,
+        "memory_rows": 1153,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume P2IDE note (claim, 16 assets, network account)": {
-    "prologue": 12314,
-    "notes_processing": 29930,
+    "prologue": 12574,
+    "notes_processing": 29911,
     "note_execution": {
-      "0x3cb8d89cd690317eadc9777eb377d0bc75e44c5f3b76b4484a3928c9fc0bb16f": 29888
+      "0x2ff78ac7bfd5b13298da6eb7fd883a83d71a9e0df244ca69da0c1981c76c5597": 29869
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15020,
-      "auth_procedure": 9686
+      "total": 15575,
+      "auth_procedure": 10152
     },
     "trace": {
-      "core_rows": 57350,
-      "chiplets_rows": 32900,
-      "range_rows": 3645,
+      "core_rows": 58145,
+      "chiplets_rows": 33307,
+      "poseidon2_permutation_rows": 43040,
+      "range_rows": 3933,
       "chiplets_shape": {
-        "hasher_rows": 24448,
-        "bitwise_rows": 5504,
-        "memory_rows": 2885,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 25216,
+        "bitwise_rows": 5136,
+        "memory_rows": 2953,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume P2IDE note (reclaim, network account)": {
-    "prologue": 3822,
-    "notes_processing": 2338,
+    "prologue": 4232,
+    "notes_processing": 2486,
     "note_execution": {
-      "0xbb2f39f6cb6f735050be9911032bebb082c4477c01920a05bdf81449a2a2531f": 2296
+      "0xeac2339398f97e24f99304dc82c53cd70394e3b83712546a6164495813330ea3": 2444
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 12541,
-      "auth_procedure": 9367
+      "total": 13096,
+      "auth_procedure": 9833
     },
     "trace": {
-      "core_rows": 18787,
-      "chiplets_rows": 8186,
-      "range_rows": 1483,
+      "core_rows": 19899,
+      "chiplets_rows": 8941,
+      "poseidon2_permutation_rows": 26816,
+      "range_rows": 1611,
       "chiplets_shape": {
-        "hasher_rows": 6192,
-        "bitwise_rows": 824,
-        "memory_rows": 1107,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 6832,
+        "bitwise_rows": 936,
+        "memory_rows": 1171,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume SWAP note (public payback, network account)": {
-    "prologue": 3719,
-    "notes_processing": 4511,
+    "prologue": 4138,
+    "notes_processing": 4550,
     "note_execution": {
-      "0xd642acc2180f1ea6f6fbd1bce45b076d517ed595c4f3c3bd9bce22ec66e9e5c7": 4469
+      "0x8d62e605e506834b64448d70ba76228b362cd8ab47430b63f82e7c8ad34744ab": 4508
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 14232,
-      "auth_procedure": 9907
+      "total": 14758,
+      "auth_procedure": 10354
     },
     "trace": {
-      "core_rows": 22548,
-      "chiplets_rows": 10187,
-      "range_rows": 1753,
+      "core_rows": 23531,
+      "chiplets_rows": 10901,
+      "poseidon2_permutation_rows": 28640,
+      "range_rows": 1865,
       "chiplets_shape": {
-        "hasher_rows": 7688,
-        "bitwise_rows": 1192,
-        "memory_rows": 1244,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8320,
+        "bitwise_rows": 1272,
+        "memory_rows": 1307,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume SWAP note (private payback, network account)": {
-    "prologue": 3719,
-    "notes_processing": 3997,
+    "prologue": 4138,
+    "notes_processing": 4034,
     "note_execution": {
-      "0x6d44d87b75165cdc5794a3dbc5cdba77277e5241ccd2e332e9d78b47f58a29af": 3955
+      "0xdb2ce55750b059eb9cdc17917e5125fb774586cdda24566821f04f9cd0372829": 3992
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 14232,
-      "auth_procedure": 9907
+      "total": 14758,
+      "auth_procedure": 10354
     },
     "trace": {
-      "core_rows": 22034,
-      "chiplets_rows": 10066,
-      "range_rows": 1761,
+      "core_rows": 23015,
+      "chiplets_rows": 10776,
+      "poseidon2_permutation_rows": 28304,
+      "range_rows": 1847,
       "chiplets_shape": {
-        "hasher_rows": 7584,
-        "bitwise_rows": 1192,
-        "memory_rows": 1227,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8216,
+        "bitwise_rows": 1272,
+        "memory_rows": 1286,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (full fill, network account)": {
-    "prologue": 3719,
-    "notes_processing": 7033,
+    "prologue": 4129,
+    "notes_processing": 7369,
     "note_execution": {
-      "0x8258ed08b1106ffafca1fa325d7588834fea990bd9e6c4600b871ef6e2708192": 6991
+      "0x8d1d808b15fb3004b885e7a2050c8920b65a134e8742f9f62b0e30871ae78618": 7327
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 14240,
-      "auth_procedure": 9907
+      "total": 14798,
+      "auth_procedure": 10354
     },
     "trace": {
-      "core_rows": 25078,
-      "chiplets_rows": 10875,
-      "range_rows": 1795,
+      "core_rows": 26381,
+      "chiplets_rows": 11746,
+      "poseidon2_permutation_rows": 31168,
+      "range_rows": 1995,
       "chiplets_shape": {
-        "hasher_rows": 8128,
-        "bitwise_rows": 1264,
-        "memory_rows": 1420,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8848,
+        "bitwise_rows": 1400,
+        "memory_rows": 1496,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PSWAP note (partial fill, network account)": {
-    "prologue": 3719,
-    "notes_processing": 9574,
+    "prologue": 4129,
+    "notes_processing": 9885,
     "note_execution": {
-      "0x8258ed08b1106ffafca1fa325d7588834fea990bd9e6c4600b871ef6e2708192": 9532
+      "0x8d1d808b15fb3004b885e7a2050c8920b65a134e8742f9f62b0e30871ae78618": 9843
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15654,
-      "auth_procedure": 10130
+      "total": 16215,
+      "auth_procedure": 10558
     },
     "trace": {
-      "core_rows": 29033,
-      "chiplets_rows": 12580,
-      "range_rows": 1991,
+      "core_rows": 30314,
+      "chiplets_rows": 13526,
+      "poseidon2_permutation_rows": 32960,
+      "range_rows": 2101,
       "chiplets_shape": {
-        "hasher_rows": 9296,
-        "bitwise_rows": 1640,
-        "memory_rows": 1581,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 10072,
+        "bitwise_rows": 1792,
+        "memory_rows": 1660,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume MINT note (fungible faucet, network account)": {
-    "prologue": 5447,
-    "notes_processing": 7263,
+    "prologue": 5881,
+    "notes_processing": 10663,
     "note_execution": {
-      "0x61eb35dd4fa928f4b4ef9be8a1c8ef62b6f904483a96904854cbd23a95a58456": 7221
+      "0xe8af36cebdc2c8e1ada99dabc0c73975b6d63b30a54b1965f51cb313c276cd0e": 10621
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 19031,
-      "auth_procedure": 9662
+      "total": 19829,
+      "auth_procedure": 10109
     },
     "trace": {
-      "core_rows": 31827,
-      "chiplets_rows": 12355,
-      "range_rows": 2815,
+      "core_rows": 36458,
+      "chiplets_rows": 14124,
+      "poseidon2_permutation_rows": 29344,
+      "range_rows": 3057,
       "chiplets_shape": {
-        "hasher_rows": 9120,
-        "bitwise_rows": 1144,
-        "memory_rows": 2028,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 10648,
+        "bitwise_rows": 1272,
+        "memory_rows": 2202,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume MINT note (non-fungible faucet, network account)": {
-    "prologue": 5496,
-    "notes_processing": 9800,
+    "prologue": 5901,
+    "notes_processing": 13147,
     "note_execution": {
-      "0xf17cb88ebe534db086dc129df0773363e7ecc8c492acb4a92b000ecb1605bfcd": 9758
+      "0x8ab02ff7b87c684976947988ca3668c5bb61075db04a31c0efe84b381420c292": 13105
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 19324,
-      "auth_procedure": 9671
+      "total": 20099,
+      "auth_procedure": 10118
     },
     "trace": {
-      "core_rows": 34706,
-      "chiplets_rows": 13480,
-      "range_rows": 2945,
+      "core_rows": 39232,
+      "chiplets_rows": 15143,
+      "poseidon2_permutation_rows": 31168,
+      "range_rows": 3207,
       "chiplets_shape": {
-        "hasher_rows": 10128,
-        "bitwise_rows": 1144,
-        "memory_rows": 2145,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 11640,
+        "bitwise_rows": 1176,
+        "memory_rows": 2325,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume BURN note (network account)": {
-    "prologue": 6046,
-    "notes_processing": 4584,
+    "prologue": 6484,
+    "notes_processing": 4613,
     "note_execution": {
-      "0x90c1f0a2c27744efd107c653e6dba134c6713257427980e503580fa4931dc935": 4542
+      "0xf23c5dbf34e0f5b7a07bb55740fee27cad486d762243d9db32bf7424e2136807": 4571
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 17773,
-      "auth_procedure": 9441
+      "total": 18568,
+      "auth_procedure": 9907
     },
     "trace": {
-      "core_rows": 28489,
-      "chiplets_rows": 11174,
-      "range_rows": 2559,
+      "core_rows": 29750,
+      "chiplets_rows": 12124,
+      "poseidon2_permutation_rows": 28288,
+      "range_rows": 2807,
       "chiplets_shape": {
-        "hasher_rows": 8392,
-        "bitwise_rows": 856,
-        "memory_rows": 1863,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 9192,
+        "bitwise_rows": 992,
+        "memory_rows": 1938,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume FAUCET_POLICY_CONFIG note (network account)": {
-    "prologue": 5400,
-    "notes_processing": 5301,
+    "prologue": 5787,
+    "notes_processing": 3766,
     "note_execution": {
-      "0xc7d1d6d6dc6a738a3115fb8aec12c2fb9767356f2c67fd08a7163d7aadc1e7e0": 5259
+      "0x084456f51db04c378fe3c9c2ecff0b773e9a1c12c62d61f58d2a2bdc63564565": 3724
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 17626,
-      "auth_procedure": 9432
+      "total": 18415,
+      "auth_procedure": 9898
     },
     "trace": {
-      "core_rows": 28413,
-      "chiplets_rows": 10164,
-      "range_rows": 2589,
+      "core_rows": 28053,
+      "chiplets_rows": 10762,
+      "poseidon2_permutation_rows": 26960,
+      "range_rows": 2695,
       "chiplets_shape": {
-        "hasher_rows": 7768,
-        "bitwise_rows": 560,
-        "memory_rows": 1773,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8280,
+        "bitwise_rows": 664,
+        "memory_rows": 1816,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume FAUCET_METADATA_CONFIG note (network account)": {
-    "prologue": 4824,
-    "notes_processing": 6043,
+    "prologue": 5238,
+    "notes_processing": 6258,
     "note_execution": {
-      "0x8ea187c948675fe48a1ef5dcf25edeb636f501de68daffcad465c87fc418d30b": 6001
+      "0xd83aa688c55b0e03ad1ec08226d941fb7b7bec95b9dce7000187bc248f9a5396": 6216
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 16281,
-      "auth_procedure": 9351
+      "total": 17004,
+      "auth_procedure": 9817
     },
     "trace": {
-      "core_rows": 27234,
-      "chiplets_rows": 9828,
-      "range_rows": 2407,
+      "core_rows": 28585,
+      "chiplets_rows": 10863,
+      "poseidon2_permutation_rows": 26272,
+      "range_rows": 2475,
       "chiplets_shape": {
-        "hasher_rows": 7400,
-        "bitwise_rows": 568,
-        "memory_rows": 1797,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8304,
+        "bitwise_rows": 672,
+        "memory_rows": 1885,
+        "kernel_rom_rows": 1,
+        "ace_rows": 0
+      }
+    }
+  },
+  "consume MIN_BURN_AMOUNT_CONFIG note (network account)": {
+    "prologue": 5844,
+    "notes_processing": 2585,
+    "note_execution": {
+      "0x827f7ece42fc23618837f134c4d22c74c9112e4c4f6007f83c7c1c4eac6cedf5": 2543
+    },
+    "tx_script_processing": 41,
+    "epilogue": {
+      "total": 18568,
+      "auth_procedure": 9907
+    },
+    "trace": {
+      "core_rows": 27082,
+      "chiplets_rows": 10372,
+      "poseidon2_permutation_rows": 25568,
+      "range_rows": 2619,
+      "chiplets_shape": {
+        "hasher_rows": 7936,
+        "bitwise_rows": 664,
+        "memory_rows": 1770,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume ALLOWLIST_CONFIG note (network account)": {
-    "prologue": 5457,
-    "notes_processing": 3029,
+    "prologue": 5844,
+    "notes_processing": 3152,
     "note_execution": {
-      "0x96371aba3cc701dee73e96fbbc51f87d716641a06ccc6e455168e7a4ae443e94": 2987
+      "0x2bb232a07d0cb126c71964b7466ea52ac59517f146870c452d4d30830327d826": 3110
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 17949,
-      "auth_procedure": 9441
+      "total": 18747,
+      "auth_procedure": 9907
     },
     "trace": {
-      "core_rows": 26521,
-      "chiplets_rows": 10074,
-      "range_rows": 2489,
+      "core_rows": 27828,
+      "chiplets_rows": 10998,
+      "poseidon2_permutation_rows": 28112,
+      "range_rows": 2611,
       "chiplets_shape": {
-        "hasher_rows": 7672,
-        "bitwise_rows": 560,
-        "memory_rows": 1779,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8488,
+        "bitwise_rows": 664,
+        "memory_rows": 1844,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume BLOCKLIST_CONFIG note (network account)": {
-    "prologue": 5457,
-    "notes_processing": 3029,
+    "prologue": 5844,
+    "notes_processing": 3152,
     "note_execution": {
-      "0xe13a4c39807ed4265ac1abb9de8509a3f9a23bfca58de66624560c04c164ccc4": 2987
+      "0x2937619d1a58aa811068b401f57826bb89baf5c14dc1354729dd4b59fe2e8af2": 3110
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 17949,
-      "auth_procedure": 9441
+      "total": 18747,
+      "auth_procedure": 9907
     },
     "trace": {
-      "core_rows": 26521,
-      "chiplets_rows": 10074,
-      "range_rows": 2479,
+      "core_rows": 27828,
+      "chiplets_rows": 10998,
+      "poseidon2_permutation_rows": 27936,
+      "range_rows": 2615,
       "chiplets_shape": {
-        "hasher_rows": 7672,
-        "bitwise_rows": 560,
-        "memory_rows": 1779,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8488,
+        "bitwise_rows": 664,
+        "memory_rows": 1844,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume PAUSE_CONFIG note (network account)": {
-    "prologue": 3327,
-    "notes_processing": 2470,
+    "prologue": 3714,
+    "notes_processing": 2600,
     "note_execution": {
-      "0x76891cc44cdb15d05251ecfe69b337f1281360a49b8b302640565382d9307143": 2428
+      "0xa44158c31f1d5baed28412b37d02dbbfe667cab3b63917d832e4616b01b700f4": 2558
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 12588,
-      "auth_procedure": 9126
+      "total": 13161,
+      "auth_procedure": 9592
     },
     "trace": {
-      "core_rows": 18471,
-      "chiplets_rows": 7250,
-      "range_rows": 1519,
+      "core_rows": 19560,
+      "chiplets_rows": 8048,
+      "poseidon2_permutation_rows": 24368,
+      "range_rows": 1637,
       "chiplets_shape": {
-        "hasher_rows": 5488,
-        "bitwise_rows": 560,
-        "memory_rows": 1139,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 6176,
+        "bitwise_rows": 664,
+        "memory_rows": 1206,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume OWNER_CONFIG note (network account)": {
-    "prologue": 3186,
-    "notes_processing": 2499,
+    "prologue": 3573,
+    "notes_processing": 2628,
     "note_execution": {
-      "0xff8dc68047d1df36aa4b3b1130779084c9216aac8f9c8dfcdfbd1f82cbe8ec40": 2457
+      "0x35a4be071cf7a24560f97bb184a411b5736fa41c7d1482466c1485d4d5f78808": 2586
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 12294,
-      "auth_procedure": 9108
+      "total": 12855,
+      "auth_procedure": 9574
     },
     "trace": {
-      "core_rows": 18065,
-      "chiplets_rows": 7146,
-      "range_rows": 1531,
+      "core_rows": 19141,
+      "chiplets_rows": 7928,
+      "poseidon2_permutation_rows": 24224,
+      "range_rows": 1619,
       "chiplets_shape": {
-        "hasher_rows": 5400,
-        "bitwise_rows": 576,
-        "memory_rows": 1107,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 6072,
+        "bitwise_rows": 680,
+        "memory_rows": 1174,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume RBAC_CONFIG note (network account)": {
-    "prologue": 3365,
-    "notes_processing": 4761,
+    "prologue": 3781,
+    "notes_processing": 5596,
     "note_execution": {
-      "0xe12e2ed4219660c99f775b11d3ec2aabf69352a7d43fe25b94c63f9afe55199b": 4719
+      "0x84bde7a3a6e8811c3a12c8996628636ba37ac12df382956fbc24a57ae92a1f3b": 5554
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 13115,
-      "auth_procedure": 9135
+      "total": 13703,
+      "auth_procedure": 9601
     },
     "trace": {
-      "core_rows": 21327,
-      "chiplets_rows": 9286,
-      "range_rows": 1697,
+      "core_rows": 23165,
+      "chiplets_rows": 10410,
+      "poseidon2_permutation_rows": 30832,
+      "range_rows": 1947,
       "chiplets_shape": {
-        "hasher_rows": 7256,
-        "bitwise_rows": 576,
-        "memory_rows": 1391,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8240,
+        "bitwise_rows": 680,
+        "memory_rows": 1488,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume NETWORK_ACCOUNT_CONFIG note (network account)": {
-    "prologue": 3270,
-    "notes_processing": 3002,
+    "prologue": 3658,
+    "notes_processing": 3125,
     "note_execution": {
-      "0x963ba76870db04bbab4fd2fa4ed3939aa38dd709634296b681beac6723728d1e": 2960
+      "0xad4268cebfa5204ae676e4e4c78de4dbf06ac883ba35ac88803335313a186f80": 3083
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 12607,
-      "auth_procedure": 9117
+      "total": 13174,
+      "auth_procedure": 9583
     },
     "trace": {
-      "core_rows": 18965,
-      "chiplets_rows": 7796,
-      "range_rows": 1583,
+      "core_rows": 20042,
+      "chiplets_rows": 8573,
+      "poseidon2_permutation_rows": 26912,
+      "range_rows": 1705,
       "chiplets_shape": {
-        "hasher_rows": 5984,
-        "bitwise_rows": 560,
-        "memory_rows": 1189,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 6656,
+        "bitwise_rows": 664,
+        "memory_rows": 1251,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume CONSTANT_FEE_POLICY_CONFIG note (network account)": {
-    "prologue": 3317,
-    "notes_processing": 3687,
+    "prologue": 3714,
+    "notes_processing": 3824,
     "note_execution": {
-      "0xba847903cc257dbbe09852d5269201716661c41ad25494c8252ff15b423cc687": 3645
+      "0x934d345f0f43b93d34e8fa780d6eb14ab5223a1d2ade5abd12c2336fcf26574e": 3782
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 12754,
-      "auth_procedure": 9126
+      "total": 13327,
+      "auth_procedure": 9592
     },
     "trace": {
-      "core_rows": 19844,
-      "chiplets_rows": 8050,
-      "range_rows": 1615,
+      "core_rows": 20950,
+      "chiplets_rows": 8867,
+      "poseidon2_permutation_rows": 27008,
+      "range_rows": 1769,
       "chiplets_shape": {
-        "hasher_rows": 6168,
-        "bitwise_rows": 560,
-        "memory_rows": 1259,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 6872,
+        "bitwise_rows": 664,
+        "memory_rows": 1329,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume FEE_SPONSORSHIP note with feature note (network account)": {
-    "prologue": 4775,
-    "notes_processing": 1191,
+    "prologue": 5367,
+    "notes_processing": 1155,
     "note_execution": {
-      "0x0ac353668246cdbf750e7e8a12eba871f95984a19b9f0998b5c9809e7e27cea4": 666,
-      "0x30e133565785ae090e4920c05bb4adac8004adba6ba51e887396e0082197e1e7": 474
+      "0x0217fafc3fac0d188fd2926c784ea6dcaf434d3dd7addc5b8fdb64e87043660c": 648,
+      "0xa7995001442412a833ad5d36457a67963ddb41d71b07e2f44f5f2cdfef20bc84": 456
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15249,
-      "auth_procedure": 12219
+      "total": 15770,
+      "auth_procedure": 12651
     },
     "trace": {
-      "core_rows": 21301,
-      "chiplets_rows": 9142,
-      "range_rows": 1543,
+      "core_rows": 22377,
+      "chiplets_rows": 9954,
+      "poseidon2_permutation_rows": 26736,
+      "range_rows": 1659,
       "chiplets_shape": {
-        "hasher_rows": 6976,
-        "bitwise_rows": 888,
-        "memory_rows": 1215,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 7656,
+        "bitwise_rows": 1024,
+        "memory_rows": 1272,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume FEE_SPONSORSHIP note (reclaim)": {
-    "prologue": 3605,
-    "notes_processing": 2920,
+    "prologue": 4015,
+    "notes_processing": 2865,
     "note_execution": {
-      "0x10ecf93babe366a86b031e4bc407ec2e05f08b8be402539782e54f239aca3222": 2878
+      "0x34e2e3da2cb4d3ae1c7565d50af5b044df57ea81fd37846911c73cf0e2bdad84": 2823
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 10374,
-      "auth_procedure": 8159
+      "total": 10278,
+      "auth_procedure": 8016
     },
     "trace": {
-      "core_rows": 16985,
-      "chiplets_rows": 7640,
-      "range_rows": 1609,
+      "core_rows": 17243,
+      "chiplets_rows": 7866,
+      "poseidon2_permutation_rows": 23648,
+      "range_rows": 1479,
       "chiplets_shape": {
-        "hasher_rows": 5568,
-        "bitwise_rows": 1144,
-        "memory_rows": 865,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 5808,
+        "bitwise_rows": 1176,
+        "memory_rows": 880,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume CLAIM note (L1 to Miden, with fee payment)": {
-    "prologue": 3957,
-    "notes_processing": 28344,
+    "prologue": 5059,
+    "notes_processing": 28104,
     "note_execution": {
-      "0xbdfc5507d93648b80a38dc73a200a09635e05ad56f11c8faf6d5403cb0d393ee": 28302
+      "0xe5bd6a41e7df4ce84754b47bcfdf6a0983ce9906cf4d938d329244e8c41ae6a4": 28062
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 20610,
-      "auth_procedure": 14310
+      "total": 21595,
+      "auth_procedure": 14921
     },
     "trace": {
-      "core_rows": 52997,
-      "chiplets_rows": 21208,
-      "range_rows": 3529,
+      "core_rows": 54843,
+      "chiplets_rows": 22634,
+      "poseidon2_permutation_rows": 47168,
+      "range_rows": 3727,
       "chiplets_shape": {
-        "hasher_rows": 13904,
-        "bitwise_rows": 3088,
-        "memory_rows": 4153,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 15008,
+        "bitwise_rows": 3184,
+        "memory_rows": 4440,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume CLAIM note (L2 to Miden, with fee payment)": {
-    "prologue": 3957,
-    "notes_processing": 38506,
+    "prologue": 5059,
+    "notes_processing": 38074,
     "note_execution": {
-      "0xee8c28c427c5a7b02c43ee3512550d029ad914f8ccd4770e62abbf7ad18dc631": 38464
+      "0xca51be4e4e01350d922889d1d090862193a47e6a3c8d90950efd4517247c4160": 38032
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 20610,
-      "auth_procedure": 14310
+      "total": 21595,
+      "auth_procedure": 14921
     },
     "trace": {
-      "core_rows": 63159,
-      "chiplets_rows": 23958,
-      "range_rows": 3737,
+      "core_rows": 64813,
+      "chiplets_rows": 25192,
+      "poseidon2_permutation_rows": 49312,
+      "range_rows": 3921,
       "chiplets_shape": {
-        "hasher_rows": 15456,
-        "bitwise_rows": 3344,
-        "memory_rows": 5095,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 16368,
+        "bitwise_rows": 3440,
+        "memory_rows": 5382,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume B2AGG note (bridge-out, with fee payment)": {
-    "prologue": 4881,
-    "notes_processing": 116251,
+    "prologue": 5366,
+    "notes_processing": 116358,
     "note_execution": {
-      "0x747971468f66129ecef049ba8c86fa71f87ce9730dcb5c49939446186373d21e": 116209
+      "0x8836876b2130ae395929f920b3752ee47ade043551d8cd5ce3aef70708db9b28": 116316
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 30377,
-      "auth_procedure": 14395
+      "total": 31384,
+      "auth_procedure": 15006
     },
     "trace": {
-      "core_rows": 151595,
-      "chiplets_rows": 71286,
-      "range_rows": 4753,
+      "core_rows": 153193,
+      "chiplets_rows": 73053,
+      "poseidon2_permutation_rows": 117680,
+      "range_rows": 5941,
       "chiplets_shape": {
-        "hasher_rows": 56944,
-        "bitwise_rows": 3864,
-        "memory_rows": 10415,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 58568,
+        "bitwise_rows": 3984,
+        "memory_rows": 10499,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume B2AGG note (bridge-out, 2^31-1 leaves, with fee payment)": {
-    "prologue": 4881,
-    "notes_processing": 60205,
+    "prologue": 5366,
+    "notes_processing": 60498,
     "note_execution": {
-      "0x747971468f66129ecef049ba8c86fa71f87ce9730dcb5c49939446186373d21e": 60163
+      "0x8836876b2130ae395929f920b3752ee47ade043551d8cd5ce3aef70708db9b28": 60456
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 21449,
-      "auth_procedure": 14395
+      "total": 22456,
+      "auth_procedure": 15006
     },
     "trace": {
-      "core_rows": 86621,
-      "chiplets_rows": 40329,
-      "range_rows": 3737,
+      "core_rows": 88405,
+      "chiplets_rows": 42216,
+      "poseidon2_permutation_rows": 55424,
+      "range_rows": 4909,
       "chiplets_shape": {
-        "hasher_rows": 30048,
-        "bitwise_rows": 3864,
-        "memory_rows": 6354,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 31544,
+        "bitwise_rows": 3984,
+        "memory_rows": 6686,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume CONFIG_AGG_BRIDGE note (with fee payment)": {
-    "prologue": 4265,
-    "notes_processing": 13388,
+    "prologue": 4746,
+    "notes_processing": 13770,
     "note_execution": {
-      "0x51eb958cc6ce003f866bed3f618c3a530dcb515bf791949db7707b662797a8a7": 13346
+      "0x84371738f53aa686ad89f9e97c98d0070c534694c304217ec0753abd40ebe4c9": 13728
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15996,
-      "auth_procedure": 9270
+      "total": 16845,
+      "auth_procedure": 9745
     },
     "trace": {
-      "core_rows": 33735,
-      "chiplets_rows": 14581,
-      "range_rows": 2465,
+      "core_rows": 35446,
+      "chiplets_rows": 15701,
+      "poseidon2_permutation_rows": 38176,
+      "range_rows": 2807,
       "chiplets_shape": {
-        "hasher_rows": 11584,
-        "bitwise_rows": 616,
-        "memory_rows": 2318,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 12568,
+        "bitwise_rows": 712,
+        "memory_rows": 2419,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume DEREGISTER_AGG_FAUCET note (with fee payment)": {
-    "prologue": 4324,
-    "notes_processing": 12687,
+    "prologue": 4787,
+    "notes_processing": 12782,
     "note_execution": {
-      "0xdc8ae96d95b6c8bba383e0829a1de57827736349bf2a65d29b98a0b8ce8de44f": 12645
+      "0x9884428362da68de6f9a7d9639ea6876a6639b12ab1d67eddcb4056a74761c5c": 12740
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15996,
-      "auth_procedure": 9270
+      "total": 16845,
+      "auth_procedure": 9745
     },
     "trace": {
-      "core_rows": 33093,
-      "chiplets_rows": 14272,
-      "range_rows": 2357,
+      "core_rows": 34499,
+      "chiplets_rows": 15356,
+      "poseidon2_permutation_rows": 36768,
+      "range_rows": 2633,
       "chiplets_shape": {
-        "hasher_rows": 11400,
-        "bitwise_rows": 608,
-        "memory_rows": 2201,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 12384,
+        "bitwise_rows": 704,
+        "memory_rows": 2266,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume UPDATE_GER note (with fee payment)": {
-    "prologue": 4265,
-    "notes_processing": 4391,
+    "prologue": 4728,
+    "notes_processing": 4550,
     "note_execution": {
-      "0x83a2de49840c9bf985e0b919a89e3ce2e632036932a345ad4faf40bccf37b61f": 4349
+      "0xa0e2723b053cd38e66d40610dbb0148f857aaeaca49185c1f5599e0451b8b1d7": 4508
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15196,
-      "auth_procedure": 9270
+      "total": 16045,
+      "auth_procedure": 9745
     },
     "trace": {
-      "core_rows": 23938,
-      "chiplets_rows": 9597,
-      "range_rows": 2057,
+      "core_rows": 25408,
+      "chiplets_rows": 10532,
+      "poseidon2_permutation_rows": 30336,
+      "range_rows": 2307,
       "chiplets_shape": {
-        "hasher_rows": 7360,
-        "bitwise_rows": 560,
-        "memory_rows": 1614,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8176,
+        "bitwise_rows": 656,
+        "memory_rows": 1698,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }
   },
   "consume REMOVE_GER note (with fee payment)": {
-    "prologue": 4324,
-    "notes_processing": 5409,
+    "prologue": 4787,
+    "notes_processing": 5582,
     "note_execution": {
-      "0xffa3eac6e83fdd664e9dca686e96d17b331a77437f1a5cbb3521b261fab833b9": 5367
+      "0xdd342dacfe759418bb2378c8650829ca9edb48788cf5e3ba4635a8fa5ade2d51": 5540
     },
-    "tx_script_processing": 42,
+    "tx_script_processing": 41,
     "epilogue": {
-      "total": 15232,
-      "auth_procedure": 9270
+      "total": 16081,
+      "auth_procedure": 9745
     },
     "trace": {
-      "core_rows": 25051,
-      "chiplets_rows": 9887,
-      "range_rows": 2061,
+      "core_rows": 26535,
+      "chiplets_rows": 10840,
+      "poseidon2_permutation_rows": 30800,
+      "range_rows": 2303,
       "chiplets_shape": {
-        "hasher_rows": 7568,
-        "bitwise_rows": 560,
-        "memory_rows": 1696,
-        "kernel_rom_rows": 62,
+        "hasher_rows": 8400,
+        "bitwise_rows": 656,
+        "memory_rows": 1782,
+        "kernel_rom_rows": 1,
         "ace_rows": 0
       }
     }

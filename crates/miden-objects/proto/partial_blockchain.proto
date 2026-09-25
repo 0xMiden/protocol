@@ -1,0 +1,10 @@
+syntax = "proto3";
+package blockchain;
+
+import "block.proto";
+import "primitives.proto";
+
+message PartialBlockchain {
+  primitives.PartialMmr mmr = 1;
+  repeated BlockHeader block_headers = 2;
+}

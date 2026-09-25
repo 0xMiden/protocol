@@ -64,4 +64,3 @@ tokio      = { optional = true, workspace = true }
 
 [dev-dependencies]
 criterion = { features = ["async_tokio", "html_reports"], workspace = true }
-rstest    = { workspace = true }

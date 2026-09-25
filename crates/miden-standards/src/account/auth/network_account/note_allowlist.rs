@@ -126,11 +126,9 @@ impl TryFrom<&AccountStorage> for NetworkAccountNoteAllowlist {
             return Err(NetworkAccountNoteAllowlistError::UnexpectedSlotType);
         };
 
-        // Only entries with a non-empty value mark a root as allowed, matching the MASM check
-        // (`word::eqz`), so the reconstructed view agrees with on-chain enforcement.
+        // A removed root leaves no entry behind, so every entry marks an allowed root.
         let allowed_script_roots = map
             .entries()
-            .filter(|(_key, value)| **value != Word::empty())
             .map(|(key, _value)| NoteScriptRoot::from_raw(key.as_word()))
             .collect();
 
@@ -173,7 +171,6 @@ mod tests {
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
     use crate::account::fees::FeePolicyManager;
-    use crate::account::wallets::BasicWallet;
 
     #[test]
     fn allowlist_storage_slot_contains_expected_entries() {
@@ -208,7 +205,7 @@ mod tests {
         assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
     }
 
-    /// Reconstructing an allowlist whose every entry has been removed (all empty-valued) fails with
+    /// Reconstructing an allowlist whose every entry has been removed fails with
     /// `EmptyAllowlist`, since such an account can no longer consume any note.
     #[test]
     fn try_from_fails_when_all_entries_removed() {
@@ -217,6 +214,7 @@ mod tests {
         let map =
             StorageMap::with_entries([(StorageMapKey::new(removed.as_word()), Word::empty())])
                 .expect("map entries should have unique keys");
+        assert_eq!(map.entries().count(), 0, "a removed root leaves no entry behind");
         let slot = StorageSlot::with_map(NetworkAccountNoteAllowlist::slot_name().clone(), map);
         let storage = AccountStorage::new(vec![slot]).expect("storage should be valid");
 
@@ -241,7 +239,6 @@ mod tests {
                 )
                 .expect("non-empty allowlist should construct"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
 
@@ -250,8 +247,9 @@ mod tests {
 
         // The map's ordering is determined by the StorageMapKey, so compare as sets.
         let mut expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
-        expected.insert(crate::note::NetworkAccountConfigNote::script_root());
+        expected.insert(crate::note::config::NetworkAccountConfigNote::script_root());
         expected.insert(crate::note::FeeSponsorshipNote::script_root());
+        expected.insert(crate::note::P2idNote::script_root());
         let actual: BTreeSet<NoteScriptRoot> =
             allowlist.allowed_script_roots().iter().copied().collect();
 

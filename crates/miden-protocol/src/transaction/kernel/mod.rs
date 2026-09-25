@@ -392,7 +392,7 @@ impl TransactionKernel {
 
         // parse final account state
         let final_account_data = advice_inputs
-            .map
+            .map()
             .get(&final_account_commitment)
             .ok_or(TransactionOutputError::FinalAccountCommitmentMissingInAdviceMap)?;
 
@@ -423,7 +423,7 @@ impl TransactionKernel {
         advice_inputs: &AdviceInputs,
     ) -> Result<(Word, Word), TransactionOutputError> {
         let account_update_data =
-            advice_inputs.map.get(&account_update_commitment).ok_or_else(|| {
+            advice_inputs.map().get(&account_update_commitment).ok_or_else(|| {
                 TransactionOutputError::AccountUpdateCommitment(
                     "failed to find ACCOUNT_UPDATE_COMMITMENT in advice map".into(),
                 )
@@ -581,5 +581,54 @@ pub(crate) mod source_manager_ext {
         }
 
         Ok(files)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transaction::kernel::memory::KERNEL_PROCEDURES_PTR;
+    use crate::word;
+
+    /// The root of `exec_kernel_proc`.
+    ///
+    /// Every kernel caller commits to this root through its `syscall` instructions, so this root
+    /// must be stable.
+    const EXEC_KERNEL_PROC_ROOT: Word =
+        word!("0x5234d0969f1a3e08bcd099fd71220f5c354eac99ab6a750368560722c5b8b113");
+
+    #[test]
+    fn exec_kernel_proc_root_is_stable() {
+        let root = TransactionKernel::package()
+            .get_procedure_root_by_path("$kernel::exec_kernel_proc")
+            .unwrap();
+
+        assert_eq!(
+            root, EXEC_KERNEL_PROC_ROOT,
+            "exec_kernel_proc root {root} was not the expected {EXEC_KERNEL_PROC_ROOT}"
+        );
+    }
+
+    /// `exec_kernel_proc` derives the procedure pointer from the procedure offset alone, which is
+    /// only correct while the kernel procedures section begins at address 0.
+    #[test]
+    fn kernel_procedures_section_begins_at_zero() {
+        assert_eq!(KERNEL_PROCEDURES_PTR, 0);
+    }
+
+    #[test]
+    fn tx_kernel_exports_only_exec_kernel_proc() {
+        let kernel_prog_info = TransactionKernel::program_info();
+        let proc_hashes = kernel_prog_info.kernel().proc_hashes();
+
+        assert_eq!(proc_hashes.len(), 1, "only one proc should be a syscallable export");
+
+        assert_eq!(
+            TransactionKernel::package()
+                .get_procedure_root_by_path("$kernel::exec_kernel_proc")
+                .unwrap(),
+            proc_hashes[0],
+            "only exec_kernel_proc should be a syscallable export"
+        );
     }
 }

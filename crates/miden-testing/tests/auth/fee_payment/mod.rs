@@ -1,9 +1,10 @@
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::note::TxFeeNote;
 
+mod conversion;
 mod multisig;
 mod network;
 mod no_auth;
@@ -15,7 +16,7 @@ mod sponsorship;
 
 /// The verification base fee configured on the fee-charging mock chains used across the fee
 /// payment tests.
-const VERIFICATION_BASE_FEE: u32 = 500;
+pub(super) const VERIFICATION_BASE_FEE: u32 = 500;
 
 // The cycle-estimate constants used by the fee-paying auth flows. These are Rust mirrors used to
 // regression-test that the estimates remain upper bounds of the measured cycle counts. There is
@@ -37,10 +38,17 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// The cycle estimate the multisig auth components pass to `pay_fee` for the given number of
+/// signers, plus pay_fee's own tail margin. Used as the upper bound for the measured auth
+/// procedure cycles.
+pub(super) fn multisig_auth_estimate(num_signers: usize) -> usize {
+    num_signers * FALCON_512_POSEIDON2_AUTH_CYCLES + MULTISIG_AUTH_BASE_CYCLES + PAY_FEE_CYCLES
+}
+
 /// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
 /// carrying a single native fee asset whose amount covers the required fee. Returns the fee
 /// asset for further assertions.
-fn assert_single_fee_note(
+pub(super) fn assert_single_fee_note(
     executed_transaction: &ExecutedTransaction,
 ) -> anyhow::Result<FungibleAsset> {
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
@@ -52,9 +60,7 @@ fn assert_single_fee_note(
     let assets = output_note.assets();
     assert_eq!(assets.num_assets(), 1);
     let asset = assets.iter().next().expect("fee note should carry an asset");
-    let Asset::Fungible(fee_asset) = asset else {
-        panic!("fee note asset should be fungible");
-    };
+    let fee_asset = asset.unwrap_fungible();
     assert_eq!(fee_asset.faucet_id(), ACCOUNT_ID_FEE_FAUCET.try_into()?);
 
     let required_fee = executed_transaction.compute_fee();
@@ -64,5 +70,5 @@ fn assert_single_fee_note(
         fee_asset.amount()
     );
 
-    Ok(*fee_asset)
+    Ok(fee_asset)
 }

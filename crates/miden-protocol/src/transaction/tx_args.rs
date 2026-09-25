@@ -1,23 +1,13 @@
 use alloc::collections::BTreeMap;
-use alloc::string::ToString;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::fmt::Display;
 
-use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_crypto_derive::WordWrapper;
-use miden_mast_package::Package;
-use miden_mast_package::debug_info::PackageDebugInfo;
-use miden_processor::LoadedMastForest;
 
+use super::script::TransactionScript;
 use super::{Felt, Hasher, Word};
+use crate::EMPTY_WORD;
 use crate::account::auth::{PublicKeyCommitment, Signature};
-use crate::assembly::Path;
-use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
-use crate::package::{loaded_mast_forest, package_debug_info};
-use crate::utils::create_external_node_forest;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -26,7 +16,6 @@ use crate::utils::serde::{
     Serializable,
 };
 use crate::vm::{AdviceInputs, AdviceMap};
-use crate::{EMPTY_WORD, MastForest, MastNodeId};
 
 // TRANSACTION ARGUMENTS
 // ================================================================================================
@@ -65,15 +54,29 @@ impl TransactionArgs {
     /// Returns new [TransactionArgs] instantiated with the provided transaction script, advice
     /// map and foreign account inputs.
     pub fn new(advice_map: AdviceMap) -> Self {
-        let mut advice_inputs = AdviceInputs::default();
-        advice_inputs.map = advice_map;
+        Self::from_parts(
+            None,
+            EMPTY_WORD,
+            BTreeMap::new(),
+            AdviceInputs::from(advice_map),
+            EMPTY_WORD,
+        )
+    }
 
+    /// Creates [`TransactionArgs`] from all of its components.
+    pub fn from_parts(
+        tx_script: Option<TransactionScript>,
+        tx_script_args: Word,
+        note_args: BTreeMap<NoteId, Word>,
+        advice_inputs: AdviceInputs,
+        auth_args: Word,
+    ) -> Self {
         Self {
-            tx_script: None,
-            tx_script_args: EMPTY_WORD,
-            note_args: Default::default(),
+            tx_script,
+            tx_script_args,
+            note_args,
             advice_inputs,
-            auth_args: EMPTY_WORD,
+            auth_args,
         }
     }
 
@@ -144,6 +147,11 @@ impl TransactionArgs {
         self.note_args.get(&note_id)
     }
 
+    /// Returns the note arguments keyed by note ID.
+    pub fn note_args(&self) -> &BTreeMap<NoteId, Word> {
+        &self.note_args
+    }
+
     /// Returns a reference to the internal [AdviceInputs].
     pub fn advice_inputs(&self) -> &AdviceInputs {
         &self.advice_inputs
@@ -189,9 +197,10 @@ impl TransactionArgs {
         signature: Signature,
     ) {
         let pk_word: Word = pub_key.into();
-        self.advice_inputs
-            .map
-            .insert(Hasher::merge(&[pk_word, message]), signature.to_encoded_signature(message));
+        self.advice_inputs.extend(AdviceInputs::default().with_map([(
+            Hasher::merge(&[pk_word, message]),
+            signature.to_encoded_signature(message),
+        )]));
     }
 
     /// Populates the advice inputs with the specified note recipient details.
@@ -213,12 +222,13 @@ impl TransactionArgs {
 
     /// Extends the internal advice inputs' map with the provided key-value pairs.
     pub fn extend_advice_map<T: IntoIterator<Item = (Word, Vec<Felt>)>>(&mut self, iter: T) {
-        self.advice_inputs.map.extend(iter);
+        self.advice_inputs.extend(AdviceInputs::default().with_map(iter));
     }
 
     /// Extends the internal advice inputs' merkle store with the provided nodes.
     pub fn extend_merkle_store<I: Iterator<Item = InnerNodeInfo>>(&mut self, iter: I) {
-        self.advice_inputs.store.extend(iter);
+        self.advice_inputs
+            .extend(AdviceInputs::default().with_merkle_store(iter.collect()));
     }
 
     /// Extends the advice inputs in self with the provided ones.
@@ -262,247 +272,20 @@ impl Deserializable for TransactionArgs {
     }
 }
 
-// TRANSACTION SCRIPT ROOT
+// TESTS
 // ================================================================================================
-
-/// The MAST root of a [`TransactionScript`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, WordWrapper)]
-pub struct TransactionScriptRoot(Word);
-
-impl From<TransactionScriptRoot> for Word {
-    fn from(root: TransactionScriptRoot) -> Self {
-        root.0
-    }
-}
-
-impl Display for TransactionScriptRoot {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        Display::fmt(&self.0, f)
-    }
-}
-
-impl Serializable for TransactionScriptRoot {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.0);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
-    }
-}
-
-impl Deserializable for TransactionScriptRoot {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let word: Word = source.read()?;
-        Ok(Self::from_raw(word))
-    }
-}
-
-// TRANSACTION SCRIPT
-// ================================================================================================
-
-/// The attribute name used to mark the entrypoint procedure in a transaction script package.
-pub const TRANSACTION_SCRIPT_ATTRIBUTE: &str = "transaction_script";
-
-/// Transaction script.
-///
-/// A transaction script is a program that is executed in a transaction after all input notes
-/// have been executed.
-///
-/// The [TransactionScript] object is composed of an executable program defined by a [MastForest]
-/// and an associated entrypoint.
-#[derive(Clone, Debug)]
-pub struct TransactionScript {
-    mast: Arc<MastForest>,
-    entrypoint: MastNodeId,
-    package_debug_info: Option<Arc<PackageDebugInfo>>,
-}
-
-impl TransactionScript {
-    // CONSTRUCTORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a new [TransactionScript] instantiated from the provided MAST forest and entrypoint.
-    ///
-    /// # Panics
-    /// Panics if the specified entrypoint is not in the provided MAST forest.
-    pub fn from_parts(mast: Arc<MastForest>, entrypoint: MastNodeId) -> Self {
-        assert!(mast.get_node_by_id(entrypoint).is_some());
-
-        Self {
-            mast,
-            entrypoint,
-            package_debug_info: None,
-        }
-    }
-
-    /// Creates a [TransactionScript] from a [`Package`].
-    ///
-    /// If the package is an executable (i.e., its target type is
-    /// [`TargetType::Executable`](miden_mast_package::TargetType::Executable)), the program's
-    /// entrypoint is used as the script's entrypoint. Otherwise, the package must contain
-    /// exactly one procedure with the `@transaction_script` attribute, which will be used as
-    /// the entrypoint.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - An executable package cannot be converted to a program.
-    /// - A library package does not contain a procedure with the `@transaction_script` attribute.
-    /// - A library package contains multiple procedures with the `@transaction_script` attribute.
-    pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
-        if package.is_program() {
-            let program =
-                package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
-
-            return Ok(Self {
-                mast: program.mast_forest().clone(),
-                entrypoint: program.entrypoint(),
-                package_debug_info: package_debug_info(package),
-            });
-        }
-
-        let mut entrypoint = None;
-
-        for export in package.manifest.exports() {
-            if let Some(proc_export) = export.as_procedure()
-                && proc_export.attributes.has(TRANSACTION_SCRIPT_ATTRIBUTE)
-            {
-                if entrypoint.is_some() {
-                    return Err(TransactionScriptError::MultipleProceduresWithAttribute);
-                }
-                entrypoint =
-                    Some(proc_export.node.ok_or(TransactionScriptError::NoProcedureWithAttribute)?);
-            }
-        }
-
-        let entrypoint = entrypoint.ok_or(TransactionScriptError::NoProcedureWithAttribute)?;
-
-        Ok(Self {
-            mast: package.mast_forest().clone(),
-            entrypoint,
-            package_debug_info: package_debug_info(package),
-        })
-    }
-
-    /// Returns a new [TransactionScript] containing only a reference to a procedure in the
-    /// provided package.
-    ///
-    /// This method is useful when a package contains multiple transaction scripts and you need
-    /// to extract a specific one by its fully qualified path (e.g.,
-    /// `::miden::standards::tx_scripts::send_notes::main`).
-    ///
-    /// The procedure at the specified path must have the `@transaction_script` attribute.
-    ///
-    /// Note: This method creates a minimal [MastForest] containing only an external node
-    /// referencing the procedure's digest, rather than copying the entire package. The actual
-    /// procedure code will be resolved at runtime via the `MastForestStore`.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The package does not contain a procedure at the specified path.
-    /// - The procedure at the specified path does not have the `@transaction_script` attribute.
-    pub fn from_package_reference(
-        package: &Package,
-        path: &Path,
-    ) -> Result<Self, TransactionScriptError> {
-        // Find the export matching the path
-        let export =
-            package.manifest.exports().find(|e| e.path().as_ref() == path).ok_or_else(|| {
-                TransactionScriptError::ProcedureNotFound(path.to_string().into())
-            })?;
-
-        // Get the procedure export and verify it has the @transaction_script attribute
-        let proc_export = export
-            .as_procedure()
-            .ok_or_else(|| TransactionScriptError::ProcedureNotFound(path.to_string().into()))?;
-
-        if !proc_export.attributes.has(TRANSACTION_SCRIPT_ATTRIBUTE) {
-            return Err(TransactionScriptError::ProcedureMissingAttribute(path.to_string().into()));
-        }
-
-        // Get the digest of the procedure from the package
-        let digest = proc_export.digest;
-
-        // Create a minimal MastForest with just an external node referencing the digest
-        let (mast, entrypoint) = create_external_node_forest(digest);
-
-        Ok(Self {
-            mast: Arc::new(mast),
-            entrypoint,
-            package_debug_info: package_debug_info(package),
-        })
-    }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a reference to the [MastForest] backing this transaction script.
-    pub fn mast(&self) -> Arc<MastForest> {
-        self.mast.clone()
-    }
-
-    /// Returns the MAST forest and package-owned debug information backing this transaction script.
-    pub fn loaded_mast_forest(&self) -> LoadedMastForest {
-        loaded_mast_forest(self.mast.clone(), self.package_debug_info.clone())
-    }
-
-    /// Returns the commitment of this transaction script (i.e., the script's MAST root).
-    pub fn root(&self) -> TransactionScriptRoot {
-        TransactionScriptRoot::from_raw(self.mast[self.entrypoint].digest())
-    }
-
-    /// Returns a new [TransactionScript] with the provided advice map entries merged into the
-    /// underlying [MastForest].
-    ///
-    /// This allows adding advice map entries to an already-compiled transaction script,
-    /// which is useful when the entries are determined after script compilation.
-    pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
-        if advice_map.is_empty() {
-            return self;
-        }
-
-        let mast = (*self.mast).clone().with_advice_map(advice_map);
-        Self {
-            mast: Arc::new(mast),
-            entrypoint: self.entrypoint,
-            package_debug_info: self.package_debug_info,
-        }
-    }
-}
-
-impl PartialEq for TransactionScript {
-    fn eq(&self, other: &Self) -> bool {
-        self.mast == other.mast && self.entrypoint == other.entrypoint
-    }
-}
-
-impl Eq for TransactionScript {}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for TransactionScript {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.mast.write_into(target);
-        target.write_u32(u32::from(self.entrypoint));
-    }
-}
-
-impl Deserializable for TransactionScript {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mast = MastForest::read_from(source)?;
-        let entrypoint = MastNodeId::from_u32_safe(source.read_u32()?, &mast)?;
-
-        Ok(Self::from_parts(Arc::new(mast), entrypoint))
-    }
-}
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use miden_core::advice::AdviceMap;
 
+    use crate::note::Note;
     use crate::transaction::TransactionArgs;
     use crate::utils::serde::{Deserializable, Serializable};
+    use crate::vm::AdviceInputs;
+    use crate::{Felt, Word};
 
     #[test]
     fn test_tx_args_serialization() {
@@ -514,158 +297,23 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_script_preserves_package_debug_info() {
-        use super::TransactionScript;
-        use crate::assembly::Assembler;
+    fn from_parts_preserves_note_args_and_advice_inputs() {
+        let note_id = Note::mock_noop(Word::empty()).id();
+        let note_args = BTreeMap::from([(note_id, Word::new([Felt::from(1_u32); 4]))]);
+        let advice_inputs = AdviceInputs::default()
+            .with_map([(Word::new([Felt::from(2_u32); 4]), vec![Felt::from(3_u32)])]);
 
-        let assembler = Assembler::default();
-        let package =
-            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
-        let script = TransactionScript::from_package(&package).unwrap();
-
-        assert!(script.loaded_mast_forest().package_debug_info().unwrap().is_some());
-    }
-
-    #[test]
-    fn test_transaction_script_with_advice_map() {
-        use miden_core::{Felt, Word};
-
-        use super::TransactionScript;
-        use crate::assembly::Assembler;
-
-        let assembler = Assembler::default();
-        let package =
-            assembler.assemble_program("test-transaction-script", "begin nop end").unwrap();
-        let script = TransactionScript::from_package(&package).unwrap();
-        assert!(script.mast().advice_map().is_empty());
-
-        // Empty advice map should be a no-op
-        let original_root = script.root();
-        let script = script.with_advice_map(AdviceMap::default());
-        assert_eq!(original_root, script.root());
-
-        // Non-empty advice map should add entries
-        let key = Word::from([1u32, 2, 3, 4]);
-        let value = vec![Felt::new_unchecked(42), Felt::new_unchecked(43)];
-        let mut advice_map = AdviceMap::default();
-        advice_map.insert(key, value.clone());
-
-        let script = script.with_advice_map(advice_map);
-
-        let mast = script.mast();
-        let stored = mast.advice_map().get(&key).expect("entry should be present");
-        assert_eq!(stored.as_ref(), value.as_slice());
-    }
-
-    #[test]
-    fn test_transaction_script_from_library_package() {
-        use assert_matches::assert_matches;
-
-        use super::TransactionScript;
-        use crate::errors::TransactionScriptError;
-        use crate::testing::assembler::assemble_test_package;
-        use crate::utils::serde::{Deserializable, Serializable};
-
-        let source = "
-            @transaction_script
-            pub proc main
-                push.1 drop
-            end
-        ";
-        let package = assemble_test_package("test-tx-script", "test::tx_script", source);
-
-        let script = TransactionScript::from_package(&package).unwrap();
-
-        // the script must round-trip through serialization unchanged
-        let bytes = script.to_bytes();
-        let decoded = TransactionScript::read_from_bytes(&bytes).unwrap();
-        assert_eq!(script, decoded);
-
-        // a package without the attribute is rejected
-        let no_attr = assemble_test_package(
-            "test-tx-script-no-attr",
-            "test::tx_script_no_attr",
-            "pub proc main push.1 drop end",
-        );
-        assert_matches!(
-            TransactionScript::from_package(&no_attr),
-            Err(TransactionScriptError::NoProcedureWithAttribute)
+        let tx_args = TransactionArgs::from_parts(
+            None,
+            Word::new([Felt::from(4_u32); 4]),
+            note_args.clone(),
+            advice_inputs.clone(),
+            Word::new([Felt::from(5_u32); 4]),
         );
 
-        // a package with multiple tagged procedures is rejected
-        let multiple = assemble_test_package(
-            "test-tx-script-multiple",
-            "test::tx_script_multiple",
-            "@transaction_script pub proc main_a push.1 drop end
-             @transaction_script pub proc main_b push.2 drop end",
-        );
-        assert_matches!(
-            TransactionScript::from_package(&multiple),
-            Err(TransactionScriptError::MultipleProceduresWithAttribute)
-        );
-    }
-
-    #[test]
-    fn test_transaction_script_from_package_reference() {
-        use alloc::string::ToString;
-
-        use assert_matches::assert_matches;
-
-        use super::TransactionScript;
-        use crate::Word;
-        use crate::assembly::Path;
-        use crate::errors::TransactionScriptError;
-        use crate::testing::assembler::assemble_test_package;
-
-        let source = "
-            @transaction_script
-            pub proc main_a
-                push.1 drop
-            end
-
-            @transaction_script
-            pub proc main_b
-                push.2 drop
-            end
-
-            pub proc helper
-                push.3 drop
-            end
-        ";
-        let package =
-            assemble_test_package("test-tx-script-reference", "test::tx_script_reference", source);
-
-        // each tagged procedure can be extracted selectively, and the resulting script's root
-        // matches the digest of the referenced procedure
-        for proc_name in ["main_a", "main_b"] {
-            let export = package
-                .manifest
-                .exports()
-                .find(|e| e.path().as_ref().to_string().ends_with(proc_name))
-                .unwrap();
-            let digest = export.as_procedure().unwrap().digest;
-
-            let script =
-                TransactionScript::from_package_reference(&package, export.path().as_ref())
-                    .unwrap();
-            assert_eq!(Word::from(script.root()), digest);
-        }
-
-        // an unknown path is rejected
-        assert_matches!(
-            TransactionScript::from_package_reference(&package, Path::new("::foo::bar::main")),
-            Err(TransactionScriptError::ProcedureNotFound(_))
-        );
-
-        // a procedure without the attribute is rejected
-        let helper = package
-            .manifest
-            .exports()
-            .find(|e| e.path().as_ref().to_string().ends_with("helper"))
-            .unwrap();
-        assert_matches!(
-            TransactionScript::from_package_reference(&package, helper.path().as_ref()),
-            Err(TransactionScriptError::ProcedureMissingAttribute(_))
-        );
+        assert_eq!(tx_args.note_args(), &note_args);
+        assert_eq!(tx_args.advice_inputs(), &advice_inputs);
+        assert_eq!(tx_args.tx_script_args(), Word::new([Felt::from(4_u32); 4]));
+        assert_eq!(tx_args.auth_args(), Word::new([Felt::from(5_u32); 4]));
     }
 }

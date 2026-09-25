@@ -3,21 +3,19 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
+use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS};
 use miden_standards::errors::standards::{
-    ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH,
+    ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
+    ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_OWNER_CONFIG_UNKNOWN_SELECTOR,
+    ERR_OWNER_CONFIG_UNKNOWN_VARIANT,
 };
-use miden_standards::note::{
-    NetworkAccountTarget,
-    NoteExecutionHint,
-    OwnerConfig,
-    OwnerConfigNote,
-};
+use miden_standards::note::config::{OwnerConfig, OwnerConfigNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
@@ -26,6 +24,7 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 // suite only checks that the OwnerConfig note dispatches each action and rejects malformed
 // notes.
 use super::{create_ownable_account, get_nominated_owner_from_storage, get_owner_from_storage};
+use crate::into_private_note;
 
 // HELPERS
 // ================================================================================================
@@ -136,9 +135,9 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let account = create_ownable_account(owner)?;
@@ -147,7 +146,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // selector 99 is not a known action
+    // variant 99 is not a known action
     let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(99u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
@@ -155,11 +154,11 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNKNOWN_VARIANT);
     Ok(())
 }
 
-/// A note whose storage item count does not match its selector is rejected by the count guard.
+/// A note whose storage item count does not match its variant is rejected by the count guard.
 #[tokio::test]
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
@@ -170,7 +169,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
 
-    // TransferOwnership selector (0) but only one storage item instead of the expected three
+    // TransferOwnership variant (0) but only one storage item instead of the expected three
     let note = malformed_owner_config_note(owner, account.id(), vec![Felt::from(0u32)], &mut rng)?;
     let tx = mock_chain
         .build_transaction(account.clone())
@@ -179,6 +178,31 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let result = tx.execute().await;
 
     assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS);
+    Ok(())
+}
+
+/// A note carrying more storage items than any action accepts is rejected before its storage is
+/// loaded, so the work an oversized note can impose on whoever attempts to consume it is bounded by
+/// the longest layout the script accepts rather than by `MAX_NOTE_STORAGE_ITEMS`.
+#[tokio::test]
+async fn oversized_storage_is_rejected_before_the_storage_is_loaded() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let account = create_ownable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let storage = vec![Felt::from(0u32); MAX_NOTE_STORAGE_ITEMS];
+    let note = malformed_owner_config_note(owner, account.id(), storage, &mut rng)?;
+    let tx = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(note)
+        .build()?;
+    let result = tx.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_NOTE_TOO_MANY_STORAGE_ITEMS);
     Ok(())
 }
 
@@ -207,6 +231,39 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_TARGET_ACCOUNT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
+    );
+    Ok(())
+}
+
+/// A private note carrying the same script and storage as a legitimate config note
+/// is rejected before any ownership change runs.
+#[tokio::test]
+async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+    let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
+
+    let account = create_ownable_account(owner)?;
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+
+    let note = owner_config_note(
+        owner,
+        account.id(),
+        OwnerConfig::TransferOwnership { new_owner: Some(new_owner) },
+        &mut rng,
+    )?;
+    let result = mock_chain
+        .build_transaction(account.clone())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_OWNER_CONFIG_NOTE_IS_NOT_PUBLIC);
     Ok(())
 }

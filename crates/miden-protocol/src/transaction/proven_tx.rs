@@ -1,8 +1,11 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use miden_core::deferred::PrecompileWitness;
+
 use super::{InputNote, ToInputNoteCommitments};
-use crate::account::{Account, AccountUpdateDetails};
+use crate::Word;
+use crate::account::{AccountUpdateDetails, validate_new_public_account};
 use crate::block::BlockNumber;
 use crate::errors::ProvenTransactionError;
 use crate::note::{NoteHeader, NoteId};
@@ -21,8 +24,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::ExecutionProof;
-use crate::{ACCOUNT_UPDATE_MAX_SIZE, Word};
+use crate::vm::{ExecutionProof, PrecompileStatus};
 
 // PROVEN TRANSACTION
 // ================================================================================================
@@ -144,6 +146,18 @@ impl ProvenTransaction {
     /// Returns the proof of the transaction.
     pub fn proof(&self) -> &ExecutionProof {
         &self.proof
+    }
+
+    /// Returns a singleton precompile witness over the transaction's outstanding precompile claims,
+    /// or `None` if the transaction has no outstanding claims.
+    ///
+    /// A batch collects these witnesses in transaction order and settles their claims with a
+    /// single precompile proof.
+    pub fn precompile_witness(&self) -> Option<&PrecompileWitness> {
+        match self.proof.precompile() {
+            PrecompileStatus::Deferred(witness) => Some(witness),
+            PrecompileStatus::Empty | PrecompileStatus::Proven(_) => None,
+        }
     }
 
     /// Returns the number of the reference block the transaction was executed against.
@@ -310,7 +324,7 @@ impl TxAccountUpdate {
     /// Returns a new [TxAccountUpdate] instantiated from the specified components.
     ///
     /// Returns an error if:
-    /// - The size of the serialized account update exceeds [`ACCOUNT_UPDATE_MAX_SIZE`].
+    /// - The size of the serialized account update exceeds [`crate::ACCOUNT_UPDATE_MAX_SIZE`].
     /// - The transaction was executed against an account with public state and its account ID does
     ///   not match the ID of the patch in the account update.
     /// - The transaction was executed against a _new_ account with public state and its commitment
@@ -336,63 +350,22 @@ impl TxAccountUpdate {
             details,
         };
 
-        let account_update_size = account_update.details.get_size_hint();
-        if account_update_size > ACCOUNT_UPDATE_MAX_SIZE as usize {
-            return Err(ProvenTransactionError::AccountUpdateSizeLimitExceeded {
-                account_id,
-                update_size: account_update_size,
+        account_update.details.validate_size(account_id)?;
+
+        let Some(patch) = account_update.details.validate_for_account(account_id)? else {
+            return Ok(account_update);
+        };
+
+        let actual_patch_commitment = patch.to_commitment();
+        if account_patch_commitment != actual_patch_commitment {
+            return Err(ProvenTransactionError::AccountPatchCommitmentMismatch {
+                expected_patch_commitment: account_patch_commitment,
+                actual_patch_commitment,
             });
         }
 
-        if account_id.is_private() {
-            if account_update.details.is_private() {
-                return Ok(account_update);
-            } else {
-                return Err(ProvenTransactionError::PrivateAccountWithDetails(account_id));
-            }
-        }
-
-        match account_update.details() {
-            AccountUpdateDetails::Private => {
-                return Err(ProvenTransactionError::PublicStateAccountMissingDetails(
-                    account_update.account_id(),
-                ));
-            },
-            AccountUpdateDetails::Public(patch) => {
-                if patch.id() != account_id {
-                    return Err(ProvenTransactionError::AccountIdMismatch {
-                        tx_account_id: account_id,
-                        details_account_id: patch.id(),
-                    });
-                }
-
-                let actual_patch_commitment = patch.to_commitment();
-                if account_patch_commitment != actual_patch_commitment {
-                    return Err(ProvenTransactionError::AccountPatchCommitmentMismatch {
-                        expected_patch_commitment: account_patch_commitment,
-                        actual_patch_commitment,
-                    });
-                }
-
-                let is_new_account = account_update.initial_state_commitment().is_empty();
-                if is_new_account {
-                    // Validate that for new accounts, the full account state can be constructed
-                    // from the patch. This will fail if it is not such a full state patch.
-                    let account = Account::try_from(patch).map_err(|err| {
-                        ProvenTransactionError::NewPublicStateAccountRequiresFullStatePatch {
-                            id: patch.id(),
-                            source: err,
-                        }
-                    })?;
-
-                    if account.to_commitment() != account_update.final_state_commitment {
-                        return Err(ProvenTransactionError::AccountFinalCommitmentMismatch {
-                            tx_final_commitment: account_update.final_state_commitment,
-                            details_commitment: account.to_commitment(),
-                        });
-                    }
-                }
-            },
+        if account_update.initial_state_commitment().is_empty() {
+            validate_new_public_account(patch, account_update.final_state_commitment)?;
         }
 
         Ok(account_update)
@@ -577,7 +550,6 @@ mod tests {
     use anyhow::Context;
     use assert_matches::assert_matches;
     use miden_crypto::rand::test_utils::rand_value;
-    use miden_verifier::ExecutionProof;
 
     use super::ProvenTransaction;
     use crate::account::{
@@ -770,7 +742,7 @@ mod tests {
         let ref_block_num = BlockNumber::from(1);
         let ref_block_commitment = Word::empty();
         let expiration_block_num = BlockNumber::from(2);
-        let proof = ExecutionProof::new_dummy();
+        let proof = crate::testing::dummy_execution_proof();
 
         let account_update = TxAccountUpdate::new(
             account_id,

@@ -1,8 +1,18 @@
+use miden_processor::ExecutionError;
+use miden_protocol::errors::BlockOutputError;
+
 // BLOCK PROVER ERROR
 // ================================================================================================
 
-/// Represents errors that can occur during block proving.
-///
-/// NOTE: Block proving is not yet implemented. This is a placeholder enum.
+/// Represents errors that can occur during block execution and proving.
 #[derive(Debug, thiserror::Error)]
-pub enum BlockProverError {}
+pub enum BlockProverError {
+    #[error("block kernel execution failed")]
+    BlockKernelExecutionFailed(#[source] ExecutionError),
+    #[error("block kernel proving failed")]
+    BlockKernelProvingFailed(#[source] ExecutionError),
+    #[error("block proof contains precompiles")]
+    BlockProofContainsPrecompiles,
+    #[error("block kernel produced an invalid output stack")]
+    BlockKernelOutputInvalid(#[source] BlockOutputError),
+}

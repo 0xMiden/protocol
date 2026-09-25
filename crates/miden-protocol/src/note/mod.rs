@@ -144,6 +144,11 @@ impl Note {
         self.header.details_commitment()
     }
 
+    /// Returns the note's details.
+    pub fn details(&self) -> &NoteDetails {
+        &self.details
+    }
+
     /// Returns the note's assets.
     pub fn assets(&self) -> &NoteAssets {
         self.details.assets()
@@ -291,5 +296,22 @@ impl Deserializable for Note {
         let (assets, recipient) = details.into_parts();
 
         Ok(Self::with_attachments(assets, partial_metadata, recipient, attachments))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use super::*;
+    use crate::utils::serde::{Deserializable, DeserializationError};
+
+    #[test]
+    fn note_deserialization_rejects_unsupported_version() {
+        let error = Note::read_from_bytes(&[0]).unwrap_err();
+
+        assert_matches!(error, DeserializationError::InvalidValue(message) => {
+            assert!(message.contains("note version is 0"));
+        });
     }
 }

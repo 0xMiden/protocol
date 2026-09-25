@@ -10,12 +10,11 @@ use miden_protocol::{Felt, Hasher, Word};
 /// Conversion info instructing `miden::standards::fee::pay_fee` which asset to pay
 /// the transaction fee in.
 ///
-/// The fee amount computed by the transaction kernel is denominated in the native fee asset;
-/// `pay_fee` pays `ceil(fee_amount * rate_num / rate_den)` of the asset issued by `faucet_id`.
-/// To pay in an asset 1-to-1 (e.g. the native fee asset itself), use [`Self::one_to_one`].
+/// `pay_fee` accepts only the native fee asset at rate 1/1, so the paid amount is the fee the
+/// kernel computed. Build it with [`Self::one_to_one`] and the reference block's fee faucet.
 ///
-/// For signature-based authentication components the conversion info is typically committed to
-/// via the transaction's auth args (see [`commit_fee_conversion_info`]).
+/// For signature-based authentication components the conversion info is committed to via the
+/// transaction's auth args (see [`commit_fee_conversion_info`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeeConversionInfo {
     faucet_id: AccountId,
@@ -26,6 +25,9 @@ pub struct FeeConversionInfo {
 impl FeeConversionInfo {
     /// Creates new fee conversion info paying the fee in the asset issued by `faucet_id` at the
     /// rate `rate_num / rate_den`.
+    ///
+    /// Any faucet or rate other than the native fee asset at 1/1 aborts until multi-asset
+    /// fee payments are supported.
     ///
     /// # Errors
     ///
@@ -49,7 +51,7 @@ impl FeeConversionInfo {
     }
 
     /// Creates fee conversion info paying the fee in the asset issued by `faucet_id` at the
-    /// rate 1/1, e.g. to pay in the native fee asset itself.
+    /// rate 1/1.
     pub fn one_to_one(faucet_id: AccountId) -> Self {
         Self {
             faucet_id,

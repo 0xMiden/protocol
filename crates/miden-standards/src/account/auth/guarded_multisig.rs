@@ -198,6 +198,16 @@ impl AuthGuardedMultisigConfig {
 /// guardian signature. This substantially mitigates low-threshold state-withholding scenarios
 /// since the guardian is expected to forward state updates to other approvers.
 ///
+/// # Auth args
+///
+/// The transaction's auth args are the commitment to
+/// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
+///
+/// # Fees
+///
+/// The transaction fee is paid as described for [`AuthMultisig`](super::AuthMultisig), so the fee
+/// note is covered by the approver and guardian signatures.
+///
 /// # Privacy
 ///
 /// Approvers and the guardian using [`AuthScheme::EcdsaK256Keccak`][scheme] disclose their public

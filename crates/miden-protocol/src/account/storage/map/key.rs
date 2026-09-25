@@ -1,3 +1,5 @@
+use core::fmt::Display;
+
 use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH};
 use miden_crypto_derive::WordWrapper;
 
@@ -69,9 +71,9 @@ impl From<StorageMapKey> for Word {
     }
 }
 
-impl core::fmt::Display for StorageMapKey {
+impl Display for StorageMapKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!("{}", self.as_word()))
+        write!(f, "{}", self.as_word())
     }
 }
 

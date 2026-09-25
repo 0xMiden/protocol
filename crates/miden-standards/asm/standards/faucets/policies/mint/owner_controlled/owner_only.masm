@@ -1,3 +1,4 @@
+use {AssetValue, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
 # miden::standards::faucets::policies::mint::owner_controlled::owner_only
 #
 # Owner-only mint policy: gates minting on the Ownable2Step owner via
@@ -22,7 +23,12 @@ use miden::standards::access::ownable2step
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_policy
+pub proc check_policy(
+    asset_value: AssetValue,
+    tag: NoteTag,
+    note_type: NoteType,
+    recipient: NoteRecipient
+) -> (AssetValue, NoteTag, NoteType, NoteRecipient)
     exec.ownable2step::assert_sender_is_owner
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 end
