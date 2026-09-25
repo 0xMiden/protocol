@@ -289,7 +289,11 @@ end
 # P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
 # P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
 # P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
-# P2ID_AMT_NOTE_FILL         : amt_note_fill
+# P2ID_NOTE_IDX                : note_idx
+# P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
+# P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
+# P2ID_AMT_ACCOUNT_FILL        : amt_account_fill
+# P2ID_AMT_NOTE_FILL           : amt_note_fill
 proc create_p2id_note(
     creator: AccountId,
     note_type: NoteType,
