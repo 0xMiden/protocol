@@ -49,6 +49,9 @@ pub enum TransactionLogDataError {
     /// Submitted log visibility differs from the native account.
     #[error("log data visibility does not match the native account")]
     VisibilityMismatch,
+    /// A private collection has no secret opening.
+    #[error("private transaction logs require a nonzero secret salt")]
+    MissingPrivateSalt,
 }
 
 // TRANSACTION LOG
@@ -202,6 +205,31 @@ pub struct TransactionLogs {
 impl TransactionLogs {
     /// Hash domain for ordered log collections.
     pub const COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0003);
+
+    /// Hash domain for private commitments.
+    pub const PRIVATE_COMMITMENT_DOMAIN: Felt = Felt::new_unchecked(0x02_0004);
+
+    /// Returns the proof-bound commitment for a native account.
+    ///
+    /// Nonempty private logs require a fresh, random, nonzero secret salt to hide predictable
+    /// records. Empty collections commit to [`Word::empty`].
+    pub fn commitment_for_account(
+        &self,
+        native_account: AccountId,
+        secret_salt: Word,
+    ) -> Result<Word, TransactionLogDataError> {
+        let commitment = self.commitment();
+        if native_account.is_public() || self.is_empty() {
+            return Ok(commitment);
+        }
+        if secret_salt.is_empty() {
+            return Err(TransactionLogDataError::MissingPrivateSalt);
+        }
+        Ok(Hasher::merge_in_domain(
+            &[commitment, secret_salt],
+            Self::PRIVATE_COMMITMENT_DOMAIN,
+        ))
+    }
 
     /// Creates a collection by appending the provided logs in order.
     ///
