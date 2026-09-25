@@ -34,6 +34,7 @@ use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE,
+    ERR_OUTPUT_NOTE_IS_SEALED,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
 };
 use miden_protocol::note::{NoteTag, NoteType};
@@ -683,8 +684,11 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 /// target of the callback.
 ///
 /// This is a regression test for https://github.com/0xMiden/protocol/issues/2864.
+#[rstest::rstest]
+#[case::unsealed(false)]
+#[case::sealed_in_callback(true)]
 #[tokio::test]
-async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
+async fn test_faucet_with_callback_calls_itself(#[case] seal: bool) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let account_callback_masm = r#"
@@ -697,21 +701,30 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     end
     "#;
 
-    let note_callback_masm = r#"
+    // A native faucet callback can seal the note while add_asset is in progress.
+    let note_callback_masm = format!(
+        r#"
     #! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
     #! Outputs: [pad(16)]
     @account_procedure
     pub proc on_before_asset_added_to_note
-        dropw dropw drop
+        dropw dropw
+        {finish_note}
         # => [pad(16)]
     end
-    "#;
+    "#,
+        finish_note = if seal {
+            "exec.::miden::protocol::output_note::seal"
+        } else {
+            "drop"
+        }
+    );
 
-    // Build an account that has both callbacks set to no-ops.
+    // Build an account with both callbacks.
     let faucet = add_faucet_with_callbacks(
         &mut builder,
         Some(account_callback_masm),
-        Some(note_callback_masm),
+        Some(&note_callback_masm),
     )?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -748,12 +761,17 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
 
     let mock_chain = builder.build()?;
-    mock_chain
+    let result = mock_chain
         .build_transaction(faucet.id())
         .tx_script(tx_script)
         .build()?
         .execute()
-        .await?;
+        .await;
+    if seal {
+        assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
+    } else {
+        result?;
+    }
 
     Ok(())
 }

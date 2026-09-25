@@ -1,6 +1,9 @@
 mod approver;
 pub use approver::{Approver, ApproverSet};
 
+mod eip712;
+pub use eip712::{Eip712Digest, Eip712TransactionSummary};
+
 mod fee;
 pub use fee::{FeeConversionInfo, commit_fee_conversion_info};
 

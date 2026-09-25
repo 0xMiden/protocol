@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+// The note file format.
+package note_file;
+
+import "block_number.proto";
+import "note.proto";
+
+// Hints used to find a note on chain after its file is imported.
+message NoteSyncHint {
+  blockchain.BlockNumber after_block_num = 1;
+  fixed32 tag = 2;
+}
+
+message ExpectedNote {
+  note.NoteDetails details = 1;
+  NoteSyncHint sync_hint = 2;
+}
+
+// The proof's note ID is checked against the note during verification.
+message CommittedNote {
+  note.Note note = 1;
+  note.NoteInclusionProof proof = 2;
+}
+
+message NoteFile {
+  oneof version {
+    NoteFileV1 v1 = 1;
+  }
+}
+
+message NoteFileV1 {
+  oneof variant {
+    note.NoteId note_id = 1;
+    ExpectedNote expected_note = 2;
+    CommittedNote committed_note = 3;
+  }
+}
