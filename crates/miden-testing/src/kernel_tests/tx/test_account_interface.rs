@@ -778,17 +778,6 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
     Ok(())
 }
 
-/// What the checker is expected to say about a lone FEE_SPONSORSHIP note.
-#[derive(Debug)]
-enum ExpectedReclaim {
-    /// The account may reclaim the note as it stands.
-    Now,
-    /// The account may reclaim the note from the given block height on.
-    From(u32),
-    /// The account may never reclaim the note.
-    Never,
-}
-
 /// Tests the static analysis [`NoteConsumptionChecker::can_consume()`] applies to a FEE_SPONSORSHIP
 /// note.
 ///
@@ -867,8 +856,19 @@ async fn check_note_consumability_static_analysis_fee_sponsorship(
     Ok(())
 }
 
-// HELPER FUNCTIONS
+// HELPERS
 // ================================================================================================
+
+/// What the checker is expected to say about a lone FEE_SPONSORSHIP note.
+#[derive(Debug)]
+enum ExpectedReclaim {
+    /// The account may reclaim the note as it stands.
+    Now,
+    /// The account may reclaim the note from the given block height on.
+    From(u32),
+    /// The account may never reclaim the note.
+    Never,
+}
 
 /// Creates a mock P2IDE note with the specified note storage.
 fn create_p2ide_note_with_storage(
