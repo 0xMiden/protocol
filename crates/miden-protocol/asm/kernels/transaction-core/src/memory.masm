@@ -27,6 +27,7 @@ use {
     StorageSlot,
 } from miden::tx_kernel_core::types
 use miden::core::mem
+use miden::core::word
 use {ACCOUNT_PROCEDURE_DATA_LENGTH, MAX_ASSETS_PER_NOTE, NOTE_MEM_SIZE, WORD_NUM_ELEMENTS}
     from miden::tx_kernel_core::constants
 
@@ -1382,6 +1383,27 @@ end
 pub proc set_account_storage_commitment(storage_commitment: Commitment) -> Commitment
     exec.get_active_account_data_ptr add.ACCT_STORAGE_COMMITMENT_OFFSET
     mem_storew_le
+end
+
+#! Returns the native account code upgrade commitment.
+#!
+#! Inputs:  []
+#! Outputs: [CODE_UPGRADE_COMMITMENT]
+#!
+#! Where:
+#! - CODE_UPGRADE_COMMITMENT is the commitment to the new account code, or the empty word if no
+#!   code upgrade is pending.
+pub proc get_code_upgrade_commitment() -> Commitment
+    padw mem_loadw_le.CODE_UPGRADE_COMMITMENT_PTR
+end
+
+#! Returns 1 if a code upgrade of the native account is pending, 0 otherwise.
+#!
+#! Inputs:  []
+#! Outputs: [has_code_upgrade]
+pub proc has_code_upgrade() -> Bool
+    exec.get_code_upgrade_commitment exec.word::eqz not
+    # => [has_code_upgrade]
 end
 
 #! Sets the native account code upgrade commitment.

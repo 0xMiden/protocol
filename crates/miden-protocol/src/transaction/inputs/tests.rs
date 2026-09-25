@@ -388,6 +388,7 @@ fn try_from_parts_preserves_all_transaction_input_components() {
         BTreeMap::new(),
         AdviceInputs::default(),
         Word::new([Felt::from(2_u32); 4]),
+        None,
     );
     let advice_inputs = AdviceInputs::default()
         .with_map([(Word::new([Felt::from(3_u32); 4]), vec![Felt::from(4_u32)])]);

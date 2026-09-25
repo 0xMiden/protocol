@@ -330,7 +330,7 @@ impl TxAccountUpdate {
     /// - The transaction was executed against a _new_ account with public state and its commitment
     ///   does not match the final state commitment of the account update.
     /// - The transaction creates a _new_ account with public state and the update is of type
-    ///   [`AccountUpdateDetails::Public`] but the account patch is not a full state patch.
+    ///   [`AccountUpdateDetails::Public`] but the account patch is not a creation patch.
     /// - The transaction was executed against a private account and the account update is _not_ of
     ///   type [`AccountUpdateDetails::Private`].
     /// - The transaction was executed against an account with public state and the update is of
@@ -554,6 +554,7 @@ mod tests {
     use super::ProvenTransaction;
     use crate::account::{
         Account,
+        AccountCodePatch,
         AccountId,
         AccountPatch,
         AccountStoragePatch,
@@ -640,7 +641,7 @@ mod tests {
             account_id,
             storage_patch,
             AccountVaultPatch::default(),
-            None,
+            AccountCodePatch::default(),
             Some(Felt::from(2u32)),
         )
         .unwrap();

@@ -403,7 +403,7 @@ mod tests {
 
     use super::*;
     use crate::ONE;
-    use crate::account::{AccountId, AccountStoragePatch, AccountVaultDelta};
+    use crate::account::{AccountCodePatch, AccountId, AccountStoragePatch, AccountVaultDelta};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 
     /// The block number, expiration delta and user parameters used by the tests below.
@@ -418,7 +418,7 @@ mod tests {
             account_id,
             AccountStoragePatch::new(),
             AccountVaultDelta::default(),
-            None,
+            AccountCodePatch::default(),
             ONE,
         )
         .unwrap();

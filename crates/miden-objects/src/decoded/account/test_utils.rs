@@ -5,6 +5,7 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
     AccountCode,
+    AccountCodePatch,
     AccountHeader,
     AccountId,
     AccountIdVersion,
@@ -49,7 +50,7 @@ pub(crate) fn account_patch() -> AccountPatch {
         private_account_id(),
         AccountStoragePatch::from_entries([]).unwrap(),
         AccountVaultPatch::new([].into()).unwrap(),
-        None,
+        AccountCodePatch::default(),
         None,
     )
     .unwrap()

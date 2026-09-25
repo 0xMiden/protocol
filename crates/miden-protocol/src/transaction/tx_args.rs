@@ -6,6 +6,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use super::script::TransactionScript;
 use super::{Felt, Hasher, Word};
 use crate::EMPTY_WORD;
+use crate::account::AccountCodeUpgrade;
 use crate::account::auth::{PublicKeyCommitment, Signature};
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
@@ -32,12 +33,12 @@ use crate::vm::{AdviceInputs, AdviceMap};
 ///   different from note storage, as the user executing the transaction can specify arbitrary note
 ///   args.
 /// - Advice inputs: provides data needed by the runtime, like the details of public output notes.
-/// - Foreign account inputs: provides foreign account data that will be used during the foreign
-///   procedure invocation (FPI).
 /// - Auth arguments: data put onto the stack right before authentication procedure execution. If
 ///   this argument is not specified, the [`EMPTY_WORD`] would be used as a default value. If the
 ///   [AdviceInputs] are propagated with some user defined map entries, this argument could be used
 ///   as a key to access the corresponding value.
+/// - Account code upgrade: the [`AccountCodeUpgrade`] of the native account if the transaction
+///   upgrades its code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -45,14 +46,14 @@ pub struct TransactionArgs {
     note_args: BTreeMap<NoteId, Word>,
     advice_inputs: AdviceInputs,
     auth_args: Word,
+    account_code_upgrade: Option<AccountCodeUpgrade>,
 }
 
 impl TransactionArgs {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns new [TransactionArgs] instantiated with the provided transaction script, advice
-    /// map and foreign account inputs.
+    /// Returns new [`TransactionArgs`] instantiated with the provided advice map.
     pub fn new(advice_map: AdviceMap) -> Self {
         Self::from_parts(
             None,
@@ -60,6 +61,7 @@ impl TransactionArgs {
             BTreeMap::new(),
             AdviceInputs::from(advice_map),
             EMPTY_WORD,
+            None,
         )
     }
 
@@ -70,6 +72,7 @@ impl TransactionArgs {
         note_args: BTreeMap<NoteId, Word>,
         advice_inputs: AdviceInputs,
         auth_args: Word,
+        account_code_upgrade: Option<AccountCodeUpgrade>,
     ) -> Self {
         Self {
             tx_script,
@@ -77,10 +80,11 @@ impl TransactionArgs {
             note_args,
             advice_inputs,
             auth_args,
+            account_code_upgrade,
         }
     }
 
-    /// Returns new [TransactionArgs] instantiated with the provided transaction script.
+    /// Returns new [`TransactionArgs`] instantiated with the provided transaction script.
     ///
     /// If the transaction script is already set, it will be overwritten with the newly provided
     /// one.
@@ -90,7 +94,7 @@ impl TransactionArgs {
         self
     }
 
-    /// Returns new [TransactionArgs] instantiated with the provided transaction script and its
+    /// Returns new [`TransactionArgs`] instantiated with the provided transaction script and its
     /// arguments.
     ///
     /// If the transaction script and arguments are already set, they will be overwritten with the
@@ -106,7 +110,7 @@ impl TransactionArgs {
         self
     }
 
-    /// Returns new [TransactionArgs] instantiated with the provided note arguments.
+    /// Returns new [`TransactionArgs`] instantiated with the provided note arguments.
     ///
     /// If the note arguments were already set, they will be overwritten with the newly provided
     /// ones.
@@ -116,10 +120,18 @@ impl TransactionArgs {
         self
     }
 
-    /// Returns new [TransactionArgs] instantiated with the provided auth arguments.
+    /// Returns new [`TransactionArgs`] instantiated with the provided auth arguments.
     #[must_use]
     pub fn with_auth_args(mut self, auth_args: Word) -> Self {
         self.auth_args = auth_args;
+        self
+    }
+
+    /// Returns new [`TransactionArgs`] instantiated with the provided code upgrade of the native
+    /// account.
+    #[must_use]
+    pub fn with_account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
+        self.account_code_upgrade = Some(account_code_upgrade);
         self
     }
 
@@ -166,6 +178,11 @@ impl TransactionArgs {
     /// [`TransactionArgs::extend_advice_map`] method.
     pub fn auth_args(&self) -> Word {
         self.auth_args
+    }
+
+    /// Returns the code upgrade of the native account, if the transaction upgrades its code.
+    pub fn account_code_upgrade(&self) -> Option<&AccountCodeUpgrade> {
+        self.account_code_upgrade.as_ref()
     }
 
     // STATE MUTATORS
@@ -251,6 +268,7 @@ impl Serializable for TransactionArgs {
         self.note_args.write_into(target);
         self.advice_inputs.write_into(target);
         self.auth_args.write_into(target);
+        self.account_code_upgrade.write_into(target);
     }
 }
 
@@ -261,14 +279,16 @@ impl Deserializable for TransactionArgs {
         let note_args = BTreeMap::<NoteId, Word>::read_from(source)?;
         let advice_inputs = AdviceInputs::read_from(source)?;
         let auth_args = Word::read_from(source)?;
+        let account_code_upgrade = Option::<AccountCodeUpgrade>::read_from(source)?;
 
-        Ok(Self {
+        Ok(Self::from_parts(
             tx_script,
             tx_script_args,
             note_args,
             advice_inputs,
             auth_args,
-        })
+            account_code_upgrade,
+        ))
     }
 }
 
@@ -309,6 +329,7 @@ mod tests {
             note_args.clone(),
             advice_inputs.clone(),
             Word::new([Felt::from(5_u32); 4]),
+            None,
         );
 
         assert_eq!(tx_args.note_args(), &note_args);

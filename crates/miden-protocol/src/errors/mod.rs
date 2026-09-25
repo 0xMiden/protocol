@@ -199,21 +199,17 @@ pub enum AccountError {
     StorageSlotReservedElementNotZero(Felt),
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
-    #[error(
-        "failed to apply full state patch to existing account; full state patches can be converted to accounts directly"
-    )]
-    ApplyFullStatePatchToAccount,
     #[error("patch is for account ID {patch_id} but is being applied to account {account_id}")]
     PatchAccountIdMismatch {
         account_id: AccountId,
         patch_id: AccountId,
     },
-    #[error("only account deltas representing a full account can be converted to a full account")]
-    PartialStateDeltaToAccount,
+    #[error("a new account must have code and a nonce")]
+    NewAccountRequiresCodeAndNonce,
+    #[error("the storage of a new account must only contain storage create operations")]
+    NewAccountStorageRequiresCreateOps,
     #[error("assets cannot be removed from a new account with an empty asset vault")]
     AssetsRemovedFromNewAccount,
-    #[error("only account patches representing a full account can be converted to a full account")]
-    PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
     MaxNumStorageMapLeavesExceeded(#[source] MerkleError),
     #[error("unknown storage patch operation tag {0}")]
@@ -270,7 +266,7 @@ pub(crate) struct AccountUpdateSizeValidationError {
 /// Error returned when a new public account cannot be reconstructed from its update details.
 #[derive(Debug)]
 pub(crate) enum NewPublicAccountValidationError {
-    RequiresFullStatePatch {
+    NotACreationPatch {
         id: AccountId,
         source: AccountError,
     },
@@ -495,12 +491,8 @@ pub enum AccountDeltaError {
         account_id: AccountId,
         source: AccountError,
     },
-    #[error("non-empty account storage or vault delta with zero nonce delta is not allowed")]
-    NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
-    #[error("cannot merge two full state deltas")]
-    MergingFullStateDeltas,
-    #[error("a full state delta must only contain storage create operations")]
-    FullStateDeltaContainsNonCreateOp,
+    #[error("non-empty account storage, vault or code delta with zero nonce delta is not allowed")]
+    NonEmptyDeltaWithZeroNonceDelta,
 }
 
 #[derive(Debug, Error)]
@@ -516,9 +508,6 @@ pub enum AccountPatchError {
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
 
-    #[error("a full state patch must only contain storage create operations")]
-    FullStatePatchContainsNonCreateStorageOp,
-
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
 
@@ -527,11 +516,6 @@ pub enum AccountPatchError {
 
     #[error("number of storage slot patches is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     TooManyStorageSlotPatches(usize),
-
-    #[error(
-        "a full state patch cannot be merged on top of another patch; it must be the merge base"
-    )]
-    MergeIncomingFullStatePatch,
 
     #[error("failed to merge storage patch for slot {0}: cannot create a slot twice")]
     StoragePatchMergeDoubleCreate(StorageSlotName),
@@ -606,8 +590,8 @@ pub enum BatchAccountUpdateError {
         account_id: AccountId,
         patch_account_id: AccountId,
     },
-    #[error("new account {id} with public state must be accompanied by a full state patch")]
-    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error("new account {id} with public state must be accompanied by a creation patch")]
+    NewPublicStateAccountRequiresCreationPatch { id: AccountId, source: AccountError },
     #[error(
         "batch account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
     )]
@@ -647,8 +631,8 @@ pub enum BlockAccountUpdateError {
         account_id: AccountId,
         patch_account_id: AccountId,
     },
-    #[error("new account {id} with public state must be accompanied by a full state patch")]
-    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error("new account {id} with public state must be accompanied by a creation patch")]
+    NewPublicStateAccountRequiresCreationPatch { id: AccountId, source: AccountError },
     #[error(
         "block account update's final commitment {final_state_commitment} and reconstructed account commitment {account_commitment} must match"
     )]
@@ -681,6 +665,11 @@ pub enum BlockBodyError {
     DuplicateOutputNote(NoteId),
     #[error("account update for {0} appears twice in the block body")]
     DuplicateAccountUpdate(AccountId),
+    #[error("account update for new account {account_id} is invalid")]
+    InvalidNewAccountUpdate {
+        account_id: AccountId,
+        source: BlockAccountUpdateError,
+    },
     #[error("nullifier {0} appears twice in the block body")]
     DuplicateNullifier(Nullifier),
     #[error("transaction {0} appears twice in the block body")]
@@ -1175,8 +1164,8 @@ pub enum ProvenTransactionError {
     PrivateAccountWithDetails(AccountId),
     #[error("account {0} with public state is missing its account details")]
     PublicStateAccountMissingDetails(AccountId),
-    #[error("new account {id} with public state must be accompanied by a full state patch")]
-    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
+    #[error("new account {id} with public state must be accompanied by a creation patch")]
+    NewPublicStateAccountRequiresCreationPatch { id: AccountId, source: AccountError },
     #[error(
         "existing account {0} with public state should only provide delta updates instead of full details"
     )]
@@ -1293,8 +1282,8 @@ impl From<AccountUpdateDetailsValidationError> for BlockAccountUpdateError {
 impl From<NewPublicAccountValidationError> for ProvenTransactionError {
     fn from(error: NewPublicAccountValidationError) -> Self {
         match error {
-            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
-                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            NewPublicAccountValidationError::NotACreationPatch { id, source } => {
+                Self::NewPublicStateAccountRequiresCreationPatch { id, source }
             },
             NewPublicAccountValidationError::FinalCommitmentMismatch {
                 final_state_commitment,
@@ -1310,8 +1299,8 @@ impl From<NewPublicAccountValidationError> for ProvenTransactionError {
 impl From<NewPublicAccountValidationError> for BatchAccountUpdateError {
     fn from(error: NewPublicAccountValidationError) -> Self {
         match error {
-            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
-                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            NewPublicAccountValidationError::NotACreationPatch { id, source } => {
+                Self::NewPublicStateAccountRequiresCreationPatch { id, source }
             },
             NewPublicAccountValidationError::FinalCommitmentMismatch {
                 final_state_commitment,
@@ -1327,8 +1316,8 @@ impl From<NewPublicAccountValidationError> for BatchAccountUpdateError {
 impl From<NewPublicAccountValidationError> for BlockAccountUpdateError {
     fn from(error: NewPublicAccountValidationError) -> Self {
         match error {
-            NewPublicAccountValidationError::RequiresFullStatePatch { id, source } => {
-                Self::NewPublicStateAccountRequiresFullStatePatch { id, source }
+            NewPublicAccountValidationError::NotACreationPatch { id, source } => {
+                Self::NewPublicStateAccountRequiresCreationPatch { id, source }
             },
             NewPublicAccountValidationError::FinalCommitmentMismatch {
                 final_state_commitment,

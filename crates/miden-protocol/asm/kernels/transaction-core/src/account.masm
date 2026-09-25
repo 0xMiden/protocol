@@ -96,6 +96,12 @@ const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT =
 const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT =
     "failed to read an account map item from a non-map storage slot"
 
+const ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED = "account storage upgrades are not supported"
+
+const ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT = "a new account cannot be upgraded"
+
+const ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET = "an account code upgrade is already pending"
+
 const ERR_FOREIGN_ACCOUNT_ID_MISMATCH =
     "foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
 
@@ -206,6 +212,9 @@ const ACCOUNT_AFTER_INCREMENT_NONCE_EVENT = event("miden::protocol::account::aft
 # Event emitted to push the index of the account procedure at the top of the operand stack onto
 # the advice stack.
 const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT = event("miden::protocol::account::push_procedure_index")
+
+# Event emitted after an account upgrade was initialized and before it is stored.
+const ACCOUNT_UPGRADE_INITIALIZED_EVENT = event("miden::protocol::account::upgrade_initialized")
 
 # CONSTANT ACCESSORS
 # =================================================================================================
@@ -896,6 +905,58 @@ pub proc assert_auth_procedure(proc_root: AccountProcedureRoot)
 
     # verify that PROC_ROOT exists in memory at index
     assert_eqw.err=ERR_ACCOUNT_PROC_NOT_AUTH_PROC
+    # => []
+end
+
+#! Initializes an upgrade of the native account's code, which the epilogue applies after the
+#! authentication procedure.
+#!
+#! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
+#!
+#! Inputs:  [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
+#! - STORAGE_UPGRADE_COMMITMENT is reserved for storage upgrades and must be empty.
+#!
+#! Panics if:
+#! - STORAGE_UPGRADE_COMMITMENT is not empty.
+#! - the native account is new.
+#! - a code upgrade is already pending.
+pub proc upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Commitment)
+    swapw exec.word::testz assert.err=ERR_ACCOUNT_UPGRADE_STORAGE_UPGRADES_UNSUPPORTED swapw
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    # a new account's code is already part of its creation, so upgrading it is meaningless
+    exec.memory::is_new_account assertz.err=ERR_ACCOUNT_UPGRADE_NOT_ALLOWED_FOR_NEW_ACCOUNT
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    exec.memory::has_code_upgrade assertz.err=ERR_ACCOUNT_UPGRADE_CODE_ALREADY_SET
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    # store the empty word if the new code is the current code, so that the upgrade is a no-op
+    dupw exec.memory::get_account_code_commitment exec.word::eq
+    # => [is_current_code, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    padw movup.4
+    # => [is_current_code, EMPTY_WORD, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
+
+    # If is_current_code EMPTY_WORD remains.
+    # If !is_current_code NEW_CODE_COMMITMENT remains.
+    cdropw
+    # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
+    emit.ACCOUNT_UPGRADE_INITIALIZED_EVENT
+    # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
+    exec.memory::set_code_upgrade_commitment
+    # => [STORAGE_UPGRADE_COMMITMENT]
+
+    # TODO(storage_upgrades): applying a storage upgrade must validate the new storage like the
+    # prologue does for a new account, including prologue::validate_asset_callbacks. A code upgrade
+    # does not need the asset callbacks check, since it changes neither the storage nor the ID.
+    exec.memory::set_storage_upgrade_commitment
     # => []
 end
 

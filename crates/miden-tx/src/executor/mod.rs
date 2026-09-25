@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::marker::PhantomData;
@@ -346,7 +347,11 @@ where
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
-        );
+            tx_inputs.tx_args().account_code_upgrade().cloned(),
+        )
+        .map_err(|err| {
+            TransactionExecutorError::TransactionHostConstructionFailed(Box::new(err))
+        })?;
 
         let advice_inputs = tx_advice_inputs.into_advice_inputs();
 

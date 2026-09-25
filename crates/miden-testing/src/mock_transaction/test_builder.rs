@@ -9,7 +9,7 @@ use anyhow::Context;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
-use miden_protocol::account::Account;
+use miden_protocol::account::{Account, AccountCodeUpgrade};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
@@ -40,6 +40,7 @@ pub(crate) struct TestTransactionBuilder {
     tx_script: Option<TransactionScript>,
     tx_script_args: Word,
     auth_args: Word,
+    account_code_upgrade: Option<AccountCodeUpgrade>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
 }
 
@@ -54,6 +55,7 @@ impl TestTransactionBuilder {
             tx_script: None,
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
+            account_code_upgrade: None,
             note_scripts: BTreeMap::new(),
         }
     }
@@ -133,6 +135,12 @@ impl TestTransactionBuilder {
         self
     }
 
+    /// Set the code upgrade of the native account.
+    pub(crate) fn account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
+        self.account_code_upgrade = Some(account_code_upgrade);
+        self
+    }
+
     /// Adds a single expected output note that the transaction produces.
     pub(crate) fn expected_output_note(mut self, output_note: RawOutputNote) -> Self {
         self.expected_output_notes.push(output_note);
@@ -197,6 +205,9 @@ impl TestTransactionBuilder {
 
         if let Some(tx_script) = self.tx_script {
             builder = builder.tx_script(tx_script);
+        }
+        if let Some(account_code_upgrade) = self.account_code_upgrade {
+            builder = builder.account_code_upgrade(account_code_upgrade);
         }
         for script in self.note_scripts.into_values() {
             builder = builder.add_note_script(script);

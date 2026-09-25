@@ -403,7 +403,8 @@ end
 #!
 #! Validating storage and procedures for new accounts is sufficient because the storage and code
 #! commitments of an existing account are bound to its committed state, which was produced by the
-#! transaction that created the account and therefore already passed this validation.
+#! transaction that created the account or upgraded its code and therefore already passed this
+#! validation.
 #!
 #! Inputs:  []
 #! Outputs: []

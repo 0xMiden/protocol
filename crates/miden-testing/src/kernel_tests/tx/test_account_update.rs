@@ -10,6 +10,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountCode,
+    AccountCodePatch,
     AccountComponent,
     AccountComponentCode,
     AccountComponentMetadata,
@@ -768,7 +769,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
-        // This is a new account, so its full state patch creates the map slots.
+        // This is a new account, so its creation patch creates the map slots.
         let map_patch_entries = tx
             .account_patch()
             .storage()
@@ -783,14 +784,21 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     let proven_tx_patch = proven_tx.account_update().details().unwrap_public();
 
-    let proven_tx_account = Account::try_from(proven_tx_patch)?;
-    let exec_tx_account = Account::try_from(tx.account_patch())?;
-    let exec_tx_delta_account = Account::try_from(tx_summary.account_delta())?;
+    let proven_tx_account = proven_tx_patch.try_to_new_account()?;
+    let exec_tx_account = tx.account_patch().try_to_new_account()?;
+
+    // Applying the creation patch to the new account must result in the same account.
+    let mut applied_account = account.clone();
+    applied_account.apply_patch(tx.account_patch())?;
+    assert_eq!(applied_account, exec_tx_account);
+    assert_eq!(applied_account.to_commitment(), tx.final_account().to_commitment());
+
+    let exec_tx_delta_account = tx_summary.account_delta().try_to_new_account()?;
 
     assert_eq!(exec_tx_delta_account, exec_tx_account);
     assert_eq!(proven_tx_account.storage(), exec_tx_account.storage());
 
-    // Check the conversion back into a full-state delta and patch works correctly.
+    // Check the conversion back into a creation delta and patch works correctly.
     let proven_tx_patch_converted = AccountPatch::try_from(proven_tx_account.clone())?;
     let exec_tx_patch_converted = AccountPatch::try_from(exec_tx_account.clone())?;
 
@@ -860,7 +868,7 @@ async fn patch_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
         }
     );
 
-    let recreated_account = Account::try_from(patch)?;
+    let recreated_account = patch.try_to_new_account()?;
     // The recreated account should match the original account with the nonce incremented (and the
     // seed removed).
     account.increment_nonce(Felt::ONE)?;
@@ -946,7 +954,7 @@ async fn patch_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
         );
     }
 
-    let recreated_account = Account::try_from(patch)?;
+    let recreated_account = patch.try_to_new_account()?;
     // The recreated account should match the original account with the nonce incremented (and the
     // seed removed).
     account.increment_nonce(Felt::ONE)?;
@@ -1285,14 +1293,14 @@ impl AccountUpdateTest {
             account.id(),
             expected_storage_patch.clone(),
             expected_vault_delta,
-            None,
+            AccountCodePatch::default(),
             expected_nonce_delta,
         )?;
         let expected_patch = AccountPatch::new(
             account.id(),
             expected_storage_patch,
             expected_vault_patch,
-            expected_code,
+            AccountCodePatch::new(expected_code),
             Some(account.nonce() + expected_nonce_delta),
         )?;
 
