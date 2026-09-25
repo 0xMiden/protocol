@@ -449,6 +449,7 @@ proc validate_new_account()
 
     # Assert the account procedures are sorted and unique.
     # ---------------------------------------------------------------------------------------------
+    exec.memory::get_active_account_code_section_ptr
     exec.account::validate_procedures
     # => []
 
@@ -570,6 +571,7 @@ proc process_account_data()
 
     # validates and stores account procedures in memory.
     exec.memory::get_account_code_commitment
+    exec.memory::get_active_account_code_section_ptr
     exec.account::save_account_procedure_data
     # => [ACCOUNT_COMMITMENT]
 

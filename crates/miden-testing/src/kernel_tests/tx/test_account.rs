@@ -8,6 +8,7 @@ use assert_matches::assert_matches;
 use miden_crypto::rand::test_utils::rand_value;
 use miden_crypto::rand::{FeltRng, RandomCoin};
 use miden_processor::{ExecutionError, Word};
+use miden_protocol::Hasher;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -43,6 +44,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_UNKNOWN_VERSION,
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
+    ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES,
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE,
     ERR_ACCOUNT_STORAGE_SLOT_TYPE_IS_INVALID,
@@ -847,8 +849,10 @@ fn sorted_procedure_roots(num_procedures: usize) -> Vec<AccountProcedureRoot> {
     roots
 }
 
-/// Returns a program that writes the provided procedure roots into the native account's procedure
+/// Returns a program that writes the provided procedure roots into the native account's code
 /// section and validates them.
+/// TODO: Refactor to create the custom procedure section in local memory and call
+/// validate_procedures with a pointer, so it becomes simpler.
 fn validate_procedures_program(procedure_roots: &[AccountProcedureRoot]) -> String {
     let procedure_writes = procedure_roots
         .iter()
@@ -875,6 +879,7 @@ fn validate_procedures_program(procedure_roots: &[AccountProcedureRoot]) -> Stri
 
             {procedure_writes}
 
+            exec.memory::get_active_account_code_section_ptr
             exec.account::validate_procedures
         end
         "#,
@@ -1165,10 +1170,10 @@ fn upgrade_tx_script(
 ) -> anyhow::Result<TransactionScript> {
     let upgrade_calls: String = upgrades
         .into_iter()
-        .map(|(new_code_commitment, storage_ugrade_commitment)| {
+        .map(|(new_code_commitment, storage_upgrade_commitment)| {
             format!(
                 "
-                push.{storage_ugrade_commitment}
+                push.{storage_upgrade_commitment}
                 push.{new_code_commitment}
                 call.mock_account::upgrade
                 dropw dropw
@@ -1376,8 +1381,8 @@ async fn test_account_upgrade_rejects_new_account() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the epilogue rejects procedures that do not match the new code commitment, so
-/// that a prover cannot swap the code the transaction commits to.
+/// Tests that the upgrade rejects procedures that do not match the new code commitment, so that a
+/// prover cannot swap the code the transaction commits to.
 #[tokio::test]
 async fn test_account_upgrade_rejects_procedures_not_matching_commitment() -> anyhow::Result<()> {
     let upgraded_code = upgraded_mock_account_code()?;
@@ -1391,6 +1396,50 @@ async fn test_account_upgrade_rejects_procedures_not_matching_commitment() -> an
         .await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH);
+
+    Ok(())
+}
+
+/// Tests that the upgrade rejects procedures that match the new code commitment but are not valid
+/// account procedures.
+#[rstest::rstest]
+#[case::not_enough_procedures(sorted_procedure_roots(1), ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES)]
+#[case::unsorted_procedures(
+    {
+        let mut procedure_roots = sorted_procedure_roots(4);
+        procedure_roots.swap(1, 2);
+        procedure_roots
+    },
+    ERR_ACCOUNT_PROCEDURES_MUST_BE_SORTED_AND_UNIQUE,
+)]
+#[case::duplicated_auth_procedure(
+    {
+        let mut procedure_roots = sorted_procedure_roots(4);
+        procedure_roots[3] = procedure_roots[0];
+        procedure_roots
+    },
+    ERR_ACCOUNT_AUTH_PROCEDURE_MUST_NOT_BE_DUPLICATED,
+)]
+#[tokio::test]
+async fn test_account_upgrade_rejects_invalid_procedures(
+    #[case] procedure_roots: Vec<AccountProcedureRoot>,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let procedure_elements: Vec<Felt> = procedure_roots
+        .iter()
+        .flat_map(AccountProcedureRoot::as_elements)
+        .copied()
+        .collect();
+    let new_code_commitment = Hasher::hash_elements(&procedure_elements);
+
+    let result = TestTransactionBuilder::new(existing_mock_account())
+        .tx_script(upgrade_tx_script([(new_code_commitment, Word::empty())])?)
+        .add_advice_map_entry(new_code_commitment, procedure_elements)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }

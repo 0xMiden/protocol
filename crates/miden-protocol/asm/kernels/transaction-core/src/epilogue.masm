@@ -230,41 +230,28 @@ end
 #! Applies a pending code upgrade of the native account, if any.
 #!
 #! The upgrade is applied after the auth procedure so that the account is authenticated by the code
-#! it had at the start of the transaction.
+#! it had at the start of the transaction. account::upgrade already validated the new code, and the
+#! new procedures are not loaded into account memory since nothing after the auth procedure reads
+#! them. This means the procedure runs in constant time which keeps the epilogue cycle estimation
+#! simple.
 #!
-#! Inputs:
-#!   Operand stack: []
-#!   Advice map: {
-#!     NEW_CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
-#!   }
-#! Outputs:
-#!   Operand stack: []
-#!
-#! Where:
-#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
-#! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
-#!
-#! Panics if:
-#! - the new procedures do not match NEW_CODE_COMMITMENT.
-#! - the new procedures are not valid account procedures.
+#! Inputs:  []
+#! Outputs: []
 proc apply_code_upgrade()
+    exec.memory::get_account_code_commitment
+    exec.memory::get_code_upgrade_commitment
+    # => [UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
+
     exec.memory::has_code_upgrade
-    # => [has_code_upgrade]
+    # => [has_code_upgrade, UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
 
-    if.true
-        exec.memory::get_code_upgrade_commitment
-        # => [NEW_CODE_COMMITMENT]
+    # If has_code_upgrade UPGRADE_CODE_COMMITMENT remains.
+    # If !has_code_upgrade CURRENT_CODE_COMMITMENT remains.
+    cdropw
+    # => [CODE_COMMITMENT]
 
-        exec.memory::set_account_code_commitment
-        # => [NEW_CODE_COMMITMENT]
-
-        # load the new procedures into memory and verify them against the new code commitment
-        exec.account::save_account_procedure_data
-        # => []
-
-        exec.account::validate_procedures
-        # => []
-    end
+    exec.memory::set_account_code_commitment dropw
+    # => []
 end
 
 # TRANSACTION EPILOGUE PROCEDURE
@@ -296,7 +283,6 @@ end
 #! - the assets that were in input notes or in the account vault at the beginning of
 #!   transaction execution are not in output notes or in the account vault at the end of the
 #!   transaction.
-#! - a pending code upgrade is invalid.
 #! - the transaction does not change the chain state. This must be the case to avoid tx
 #!   replayability. A tx changes the chain state if it either consumes 1 or more input notes or by
 #!   changing the account's state. The latter is validated as part of computing the account patch
