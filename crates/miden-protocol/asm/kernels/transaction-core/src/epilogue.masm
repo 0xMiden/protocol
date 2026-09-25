@@ -224,11 +224,55 @@ proc execute_auth_procedure()
     emit.EPILOGUE_AUTH_PROC_END_EVENT
 end
 
+# ACCOUNT UPGRADE
+# =================================================================================================
+
+#! Applies a pending code upgrade of the native account, if any.
+#!
+#! The upgrade is applied after the auth procedure so that the account is authenticated by the code
+#! it had at the start of the transaction.
+#!
+#! Inputs:
+#!   Operand stack: []
+#!   Advice map: {
+#!     NEW_CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new account code.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
+#!
+#! Panics if:
+#! - the new procedures do not match NEW_CODE_COMMITMENT.
+#! - the new procedures are not valid account procedures.
+proc apply_code_upgrade()
+    exec.memory::has_code_upgrade
+    # => [has_code_upgrade]
+
+    if.true
+        exec.memory::get_code_upgrade_commitment
+        # => [NEW_CODE_COMMITMENT]
+
+        exec.memory::set_account_code_commitment
+        # => [NEW_CODE_COMMITMENT]
+
+        # load the new procedures into memory and verify them against the new code commitment
+        exec.account::save_account_procedure_data
+        # => []
+
+        exec.account::validate_procedures
+        # => []
+    end
+end
+
 # TRANSACTION EPILOGUE PROCEDURE
 # =================================================================================================
 
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
+#! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
@@ -252,6 +296,7 @@ end
 #! - the assets that were in input notes or in the account vault at the beginning of
 #!   transaction execution are not in output notes or in the account vault at the end of the
 #!   transaction.
+#! - a pending code upgrade is invalid.
 #! - the transaction does not change the chain state. This must be the case to avoid tx
 #!   replayability. A tx changes the chain state if it either consumes 1 or more input notes or by
 #!   changing the account's state. The latter is validated as part of computing the account patch
@@ -270,6 +315,11 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber)
     exec.memory::get_native_account_nonce
     # => [nonce]
     eq.0 assertz.err=ERR_EPILOGUE_NONCE_CANNOT_BE_0
+
+    # ------ Apply the account code upgrade ------
+
+    exec.apply_code_upgrade
+    # => []
 
     # ------ Assert assets are preserved ------
 

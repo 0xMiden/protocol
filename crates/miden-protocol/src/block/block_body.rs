@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 
 use miden_core::Word;
 
+use crate::account::AccountId;
 use crate::block::{
     BlockAccountUpdate,
     BlockNoteIndex,
@@ -13,7 +14,7 @@ use crate::block::{
 };
 use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote};
+use crate::transaction::{OrderedTransactionHeaders, OutputNote, TransactionHeader};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -62,7 +63,9 @@ impl BlockBody {
     ///
     /// # Errors
     ///
-    /// Returns an error if a size, index, or uniqueness constraint is violated.
+    /// Returns an error if:
+    /// - a size, index, or uniqueness constraint is violated.
+    /// - the update of a new public account does not reconstruct to its final state commitment.
     pub fn new(
         updated_accounts: Vec<BlockAccountUpdate>,
         output_note_batches: Vec<OutputNoteBatch>,
@@ -79,10 +82,26 @@ impl BlockBody {
             return Err(BlockBodyError::TooManyNullifiers(created_nullifiers.len()));
         }
 
+        // Account-creating transactions have an empty initial state commitment.
+        let new_account_ids: BTreeSet<AccountId> = transactions
+            .as_slice()
+            .iter()
+            .filter(|transaction| transaction.initial_state_commitment().is_empty())
+            .map(TransactionHeader::account_id)
+            .collect();
+
         let mut account_ids = BTreeSet::new();
         for update in &updated_accounts {
             if !account_ids.insert(update.account_id()) {
                 return Err(BlockBodyError::DuplicateAccountUpdate(update.account_id()));
+            }
+            if new_account_ids.contains(&update.account_id()) {
+                update.validate_new_account_patch().map_err(|source| {
+                    BlockBodyError::InvalidNewAccountUpdate {
+                        account_id: update.account_id(),
+                        source,
+                    }
+                })?;
             }
         }
 
@@ -306,10 +325,13 @@ mod tests {
 
     use super::BlockBody;
     use crate::Word;
-    use crate::account::AccountId;
-    use crate::errors::{BlockBodyError, TransactionHeaderError};
+    use crate::account::{Account, AccountId, AccountPatch, AccountType, AccountUpdateDetails};
+    use crate::block::BlockAccountUpdate;
+    use crate::errors::{BlockAccountUpdateError, BlockBodyError, TransactionHeaderError};
     use crate::note::{Note, NoteHeader};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+    use crate::testing::add_component::AddComponent;
+    use crate::testing::noop_auth_component::NoopAuthComponent;
     use crate::transaction::{
         InputNoteCommitment,
         InputNotes,
@@ -341,6 +363,90 @@ mod tests {
 
     fn into_output_note(note: Note) -> OutputNote {
         RawOutputNote::Full(note).into_output_note().unwrap()
+    }
+
+    fn public_account() -> anyhow::Result<Account> {
+        Ok(Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?)
+    }
+
+    /// Returns the body parts of a block with a single transaction against `account`, whose update
+    /// reconstructs `account` but claims `final_state_commitment`.
+    fn public_account_body_parts(
+        account: &Account,
+        initial_state_commitment: Word,
+        final_state_commitment: Word,
+    ) -> anyhow::Result<(Vec<BlockAccountUpdate>, OrderedTransactionHeaders)> {
+        let update = BlockAccountUpdate::new(
+            account.id(),
+            final_state_commitment,
+            AccountUpdateDetails::Public(AccountPatch::try_from(account.clone())?),
+        )?;
+        let transactions = OrderedTransactionHeaders::new_unchecked(vec![TransactionHeader::new(
+            account.id(),
+            initial_state_commitment,
+            final_state_commitment,
+            InputNotes::default(),
+            vec![],
+        )?]);
+
+        Ok((vec![update], transactions))
+    }
+
+    #[rstest]
+    #[case::new_account_matching_commitment(true, true)]
+    #[case::existing_account_matching_commitment(false, true)]
+    #[case::existing_account_mismatching_commitment(false, false)]
+    fn accepts_public_account_update(
+        #[case] is_new_account: bool,
+        #[case] is_final_commitment_matching: bool,
+    ) -> anyhow::Result<()> {
+        let initial_state_commitment = if is_new_account {
+            Word::empty()
+        } else {
+            Word::from([1_u32, 2, 3, 4])
+        };
+        let account = public_account()?;
+        let final_state_commitment = if is_final_commitment_matching {
+            account.to_commitment()
+        } else {
+            Word::from([5_u32, 6, 7, 8])
+        };
+        let (updated_accounts, transactions) =
+            public_account_body_parts(&account, initial_state_commitment, final_state_commitment)?;
+
+        BlockBody::new(updated_accounts, vec![], vec![], transactions)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_new_public_account_final_commitment_mismatch() -> anyhow::Result<()> {
+        let account = public_account()?;
+        let final_state_commitment = Word::from([5_u32, 6, 7, 8]);
+        let (updated_accounts, transactions) =
+            public_account_body_parts(&account, Word::empty(), final_state_commitment)?;
+        let account_commitment = account.to_commitment();
+
+        let result = BlockBody::new(updated_accounts, vec![], vec![], transactions);
+
+        assert_matches!(
+            result,
+            Err(BlockBodyError::InvalidNewAccountUpdate {
+                account_id,
+                source: BlockAccountUpdateError::AccountFinalCommitmentMismatch {
+                    final_state_commitment: actual_final_state_commitment,
+                    account_commitment: actual_account_commitment,
+                },
+            }) if account_id == account.id()
+                && actual_final_state_commitment == final_state_commitment
+                && actual_account_commitment == account_commitment
+        );
+
+        Ok(())
     }
 
     #[rstest]

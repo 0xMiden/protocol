@@ -4,13 +4,16 @@ use std::collections::BTreeSet;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountCode,
+    AccountCodeUpgrade,
+    AccountComponent,
     AccountId,
     AccountType,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::AssetAmount;
-use miden_protocol::note::{Note, NoteScriptRoot};
+use miden_protocol::asset::{AssetAmount, FungibleAsset};
+use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_protocol::{Felt, Word};
@@ -29,6 +32,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
+use miden_standards::note::P2idNote;
 use miden_standards::note::config::{NetworkAccountConfig, NetworkAccountConfigNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
@@ -926,69 +930,111 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
 // UPGRADE NOTE
 // ================================================================================================
 
-/// Builds an upgradeable network account: the [`AuthNetworkAccount`] auth component with the given
-/// note-script allowlist, `OwnerControlled` authority (via [`AccessControl::Ownable2Step`]) so the
-/// `UpgradeManager::upgrade` procedure authorizes the note sender against `owner`, plus the
-/// [`UpgradeManager`] procedure itself.
-fn build_upgradeable_network_account(
+/// Returns the components of an upgradeable network account: the [`AuthNetworkAccount`] auth
+/// component with the given note-script allowlist, `OwnerControlled` authority (via
+/// [`AccessControl::Ownable2Step`]) so the `UpgradeManager::upgrade` procedure authorizes the note
+/// sender against `owner`, plus the [`UpgradeManager`] procedure itself.
+fn upgradeable_network_account_components(
     owner: AccountId,
     allowed_note_script_roots: Vec<Word>,
-) -> anyhow::Result<Account> {
+) -> anyhow::Result<Vec<AccountComponent>> {
     let note_roots: BTreeSet<NoteScriptRoot> =
         allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect();
     let fee_policy_manager = zero_fee_policy_manager(
         note_roots.iter().copied().chain([NetworkAccountConfigNote::script_root()]),
     )?;
 
-    let auth_component = AuthNetworkAccount::new(note_roots, fee_policy_manager)?;
+    let auth_component = AuthNetworkAccount::custom(note_roots, fee_policy_manager)?;
 
+    Ok(auth_component
+        .into_iter()
+        .chain(AccessControl::Ownable2Step { owner })
+        .chain([UpgradeManager.into()])
+        .collect())
+}
+
+/// Builds an upgradeable network account from [`upgradeable_network_account_components`].
+fn build_upgradeable_network_account(
+    owner: AccountId,
+    allowed_note_script_roots: Vec<Word>,
+) -> anyhow::Result<Account> {
     Ok(AccountBuilder::new([7; 32])
-        .with_components(auth_component)
-        .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(UpgradeManager)
-        .with_component(BasicWallet)
+        .with_components(upgradeable_network_account_components(owner, allowed_note_script_roots)?)
         .account_type(AccountType::Public)
         .build_existing()?)
 }
 
-/// Builds an ad-hoc note from `sender` whose script calls the `UpgradeManager::upgrade` procedure
-/// with two fixed commitment words pushed directly on the stack, matching the procedure layout
-/// `[CODE_UPGRADE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]`.
+/// Returns the code of an upgradeable network account extended with the [`BasicWallet`].
 ///
-/// The commitment values are immaterial here; these tests only exercise the allowlist and authority
-/// paths, not the stored commitments. The script root is independent of `sender`, so it can be
-/// allowlisted regardless of who sends the note.
-fn build_upgrade_note(sender: AccountId) -> anyhow::Result<Note> {
-    let script = "
+/// The allowlists only live in storage, so the code does not depend on them.
+fn upgraded_network_account_code(owner: AccountId) -> anyhow::Result<AccountCode> {
+    let mut components =
+        upgradeable_network_account_components(owner, vec![placeholder_script_root()])?;
+    components.push(BasicWallet.into());
+
+    Ok(AccountCode::from_components(&components)?)
+}
+
+/// Builds an ad-hoc note from `sender` whose script calls the `UpgradeManager::upgrade` procedure
+/// to upgrade the account's code to the code with `new_code_commitment`.
+///
+/// The script root is independent of `sender`, so it can be allowlisted regardless of who sends
+/// the note.
+fn build_upgrade_note(sender: AccountId, new_code_commitment: Word) -> anyhow::Result<Note> {
+    let script = format!(
+        "
         use miden::standards::account_upgrade
 
         @note_script
         pub proc main
-            padw padw
-            push.5.6.7.8
-            push.1.2.3.4
+            padw padw padw push.{new_code_commitment}
+            # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
             call.account_upgrade::upgrade
             dropw dropw dropw dropw
         end
-    ";
+        "
+    );
     Ok(NoteBuilder::new(sender, &mut rand::rng()).code(script).build()?)
 }
 
-/// Consuming an allowlisted upgrade note sent by the owner runs the full note -> `upgrade` ->
-/// `assert_authorized` -> kernel path without panicking.
+/// Consuming an allowlisted upgrade note sent by the owner upgrades the account's code, so that a
+/// later transaction can call procedures that only exist in the new code.
 #[tokio::test]
-async fn test_auth_network_account_accepts_authorized_upgrade_note() -> anyhow::Result<()> {
+async fn test_auth_network_account_upgrades_code_via_authorized_note() -> anyhow::Result<()> {
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
-    let note = build_upgrade_note(owner)?;
-    let account = build_upgradeable_network_account(owner, vec![note.script().root().into()])?;
+    let upgraded_code = upgraded_network_account_code(owner)?;
+    let upgrade_note = build_upgrade_note(owner, upgraded_code.commitment())?;
+    let account = build_upgradeable_network_account(
+        owner,
+        vec![upgrade_note.script().root().into(), P2idNote::script_root().into()],
+    )?;
+    assert_ne!(account.code(), &upgraded_code);
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
+    builder.add_output_note(RawOutputNote::Full(upgrade_note.clone()));
+    let p2id_note =
+        builder.add_p2id_note(owner, account.id(), &[FungibleAsset::mock(10)], NoteType::Public)?;
+    let mut mock_chain = builder.build()?;
 
+    let executed_tx = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(upgrade_note.id())
+        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_code.clone()))
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(executed_tx.final_account().code_commitment(), upgraded_code.commitment());
+
+    mock_chain.add_pending_executed_transaction(&executed_tx)?;
+    mock_chain.prove_next_block()?;
+    assert_eq!(mock_chain.committed_account(account.id())?.code(), &upgraded_code);
+
+    // The P2ID note calls `receive_asset`, which only the upgraded code provides.
     mock_chain
         .build_transaction(account.id())
-        .unauthenticated_input_note(note)
+        .authenticated_input_note(p2id_note.id())
         .build()?
         .execute()
         .await?;
@@ -1003,7 +1049,9 @@ async fn test_auth_network_account_rejects_non_allowlisted_upgrade_note() -> any
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
     // Allowlist a placeholder root, not the upgrade note root.
     let account = build_upgradeable_network_account(owner, vec![placeholder_script_root()])?;
-    let note = build_upgrade_note(owner)?;
+    // Upgrade to the current code, so that the upgrade is a no-op and the allowlist check in the
+    // auth procedure is the first to fail.
+    let note = build_upgrade_note(owner, account.code().commitment())?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -1029,7 +1077,7 @@ async fn test_auth_network_account_rejects_unauthorized_upgrade_note() -> anyhow
 
     // The note sender is not the owner, so the OwnerControlled authority check must reject it.
     let not_owner = AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32]);
-    let note = build_upgrade_note(not_owner)?;
+    let note = build_upgrade_note(not_owner, upgraded_network_account_code(owner)?.commitment())?;
     let account = build_upgradeable_network_account(owner, vec![note.script().root().into()])?;
 
     let mut builder = MockChain::builder();

@@ -13,11 +13,11 @@ use {ACCOUNT_UPDATE_ASSET_PTR} from miden::tx_kernel_core::memory
 # ERRORS
 # =================================================================================================
 
-const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED =
-    "nonce in delta must have been incremented if account vault or account storage changed"
+const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED =
+    "nonce in delta must have been incremented if account vault, storage or code changed"
 
-const ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED =
-    "final nonce in patch must have been incremented if account vault or account storage changed"
+const ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED =
+    "final nonce in patch must have been incremented if account vault, storage or code changed"
 
 const ERR_ACCOUNT_DELTA_TOO_MANY_ADDED_ASSETS =
     "number of added assets in the transaction exceeds the maximum limit of 1024"
@@ -54,6 +54,8 @@ const DOMAIN_ASSET = 1
 const DOMAIN_VALUE = 2
 #! The domain of a map storage slot in a delta or patch commitment.
 const DOMAIN_MAP = 3
+#! The domain of the account code in a delta or patch commitment.
+const DOMAIN_CODE = 4
 
 #! The version of the delta commitment layout.
 const DELTA_VERSION_1 = 1
@@ -126,7 +128,7 @@ const MAX_ASSETS_PER_DELTA_OP = 1024
 #! - PATCH_COMMITMENT is the commitment to the account patch.
 #!
 #! Panics if:
-#! - the vault patch or storage patch is not empty but the nonce increment is zero.
+#! - the vault, storage or code patch is not empty but the nonce increment is zero.
 pub proc compute_patch_commitment() -> Commitment
     # domain-separate the patch commitment through the hasher capacity
     push.0.0.DOMAIN_PATCH.0
@@ -162,6 +164,9 @@ pub proc compute_patch_commitment() -> Commitment
     exec.commit_storage_patch
     # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
+    exec.commit_code_section
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
+
     exec.poseidon2::squeeze_digest
     # => [PATCH_COMMITMENT, METADATA_DIGEST]
 
@@ -169,9 +174,9 @@ pub proc compute_patch_commitment() -> Commitment
     # => [!was_nonce_incremented, PATCH_COMMITMENT, METADATA_DIGEST]
 
     if.true
-        # if the nonce wasn't incremented, then the vault and storage patch is required to be empty
-        # storage and vault patch were empty if the patch commitment is equal to METADATA_DIGEST
-        assert_eqw.err=ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        # if the nonce wasn't incremented, then the vault, storage and code patches must be empty,
+        # which is the case if the patch commitment is equal to METADATA_DIGEST
+        assert_eqw.err=ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED
         # => []
 
         # if the patch is empty, its commitment is defined as the empty word
@@ -195,7 +200,7 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the vault delta or storage patch is not empty but the nonce increment is zero.
+#! - the vault, storage or code delta is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment() -> Commitment
     # domain-separate the delta commitment through the hasher capacity
     push.0.0.DOMAIN_DELTA.0
@@ -229,6 +234,9 @@ pub proc compute_delta_commitment() -> Commitment
     exec.commit_storage_patch
     # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
 
+    exec.commit_code_section
+    # => [RATE0, RATE1, CAPACITY, METADATA_DIGEST]
+
     exec.poseidon2::squeeze_digest
     # => [DELTA_COMMITMENT, METADATA_DIGEST]
 
@@ -236,9 +244,9 @@ pub proc compute_delta_commitment() -> Commitment
     # => [!was_nonce_incremented, DELTA_COMMITMENT, METADATA_DIGEST]
 
     if.true
-        # if the nonce wasn't incremented, then the vault and storage delta is required to be empty
-        # storage and vault delta were empty if the delta commitment is equal to METADATA_DIGEST
-        assert_eqw.err=ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        # if the nonce wasn't incremented, then the vault, storage and code deltas must be empty,
+        # which is the case if the delta commitment is equal to METADATA_DIGEST
+        assert_eqw.err=ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED
         # => []
 
         # if the delta is empty, its commitment is defined as the empty word
@@ -317,6 +325,48 @@ proc commit_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
         exec.commit_map_slot_patch
     end
     # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Updates the given hasher with the native account's code, if the account is new or its code is
+#! upgraded.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+proc commit_code_section(state: HasherState) -> HasherState
+    exec.memory::is_new_account
+    # => [is_new_account, RATE0, RATE1, CAPACITY]
+
+    dup exec.memory::has_code_upgrade or
+    # => [has_code, is_new_account, RATE0, RATE1, CAPACITY]
+
+    if.true
+        # a new account cannot be upgraded, so its code is the current code and the code of an
+        # existing account is the pending upgrade
+        exec.memory::get_code_upgrade_commitment
+        exec.memory::get_account_code_commitment
+        # => [CURRENT_CODE_COMMITMENT, UPGRADE_CODE_COMMITMENT, is_new_account, RATE0, RATE1, CAPACITY]
+
+        movup.8
+        # => [is_new_account, CURRENT_CODE_COMMITMENT, UPGRADE_CODE_COMMITMENT, RATE0, RATE1, CAPACITY]
+
+        # If is_new_account CURRENT_CODE_COMMITMENT remains.
+        # If !is_new_account UPGRADE_CODE_COMMITMENT remains.
+        cdropw
+        # => [CODE_COMMITMENT, RATE0, RATE1, CAPACITY]
+
+        push.0.0.0.DOMAIN_CODE
+        # => [[domain_code, 0, 0, 0], CODE_COMMITMENT, RATE0, RATE1, CAPACITY]
+
+        # clear rate elements
+        swapdw dropw dropw
+        # => [[domain_code, 0, 0, 0], CODE_COMMITMENT, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    else
+        drop
+        # => [RATE0, RATE1, CAPACITY]
+    end
 end
 
 #! Returns the storage delta operation for the native account's storage slots.

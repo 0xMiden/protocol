@@ -47,6 +47,12 @@ impl TransactionAdviceInputs {
         let partial_native_acc = tx_inputs.account();
         inputs.add_account(partial_native_acc);
 
+        // Inject the procedures of the upgraded code, which the epilogue loads when it applies the
+        // upgrade.
+        if let Some(code_upgrade) = tx_inputs.tx_args().account_code_upgrade() {
+            inputs.add_map_entry(code_upgrade.commitment(), code_upgrade.code().to_elements());
+        }
+
         // If a seed was provided, extend the map appropriately.
         if let Some(seed) = tx_inputs.account().seed() {
             // ACCOUNT_ID |-> ACCOUNT_SEED

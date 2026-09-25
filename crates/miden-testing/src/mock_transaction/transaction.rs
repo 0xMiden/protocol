@@ -243,6 +243,7 @@ impl MockTransaction {
             ref_block,
             block_commitments,
             self.source_manager(),
+            tx_inputs.tx_args().account_code_upgrade().cloned(),
         )
         .expect("partial account from a full account should contain its complete storage");
 

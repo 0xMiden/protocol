@@ -217,6 +217,16 @@ pub enum TransactionKernelError {
     AccountDeltaRemoveAssetFailed(#[source] AccountDeltaError),
     #[error("failed to add asset to note")]
     FailedToAddAssetToNote(#[source] NoteError),
+    #[error(
+        "transaction initialized an upgrade to account code {0} but the transaction arguments do not provide the new code"
+    )]
+    AccountCodeUpgradeMissing(Word),
+    #[error(
+        "transaction initialized an upgrade to account code {expected} but the transaction arguments provide code {actual}"
+    )]
+    AccountCodeUpgradeCommitmentMismatch { expected: Word, actual: Word },
+    #[error("account code upgrade is not allowed for new accounts")]
+    AccountCodeUpgradeNotAllowedForNewAccount,
     #[error("note storage has commitment {actual} but expected commitment {expected}")]
     InvalidNoteStorage { expected: Word, actual: Word },
     #[error(

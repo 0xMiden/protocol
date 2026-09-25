@@ -37,6 +37,7 @@ use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
+    AccountCodeUpgrade,
     AccountDelta,
     AccountHeader,
     AccountId,
@@ -130,7 +131,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
+        account_code_upgrade: Option<AccountCodeUpgrade>,
     ) -> Result<Self, TransactionKernelError> {
+        let update_tracker = AccountUpdateTracker::new(account, account_code_upgrade)?;
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
 
@@ -147,7 +150,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             scripts_mast_store,
             initial_account_header: account.into(),
             initial_account_storage_header: account.storage().header().clone(),
-            update_tracker: AccountUpdateTracker::new(account)?,
+            update_tracker,
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
@@ -384,6 +387,16 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         }
 
         self.update_tracker.increment_nonce();
+
+        Ok(Vec::new())
+    }
+
+    /// Handles the account upgrade event by recording the new code in the update tracker.
+    pub fn on_account_upgrade_initialized(
+        &mut self,
+        new_code_commitment: Word,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        self.update_tracker.record_code_upgrade(new_code_commitment)?;
 
         Ok(Vec::new())
     }
