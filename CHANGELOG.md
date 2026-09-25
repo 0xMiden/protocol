@@ -5,12 +5,18 @@
 ### Features
 
 - [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3948](https://github.com/0xMiden/protocol/pull/3948)).
+- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
 
 ### Changes
 
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
 - [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
+
+### Fixes
+
+- Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
+
 ## v0.17.0-rc.7 (2026-09-24)
 
 ### Fixes

@@ -351,15 +351,16 @@ const OUTPUT_NOTE_DETAILS_COMMITMENT_OFFSET = 0
 const OUTPUT_NOTE_METADATA_OFFSET = 4
 const OUTPUT_NOTE_RECIPIENT_OFFSET = 8
 const OUTPUT_NOTE_DIRTY_FLAG_OFFSET = 12
-const OUTPUT_NOTE_NUM_ASSETS_OFFSET = 13
-const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET = 14
-const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET = 15
-const OUTPUT_NOTE_ATTACHMENT_0_OFFSET = 16
-const OUTPUT_NOTE_ATTACHMENT_1_OFFSET = 20
-const OUTPUT_NOTE_ATTACHMENT_2_OFFSET = 24
-const OUTPUT_NOTE_ATTACHMENT_3_OFFSET = 28
-const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 32
-const OUTPUT_NOTE_ASSETS_OFFSET = 36
+const OUTPUT_NOTE_SEALED_FLAG_OFFSET = 13
+const OUTPUT_NOTE_NUM_ASSETS_OFFSET = 16
+const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET = 17
+const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET = 18
+const OUTPUT_NOTE_ATTACHMENT_0_OFFSET = 20
+const OUTPUT_NOTE_ATTACHMENT_1_OFFSET = 24
+const OUTPUT_NOTE_ATTACHMENT_2_OFFSET = 28
+const OUTPUT_NOTE_ATTACHMENT_3_OFFSET = 32
+const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET = 36
+const OUTPUT_NOTE_ASSETS_OFFSET = 40
 
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
@@ -2182,6 +2183,22 @@ end
 #! - dirty_flag is the flag indicating whether the assets commitment is outdated.
 pub proc set_output_note_dirty_flag(output_note_data_ptr: ptr<OutputNoteData>, dirty_flag: Bool)
     add.OUTPUT_NOTE_DIRTY_FLAG_OFFSET mem_store
+end
+
+#! Returns whether the output note has been sealed against further mutations.
+#!
+#! Inputs:  [output_note_data_ptr]
+#! Outputs: [sealed]
+pub proc is_output_note_sealed(output_note_data_ptr: ptr<OutputNoteData>) -> Bool
+    add.OUTPUT_NOTE_SEALED_FLAG_OFFSET mem_load
+end
+
+#! Seals an output note for the remainder of the transaction.
+#!
+#! Inputs:  [output_note_data_ptr]
+#! Outputs: []
+pub proc seal_output_note(output_note_data_ptr: ptr<OutputNoteData>)
+    push.1 swap add.OUTPUT_NOTE_SEALED_FLAG_OFFSET mem_store
 end
 
 #! Returns a pointer to the output note asset data.
