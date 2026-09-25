@@ -1912,11 +1912,16 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `native_account::get_initial_item` cannot be called against a foreign account: it is a
-/// native-account-only procedure, so invoking it from an FPI context must fail via
+/// Native-only procedures, including output note sealing, cannot be called from a foreign account.
+/// Invoking them from an FPI context must fail via
 /// `memory::assert_native_account` with `ERR_ACCOUNT_IS_NOT_NATIVE`.
+#[rstest::rstest]
+#[case::get_initial_item("push.MOCK_VALUE_SLOT0[0..2] exec.native_account::get_initial_item")]
+#[case::seal_output_note("push.0 exec.::miden::protocol::output_note::seal")]
 #[tokio::test]
-async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
+async fn native_only_procedure_fails_for_foreign_account(
+    #[case] native_call: &str,
+) -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(rand::random())
         .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
@@ -1925,7 +1930,7 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
 
     let mock_value_slot0 = AccountStorage::mock_value_slot0();
 
-    // Foreign procedure that attempts to call the native-only get_initial_item.
+    // Foreign procedure that attempts to call a native-only API.
     let foreign_account_code_source = format!(
         r#"
         use miden::protocol::native_account
@@ -1934,9 +1939,8 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
         @account_procedure
-        pub proc test_get_initial_item
-            push.MOCK_VALUE_SLOT0[0..2]
-            exec.native_account::get_initial_item
+        pub proc test_native_only_procedure
+            {native_call}
             exec.sys::truncate_stack
         end
     "#,
@@ -1969,9 +1973,9 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            # attempt to call the native-only get_initial_item on a foreign account
+            # attempt to call the native-only procedure on a foreign account
             padw padw padw push.0.0.0
-            procref.::foreign_account::test_get_initial_item
+            procref.::foreign_account::test_native_only_procedure
             push.{foreign_account_id_prefix} push.{foreign_account_id_suffix}
             exec.tx::execute_foreign_procedure
 
@@ -1995,6 +1999,81 @@ async fn get_initial_item_fails_for_foreign_account() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_NATIVE);
+
+    Ok(())
+}
+
+/// A foreign account can query the sealing state of outputs created by the native account.
+#[tokio::test]
+async fn foreign_account_can_query_output_note_sealing() -> anyhow::Result<()> {
+    let foreign_account_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code(
+            "foreign_account",
+            "
+            use miden::protocol::output_note
+
+            @account_procedure
+            pub proc check_output_note_sealing
+                push.0 exec.output_note::is_sealed assert
+                push.1 exec.output_note::is_sealed assertz
+            end
+            ",
+        )?,
+        vec![],
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
+    let foreign_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(foreign_account_component.clone())
+        .build_existing()?;
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([native_account.clone(), foreign_account.clone()])?
+            .build()?;
+    mock_chain.prove_next_block()?;
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.clone())?;
+
+    let code = format!(
+        "
+        use miden::core::sys
+        use miden::protocol::output_note
+        use miden::protocol::tx
+        use {{NOTE_TYPE_PRIVATE}} from miden::protocol::note
+
+        @transaction_script
+        pub proc main
+            # Use different recipients to keep the outputs distinct; seal only the first.
+            push.1.2.3.4 push.NOTE_TYPE_PRIVATE.0
+            call.::mock::account::create_note exec.output_note::seal
+            push.5.6.7.8 push.NOTE_TYPE_PRIVATE.0
+            call.::mock::account::create_note drop
+
+            padw padw padw push.0.0.0
+            procref.::foreign_account::check_output_note_sealing
+            push.{foreign_prefix} push.{foreign_suffix}
+            exec.tx::execute_foreign_procedure
+            exec.sys::truncate_stack
+        end
+        ",
+        foreign_prefix = foreign_account.id().prefix().as_felt(),
+        foreign_suffix = foreign_account.id().suffix(),
+    );
+    let tx_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
+        .compile_tx_script(code)?;
+
+    mock_chain
+        .build_transaction(native_account.id())
+        .foreign_accounts([foreign_account_inputs])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }

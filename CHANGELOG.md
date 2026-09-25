@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Added `miden::protocol::output_note::seal` to prevent further asset and attachment changes to an output note and `is_sealed` to query its sealing state ([#3923](https://github.com/0xMiden/protocol/pull/3923)).
+
 ### Changes
 
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
