@@ -7,6 +7,8 @@
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
 - [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
+- [BREAKING] `NoteConsumptionChecker::new` now takes the account's fee asset, and the checker rejects unconsumable `FEE_SPONSORSHIP` notes without executing them. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
+
 ## v0.17.0-rc.7 (2026-09-24)
 
 ### Fixes
@@ -31,7 +33,6 @@
 ### Fixes
 
 - [BREAKING] `NoteConsumptionChecker` now tests notes that can only be consumed together, such as a feature note and its `FEE_SPONSORSHIP` notes, as one unit, and `FailedNote` reports a `NoteFailure` instead of a bare error ([#3801](https://github.com/0xMiden/protocol/pull/3801)).
-- [BREAKING] `NoteConsumptionChecker::new` now takes the account's fee asset, and the checker rejects unconsumable `FEE_SPONSORSHIP` notes without executing them. Renamed `FailedNote::error` to `FailedNote::execution_error` ([#3924](https://github.com/0xMiden/protocol/pull/3924)).
 - `LocalTransactionProver` now leaves precompile claims deferred for the batch prover to settle, instead of proving them per transaction ([#3851](https://github.com/0xMiden/protocol/pull/3851)).
 - The batch executor now merges the deferred precompile witnesses of its transactions so the batch prover settles them with a single precompile proof ([#3859](https://github.com/0xMiden/protocol/pull/3859)).
 
