@@ -5,6 +5,8 @@
 use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::guardian
+use miden::standards::auth::signature
+use miden::standards::fee
 
 pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
@@ -14,7 +16,12 @@ pub use {is_signer} from miden::standards::auth::multisig
 
 pub use {update_guardian_public_key} from miden::standards::auth::guardian
 
-#! Authenticate a transaction with multi-signature support and optional guardian verification.
+#! Authenticate a transaction with multi-signature support and optional guardian verification,
+#! paying the transaction fee in the process.
+#!
+#! The fee is paid as in the multisig component, before the transaction summary is created, so
+#! the fee note is covered by the approver and guardian signatures. The cycle estimate counts the
+#! guardian as one more signer.
 #!
 #! The guardian must not be an approver, otherwise a single signature would satisfy both the
 #! multisig and the guardian check, so this procedure re-checks the invariant that
@@ -43,22 +50,49 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     exec.multisig::resolve_auth_args
     # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
 
-    # this component does not pay the transaction fee yet, so the conversion info is unused
-    dropw
-    # => [bound_block_num, approval_expiration_block_num, SALT]
-
     # reject an expired approval before any signature is verified.
-    dup.1 exec.tx::get_reference_block_number
-    # => [reference_block_num, approval_expiration_block_num, bound_block_num, approval_expiration_block_num, SALT]
+    # ---------------------------------------------------------------------------------------------
 
-    exec.multisig::assert_approval_not_expired movdn.6
-    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    dup.5 exec.tx::get_reference_block_number
+    # => [reference_block_num, approval_expiration_block_num, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+
+    exec.multisig::assert_approval_not_expired movdn.10
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+
+    # check a guardian rotation before the fee note exists, since a rotation must not create notes
+    exec.guardian::assert_rotation_policy movdn.11
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
+    # Pay the transaction fee before the summary is created so that the TX_FEE note and the
+    # vault withdrawal funding it are covered by the approver and guardian signatures.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.multisig::get_initial_threshold_and_num_approvers drop
+    # => [num_of_approvers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
+    # count the guardian as a signer; this overestimates a guardian rotation, which skips it
+    add.1
+    # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
+    exec.signature::estimate_multisig_authentication_cycles
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
+    # use the signed block for the fee note.
+    dup.5 movdn.5
+    # => [num_extra_cycles, CONVERSION_INFO, bound_block_num, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
+    exec.fee::pay_fee drop
+    # => [bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta, is_rotation]
+
+    # Authenticate the transaction with the approvers and the guardian and record it for replay
+    # protection.
+    # ---------------------------------------------------------------------------------------------
 
     exec.multisig::auth_tx
-    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
+    # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta, is_rotation]
 
-    dupw
-    # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
+    dupw movup.9
+    # => [is_rotation, TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT, approval_expiration_delta]
 
     exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT, approval_expiration_delta]
@@ -74,6 +108,8 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
 
     # apply the approval expiration after tx summary extractions since the host cross-checks
     # the kernel expiration delta against the transaction summary delta
+    # ---------------------------------------------------------------------------------------------
+
     exec.multisig::apply_approval_expiration
     # => []
 end
