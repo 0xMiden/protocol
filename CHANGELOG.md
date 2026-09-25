@@ -9,11 +9,18 @@
 ### Changes
 
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
+- [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
 
 ### Fixes
 
 - Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
+
+## v0.17.0-rc.7 (2026-09-24)
+
+### Fixes
+
+- [BREAKING] `AuthGuardedMultisig` now pays the transaction fee ([#3931](https://github.com/0xMiden/protocol/pull/3931)).
 
 ## v0.17.0-rc.6 (2026-09-22)
 
