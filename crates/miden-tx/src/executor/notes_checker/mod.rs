@@ -1,11 +1,12 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
+use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::Note;
+use miden_protocol::note::{Note, NoteId};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -30,7 +31,12 @@ pub use checker_utils::{
     NoteFailure,
     SuccessfulNote,
 };
-use checker_utils::{NoteBundle, handle_epilogue_error};
+use checker_utils::{
+    NoteBundle,
+    handle_epilogue_error,
+    reject_unconsumable_sponsorships,
+    sponsorship_consumption_status,
+};
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -40,9 +46,12 @@ use checker_utils::{NoteBundle, handle_epilogue_error};
 /// The check is performed using the [NoteConsumptionChecker::check_notes_consumability] procedure.
 /// Essentially runs the transaction to make sure that provided input notes could be consumed by the
 /// account.
-pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor>(
-    &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
-);
+pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor> {
+    tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
+    /// The asset the target account collects fees in, which every FEE_SPONSORSHIP note it consumes
+    /// has to carry.
+    collected_fee_asset_id: Option<AssetId>,
+}
 
 impl<'a, STORE, AUTH, EXEC> NoteConsumptionChecker<'a, STORE, AUTH, EXEC>
 where
@@ -50,9 +59,17 @@ where
     AUTH: TransactionAuthenticator + Sync,
     EXEC: ProgramExecutor,
 {
-    /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
-    pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>) -> Self {
-        NoteConsumptionChecker(tx_executor)
+    /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor and
+    /// fee asset ID.
+    ///
+    /// `collected_fee_asset_id` is the asset the checked account collects fees in. Pass `None` for
+    /// an account that collects no fees, such as a regular wallet, which has no such asset to check
+    /// against.
+    pub fn new(
+        tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
+        collected_fee_asset_id: Option<AssetId>,
+    ) -> Self {
+        NoteConsumptionChecker { tx_executor, collected_fee_asset_id }
     }
 
     /// Checks whether some set of the provided input notes could be consumed by the provided
@@ -80,6 +97,10 @@ where
     /// together, such as a feature note and the FEE_SPONSORSHIP notes bound to it, are grouped and
     /// retried as a unit.
     ///
+    /// FEE_SPONSORSHIP notes the target account cannot consume at all are rejected up front, before
+    /// anything is executed: one carrying an asset other than the account's fee asset, and one
+    /// whose feature note is absent and which the account may not reclaim.
+    ///
     /// Returns a list of successfully consumed notes and a list of failed notes.
     pub async fn check_notes_consumability(
         &self,
@@ -97,15 +118,35 @@ where
             StandardNote::from_script_root(note.script().root()).is_none()
         });
 
+        // Drop the notes that can be ruled out without executing anything. The rejected notes are
+        // identified by ID rather than taken from the bundles, so that the notes kept stay in the
+        // order sorted above instead of being reordered into bundles.
+        let rejected = reject_unconsumable_sponsorships(
+            &NoteBundle::group(&notes),
+            target_account_id,
+            block_ref,
+            self.collected_fee_asset_id,
+        );
+        if !rejected.is_empty() {
+            let rejected_ids: BTreeSet<NoteId> =
+                rejected.iter().map(|failed| failed.note().id()).collect();
+            notes.retain(|note| !rejected_ids.contains(&note.id()));
+
+            // Nothing is left to execute.
+            if notes.is_empty() {
+                return Ok(NoteConsumptionInfo::new(Vec::new(), rejected));
+            }
+        }
+
         let notes = InputNotes::from(notes);
         let tx_inputs = self
-            .0
+            .tx_executor
             .prepare_tx_inputs(target_account_id, block_ref, notes, tx_args)
             .await
             .map_err(NoteCheckerError::TransactionPreparation)?;
 
         // Attempt to find an executable set of notes.
-        self.find_executable_notes_by_elimination(tx_inputs).await
+        self.find_executable_notes_by_elimination(tx_inputs, rejected).await
     }
 
     /// Checks whether the provided input note could be consumed by the provided account by
@@ -115,7 +156,11 @@ where
     /// the transaction context and returns the [`NoteConsumptionStatus`] result accordingly.
     ///
     /// This function first applies the static analysis of the provided note, and if it doesn't
-    /// reveal any errors next it tries to execute the transaction. Based on the execution result,
+    /// reveal any errors next it tries to execute the transaction. A FEE_SPONSORSHIP note is
+    /// analysed as a note whose feature note is absent, since it is the only input note, and so
+    /// against the rules of its reclaim path.
+    ///
+    /// Based on the execution result,
     /// it either returns a [`NoteCheckerError`] or the [`NoteConsumptionStatus`]: depending on
     /// whether the execution succeeded, failed in the prologue, during the note execution process
     /// or in the epilogue.
@@ -134,9 +179,17 @@ where
             return Ok(consumption_status);
         }
 
+        // A FEE_SPONSORSHIP note checked on its own is one whose feature note is absent, which
+        // leaves the reclaim as the only way to consume it.
+        if let Some(consumption_status) =
+            sponsorship_consumption_status(note.note(), target_account_id, block_ref)
+        {
+            return Ok(consumption_status);
+        }
+
         // Prepare transaction inputs.
         let mut tx_inputs = self
-            .0
+            .tx_executor
             .prepare_tx_inputs(
                 target_account_id,
                 block_ref,
@@ -179,17 +232,18 @@ where
     /// Finds a set of executable notes and eliminates failed notes from the list in the process.
     ///
     /// The result contains some combination of the input notes partitioned by whether they
-    /// succeeded or failed to execute.
+    /// succeeded or failed to execute. `failed_notes` seeds the failures reported, so that notes
+    /// already ruled out before any execution are accounted for in the result.
     async fn find_executable_notes_by_elimination(
         &self,
         mut tx_inputs: TransactionInputs,
+        mut failed_notes: Vec<FailedNote>,
     ) -> Result<NoteConsumptionInfo, NoteCheckerError> {
         let mut candidate_notes = tx_inputs
             .input_notes()
             .iter()
             .map(|note| note.clone().into_note())
             .collect::<Vec<_>>();
-        let mut failed_notes = Vec::new();
 
         // Attempt to execute notes in a loop. Reduce the set of notes based on failures until
         // either a set of notes executes without failure or the set of notes cannot be
@@ -261,7 +315,7 @@ where
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
-        let mut remaining_bundles = NoteBundle::group(remaining_notes);
+        let mut remaining_bundles = NoteBundle::group(&remaining_notes);
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
         let mut failed_note_index = BTreeMap::new();
@@ -373,15 +427,15 @@ where
             return Ok(Vec::new());
         }
 
-        let (mut host, stack_inputs, advice_inputs) =
-            self.0
-                .prepare_transaction(tx_inputs)
-                .await
-                .map_err(TransactionCheckerError::TransactionPreparation)?;
+        let (mut host, stack_inputs, advice_inputs) = self
+            .tx_executor
+            .prepare_transaction(tx_inputs)
+            .await
+            .map_err(TransactionCheckerError::TransactionPreparation)?;
 
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let executor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options)
+        let executor = EXEC::new(stack_inputs, advice_inputs, self.tx_executor.exec_options)
             .map_err(ExecutionError::advice_error_no_context)
             .map_err(map_execution_error)
             .map_err(TransactionCheckerError::PrologueExecution)?;

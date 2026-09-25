@@ -142,6 +142,16 @@ fn network_account(
         .build_existing()?)
 }
 
+/// A FEE_SPONSORSHIP note to build, as [`TestBuilder`] collects it.
+struct Sponsorship {
+    /// Index of the feature note the sponsorship pays for.
+    feature_note_idx: usize,
+    /// The asset the sponsorship carries as the fee.
+    asset: FungibleAsset,
+    /// Whether the network account may reclaim the note.
+    reclaimable_by_target: bool,
+}
+
 /// A network account plus the feature notes it can consume and the FEE_SPONSORSHIP notes bound to
 /// them.
 struct Test {
@@ -161,7 +171,7 @@ impl Test {
     /// Use [`TestBuilder::sponsorship`] to add the FEE_SPONSORSHIP notes.
     #[builder]
     fn new(
-        #[builder(field)] sponsorships: Vec<(usize, FungibleAsset)>,
+        #[builder(field)] sponsorships: Vec<Sponsorship>,
         /// Fee the fee schedule charges for each feature note. Without this fee the feature note
         /// script root stays unscheduled.
         feature_note_fee: Option<AssetAmount>,
@@ -193,17 +203,25 @@ impl Test {
         // The sponsorship notes target the network account, so they can only be built once it
         // exists.
         let mut sponsorship_notes = Vec::new();
-        for (feature_note_idx, asset) in sponsorships {
+        for sponsorship in sponsorships {
+            let feature_note_idx = sponsorship.feature_note_idx;
             let feature_note = feature_notes.get(feature_note_idx).with_context(|| {
                 format!("sponsorship should name an existing feature note, got {feature_note_idx}")
             })?;
+            // The reclaimer and the reclaim height default to the sponsor and to no reclaim at
+            // all, which is what a sponsorship that is not meant to be reclaimed here keeps.
+            let reclaim = sponsorship
+                .reclaimable_by_target
+                .then(|| (network_account.id(), BlockNumber::from(1)));
             let note = Note::from(
                 FeeSponsorshipNote::builder()
                     .sender(sponsor.id())
                     .target_account(network_account.id())
                     .feature_note_id(feature_note.id())
-                    .asset(asset)
+                    .asset(sponsorship.asset)
                     .generate_serial_number(&mut rng)
+                    .maybe_reclaimer(reclaim.map(|(reclaimer, _)| reclaimer))
+                    .maybe_reclaim_height(reclaim.map(|(_, height)| height))
                     .build()?,
             );
             builder.add_output_note(RawOutputNote::Full(note.clone()));
@@ -228,7 +246,22 @@ impl<S: test_builder::State> TestBuilder<S> {
     ///
     /// The notes keep the order in which they were added.
     fn sponsorship(mut self, feature_note_idx: usize, asset: FungibleAsset) -> Self {
-        self.sponsorships.push((feature_note_idx, asset));
+        self.sponsorships.push(Sponsorship {
+            feature_note_idx,
+            asset,
+            reclaimable_by_target: false,
+        });
+        self
+    }
+
+    /// Adds a FEE_SPONSORSHIP note as [`TestBuilder::sponsorship`] does, except that the network
+    /// account may reclaim it - see [`Sponsorship::reclaimable_by_target`].
+    fn reclaimable_sponsorship(mut self, feature_note_idx: usize, asset: FungibleAsset) -> Self {
+        self.sponsorships.push(Sponsorship {
+            feature_note_idx,
+            asset,
+            reclaimable_by_target: true,
+        });
         self
     }
 }
@@ -1315,14 +1348,16 @@ async fn check_notes(
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
         .with_source_manager(mock_tx.source_manager());
-    Ok(NoteConsumptionChecker::new(&executor)
-        .check_notes_consumability(
-            network_account_id,
-            mock_tx.tx_inputs().block_header().block_num(),
-            notes,
-            mock_tx.tx_args().clone(),
-        )
-        .await?)
+    Ok(
+        NoteConsumptionChecker::new(&executor, Some(AssetId::new_fungible(fee_faucet_id()?)))
+            .check_notes_consumability(
+                network_account_id,
+                mock_tx.tx_inputs().block_header().block_num(),
+                notes,
+                mock_tx.tx_args().clone(),
+            )
+            .await?,
+    )
 }
 
 /// Runs the checker and returns the note ids it reports as `(successful, failed)`.
@@ -1397,20 +1432,34 @@ async fn note_checker_keeps_intact_pairs_alongside_an_uncovered_note(
 }
 
 /// A FEE_SPONSORSHIP note whose feature note is absent is not bundled with anything: it fails on
-/// its own and leaves an intact pair untouched.
+/// its own and leaves an intact pair untouched. Its only remaining path is the reclaim.
+///
+/// If the network account is not the reclaimer, the note is rejected before anything is executed.
+/// If it is, the static rules cannot rule the reclaim out, so the note is left for the executor to
+/// decide. Fee collection then turns it down anyway, since it does not allow reclaiming a
+/// sponsorship in a network transaction, which is why the note ends up blamed rather than rejected.
+#[rstest]
+#[case::not_reclaimer(false)]
+#[case::reclaimer(true)]
 #[tokio::test]
-async fn note_checker_fails_an_orphan_sponsorship_alone() -> anyhow::Result<()> {
+async fn note_checker_fails_an_orphan_sponsorship_alone(
+    #[case] reclaimable_by_target: bool,
+) -> anyhow::Result<()> {
+    let builder = Test::builder()
+        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .num_feature_notes(2)
+        .sponsorship(0, fee_asset(FEE_AMOUNT)?);
+    let builder = if reclaimable_by_target {
+        builder.reclaimable_sponsorship(1, fee_asset(FEE_AMOUNT)?)
+    } else {
+        builder.sponsorship(1, fee_asset(FEE_AMOUNT)?)
+    };
     let Test {
         mock_chain,
         network_account,
         feature_notes,
         sponsorship_notes,
-    } = Test::builder()
-        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
-        .num_feature_notes(2)
-        .sponsorship(0, fee_asset(FEE_AMOUNT)?)
-        .sponsorship(1, fee_asset(FEE_AMOUNT)?)
-        .build()?;
+    } = builder.build()?;
 
     // the sponsorship for the second feature note is included, but that feature note is not
     let notes = vec![
@@ -1419,19 +1468,28 @@ async fn note_checker_fails_an_orphan_sponsorship_alone() -> anyhow::Result<()> 
         sponsorship_notes[1].clone(),
     ];
 
-    let (successful, failed) =
-        check_consumability(&mock_chain, network_account.id(), notes).await?;
+    let info = check_notes(&mock_chain, network_account.id(), notes).await?;
 
     assert_eq!(
-        successful,
+        info.successful().iter().map(|note| note.note().id()).collect::<BTreeSet<_>>(),
         BTreeSet::from([feature_notes[0].id(), sponsorship_notes[0].id()]),
         "the intact pair should survive the orphan sponsorship"
     );
-    assert_eq!(
-        failed,
-        BTreeSet::from([sponsorship_notes[1].id()]),
-        "only the orphan sponsorship should fail"
-    );
+    let [orphan] = info.failed() else {
+        panic!("only the orphan sponsorship should fail, got {:?}", info.failed());
+    };
+    assert_eq!(orphan.note().id(), sponsorship_notes[1].id());
+    if reclaimable_by_target {
+        assert!(
+            orphan.is_blamed(),
+            "a reclaimable orphan should be executed rather than rejected, and fail there"
+        );
+    } else {
+        assert!(
+            orphan.is_rejected(),
+            "the account is not the orphan's reclaimer, so it should be rejected without being executed"
+        );
+    }
 
     Ok(())
 }
@@ -1525,7 +1583,7 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
         feature_notes[1].id(),
         "the uncovered feature note heads its bundle, so it takes the epilogue failure"
     );
-    assert!(blamed[0].error().is_some(), "the blamed note should carry the error");
+    assert!(blamed[0].execution_error().is_some(), "the blamed note should carry the error");
 
     let collateral: Vec<_> = info
         .failed()
@@ -1547,12 +1605,70 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
         collateral_note.is_collateral(),
         "the sponsorship should be reported as collateral"
     );
-    assert!(collateral_note.error().is_none(), "a collateral note has no error of its own");
+    assert!(
+        collateral_note.execution_error().is_none(),
+        "a collateral note has no error of its own"
+    );
 
     // The note a collateral failure names is always reported alongside it.
     assert!(
         info.failed().iter().any(|failed| failed.note().id() == blamed_by),
         "the blamed note should be in the same failed list"
+    );
+
+    Ok(())
+}
+
+/// A FEE_SPONSORSHIP note funded with an asset other than the one the account collects fees in is
+/// rejected before anything is executed, and the feature note it is bound to takes the blame for
+/// being left uncovered.
+///
+/// Without the check the pair would be tried and fail in the epilogue, which points at no note, so
+/// the blame would fall on the feature note heading the bundle and the sponsorship that actually
+/// carries the wrong asset would be reported as its collateral.
+#[tokio::test]
+async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = Test::builder()
+        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .num_feature_notes(2)
+        .sponsorship(0, fee_asset(FEE_AMOUNT)?)
+        // the second feature note is sponsored in an asset the account does not collect fees in
+        .sponsorship(1, other_asset(FEE_AMOUNT)?)
+        .build()?;
+
+    let notes = vec![
+        feature_notes[0].clone(),
+        sponsorship_notes[0].clone(),
+        feature_notes[1].clone(),
+        sponsorship_notes[1].clone(),
+    ];
+    let info = check_notes(&mock_chain, network_account.id(), notes).await?;
+
+    assert_eq!(
+        info.successful().iter().map(|note| note.note().id()).collect::<BTreeSet<_>>(),
+        BTreeSet::from([feature_notes[0].id(), sponsorship_notes[0].id()]),
+        "the intact pair should survive the wrongly funded sponsorship"
+    );
+
+    let rejected: Vec<_> = info.failed().iter().filter(|failed| failed.is_rejected()).collect();
+    assert_eq!(rejected.len(), 1, "only the wrongly funded sponsorship should be rejected");
+    assert_eq!(rejected[0].note().id(), sponsorship_notes[1].id());
+    assert!(
+        rejected[0].execution_error().is_none(),
+        "a rejected note was never executed, so it has no error"
+    );
+
+    let blamed: Vec<_> = info.failed().iter().filter(|failed| failed.is_blamed()).collect();
+    assert_eq!(blamed.len(), 1, "the feature note left uncovered should be blamed");
+    assert_eq!(
+        blamed[0].note().id(),
+        feature_notes[1].id(),
+        "the blame should fall on the note left uncovered, not on the sponsorship"
     );
 
     Ok(())

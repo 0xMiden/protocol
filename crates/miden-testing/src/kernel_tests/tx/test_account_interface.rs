@@ -7,11 +7,13 @@ use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
     NoteAssets,
+    NoteId,
     NoteRecipient,
     NoteStorage,
     NoteTag,
@@ -26,7 +28,13 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
+use miden_standards::note::{
+    FeeSponsorshipNote,
+    NoteConsumptionStatus,
+    P2idNote,
+    P2ideNote,
+    StandardNote,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
@@ -66,7 +74,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     let consumption_info = notes_checker
         .check_notes_consumability(target_account_id, block_ref, notes.clone(), tx_args)
@@ -106,7 +114,7 @@ async fn check_note_consumability_custom_notes_success(
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes.clone(), tx_args)
@@ -184,7 +192,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
@@ -199,7 +207,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // First failing note.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error().expect("a blamed note should carry its error"),
+        first_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -212,7 +220,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     // Second failing note.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error().expect("a blamed note should carry its error"),
+        second_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -258,7 +266,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
@@ -333,7 +341,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let tx_args = mock_tx.tx_args().clone();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     let consumption_info = notes_checker
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
@@ -348,7 +356,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // First failing note should be the note that does not cause epilogue failure.
     let first_failed = failed.first().expect("first failed notes should exist");
     assert_matches!(
-        first_failed.error().expect("a blamed note should carry its error"),
+        first_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::DivideByZero,
@@ -361,7 +369,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // Second failing note should be the note that causes epilogue failure.
     let second_failed = failed.get(1).expect("second failed note should exist");
     assert_matches!(
-        second_failed.error().expect("a blamed note should carry its error"),
+        second_failed.execution_error().expect("a blamed note should carry its error"),
         TransactionExecutorError::TransactionProgramExecutionFailed(
             ExecutionError::OperationError {
                 err: miden_processor::operation::OperationError::FailedAssertion { .. },
@@ -408,7 +416,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
 
     // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     let consumability_info: NoteConsumptionStatus = notes_checker
         .can_consume(
@@ -506,7 +514,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     let block_ref = mock_tx.tx_inputs().block_header().block_num();
     let tx_args = mock_tx.tx_args();
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     // check the note with invalid number of inputs
     // --------------------------------------------------------------------------------------------
@@ -659,7 +667,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
     let tx_args = mock_tx.tx_args();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     // check the note with invalid number of inputs
     // --------------------------------------------------------------------------------------------
@@ -752,7 +760,7 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
     let tx_args = mock_tx.tx_args();
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
-    let notes_checker = NoteConsumptionChecker::new(&executor);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
 
     // check the note with invalid number of inputs
     // --------------------------------------------------------------------------------------------
@@ -770,8 +778,97 @@ async fn test_check_note_consumability_static_analysis_reclaimer(
     Ok(())
 }
 
-// HELPER FUNCTIONS
+/// Tests the static analysis [`NoteConsumptionChecker::can_consume()`] applies to a FEE_SPONSORSHIP
+/// note.
+///
+/// A note checked on its own is one whose feature note is absent, which leaves the reclaim as its
+/// only path: only the reclaimer may consume it, and only once the reclaim height is reached.
+#[rstest::rstest]
+#[case::reclaim_height_reached(true, Some(3), ExpectedReclaim::Now)]
+#[case::reclaim_height_not_reached(true, Some(5), ExpectedReclaim::From(5))]
+#[case::reclaim_disabled(true, None, ExpectedReclaim::Never)]
+#[case::not_the_reclaimer(false, Some(2), ExpectedReclaim::Never)]
+#[tokio::test]
+async fn check_note_consumability_static_analysis_fee_sponsorship(
+    #[case] consumer_is_reclaimer: bool,
+    #[case] reclaim_height: Option<u32>,
+    #[case] expected: ExpectedReclaim,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let account = builder.add_existing_wallet(Auth::Noop)?;
+    let sponsor_id: AccountId = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?;
+    let reclaimer = if consumer_is_reclaimer {
+        account.id()
+    } else {
+        sponsor_id
+    };
+
+    // The note names a feature note that is not among the inputs, so the reclaim is all it has
+    // left. Its ID is never looked up, so any word does.
+    let sponsorship: Note = FeeSponsorshipNote::builder()
+        .sender(sponsor_id)
+        .target_account(account.id())
+        .feature_note_id(NoteId::from_raw(Word::from([9u32; 4])))
+        .asset(FungibleAsset::new(FungibleAsset::mock_issuer(), 10)?)
+        .reclaimer(reclaimer)
+        .maybe_reclaim_height(reclaim_height.map(BlockNumber::from))
+        .generate_serial_number(&mut RandomCoin::new(Word::empty()))
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_until_block(3)?;
+
+    let mock_tx = mock_chain
+        .build_transaction(account.clone())
+        .authenticated_input_note(sponsorship.id())
+        .build()?;
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
+    let notes_checker = NoteConsumptionChecker::new(&executor, None);
+
+    let status = notes_checker
+        .can_consume(
+            account.id(),
+            block_ref,
+            InputNote::Unauthenticated { note: sponsorship },
+            tx_args,
+        )
+        .await?;
+
+    match expected {
+        ExpectedReclaim::Now => {
+            assert_matches!(status, NoteConsumptionStatus::ConsumableWithAuthorization)
+        },
+        ExpectedReclaim::From(height) => {
+            assert_matches!(status, NoteConsumptionStatus::ConsumableAfter(block)
+                if block == BlockNumber::from(height))
+        },
+        ExpectedReclaim::Never => {
+            assert_matches!(status, NoteConsumptionStatus::NeverConsumable(_))
+        },
+    }
+
+    Ok(())
+}
+
+// HELPERS
 // ================================================================================================
+
+/// What the checker is expected to say about a lone FEE_SPONSORSHIP note.
+#[derive(Debug)]
+enum ExpectedReclaim {
+    /// The account may reclaim the note as it stands.
+    Now,
+    /// The account may reclaim the note from the given block height on.
+    From(u32),
+    /// The account may never reclaim the note.
+    Never,
+}
 
 /// Creates a mock P2IDE note with the specified note storage.
 fn create_p2ide_note_with_storage(
