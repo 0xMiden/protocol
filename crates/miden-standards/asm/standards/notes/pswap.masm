@@ -19,6 +19,7 @@ use miden::standards::wallets::basic as wallet
 # =================================================================================================
 
 const NUM_STORAGE_ITEMS=7
+const NUM_ASSETS = 1
 const MAX_U32=0x0000000100000000
 
 # Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
@@ -257,7 +258,7 @@ proc validate_and_seal_output_note(expected_asset: Asset, note_idx: u16)
     dup exec.output_note::get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, note_idx, EXPECTED_ASSETS_COMMITMENT]
 
-    movup.4 eq.1 assert.err=ERR_PSWAP_OUTPUT_ALTERED
+    movup.4 eq.NUM_ASSETS assert.err=ERR_PSWAP_OUTPUT_ALTERED
     # => [ASSETS_COMMITMENT, note_idx, EXPECTED_ASSETS_COMMITMENT]
 
     movup.4 movdn.8
@@ -285,10 +286,6 @@ end
 #! Outputs: []
 #!
 @locals(5)
-# P2ID_NOTE_IDX              : note_idx
-# P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
-# P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
-# P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
 # P2ID_NOTE_IDX                : note_idx
 # P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
 # P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
@@ -567,14 +564,14 @@ proc load_offered_asset() -> Asset
     locaddr.OFFERED_REMAINING_ASSET_PTR exec.active_note::remove_all_assets
     # => [num_assets]
 
-    push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+    push.NUM_ASSETS eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
     # => []
 
     # initial assets are unaffected by removals; require exactly one
     locaddr.OFFERED_INITIAL_ASSET_PTR exec.active_note::get_initial_assets
     # => [num_initial_assets]
 
-    eq.1 assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
+    eq.NUM_ASSETS assert.err=ERR_PSWAP_OFFERED_ASSET_ALTERED
     # => []
 
     locaddr.OFFERED_REMAINING_ASSET_PTR exec.asset::load

@@ -349,6 +349,11 @@ impl PswapNote {
     /// Expected number of storage items for the PSWAP note.
     pub const NUM_STORAGE_ITEMS: usize = PswapNoteStorage::NUM_STORAGE_ITEMS;
 
+    /// Expected number of assets of the PSWAP note.
+    ///
+    /// Must match `NUM_ASSETS` in `asm/standards/notes/pswap.masm`.
+    pub const NUM_ASSETS: usize = 1;
+
     /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
     /// remainder PSWAP).
     pub const PSWAP_ATTACHMENT_SCHEME: NoteAttachmentScheme =
@@ -949,7 +954,7 @@ impl TryFrom<&Note> for PswapNote {
 
         let storage = PswapNoteStorage::try_from(note.recipient().storage().items())?;
 
-        if note.assets().num_assets() != 1 {
+        if note.assets().num_assets() != Self::NUM_ASSETS {
             return Err(NoteError::other("PSWAP note must have exactly one asset"));
         }
         let offered_asset = note
