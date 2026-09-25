@@ -1005,12 +1005,7 @@ pub proc auth_tx(
     push.0 movdn.2
     # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
-    exec.auth::create_tx_summary_with_block
-    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
-
-    # the commitment to the tx summary is the message that is signed; the preimage is inserted
-    # into the advice map for extraction by the host
-    exec.auth::hash_and_insert_tx_summary
+    exec.auth::get_tx_summary_commitment_with_block
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------

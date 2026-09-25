@@ -1,3 +1,4 @@
+use {TX_ADD_LOG_OFFSET, TX_GET_LOGS_COMMITMENT_OFFSET} from miden::protocol::kernel_proc_offsets
 use {
     AccountId,
     AccountProcedureRoot,
@@ -445,4 +446,26 @@ pub proc get_fee_asset_id() -> AssetId
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [FEE_ASSET_ID]
+end
+
+#! Emits a log from the active authenticated account.
+#! The advice map must contain the payload elements under PAYLOAD_COMMITMENT.
+#! Visibility follows the native transaction account, including during FPI.
+#! Inputs: [topic_0, topic_1, PAYLOAD_COMMITMENT]
+#! Outputs: []
+pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
+    repeat.9
+        push.0 movdn.6
+    end
+    push.TX_ADD_LOG_OFFSET syscall.exec_kernel_proc
+    dropw dropw dropw dropw
+end
+
+#! Returns the current log commitment without closing the log list.
+#! Inputs: []
+#! Outputs: [LOGS_COMMITMENT]
+pub proc get_logs_commitment() -> word
+    padw padw padw push.0.0.0
+    push.TX_GET_LOGS_COMMITMENT_OFFSET syscall.exec_kernel_proc
+    swapdw dropw dropw swapw dropw
 end

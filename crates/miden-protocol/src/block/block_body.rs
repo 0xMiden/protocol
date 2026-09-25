@@ -336,6 +336,7 @@ mod tests {
             final_state_commitment,
             input_notes,
             output_notes,
+            Default::default(),
         )
     }
 

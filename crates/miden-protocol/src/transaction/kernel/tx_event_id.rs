@@ -58,6 +58,8 @@ pub enum TransactionEventId {
 
     InputNoteIndexLookup = INPUT_NOTE_INDEX_LOOKUP_ID,
 
+    TxLogAdded = TX_LOG_ADDED_ID,
+
     TxBeforeBlockWitnessLoad = TX_BEFORE_BLOCK_WITNESS_LOAD_ID,
 
     AuthRequest = AUTH_REQUEST_ID,
@@ -131,6 +133,7 @@ impl TransactionEventId {
             Self::NoteAfterAddAsset => &NOTE_AFTER_ADD_ASSET_NAME,
             Self::NoteBeforeAddAttachment => &NOTE_BEFORE_ADD_ATTACHMENT_NAME,
             Self::InputNoteIndexLookup => &INPUT_NOTE_INDEX_LOOKUP_NAME,
+            Self::TxLogAdded => &TX_LOG_ADDED_NAME,
             Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
@@ -226,6 +229,7 @@ impl TryFrom<EventId> for TransactionEventId {
 
             INPUT_NOTE_INDEX_LOOKUP_ID => Ok(TransactionEventId::InputNoteIndexLookup),
 
+            TX_LOG_ADDED_ID => Ok(TransactionEventId::TxLogAdded),
             TX_BEFORE_BLOCK_WITNESS_LOAD_ID => Ok(TransactionEventId::TxBeforeBlockWitnessLoad),
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),

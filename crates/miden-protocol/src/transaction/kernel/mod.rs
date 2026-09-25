@@ -10,7 +10,13 @@ use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
-use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
+use crate::transaction::{
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionInputs,
+    TransactionLogs,
+    TransactionOutputs,
+};
 use crate::utils::sync::LazyLock;
 use crate::vm::{
     AdviceInputs,
@@ -268,7 +274,8 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     expiration_block_num
+    ///     expiration_block_num,
+    ///     LOGS_COMMITMENT,
     /// ]
     /// ```
     ///
@@ -282,14 +289,16 @@ impl TransactionKernel {
         account_delta_commitment: Word,
         output_notes_commitment: Word,
         expiration_block_num: BlockNumber,
+        logs_commitment: Word,
     ) -> StackOutputs {
         let account_update_commitment =
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
 
-        let mut outputs: Vec<Felt> = Vec::with_capacity(9);
+        let mut outputs: Vec<Felt> = Vec::with_capacity(13);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
         outputs.push(Felt::from(expiration_block_num));
+        outputs.extend(logs_commitment);
 
         StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
     }
@@ -303,6 +312,7 @@ impl TransactionKernel {
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
     ///     expiration_block_num,
+    ///     LOGS_COMMITMENT,
     /// ]
     /// ```
     ///
@@ -317,11 +327,11 @@ impl TransactionKernel {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Indices 9..16 on the stack are not zeroes.
+    /// - Indices 13..16 on the stack are not zeroes.
     /// - Overflow addresses are not empty.
     pub fn parse_output_stack(
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
-    ) -> Result<(Word, Word, BlockNumber), TransactionOutputError> {
+    ) -> Result<(Word, Word, BlockNumber, Word), TransactionOutputError> {
         let output_notes_commitment = stack
             .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
@@ -342,14 +352,21 @@ impl TransactionKernel {
             })?
             .into();
 
-        // Make sure that indices 9..16 are zeros.
-        if stack.as_slice()[9..].iter().any(|element| *element != Felt::ZERO) {
+        // Make sure that indices 13..16 are zeros.
+        if stack.as_slice()[13..].iter().any(|element| *element != Felt::ZERO) {
             return Err(TransactionOutputError::OutputStackInvalid(
-                "indices 9..16 on the output stack should be ZERO".into(),
+                "indices 13..16 on the output stack should be ZERO".into(),
             ));
         }
 
-        Ok((output_notes_commitment, account_update_commitment, expiration_block_num))
+        Ok((
+            output_notes_commitment,
+            account_update_commitment,
+            expiration_block_num,
+            stack
+                .get_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX)
+                .expect("log commitment is present"),
+        ))
     }
 
     // TRANSACTION OUTPUT PARSER
@@ -364,6 +381,7 @@ impl TransactionKernel {
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
     ///     expiration_block_num,
+    ///     LOGS_COMMITMENT,
     /// ]
     /// ```
     ///
@@ -383,9 +401,15 @@ impl TransactionKernel {
         stack: &StackOutputs,
         advice_inputs: &AdviceInputs,
         output_notes: Vec<RawOutputNote>,
+        logs: TransactionLogs,
+        log_salt: Word,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
-        let (output_notes_commitment, account_update_commitment, expiration_block_num) =
-            Self::parse_output_stack(stack)?;
+        let (
+            output_notes_commitment,
+            account_update_commitment,
+            expiration_block_num,
+            logs_commitment,
+        ) = Self::parse_output_stack(stack)?;
 
         let (final_account_commitment, account_patch_commitment) =
             Self::parse_account_update_commitment(account_update_commitment, advice_inputs)?;
@@ -408,12 +432,18 @@ impl TransactionKernel {
             });
         }
 
-        Ok(TransactionOutputs::new(
+        let outputs = TransactionOutputs::new(
             account,
             account_patch_commitment,
             output_notes,
             expiration_block_num,
-        ))
+        )
+        .with_logs(logs, log_salt)
+        .map_err(TransactionOutputError::LogData)?;
+        if outputs.logs_commitment() != logs_commitment {
+            return Err(TransactionOutputError::LogsCommitmentInconsistent);
+        }
+        Ok(outputs)
     }
 
     /// Returns the final account commitment and account patch commitment extracted from the account

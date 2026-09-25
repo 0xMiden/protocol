@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Added authenticated transaction logging with FPI emitter attribution and log commitments bound to proofs, transaction IDs, and signing summaries.
 - Added private transaction-log openings and local execution records.
 - Added Rust transaction log types with two-felt named topics, bounded serialization, cached two-stage commitments, and separate public/private submission data ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
 

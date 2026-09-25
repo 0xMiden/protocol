@@ -1,0 +1,109 @@
+use miden::core::crypto::hashes::poseidon2
+use miden::core::word
+use miden::tx_kernel_core::memory
+use {MAX_LOGS_PER_TX, MAX_LOG_PAYLOAD_WORDS, MAX_LOG_PAYLOAD_WORDS_PER_TX, WORD_NUM_ELEMENTS}
+    from miden::protocol_utils::constants
+
+const LOG_DOMAIN = 0x020002
+const LOGS_DOMAIN = 0x020003
+const PRIVATE_LOGS_DOMAIN = 0x020004
+
+const NUM_LOGS_PTR = 1300
+const PAYLOAD_WORDS_PTR = 1301
+const DIRTY_PTR = 1302
+const COMMITMENT_PTR = 1304
+pub const SALT_PTR = 1308
+const LOG_COMMITMENTS_PTR = 3000
+
+const TOPIC_0_LOC = 0
+const TOPIC_1_LOC = 1
+const PAYLOAD_COMMITMENT_LOC = 4
+const PAYLOAD_LENGTH_LOC = 8
+const PAYLOAD_LOC = 16
+const MAX_PAYLOAD_ELEMENTS = MAX_LOG_PAYLOAD_WORDS * WORD_NUM_ELEMENTS
+const ACCOUNT_TYPE_MASK_U32 = 0x10
+
+const TX_LOG_ADDED_EVENT = event("miden::protocol::tx::log_added")
+const ERR_TX_LOG_COUNT = "transaction exceeds 64 logs"
+const ERR_TX_LOG_PAYLOAD = "log payload must contain at most 256 complete words"
+const ERR_TX_LOG_TOTAL_PAYLOAD = "transaction log payloads exceed 512 words"
+const ERR_TX_LOG_PREIMAGE = "log payload does not match its commitment"
+const ERR_TX_LOG_SALT = "private transaction logs require a nonzero secret salt"
+
+#! Records a log for the active account after verifying its payload and the transaction limits.
+#! The caller must authenticate the account procedure before invoking this procedure.
+#!
+#! Inputs: [topic_0, topic_1, PAYLOAD_COMMITMENT]
+#! Outputs: []
+#!
+#! Invocation: exec
+# 16 bookkeeping elements followed by 256 payload words.
+@locals(1040)
+pub proc add_log(topic_0: felt, topic_1: felt, payload_commitment: word)
+    loc_store.TOPIC_0_LOC loc_store.TOPIC_1_LOC
+    loc_storew_le.PAYLOAD_COMMITMENT_LOC
+    # => [PAYLOAD_COMMITMENT]
+
+    mem_load.NUM_LOGS_PTR u32lt.MAX_LOGS_PER_TX assert.err=ERR_TX_LOG_COUNT
+    adv.push_mapvaln adv_push
+    # => [num_elements, PAYLOAD_COMMITMENT]
+
+    u32assert.err=ERR_TX_LOG_PAYLOAD
+    dup u32mod.WORD_NUM_ELEMENTS eq.0 assert.err=ERR_TX_LOG_PAYLOAD
+    dup u32lte.MAX_PAYLOAD_ELEMENTS assert.err=ERR_TX_LOG_PAYLOAD
+    dup loc_store.PAYLOAD_LENGTH_LOC
+    u32div.WORD_NUM_ELEMENTS mem_load.PAYLOAD_WORDS_PTR add
+    dup u32lte.MAX_LOG_PAYLOAD_WORDS_PER_TX assert.err=ERR_TX_LOG_TOTAL_PAYLOAD
+    mem_store.PAYLOAD_WORDS_PTR
+    dropw
+
+    # Read only the checked number of elements into bounded local memory.
+    locaddr.PAYLOAD_LOC loc_load.PAYLOAD_LENGTH_LOC add locaddr.PAYLOAD_LOC
+    # => [write_ptr, end_ptr]
+    dup.1 dup.1 neq
+    while.true
+        dup adv_push swap mem_store add.1
+        dup.1 dup.1 neq
+    end
+    drop drop
+
+    loc_load.PAYLOAD_LENGTH_LOC locaddr.PAYLOAD_LOC exec.poseidon2::hash_elements
+    # => [COMPUTED_PAYLOAD_COMMITMENT]
+    padw loc_loadw_le.PAYLOAD_COMMITMENT_LOC assert_eqw.err=ERR_TX_LOG_PREIMAGE
+
+    padw loc_loadw_le.PAYLOAD_COMMITMENT_LOC
+    loc_load.TOPIC_1_LOC loc_load.TOPIC_0_LOC exec.memory::get_account_id
+    # => [emitter_suffix, emitter_prefix, topic_0, topic_1, PAYLOAD_COMMITMENT]
+
+    emit.TX_LOG_ADDED_EVENT
+    push.LOG_DOMAIN exec.poseidon2::merge_in_domain
+    mem_load.NUM_LOGS_PTR mul.WORD_NUM_ELEMENTS add.LOG_COMMITMENTS_PTR mem_storew_le dropw
+    mem_load.NUM_LOGS_PTR add.1 mem_store.NUM_LOGS_PTR
+    push.1 mem_store.DIRTY_PTR
+end
+
+#! Returns the proof-bound commitment. Appending another log invalidates the cache.
+#! Private nonempty collections include the secret transaction salt.
+#!
+#! Inputs: []
+#! Outputs: [LOGS_COMMITMENT]
+#!
+#! Invocation: exec
+pub proc get_commitment() -> word
+    mem_load.DIRTY_PTR
+    if.true
+        push.LOGS_DOMAIN mem_load.NUM_LOGS_PTR mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
+        exec.poseidon2::hash_elements_in_domain
+
+        # Account type is bit four of the native account prefix.
+        exec.memory::get_native_account_id drop u32split swap drop u32and.ACCOUNT_TYPE_MASK_U32 eq.0
+        if.true
+            padw mem_loadw_le.SALT_PTR
+            exec.word::testz not assert.err=ERR_TX_LOG_SALT
+            swapw push.PRIVATE_LOGS_DOMAIN exec.poseidon2::merge_in_domain
+        end
+        mem_storew_le.COMMITMENT_PTR dropw
+        push.0 mem_store.DIRTY_PTR
+    end
+    padw mem_loadw_le.COMMITMENT_PTR
+end

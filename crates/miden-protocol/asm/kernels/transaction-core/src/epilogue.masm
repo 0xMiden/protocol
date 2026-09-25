@@ -5,6 +5,7 @@ use miden::tx_kernel_core::account_update
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::asset_vault
 use miden::tx_kernel_core::memory
+use miden::tx_kernel_core::log
 use miden::tx_kernel_core::note
 
 use miden::core::crypto::hashes::poseidon2
@@ -235,7 +236,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: [
-#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num, LOGS_COMMITMENT
 #! ]
 #!
 #! Where:
@@ -257,7 +258,7 @@ end
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
 @locals(8)
-pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber)
+pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber, Commitment)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
 
@@ -370,4 +371,8 @@ pub proc finalize_transaction() -> (Commitment, Commitment, BlockNumber)
     # load output notes commitment from local
     padw loc_loadw_le.0
     # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, tx_expiration_block_num]
+    exec.log::get_commitment
+    repeat.4
+        movdn.12
+    end
 end

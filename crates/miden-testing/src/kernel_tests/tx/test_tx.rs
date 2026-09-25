@@ -564,10 +564,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           push.0.0.0.0.0
           # => [user_params(6), pad(16)]
 
-          exec.auth::create_tx_summary
-          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
-
-          exec.auth::hash_and_insert_tx_summary
+          exec.auth::get_tx_summary_commitment
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -659,10 +656,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
           push.0.0.9.8.7
           # => [user_params(6), pad(16)]
 
-          exec.auth::create_tx_summary
-          # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
-
-          exec.auth::hash_and_insert_tx_summary
+          exec.auth::get_tx_summary_commitment
           # => [MESSAGE, pad(16)]
 
           emit.AUTH_UNAUTHORIZED_EVENT
@@ -725,6 +719,7 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
 
           # Assemble the summary preimage manually with a bogus BLOCK_COMMITMENT. The commitment is
           # the deepest word of the preimage, so it cannot be patched in after create_tx_summary.
+          exec.tx::get_logs_commitment
           push.1.2.3.4
           # => [FAKE_BLOCK_COMMITMENT, pad(16)]
 
@@ -739,7 +734,7 @@ async fn tx_summary_with_wrong_block_commitment_is_rejected() -> anyhow::Result<
 
           # metadata binding the reference block number and an unset expiration delta, preceded by
           # the layout version
-          exec.tx::get_reference_block_number push.1
+          exec.tx::get_reference_block_number push.2
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FAKE_BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -805,6 +800,7 @@ async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<(
 
           # The bound block is not tracked by the transaction, so its commitment cannot be read
           # from the partial blockchain and any word will do here.
+          exec.tx::get_logs_commitment
           push.1.2.3.4
           # => [BLOCK_COMMITMENT, pad(16)]
 
@@ -819,7 +815,7 @@ async fn tx_summary_with_unauthenticated_block_is_rejected() -> anyhow::Result<(
 
           # metadata binding the block before the reference block, which the transaction does not
           # track, and an unset expiration delta, preceded by the layout version
-          exec.tx::get_reference_block_number sub.1 push.1
+          exec.tx::get_reference_block_number sub.1 push.2
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary
@@ -886,6 +882,7 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
 
           # Assemble the summary preimage manually with a forged metadata felt claiming an
           # expiration delta of 777 while the transaction never set one.
+          exec.tx::get_logs_commitment
           exec.tx::get_reference_block_commitment
           exec.tx::get_output_notes_commitment
           exec.tx::get_input_notes_commitment
@@ -896,7 +893,7 @@ async fn tx_summary_with_forged_expiration_delta_is_rejected() -> anyhow::Result
           padw push.0.0
           # => [user_params(6), ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
-          push.777 mul.0x100000000 exec.tx::get_reference_block_number add push.1
+          push.777 mul.0x100000000 exec.tx::get_reference_block_number add push.2
           # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, pad(16)]
 
           exec.auth::hash_and_insert_tx_summary

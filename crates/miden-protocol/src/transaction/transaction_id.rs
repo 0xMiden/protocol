@@ -23,6 +23,7 @@ use crate::utils::serde::{
 ///     FINAL_ACCOUNT_COMMITMENT,
 ///     INPUT_NOTES_COMMITMENT,
 ///     OUTPUT_NOTES_COMMITMENT,
+///     LOGS_COMMITMENT,
 /// )
 ///
 /// This achieves the following properties:
@@ -38,12 +39,14 @@ impl TransactionId {
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        logs_commitment: Word,
     ) -> Self {
-        let mut elements = [ZERO; 4 * WORD_SIZE];
+        let mut elements = [ZERO; 5 * WORD_SIZE];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
+        elements[16..20].copy_from_slice(logs_commitment.as_elements());
         Self(Hasher::hash_elements(&elements))
     }
 }
@@ -70,6 +73,7 @@ impl From<&ProvenTransaction> for TransactionId {
             tx.account_update().final_state_commitment(),
             tx.input_notes().commitment(),
             tx.output_notes().commitment(),
+            tx.log_data().commitment(),
         )
     }
 }
