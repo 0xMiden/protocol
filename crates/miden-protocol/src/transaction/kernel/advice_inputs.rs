@@ -47,8 +47,8 @@ impl TransactionAdviceInputs {
         let partial_native_acc = tx_inputs.account();
         inputs.add_account(partial_native_acc);
 
-        // Inject the procedures of the upgraded code, which the epilogue loads when it applies the
-        // upgrade.
+        // Inject the procedures of the upgraded code, which the kernel loads when the upgrade is
+        // initialized.
         if let Some(code_upgrade) = tx_inputs.tx_args().account_code_upgrade() {
             inputs.add_map_entry(code_upgrade.commitment(), code_upgrade.code().to_elements());
         }

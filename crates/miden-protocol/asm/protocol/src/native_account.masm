@@ -155,9 +155,10 @@ end
 
 #! Initializes an upgrade of the native account's code to the code with the given commitment.
 #!
-#! The upgrade is applied in the epilogue after the authentication procedure, so the account's code
-#! does not change during the transaction. The epilogue validates the new code the same way as the
-#! code of a new account.
+#! The new code is validated the same way as the code of a new account when the upgrade is
+#! initialized. The new code becomes active after the current authentication procedure has run, so
+#! the account's code does not change during the transaction and the current auth procedure
+#! authenticates the upgrade.
 #!
 #! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
 #!
@@ -174,6 +175,7 @@ end
 #! - STORAGE_UPGRADE_COMMITMENT is not empty.
 #! - the native account is new.
 #! - a code upgrade is already pending.
+#! - the new code is not valid account code.
 #!
 #! Invocation: exec
 pub proc upgrade(new_code_commitment: word, storage_upgrade_commitment: word)
