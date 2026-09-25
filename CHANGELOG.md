@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Added Rust transaction log types with two-felt named topics, bounded serialization, cached two-stage commitments, and separate public/private submission data ([#3833](https://github.com/0xMiden/protocol/pull/3833)).
+
 ### Changes
 
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).

@@ -23,6 +23,21 @@ pub const MAX_INPUT_NOTES_PER_TX: usize = 1024;
 /// The maximum number of new notes created by a single transaction.
 pub const MAX_OUTPUT_NOTES_PER_TX: usize = MAX_INPUT_NOTES_PER_TX;
 
+/// The maximum number of logs emitted by a single transaction.
+pub const MAX_LOGS_PER_TX: usize = 64;
+
+/// The maximum number of words in a log payload (8 KiB of serialized payload data).
+pub const MAX_LOG_PAYLOAD_WORDS: usize = 256;
+
+/// The maximum total number of log payload words in a transaction (16 KiB of serialized data).
+///
+/// This excludes the bounded emitter, topic, and length metadata.
+pub const MAX_LOG_PAYLOAD_WORDS_PER_TX: usize = 512;
+
+const _: () = assert!(MAX_LOGS_PER_TX <= u16::MAX as usize);
+const _: () = assert!(MAX_LOG_PAYLOAD_WORDS <= u16::MAX as usize);
+const _: () = assert!(MAX_LOG_PAYLOAD_WORDS_PER_TX >= MAX_LOG_PAYLOAD_WORDS);
+
 /// The minimum proof security level used by the Miden prover & verifier.
 pub const MIN_PROOF_SECURITY_LEVEL: u32 = 96;
 
