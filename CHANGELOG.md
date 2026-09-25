@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- [BREAKING] Added account code upgrades via `native_account::upgrade` and made account patch and delta commitments cover the code, so code in a patch or delta no longer implies a new account ([#3948](https://github.com/0xMiden/protocol/pull/3948)).
+
 ### Changes
 
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
