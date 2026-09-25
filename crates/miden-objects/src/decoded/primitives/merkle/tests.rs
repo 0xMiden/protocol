@@ -2,7 +2,7 @@ use alloc::vec;
 
 use miden_protocol::Word;
 
-use crate::{DecodeMessage, Verify, proto};
+use crate::{DecodeMessage, DecodeMessageExt, Verify, proto};
 
 #[test]
 fn merkle_path_verifies() {
@@ -10,6 +10,43 @@ fn merkle_path_verifies() {
         .decode_fields()
         .unwrap();
     assert_eq!(decoded.verify().unwrap().nodes(), &[Word::empty()]);
+}
+
+#[test]
+fn merkle_path_rejects_more_than_255_siblings_without_panicking() {
+    use miden_protocol::crypto::merkle::MerkleError;
+
+    let decoded = proto::primitives::MerklePath {
+        siblings: vec![Word::empty().into(); 256],
+    }
+    .decode_fields()
+    .unwrap();
+    assert!(matches!(decoded.verify(), Err(MerkleError::DepthTooBig(256))));
+}
+
+#[test]
+fn merkle_path_oversized_protobuf_reports_depth_error() {
+    use assert_matches::assert_matches;
+    use miden_protocol::crypto::merkle::MerkleError;
+
+    let wire = proto::primitives::MerklePath {
+        siblings: vec![Word::empty().into(); 256],
+    };
+    let error = wire.decode_and_verify().unwrap_err();
+    assert_matches!(
+        crate::test_utils::error_source::<MerkleError>(&error),
+        Some(MerkleError::DepthTooBig(256))
+    );
+}
+
+#[test]
+fn merkle_path_accepts_maximum_sibling_count() {
+    let decoded = proto::primitives::MerklePath {
+        siblings: vec![Word::empty().into(); 255],
+    }
+    .decode_fields()
+    .unwrap();
+    assert_eq!(decoded.verify().unwrap().depth(), 255);
 }
 
 #[test]

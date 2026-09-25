@@ -8,9 +8,13 @@ mod tests;
 
 impl Verify for MerklePath {
     type Verified = miden_protocol::crypto::merkle::MerklePath;
-    type Error = core::convert::Infallible;
+    type Error = miden_protocol::crypto::merkle::MerkleError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(Self::Verified::new(self.siblings.into_inner()))
+        let siblings = self.siblings.into_inner();
+        if siblings.len() > u8::MAX as usize {
+            return Err(Self::Error::DepthTooBig(siblings.len() as u64));
+        }
+        Ok(Self::Verified::new(siblings))
     }
 }
 
