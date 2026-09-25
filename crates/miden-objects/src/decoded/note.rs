@@ -43,6 +43,8 @@ pub enum NoteMetadataError {
     UnspecifiedVersion,
     #[error("note type is unspecified")]
     UnspecifiedNoteType,
+    #[error("attachment schemes must be contiguous from the first slot")]
+    SparseAttachmentSchemes,
     #[error("too many attachment schemes")]
     TooManyAttachmentSchemes,
 }
@@ -134,9 +136,18 @@ impl Verify for NoteMetadata {
             return Err(NoteMetadataError::TooManyAttachmentSchemes.into());
         }
         let mut headers = [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT];
+        let mut seen_absent = false;
         for (header, raw) in headers.iter_mut().zip(self.attachment_schemes.into_inner()) {
             let scheme: u16 = raw.try_into()?;
-            if scheme != 0 {
+            if scheme == 0 {
+                seen_absent = true;
+            } else {
+                // Native serialization writes only present headers, then restores
+                // them densely from slot zero. Accepting a gap here would change
+                // the metadata commitment (and note ID) after a native round trip.
+                if seen_absent {
+                    return Err(NoteMetadataError::SparseAttachmentSchemes.into());
+                }
                 *header = NoteAttachmentHeader::new(NoteAttachmentScheme::new(scheme)?);
             }
         }

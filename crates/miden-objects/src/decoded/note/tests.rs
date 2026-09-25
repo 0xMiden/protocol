@@ -3,7 +3,10 @@ use alloc::vec;
 
 use miden_protocol::Word;
 use miden_protocol::note::Note;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
+use prost::Message;
 
+use super::NoteMetadataError;
 use crate::test_utils::error_source;
 use crate::{ConversionError, DecodeMessage, Verify, proto};
 
@@ -124,6 +127,51 @@ fn note_metadata_decodes_named_enums_and_defers_attachment_checks() {
     let decoded = proto::note::NoteMetadata { note_type: 0, ..wire }.decode_fields().unwrap();
     assert_eq!(decoded.note_type, proto::note::NoteType::Unspecified);
     assert!(decoded.verify().is_err());
+}
+
+#[test]
+fn note_header_rejects_sparse_attachment_schemes_before_changing_its_id() {
+    // A zero before a present scheme changes positions when native serialization
+    // compacts the headers, changing the committed metadata word and note ID.
+    let header = *Note::mock_noop(Word::empty()).header();
+    for schemes in [vec![0, 1], vec![1, 0, 2], vec![0, 0, 1]] {
+        let mut wire = proto::note::NoteHeader::from(header);
+        wire.metadata.as_mut().unwrap().attachment_schemes = schemes;
+        let bytes = wire.encode_to_vec();
+        let decoded_wire = proto::note::NoteHeader::decode(bytes.as_slice()).unwrap();
+        let error = decoded_wire.decode_fields().unwrap().verify().unwrap_err();
+        assert!(
+            matches!(
+                error_source::<NoteMetadataError>(&error),
+                Some(NoteMetadataError::SparseAttachmentSchemes)
+            ),
+            "sparse attachment schemes must be rejected: {error}"
+        );
+    }
+}
+
+#[test]
+fn note_header_accepts_dense_attachment_schemes_with_trailing_zeros() {
+    // Canonical protobuf encoders emit all four positions, including absent
+    // trailing headers. Those must remain valid and stable across native I/O.
+    let header = *Note::mock_noop(Word::empty()).header();
+    for schemes in [
+        vec![],
+        vec![0],
+        vec![0, 0, 0, 0],
+        vec![1],
+        vec![1, 0],
+        vec![1, 0, 0, 0],
+        vec![1, 2, 0, 0],
+    ] {
+        let mut wire = proto::note::NoteHeader::from(header);
+        wire.metadata.as_mut().unwrap().attachment_schemes = schemes;
+        let verified = wire.decode_fields().unwrap().verify().unwrap();
+        let roundtripped =
+            miden_protocol::note::NoteHeader::read_from_bytes(&verified.to_bytes()).unwrap();
+        assert_eq!(roundtripped, verified);
+        assert_eq!(roundtripped.id(), verified.id());
+    }
 }
 
 #[test]
