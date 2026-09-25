@@ -28,7 +28,6 @@ std = [
   "miden-core/std",
   "miden-crypto/concurrent",
   "miden-crypto/std",
-  "miden-precompiles/std",
   "miden-processor/std",
   "miden-verifier/std",
 ]
@@ -43,7 +42,6 @@ miden-core-lib        = { workspace = true }
 miden-crypto          = { workspace = true }
 miden-crypto-derive   = { workspace = true }
 miden-mast-package    = { workspace = true }
-miden-precompiles     = { workspace = true }
 miden-processor       = { workspace = true }
 miden-utils-sync      = { workspace = true }
 miden-verifier        = { workspace = true }
@@ -69,7 +67,6 @@ criterion      = { default-features = false, features = ["html_reports"], worksp
 miden-protocol = { features = ["testing"], path = "." }
 pprof          = { default-features = false, features = ["criterion", "flamegraph"], version = "0.15" }
 rstest         = { workspace = true }
-tempfile       = { version = "3.19" }
 
 [build-dependencies]
 fs-err                     = { workspace = true }

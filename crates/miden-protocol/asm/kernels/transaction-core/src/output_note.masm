@@ -41,6 +41,8 @@ const ATTACHMENT_RESERVED_SCHEME = 0
 const ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT =
     "number of output notes in the transaction exceeds the maximum limit of 1024"
 
+const ERR_OUTPUT_NOTE_IS_SEALED = "sealed output notes cannot be modified"
+
 const ERR_NOTE_INVALID_TYPE = "invalid note type"
 
 const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS =
@@ -247,6 +249,7 @@ end
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 16.
+#! - the output note is sealed, including by the asset callback.
 pub proc add_asset(asset: Asset, note_idx: u16)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
@@ -270,7 +273,10 @@ pub proc add_asset(asset: Asset, note_idx: u16)
     exec.callbacks::on_before_asset_added_to_note
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    movup.8 exec.memory::get_output_note_ptr dup
+    movup.8 exec.memory::get_output_note_ptr
+    # Check after the callback, which can itself seal the note.
+    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
+    dup
     # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]
 
     movdn.9 movdn.9
@@ -313,6 +319,7 @@ end
 #! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
 #! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
 #! - the note already has 4 attachments.
+#! - the output note is sealed.
 pub proc add_attachment(
     attachment_scheme: u16,
     attachment_commitment: NoteAttachmentCommitment,
@@ -339,6 +346,9 @@ pub proc add_attachment(
 
     # get note_ptr from note_idx
     movup.6 exec.memory::get_output_note_ptr
+    # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
+
+    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
     # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
 
     # update and validate total attachment words

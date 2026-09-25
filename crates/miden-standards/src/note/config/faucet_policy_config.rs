@@ -68,40 +68,40 @@ pub enum FaucetPolicyConfig {
 }
 
 impl FaucetPolicyConfig {
-    // SELECTORS
+    // VARIANTS
     // --------------------------------------------------------------------------------------------
 
-    // Config note selectors stored in the storage item after the policy root. Keep in sync with
+    // Config note variants stored in the storage item after the policy root. Keep in sync with
     // `faucet_policy_config.masm`.
-    const SELECTOR_SET_MINT_POLICY: u8 = 0;
-    const SELECTOR_SET_BURN_POLICY: u8 = 1;
-    const SELECTOR_SET_SEND_POLICY: u8 = 2;
-    const SELECTOR_SET_RECEIVE_POLICY: u8 = 3;
+    const VARIANT_SET_MINT_POLICY: u8 = 0;
+    const VARIANT_SET_BURN_POLICY: u8 = 1;
+    const VARIANT_SET_SEND_POLICY: u8 = 2;
+    const VARIANT_SET_RECEIVE_POLICY: u8 = 3;
 
-    /// Returns the selector and policy root of this action.
+    /// Returns the variant and policy root of this action.
     fn parts(self) -> (u8, AccountProcedureRoot) {
         match self {
             FaucetPolicyConfig::SetMintPolicy { policy_root } => {
-                (Self::SELECTOR_SET_MINT_POLICY, policy_root)
+                (Self::VARIANT_SET_MINT_POLICY, policy_root)
             },
             FaucetPolicyConfig::SetBurnPolicy { policy_root } => {
-                (Self::SELECTOR_SET_BURN_POLICY, policy_root)
+                (Self::VARIANT_SET_BURN_POLICY, policy_root)
             },
             FaucetPolicyConfig::SetSendPolicy { policy_root } => {
-                (Self::SELECTOR_SET_SEND_POLICY, policy_root)
+                (Self::VARIANT_SET_SEND_POLICY, policy_root)
             },
             FaucetPolicyConfig::SetReceivePolicy { policy_root } => {
-                (Self::SELECTOR_SET_RECEIVE_POLICY, policy_root)
+                (Self::VARIANT_SET_RECEIVE_POLICY, policy_root)
             },
         }
     }
 
-    /// Returns the note storage values encoding this action, laid out as `[POLICY_ROOT, selector]`.
+    /// Returns the note storage values encoding this action, laid out as `[POLICY_ROOT, variant]`.
     fn to_storage_values(self) -> Vec<Felt> {
-        let (selector, policy_root) = self.parts();
+        let (variant, policy_root) = self.parts();
         let mut values = Vec::with_capacity(FaucetPolicyConfigNote::NUM_STORAGE_ITEMS);
         values.extend_from_slice(policy_root.as_word().as_elements());
-        values.push(Felt::from(selector));
+        values.push(Felt::from(variant));
         values
     }
 }
@@ -120,7 +120,7 @@ impl From<FaucetPolicyConfig> for NoteStorage {
 /// [`TokenPolicyManager`](crate::account::policies::TokenPolicyManager) policy switch on the
 /// faucet that consumes it.
 ///
-/// A single note script dispatches on a selector in the note's storage to one of the component's
+/// A single note script dispatches on the note variant in its storage to one of the component's
 /// setters (`set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`).
 /// Authorization is enforced by those procedures through the account-wide
 /// [`Authority`](crate::account::access::Authority) component, so the note carries no assets.
@@ -192,7 +192,7 @@ impl FaucetPolicyConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of a FaucetPolicyConfig note: a selector plus the policy root word.
+    /// Number of storage items of a FaucetPolicyConfig note: a variant plus the policy root word.
     pub const NUM_STORAGE_ITEMS: usize = 5;
 
     // PUBLIC ACCESSORS
@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(note.assets().num_assets(), 0);
     }
 
-    /// Storage is `[POLICY_ROOT, selector]` with the selector matching the action kind.
+    /// Storage is `[POLICY_ROOT, variant]` with the variant matching the action kind.
     #[test]
     fn storage_layout() {
         let root = policy_root(10);
@@ -348,26 +348,26 @@ mod tests {
         let cases = [
             (
                 FaucetPolicyConfig::SetMintPolicy { policy_root: root },
-                FaucetPolicyConfig::SELECTOR_SET_MINT_POLICY,
+                FaucetPolicyConfig::VARIANT_SET_MINT_POLICY,
             ),
             (
                 FaucetPolicyConfig::SetBurnPolicy { policy_root: root },
-                FaucetPolicyConfig::SELECTOR_SET_BURN_POLICY,
+                FaucetPolicyConfig::VARIANT_SET_BURN_POLICY,
             ),
             (
                 FaucetPolicyConfig::SetSendPolicy { policy_root: root },
-                FaucetPolicyConfig::SELECTOR_SET_SEND_POLICY,
+                FaucetPolicyConfig::VARIANT_SET_SEND_POLICY,
             ),
             (
                 FaucetPolicyConfig::SetReceivePolicy { policy_root: root },
-                FaucetPolicyConfig::SELECTOR_SET_RECEIVE_POLICY,
+                FaucetPolicyConfig::VARIANT_SET_RECEIVE_POLICY,
             ),
         ];
 
-        for (action, selector) in cases {
+        for (action, variant) in cases {
             let storage = NoteStorage::from(action);
             let mut expected = Vec::from(root.as_word().as_elements());
-            expected.push(Felt::from(selector));
+            expected.push(Felt::from(variant));
             assert_eq!(storage.items(), expected.as_slice());
             assert_eq!(storage.items().len(), FaucetPolicyConfigNote::NUM_STORAGE_ITEMS);
         }

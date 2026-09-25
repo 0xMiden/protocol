@@ -8,11 +8,13 @@ use miden::protocol_utils::mem
 use {MAX_OUTPUT_NOTES_PER_TX} from miden::tx_kernel_core::constants
 use {PARTIAL_BLOCKCHAIN_PTR} from miden::tx_kernel_core::memory
 
-# CONSTANTS
+# RE-EXPORTS
 # =================================================================================================
 
-# Max value for U16, used as the upper limit for expiration block delta
-const EXPIRY_UPPER_LIMIT = 0xFFFF + 1
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
+
+# CONSTANTS
+# =================================================================================================
 
 # Max U32 value, used for initializing the expiration block number
 const MAX_BLOCK_NUM = 0xFFFFFFFF
@@ -146,7 +148,7 @@ pub proc update_expiration_block_delta(block_height_delta: u16)
     dup u32assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
     # => [block_height_delta, block_height_delta]
 
-    u32lt.EXPIRY_UPPER_LIMIT assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
+    u32lte.MAX_EXPIRATION_BLOCK_DELTA assert.err=ERR_TX_INVALID_EXPIRATION_DELTA
     # => [block_height_delta]
 
     exec.get_reference_block_number add

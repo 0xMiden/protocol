@@ -12,6 +12,7 @@ use miden_protocol::note::{
     NoteScript,
     NoteStorage,
     NoteType,
+    PartialNote,
     PartialNoteMetadata,
 };
 
@@ -131,11 +132,30 @@ impl From<&NoteDetails> for proto::note::NoteDetails {
 
 impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
-        let (assets, metadata, recipient, attachments) = note.into_parts();
+        Self::from(&note)
+    }
+}
+
+impl From<&Note> for proto::note::Note {
+    fn from(note: &Note) -> Self {
         Self {
-            metadata: Some(metadata.into_partial_metadata().into()),
-            note_details: Some(NoteDetails::new(assets, recipient).into()),
-            note_attachments: Some(attachments.into()),
+            metadata: Some((*note.metadata().partial_metadata()).into()),
+            note_details: Some(note.details().into()),
+            note_attachments: Some(note.attachments().into()),
+        }
+    }
+}
+
+// PARTIAL NOTE
+// ================================================================================================
+
+impl From<&PartialNote> for proto::note::PartialNote {
+    fn from(note: &PartialNote) -> Self {
+        Self {
+            metadata: Some((*note.partial_metadata()).into()),
+            recipient_digest: Some(note.recipient_digest().into()),
+            assets: note.assets().iter().map(Into::into).collect(),
+            attachments: Some(note.attachments().into()),
         }
     }
 }

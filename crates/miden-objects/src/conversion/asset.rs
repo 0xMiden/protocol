@@ -1,4 +1,4 @@
-use miden_protocol::asset::{Asset, AssetClass, AssetComposition, AssetId};
+use miden_protocol::asset::{Asset, AssetClass, AssetComposition, AssetId, AssetVault};
 
 use crate::proto;
 
@@ -55,5 +55,22 @@ impl From<&Asset> for proto::asset::Asset {
 impl From<Asset> for proto::asset::Asset {
     fn from(asset: Asset) -> Self {
         Self::from(&asset)
+    }
+}
+
+// ASSET VAULT
+// ================================================================================================
+
+impl From<&AssetVault> for proto::asset::AssetVault {
+    fn from(vault: &AssetVault) -> Self {
+        Self {
+            assets: vault.assets().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<AssetVault> for proto::asset::AssetVault {
+    fn from(vault: AssetVault) -> Self {
+        Self::from(&vault)
     }
 }
