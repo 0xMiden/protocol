@@ -1,6 +1,5 @@
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -14,6 +13,7 @@ use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
     ERR_FEE_CONVERSION_INFO_MISSING,
     ERR_FEE_CONVERSION_INFO_NOT_NATIVE,
+    ERR_FEE_INSUFFICIENT_BALANCE,
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -225,7 +225,7 @@ async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Fee payment fails with the specific vault error when the account does not hold enough of the
+/// Fee payment fails with a fee-specific error when the account does not hold enough of the
 /// fee asset.
 #[tokio::test]
 async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
@@ -250,10 +250,41 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
+    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
+
+    Ok(())
+}
+
+/// Fee payment fails with the same fee-specific error when the account holds some of the fee
+/// asset, but less than the fee.
+#[tokio::test]
+async fn fee_payment_fails_with_insufficient_fee_asset() -> anyhow::Result<()> {
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1)?.into();
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        [fee_asset],
+    )?;
+    let mock_chain = builder.build()?;
+
+    let (args, advice_value) = commit_fee_conversion_info(
+        FeeConversionInfo::one_to_one(fee_faucet_id),
+        Word::from([9u32, 10, 11, 12]),
     );
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .auth_args(args)
+        .add_advice_map_entry(args, advice_value)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
 
     Ok(())
 }
