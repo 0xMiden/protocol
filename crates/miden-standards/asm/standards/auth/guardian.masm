@@ -4,6 +4,7 @@
 #
 # A state guardian can help coordinate state availability for private accounts.
 
+use {Bool} from miden::protocol::types
 use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
@@ -16,7 +17,7 @@ use {ZERO_WORD} from miden::standards::utils
 # - By default, exactly one valid guardian signature is required.
 # - If `update_guardian_public_key` is the only non-auth account procedure called in the current
 #   transaction, `verify_signature` skips the guardian signature check so key rotation can proceed
-#   without the old guardian signer.
+#   without the old guardian signer. `assert_rotation_policy` enforces that condition.
 # - `update_guardian_public_key` rotates the guardian public key and corresponding
 #   scheme id using the fixed map key `GUARDIAN_MAP_KEY`.
 
@@ -63,7 +64,7 @@ const ERR_INVALID_GUARDIAN_SIGNATURE = "invalid guardian signature"
 #! Notes:
 #! - This procedure only updates the guardian public key and corresponding scheme id.
 #! - `verify_signature` skips guardian verification only when this is the only non-auth account
-#!   procedure called in the transaction.
+#!   procedure called in the transaction, see `assert_rotation_policy`.
 #!
 #! Invocation: call
 @locals(1)
@@ -133,35 +134,60 @@ pub proc get_guardian_public_key() -> word
     # => [GUARDIAN_PUBLIC_KEY]
 end
 
-#! Conditionally verifies a guardian signature.
+#! Returns whether the transaction rotates the guardian key, and if so asserts that the rotation
+#! is called alone.
 #!
-#! Inputs:  [MSG]
-#! Outputs: []
+#! A rotation skips the guardian signature, so it must not touch notes or call another account
+#! procedure. Auth components must run this before they create notes of their own (e.g. the fee
+#! note) and pass the result to `verify_signature`.
+#!
+#! Inputs:  []
+#! Outputs: [is_rotation]
+#!
+#! Where:
+#! - is_rotation is 1 if `update_guardian_public_key` was called, 0 otherwise.
 #!
 #! Panics if:
-#! - `update_guardian_public_key` is called together with another non-auth account procedure.
-#! - `update_guardian_public_key` was not called and a valid guardian signature is missing or
-#!   invalid.
+#! - `update_guardian_public_key` is called together with input notes, output notes or another
+#!   non-auth account procedure.
 #!
 #! Invocation: exec
-pub proc verify_signature(msg: word)
+pub proc assert_rotation_policy() -> Bool
     procref.update_guardian_public_key
-    # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT, MSG]
+    # => [UPDATE_GUARDIAN_PUBLIC_KEY_ROOT]
 
     exec.native_account::was_procedure_called
-    # => [was_update_guardian_public_key_called, MSG]
+    # => [is_rotation]
 
+    dup
     if.true
         # Check the notes first: creating an output note requires calling `create_note`, which
         # would also trip `assert_only_one_non_auth_procedure_called`. Running that check last lets
         # the more specific input/output-note errors surface when notes are present.
         exec.tx_policy::assert_no_input_notes
         exec.tx_policy::assert_no_output_notes
-        # => [MSG]
+        # => [is_rotation]
 
         exec.tx_policy::assert_only_one_non_auth_procedure_called
-        # => [MSG]
+        # => [is_rotation]
+    end
+    # => [is_rotation]
+end
 
+#! Verifies a guardian signature unless the transaction rotates the guardian key.
+#!
+#! Inputs:  [is_rotation, MSG]
+#! Outputs: []
+#!
+#! Where:
+#! - is_rotation is the output of `assert_rotation_policy`.
+#!
+#! Panics if:
+#! - is_rotation is 0 and a valid guardian signature is missing or invalid.
+#!
+#! Invocation: exec
+pub proc verify_signature(is_rotation: Bool, msg: word)
+    if.true
         dropw
         # => []
     else

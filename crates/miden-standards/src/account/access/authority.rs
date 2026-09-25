@@ -513,4 +513,18 @@ mod tests {
             Err(AuthorityError::NonCanonicalConfig)
         );
     }
+
+    /// A role that has been removed leaves no map entry behind, so the procedure is simply
+    /// unmapped and falls back to `ADMIN`, which is what the MASM check does as well.
+    #[test]
+    fn removed_role_leaves_the_procedure_unmapped() {
+        let storage = rbac_storage_with_role_value(Word::empty());
+        let removed_root = AccountProcedureRoot::from_raw(Word::from(ROLE_KEY_WORD));
+
+        assert_matches!(
+            Authority::try_from_storage(&storage),
+            Ok(Authority::RbacControlled { procedure_roles })
+                if !procedure_roles.contains_key(&removed_root)
+        );
+    }
 }

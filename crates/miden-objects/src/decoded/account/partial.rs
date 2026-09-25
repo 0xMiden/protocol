@@ -59,6 +59,7 @@ impl Verify for PartialAccount {
     type Verified = miden_protocol::account::PartialAccount;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
+        self.version.ensure_specified()?;
         Ok(Self::Verified::new(
             self.account_id.verify()?,
             self.nonce,

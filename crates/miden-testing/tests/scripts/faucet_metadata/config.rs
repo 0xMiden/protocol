@@ -1,7 +1,7 @@
 //! Tests for the `FAUCET_METADATA_CONFIG` standard note, which dispatches the
 //! [`miden_standards::account::faucets::FungibleFaucet`] metadata setters from a note.
 //!
-//! The suite covers the note itself: that each selector dispatches to the matching setter, and that
+//! The suite covers the note itself: that each variant dispatches to the matching setter, and that
 //! the script's own guards reject malformed storage. The setters' own behaviour — the advice-map
 //! argument contract, the mutability flags and the `Authority` gate — is covered by the parent
 //! [`super`] suite.
@@ -15,7 +15,7 @@ use miden_standards::account::faucets::{Description, ExternalLink, FungibleFauce
 use miden_standards::errors::standards::{
     ERR_FAUCET_METADATA_CONFIG_NOTE_IS_NOT_PUBLIC,
     ERR_FAUCET_METADATA_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
-    ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR,
+    ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT,
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
 };
 use miden_standards::note::config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
@@ -75,7 +75,7 @@ fn max_supply(faucet: &Account) -> anyhow::Result<AssetAmount> {
 // TESTS — DISPATCH
 // ================================================================================================
 
-/// Selector `0` dispatches to `set_max_supply`.
+/// Variant `0` dispatches to `set_max_supply`.
 #[tokio::test]
 async fn set_max_supply_dispatch() -> anyhow::Result<()> {
     let owner = owner_id();
@@ -99,10 +99,10 @@ async fn set_max_supply_dispatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Selectors `1`, `2` and `3` dispatch to `set_description`, `set_logo_uri` and
+/// Variants `1`, `2` and `3` dispatch to `set_description`, `set_logo_uri` and
 /// `set_external_link`, each writing its own field.
 ///
-/// The three run against the same faucet in sequence, so a selector wired to the wrong setter shows
+/// The three run against the same faucet in sequence, so a variant wired to the wrong setter shows
 /// up as a field that did not change — or as one that changed twice.
 #[tokio::test]
 async fn string_actions_dispatch() -> anyhow::Result<()> {
@@ -153,16 +153,16 @@ async fn string_actions_dispatch() -> anyhow::Result<()> {
 // TESTS — SCRIPT GUARDS
 // ================================================================================================
 
-/// A note whose selector matches no known action is rejected by the script's dispatch guard.
+/// A note whose variant matches no known action is rejected by the script's dispatch guard.
 #[tokio::test]
-async fn unknown_selector_fails() -> anyhow::Result<()> {
+async fn unknown_variant_fails() -> anyhow::Result<()> {
     let owner = owner_id();
     let faucet = create_faucet(owner, true)?;
     let mut builder = MockChain::builder();
     builder.add_account(faucet.clone())?;
     let mock_chain = builder.build()?;
 
-    // selector 99 is not a known action
+    // variant 99 is not a known action
     let note = malformed_config_note(owner, faucet.id(), vec![Felt::from(99u32), Felt::ZERO], 5)?;
 
     let result = mock_chain
@@ -172,7 +172,7 @@ async fn unknown_selector_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_UNKNOWN_SELECTOR);
+    assert_transaction_executor_error!(result, ERR_FAUCET_METADATA_CONFIG_UNKNOWN_VARIANT);
 
     Ok(())
 }
@@ -186,7 +186,7 @@ async fn wrong_storage_item_count_fails_for_max_supply() -> anyhow::Result<()> {
     builder.add_account(faucet.clone())?;
     let mock_chain = builder.build()?;
 
-    // SetMaxSupply selector (0) but the new cap is missing
+    // SetMaxSupply variant (0) but the new cap is missing
     let note = malformed_config_note(owner, faucet.id(), vec![Felt::ZERO], 6)?;
 
     let result = mock_chain
@@ -214,7 +214,7 @@ async fn wrong_storage_item_count_fails_for_string_action() -> anyhow::Result<()
     builder.add_account(faucet.clone())?;
     let mock_chain = builder.build()?;
 
-    // SetDescription selector (1) with only the reserved selector word, no payload
+    // SetDescription variant (1) with only the reserved variant word, no payload
     let note = malformed_config_note(
         owner,
         faucet.id(),

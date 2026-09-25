@@ -87,7 +87,9 @@ pub enum Auth {
     /// transaction scripts whose roots appear in `allowed_tx_script_roots` (may be empty).
     ///
     /// The `fee_policy_manager` initializes the fee-policy storage the auth component owns and
-    /// contributes the components making its fee policies dispatchable.
+    /// contributes the components making its fee policies dispatchable. Built with
+    /// [`AuthNetworkAccount::new`], the expansion also yields
+    /// [`BasicWallet`](miden_standards::account::wallets::BasicWallet).
     NetworkAccount {
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
         allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,

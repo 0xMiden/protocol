@@ -1,9 +1,21 @@
 //! The standardized config notes: notes that carry a management action for the account that
 //! consumes them.
 //!
-//! Each config note pairs one note script with a selector in the note's storage, dispatching to
+//! Each config note pairs one note script with a variant in its storage, dispatching to
 //! the admin procedure of the component it manages. The action is fixed at note creation and
 //! bound into the note commitment, so the authorized party is the note sender.
+//!
+//! # Note variant
+//!
+//! A standard note that has more than one code path reads which one to take from a dedicated
+//! variant value in its storage: a single felt, fixed when the note is created and bound into the
+//! note commitment along with the rest of the storage.
+//!
+//! A note adopting the convention:
+//!
+//! - Numbers the variants contiguously from `0`.
+//! - Asserts both that the variant is one it knows (`ERR_*_UNKNOWN_VARIANT`) and that the storage
+//!   item count matches that variant (`ERR_*_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS`).
 //!
 //! # Note type
 //!

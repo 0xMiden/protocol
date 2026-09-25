@@ -158,7 +158,7 @@ pub proc account_get_initial_commitment(padding: [felt; 16]) -> (Commitment, [fe
     # => [INIT_COMMITMENT, pad(12)]
 end
 
-#! Computes commitment to the state of the active account.
+#! Computes commitment to the state of the native account.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [ACCOUNT_COMMITMENT, pad(12)]
@@ -168,14 +168,18 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - the active account is not the native account.
 #!
 #! Invocation: dynexec
 pub proc account_compute_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
+    # check that this procedure was executed against the native account
+    exec.memory::assert_native_account
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [pad(16)]
 
-    # compute the active account commitment
+    # compute the native account commitment
     exec.account::compute_commitment
     # => [ACCOUNT_COMMITMENT, pad(16)]
 
@@ -1556,6 +1560,7 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #!
 #! Invocation: dynexec
 pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) -> [felt; 16]
@@ -1568,6 +1573,49 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
 
     exec.output_note::add_asset
     # => [pad(16)]
+end
+
+#! Prevents further changes to the specified output note's assets and attachments.
+#! Sealing is idempotent.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the active account is not the native account.
+#! - the note index points to a non-existent output note.
+#!
+#! Invocation: dynexec
+pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
+    exec.memory::assert_native_account
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
+    exec.memory::get_output_note_ptr
+    # => [note_ptr, pad(15)]
+
+    exec.memory::seal_output_note
+    # => [pad(16)]
+end
+
+#! Returns whether the specified output note is sealed against asset and attachment changes.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [is_sealed, pad(15)]
+#!
+#! Panics if:
+#! - the note index points to a non-existent output note.
+#!
+#! Invocation: dynexec
+pub proc output_note_is_sealed(note_idx: u16, padding: [felt; 15]) -> (Bool, [felt; 15])
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_idx, pad(15)]
+
+    exec.memory::get_output_note_ptr
+    # => [note_ptr, pad(15)]
+
+    exec.memory::is_output_note_sealed
+    # => [is_sealed, pad(15)]
 end
 
 #! Adds an attachment to the note specified by the index.
@@ -1583,6 +1631,7 @@ end
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
+#! - the output note is sealed.
 #! - the attachment scheme is 0 or exceeds 65534.
 #! - the attachment num_words exceeds 256 or is zero.
 #! - the note already has 4 attachments.

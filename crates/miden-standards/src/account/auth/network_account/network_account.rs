@@ -90,6 +90,10 @@ impl NetworkAccount {
     /// `fee_policy_manager` are installed as part of the auth component's expansion, so the active
     /// policy is dispatchable without the caller installing it separately.
     ///
+    /// [`AuthNetworkAccount::new`] allowlists the P2ID script root and its expansion installs
+    /// [`BasicWallet`](crate::account::wallets::BasicWallet), so a P2ID note carrying the fee
+    /// asset can fund the account; callers need not install the wallet again.
+    ///
     /// Callers add their functional components to the returned builder and finish with
     /// [`AccountBuilder::build`]; the built account satisfies the [`NetworkAccount`] specification.
     /// Accounts that need a different set of allowlisted transaction scripts should construct the
@@ -200,7 +204,6 @@ mod tests {
                 )
                 .expect("non-empty allowlist"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building should succeed")
     }
@@ -218,6 +221,7 @@ mod tests {
         let mut expected = roots;
         expected.insert(crate::note::config::NetworkAccountConfigNote::script_root());
         expected.insert(FeeSponsorshipNote::script_root());
+        expected.insert(crate::note::P2idNote::script_root());
         assert_eq!(actual, expected);
     }
 
@@ -266,7 +270,6 @@ mod tests {
                 )
                 .expect("non-empty allowlist"),
             )
-            .with_component(BasicWallet)
             .build()
             .expect("account building should succeed");
 
@@ -287,7 +290,6 @@ mod tests {
             FeePolicyManager::mock(FungibleAsset::mock_issuer()),
         )
         .expect("non-empty allowlist")
-        .with_component(BasicWallet)
         .build()
         .expect("account building should succeed");
 
@@ -302,6 +304,20 @@ mod tests {
                 .allowed_notes()
                 .allowed_script_roots()
                 .contains(&FeeSponsorshipNote::script_root())
+        );
+
+        // the auth component allowlists P2ID and installs the wallet procedure it calls
+        assert!(
+            network_account
+                .allowed_notes()
+                .allowed_script_roots()
+                .contains(&crate::note::P2idNote::script_root())
+        );
+        assert!(
+            network_account
+                .as_account()
+                .code()
+                .has_procedure(BasicWallet::receive_asset_root().into())
         );
     }
 }
