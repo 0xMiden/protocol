@@ -101,17 +101,17 @@ impl Deserializable for NextProtocolConfig {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_crypto::rand::test_utils::rand_value;
+    use rand::random;
 
     use super::*;
 
     #[test]
     fn commitment_binds_both_fields() {
-        let config = rand_value::<Word>();
+        let config = random::<Word>();
         let next = NextProtocolConfig::new(BlockNumber::from(10u32), config).unwrap();
         let other_block = NextProtocolConfig::new(BlockNumber::from(11u32), config).unwrap();
         let other_config =
-            NextProtocolConfig::new(BlockNumber::from(10u32), rand_value::<Word>()).unwrap();
+            NextProtocolConfig::new(BlockNumber::from(10u32), random::<Word>()).unwrap();
 
         assert_ne!(next.to_commitment(), other_block.to_commitment());
         assert_ne!(next.to_commitment(), other_config.to_commitment());
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn serde_round_trip() -> anyhow::Result<()> {
-        let next = NextProtocolConfig::new(BlockNumber::from(42u32), rand_value::<Word>())?;
+        let next = NextProtocolConfig::new(BlockNumber::from(42u32), random::<Word>())?;
 
         let deserialized = NextProtocolConfig::read_from_bytes(&next.to_bytes())
             .map_err(|err| anyhow::anyhow!("{err}"))?;

@@ -1,6 +1,6 @@
 use miden_crypto::merkle::smt::Smt;
 #[cfg(not(target_family = "wasm"))]
-use miden_crypto::rand::test_utils::rand_value;
+use rand::random;
 
 use crate::Word;
 use crate::account::Account;
@@ -43,12 +43,12 @@ impl BlockHeader {
             tx_commitment,
             timestamp,
         ) = {
-            let prev_block_commitment = rand_value::<Word>();
-            let chain_commitment = chain_commitment.unwrap_or(rand_value::<Word>());
-            let nullifier_root = rand_value::<Word>();
-            let note_root = note_root.unwrap_or(rand_value::<Word>());
-            let tx_commitment = rand_value::<Word>();
-            let timestamp = rand_value::<u32>();
+            let prev_block_commitment = random::<Word>();
+            let chain_commitment = chain_commitment.unwrap_or(random::<Word>());
+            let nullifier_root = random::<Word>();
+            let note_root = note_root.unwrap_or(random::<Word>());
+            let tx_commitment = random::<Word>();
+            let timestamp = random::<u32>();
 
             (
                 prev_block_commitment,

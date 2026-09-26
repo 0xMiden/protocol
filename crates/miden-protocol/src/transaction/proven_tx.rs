@@ -549,7 +549,7 @@ mod tests {
 
     use anyhow::Context;
     use assert_matches::assert_matches;
-    use miden_crypto::rand::test_utils::rand_value;
+    use rand::random;
 
     use super::ProvenTransaction;
     use crate::account::{
@@ -627,7 +627,7 @@ mod tests {
         // 32 bytes in size.
         let required_entries = ACCOUNT_UPDATE_MAX_SIZE / (2 * 32);
         for _ in 0..required_entries {
-            map.insert(StorageMapKey::from_raw(rand_value()), rand_value::<Word>());
+            map.insert(StorageMapKey::from_raw(random()), random::<Word>());
         }
         let storage_patch = StorageMapPatch::Update {
             entries: StorageMapPatchEntries::from_raw(map),

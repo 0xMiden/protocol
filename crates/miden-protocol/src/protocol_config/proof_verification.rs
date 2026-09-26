@@ -198,13 +198,13 @@ impl Deserializable for ProofSecurityPolicy {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_crypto::rand::test_utils::rand_value;
+    use rand::random;
 
     use super::*;
 
     fn config() -> ProofVerificationConfig {
-        let policy = ProofSecurityPolicy::new(rand_value::<Word>(), 96).unwrap();
-        ProofVerificationConfig::new(rand_value::<Word>(), rand_value::<Word>(), policy)
+        let policy = ProofSecurityPolicy::new(random::<Word>(), 96).unwrap();
+        ProofVerificationConfig::new(random::<Word>(), random::<Word>(), policy)
     }
 
     #[test]

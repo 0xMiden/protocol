@@ -8,6 +8,7 @@
 
 ### Changes
 
+- [BREAKING] Upgraded Miden VM and crypto from v0.33.0 to v0.34.0, including Plonky3 v0.8.0 and updated VM AIR and recursive verifier roots. Falcon key generation now requires a `CryptoRng`.
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
 - [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).

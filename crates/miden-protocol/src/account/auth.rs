@@ -141,8 +141,9 @@ impl AuthSecretKey {
         Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::new())
     }
 
-    /// Generates an Falcon512Poseidon2 secrete key using the provided random number generator.
-    pub fn new_falcon512_poseidon2_with_rng<R: Rng>(rng: &mut R) -> Self {
+    /// Generates a Falcon512Poseidon2 secret key using the provided cryptographic random number
+    /// generator.
+    pub fn new_falcon512_poseidon2_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
         Self::Falcon512Poseidon2(falcon512_poseidon2::SecretKey::with_rng::<R>(rng))
     }
 

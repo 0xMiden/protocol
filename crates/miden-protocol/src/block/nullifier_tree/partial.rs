@@ -111,7 +111,7 @@ impl PartialNullifierTree {
 mod tests {
     use assert_matches::assert_matches;
     use miden_crypto::merkle::smt::Smt;
-    use miden_crypto::rand::test_utils::rand_value;
+    use rand::random;
 
     use super::*;
     use crate::block::nullifier_tree::NullifierTree;
@@ -121,12 +121,12 @@ mod tests {
     /// tree root and thus an error.
     #[test]
     fn partial_nullifier_tree_root_mismatch() {
-        let key0 = rand_value::<Word>();
-        let key1 = rand_value::<Word>();
-        let key2 = rand_value::<Word>();
+        let key0 = random::<Word>();
+        let key1 = random::<Word>();
+        let key2 = random::<Word>();
 
         let value0 = EMPTY_WORD;
-        let value1 = rand_value::<Word>();
+        let value1 = random::<Word>();
         let value2 = EMPTY_WORD;
 
         let kv_pairs = vec![(key0, value0)];

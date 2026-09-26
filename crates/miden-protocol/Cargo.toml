@@ -31,7 +31,14 @@ std = [
   "miden-processor/std",
   "miden-verifier/std",
 ]
-testing = ["dep:rand_chacha", "dep:rand_xoshiro", "miden-core/testing", "miden-crypto/std", "rand/thread_rng"]
+testing = [
+  "dep:getrandom-03",
+  "dep:rand_chacha",
+  "dep:rand_xoshiro",
+  "miden-core/testing",
+  "miden-crypto/std",
+  "rand/thread_rng",
+]
 
 [dependencies]
 # Miden dependencies
@@ -59,6 +66,8 @@ rand_chacha = { optional = true, workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { features = ["wasm_js"], version = "0.4" }
+# The VM's testing feature enables Proptest, which uses getrandom 0.3.
+getrandom-03 = { features = ["wasm_js"], optional = true, package = "getrandom", version = "0.3" }
 
 [dev-dependencies]
 anyhow         = { features = ["backtrace", "std"], workspace = true }
