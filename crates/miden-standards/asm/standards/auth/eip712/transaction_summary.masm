@@ -1,0 +1,194 @@
+use miden::core::crypto::hashes::keccak256
+use miden::core::crypto::hashes::poseidon2
+use {Bool, StorageMapKey, StorageSlotId} from miden::protocol::types
+use miden::protocol::native_account
+use miden::standards::auth::eip712
+
+# CONSTANTS
+# =================================================================================================
+
+# Little-endian ASCII "EIP712" packed into one felt. This separates EIP-712 advice-map keys from
+# raw signature keys.
+const SIGNATURE_KEY_DOMAIN = 0x323137504945
+
+# keccak256("MidenTransaction(bytes32 txSummaryHash)"), stored as eight little-endian u32 limbs.
+const TRANSACTION_TYPE_HASH_LOW = [3002887380, 1420631288, 494091842, 2729528150]
+const TRANSACTION_TYPE_HASH_HIGH = [4274085984, 2147426208, 2043519110, 1663807340]
+
+# keccak256(domainTypeHash || keccak256("Miden Transaction") || keccak256("1")), stored as eight
+# little-endian u32 limbs.
+const DOMAIN_SEPARATOR_LOW = [825989586, 400295538, 7363001, 2458011656]
+const DOMAIN_SEPARATOR_HIGH = [919736643, 3455887530, 1338955348, 3083259562]
+
+const ECDSA_K256_KECCAK_SCHEME_ID = 1
+const ECDSA_K256_KECCAK_SIGNATURE_LENGTH = 32
+const ERR_EIP712_REQUIRES_ECDSA = "EIP-712 transaction-summary signatures require ecdsa_k256_keccak"
+const ERR_EIP712_INVALID_SIGNATURE_LENGTH = "EIP-712 signature advice value must contain exactly 32 field elements"
+
+# local memory address for the public-key commitment
+const VERIFY_PUBLIC_KEY_COMMITMENT_LOC = 0
+
+# PROCEDURES
+# =================================================================================================
+
+#! Computes the advice-map key for an EIP-712 transaction-summary signature.
+#!
+#! Inputs:  [RAW_SIGNATURE_KEY]
+#! Outputs: [EIP712_SIGNATURE_KEY]
+#!
+#! Where:
+#! - RAW_SIGNATURE_KEY is the advice-map key for a raw transaction signature.
+#! - EIP712_SIGNATURE_KEY is the domain-separated advice-map key for an EIP-712 signature.
+#!
+#! Invocation: exec
+proc compute_signature_key(raw_signature_key: word) -> word
+    push.0.0.0.SIGNATURE_KEY_DOMAIN
+    # => [EIP712_DOMAIN, RAW_SIGNATURE_KEY]
+
+    swapw
+    exec.poseidon2::merge
+    # => [EIP712_SIGNATURE_KEY]
+end
+
+#! Verifies an EIP-712 transaction-summary signature for a signer when one is present.
+#!
+#! The raw signature key is domain-separated before the advice-map lookup. If no EIP-712 entry is
+#! present, this procedure returns 0 without performing signature verification.
+#!
+#! Inputs:  [APPROVER_MAP_KEY, scheme_slot_id_{suffix,prefix}, RAW_SIGNATURE_KEY, PK_COMM, MSG,
+#!           signer_idx]
+#! Outputs: [is_verified, MSG, signer_idx]
+#!
+#! Where:
+#! - APPROVER_MAP_KEY is the key for the signer in the approver scheme map.
+#! - scheme_slot_id_{suffix,prefix} are the suffix and prefix felts of the account storage-map slot
+#!   containing signature scheme IDs.
+#! - RAW_SIGNATURE_KEY is the advice-map key for a raw transaction signature.
+#! - PK_COMM is the signer's public-key commitment.
+#! - MSG is the transaction-summary hash.
+#! - signer_idx identifies the signer in the approver maps.
+#! - is_verified is 1 when an EIP-712 signature was present and verified, and 0 when absent.
+#!
+#! Panics if:
+#! - an EIP-712 signature is present for a non-ECDSA approver.
+#! - the EIP-712 signature advice value does not contain exactly 32 field elements.
+#! - the public key or signature is malformed.
+#! - the public-key commitment is invalid.
+#! - signature verification fails.
+#!
+#! Invocation: exec
+pub proc verify_eip712_signature(
+    approver_map_key: StorageMapKey,
+    scheme_slot_id: StorageSlotId,
+    raw_signature_key: word,
+    public_key_commitment: word,
+    msg: word,
+    signer_idx: u8
+) -> (Bool, word, u8)
+    # Move RAW_SIGNATURE_KEY to the top while preserving APPROVER_MAP_KEY and the remaining inputs.
+    movup.9 movup.9 movup.9 movup.9
+    # => [RAW_SIGNATURE_KEY, APPROVER_MAP_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix,
+    #     PK_COMM, MSG, signer_idx]
+
+    exec.compute_signature_key
+    # => [EIP712_SIG_KEY, APPROVER_MAP_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix,
+    #     PK_COMM, MSG, signer_idx]
+
+    adv.has_mapkey
+    adv_push
+    # => [has_eip712_signature, EIP712_SIG_KEY, APPROVER_MAP_KEY, scheme_slot_id_suffix,
+    #     scheme_slot_id_prefix, PK_COMM, MSG, signer_idx]
+
+    if.true
+        swapw
+        # => [APPROVER_MAP_KEY, EIP712_SIG_KEY, scheme_slot_id_suffix, scheme_slot_id_prefix,
+        #     PK_COMM, MSG, signer_idx]
+
+        movup.9 movup.9
+        # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, EIP712_SIG_KEY,
+        #     PK_COMM, MSG, signer_idx]
+
+        exec.native_account::get_initial_map_item
+        # => [[scheme_id, 0, 0, 0], EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        movdn.3 drop drop drop
+        # => [scheme_id, EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        eq.ECDSA_K256_KECCAK_SCHEME_ID
+        assert.err=ERR_EIP712_REQUIRES_ECDSA
+        # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        adv.push_mapval_count
+        adv_push
+        eq.ECDSA_K256_KECCAK_SIGNATURE_LENGTH assert.err=ERR_EIP712_INVALID_SIGNATURE_LENGTH
+        # => [EIP712_SIG_KEY, PK_COMM, MSG, signer_idx]
+
+        adv.push_mapval
+        dropw
+        # OS => [PK_COMM, MSG, signer_idx]
+        # AS => [SIGNATURE]
+
+        dupw.1 swapw
+        # => [PK_COMM, MSG, MSG, signer_idx]
+
+        exec.verify
+        # => [MSG, signer_idx]
+
+        push.1
+        # => [is_verified, MSG, signer_idx]
+    else
+        dropw dropw drop drop dropw
+        # => [MSG, signer_idx]
+
+        push.0
+        # => [is_verified, MSG, signer_idx]
+    end
+end
+
+#! Verifies an ECDSA signature over the Miden EIP-712 transaction-summary message.
+#!
+#! Inputs:
+#!   Operand stack: [PUBLIC_KEY_COMMITMENT, TX_SUMMARY_HASH]
+#!   Advice stack:  [public_key(16) | signature_r(8) | signature_s(8)]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - PUBLIC_KEY_COMMITMENT is the commitment to public_key(16).
+#! - TX_SUMMARY_HASH is the transaction-summary commitment.
+#! - public_key(16) is the secp256k1 public key as little-endian u32 limbs.
+#! - signature_r(8) and signature_s(8) are the ECDSA signature scalars as little-endian u32
+#!   limbs.
+#!
+#! Panics if:
+#! - the public key or signature is malformed.
+#! - the public-key commitment is invalid.
+#! - signature verification fails.
+#!
+#! Invocation: exec
+@locals(4)
+pub proc verify(public_key_commitment: word, tx_summary_hash: word)
+    loc_storew_le.VERIFY_PUBLIC_KEY_COMMITMENT_LOC dropw
+    # => [TX_SUMMARY_HASH]
+
+    # convert the Miden word to the little-endian u32 limbs of its bytes32 encoding
+    movup.3 u32split movup.4 u32split movup.5 u32split movup.6 u32split
+    # => [tx_summary_hash_u32(8)]
+
+    push.TRANSACTION_TYPE_HASH_HIGH push.TRANSACTION_TYPE_HASH_LOW
+    # => [transaction_type_hash(8), tx_summary_hash_u32(8)]
+
+    exec.keccak256::merge
+    # => [struct_hash(8)]
+
+    push.DOMAIN_SEPARATOR_HIGH push.DOMAIN_SEPARATOR_LOW
+    # => [domain_separator(8), struct_hash(8)]
+
+    padw loc_loadw_le.VERIFY_PUBLIC_KEY_COMMITMENT_LOC
+    # OS => [PUBLIC_KEY_COMMITMENT, domain_separator(8), struct_hash(8)]
+    # AS => [public_key(16) | signature_r(8) | signature_s(8)]
+
+    exec.eip712::verify_raw
+    # OS => []
+    # AS => []
+end

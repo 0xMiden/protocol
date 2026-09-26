@@ -30,6 +30,7 @@
 
 ### Changes
 
+- [BREAKING] Moved the EIP-712 transaction-summary adapter from `miden::standards::auth::eip712_transaction_summary` to `miden::standards::auth::eip712::transaction_summary` ([#3898](https://github.com/0xMiden/protocol/pull/3898)).
 - [BREAKING] Moved `AccountFile` from `miden-protocol` and `NoteFile` from `miden-standards` into `miden-objects` and switched both to Protobuf serialization ([#3915](https://github.com/0xMiden/protocol/pull/3915)).
 - [BREAKING] Moved `miden::protocol::active_account::compute_commitment` to `miden::protocol::native_account::compute_commitment` and restricted it to native-account context ([#3908](https://github.com/0xMiden/protocol/pull/3908)).
 - [BREAKING] Expanded P2ID note storage to include two salt elements, defaulting to zero, and updated AggLayer MINT outputs to use the four-element layout ([#3887](https://github.com/0xMiden/protocol/pull/3887)).
