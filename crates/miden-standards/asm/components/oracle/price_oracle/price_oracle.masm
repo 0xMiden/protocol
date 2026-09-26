@@ -1,0 +1,9 @@
+# The MASM code of the Price Oracle Account Component.
+#
+# Exposes the user-facing `get_conversion_rate`, plus the authority-gated setter selecting the rate
+# provider it dispatches to.
+#
+# See the `PriceOracle` Rust type's documentation for more details.
+
+pub use {get_conversion_rate} from miden::standards::oracle::price_oracle
+pub use {set_rate_provider} from miden::standards::oracle::price_oracle
