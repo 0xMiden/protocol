@@ -2915,6 +2915,7 @@ dependencies = [
  "miden-package-registry",
  "miden-project",
  "regex",
+ "toml",
  "walkdir",
 ]
 

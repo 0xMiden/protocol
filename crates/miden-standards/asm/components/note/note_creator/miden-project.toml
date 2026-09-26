@@ -11,3 +11,8 @@ path      = "note_creator.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Exposes the `create_note` procedure for creating output notes"
+name        = "miden::standards::note::note_creator"
+version     = "1.0.0"
