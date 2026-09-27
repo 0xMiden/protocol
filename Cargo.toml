@@ -73,6 +73,8 @@ assert_matches   = { default-features = false, version = "1.5" }
 bon              = { default-features = false, version = "3" }
 criterion        = { default-features = false, version = "0.5" }
 fs-err           = { default-features = false, version = "3" }
+getrandom        = { version = "0.4" }
+getrandom-03     = { package = "getrandom", version = "0.3" }
 heck             = { version = "0.5" }
 primitive-types  = { default-features = false, version = "0.14" }
 proc-macro-crate = { version = "3.4" }
