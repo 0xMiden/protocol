@@ -121,12 +121,13 @@ where
         // Drop the notes that can be ruled out without executing anything. The rejected notes are
         // identified by ID rather than taken from the bundles, so that the notes kept stay in the
         // order sorted above instead of being reordered into bundles.
-        let rejected = reject_unconsumable_sponsorships(
-            &NoteBundle::group(&notes),
+        let (bundles, mut rejected) = NoteBundle::group(&notes);
+        rejected.extend(reject_unconsumable_sponsorships(
+            &bundles,
             target_account_id,
             block_ref,
             self.collected_fee_asset_id,
-        );
+        ));
         if !rejected.is_empty() {
             let rejected_ids: BTreeSet<NoteId> =
                 rejected.iter().map(|failed| failed.note().id()).collect();
@@ -315,7 +316,11 @@ where
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
-        let mut remaining_bundles = NoteBundle::group(&remaining_notes);
+        let (mut remaining_bundles, invalid_notes) = NoteBundle::group(&remaining_notes);
+        debug_assert!(
+            invalid_notes.is_empty(),
+            "invalid sponsorship notes should have been rejected before execution"
+        );
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
         let mut failed_note_index = BTreeMap::new();

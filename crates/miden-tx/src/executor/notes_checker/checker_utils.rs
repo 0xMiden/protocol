@@ -190,9 +190,13 @@ impl NoteBundle {
     ///
     /// The feature note is always first in the resulting bundle (if any); bundle preserves the
     /// relative order of the sponsorship notes in it.
-    pub(super) fn group(notes: &[Note]) -> Vec<Self> {
+    ///
+    /// A FEE_SPONSORSHIP note whose feature note is itself a FEE_SPONSORSHIP note can never be
+    /// consumed, so it joins no bundle and is returned among the rejected notes instead.
+    pub(super) fn group(notes: &[Note]) -> (Vec<Self>, Vec<FailedNote>) {
         let note_indices: BTreeMap<NoteId, usize> =
             notes.iter().enumerate().map(|(idx, note)| (note.id(), idx)).collect();
+        let mut rejected = Vec::new();
 
         // Put the feature notes and orphan notes to the values with keys equal to this note index
         // in the `note_indices`. Sponsorship notes are appended to the values which contain the
@@ -206,6 +210,12 @@ impl NoteBundle {
                 .ok()
                 .and_then(|sponsorship| note_indices.get(&sponsorship.feature_note_id()).copied())
             {
+                Some(head_idx) if FeeSponsorshipNote::try_from(&notes[head_idx]).is_ok() => {
+                    let reason = SponsorshipRejection::FeatureNoteIsSponsorship {
+                        feature_note_id: notes[head_idx].id(),
+                    };
+                    rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
+                },
                 Some(head_idx) => bundles.entry(head_idx).or_default().push(note.clone()),
                 // This note heads its own bundle, so it goes first whichever side of the notes
                 // bound to it it arrives on.
@@ -213,7 +223,8 @@ impl NoteBundle {
             }
         }
 
-        bundles.into_values().map(|notes| Self { notes }).collect()
+        let bundles = bundles.into_values().map(|notes| Self { notes }).collect();
+        (bundles, rejected)
     }
 
     /// Returns the notes forming the bundle.
@@ -250,6 +261,10 @@ pub(super) enum SponsorshipRejection {
         reclaim_height: BlockNumber,
         current_height: BlockNumber,
     },
+    #[error(
+        "FEE_SPONSORSHIP note names note {feature_note_id} as its feature note, but that note is itself a FEE_SPONSORSHIP note"
+    )]
+    FeatureNoteIsSponsorship { feature_note_id: NoteId },
 }
 
 /// Rejects the FEE_SPONSORSHIP notes among `bundles` that `native_account_id` cannot consume at
@@ -280,17 +295,11 @@ pub(super) fn reject_unconsumable_sponsorships(
             .expect("a bundle holds at least the note heading it");
 
         // A sponsorship only heads a bundle when the feature note it names is not an input.
-        if let Ok(sponsorship) = FeeSponsorshipNote::try_from(head) {
-            assert!(
-                bound_notes.is_empty(),
-                "a bundle headed by a sponsorship note should contain only that note"
-            );
-
-            if let Some(reason) =
+        if let Ok(sponsorship) = FeeSponsorshipNote::try_from(head)
+            && let Some(reason) =
                 reject_orphan_sponsorship(&sponsorship, native_account_id, block_ref)
-            {
-                rejected.push(FailedNote::new(head.clone(), NoteFailure::from(reason)));
-            }
+        {
+            rejected.push(FailedNote::new(head.clone(), NoteFailure::from(reason)));
         }
 
         for note in bound_notes {
