@@ -62,6 +62,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
     TransactionSummaryUserParams,
 };
+use miden_standards::note::AccountCodeUpgradeAttachment;
 pub(crate) use tx_event::{
     RecipientData,
     TransactionEvent,
@@ -205,6 +206,26 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns the input notes consumed in this transaction.
     pub fn input_notes(&self) -> InputNotes<InputNote> {
         self.input_notes.clone()
+    }
+
+    /// Returns the upgrade to the code with `new_code_commitment` that an input note carries in an
+    /// [`AccountCodeUpgradeAttachment`], if any.
+    ///
+    /// Only attachments of that scheme are decoded. Those that do not decode or carry other code
+    /// are skipped.
+    pub(crate) fn find_input_note_code_upgrade(
+        &self,
+        new_code_commitment: Word,
+    ) -> Option<AccountCodeUpgrade> {
+        self.input_notes
+            .iter()
+            .flat_map(|input_note| input_note.note().attachments().iter())
+            .filter(|attachment| {
+                attachment.attachment_scheme() == AccountCodeUpgradeAttachment::ATTACHMENT_SCHEME
+            })
+            .filter_map(|attachment| AccountCodeUpgradeAttachment::try_from(attachment).ok())
+            .map(AccountCodeUpgradeAttachment::into_code_upgrade)
+            .find(|code_upgrade| code_upgrade.commitment() == new_code_commitment)
     }
 
     /// Clones the inner [`OutputNoteBuilder`]s and returns the vector of created output notes that
@@ -391,6 +412,10 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     /// Handles the before code upgrade event by recording the new code in the update tracker and
     /// providing its procedures to the kernel through the advice map.
+    ///
+    /// The `code_upgrade` is taken from the advice map entry under
+    /// [`AccountCodeUpgrade::advice_map_key`] or, if there is none, from an input note's
+    /// [`AccountCodeUpgradeAttachment`] when the event is extracted.
     ///
     /// # Errors
     ///
