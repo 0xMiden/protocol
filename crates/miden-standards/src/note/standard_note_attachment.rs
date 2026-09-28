@@ -21,7 +21,8 @@ impl StandardNoteAttachment {
         match self {
             StandardNoteAttachment::NetworkAccountTarget => NoteAttachmentScheme::new_const(2u16),
             StandardNoteAttachment::PswapAttachment => NoteAttachmentScheme::new_const(3u16),
-            StandardNoteAttachment::AccountCodeUpgrade => NoteAttachmentScheme::new_const(4u16),
+            // Schemes 4 to 6 are reserved for the USDCx attachments.
+            StandardNoteAttachment::AccountCodeUpgrade => NoteAttachmentScheme::new_const(7u16),
         }
     }
 }
