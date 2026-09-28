@@ -1,3 +1,4 @@
+use miden_protocol::Felt;
 use miden_protocol::account::{
     AccountCode,
     AccountCodePatch,
@@ -8,7 +9,6 @@ use miden_protocol::account::{
     AssetDelta,
     PartialAccount,
 };
-use miden_protocol::{Felt, Word};
 
 use crate::TransactionKernelError;
 use crate::host::storage_patch_tracker::StoragePatchTracker;
@@ -36,33 +36,22 @@ pub struct AccountUpdateTracker {
 }
 
 impl AccountUpdateTracker {
-    /// Returns a new [`AccountUpdateTracker`] instantiated for the specified account and the code
-    /// upgrade the transaction may apply to it.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the account is new and a code upgrade is provided.
-    pub fn new(
-        account: &PartialAccount,
-        account_code_upgrade: Option<AccountCodeUpgrade>,
-    ) -> Result<Self, TransactionKernelError> {
-        let code = match (account.is_new(), account_code_upgrade) {
-            (true, Some(_)) => {
-                return Err(TransactionKernelError::AccountCodeUpgradeNotAllowedForNewAccount);
-            },
-            (true, None) => AccountCodeState::New(account.code().clone()),
-            (false, Some(code_upgrade)) => AccountCodeState::UpgradeProvided(code_upgrade),
-            (false, None) => AccountCodeState::None,
+    /// Returns a new [`AccountUpdateTracker`] instantiated for the specified account.
+    pub fn new(account: &PartialAccount) -> Self {
+        let code = if account.is_new() {
+            AccountCodeState::New(account.code().clone())
+        } else {
+            AccountCodeState::None
         };
 
-        Ok(Self {
+        Self {
             account_id: account.id(),
             storage: StoragePatchTracker::new(account),
             vault: VaultUpdateTracker::default(),
             code,
             nonce_delta: Felt::ZERO,
             initial_nonce: account.nonce(),
-        })
+        }
     }
 
     /// Returns true if the nonce delta is non-zero.
@@ -75,45 +64,29 @@ impl AccountUpdateTracker {
         self.nonce_delta += Felt::ONE;
     }
 
-    /// Records the code upgrade the kernel is initializing and returns the new code.
+    /// Records the code upgrade the kernel is initializing.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the executor did not provide the code upgrade.
     /// - the account is new.
     /// - the upgrade was already initialized.
-    /// - the commitment of the provided code upgrade does not match `new_code_commitment`.
     pub fn record_code_upgrade(
         &mut self,
-        new_code_commitment: Word,
-    ) -> Result<AccountCode, TransactionKernelError> {
-        let code_upgrade = match &self.code {
+        code_upgrade: AccountCodeUpgrade,
+    ) -> Result<(), TransactionKernelError> {
+        match self.code {
             AccountCodeState::None => {
-                return Err(TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment));
+                self.code = AccountCodeState::UpgradeInitialized(code_upgrade);
+                Ok(())
             },
             AccountCodeState::New(_) => {
-                return Err(TransactionKernelError::AccountCodeUpgradeNotAllowedForNewAccount);
+                Err(TransactionKernelError::AccountCodeUpgradeNotAllowedForNewAccount)
             },
             AccountCodeState::UpgradeInitialized(_) => {
-                return Err(TransactionKernelError::other(
-                    "account code upgrade was already initialized",
-                ));
+                Err(TransactionKernelError::other("account code upgrade was already initialized"))
             },
-            AccountCodeState::UpgradeProvided(code_upgrade) => code_upgrade,
-        };
-
-        if code_upgrade.commitment() != new_code_commitment {
-            return Err(TransactionKernelError::AccountCodeUpgradeCommitmentMismatch {
-                expected: new_code_commitment,
-                actual: code_upgrade.commitment(),
-            });
         }
-
-        let new_code = code_upgrade.code().clone();
-        self.code = AccountCodeState::UpgradeInitialized(code_upgrade.clone());
-
-        Ok(new_code)
     }
 
     /// Updates the vault patch.
@@ -197,10 +170,6 @@ enum AccountCodeState {
     None,
     /// The code of a new account, which the transaction creates.
     New(AccountCode),
-    /// The code upgrade the executor provided for an existing account.
-    ///
-    /// The patch does not carry it, since the transaction may never apply it.
-    UpgradeProvided(AccountCodeUpgrade),
     /// The code upgrade the transaction applies to an existing account.
     UpgradeInitialized(AccountCodeUpgrade),
 }
@@ -209,7 +178,7 @@ impl AccountCodeState {
     /// Consumes `self` and returns the code for the [`AccountCodePatch`], if any.
     fn into_option_code(self) -> Option<AccountCode> {
         match self {
-            AccountCodeState::None | AccountCodeState::UpgradeProvided(_) => None,
+            AccountCodeState::None => None,
             AccountCodeState::New(account_code) => Some(account_code),
             AccountCodeState::UpgradeInitialized(code_upgrade) => Some(code_upgrade.into_code()),
         }

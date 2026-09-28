@@ -243,9 +243,7 @@ impl MockTransaction {
             ref_block,
             block_commitments,
             self.source_manager(),
-            tx_inputs.tx_args().account_code_upgrade().cloned(),
-        )
-        .expect("failed to construct transaction executor host");
+        );
 
         let advice_inputs = advice_inputs.into_advice_inputs();
 
