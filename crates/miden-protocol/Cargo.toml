@@ -31,7 +31,14 @@ std = [
   "miden-processor/std",
   "miden-verifier/std",
 ]
-testing = ["dep:rand_chacha", "dep:rand_xoshiro", "miden-core/testing", "miden-crypto/std", "rand/thread_rng"]
+testing = [
+  "dep:getrandom-03",
+  "dep:rand_chacha",
+  "dep:rand_xoshiro",
+  "miden-core/testing",
+  "miden-crypto/std",
+  "rand/thread_rng",
+]
 
 [dependencies]
 # Miden dependencies
@@ -58,7 +65,9 @@ toml         = { optional = true, version = "1.0" }
 rand_chacha = { optional = true, workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { features = ["wasm_js"], version = "0.4" }
+getrandom = { features = ["wasm_js"], workspace = true }
+# The VM's testing feature enables Proptest, which uses getrandom 0.3.
+getrandom-03 = { features = ["wasm_js"], optional = true, workspace = true }
 
 [dev-dependencies]
 anyhow         = { features = ["backtrace", "std"], workspace = true }
@@ -78,4 +87,4 @@ miden-protocol-build-utils = { workspace = true }
 regex                      = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["getrandom"]
+ignored = ["getrandom", "getrandom-03"]

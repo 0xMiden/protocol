@@ -38,6 +38,6 @@ members = [
 version = "0.17.0"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "0.33" }
+miden-core      = { linkage = "dynamic", version = "0.34" }
 miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
 miden-standards = { linkage = "dynamic", version = "0.17.0" }
