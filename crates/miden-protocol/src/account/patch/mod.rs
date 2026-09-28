@@ -159,6 +159,9 @@ impl AccountPatch {
     /// `other` overwrite their counterparts in `self`, and `other.final_nonce`, if present,
     /// becomes the new final nonce.
     ///
+    /// The merge is not commutative: `self` must describe the earlier and `other` the later
+    /// state, so `a.merge(b)` and `b.merge(a)` generally give different results.
+    ///
     /// Both patches must apply to the same account, and `other.final_nonce` must be exactly one
     /// greater than `self.final_nonce` whenever both are set. The exact `+1` requirement reflects
     /// the tx kernel invariants that (a) a state-changing transaction must increment the nonce,
@@ -330,7 +333,7 @@ impl AccountPatch {
     /// This method only results in a semantically correct account if the caller knows that the
     /// patch is from an account-creating transaction itself or resulted from merging patches
     /// onto the account-creating patch. The method can also succeed on patches coming from
-    /// code-upgrading transactions, but the but the result will not correspond to a meaningful
+    /// code-upgrading transactions, but the result will not correspond to a meaningful
     /// account state. Prefer applying the patch onto the new account against which the
     /// account-creating transaction was executed.
     ///

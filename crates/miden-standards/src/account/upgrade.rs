@@ -27,7 +27,9 @@ procedure_root!(
 /// [`crate::account::access::Authority`] component via `exec.authority::assert_authorized`.
 ///
 /// The procedure wraps the protocol `native_account::upgrade` kernel procedure, letting an account
-/// replace its own code. Storage upgrades are not yet supported.
+/// replace its own code. Storage upgrades are not yet supported, so the new code must use the same
+/// storage layout as the current code. Otherwise, the account can become unusable. See
+/// [`AccountCodeUpgrade`](miden_protocol::account::AccountCodeUpgrade).
 ///
 /// The account's authority must authorize every upgrade.
 ///

@@ -16,6 +16,11 @@ use crate::{Felt, Hasher, WORD_SIZE, Word};
 
 /// An upgrade of the [`AccountCode`] of an existing account.
 ///
+/// # Warning
+///
+/// An upgrade does not change the account's storage, so the new code must use the same storage
+/// layout as the current code. Otherwise, the account can become unusable.
+///
 /// The kernel only learns the commitment of the new code, so the host must obtain the new code when
 /// the kernel initializes the upgrade. It looks for the code, encoded by
 /// [`AccountCodeUpgrade::to_elements`], in:

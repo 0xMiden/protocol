@@ -242,7 +242,8 @@ proc apply_code_upgrade()
     exec.memory::get_code_upgrade_commitment
     # => [UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
 
-    exec.memory::has_code_upgrade
+    # the upgrade commitment is the empty word if no code upgrade is pending
+    exec.word::testz not
     # => [has_code_upgrade, UPGRADE_CODE_COMMITMENT, CURRENT_CODE_COMMITMENT]
 
     # If has_code_upgrade UPGRADE_CODE_COMMITMENT remains.

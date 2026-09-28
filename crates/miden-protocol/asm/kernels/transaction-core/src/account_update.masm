@@ -327,8 +327,8 @@ proc commit_slot_patch(slot_idx: u8, state: HasherState) -> HasherState
     # => [RATE0, RATE1, CAPACITY]
 end
 
-#! Updates the given hasher with the native account's code, if the account is new or its code is
-#! upgraded.
+#! Updates the given hasher with the native account's code commitment, if the account is new or
+#! its code is upgraded.
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]

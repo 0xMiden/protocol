@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 
 use miden_core::Word;
 
-use crate::account::AccountId;
 use crate::block::{
     BlockAccountUpdate,
     BlockNoteIndex,
@@ -14,7 +13,7 @@ use crate::block::{
 };
 use crate::errors::BlockBodyError;
 use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote, TransactionHeader};
+use crate::transaction::{OrderedTransactionHeaders, OutputNote};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -82,13 +81,7 @@ impl BlockBody {
             return Err(BlockBodyError::TooManyNullifiers(created_nullifiers.len()));
         }
 
-        // Account-creating transactions have an empty initial state commitment.
-        let new_account_ids: BTreeSet<AccountId> = transactions
-            .as_slice()
-            .iter()
-            .filter(|transaction| transaction.initial_state_commitment().is_empty())
-            .map(TransactionHeader::account_id)
-            .collect();
+        let new_account_ids: BTreeSet<_> = transactions.created_account_ids().collect();
 
         let mut account_ids = BTreeSet::new();
         for update in &updated_accounts {

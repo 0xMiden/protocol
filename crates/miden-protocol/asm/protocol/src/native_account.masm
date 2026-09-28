@@ -162,6 +162,9 @@ end
 #!
 #! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
 #!
+#! WARNING: The upgrade does not change the account's storage, so the new code must use the same
+#! storage layout as the current code. Otherwise, the account can become unusable.
+#!
 #! Inputs:  [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
 #! Outputs: []
 #!

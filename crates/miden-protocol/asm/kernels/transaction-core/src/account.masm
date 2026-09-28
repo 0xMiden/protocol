@@ -1217,6 +1217,7 @@ pub proc validate_procedures(code_section_ptr: ptr<felt>)
     dup add.ACCOUNT_PROCEDURE_DATA_LENGTH movdn.2
     # => [auth_proc_ptr, num_procs, proc_1_ptr]
 
+    # curr_proc_ptr starts at the last procedure and the loop steps it back to proc_1_ptr
     swap sub.1 mul.ACCOUNT_PROCEDURE_DATA_LENGTH dup.1 add
     # => [curr_proc_ptr, auth_proc_ptr, proc_1_ptr]
 

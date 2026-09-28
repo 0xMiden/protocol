@@ -44,7 +44,7 @@ impl AccountCodePatch {
     }
 
     /// Merges `other` into this patch. The code of `other`, if present, replaces the code of
-    /// `self`, since `other` describes the later state.
+    /// `self`, since `other` describes the later state. Hence, the merge is not commutative.
     pub fn merge(&mut self, other: Self) {
         if other.patch.is_some() {
             self.patch = other.patch;
