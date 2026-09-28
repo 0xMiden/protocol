@@ -19,7 +19,8 @@ use crate::{Felt, Hasher, WORD_SIZE, Word};
 /// # Warning
 ///
 /// An upgrade does not change the account's storage, so the new code must use the same storage
-/// layout as the current code. Otherwise, the account can become unusable.
+/// layout as the current code. Otherwise, the account can become unusable. The kernel does not
+/// enforce this, so the account authority must make sure that the layout stays the same.
 ///
 /// The kernel only learns the commitment of the new code, so the host must obtain the new code when
 /// the kernel initializes the upgrade. It looks for the code, encoded by
@@ -84,9 +85,9 @@ impl AccountCodeUpgrade {
 
     /// Returns the encoding of the new code as field elements.
     ///
-    /// The serialized code is packed into field elements, 7 bytes per element, and padded with
-    /// zero elements to a whole number of words, so that it can also be carried as words, e.g. in
-    /// a note attachment.
+    /// The serialized code is packed into field elements, 7 bytes per element, with a non-zero
+    /// padding marker in the last packed element, and then padded with zero elements to a whole
+    /// number of words, so that it can also be carried as words, e.g. in a note attachment.
     pub fn to_elements(&self) -> Vec<Felt> {
         let mut elements = bytes_to_elements_with_padding(&self.code.to_bytes());
         elements.resize(elements.len().next_multiple_of(WORD_SIZE), Felt::ZERO);
