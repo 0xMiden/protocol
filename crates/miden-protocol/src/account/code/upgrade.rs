@@ -136,8 +136,8 @@ impl Deserializable for AccountCodeUpgrade {
 #[cfg(test)]
 mod tests {
     use super::AccountCodeUpgrade;
+    use crate::WORD_SIZE;
     use crate::account::AccountCode;
-    use crate::{Hasher, WORD_SIZE};
 
     #[test]
     fn advice_map_entry_roundtrips() -> anyhow::Result<()> {
