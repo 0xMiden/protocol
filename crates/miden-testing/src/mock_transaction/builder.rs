@@ -226,8 +226,8 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
-    /// Sets the code upgrade of the native account, which the transaction must provide if it
-    /// upgrades the account's code.
+    /// Sets the code upgrade of the native account, which is provided through the advice map to a
+    /// transaction that upgrades the account's code.
     pub fn account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
         self.account_code_upgrade = Some(account_code_upgrade);
         self
@@ -332,8 +332,8 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_args = tx_args.with_tx_script_and_args(tx_script, self.tx_script_args);
         }
         tx_args = tx_args.with_auth_args(self.auth_args);
-        if let Some(account_code_upgrade) = self.account_code_upgrade {
-            tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
+        if let Some(account_code_upgrade) = &self.account_code_upgrade {
+            tx_args.add_account_code_upgrade(account_code_upgrade);
         }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(&self.expected_output_notes);

@@ -138,7 +138,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".note.NoteAttachment",
             ".note.NoteStorage",
             ".account.AccountCode",
-            ".account.AccountCodeUpgrade",
             ".blockchain.NextProtocolConfig",
             ".note.NoteId",
             ".primitives.AdviceStack",

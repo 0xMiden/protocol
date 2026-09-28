@@ -4,7 +4,6 @@ use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
     AccountCodePatch,
-    AccountCodeUpgrade,
     AccountPatch,
     AccountStoragePatch,
     AccountUpdateDetails,
@@ -35,12 +34,6 @@ impl From<&AccountCode> for proto::account::AccountCode {
 impl From<AccountCode> for proto::account::AccountCode {
     fn from(code: AccountCode) -> Self {
         Self::from(&code)
-    }
-}
-
-impl From<&AccountCodeUpgrade> for proto::account::AccountCodeUpgrade {
-    fn from(upgrade: &AccountCodeUpgrade) -> Self {
-        Self { code: Some(upgrade.code().into()) }
     }
 }
 

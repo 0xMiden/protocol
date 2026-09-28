@@ -120,10 +120,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionBaseHost`] instance from the provided inputs.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the [`AccountUpdateTracker`] cannot be created for the account.
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
@@ -131,9 +127,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-        account_code_upgrade: Option<AccountCodeUpgrade>,
-    ) -> Result<Self, TransactionKernelError> {
-        let update_tracker = AccountUpdateTracker::new(account, account_code_upgrade)?;
+    ) -> Self {
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
 
@@ -145,18 +139,18 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             }
             registry
         };
-        Ok(Self {
+        Self {
             mast_store,
             scripts_mast_store,
             initial_account_header: account.into(),
             initial_account_storage_header: account.storage().header().clone(),
-            update_tracker,
+            update_tracker: AccountUpdateTracker::new(account),
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
             block_commitments,
             core_lib_handlers,
-        })
+        }
     }
 
     // PUBLIC ACCESSORS
@@ -393,15 +387,30 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     /// Handles the before code upgrade event by recording the new code in the update tracker and
     /// providing its procedures to the kernel through the advice map.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the commitment of `code_upgrade` does not match `new_code_commitment`.
+    /// - the update tracker rejects the upgrade.
     pub fn on_account_before_code_upgrade(
         &mut self,
         new_code_commitment: Word,
+        code_upgrade: AccountCodeUpgrade,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let new_code = self.update_tracker.record_code_upgrade(new_code_commitment)?;
+        if code_upgrade.commitment() != new_code_commitment {
+            return Err(TransactionKernelError::AccountCodeUpgradeCommitmentMismatch {
+                expected: new_code_commitment,
+                actual: code_upgrade.commitment(),
+            });
+        }
+
+        let procedures = code_upgrade.code().to_elements();
+        self.update_tracker.record_code_upgrade(code_upgrade)?;
 
         Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
             new_code_commitment,
-            new_code.to_elements(),
+            procedures,
         )]))])
     }
 

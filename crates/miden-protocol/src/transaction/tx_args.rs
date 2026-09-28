@@ -37,8 +37,6 @@ use crate::vm::{AdviceInputs, AdviceMap};
 ///   this argument is not specified, the [`EMPTY_WORD`] would be used as a default value. If the
 ///   [AdviceInputs] are propagated with some user defined map entries, this argument could be used
 ///   as a key to access the corresponding value.
-/// - Account code upgrade: the [`AccountCodeUpgrade`] of the native account if the transaction
-///   upgrades its code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -46,7 +44,6 @@ pub struct TransactionArgs {
     note_args: BTreeMap<NoteId, Word>,
     advice_inputs: AdviceInputs,
     auth_args: Word,
-    account_code_upgrade: Option<AccountCodeUpgrade>,
 }
 
 impl TransactionArgs {
@@ -61,7 +58,6 @@ impl TransactionArgs {
             BTreeMap::new(),
             AdviceInputs::from(advice_map),
             EMPTY_WORD,
-            None,
         )
     }
 
@@ -72,7 +68,6 @@ impl TransactionArgs {
         note_args: BTreeMap<NoteId, Word>,
         advice_inputs: AdviceInputs,
         auth_args: Word,
-        account_code_upgrade: Option<AccountCodeUpgrade>,
     ) -> Self {
         Self {
             tx_script,
@@ -80,7 +75,6 @@ impl TransactionArgs {
             note_args,
             advice_inputs,
             auth_args,
-            account_code_upgrade,
         }
     }
 
@@ -124,14 +118,6 @@ impl TransactionArgs {
     #[must_use]
     pub fn with_auth_args(mut self, auth_args: Word) -> Self {
         self.auth_args = auth_args;
-        self
-    }
-
-    /// Returns new [`TransactionArgs`] instantiated with the provided code upgrade of the native
-    /// account.
-    #[must_use]
-    pub fn with_account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
-        self.account_code_upgrade = Some(account_code_upgrade);
         self
     }
 
@@ -180,11 +166,6 @@ impl TransactionArgs {
         self.auth_args
     }
 
-    /// Returns the code upgrade of the native account, if the transaction upgrades its code.
-    pub fn account_code_upgrade(&self) -> Option<&AccountCodeUpgrade> {
-        self.account_code_upgrade.as_ref()
-    }
-
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -218,6 +199,18 @@ impl TransactionArgs {
             Hasher::merge(&[pk_word, message]),
             signature.to_encoded_signature(message),
         )]));
+    }
+
+    /// Adds the `code_upgrade` of the native account to the advice inputs' map.
+    ///
+    /// The host reads the new code from this entry when the transaction upgrades the code of the
+    /// native account to it.
+    ///
+    /// The advice inputs' map is extended with the following key:
+    ///
+    /// - hash(NEW_CODE_COMMITMENT) |-> new code (encoded as field elements).
+    pub fn add_account_code_upgrade(&mut self, code_upgrade: &AccountCodeUpgrade) {
+        self.extend_advice_map([code_upgrade.to_advice_map_entry()]);
     }
 
     /// Populates the advice inputs with the specified note recipient details.
@@ -268,7 +261,6 @@ impl Serializable for TransactionArgs {
         self.note_args.write_into(target);
         self.advice_inputs.write_into(target);
         self.auth_args.write_into(target);
-        self.account_code_upgrade.write_into(target);
     }
 }
 
@@ -279,16 +271,8 @@ impl Deserializable for TransactionArgs {
         let note_args = BTreeMap::<NoteId, Word>::read_from(source)?;
         let advice_inputs = AdviceInputs::read_from(source)?;
         let auth_args = Word::read_from(source)?;
-        let account_code_upgrade = Option::<AccountCodeUpgrade>::read_from(source)?;
 
-        Ok(Self::from_parts(
-            tx_script,
-            tx_script_args,
-            note_args,
-            advice_inputs,
-            auth_args,
-            account_code_upgrade,
-        ))
+        Ok(Self::from_parts(tx_script, tx_script_args, note_args, advice_inputs, auth_args))
     }
 }
 
@@ -329,7 +313,6 @@ mod tests {
             note_args.clone(),
             advice_inputs.clone(),
             Word::new([Felt::from(5_u32); 4]),
-            None,
         );
 
         assert_eq!(tx_args.note_args(), &note_args);
