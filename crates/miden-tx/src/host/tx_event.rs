@@ -434,10 +434,10 @@ impl TransactionEvent {
                     let note_script = process
                         .advice_provider()
                         .get_mapped_values(&script_root)
-                        .map(|script_data| {
-                            NoteScript::try_from(script_data).map_err(|source| {
+                        .map(|script_elements| {
+                            NoteScript::try_from_elements(script_elements).map_err(|source| {
                                 TransactionKernelError::MalformedNoteScript {
-                                    data: script_data.to_vec(),
+                                    script_elements: script_elements.to_vec(),
                                     source,
                                 }
                             })

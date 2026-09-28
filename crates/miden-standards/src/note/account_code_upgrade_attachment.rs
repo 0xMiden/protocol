@@ -14,8 +14,8 @@ use crate::note::StandardNoteAttachment;
 /// A [`NoteAttachment`] that carries an [`AccountCodeUpgrade`], so that a transaction consuming the
 /// note can upgrade an account to its code.
 ///
-/// The attachment content is the encoding of [`AccountCodeUpgrade::to_elements`], which is also
-/// the value of the upgrade's advice map entry.
+/// The attachment content is the encoding of [`AccountCodeUpgrade::to_elements`], which is
+/// also the value of the upgrade's advice map entry.
 ///
 /// When the kernel initializes an upgrade that the advice map does not provide the code for, the
 /// transaction host looks for an attachment of this scheme on the input notes whose code matches

@@ -1,8 +1,9 @@
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
-use miden_core::mast::MastNodeExt;
+use miden_core::mast::{MastNodeExt, UntrustedMastForest};
 use miden_mast_package::Package;
 use miden_mast_package::debug_info::PackageDebugInfo;
 use miden_processor::LoadedMastForest;
@@ -214,15 +215,17 @@ impl Eq for MastForestScript {}
 
 impl Serializable for MastForestScript {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.mast.write_into(target);
+        self.mast.write_hashless(target);
         target.write_u32(u32::from(self.entrypoint));
     }
 
     fn get_size_hint(&self) -> usize {
-        // TODO: this is a temporary workaround. Replace mast.to_bytes().len() with
+        // TODO: this is a temporary workaround. Replace the temporary serialization with
         // MastForest::get_size_hint() (or a similar size-hint API) once it becomes
         // available.
-        let mast_size = self.mast.to_bytes().len();
+        let mut mast_target = Vec::new();
+        self.mast.write_hashless(&mut mast_target);
+        let mast_size = mast_target.len();
         let u32_size = 0u32.get_size_hint();
 
         mast_size + u32_size
@@ -231,7 +234,10 @@ impl Serializable for MastForestScript {
 
 impl Deserializable for MastForestScript {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mast = MastForest::read_from(source)?;
+        // The bytes may be untrusted, so node hashes are rebuilt from the forest's structure.
+        let mast = UntrustedMastForest::read_from_reader(source)?
+            .validate()
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
         let entrypoint = MastNodeId::from_u32_safe(source.read_u32()?, &mast)?;
 
         Self::from_parts(Arc::new(mast), entrypoint)

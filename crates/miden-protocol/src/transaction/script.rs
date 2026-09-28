@@ -280,6 +280,9 @@ mod tests {
 
         // the script must round-trip through serialization unchanged
         let bytes = script.to_bytes();
+        let mut hashless_mast = alloc::vec::Vec::new();
+        script.mast().write_hashless(&mut hashless_mast);
+        assert!(bytes.starts_with(&hashless_mast));
         let decoded = TransactionScript::read_from_bytes(&bytes).unwrap();
         assert_eq!(script, decoded);
 
