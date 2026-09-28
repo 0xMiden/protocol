@@ -52,6 +52,10 @@ message AccountCode {
   repeated primitives.Word procedure_roots = 2;
 }
 
+message AccountCodeUpgrade {
+  AccountCode code = 1;
+}
+
 message StorageSlotId {
   primitives.Felt suffix = 1;
   primitives.Felt prefix = 2;

@@ -2,7 +2,13 @@ use alloc::vec::Vec;
 
 use crate::account::AccountCode;
 use crate::crypto::utils::{bytes_to_elements_with_padding, padded_elements_to_bytes};
-use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Hasher, Word};
 
 // ACCOUNT CODE UPGRADE
@@ -10,9 +16,9 @@ use crate::{Felt, Hasher, Word};
 
 /// An upgrade of the [`AccountCode`] of an existing account.
 ///
-/// The kernel only learns the commitment of the new code, so a transaction that upgrades an account
-/// must provide the new code in its advice map, under [`AccountCodeUpgrade::advice_map_key`]. The
-/// host reads it from there when the kernel initializes the upgrade.
+/// The kernel only learns the commitment of the new code, so the transaction advice inputs provide
+/// the new code under [`AccountCodeUpgrade::advice_map_key`]. The host reads it from there when the
+/// kernel initializes the upgrade.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountCodeUpgrade {
     code: AccountCode,
@@ -55,18 +61,34 @@ impl AccountCodeUpgrade {
             bytes_to_elements_with_padding(&self.code.to_bytes()),
         )
     }
-}
-
-impl TryFrom<&[Felt]> for AccountCodeUpgrade {
-    type Error = DeserializationError;
 
     /// Reads an [`AccountCodeUpgrade`] from the value of the advice map entry that provides it.
-    fn try_from(elements: &[Felt]) -> Result<Self, Self::Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `elements` do not encode valid account code.
+    pub fn try_from_elements(elements: &[Felt]) -> Result<Self, DeserializationError> {
         let bytes = padded_elements_to_bytes(elements).ok_or_else(|| {
             DeserializationError::InvalidValue("encoded account code is not padded".into())
         })?;
 
         AccountCode::read_from_bytes(&bytes).map(Self::new)
+    }
+}
+
+impl Serializable for AccountCodeUpgrade {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        self.code.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.code.get_size_hint()
+    }
+}
+
+impl Deserializable for AccountCodeUpgrade {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        AccountCode::read_from(source).map(Self::new)
     }
 }
 
@@ -85,7 +107,7 @@ mod tests {
         let (key, elements) = upgrade.to_advice_map_entry();
 
         assert_eq!(key, AccountCodeUpgrade::advice_map_key(upgrade.commitment()));
-        assert_eq!(AccountCodeUpgrade::try_from(elements.as_slice())?, upgrade);
+        assert_eq!(AccountCodeUpgrade::try_from_elements(&elements)?, upgrade);
 
         Ok(())
     }

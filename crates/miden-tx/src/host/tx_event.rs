@@ -402,7 +402,7 @@ impl TransactionEvent {
                         TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment),
                     )?;
                 let code_upgrade =
-                    AccountCodeUpgrade::try_from(upgrade_data).map_err(|source| {
+                    AccountCodeUpgrade::try_from_elements(upgrade_data).map_err(|source| {
                         TransactionKernelError::AccountCodeUpgradeInvalid {
                             new_code_commitment,
                             source,
