@@ -1196,22 +1196,10 @@ fn upgrade_tx_script(
     Ok(CodeBuilder::with_mock_packages().compile_tx_script(tx_script)?)
 }
 
-/// Tests that `native_account::upgrade` stores the new code commitment in kernel memory, and the
-/// empty word if the upgrade is a no-op.
-#[rstest::rstest]
-#[case::upgraded_code(upgraded_mock_account_code()?.commitment(), upgraded_mock_account_code()?.commitment())]
-#[case::current_code(existing_mock_account().code().commitment(), Word::empty())]
-#[case::empty_word(Word::empty(), Word::empty())]
-#[tokio::test]
-async fn test_account_upgrade_stores_code_commitment(
-    #[case] new_code_commitment: Word,
-    #[case] expected_code_upgrade_commitment: Word,
-) -> anyhow::Result<()> {
-    let mock_tx = TestTransactionBuilder::new(existing_mock_account())
-        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_mock_account_code()?))
-        .build()?;
-
-    let code = format!(
+/// Returns a program that runs the prologue and then initializes an upgrade of the native account's
+/// code to the code with `new_code_commitment`.
+fn upgrade_program(new_code_commitment: Word) -> String {
+    format!(
         r#"
         use mock::account as mock_account
         use miden::tx_kernel_core::prologue
@@ -1227,9 +1215,25 @@ async fn test_account_upgrade_stores_code_commitment(
             dropw dropw dropw dropw
         end
         "#,
-    );
+    )
+}
 
-    let exec_output = &mock_tx.execute_code(&code).await?;
+/// Tests that `native_account::upgrade` stores the new code commitment in kernel memory, and the
+/// empty word if the upgrade is a no-op.
+#[rstest::rstest]
+#[case::upgraded_code(upgraded_mock_account_code()?.commitment(), upgraded_mock_account_code()?.commitment())]
+#[case::current_code(existing_mock_account().code().commitment(), Word::empty())]
+#[case::empty_word(Word::empty(), Word::empty())]
+#[tokio::test]
+async fn test_account_upgrade_stores_code_commitment(
+    #[case] new_code_commitment: Word,
+    #[case] expected_code_upgrade_commitment: Word,
+) -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::new(existing_mock_account())
+        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_mock_account_code()?))
+        .build()?;
+
+    let exec_output = &mock_tx.execute_code(&upgrade_program(new_code_commitment)).await?;
 
     assert_eq!(
         exec_output.get_kernel_mem_word(CODE_UPGRADE_COMMITMENT_PTR),
@@ -1301,7 +1305,7 @@ async fn test_account_upgrade_replaces_code(#[case] is_upgrade: bool) -> anyhow:
     assert_eq!(expected_account.to_commitment(), executed_tx.final_account().to_commitment());
 
     // Check account upgrades work under the prover's re-execution.
-    LocalTransactionProver::default().prove_dummy(executed_tx)?;
+    LocalTransactionProver::default().prove(executed_tx)?;
 
     Ok(())
 }
@@ -1381,27 +1385,83 @@ async fn test_account_upgrade_rejects_new_account() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the upgrade rejects procedures that do not match the new code commitment, so that a
-/// prover cannot swap the code the transaction commits to.
+/// Tests that the host rejects an upgrade to code that the executor did not provide.
 #[tokio::test]
-async fn test_account_upgrade_rejects_procedures_not_matching_commitment() -> anyhow::Result<()> {
+async fn test_account_upgrade_rejects_missing_code() -> anyhow::Result<()> {
     let upgraded_code = upgraded_mock_account_code()?;
 
     let result = TestTransactionBuilder::new(existing_mock_account())
         .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
-        .account_code_upgrade(AccountCodeUpgrade::new(upgraded_code.clone()))
-        .add_advice_map_entry(upgraded_code.commitment(), AccountCode::mock().to_elements())
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH);
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment))
+                    if *new_code_commitment == upgraded_code.commitment()
+            )
+    );
+
+    Ok(())
+}
+
+/// Tests that the host rejects an upgrade to code other than the code the executor provided.
+#[tokio::test]
+async fn test_account_upgrade_rejects_code_not_matching_provided_code() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+    let provided_code = AccountCode::mock();
+    assert_ne!(upgraded_code.commitment(), provided_code.commitment());
+
+    let result = TestTransactionBuilder::new(existing_mock_account())
+        .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
+        .account_code_upgrade(AccountCodeUpgrade::new(provided_code.clone()))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::AccountCodeUpgradeCommitmentMismatch {
+                    expected,
+                    actual,
+                }) if *expected == upgraded_code.commitment()
+                    && *actual == provided_code.commitment()
+            )
+    );
+
+    Ok(())
+}
+
+/// Tests that the upgrade rejects procedures that do not match the new code commitment, so that a
+/// malicious host cannot swap the code the transaction commits to.
+#[tokio::test]
+async fn test_account_upgrade_rejects_procedures_not_matching_commitment() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+
+    // Without lazy loading, the host does not provide the procedures of the new code, so the kernel
+    // loads the mismatching procedures from the advice map.
+    let mock_tx = TestTransactionBuilder::new(existing_mock_account())
+        .add_advice_map_entry(upgraded_code.commitment(), AccountCode::mock().to_elements())
+        .build()?;
+
+    let result = mock_tx
+        .execute_code_without_lazy_loading(&upgrade_program(upgraded_code.commitment()))
+        .await;
+
+    assert_execution_error!(result, ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH);
 
     Ok(())
 }
 
 /// Tests that the upgrade rejects procedures that match the new code commitment but are not valid
-/// account procedures.
+/// account procedures, which only a malicious host could provide.
 #[rstest::rstest]
 #[case::not_enough_procedures(sorted_procedure_roots(1), ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES)]
 #[case::unsorted_procedures(
@@ -1432,14 +1492,17 @@ async fn test_account_upgrade_rejects_invalid_procedures(
         .collect();
     let new_code_commitment = Hasher::hash_elements(&procedure_elements);
 
-    let result = TestTransactionBuilder::new(existing_mock_account())
-        .tx_script(upgrade_tx_script([(new_code_commitment, Word::empty())])?)
+    // Without lazy loading, the host does not provide the procedures of the new code, so the kernel
+    // loads the invalid procedures from the advice map.
+    let mock_tx = TestTransactionBuilder::new(existing_mock_account())
         .add_advice_map_entry(new_code_commitment, procedure_elements)
-        .build()?
-        .execute()
+        .build()?;
+
+    let result = mock_tx
+        .execute_code_without_lazy_loading(&upgrade_program(new_code_commitment))
         .await;
 
-    assert_transaction_executor_error!(result, expected_error);
+    assert_execution_error!(result, expected_error);
 
     Ok(())
 }
