@@ -226,48 +226,25 @@ async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
 }
 
 /// Fee payment fails with a fee-specific error when the account does not hold enough of the
-/// fee asset.
+/// fee asset, whether it holds none of it or less than the fee.
+#[rstest]
+#[case::no_fee_asset(None)]
+#[case::insufficient_balance(Some(1))]
 #[tokio::test]
-async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
+async fn fee_payment_fails_without_fee_asset(
+    #[case] fee_balance: Option<u64>,
+) -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
-
-    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-    let mock_chain = builder.build()?;
-
-    let (args, advice_value) = commit_fee_conversion_info(
-        FeeConversionInfo::one_to_one(fee_faucet_id),
-        Word::from([9u32, 10, 11, 12]),
-    );
-
-    let result = mock_chain
-        .build_transaction(account.id())
-        .auth_args(args)
-        .add_advice_map_entry(args, advice_value)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
-
-    Ok(())
-}
-
-/// Fee payment fails with the same fee-specific error when the account holds some of the fee
-/// asset, but less than the fee.
-#[tokio::test]
-async fn fee_payment_fails_with_insufficient_fee_asset() -> anyhow::Result<()> {
-    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
-    let fee_asset: Asset = FungibleAsset::new(fee_faucet_id, 1)?.into();
+    let fee_assets = fee_balance
+        .map(|amount| FungibleAsset::new(fee_faucet_id, amount).map(Asset::from))
+        .transpose()?;
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let account = builder.add_existing_wallet_with_assets(
         Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
-        [fee_asset],
+        fee_assets,
     )?;
     let mock_chain = builder.build()?;
 
