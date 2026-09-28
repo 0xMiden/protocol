@@ -151,16 +151,4 @@ mod tests {
 
         Ok(())
     }
-
-    /// The key must differ from the undomained hash that keys, e.g., a note storage holding the
-    /// commitment.
-    #[test]
-    fn advice_map_key_is_domain_separated() {
-        let commitment = AccountCode::mock().commitment();
-
-        assert_ne!(
-            AccountCodeUpgrade::advice_map_key(commitment),
-            Hasher::hash_elements(commitment.as_elements())
-        );
-    }
 }

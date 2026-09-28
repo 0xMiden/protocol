@@ -208,7 +208,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// [`AccountCodeUpgradeAttachment`], if any.
     ///
     /// Only attachments of that scheme are decoded. Those that do not decode or carry other code
-    /// are skipped, so that an unrelated input note cannot prevent the upgrade.
+    /// are skipped.
     pub(crate) fn find_input_note_code_upgrade(
         &self,
         new_code_commitment: Word,
