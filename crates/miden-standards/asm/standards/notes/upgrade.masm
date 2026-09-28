@@ -20,6 +20,8 @@ const NUM_STORAGE_ITEMS = 4
 
 const ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "upgrade note storage item count is not the expected count"
 
+const ERR_UPGRADE_NOTE_IS_NOT_PUBLIC = "upgrade note must be public"
+
 # NOTE SCRIPT
 # =================================================================================================
 
@@ -48,6 +50,7 @@ const ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "upgrade note storag
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
 #! - the note sender is not authorized (per the `Authority` component).
@@ -56,6 +59,10 @@ const ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "upgrade note storag
 pub proc main(args: NoteArgs)
     # drop the note script args
     dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_UPGRADE_NOTE_IS_NOT_PUBLIC
     # => [pad(16)]
 
     # abort if the consuming account is not the note's target account

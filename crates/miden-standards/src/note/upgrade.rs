@@ -56,8 +56,7 @@ static UPGRADE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// map instead (see [`AccountCodeUpgrade`]).
 ///
 /// The note is always public (for network execution) and bound to the `target` account by a
-/// [`NetworkAccountTarget`] attachment: the script asserts that the consuming account matches that
-/// target before calling `upgrade`.
+/// [`NetworkAccountTarget`] attachment. The script asserts both before calling `upgrade`.
 #[derive(Debug, Clone)]
 pub struct UpgradeNote {
     sender: AccountId,
@@ -252,6 +251,7 @@ mod tests {
 
     use super::*;
     use crate::code_builder::CodeBuilder;
+    use crate::note::AccountCodeUpgradeAttachmentError;
     use crate::testing::account_component::IncrNonceAuthComponent;
 
     fn account_id(seed: u8) -> AccountId {
@@ -371,8 +371,11 @@ mod tests {
     fn too_large_code_is_rejected() -> anyhow::Result<()> {
         let result = build_upgrade_note(account_id(1), too_large_code()?);
 
-        assert_matches!(result, Err(NoteError::Other { error_msg, .. })
-            if error_msg.contains("failed to attach the account code"));
+        assert_matches!(result, Err(NoteError::Other { source: Some(source), .. })
+        if matches!(
+            source.downcast_ref::<AccountCodeUpgradeAttachmentError>(),
+            Some(AccountCodeUpgradeAttachmentError::CodeTooLarge(_))
+        ));
 
         Ok(())
     }

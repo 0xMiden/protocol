@@ -12,6 +12,8 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
+use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
@@ -30,9 +32,11 @@ use miden_standards::errors::standards::{
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
+    ERR_UPGRADE_NOTE_IS_NOT_PUBLIC,
+    ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
 };
 use miden_standards::note::config::{NetworkAccountConfig, NetworkAccountConfigNote};
-use miden_standards::note::{P2idNote, UpgradeNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, P2idNote, UpgradeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
@@ -1117,6 +1121,70 @@ async fn test_auth_network_account_rejects_upgrade_note_for_other_target() -> an
         result,
         ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT
     );
+
+    Ok(())
+}
+
+/// A private upgrade note sent by the owner must be rejected by the note script.
+#[tokio::test]
+async fn test_auth_network_account_rejects_private_upgrade_note() -> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+    let note = build_upgrade_note(owner, account.id(), upgraded_network_account_code(owner)?)?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(into_private_note(note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_UPGRADE_NOTE_IS_NOT_PUBLIC);
+
+    Ok(())
+}
+
+/// A note carrying the upgrade note script but a storage item count other than
+/// [`UpgradeNote::NUM_STORAGE_ITEMS`] must be rejected. An oversized note is rejected by the bound
+/// the script passes to `get_bounded_storage`; the other counts reach the script's own guard.
+#[rstest]
+#[case::empty(0, ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS)]
+#[case::too_few(
+    UpgradeNote::NUM_STORAGE_ITEMS - 1,
+    ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+)]
+#[case::too_many(UpgradeNote::NUM_STORAGE_ITEMS + 1, ERR_NOTE_TOO_MANY_STORAGE_ITEMS)]
+#[tokio::test]
+async fn test_auth_network_account_rejects_upgrade_note_with_wrong_storage_item_count(
+    #[case] num_items: usize,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+    let note = NoteBuilder::new(owner, &mut rand::rng())
+        .script(UpgradeNote::script())
+        .note_storage(vec![Felt::from(1u32); num_items])?
+        .attachment(NetworkAccountTarget::new(account.id(), NoteExecutionHint::Always)?)
+        .build()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }
