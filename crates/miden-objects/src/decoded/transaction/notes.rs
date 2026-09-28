@@ -109,3 +109,27 @@ impl Verify for InputNotes {
         Ok(Self::Verified::new(notes)?)
     }
 }
+
+pub use proto::transaction::DecodedRawOutputNote as RawOutputNote;
+
+impl Verify for RawOutputNote {
+    type Verified = miden_protocol::transaction::RawOutputNote;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        use proto::transaction::raw_output_note::DecodedNote;
+        match self.note {
+            DecodedNote::Full(note) => Ok(Self::Verified::Full(note.verify()?)),
+            DecodedNote::Partial(note) => Ok(Self::Verified::Partial(note.verify()?)),
+        }
+    }
+}
+
+pub use proto::transaction::DecodedRawOutputNotes as RawOutputNotes;
+
+impl Verify for RawOutputNotes {
+    type Verified = miden_protocol::transaction::RawOutputNotes;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(self.notes.verify()?)?)
+    }
+}

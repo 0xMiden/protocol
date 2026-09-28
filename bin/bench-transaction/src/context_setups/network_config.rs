@@ -40,7 +40,6 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
@@ -537,7 +536,6 @@ pub fn tx_consume_network_account_config_note_network() -> Result<MockTransactio
         .account_type(AccountType::Public)
         .with_components(auth_components)
         .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(BasicWallet)
         .with_assets([super::fee_funding_asset()?])
         .build_existing()?;
     builder.add_account(account.clone())?;
@@ -580,7 +578,6 @@ pub fn tx_consume_constant_fee_policy_config_note_network() -> Result<MockTransa
 
     let account_builder = AccountBuilder::new([7; 32])
         .account_type(AccountType::Public)
-        .with_component(BasicWallet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_component(ConstantFeeManager::for_basic_constant_fee_policy())

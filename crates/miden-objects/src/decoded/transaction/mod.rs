@@ -12,6 +12,9 @@ pub use core::{
     TxAccountUpdate,
 };
 
+mod effects;
+pub use effects::{TransactionEffects, TransactionEffectsV1};
+
 mod args;
 pub use args::{NoteArgument, TransactionArgs, TransactionArgsError, TransactionScript};
 
@@ -25,6 +28,8 @@ pub use notes::{
     OutputNote,
     PrivateOutputNote,
     PublicOutputNote,
+    RawOutputNote,
+    RawOutputNotes,
 };
 
 mod inputs;

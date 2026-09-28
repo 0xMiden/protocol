@@ -7,9 +7,10 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::errors::ProvenBatchError;
+use miden_protocol::errors::ProposedBatchError;
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::ProvenTransaction;
+use miden_protocol::vm::{ExecutionProof, PrecompileStatus};
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch::{BatchExecutor, LocalBatchProver};
@@ -147,8 +148,8 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The batch settles the outstanding precompile claims of its transactions: the executor merges one
-/// witness per ECDSA transaction in transaction order, and the prover proves them all at once.
+/// The batch settles the outstanding precompile claims of its transactions: the executor collects
+/// one witness per ECDSA transaction in transaction order, and the prover proves them all at once.
 /// Falcon verifies in-circuit and therefore contributes no claim.
 ///
 /// The four transactions are proven once and reused across the batch shapes, because proving them
@@ -179,16 +180,21 @@ async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
         let mut expected_roots = Vec::new();
         for transaction in batch.transactions() {
             expected_roots
-                .extend(transaction.precompile_witness()?.map(|witness| witness.state().root()));
+                .extend(transaction.precompile_witness().map(|witness| witness.root_unchecked()));
         }
         // Pin the count independently, so this fails if transactions stop deferring claims.
         assert_eq!(expected_roots.len(), expected_root_count, "{shape}");
 
         let executed = BatchExecutor::new().execute(batch).context(shape)?;
-        match executed.precompile_witness() {
-            Some(witness) => assert_eq!(witness.roots(), expected_roots, "{shape}"),
-            None => assert!(expected_roots.is_empty(), "{shape}"),
-        }
+        assert_eq!(
+            executed
+                .precompile_witnesses()
+                .iter()
+                .map(|witness| witness.root_unchecked())
+                .collect::<Vec<_>>(),
+            expected_roots,
+            "{shape}"
+        );
 
         LocalBatchProver::default().prove(executed).context(shape)?;
     }
@@ -196,37 +202,46 @@ async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A deferred wire that opens no claims cannot produce a precompile witness, so the executor
-/// rejects the transaction carrying it.
-#[test]
-fn batch_executor_rejects_a_transaction_with_an_empty_deferred_wire() -> anyhow::Result<()> {
-    let mut setup = setup_chain();
-    let block1 = setup.chain.block_header(1);
-    let block2 = setup.chain.prove_next_block()?;
+/// A transaction whose deferred precompile witness does not match the precompile root its VM proof
+/// commits to is rejected when the batch is proposed. This is the guarantee that lets
+/// `BatchExecutor::execute` collect the witnesses without re-validating them.
+#[tokio::test]
+async fn propose_batch_rejects_mismatched_precompile_witness() -> anyhow::Result<()> {
+    let (chain, transactions) =
+        proven_transactions(vec![Auth::basic_ecdsa(), Auth::basic_ecdsa()]).await?;
 
-    let tx = MockProvenTxBuilder::with_account(
-        setup.account1.id(),
-        Word::empty(),
-        setup.account1.to_commitment(),
-    )
-    .reference_block(&block1)
-    .authenticated_notes(vec![setup.note1.clone()])
-    .proof(miden_protocol::testing::dummy_deferred_execution_proof())
-    .build()?;
-
-    let batch = ProposedBatch::new_unverified(
-        vec![Arc::new(tx)],
-        block2.header().clone(),
-        setup.chain.latest_partial_blockchain(),
-        BTreeMap::default(),
+    // Move the second transaction's witness onto the first transaction, leaving its VM proof - and
+    // therefore the precompile root that proof commits to - untouched.
+    let foreign_witness = transactions[1]
+        .precompile_witness()
+        .context("second transaction does not defer precompile work")?
+        .clone();
+    let original = transactions[0].as_ref();
+    let tampered = ProvenTransaction::new(
+        original.account_update().clone(),
+        original.input_notes().iter().cloned(),
+        original.output_notes().iter().cloned(),
+        original.ref_block_num(),
+        original.ref_block_commitment(),
+        original.expiration_block_num(),
+        ExecutionProof::new(
+            original.proof().vm().clone(),
+            PrecompileStatus::Deferred(foreign_witness),
+        ),
     )?;
 
-    let error = match BatchExecutor::new().execute(batch) {
-        Ok(_) => anyhow::bail!("executing a batch with an empty deferred wire should fail"),
-        Err(error) => error,
-    };
+    let (reference_block, partial_blockchain, unauthenticated_note_proofs) =
+        chain.get_batch_inputs(core::iter::once(tampered.ref_block_num()), iter::empty())?;
+    let error = ProposedBatch::new(
+        vec![Arc::new(tampered)],
+        reference_block,
+        partial_blockchain,
+        unauthenticated_note_proofs,
+        MIN_PROOF_SECURITY_LEVEL,
+    )
+    .expect_err("batch with a mismatched precompile witness was proposed");
 
-    assert_matches!(error, ProvenBatchError::TransactionPrecompileWitnessInvalid { .. });
+    assert_matches!(error, ProposedBatchError::TransactionVerificationFailed { .. });
 
     Ok(())
 }

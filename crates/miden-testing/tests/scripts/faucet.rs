@@ -58,7 +58,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::config::{MinBurnAmountConfigNote, NetworkAccountConfigNote};
-use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, StandardNote};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote, P2idNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -2399,13 +2399,17 @@ async fn test_set_max_supply_rejects_cap_above_fungible_asset_max_amount() -> an
 // TESTS FOR MINT NOTE WITH PRIVATE AND PUBLIC OUTPUT MODES
 // ================================================================================================
 
-/// Tests creating a MINT note with different output note types (private/public)
-/// The MINT note can create output notes with variable-length inputs for public notes.
+/// MINT creates consumable P2ID notes with zero or nonzero salt in both output modes.
 #[rstest::rstest]
-#[case::private(NoteType::Private)]
-#[case::public(NoteType::Public)]
+#[case::private_zero_salt(NoteType::Private, [Felt::ZERO; 2])]
+#[case::public_zero_salt(NoteType::Public, [Felt::ZERO; 2])]
+#[case::private_salted(NoteType::Private, [Felt::ONE, Felt::from(2u32)])]
+#[case::public_salted(NoteType::Public, [Felt::ONE, Felt::from(2u32)])]
 #[tokio::test]
-async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow::Result<()> {
+async fn test_mint_note_output_note_types(
+    #[case] note_type: NoteType,
+    #[case] salt: [Felt; 2],
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let faucet_owner_account_id =
@@ -2432,6 +2436,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         P2idNote::builder()
             .sender(faucet.id())
             .target(target_account.id())
+            .salt(salt)
             .assets(vec![mint_asset])
             .note_type(note_type)
             .serial_number(serial_num)
@@ -2448,11 +2453,9 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
-            let p2id_script = StandardNote::P2ID.script();
-            let p2id_storage =
-                vec![target_account.id().suffix(), target_account.id().prefix().as_felt()];
-            let note_storage = NoteStorage::new(p2id_storage)?;
-            let recipient = NoteRecipient::new(serial_num, p2id_script, note_storage);
+            let recipient = P2idNoteStorage::new(target_account.id())
+                .with_salt(salt)
+                .into_recipient(serial_num);
             MintNoteStorage::new_public(recipient, mint_asset, output_note_tag)?
         },
     };

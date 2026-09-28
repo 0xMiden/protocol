@@ -55,7 +55,7 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
-use miden_standards::account::auth::SponsorshipPolicy;
+use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::note_creator::NoteCreator;
@@ -66,7 +66,6 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::config::NetworkAccountConfigNote;
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::RngExt;
@@ -406,10 +405,12 @@ impl MockChainBuilder {
             basic_constant_fee_policy =
                 basic_constant_fee_policy.with_fee(*note_script, AssetAmount::ZERO);
         }
-        // `with_allowed_notes` always allowlists the config note, which the network auth flow
-        // prices if it is ever consumed, so schedule it too.
-        basic_constant_fee_policy = basic_constant_fee_policy
-            .with_fee(NetworkAccountConfigNote::script_root(), AssetAmount::ZERO);
+        // `AuthNetworkAccount::new` allowlists its default notes on top, which the network auth
+        // flow prices if they are ever consumed, so schedule them too.
+        for note_script in AuthNetworkAccount::default_allowed_note_scripts() {
+            basic_constant_fee_policy =
+                basic_constant_fee_policy.with_fee(note_script, AssetAmount::ZERO);
+        }
 
         let fee_policy_manager = FeePolicyManager::builder()
             .active_fee_policy(basic_constant_fee_policy.into())

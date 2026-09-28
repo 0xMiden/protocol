@@ -2,7 +2,7 @@ use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
-use miden_verifier::{ExecutionClaim, Verifier};
+use miden_verifier::{ExecutionClaim, VerificationError, Verifier};
 
 use crate::BatchVerifierError;
 
@@ -67,18 +67,19 @@ impl BatchVerifier {
             stack_outputs,
         );
         let outcome = Verifier::new()
+            .with_min_conjectured_security_level_per_stark(self.proof_security_level)
             .verify(&claim, batch.proof())
-            .map_err(BatchVerifierError::BatchVerificationFailed)?;
+            .map_err(|error| match error {
+                VerificationError::InsufficientSecurityLevel { actual, required } => {
+                    BatchVerifierError::InsufficientProofSecurityLevel {
+                        actual,
+                        expected_minimum: required,
+                    }
+                },
+                error => BatchVerifierError::BatchVerificationFailed(error),
+            })?;
         if !outcome.is_complete() {
             return Err(BatchVerifierError::IncompleteProof);
-        }
-        let proof_security_level = outcome.vm_security_parameters().conjectured_security_level();
-
-        if proof_security_level < self.proof_security_level {
-            return Err(BatchVerifierError::InsufficientProofSecurityLevel {
-                actual: proof_security_level,
-                expected_minimum: self.proof_security_level,
-            });
         }
 
         Ok(())

@@ -2,16 +2,19 @@ use std::collections::BTreeSet;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
+use miden_protocol::block::FeeParameters;
 use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
+use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::faucets::{
     FungibleFaucet,
     TokenName,
     create_native_fungible_faucet_for_genesis,
+    create_network_fungible_faucet,
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
@@ -20,12 +23,19 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT;
 use miden_standards::note::config::NetworkAccountConfigNote;
-use miden_standards::note::{MintNote, MintNoteStorage, TxFeeNote};
+use miden_standards::note::{
+    BurnNote,
+    FeeSponsorshipNote,
+    MintNote,
+    MintNoteStorage,
+    P2idNote,
+    TxFeeNote,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
+use miden_tx::NetworkNotePricer;
 
 use super::VERIFICATION_BASE_FEE;
 
@@ -70,7 +80,6 @@ async fn execute_network_account_tx(
 
     let account = AccountBuilder::new([9; 32])
         .with_components(auth_component)
-        .with_component(BasicWallet)
         .with_assets(assets)
         .account_type(AccountType::Public)
         .build_existing()?;
@@ -219,6 +228,99 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
 
     assert_eq!(paid_asset.faucet_id(), fee_faucet_id);
     assert!(paid_asset.amount() >= executed_transaction.compute_fee());
+
+    Ok(())
+}
+
+/// A network faucet built by the standard factory deploys itself on a fee-charging chain by
+/// consuming a P2ID note carrying the native fee asset together with a FEE_SPONSORSHIP note bound
+/// to it, which covers the P2ID price its fee schedule charges. The deposit and the collected
+/// sponsorship fund the vault, the auth procedure pays the transaction fee from it, and the account
+/// lands on chain with nonce 1.
+#[tokio::test]
+async fn network_faucet_deploys_by_consuming_p2id_note() -> anyhow::Result<()> {
+    const DEPOSIT: u64 = 1_000_000;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("Network token")?)
+        .symbol(TokenSymbol::new("NET")?)
+        .decimals(6)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .token_supply(AssetAmount::ZERO)
+        .build()?;
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .build();
+    // every allowlisted note the account prices needs a schedule entry, taken from the cost tables
+    let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let pricer = NetworkNotePricer::builder()
+        .fee_parameters(FeeParameters::new(VERIFICATION_BASE_FEE))
+        .fee_asset_id(AssetId::new_fungible(fee_faucet_id))
+        .build();
+    let fee_policy = pricer.basic_constant_fee_policy([
+        P2idNote::script_root(),
+        MintNote::script_root(),
+        BurnNote::script_root(),
+        NetworkAccountConfigNote::script_root(),
+    ])?;
+    let p2id_price = pricer.price(P2idNote::script_root())?;
+    assert!(p2id_price > AssetAmount::ZERO);
+    let fee_policy_manager = FeePolicyManager::builder()
+        .active_fee_policy(fee_policy.into())
+        .fee_faucet_id(fee_faucet_id)
+        .build();
+    let faucet_account = create_network_fungible_faucet(
+        [11; 32],
+        faucet,
+        AccessControl::Ownable2Step { owner: ACCOUNT_ID_SENDER.try_into()? },
+        token_policy_manager,
+        fee_policy_manager,
+    )?;
+    assert!(faucet_account.is_new());
+
+    let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
+    let deposit_note = builder.add_p2id_note_with_fee(faucet_account.id(), DEPOSIT)?;
+    // the sponsorship carries exactly the P2ID price and names the deposit as its feature note
+    let sponsorship: Note = FeeSponsorshipNote::builder()
+        .sender(ACCOUNT_ID_SENDER.try_into()?)
+        .target_account(faucet_account.id())
+        .feature_note_id(deposit_note.id())
+        .asset(FungibleAsset::new(fee_faucet_id, p2id_price.as_u64())?)
+        .serial_number(Word::from([21, 22, 23, 24u32]))
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(sponsorship.clone()));
+    let mut mock_chain = builder.build()?;
+    assert_eq!(mock_chain.account_tree().get(faucet_account.id()), Word::empty());
+
+    let executed_transaction = mock_chain
+        .build_transaction(faucet_account.clone())
+        .authenticated_input_note(deposit_note.id())
+        .authenticated_input_note(sponsorship.id())
+        .build()?
+        .execute()
+        .await?;
+
+    let fee_note = executed_transaction
+        .output_notes()
+        .iter()
+        .find(|note| note.metadata().tag() == TxFeeNote::TAG)
+        .expect("the deploying account should pay its own fee note");
+    let paid = fee_note
+        .assets()
+        .iter()
+        .next()
+        .expect("fee note should carry an asset")
+        .unwrap_fungible();
+    assert!(paid.amount() > AssetAmount::ZERO);
+    assert_eq!(executed_transaction.final_account().nonce(), miden_protocol::Felt::ONE);
+
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+    let committed = mock_chain.committed_account(faucet_account.id())?;
+    let fee_balance = committed.vault().get_balance(AssetId::new_fungible(fee_faucet_id))?;
+    assert_eq!(fee_balance.as_u64(), DEPOSIT + p2id_price.as_u64() - paid.amount().as_u64());
 
     Ok(())
 }
