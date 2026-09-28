@@ -75,9 +75,7 @@ impl AccountUpdateTracker {
         self.nonce_delta += Felt::ONE;
     }
 
-    /// Records the code upgrade initialized by the kernel.
-    ///
-    /// An empty `new_code_commitment` means the upgrade was a no-op.
+    /// Records the code upgrade the kernel is initializing and returns the new code.
     ///
     /// # Errors
     ///
@@ -89,11 +87,7 @@ impl AccountUpdateTracker {
     pub fn record_code_upgrade(
         &mut self,
         new_code_commitment: Word,
-    ) -> Result<(), TransactionKernelError> {
-        if new_code_commitment.is_empty() {
-            return Ok(());
-        }
-
+    ) -> Result<AccountCode, TransactionKernelError> {
         let code_upgrade = match &self.code {
             AccountCodeState::None => {
                 return Err(TransactionKernelError::AccountCodeUpgradeMissing(new_code_commitment));
@@ -116,9 +110,10 @@ impl AccountUpdateTracker {
             });
         }
 
+        let new_code = code_upgrade.code().clone();
         self.code = AccountCodeState::UpgradeInitialized(code_upgrade.clone());
 
-        Ok(())
+        Ok(new_code)
     }
 
     /// Updates the vault patch.

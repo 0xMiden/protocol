@@ -223,8 +223,9 @@ const ACCOUNT_AFTER_INCREMENT_NONCE_EVENT = event("miden::protocol::account::aft
 # the advice stack.
 const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT = event("miden::protocol::account::push_procedure_index")
 
-# Event emitted after an account upgrade was initialized and before it is stored.
-const ACCOUNT_UPGRADE_INITIALIZED_EVENT = event("miden::protocol::account::upgrade_initialized")
+# Event emitted before the procedures of the new code of an account code upgrade are loaded from the
+# advice inputs.
+const ACCOUNT_BEFORE_CODE_UPGRADE_EVENT = event("miden::protocol::account::before_code_upgrade")
 
 # CONSTANT ACCESSORS
 # =================================================================================================
@@ -924,6 +925,9 @@ end
 #! The new code is validated here rather than in the epilogue, so that the work after the
 #! authentication procedure does not depend on the number of new procedures.
 #!
+#! The host provides the procedures of the new code in the advice map in response to the event
+#! emitted before they are loaded.
+#!
 #! A NEW_CODE_COMMITMENT that is empty or equal to the current code commitment is a no-op.
 #!
 #! Inputs:
@@ -974,20 +978,21 @@ pub proc upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Co
     cdropw
     # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
 
-    # the advice map has no entry for the empty word, so a no-op upgrade skips the validation
+    # a no-op upgrade has no new code to load and validate
     exec.word::testz not
     # => [has_code_upgrade, NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
 
     if.true
+        # let the host provide the procedures of the new code in the advice map
+        emit.ACCOUNT_BEFORE_CODE_UPGRADE_EVENT
+        # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
+
         dupw locaddr.UPGRADE_CODE_SECTION_LOC exec.save_account_procedure_data
         # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
 
         locaddr.UPGRADE_CODE_SECTION_LOC exec.validate_procedures
         # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
     end
-    # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
-
-    emit.ACCOUNT_UPGRADE_INITIALIZED_EVENT
     # => [NEW_CODE_COMMITMENT', STORAGE_UPGRADE_COMMITMENT]
 
     exec.memory::set_code_upgrade_commitment

@@ -121,8 +121,8 @@ pub(crate) enum TransactionEvent {
         procedure_root: Word,
     },
 
-    AccountUpgradeInitialized {
-        /// The commitment to the new code, or the empty word if the upgrade is a no-op.
+    AccountBeforeCodeUpgrade {
+        /// The commitment to the new code.
         new_code_commitment: Word,
     },
 
@@ -389,11 +389,11 @@ impl TransactionEvent {
                 })
             },
 
-            TransactionEventId::AccountUpgradeInitialized => {
+            TransactionEventId::AccountBeforeCodeUpgrade => {
                 // Expected stack state: [event, NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT]
                 let new_code_commitment = process.get_stack_word(1);
 
-                Some(TransactionEvent::AccountUpgradeInitialized { new_code_commitment })
+                Some(TransactionEvent::AccountBeforeCodeUpgrade { new_code_commitment })
             },
 
             TransactionEventId::NoteBeforeCreated => {

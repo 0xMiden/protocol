@@ -169,8 +169,8 @@ where
                 self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
             },
 
-            TransactionEvent::AccountUpgradeInitialized { new_code_commitment } => {
-                self.base_host.on_account_upgrade_initialized(new_code_commitment)
+            TransactionEvent::AccountBeforeCodeUpgrade { new_code_commitment } => {
+                self.base_host.on_account_before_code_upgrade(new_code_commitment)
             },
 
             TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {
