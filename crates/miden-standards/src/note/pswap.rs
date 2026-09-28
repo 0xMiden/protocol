@@ -349,6 +349,11 @@ impl PswapNote {
     /// Expected number of storage items for the PSWAP note.
     pub const NUM_STORAGE_ITEMS: usize = PswapNoteStorage::NUM_STORAGE_ITEMS;
 
+    /// Expected number of assets of the PSWAP note.
+    ///
+    /// Must match `NUM_ASSETS` in `asm/standards/notes/pswap.masm`.
+    pub const NUM_ASSETS: usize = 1;
+
     /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
     /// remainder PSWAP).
     pub const PSWAP_ATTACHMENT_SCHEME: NoteAttachmentScheme =
@@ -623,9 +628,13 @@ impl PswapNote {
     /// Reconstructs the depth-`d` payback P2ID [`Note`], so the creator can consume it as an
     /// unauthenticated input note.
     ///
+    /// The returned note includes only the supplied PSWAP attachment. If the output contains
+    /// additional attachments, use [`Note::with_attachments`] with the returned assets, partial
+    /// metadata, and recipient plus the output's complete public attachment list to reconstruct
+    /// its ID.
+    ///
     /// `consumer_account_id` must be the account that consumed the parent PSWAP in round
-    /// `depth`: the MASM stamps it as the payback's metadata sender, which feeds into
-    /// [`Note::details_commitment`].
+    /// `depth`: the MASM stamps it as the payback's metadata sender, which feeds into [`Note::id`].
     ///
     /// # Errors
     ///
@@ -668,8 +677,10 @@ impl PswapNote {
 
     /// Reconstructs the depth-`d` remainder PSWAP [`Note`] in this lineage.
     ///
-    /// Called on the original PSWAP, this returns the full Note for the remainder produced
-    /// in round `depth`. The returned Note matches the created note exactly.
+    /// Called on the original PSWAP, this returns the remainder produced in round `depth`, with
+    /// only the supplied PSWAP attachment. If the output contains additional attachments, use
+    /// [`Note::with_attachments`] with the returned assets, partial metadata, and recipient plus
+    /// the output's complete public attachment list to reconstruct its ID.
     ///
     /// - `consumer_account_id` — the account that consumed the parent PSWAP in round `depth`, used
     ///   as the remainder's sender.
@@ -929,6 +940,10 @@ impl From<PswapNote> for Note {
 }
 
 /// Parses a protocol [`Note`] back into a [`PswapNote`] by deserializing its storage.
+///
+/// This wrapper supports at most one attachment. Notes with additional attachments can
+/// still be consumed through the generic [`Note`] API, but cannot be represented as a
+/// [`PswapNote`].
 impl TryFrom<&Note> for PswapNote {
     type Error = NoteError;
 
@@ -939,7 +954,7 @@ impl TryFrom<&Note> for PswapNote {
 
         let storage = PswapNoteStorage::try_from(note.recipient().storage().items())?;
 
-        if note.assets().num_assets() != 1 {
+        if note.assets().num_assets() != Self::NUM_ASSETS {
             return Err(NoteError::other("PSWAP note must have exactly one asset"));
         }
         let offered_asset = note
