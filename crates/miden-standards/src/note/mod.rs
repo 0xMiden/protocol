@@ -53,6 +53,12 @@ pub use tx_fee::TxFeeNote;
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
 
+mod account_code_upgrade_attachment;
+pub use account_code_upgrade_attachment::{
+    AccountCodeUpgradeAttachment,
+    AccountCodeUpgradeAttachmentError,
+};
+
 mod network_note;
 pub use network_note::{AccountTargetNetworkNote, NetworkNoteExt};
 
