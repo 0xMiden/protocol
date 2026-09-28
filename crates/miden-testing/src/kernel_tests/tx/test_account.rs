@@ -1385,7 +1385,7 @@ async fn test_account_upgrade_rejects_new_account() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the host rejects an upgrade to code that the executor did not provide.
+/// Tests that the host rejects an upgrade to code that the advice map does not provide.
 #[tokio::test]
 async fn test_account_upgrade_rejects_missing_code() -> anyhow::Result<()> {
     let upgraded_code = upgraded_mock_account_code()?;
@@ -1409,16 +1409,50 @@ async fn test_account_upgrade_rejects_missing_code() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the host rejects an upgrade to code other than the code the executor provided.
+/// Tests that the host rejects an upgrade whose advice map entry does not encode valid code.
 #[tokio::test]
-async fn test_account_upgrade_rejects_code_not_matching_provided_code() -> anyhow::Result<()> {
+async fn test_account_upgrade_rejects_invalid_code() -> anyhow::Result<()> {
+    let upgraded_code = upgraded_mock_account_code()?;
+
+    let result = TestTransactionBuilder::new(existing_mock_account())
+        .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
+        .add_advice_map_entry(
+            AccountCodeUpgrade::advice_map_key(upgraded_code.commitment()),
+            vec![Felt::ONE],
+        )
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::AccountCodeUpgradeInvalid { new_code_commitment, .. })
+                    if *new_code_commitment == upgraded_code.commitment()
+            )
+    );
+
+    Ok(())
+}
+
+/// Tests that the host rejects an upgrade whose advice map entry provides code with a different
+/// commitment.
+#[tokio::test]
+async fn test_account_upgrade_rejects_code_not_matching_commitment() -> anyhow::Result<()> {
     let upgraded_code = upgraded_mock_account_code()?;
     let provided_code = AccountCode::mock();
     assert_ne!(upgraded_code.commitment(), provided_code.commitment());
 
+    let (_, provided_code_data) =
+        AccountCodeUpgrade::new(provided_code.clone()).to_advice_map_entry();
     let result = TestTransactionBuilder::new(existing_mock_account())
         .tx_script(upgrade_tx_script([(upgraded_code.commitment(), Word::empty())])?)
-        .account_code_upgrade(AccountCodeUpgrade::new(provided_code.clone()))
+        .add_advice_map_entry(
+            AccountCodeUpgrade::advice_map_key(upgraded_code.commitment()),
+            provided_code_data,
+        )
         .build()?
         .execute()
         .await;

@@ -9,7 +9,6 @@ use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, Process
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
-    AccountCodeUpgrade,
     AccountId,
     AccountPatch,
     PartialAccount,
@@ -138,7 +137,6 @@ where
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
-        account_code_upgrade: Option<AccountCodeUpgrade>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -147,7 +145,6 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-            account_code_upgrade,
         )?;
 
         Ok(Self {
@@ -562,8 +559,11 @@ where
                     self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
                 },
 
-                TransactionEvent::AccountBeforeCodeUpgrade { new_code_commitment } => {
-                    self.base_host.on_account_before_code_upgrade(new_code_commitment)
+                TransactionEvent::AccountBeforeCodeUpgrade {
+                    new_code_commitment,
+                    code_upgrade,
+                } => {
+                    self.base_host.on_account_before_code_upgrade(new_code_commitment, code_upgrade)
                 },
 
                 TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {
