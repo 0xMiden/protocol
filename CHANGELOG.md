@@ -15,7 +15,7 @@
 - [BREAKING] Linked standard and AggLayer account components dynamically against their libraries ([#3925](https://github.com/0xMiden/protocol/pull/3925)).
 - [BREAKING] Added the `version` field to the Protobuf `PartialAccount` message, matching `Account` ([#3933](https://github.com/0xMiden/protocol/pull/3933)).
 - Switched the Protobuf `MastForest` encoding to the hashless format, which roughly halves the size of `AccountCode` on the wire ([#3926](https://github.com/0xMiden/protocol/pull/3926)).
-- [BREAKING] `AccountCode`, `NoteScript` and `TransactionScript` now serialize their MAST forest in the hashless format and `NoteScript` element conversions became `NoteScript::{to_elements, try_from_elements}` ([#3959](https://github.com/0xMiden/protocol/pull/3959)).
+- [BREAKING] `AccountCode`, `NoteScript` and `TransactionScript` now serialize their MAST forest in the hashless format and `NoteScript` element conversions became `NoteScript::{to_elements, try_from_elements}` ([#3961](https://github.com/0xMiden/protocol/pull/3961)).
 
 ### Fixes
 
