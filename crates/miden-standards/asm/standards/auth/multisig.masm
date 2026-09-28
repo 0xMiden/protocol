@@ -8,6 +8,7 @@ use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::protocol::tx
+use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
 use miden::standards::auth
 use miden::standards::auth::signature
 use {ConversionInfo} from miden::standards::fee
@@ -33,6 +34,7 @@ const CURRENT_SIGNER_INDEX_LOC=1
 
 # resolve_auth_args locals: the three words of the auth args preimage in hashing order.
 const AUTH_ARGS_BLOCK_LOC=0
+const AUTH_ARGS_APPROVAL_EXPIRATION_LOC=1
 const AUTH_ARGS_SALT_LOC=4
 const AUTH_ARGS_CONVERSION_INFO_LOC=8
 
@@ -127,11 +129,11 @@ const ERR_TOO_MANY_APPROVERS = "number of approvers exceeds the maximum supporte
 
 const ERR_AUTH_ARGS_PREIMAGE_MISSING = "the advice map holds no preimage for the multisig auth args"
 
-const ERR_AUTH_ARGS_BLOCK_NUMBER_NOT_U32 = "the block number in the multisig auth args must be a u32"
+const ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32 = "the block numbers in the multisig auth args must be u32 values"
 
-const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval window ended at or before the transaction reference block"
+const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval expired at or before the transaction reference block"
 
-const ERR_MULTISIG_EXPIRATION_DELTAS_NOT_U32 = "the expiration delta and the reference block delta must be u32 values"
+const ERR_MULTISIG_APPROVAL_BLOCKS_NOT_U32 = "the reference block and approval expiration block numbers must be u32 values"
 
 const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public key"
 
@@ -802,12 +804,15 @@ end
 #!   Operand stack: [AUTH_ARGS]
 #!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
 #! Outputs:
-#!   Operand stack: [CONVERSION_INFO, block_number, SALT]
+#!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
 #!
 #! Where:
 #! - AUTH_ARGS is the sequential hash of the three preimage words.
-#! - BLOCK_WORD is [block_number, 0, 0, 0].
-#! - block_number is the number of the block the transaction summary binds.
+#! - BLOCK_WORD is [bound_block_num, approval_expiration_block_num, 0, 0].
+#! - bound_block_num is the number of the block the transaction summary binds.
+#! - approval_expiration_block_num is the first reference block at which the approvers'
+#!   signatures are no longer valid, or 0 if the approval does not expire. See
+#!   `assert_approval_not_expired`.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - CONVERSION_INFO tells miden::standards::fee::pay_fee which asset to pay the transaction fee
 #!   in; pay_fee accepts only the reference block's fee asset at rate 1/1. It is the empty word
@@ -816,11 +821,12 @@ end
 #! Panics if:
 #! - the advice map holds no preimage for the auth args.
 #! - the preimage does not hash to the auth args.
-#! - block_number is not a u32.
+#! - bound_block_num or approval_expiration_block_num is not a u32.
 #!
 #! Invocation: exec
 @locals(12)
-pub proc resolve_auth_args(auth_args: word) -> (ConversionInfo, BlockNumber, word)
+pub proc resolve_auth_args(auth_args: word)
+    -> (ConversionInfo, BlockNumber, BlockNumber, word)
     adv.has_mapkey adv_push assert.err=ERR_AUTH_ARGS_PREIMAGE_MISSING
     # => [AUTH_ARGS]
 
@@ -837,66 +843,100 @@ pub proc resolve_auth_args(auth_args: word) -> (ConversionInfo, BlockNumber, wor
     padw loc_loadw_le.AUTH_ARGS_SALT_LOC
     # => [SALT]
 
-    loc_load.AUTH_ARGS_BLOCK_LOC u32assert.err=ERR_AUTH_ARGS_BLOCK_NUMBER_NOT_U32
-    # => [block_number, SALT]
+    loc_load.AUTH_ARGS_APPROVAL_EXPIRATION_LOC loc_load.AUTH_ARGS_BLOCK_LOC
+    # => [bound_block_num, approval_expiration_block_num, SALT]
+
+    u32assert2.err=ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32
+    # => [bound_block_num, approval_expiration_block_num, SALT]
 
     padw loc_loadw_le.AUTH_ARGS_CONVERSION_INFO_LOC
-    # => [CONVERSION_INFO, block_number, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
 end
 
-#! Rebases the transaction's expiration to the block bound by the transaction summary.
+#! Asserts that the multisig approval has not expired and returns the expiration delta to apply.
 #!
-#! The kernel computes the expiration block based on the transaction's reference block. Since
-#! multisigs allow execution and proposal reference blocks to differ, the signatures never expire
-#! since execution could always pick the chain tip.
+#! The approvers commit to `approval_expiration_block_num` through the transaction summary, so the
+#! party executing the transaction, who supplies the auth args cannot shorten or extend it.
 #!
-#! Rebasing the expiration onto the `proposal_ref_block`, the reference block at which the tx was
-#! proposed, makes the approval cover inclusion until the intended
-#! `proposal_ref_block + expiration_delta`, no matter when the transaction is _executed_.
+#! The returned delta is measured from the transaction reference block, which is what
+#! `tx::update_expiration_block_delta` expects. It is clamped to MAX_EXPIRATION_BLOCK_DELTA so
+#! that an approval expiring further than that in the future can still be applied; the transaction
+#! then expires before the approval does, which is safe.
 #!
-#! This procedure is a no-op if the transaction set no expiration delta.
+#! This procedure only reads, so it can run before the signatures are verified to abort an expired
+#! approval early. `apply_approval_expiration` writes the returned delta to the kernel.
 #!
-#! Inputs:  [bound_block]
+#! Inputs:  [reference_block_num, approval_expiration_block_num]
+#! Outputs: [approval_expiration_delta]
+#!
+#! Where:
+#! - reference_block_num is the transaction reference block number.
+#! - approval_expiration_block_num is the first reference block at which the approvers'
+#!   signatures are no longer valid, or 0 if the approval does not expire.
+#! - approval_expiration_delta is the number of blocks from the reference block to the approval
+#!   expiration, clamped to MAX_EXPIRATION_BLOCK_DELTA, or 0 if the approval does not expire.
+#!
+#! Panics if:
+#! - reference_block_num or approval_expiration_block_num is not a u32 value.
+#! - the approval expired at or before the transaction reference block.
+#!
+#! Invocation: exec
+pub proc assert_approval_not_expired(
+    reference_block_num: BlockNumber,
+    approval_expiration_block_num: BlockNumber
+) -> u16
+    dup.1 neq.0
+    # => [has_approval_expiration, reference_block_num, approval_expiration_block_num]
+
+    if.true
+        dup dup.2
+        # => [approval_expiration_block_num, reference_block_num, reference_block_num,
+        #     approval_expiration_block_num]
+
+        # an approval expiring at the reference block is already expired and cannot be included in
+        # a block anymore, so reference_block_num < approval_expiration_block_num must hold
+        # this also guarantees the delta is at least 1
+        u32assert2.err=ERR_MULTISIG_APPROVAL_BLOCKS_NOT_U32
+        u32lt assert.err=ERR_MULTISIG_APPROVAL_EXPIRED
+        # => [reference_block_num, approval_expiration_block_num]
+
+        # cannot underflow because of the assertion above
+        sub
+        # => [blocks_until_approval_expiration]
+
+        push.MAX_EXPIRATION_BLOCK_DELTA u32min
+        # => [approval_expiration_delta]
+    else
+        # an approval that does not expire is the zero delta, so the zero block number carries over
+        drop
+        # => [approval_expiration_delta]
+    end
+end
+
+#! Applies the approval expiration delta returned by [`assert_approval_not_expired`] to the
+#! transaction.
+#!
+#! This writes kernel state that the host cross-checks against an extracted transaction summary, so
+#! it must run after every event that reports the summary to the host.
+#!
+#! This procedure is a no-op if the approval does not expire.
+#!
+#! Inputs:  [approval_expiration_delta]
 #! Outputs: []
 #!
 #! Where:
-#! - bound_block is the number of the block the transaction summary binds.
-#!
-#! Panics if:
-#! - the approval window ended at or before the transaction reference block.
-#! - bound_block exceeds the transaction reference block number.
+#! - approval_expiration_delta is as described in `assert_approval_not_expired`.
 #!
 #! Invocation: exec
-pub proc rebase_expiration_delta(bound_block: BlockNumber)
-    exec.tx::get_expiration_block_delta
-    # => [expiration_delta, bound_block]
-
+pub proc apply_approval_expiration(approval_expiration_delta: u16)
     dup neq.0
+    # => [has_approval_expiration, approval_expiration_delta]
+
     if.true
-        exec.tx::get_reference_block_number movup.2
-        # => [bound_block, reference_block, expiration_delta]
-
-        # compute the delta between the original ref block (bound_block) and the current ref block
-        # this cannot underflow because the summary creation read the commitment of bound_block,
-        # which implies reference_block >= bound_block
-        sub
-        # => [ref_block_delta, expiration_delta]
-
-        # assert expiration_delta > ref_block_delta to ensure subtraction will not underflow and
-        # result in at least 1 (0 would be rejected by update_expiration_block_delta)
-        # a delta equal to the reference block delta means the reference block is already the last
-        # block that could have included the transaction, so the approval expired
-        dup.1 dup.1 u32assert2.err=ERR_MULTISIG_EXPIRATION_DELTAS_NOT_U32
-        u32gt assert.err=ERR_MULTISIG_APPROVAL_EXPIRED
-        # => [ref_block_delta, expiration_delta]
-
-        sub
-        # => [bound_block_expiration_delta]
-
         exec.tx::update_expiration_block_delta
         # => []
     else
-        drop drop
+        drop
         # => []
     end
 end
@@ -913,8 +953,24 @@ end
 #! 2. Verifying signatures from multiple required signers against their public keys
 #! 3. Ensuring the minimum threshold of valid signatures is met
 #!
+#! The transaction summary the approvers sign is laid out as:
+#!
+#! ```text
+#! [
+#!     [version, expiration_delta << 32 || bound_block_num, approval_expiration_block_num, 0],
+#!     SALT,
+#!     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+#!     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
+#! ]
+#! ```
+#!
+#! The expiration delta in the metadata is the transaction's own delta, which a callback may have
+#! set as a freshness bound on foreign state it read and is measured from the transaction reference
+#! block. The approval expiration binds the signatures to a window, see
+#! `assert_approval_not_expired`.
+#!
 #! Inputs:
-#!   Operand stack: [block_number, SALT]
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -924,7 +980,9 @@ end
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - block_number is the number of the block the transaction summary binds.
+#! - bound_block_num is the number of the block the transaction summary binds.
+#! - approval_expiration_block_num is the first reference block at which the approvers'
+#!   signatures are no longer valid, or 0 if the approval does not expire.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
@@ -932,34 +990,27 @@ end
 #!
 #! Panics if:
 #! - insufficient number of valid signatures (below threshold).
-#! - the approval window ended at or before the transaction reference block, see
-#!   `rebase_expiration_delta`.
 #!
 #! Invocation: exec
-pub proc auth_tx(block_number: BlockNumber, salt: word)
+pub proc auth_tx(
+    bound_block_num: BlockNumber,
+    approval_expiration_block_num: BlockNumber,
+    salt: word
+)
     exec.native_account::incr_nonce drop
-    # => [block_number, SALT]
+    # => [bound_block_num, approval_expiration_block_num, SALT]
 
     # ------ Computing transaction summary ------
 
-    # the leading user params have no meaning, leave them zeroed
-    push.0.0 movup.2
-    # => [block_number, 0, 0, SALT]
-
-    dup movdn.7
-    # => [block_number, 0, 0, SALT, block_number]
+    push.0 movdn.2
+    # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
     exec.auth::create_tx_summary_with_block
-    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, block_number]
+    # => [PARAMS_HEAD, PARAMS_TAIL, ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted
     # into the advice map for extraction by the host
     exec.auth::hash_and_insert_tx_summary
-    # => [TX_SUMMARY_COMMITMENT, block_number]
-
-    # this must run after the summary was created since rebasing the expiration before would bind a
-    # reference-block-dependent delta and so change the summary with every new reference block.
-    movup.4 exec.rebase_expiration_delta
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------

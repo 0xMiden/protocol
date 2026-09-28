@@ -57,6 +57,8 @@ const ENCRYPTION_KEY_X25519_XCHACHA20POLY1305: u8 = 0;
 const ENCRYPTION_KEY_K256_XCHACHA20POLY1305: u8 = 1;
 const ENCRYPTION_KEY_X25519_AEAD_POSEIDON2: u8 = 2;
 const ENCRYPTION_KEY_K256_AEAD_POSEIDON2: u8 = 3;
+const ENCRYPTION_KEY_X25519_AEAD_EIDOS: u8 = 4;
+const ENCRYPTION_KEY_K256_AEAD_EIDOS: u8 = 5;
 
 /// Parameters that define how a sender should route a note to the [`AddressId`](super::AddressId)
 /// in an [`Address`](super::Address).
@@ -325,6 +327,14 @@ fn encode_encryption_key(key: &SealingKey, encoded: &mut Vec<u8>) {
             encoded.push(ENCRYPTION_KEY_K256_AEAD_POSEIDON2);
             encoded.extend(&pk.to_bytes());
         },
+        SealingKey::X25519AeadEidos(pk) => {
+            encoded.push(ENCRYPTION_KEY_X25519_AEAD_EIDOS);
+            encoded.extend(&pk.to_bytes());
+        },
+        SealingKey::K256AeadEidos(pk) => {
+            encoded.push(ENCRYPTION_KEY_K256_AEAD_EIDOS);
+            encoded.extend(&pk.to_bytes());
+        },
     }
 }
 
@@ -353,6 +363,10 @@ fn decode_encryption_key(
         ENCRYPTION_KEY_K256_AEAD_POSEIDON2 => {
             SealingKey::K256AeadPoseidon2(read_k256_pub_key(byte_iter)?)
         },
+        ENCRYPTION_KEY_X25519_AEAD_EIDOS => {
+            SealingKey::X25519AeadEidos(read_x25519_pub_key(byte_iter)?)
+        },
+        ENCRYPTION_KEY_K256_AEAD_EIDOS => SealingKey::K256AeadEidos(read_k256_pub_key(byte_iter)?),
         other => {
             return Err(AddressError::decode_error(format!(
                 "unknown encryption key variant: {}",
@@ -572,6 +586,24 @@ mod tests {
             let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::K256AeadPoseidon2(public_key);
+            test_encryption_key_roundtrip(encryption_key)?;
+        }
+
+        // Test X25519AeadEidos
+        {
+            use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
+            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
+            let public_key = secret_key.public_key();
+            let encryption_key = SealingKey::X25519AeadEidos(public_key);
+            test_encryption_key_roundtrip(encryption_key)?;
+        }
+
+        // Test K256AeadEidos
+        {
+            use crate::crypto::dsa::ecdsa_k256_keccak::KeyExchangeKey;
+            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
+            let public_key = secret_key.public_key();
+            let encryption_key = SealingKey::K256AeadEidos(public_key);
             test_encryption_key_roundtrip(encryption_key)?;
         }
 

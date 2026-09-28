@@ -72,3 +72,18 @@ fn transaction_args_roundtrip_normalizes_note_args_order() {
     );
     assert_eq!(message.decode_fields().unwrap().verify().unwrap(), args);
 }
+
+#[test]
+fn raw_output_notes_roundtrip_through_protobuf() {
+    use miden_protocol::note::PartialNote;
+    use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
+
+    let full = RawOutputNote::Full(public_note());
+    let partial = RawOutputNote::Partial(PartialNote::from(Note::mock_noop(dummy_word(7))));
+    let notes = RawOutputNotes::new(vec![full, partial]).unwrap();
+
+    let encoded = proto::transaction::RawOutputNotes::from(&notes).encode_to_vec();
+    let message = proto::transaction::RawOutputNotes::decode(encoded.as_slice()).unwrap();
+
+    assert_eq!(message.decode_fields().unwrap().verify().unwrap(), notes);
+}

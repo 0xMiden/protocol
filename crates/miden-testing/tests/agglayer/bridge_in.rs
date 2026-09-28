@@ -446,6 +446,15 @@ async fn test_bridge_in_claim_to_p2id(
     );
 
     assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
+    assert_eq!(
+        output_note.recipient().unwrap().storage().items(),
+        &[
+            destination_account_id.suffix(),
+            destination_account_id.prefix().as_felt(),
+            Felt::ZERO,
+            Felt::ZERO
+        ]
+    );
 
     // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT
     // --------------------------------------------------------------------------------------------
@@ -1413,7 +1422,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     assert_eq!(unlocked_asset.faucet_id(), native_faucet.id());
 
     // Cross-check storage directly: it should encode the destination account ID the same way
-    // `P2idNoteStorage::from` does ([suffix, prefix]).
+    // `P2idNoteStorage::from` does ([suffix, prefix, 0, 0]).
     let expected_p2id_note = Note::from(
         P2idNote::builder()
             .sender(bridge_account.id())
@@ -1426,6 +1435,15 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     );
     let actual_storage = output_note.recipient().storage();
     let expected_storage = expected_p2id_note.recipient().storage();
+    assert_eq!(
+        actual_storage.items(),
+        &[
+            destination_account_id.suffix(),
+            destination_account_id.prefix().as_felt(),
+            Felt::ZERO,
+            Felt::ZERO
+        ]
+    );
     assert_eq!(
         actual_storage, expected_storage,
         "P2ID note storage items (encoding the target account ID) should match \

@@ -3,6 +3,9 @@ use std::path::PathBuf;
 
 use prost::Message;
 
+/// Schemas that are compiled but left out of the exported descriptor set.
+const UNEXPORTED_FILES: [&str; 2] = ["account_file.proto", "note_file.proto"];
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=proto");
 
@@ -13,13 +16,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "block_number.proto",
         "account.proto",
         "asset.proto",
+        "account_state.proto",
         "protocol_config.proto",
         "note.proto",
         "transaction.proto",
         "block.proto",
         "partial_blockchain.proto",
         "transaction_inputs.proto",
+        "transaction_effects.proto",
         "batch.proto",
+        "account_file.proto",
+        "note_file.proto",
     ];
 
     let mut compiler = protox::Compiler::new([&proto_dir])?;
@@ -27,8 +34,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     compiler.open_files(files.iter().map(|file| proto_dir.join(file)))?;
     let descriptors = compiler.file_descriptor_set();
 
+    // The file formats are not transport objects, and the secret key message must not reach gRPC
+    // server reflection through a node that registers the exported descriptor set. Nothing in the
+    // set imports them, so the remaining files stay valid without them.
+    let mut exported = descriptors.clone();
+    exported.file.retain(|file| !UNEXPORTED_FILES.contains(&file.name()));
+
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
-    std::fs::write(out_dir.join("miden_objects_descriptor.bin"), descriptors.encode_to_vec())?;
+    std::fs::write(out_dir.join("miden_objects_descriptor.bin"), exported.encode_to_vec())?;
 
     let mut prost = prost_build::Config::new();
     prost.out_dir(out_dir);
@@ -61,14 +74,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.InputNote",
             ".transaction.AuthenticatedInputNote",
             ".transaction.OutputNote",
+            ".transaction.RawOutputNote",
+            ".transaction.RawOutputNotes",
             ".transaction.PublicOutputNote",
             ".note.Note",
+            ".note.PartialNote",
             ".note.PartialNoteMetadata",
             ".blockchain.PartialBlockchain",
             ".blockchain.BlockHeader",
             ".blockchain.ValidatorConfig",
             ".primitives.Signature",
             ".primitives.PublicKey",
+            ".account.Account",
+            ".account.AccountStorage",
+            ".account.StorageSlot",
+            ".account.StorageMap",
+            ".asset.AssetVault",
             ".account.PartialAccount",
             ".account.PartialVault",
             ".account.PartialStorage",
@@ -83,6 +104,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".account.StorageSlotPatch",
             ".account.StorageValuePatch",
             ".transaction.TransactionHeader",
+            ".transaction.TransactionEffects",
+            ".transaction.TransactionEffectsV1",
             ".transaction.PrivateOutputNote",
             ".transaction.InputNoteCommitment",
             ".note.NoteHeader",
@@ -119,7 +142,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".primitives.AdviceStack",
             ".blockchain.FeeParameters",
             ".blockchain.BlockNumber",
-            ".blockchain.TrackedMmrLeaf",
+            ".primitives.TrackedMmrLeaf",
+            ".primitives.PartialMmr",
             ".account.StorageMapEntry",
             ".primitives.AdviceMapEntry",
             ".primitives.MerkleStoreNode",
@@ -137,6 +161,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".protocol_config.ProofVerificationConfig",
             ".protocol_config.ProofSecurityPolicy",
             ".protocol_config.KernelConfig",
+            ".account_file.AuthSecretKey",
+            ".account_file.AccountFile",
+            ".account_file.AccountFileV1",
+            ".note_file.NoteSyncHint",
+            ".note_file.ExpectedNote",
+            ".note_file.CommittedNote",
+            ".note_file.NoteFile",
+            ".note_file.NoteFileV1",
         ],
     )?;
     prost.field_attribute(
@@ -155,6 +187,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ".primitives.Signature.signature.ecdsa_k256_keccak",
         quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".account_file.AuthSecretKey.key.ecdsa_k256_keccak",
+        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".account_file.AuthSecretKey.key.falcon512_poseidon2",
+        quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey
         >)])
         .to_string(),
     );

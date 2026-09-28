@@ -58,12 +58,13 @@ message StorageSlotId {
 }
 
 message PartialAccount {
-  AccountId account_id = 1;
-  primitives.Felt nonce = 2;
-  AccountCode code = 3;
-  PartialStorage storage = 4;
-  PartialVault vault = 5;
-  optional primitives.Word seed = 6;
+  AccountVersion version = 1;
+  AccountId account_id = 2;
+  primitives.Felt nonce = 3;
+  AccountCode code = 4;
+  PartialStorage storage = 5;
+  PartialVault vault = 6;
+  optional primitives.Word seed = 7;
 }
 
 message PartialStorage {

@@ -4,6 +4,8 @@ use miden_protocol::transaction::{
     PrivateOutputNote,
     ProvenTransaction,
     PublicOutputNote,
+    RawOutputNote,
+    RawOutputNotes,
     TransactionArgs,
     TransactionHeader,
     TransactionId,
@@ -196,5 +198,34 @@ impl From<&OutputNote> for proto::transaction::OutputNote {
 impl From<OutputNote> for proto::transaction::OutputNote {
     fn from(note: OutputNote) -> Self {
         Self::from(&note)
+    }
+}
+
+// RAW OUTPUT NOTES
+// ================================================================================================
+
+impl From<&RawOutputNote> for proto::transaction::RawOutputNote {
+    fn from(note: &RawOutputNote) -> Self {
+        use proto::transaction::raw_output_note::Note;
+
+        let note = match note {
+            RawOutputNote::Full(note) => Note::Full(note.clone().into()),
+            RawOutputNote::Partial(note) => Note::Partial(note.into()),
+        };
+        Self { note: Some(note) }
+    }
+}
+
+impl From<RawOutputNote> for proto::transaction::RawOutputNote {
+    fn from(note: RawOutputNote) -> Self {
+        Self::from(&note)
+    }
+}
+
+impl From<&RawOutputNotes> for proto::transaction::RawOutputNotes {
+    fn from(notes: &RawOutputNotes) -> Self {
+        Self {
+            notes: notes.iter().map(Into::into).collect(),
+        }
     }
 }
