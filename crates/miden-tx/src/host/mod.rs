@@ -14,7 +14,7 @@ pub use account_procedures::AccountProcedureIndexMap;
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
 use miden_protocol::transaction::TransactionEventId;
-use miden_protocol::vm::{EventId, EventName};
+use miden_protocol::vm::{AdviceMap, EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -391,14 +391,18 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         Ok(Vec::new())
     }
 
-    /// Handles the account upgrade event by recording the new code in the update tracker.
-    pub fn on_account_upgrade_initialized(
+    /// Handles the before code upgrade event by recording the new code in the update tracker and
+    /// providing its procedures to the kernel through the advice map.
+    pub fn on_account_before_code_upgrade(
         &mut self,
         new_code_commitment: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.record_code_upgrade(new_code_commitment)?;
+        let new_code = self.update_tracker.record_code_upgrade(new_code_commitment)?;
 
-        Ok(Vec::new())
+        Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
+            new_code_commitment,
+            new_code.to_elements(),
+        )]))])
     }
 
     // ACCOUNT STORAGE UPDATE HANDLERS
