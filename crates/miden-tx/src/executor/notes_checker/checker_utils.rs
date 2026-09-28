@@ -1,12 +1,12 @@
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use core::error::Error;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::asset::AssetId;
+use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteId};
+use miden_protocol::note::{Note, NoteId, NoteScriptRoot};
 use miden_standards::note::{FeeSponsorshipNote, NoteConsumptionStatus};
 
 use crate::TransactionExecutorError;
@@ -232,6 +232,18 @@ impl NoteBundle {
     pub(super) fn notes(&self) -> &[Note] {
         &self.notes
     }
+
+    /// Returns the note heading the bundle: its feature note, or a FEE_SPONSORSHIP note whose
+    /// feature note is absent.
+    pub(super) fn head(&self) -> &Note {
+        self.notes.first().expect("a bundle holds at least the note heading it")
+    }
+
+    /// Returns the notes bound to the note heading the bundle, which are the FEE_SPONSORSHIP notes
+    /// sponsoring it.
+    pub(super) fn bound_notes(&self) -> &[Note] {
+        &self.notes[1..]
+    }
 }
 
 // SPONSORSHIP REJECTION
@@ -268,59 +280,43 @@ pub(super) enum SponsorshipRejection {
     FeatureNoteIsSponsorship { feature_note_id: NoteId },
 }
 
-/// Rejects the FEE_SPONSORSHIP notes among `bundles` that `native_account_id` cannot consume at
-/// `block_ref`.
+/// Rejects the FEE_SPONSORSHIP notes heading a bundle of their own that `native_account_id` cannot
+/// reclaim at `block_ref`.
 ///
-/// This procedure checks the following:
-/// - If a bundle has only a sponsorship note. In that case the note can only be reclaimed, which
-///   requires reclaim to be enabled, its height to have been reached, and the reclaiming account to
-///   be the named reclaimer. The asset a reclaim returns is not constrained, so the fee asset is
-///   not checked here.
-/// - If a bundle contains a feature note. In that case all the sponsorship notes should have the
-///   fee asset the account collects fees in.
-///
-/// `collected_fee_asset_id` is `None` for an account that collects no fees and therefore has no
-/// such asset; the fee asset check is then skipped.
-pub(super) fn reject_unconsumable_sponsorships(
+/// A sponsorship heads a bundle only when the feature note it names is not an input, and then it
+/// can only be reclaimed, which requires reclaim to be enabled, its height to have been reached,
+/// and the reclaiming account to be the named reclaimer. The asset a reclaim returns is not
+/// constrained, so the fee asset is not checked here.
+pub(super) fn reject_unreclaimable_sponsorships(
     bundles: &[NoteBundle],
     native_account_id: AccountId,
     block_ref: BlockNumber,
-    collected_fee_asset_id: Option<AssetId>,
 ) -> Vec<FailedNote> {
-    let mut rejected = Vec::new();
+    bundles
+        .iter()
+        .filter_map(|bundle| {
+            let head = bundle.head();
+            let sponsorship = FeeSponsorshipNote::try_from(head).ok()?;
+            let reason = reject_orphan_sponsorship(&sponsorship, native_account_id, block_ref)?;
 
-    for bundle in bundles {
-        let (head, bound_notes) = bundle
-            .notes()
-            .split_first()
-            .expect("a bundle holds at least the note heading it");
+            Some(FailedNote::new(head.clone(), NoteFailure::from(reason)))
+        })
+        .collect()
+}
 
-        // A sponsorship only heads a bundle when the feature note it names is not an input.
-        if let Ok(sponsorship) = FeeSponsorshipNote::try_from(head)
-            && let Some(reason) =
-                reject_orphan_sponsorship(&sponsorship, native_account_id, block_ref)
-        {
-            rejected.push(FailedNote::new(head.clone(), NoteFailure::from(reason)));
-        }
-
-        for note in bound_notes {
-            // Every note bound to the note heading the bundle is a sponsorship of it.
-            if let Ok(sponsorship) = FeeSponsorshipNote::try_from(note)
-                && let Some(reason) =
-                    reject_unexpected_fee_asset(&sponsorship, collected_fee_asset_id)
-            {
-                rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
-            }
-        }
-    }
-
-    rejected
+/// Removes the `rejected` notes from `notes`.
+///
+/// The rejected notes are identified by ID rather than taken from the bundles, so that the notes
+/// kept stay in their original order instead of being reordered into bundles.
+pub(super) fn drop_rejected_notes(notes: &mut Vec<Note>, rejected: &[FailedNote]) {
+    let rejected_ids: BTreeSet<NoteId> = rejected.iter().map(|failed| failed.note().id()).collect();
+    notes.retain(|note| !rejected_ids.contains(&note.id()));
 }
 
 /// Returns the consumption status of a lone FEE_SPONSORSHIP note, or `None` if `note` is not one.
 ///
 /// A note checked on its own is one whose feature note is absent, so the reclaim rules of
-/// [`reject_unconsumable_sponsorships`] decide it.
+/// [`reject_unreclaimable_sponsorships`] decide it.
 pub(super) fn sponsorship_consumption_status(
     note: &Note,
     native_account_id: AccountId,
@@ -368,21 +364,158 @@ fn reject_orphan_sponsorship(
     }
 }
 
-/// Returns why `sponsorship` cannot pay for the feature note it is bound to, or `None` if it can.
-fn reject_unexpected_fee_asset(
-    sponsorship: &FeeSponsorshipNote,
-    collected_fee_asset_id: Option<AssetId>,
-) -> Option<SponsorshipRejection> {
-    let expected = collected_fee_asset_id?;
-    let actual = sponsorship.asset().id();
-
-    (actual != expected).then_some(SponsorshipRejection::WrongFeeAsset { expected, actual })
-}
-
 impl From<SponsorshipRejection> for NoteFailure {
     fn from(rejection: SponsorshipRejection) -> Self {
         NoteFailure::Rejected { reason: Box::new(rejection) }
     }
+}
+
+// FEE COLLECTION
+// ================================================================================================
+
+/// The fee configuration of an account that collects fees, read from its storage.
+#[derive(Debug)]
+pub(super) struct FeeCollection {
+    /// The asset the account collects fees in, which every FEE_SPONSORSHIP note it consumes has to
+    /// carry.
+    fee_asset_id: AssetId,
+    /// The fees the account charges for the feature notes, by script root: `None` for a root the
+    /// fee schedule has no entry for. A root missing from the map has a fee that could not be
+    /// determined, e.g. because the account prices notes through a custom fee policy.
+    scheduled_fees: BTreeMap<NoteScriptRoot, Option<AssetAmount>>,
+}
+
+impl FeeCollection {
+    /// Returns a new [`FeeCollection`] collecting fees in `fee_asset_id` and charging the
+    /// `scheduled_fees` for the feature notes.
+    pub(super) fn new(
+        fee_asset_id: AssetId,
+        scheduled_fees: BTreeMap<NoteScriptRoot, Option<AssetAmount>>,
+    ) -> Self {
+        Self { fee_asset_id, scheduled_fees }
+    }
+}
+
+/// The reason a feature note and the FEE_SPONSORSHIP notes bound to it cannot be consumed, decided
+/// without executing them.
+#[derive(Debug, Clone, thiserror::Error)]
+pub(super) enum FeeRejection {
+    #[error(
+        "the account schedules no fee for script root {script_root} of feature note {feature_note_id}"
+    )]
+    FeeNotScheduled {
+        feature_note_id: NoteId,
+        script_root: NoteScriptRoot,
+    },
+    #[error(
+        "the FEE_SPONSORSHIP notes bound to feature note {feature_note_id} provide a fee of {provided}, but the account charges {required}"
+    )]
+    FeeNotCovered {
+        feature_note_id: NoteId,
+        required: AssetAmount,
+        provided: AssetAmount,
+    },
+}
+
+impl From<FeeRejection> for NoteFailure {
+    fn from(rejection: FeeRejection) -> Self {
+        NoteFailure::Rejected { reason: Box::new(rejection) }
+    }
+}
+
+/// Returns the script roots of the feature notes heading `bundles`, whose fees are needed to check
+/// their bundles with [`reject_unfunded_bundles`].
+pub(super) fn feature_note_roots(bundles: &[NoteBundle]) -> BTreeSet<NoteScriptRoot> {
+    bundles
+        .iter()
+        .map(NoteBundle::head)
+        .filter(|head| FeeSponsorshipNote::try_from(*head).is_err())
+        .map(|head| head.script().root())
+        .collect()
+}
+
+/// Rejects the notes among `bundles` that fail the fee collection of the account described by
+/// `fee_collection`.
+///
+/// Mirrors the `miden::standards::fees::collect_sponsored_fees` procedure, which prices every
+/// feature note through the account's fee policy and asserts the FEE_SPONSORSHIP notes bound to it
+/// cover that fee. For every bundle headed by a feature note:
+/// - a FEE_SPONSORSHIP note carrying an asset other than the account's fee asset is rejected on its
+///   own, and does not count towards the fee.
+/// - if the account schedules no fee for the feature note, the whole bundle is rejected, since fee
+///   estimation aborts for it.
+/// - if the remaining sponsorships do not cover the scheduled fee, the whole bundle is rejected. A
+///   feature note without sponsorships is covered only by a zero fee.
+///
+/// A bundle whose fee could not be determined is left for execution to decide.
+pub(super) fn reject_unfunded_bundles(
+    bundles: &[NoteBundle],
+    fee_collection: &FeeCollection,
+) -> Vec<FailedNote> {
+    let mut rejected = Vec::new();
+
+    for bundle in bundles {
+        let feature_note = bundle.head();
+        // A bundle headed by a sponsorship is a reclaim, which collects no fee.
+        if FeeSponsorshipNote::try_from(feature_note).is_ok() {
+            continue;
+        }
+
+        // Every note bound to the note heading the bundle is a sponsorship of it.
+        let mut funding = Vec::new();
+        for note in bundle.bound_notes() {
+            let Ok(sponsorship) = FeeSponsorshipNote::try_from(note) else {
+                continue;
+            };
+            let actual = sponsorship.asset().id();
+            if actual != fee_collection.fee_asset_id {
+                let reason = SponsorshipRejection::WrongFeeAsset {
+                    expected: fee_collection.fee_asset_id,
+                    actual,
+                };
+                rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
+            } else {
+                funding.push((note, sponsorship.asset().amount()));
+            }
+        }
+
+        let script_root = feature_note.script().root();
+        let Some(&scheduled_fee) = fee_collection.scheduled_fees.get(&script_root) else {
+            continue;
+        };
+        let reason = match scheduled_fee {
+            None => FeeRejection::FeeNotScheduled {
+                feature_note_id: feature_note.id(),
+                script_root,
+            },
+            Some(required) => {
+                // A total above the maximum asset amount overflows the account vault when it is
+                // collected, which is left for execution to report.
+                let Some(provided) = funding
+                    .iter()
+                    .try_fold(AssetAmount::ZERO, |total, (_, amount)| (total + *amount).ok())
+                else {
+                    continue;
+                };
+                if provided >= required {
+                    continue;
+                }
+                FeeRejection::FeeNotCovered {
+                    feature_note_id: feature_note.id(),
+                    required,
+                    provided,
+                }
+            },
+        };
+
+        // The feature note and its sponsorships only fail together.
+        rejected.push(FailedNote::new(feature_note.clone(), NoteFailure::from(reason.clone())));
+        for (note, _) in funding {
+            rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason.clone())));
+        }
+    }
+
+    rejected
 }
 
 // HELPER FUNCTIONS

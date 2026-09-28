@@ -133,9 +133,19 @@ fn network_account(
     if let Some((root, fee)) = fee_entry {
         policy = policy.with_fee(root, fee);
     }
+
+    network_account_with_fee_policy(policy.into(), allowed_note_roots)
+}
+
+/// Builds a network account as [`network_account`] does, except that it prices notes through the
+/// given fee policy.
+fn network_account_with_fee_policy(
+    fee_policy: FeePolicy,
+    allowed_note_roots: BTreeSet<NoteScriptRoot>,
+) -> anyhow::Result<Account> {
     let fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(fee_faucet_id()?)
-        .active_fee_policy(policy.into())
+        .active_fee_policy(fee_policy)
         .build();
 
     Ok(NetworkAccount::builder([7; 32], allowed_note_roots, fee_policy_manager)?
@@ -216,6 +226,9 @@ impl Test {
         /// Fee the fee schedule charges for each feature note. Without this fee the feature note
         /// script root stays unscheduled.
         feature_note_fee: Option<AssetAmount>,
+        /// Fee policy the network account prices notes through instead of the
+        /// [`BasicConstantFeePolicy`] scheduling `feature_note_fee`, which is then ignored.
+        fee_policy: Option<FeePolicy>,
         /// Number of feature notes to create. Defaults to 1.
         #[builder(default = 1)]
         num_feature_notes: usize,
@@ -238,7 +251,10 @@ impl Test {
             fee_entry = feature_note_fee.map(|fee| (feature_note.script().root(), fee));
         }
 
-        let network_account = network_account(fee_entry, allowed_note_roots)?;
+        let network_account = match fee_policy {
+            Some(fee_policy) => network_account_with_fee_policy(fee_policy, allowed_note_roots)?,
+            None => network_account(fee_entry, allowed_note_roots)?,
+        };
         builder.add_account(network_account.clone())?;
 
         // The sponsorship notes target the network account, so they can only be built once it
@@ -888,6 +904,48 @@ fn asset_commitment_fee_policy(
     Ok(FeePolicy::custom(root, [component])?)
 }
 
+/// A custom fee policy charging `fee_amount` of the fee faucet's asset for every note.
+///
+/// Since it is not a [`BasicConstantFeePolicy`], the note checker cannot tell the fees it charges
+/// without executing it.
+fn flat_fee_policy(fee_amount: u64) -> anyhow::Result<FeePolicy> {
+    const POLICY_NAME: &str = "test::fees::flat_fee";
+    let masm_source = format!(
+        r#"
+        use miden::standards::assets::fungible_asset
+
+        #! Fee policy pricing every note at the same fee.
+        #!
+        #! Inputs:  [RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+        #! Outputs: [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+        #!
+        #! Invocation: call
+        @account_procedure
+        pub proc compute_note_fee
+            push.{fee_asset_id}
+            # => [FEE_ASSET_ID, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+
+            push.{fee_amount} exec.fungible_asset::create_value swapw
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, RECIPIENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT, timeframe, priority, pad(2)]
+
+            # drop the note parameters
+            repeat.4 movupw.2 dropw end
+            # => [FEE_ASSET_ID, FEE_ASSET_VALUE, pad(8)]
+        end
+        "#,
+        fee_asset_id = AssetId::new_fungible(fee_faucet_id()?).to_word(),
+    );
+
+    let code = CodeBuilder::default().compile_component_code(POLICY_NAME, &masm_source)?;
+    let root = code
+        .get_procedure_root_by_path(format!("{POLICY_NAME}::compute_note_fee").as_str())
+        .expect("flat fee policy should export compute_note_fee");
+    let component =
+        AccountComponent::new(code, vec![], AccountComponentMetadata::mock(POLICY_NAME))?;
+
+    Ok(FeePolicy::custom(root, [component])?)
+}
+
 /// Two priced feature notes whose fees are charged in different assets cannot be collected in the
 /// same transaction. A custom fee policy prices the first feature note in the fee faucet's asset
 /// and the second (which carries a different asset, so its assets commitment differs) in a
@@ -1380,16 +1438,14 @@ async fn check_notes(
 
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx)
         .with_source_manager(mock_tx.source_manager());
-    Ok(
-        NoteConsumptionChecker::new(&executor, Some(AssetId::new_fungible(fee_faucet_id()?)))
-            .check_notes_consumability(
-                network_account_id,
-                mock_tx.tx_inputs().block_header().block_num(),
-                notes,
-                mock_tx.tx_args().clone(),
-            )
-            .await?,
-    )
+    Ok(NoteConsumptionChecker::new(&executor)
+        .check_notes_consumability(
+            network_account_id,
+            mock_tx.tx_inputs().block_header().block_num(),
+            notes,
+            mock_tx.tx_args().clone(),
+        )
+        .await?)
 }
 
 /// Runs the checker and returns the note ids it reports as `(successful, failed)`.
@@ -1404,6 +1460,23 @@ async fn check_consumability(
         info.successful().iter().map(|note| note.note().id()).collect(),
         info.failed().iter().map(|note| note.note().id()).collect(),
     ))
+}
+
+/// Asserts that the checker rejected the note with `note_id` without executing it, for a reason
+/// whose message contains `reason`.
+fn assert_rejected(info: &NoteConsumptionInfo, note_id: NoteId, reason: &str) {
+    let failed = info
+        .failed()
+        .iter()
+        .find(|failed| failed.note().id() == note_id)
+        .unwrap_or_else(|| panic!("note {note_id} should have failed"));
+    let NoteFailure::Rejected { reason: actual } = failed.failure() else {
+        panic!("note {note_id} should have been rejected without being executed");
+    };
+    assert!(
+        actual.to_string().contains(reason),
+        "note {note_id} should have been rejected because of `{reason}`, got `{actual}`"
+    );
 }
 
 /// An uncovered feature note does not drag the intact (feature note, FEE_SPONSORSHIP) pairs
@@ -1455,10 +1528,16 @@ async fn note_checker_keeps_intact_pairs_alongside_an_uncovered_note(
         uncovered_ids.insert(sponsorship_notes[1].id());
     }
 
-    let (successful, failed) =
-        check_consumability(&mock_chain, network_account.id(), poisoned).await?;
+    let info = check_notes(&mock_chain, network_account.id(), poisoned).await?;
+    let successful: BTreeSet<NoteId> = info.successful().iter().map(|n| n.note().id()).collect();
+    let failed: BTreeSet<NoteId> = info.failed().iter().map(|n| n.note().id()).collect();
     assert_eq!(successful, intact_ids, "the intact pair should survive the uncovered note");
     assert_eq!(failed, uncovered_ids, "only the uncovered note and its sponsorship should fail");
+
+    // the uncovered bundle is ruled out from the fee schedule, without being executed
+    for note_id in uncovered_ids {
+        assert_rejected(&info, note_id, "but the account charges");
+    }
 
     Ok(())
 }
@@ -1658,9 +1737,10 @@ async fn note_checker_bundles_by_note_id_regardless_of_order(
 
 /// A rejected bundle blames exactly one note and reports the rest as its collateral, naming it.
 ///
-/// The uncovered feature note is the one blamed - fee collection fails in the epilogue, which
-/// points at no particular note - and the sponsorship that shares its bundle is reported as
-/// collateral of it, with no error of its own.
+/// The account prices notes through a custom fee policy, so the checker cannot tell the
+/// underfunded bundle apart without executing it. The uncovered feature note is the one blamed -
+/// fee collection fails in the epilogue, which points at no particular note - and the sponsorship
+/// that shares its bundle is reported as collateral of it, with no error of its own.
 #[tokio::test]
 async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()> {
     let Test {
@@ -1669,7 +1749,7 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
         feature_notes,
         sponsorship_notes,
     } = Test::builder()
-        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .fee_policy(flat_fee_policy(FEE_AMOUNT)?)
         .num_feature_notes(2)
         .sponsorship(Sponsorship::new(0, fee_asset(FEE_AMOUNT)?))
         // the second feature note's sponsorship does not cover its fee
@@ -1728,8 +1808,8 @@ async fn note_checker_blames_one_note_per_rejected_bundle() -> anyhow::Result<()
 }
 
 /// A FEE_SPONSORSHIP note funded with an asset other than the one the account collects fees in is
-/// rejected before anything is executed, and the feature note it is bound to takes the blame for
-/// being left uncovered.
+/// rejected before anything is executed, and so is the feature note it is bound to, which is left
+/// without anything covering its fee.
 ///
 /// Without the check the pair would be tried and fail in the epilogue, which points at no note, so
 /// the blame would fall on the feature note heading the bundle and the sponsorship that actually
@@ -1763,21 +1843,99 @@ async fn note_checker_rejects_a_sponsorship_carrying_the_wrong_fee_asset() -> an
         "the intact pair should survive the wrongly funded sponsorship"
     );
 
-    let rejected: Vec<_> = info.failed().iter().filter(|failed| failed.is_rejected()).collect();
-    assert_eq!(rejected.len(), 1, "only the wrongly funded sponsorship should be rejected");
-    assert_eq!(rejected[0].note().id(), sponsorship_notes[1].id());
-    assert!(
-        rejected[0].execution_error().is_none(),
-        "a rejected note was never executed, so it has no error"
-    );
+    assert_eq!(info.failed().len(), 2, "only the wrongly funded pair should fail");
+    assert_rejected(&info, sponsorship_notes[1].id(), "rather than the asset");
+    assert_rejected(&info, feature_notes[1].id(), "provide a fee of 0");
 
-    let blamed: Vec<_> = info.failed().iter().filter(|failed| failed.is_blamed()).collect();
-    assert_eq!(blamed.len(), 1, "the feature note left uncovered should be blamed");
-    assert_eq!(
-        blamed[0].note().id(),
-        feature_notes[1].id(),
-        "the blame should fall on the note left uncovered, not on the sponsorship"
-    );
+    Ok(())
+}
+
+/// Several FEE_SPONSORSHIP notes bound to one feature note are summed against its fee: the bundle
+/// is kept when they cover it between them, and rejected as a whole, without being executed, when
+/// they fall short of it.
+#[rstest]
+#[case::covered_between_them(FEE_AMOUNT / 2, FEE_AMOUNT - FEE_AMOUNT / 2, true)]
+#[case::one_short(FEE_AMOUNT / 2, FEE_AMOUNT - FEE_AMOUNT / 2 - 1, false)]
+#[tokio::test]
+async fn note_checker_sums_the_sponsorships_of_a_feature_note(
+    #[case] first_amount: u64,
+    #[case] second_amount: u64,
+    #[case] covered: bool,
+) -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = Test::builder()
+        .feature_note_fee(AssetAmount::new(FEE_AMOUNT)?)
+        .sponsorship(Sponsorship::new(0, fee_asset(first_amount)?))
+        .sponsorship(Sponsorship::new(0, fee_asset(second_amount)?))
+        .build()?;
+
+    let bundle = vec![
+        feature_notes[0].clone(),
+        sponsorship_notes[0].clone(),
+        sponsorship_notes[1].clone(),
+    ];
+    let bundle_ids: Vec<NoteId> = bundle.iter().map(Note::id).collect();
+    let info = check_notes(&mock_chain, network_account.id(), bundle).await?;
+
+    if covered {
+        assert_eq!(info.successful().len(), 3, "the covered bundle should be consumable");
+        assert!(info.failed().is_empty(), "no note of the covered bundle should fail");
+    } else {
+        assert!(info.successful().is_empty(), "no note of the uncovered bundle should succeed");
+        for note_id in bundle_ids {
+            assert_rejected(&info, note_id, "but the account charges");
+        }
+    }
+
+    Ok(())
+}
+
+/// A feature note whose script root the account schedules no fee for is rejected together with
+/// its sponsorship, without being executed, since fee estimation aborts for it.
+#[tokio::test]
+async fn note_checker_rejects_an_unscheduled_feature_note() -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        sponsorship_notes,
+    } = Test::builder()
+        .sponsorship(Sponsorship::new(0, fee_asset(FEE_AMOUNT)?))
+        .build()?;
+
+    let info = check_notes(
+        &mock_chain,
+        network_account.id(),
+        vec![feature_notes[0].clone(), sponsorship_notes[0].clone()],
+    )
+    .await?;
+
+    assert!(info.successful().is_empty(), "no note of the bundle should succeed");
+    assert_rejected(&info, feature_notes[0].id(), "schedules no fee");
+    assert_rejected(&info, sponsorship_notes[0].id(), "schedules no fee");
+
+    Ok(())
+}
+
+/// A feature note the account schedules a zero fee for needs no sponsorship.
+#[tokio::test]
+async fn note_checker_keeps_a_zero_fee_feature_note_without_sponsorship() -> anyhow::Result<()> {
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        ..
+    } = Test::builder().feature_note_fee(AssetAmount::ZERO).build()?;
+
+    let info =
+        check_notes(&mock_chain, network_account.id(), vec![feature_notes[0].clone()]).await?;
+
+    assert_eq!(info.successful().len(), 1, "the zero-fee feature note should be consumable");
+    assert!(info.failed().is_empty(), "the zero-fee feature note should not fail");
 
     Ok(())
 }
