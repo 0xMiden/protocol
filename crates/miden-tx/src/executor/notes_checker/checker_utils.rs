@@ -210,6 +210,7 @@ impl NoteBundle {
                 .ok()
                 .and_then(|sponsorship| note_indices.get(&sponsorship.feature_note_id()).copied())
             {
+                // Reject a sponsorship which names another sponsorship as its feature note.
                 Some(head_idx) if FeeSponsorshipNote::try_from(&notes[head_idx]).is_ok() => {
                     let reason = SponsorshipRejection::FeatureNoteIsSponsorship {
                         feature_note_id: notes[head_idx].id(),
@@ -305,7 +306,8 @@ pub(super) fn reject_unconsumable_sponsorships(
         for note in bound_notes {
             // Every note bound to the note heading the bundle is a sponsorship of it.
             if let Ok(sponsorship) = FeeSponsorshipNote::try_from(note)
-                && let Some(reason) = reject_bound_sponsorship(&sponsorship, collected_fee_asset_id)
+                && let Some(reason) =
+                    reject_unexpected_fee_asset(&sponsorship, collected_fee_asset_id)
             {
                 rejected.push(FailedNote::new(note.clone(), NoteFailure::from(reason)));
             }
@@ -367,7 +369,7 @@ fn reject_orphan_sponsorship(
 }
 
 /// Returns why `sponsorship` cannot pay for the feature note it is bound to, or `None` if it can.
-fn reject_bound_sponsorship(
+fn reject_unexpected_fee_asset(
     sponsorship: &FeeSponsorshipNote,
     collected_fee_asset_id: Option<AssetId>,
 ) -> Option<SponsorshipRejection> {

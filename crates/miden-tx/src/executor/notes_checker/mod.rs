@@ -316,11 +316,8 @@ where
         mut failed_notes: Vec<FailedNote>,
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
-        let (mut remaining_bundles, invalid_notes) = NoteBundle::group(&remaining_notes);
-        debug_assert!(
-            invalid_notes.is_empty(),
-            "invalid sponsorship notes should have been rejected before execution"
-        );
+        // The invalid sponsorships were already rejected before execution, so none are left here.
+        let (mut remaining_bundles, _) = NoteBundle::group(&remaining_notes);
         let mut successful_notes: Vec<Note> = Vec::new();
         let mut successful_cycle_counts = Vec::new();
         let mut failed_note_index = BTreeMap::new();

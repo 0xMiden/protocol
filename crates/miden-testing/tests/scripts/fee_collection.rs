@@ -145,9 +145,10 @@ fn network_account(
 /// The note a FEE_SPONSORSHIP note names as its feature note.
 #[derive(Clone, Copy)]
 enum Sponsored {
-    /// The feature note at the given index.
+    /// The feature note at the given index in the feature notes vector.
     FeatureNote(usize),
-    /// The sponsorship note at the given index, which makes the sponsorship invalid.
+    /// The sponsorship note at the given index in the sponsorship notes vector, which is separate
+    /// from the feature notes one. Naming a sponsorship makes the sponsorship invalid.
     Sponsorship(usize),
 }
 
