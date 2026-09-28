@@ -225,9 +225,10 @@ impl Test {
             .id();
             // The reclaimer and the reclaim height default to the sponsor and to no reclaim at
             // all, which is what a sponsorship that is not meant to be reclaimed here keeps.
-            let reclaim = sponsorship
+            let (reclaimer, reclaim_height) = sponsorship
                 .reclaimable_by_target
-                .then(|| (network_account.id(), BlockNumber::from(1)));
+                .then(|| (network_account.id(), BlockNumber::from(1)))
+                .unzip();
             let note = Note::from(
                 FeeSponsorshipNote::builder()
                     .sender(sponsor.id())
@@ -235,8 +236,8 @@ impl Test {
                     .feature_note_id(feature_note_id)
                     .asset(sponsorship.asset)
                     .generate_serial_number(&mut rng)
-                    .maybe_reclaimer(reclaim.map(|(reclaimer, _)| reclaimer))
-                    .maybe_reclaim_height(reclaim.map(|(_, height)| height))
+                    .maybe_reclaimer(reclaimer)
+                    .maybe_reclaim_height(reclaim_height)
                     .build()?,
             );
             builder.add_output_note(RawOutputNote::Full(note.clone()));
