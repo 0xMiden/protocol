@@ -1,4 +1,5 @@
-use {Bool} from miden::protocol::types
+use {AccountProcedureRoot, Bool} from miden::protocol::types
+use {RoleSymbol} from miden::standards::access::role_symbol
 # miden::standards::access::authority
 #
 # Single source of truth for the account-wide authority. Components that gate state-mutating
@@ -33,6 +34,7 @@ pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_
 
 # Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
 # Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
+
 pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
 
 # Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
@@ -44,6 +46,8 @@ const FROZEN = 1
 
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 const ERR_AUTHORITY_FROZEN = "authority is frozen"
+const ERR_PROCEDURE_ROLES_REQUIRE_RBAC = "procedure roles require an RBAC-controlled authority"
+const ERR_CANNOT_REASSIGN_SET_PROCEDURE_ROLE = "the role of set_procedure_role cannot be reassigned"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -81,6 +85,66 @@ pub proc unfreeze()
     # => [pad(16)]
 
     push.UNFROZEN exec.write_frozen_flag
+    # => [pad(16)]
+end
+
+#! Assigns the role required to invoke an authority-gated procedure, or clears it.
+#!
+#! Writing `0` unmaps the procedure so it falls back to the `ADMIN` role. Assigning a role that has
+#! no members blocks the procedure for everyone, `ADMIN` included, until it is reassigned.
+#!
+#! Inputs:  [role_symbol, PROCEDURE_ROOT, pad(11)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - role_symbol is the encoded role to require, or 0 to unmap the procedure.
+#! - PROCEDURE_ROOT is the root of the authority-gated procedure to configure.
+#!
+#! Panics if:
+#! - the authority is not RbacControlled.
+#! - the note sender is not the account's emergency authority.
+#! - role_symbol is neither 0 nor a valid role symbol encoding.
+#! - PROCEDURE_ROOT is the root of `set_procedure_role` itself.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_procedure_role(role_symbol: RoleSymbol, procedure_root: AccountProcedureRoot)
+    exec.assert_rbac_controlled
+    exec.assert_sender_is_emergency_authority
+    # => [role_symbol, PROCEDURE_ROOT, pad(11)]
+
+    # 0 unmaps the procedure, anything else must be a canonical role symbol.
+    dup neq.0
+    if.true
+        dup exec.role_symbol::validate_encoding
+    end
+    # => [role_symbol, PROCEDURE_ROOT, pad(11)]
+
+    movdn.4
+    # => [PROCEDURE_ROOT, role_symbol, pad(11)]
+
+    padw caller
+    # => [SELF_ROOT, PROCEDURE_ROOT, role_symbol, pad(11)]
+
+    eqw assertz.err=ERR_CANNOT_REASSIGN_SET_PROCEDURE_ROLE
+    # => [SELF_ROOT, PROCEDURE_ROOT, role_symbol, pad(11)]
+
+    dropw movup.4
+    # => [role_symbol, PROCEDURE_ROOT, pad(11)]
+
+    push.0.0.0 movup.3
+    # => [role_symbol, 0, 0, 0, PROCEDURE_ROOT, pad(11)]
+
+    swapw
+    # => [PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, PROCEDURE_ROOT, role_symbol, 0, 0, 0, pad(11)]
+
+    exec.native_account::set_map_item
+    # => [OLD_ROLE_WORD, pad(11)]
+
+    dropw
     # => [pad(16)]
 end
 
@@ -204,6 +268,26 @@ proc assert_sender_is_emergency_authority()
             push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
         end
     end
+end
+
+#! Asserts the authority is RbacControlled.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the authority is not RbacControlled.
+#!
+#! Invocation: exec
+proc assert_rbac_controlled()
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, is_frozen, 0, 0]
+
+    eq.RBAC_CONTROLLED assert.err=ERR_PROCEDURE_ROLES_REQUIRE_RBAC
+    # => [is_frozen, 0, 0]
+
+    drop drop drop
+    # => []
 end
 
 #! Writes the is_frozen flag into the authority slot, preserving the authority discriminator.
