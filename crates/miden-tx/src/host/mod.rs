@@ -119,6 +119,10 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionBaseHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the [`AccountUpdateTracker`] cannot be created for the account.
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
@@ -126,7 +130,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
 
@@ -138,18 +142,18 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             }
             registry
         };
-        Self {
+        Ok(Self {
             mast_store,
             scripts_mast_store,
             initial_account_header: account.into(),
             initial_account_storage_header: account.storage().header().clone(),
-            update_tracker: AccountUpdateTracker::new(account),
+            update_tracker: AccountUpdateTracker::new(account)?,
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
             block_commitments,
             core_lib_handlers,
-        }
+        })
     }
 
     // PUBLIC ACCESSORS

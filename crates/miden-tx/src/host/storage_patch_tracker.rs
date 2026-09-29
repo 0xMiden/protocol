@@ -51,13 +51,19 @@ impl StoragePatchTracker {
     ///
     /// If the account is new, inserts the storage entries into the patch analogously to the
     /// transaction kernel patch.
-    pub fn new(account: &PartialAccount) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the account is new and its partial storage does not contain the storage map of every map
+    ///   slot.
+    pub fn new(account: &PartialAccount) -> Result<Self, TransactionKernelError> {
         let mut init_maps = BTreeMap::new();
         let mut patches = BTreeMap::new();
 
         // Record all slots in a new account as created.
         if account.is_new() {
-            account.storage().header().slots().for_each(|slot_header| {
+            for slot_header in account.storage().header().slots() {
                 match slot_header.slot_type() {
                     StorageSlotType::Value => {
                         // For new accounts, all values are recorded as created, even empty words,
@@ -75,7 +81,11 @@ impl StoragePatchTracker {
                             .storage()
                             .maps()
                             .find(|map| map.root() == slot_header.value())
-                            .expect("storage map should be present in partial storage");
+                            .ok_or_else(|| {
+                                TransactionKernelError::NewAccountMissingStorageMap(
+                                    slot_header.name().clone(),
+                                )
+                            })?;
 
                         let mut map_patch_entries = StorageMapPatchEntries::new();
                         storage_map.entries().for_each(|(key, value)| {
@@ -102,17 +112,17 @@ impl StoragePatchTracker {
                         assert!(prev_entry.is_none(), "storage header should contain unique slots");
                     },
                 }
-            });
+            }
         }
 
-        Self {
+        Ok(Self {
             storage_header: account.storage().header().clone(),
             init_maps,
             // The patches are derived from the account's storage slots, which are bounded by
             // `AccountStorage::MAX_NUM_STORAGE_SLOTS`, so this cannot exceed the limit.
             patch: AccountStoragePatch::from_raw(patches)
                 .expect("number of slot patches is bounded by the account's storage slots"),
-        }
+        })
     }
 
     // PUBLIC MUTATORS

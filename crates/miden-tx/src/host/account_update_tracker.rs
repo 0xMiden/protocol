@@ -37,21 +37,25 @@ pub struct AccountUpdateTracker {
 
 impl AccountUpdateTracker {
     /// Returns a new [`AccountUpdateTracker`] instantiated for the specified account.
-    pub fn new(account: &PartialAccount) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the [`StoragePatchTracker`] cannot be created for the account.
+    pub fn new(account: &PartialAccount) -> Result<Self, TransactionKernelError> {
         let code = if account.is_new() {
             Some(account.code().clone())
         } else {
             None
         };
 
-        Self {
+        Ok(Self {
             account_id: account.id(),
-            storage: StoragePatchTracker::new(account),
+            storage: StoragePatchTracker::new(account)?,
             vault: VaultUpdateTracker::default(),
             code,
             nonce_delta: Felt::ZERO,
             initial_nonce: account.nonce(),
-        }
+        })
     }
 
     /// Returns true if the nonce delta is non-zero.

@@ -17,6 +17,7 @@
 
 - Fixed PSWAP output mutation after fills by validating and sealing payback and remainder notes ([#3927](https://github.com/0xMiden/protocol/pull/3927)).
 - Fixed a panic when verifying a Protobuf `MerklePath` or `PartialMmr` with a path longer than 255 nodes ([#3970](https://github.com/0xMiden/protocol/pull/3970)).
+- [BREAKING] Transaction host creation now returns an error instead of panicking when a new account's partial storage is missing a storage map ([#3971](https://github.com/0xMiden/protocol/pull/3971)).
 
 ## v0.17.0-rc.7 (2026-09-24)
 
