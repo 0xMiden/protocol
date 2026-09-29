@@ -49,11 +49,11 @@ static UPGRADE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// The called `upgrade` procedure authorizes the sender through the account-wide
 /// [`Authority`](crate::account::access::Authority) component.
 ///
-/// The new code itself is carried in an [`AccountCodeUpgradeAttachment`], from which the
-/// transaction host provides it to the kernel. The note script does not require the attachment:
-/// the kernel validates the provided code against the commitment either way. The code must fit
-/// into the note's [`NoteAttachments`]; a larger upgrade must provide the code through the advice
-/// map instead (see [`AccountCodeUpgrade`]).
+/// The new code itself is carried in an [`AccountCodeUpgradeAttachment`], which the note script
+/// requires and inserts into the advice map, from which the transaction host provides it to the
+/// kernel. The code must therefore fit into the note's [`NoteAttachments`]. If the transaction
+/// already provides a different encoding of the same code through the advice map (see
+/// [`AccountCodeUpgrade`]), consuming the note fails.
 ///
 /// The note is always public (for network execution) and bound to the `target` account by a
 /// [`NetworkAccountTarget`] attachment. The script asserts both before calling `upgrade`.

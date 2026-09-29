@@ -20,9 +20,8 @@ use crate::note::StandardNoteAttachment;
 /// carried by a note, within the limits of [`NoteAttachments`]. The chunks are joined in the order
 /// in which they appear in the note's attachments, which the note commits to.
 ///
-/// When the kernel initializes an upgrade that the advice map does not provide the code for, the
-/// transaction host looks for an input note whose chunks decode to code that matches the new code
-/// commitment.
+/// The [`UpgradeNote`](crate::note::UpgradeNote) script joins the chunks and inserts the code
+/// into the advice map under [`AccountCodeUpgrade::advice_map_key`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountCodeUpgradeAttachment {
     code_upgrade: AccountCodeUpgrade,

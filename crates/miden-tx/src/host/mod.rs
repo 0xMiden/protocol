@@ -62,7 +62,6 @@ use miden_protocol::transaction::{
     TransactionSummary,
     TransactionSummaryUserParams,
 };
-use miden_standards::note::AccountCodeUpgradeAttachment;
 pub(crate) use tx_event::{
     RecipientData,
     TransactionEvent,
@@ -206,24 +205,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns the input notes consumed in this transaction.
     pub fn input_notes(&self) -> InputNotes<InputNote> {
         self.input_notes.clone()
-    }
-
-    /// Returns the upgrade to the code with `new_code_commitment` that an input note carries in its
-    /// [`AccountCodeUpgradeAttachment`], if any.
-    ///
-    /// Notes whose attachments do not decode or carry other code are skipped.
-    pub(crate) fn find_input_note_code_upgrade(
-        &self,
-        new_code_commitment: Word,
-    ) -> Option<AccountCodeUpgrade> {
-        self.input_notes
-            .iter()
-            .filter_map(|input_note| {
-                AccountCodeUpgradeAttachment::try_from_attachments(input_note.note().attachments())
-                    .ok()
-            })
-            .map(AccountCodeUpgradeAttachment::into_code_upgrade)
-            .find(|code_upgrade| code_upgrade.commitment() == new_code_commitment)
     }
 
     /// Clones the inner [`OutputNoteBuilder`]s and returns the vector of created output notes that
@@ -412,8 +393,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// providing its procedures to the kernel through the advice map.
     ///
     /// The `code_upgrade` is taken from the advice map entry under
-    /// [`AccountCodeUpgrade::advice_map_key`] or, if there is none, from an input note's
-    /// [`AccountCodeUpgradeAttachment`] when the event is extracted.
+    /// [`AccountCodeUpgrade::advice_map_key`] when the event is extracted.
     ///
     /// # Errors
     ///

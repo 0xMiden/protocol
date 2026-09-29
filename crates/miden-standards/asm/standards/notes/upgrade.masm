@@ -1,5 +1,8 @@
 use {NoteArgs} from miden::protocol::types
+use {WORD_NUM_ELEMENTS} from miden::protocol::constants
+use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_note
+use miden::protocol::note
 use miden::standards::account_upgrade
 use miden::standards::note::note_target
 
@@ -15,12 +18,27 @@ const NEW_CODE_COMMITMENT_PTR = STORAGE_PTR
 # Expected note storage item count: the new code commitment.
 const NUM_STORAGE_ITEMS = 4
 
+# The attachment scheme of `AccountCodeUpgradeAttachment` chunks.
+const ACCOUNT_CODE_UPGRADE_ATTACHMENT_SCHEME = 7
+
+# Domain of the advice map key under which the host looks up the new code, see the Rust
+# `AccountCodeUpgrade::advice_map_key`.
+const CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN = 0x020002
+
+# Number of elements hashed into the advice map key: the new code commitment.
+const CODE_UPGRADE_ADVICE_MAP_KEY_NUM_ELEMENTS = 4
+
+# Local memory offset of the joined code chunks.
+const CODE_LOC = 0
+
 # ERRORS
 # =================================================================================================
 
 const ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "upgrade note storage item count is not the expected count"
 
 const ERR_UPGRADE_NOTE_IS_NOT_PUBLIC = "upgrade note must be public"
+
+const ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT = "upgrade note does not carry an account code upgrade attachment"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -34,8 +52,8 @@ const ERR_UPGRADE_NOTE_IS_NOT_PUBLIC = "upgrade note must be public"
 #! script asserts the consuming account matches that target before doing anything else, so the note
 #! cannot be consumed by any other account that happens to accept its sender.
 #!
-#! The script does not provide the new code itself. It must be present in the advice map, usually
-#! through an `AccountCodeUpgradeAttachment`.
+#! The new code is carried in the note's `AccountCodeUpgradeAttachment` chunks, which the script
+#! provides to the transaction host through the advice map.
 #!
 #! Authorization is enforced by the called `upgrade` procedure via the account-wide `Authority`
 #! component, which resolves the note sender against the configured owner or role.
@@ -53,6 +71,9 @@ const ERR_UPGRADE_NOTE_IS_NOT_PUBLIC = "upgrade note must be public"
 #! - the note is not public.
 #! - the consuming account is not the note's target account, or the target attachment is missing.
 #! - the number of storage items is not NUM_STORAGE_ITEMS.
+#! - the note does not carry an `AccountCodeUpgradeAttachment` chunk.
+#! - the advice map already holds a different encoding of the new code, e.g. provided through the
+#!   transaction arguments.
 #! - the note sender is not authorized (per the `Authority` component).
 #! - the `upgrade` procedure panics.
 @note_script
@@ -82,10 +103,99 @@ pub proc main(args: NoteArgs)
     mem_loadw_le.NEW_CODE_COMMITMENT_PTR
     # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8), pad(16)]
 
+    dupw exec.insert_code_into_advice_map
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8), pad(16)]
+
     call.account_upgrade::upgrade
     # => [pad(16), pad(16)]
 
     # truncate the stack
     dropw dropw dropw dropw
     # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Joins the active note's `AccountCodeUpgradeAttachment` chunks and inserts the resulting code into
+#! the advice map, from which the transaction host provides it to the kernel.
+#!
+#! The code must be split in the order in which the `AccountCodeUpgradeAttachment`s appear, but
+#! they do not necessarily have to appear contiguously.
+#!
+#! Inputs:  [NEW_CODE_COMMITMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - NEW_CODE_COMMITMENT is the commitment to the new code, which the advice map key is derived
+#!   from.
+#!
+#! Panics if:
+#! - the note does not carry an `AccountCodeUpgradeAttachment` chunk.
+#! - the advice map already holds a different value under the key.
+#!
+#! Invocation: exec
+# the locals fit all attachments of a note: MAX_ATTACHMENT_TOTAL_WORDS * WORD_NUM_ELEMENTS
+@locals(2048)
+proc insert_code_into_advice_map(new_code_commitment: word)
+    exec.active_note::get_metadata
+    # => [METADATA, NEW_CODE_COMMITMENT]
+
+    exec.note::metadata_into_attachment_schemes
+    # => [scheme_0, scheme_1, scheme_2, scheme_3, NEW_CODE_COMMITMENT]
+
+    locaddr.CODE_LOC push.0
+    # => [attachment_idx = 0, write_ptr, scheme_0, scheme_1, scheme_2, scheme_3, NEW_CODE_COMMITMENT]
+
+    # append the chunks to the local memory region in the order of their attachment slots
+    repeat.4
+        # => [attachment_idx, write_ptr, scheme_n, ...]
+
+        movup.2 eq.ACCOUNT_CODE_UPGRADE_ATTACHMENT_SCHEME
+        # => [is_code_chunk, attachment_idx, write_ptr, scheme_n+1, ...]
+
+        if.true
+            dup dup.2
+            # => [write_ptr, attachment_idx, attachment_idx, write_ptr, scheme_n+1, ...]
+
+            # this fetches all attachment commitments repeatedly, but this is acceptable given
+            # it only happens at most twice and may change again in the future
+            exec.active_note::write_attachment_to_memory
+            # => [num_words, attachment_idx, write_ptr, scheme_n+1, ...]
+
+            mul.WORD_NUM_ELEMENTS movup.2 add swap
+            # => [attachment_idx, write_ptr', scheme_n+1, ...]
+        end
+
+        add.1
+        # => [attachment_idx + 1, write_ptr, scheme_n+1, ...]
+    end
+    # => [attachment_idx, end_ptr, NEW_CODE_COMMITMENT]
+
+    # the end pointer only moved past the start of the region if at least one chunk was written
+    drop dup locaddr.CODE_LOC neq assert.err=ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT
+    # => [end_ptr, NEW_CODE_COMMITMENT]
+
+    movdn.4
+    # => [NEW_CODE_COMMITMENT, end_ptr]
+
+    # compute the domain-separated advice map key over the four elements of the commitment
+    push.0.0.CODE_UPGRADE_ADVICE_MAP_KEY_DOMAIN.CODE_UPGRADE_ADVICE_MAP_KEY_NUM_ELEMENTS
+    exec.poseidon2::init_with_capacity
+    # => [RATE0 = EMPTY_WORD, RATE1 = EMPTY_WORD, CAPACITY, NEW_CODE_COMMITMENT, end_ptr]
+
+    dropw movupw.2
+    # => [NEW_CODE_COMMITMENT, RATE1 = EMPTY_WORD, CAPACITY, end_ptr]
+
+    exec.poseidon2::permute exec.poseidon2::squeeze_digest
+    # => [KEY, end_ptr]
+
+    locaddr.CODE_LOC movdn.4
+    # => [KEY, start_ptr, end_ptr]
+
+    adv.insert_mem
+    # => [KEY, start_ptr, end_ptr]
+
+    dropw drop drop
+    # => []
 end

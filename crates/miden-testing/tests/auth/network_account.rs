@@ -33,6 +33,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
     ERR_UPGRADE_NOTE_IS_NOT_PUBLIC,
+    ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT,
     ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
 };
 use miden_standards::note::config::{NetworkAccountConfig, NetworkAccountConfigNote};
@@ -1213,6 +1214,37 @@ async fn test_auth_network_account_rejects_upgrade_note_with_wrong_storage_item_
         .await;
 
     assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// An upgrade note that does not carry the new code in an `AccountCodeUpgradeAttachment` must be
+/// rejected by the note script, since it is the only source of the code.
+#[tokio::test]
+async fn test_auth_network_account_rejects_upgrade_note_without_code_attachment()
+-> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+    let upgraded_code = upgraded_network_account_code(owner, vec![])?;
+    let note = NoteBuilder::new(owner, &mut rand::rng())
+        .script(UpgradeNote::script())
+        .note_storage(upgraded_code.commitment().as_elements().to_vec())?
+        .attachment(NetworkAccountTarget::new(account.id(), NoteExecutionHint::Always)?)
+        .build()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT);
 
     Ok(())
 }
