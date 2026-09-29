@@ -122,6 +122,10 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionExecutorHost`] instance from the provided inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the host cannot be created.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: &PartialAccount,
@@ -133,7 +137,7 @@ where
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
-    ) -> Self {
+    ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
             input_notes,
@@ -141,9 +145,9 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-        );
+        )?;
 
-        Self {
+        Ok(Self {
             base_host,
             tx_progress: TransactionProgress::default(),
             authenticator,
@@ -153,7 +157,7 @@ where
             generated_signatures: BTreeMap::new(),
             in_auth_procedure: false,
             source_manager,
-        }
+        })
     }
 
     // PUBLIC ACCESSORS
