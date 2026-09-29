@@ -11,3 +11,18 @@ path      = "rbac.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Role-based access control"
+name        = "miden::standards::access::rbac"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Per-role RBAC configuration (member count and delegated admin role)"
+name        = "miden::standards::access::rbac::role_config"
+type        = { key = "miden::standards::access::role_symbol", value = "word" }
+
+[[package.metadata.account-component.storage.slots]]
+description = "Role membership flag indexed by role symbol and account ID"
+name        = "miden::standards::access::rbac::role_membership"
+type        = { key = "word", value = "bool" }

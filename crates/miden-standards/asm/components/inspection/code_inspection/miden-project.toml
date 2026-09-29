@@ -11,3 +11,8 @@ path      = "code_inspection.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Read-only introspection over the account's own code"
+name        = "miden::standards::inspection::code_inspection"
+version     = "1.0.0"

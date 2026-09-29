@@ -11,3 +11,8 @@ path      = "allow_all.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "`allow_all` transfer policy for callback-enabled faucets"
+name        = "miden::standards::faucets::policies::transfer::allow_all"
+version     = "1.0.0"

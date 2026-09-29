@@ -1,7 +1,7 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 // ALLOW-ALL MINT POLICY
@@ -55,12 +55,16 @@ impl MintAllowAll {
     pub fn root() -> AccountProcedureRoot {
         *ALLOW_ALL_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        package_metadata(Self::code())
+    }
 }
 
 impl From<MintAllowAll> for AccountComponent {
     fn from(_: MintAllowAll) -> Self {
-        let metadata = AccountComponentMetadata::new(MintAllowAll::NAME)
-            .with_description("`allow_all` mint policy for fungible faucets");
+        let metadata = MintAllowAll::component_metadata();
 
         AccountComponent::new(MintAllowAll::code().clone(), vec![], metadata).expect(
             "`allow_all` mint policy component should satisfy the requirements of a valid account component",

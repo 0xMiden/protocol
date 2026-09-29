@@ -11,3 +11,13 @@ path      = "basic_constant_fee.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "`basic_constant_fee` fee policy charging a constant per-note-script fee"
+name        = "miden::standards::fees::policies::basic_constant_fee"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Fee charged per note script root"
+name        = "miden::standards::fees::policies::basic_constant_fee::fee_schedule"
+type        = { key = "word", value = "word" }

@@ -11,3 +11,13 @@ path      = "min_burn_amount.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "`min_burn_amount` burn policy for fungible faucets"
+name        = "miden::standards::faucets::policies::burn::min_burn_amount"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Minimum burn amount"
+name        = "miden::standards::faucets::policies::burn::min_burn_amount::min_burn_amount"
+type        = "word"

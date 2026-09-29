@@ -1,4 +1,3 @@
-use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotContent, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -54,17 +53,6 @@ impl SponsorshipPolicy {
     /// Returns the [`StorageSlotName`] of the standardized sponsorship policy slot.
     pub fn slot_name() -> &'static StorageSlotName {
         &SLOT_NAME
-    }
-
-    /// Returns the schema entry for the sponsorship policy slot.
-    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::slot_name().clone(),
-            StorageSlotSchema::value(
-                "Whether sponsorships are capped at the fees collected in the same transaction",
-                SchemaType::native_word(),
-            ),
-        )
     }
 
     /// Returns the [`StorageSlot`] encoding this policy, suitable for inclusion in an

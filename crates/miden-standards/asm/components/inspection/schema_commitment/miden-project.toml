@@ -11,3 +11,13 @@ path      = "schema_commitment.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Exposes a commitment to the account's storage schema"
+name        = "miden::standards::inspection::storage_schema"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "Commitment to the storage schema of an account"
+name        = "miden::standards::inspection::storage_schema::commitment"
+type        = "word"

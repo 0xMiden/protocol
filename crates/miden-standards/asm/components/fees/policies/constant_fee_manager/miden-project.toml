@@ -11,3 +11,13 @@ path      = "constant_fee_manager.masm"
 miden-core.workspace      = true
 miden-protocol.workspace  = true
 miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Authority-gated `set_note_fee` admin for updating a constant-fee schedule"
+name        = "miden::standards::fees::policies::constant_fee_manager"
+version     = "1.0.0"
+
+[[package.metadata.account-component.storage.slots]]
+description = "ID of the fee schedule slot this manager updates"
+name        = "miden::standards::fees::policies::constant_fee_manager::fee_schedule_slot_id"
+type        = "word"

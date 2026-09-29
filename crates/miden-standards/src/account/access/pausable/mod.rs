@@ -1,9 +1,5 @@
-use miden_protocol::account::component::{
-    AccountComponentCode,
-    AccountComponentMetadata,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::Word;
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
@@ -11,9 +7,8 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 
-use crate::account::account_component_code;
+use crate::account::{account_component_code, package_metadata};
 use crate::procedure_root;
 
 mod manager;
@@ -87,17 +82,6 @@ impl PausableStorage {
         &IS_PAUSED_SLOT_NAME
     }
 
-    /// Schema entry for the pause flag slot (documentation / tooling).
-    pub fn is_paused_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::is_paused_slot().clone(),
-            StorageSlotSchema::value(
-                "Pause flag word; zero is unpaused, canonical paused encoding is [1,0,0,0]",
-                [Felt::ZERO; 4],
-            ),
-        )
-    }
-
     /// Returns the pause-flag [`Word`] for the captured state.
     pub fn to_word(&self) -> Word {
         if self.state {
@@ -165,19 +149,16 @@ impl Pausable {
     pub fn is_paused_root() -> AccountProcedureRoot {
         *PAUSABLE_IS_PAUSED_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        package_metadata(Self::code())
+    }
 }
 
 impl From<Pausable> for AccountComponent {
     fn from(pausable: Pausable) -> Self {
-        let storage_schema = StorageSchema::new([PausableStorage::is_paused_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(Pausable::NAME)
-            .with_description(
-                "Pausable: installs the `is_paused` storage slot and exposes \
-                 `is_paused` view.",
-            )
-            .with_storage_schema(storage_schema);
+        let metadata = Pausable::component_metadata();
 
         AccountComponent::new(Pausable::code().clone(), vec![pausable.0.into_slot()], metadata)
             .expect(
