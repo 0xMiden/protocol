@@ -208,22 +208,20 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         self.input_notes.clone()
     }
 
-    /// Returns the upgrade to the code with `new_code_commitment` that an input note carries in an
+    /// Returns the upgrade to the code with `new_code_commitment` that an input note carries in its
     /// [`AccountCodeUpgradeAttachment`], if any.
     ///
-    /// Only attachments of that scheme are decoded. Those that do not decode or carry other code
-    /// are skipped.
+    /// Notes whose attachments do not decode or carry other code are skipped.
     pub(crate) fn find_input_note_code_upgrade(
         &self,
         new_code_commitment: Word,
     ) -> Option<AccountCodeUpgrade> {
         self.input_notes
             .iter()
-            .flat_map(|input_note| input_note.note().attachments().iter())
-            .filter(|attachment| {
-                attachment.attachment_scheme() == AccountCodeUpgradeAttachment::ATTACHMENT_SCHEME
+            .filter_map(|input_note| {
+                AccountCodeUpgradeAttachment::try_from_attachments(input_note.note().attachments())
+                    .ok()
             })
-            .filter_map(|attachment| AccountCodeUpgradeAttachment::try_from(attachment).ok())
             .map(AccountCodeUpgradeAttachment::into_code_upgrade)
             .find(|code_upgrade| code_upgrade.commitment() == new_code_commitment)
     }

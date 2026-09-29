@@ -52,7 +52,7 @@ static UPGRADE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// The new code itself is carried in an [`AccountCodeUpgradeAttachment`], from which the
 /// transaction host provides it to the kernel. The note script does not require the attachment:
 /// the kernel validates the provided code against the commitment either way. The code must fit
-/// into a single [`NoteAttachment`]; a larger upgrade must provide the code through the advice
+/// into the note's [`NoteAttachments`]; a larger upgrade must provide the code through the advice
 /// map instead (see [`AccountCodeUpgrade`]).
 ///
 /// The note is always public (for network execution) and bound to the `target` account by a
@@ -74,12 +74,11 @@ impl UpgradeNote {
     ///
     /// Returns an error if:
     /// - the attachments already carry an [`AccountCodeUpgradeAttachment`].
-    /// - `code` does not fit into a single [`NoteAttachment`].
     /// - `target` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
     ///   which requires a public target).
     /// - the attachments carry a `NetworkAccountTarget` for an account other than `target`.
     /// - the attachments exceed their protocol limit (see [`NoteAttachments::new`]); the code and
-    ///   target attachments occupy some of the available slots.
+    ///   target attachments occupy some of the available words and slots.
     #[builder]
     pub fn new(
         #[builder(field)] mut attachments: Vec<NoteAttachment>,
@@ -98,16 +97,7 @@ impl UpgradeNote {
 
         let code_upgrade = AccountCodeUpgrade::new(code);
         let new_code_commitment = code_upgrade.commitment();
-        let code_attachment = NoteAttachment::try_from(&AccountCodeUpgradeAttachment::new(
-            code_upgrade,
-        ))
-        .map_err(|err| {
-            NoteError::other_with_source(
-                "failed to attach the account code to the upgrade note",
-                err,
-            )
-        })?;
-        attachments.push(code_attachment);
+        attachments.extend(AccountCodeUpgradeAttachment::new(code_upgrade).to_attachments()?);
 
         // Bind the note to `target`.
         NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
@@ -241,18 +231,12 @@ impl NoteConsumptionCost for UpgradeNote {
 
 #[cfg(test)]
 mod tests {
-    use alloc::format;
-    use alloc::string::String;
-
     use assert_matches::assert_matches;
-    use miden_protocol::account::component::AccountComponentMetadata;
-    use miden_protocol::account::{AccountComponent, AccountType};
+    use miden_protocol::account::AccountType;
     use miden_protocol::crypto::rand::RandomCoin;
 
     use super::*;
-    use crate::code_builder::CodeBuilder;
-    use crate::note::AccountCodeUpgradeAttachmentError;
-    use crate::testing::account_component::IncrNonceAuthComponent;
+    use crate::testing::account_component::{IncrNonceAuthComponent, MockProceduresComponent};
 
     fn account_id(seed: u8) -> AccountId {
         AccountId::builder()
@@ -269,23 +253,12 @@ mod tests {
             .build()
     }
 
-    /// Returns account code whose encoding does not fit into a single note attachment.
-    fn too_large_code() -> anyhow::Result<AccountCode> {
-        // Each procedure pushes a distinct value, so that no two procedures share a MAST root.
-        let source: String = (0..AccountCode::MAX_NUM_PROCEDURES - 1)
-            .map(|idx| {
-                format!("@account_procedure\npub proc procedure_{idx}\n push.{idx} drop\nend\n")
-            })
-            .collect();
-        let component_code =
-            CodeBuilder::default().compile_component_code("test::too_large", source)?;
-        let component = AccountComponent::new(
-            component_code,
-            vec![],
-            AccountComponentMetadata::new("test::too_large"),
-        )?;
-
-        Ok(AccountCode::from_components(&[IncrNonceAuthComponent.into(), component])?)
+    /// Returns account code with `num_procedures` procedures next to its auth procedure.
+    fn code_with_procedures(num_procedures: usize) -> anyhow::Result<AccountCode> {
+        Ok(AccountCode::from_components(&[
+            IncrNonceAuthComponent.into(),
+            MockProceduresComponent::new(num_procedures).into(),
+        ])?)
     }
 
     /// The builder produces a public, asset-less note tagged for the upgraded account, whose
@@ -319,24 +292,21 @@ mod tests {
     }
 
     /// The built note carries a `NetworkAccountTarget` attachment bound to the upgraded account and
-    /// an `AccountCodeUpgradeAttachment` carrying the new code.
-    #[test]
-    fn note_carries_target_and_code_attachments() -> anyhow::Result<()> {
+    /// the new code in `AccountCodeUpgradeAttachment` chunks.
+    #[rstest::rstest]
+    #[case::single_chunk(1)]
+    #[case::two_chunks(200)]
+    fn note_carries_target_and_code_attachments(
+        #[case] num_procedures: usize,
+    ) -> anyhow::Result<()> {
         let target = account_id(1);
-        let code = AccountCode::mock();
+        let code = code_with_procedures(num_procedures)?;
         let note = Note::from(build_upgrade_note(target, code.clone())?);
 
         let network_target = NetworkAccountTarget::try_from(note.attachments())?;
         assert_eq!(network_target.target_id(), target);
 
-        let code_attachment = note
-            .attachments()
-            .iter()
-            .find(|attachment| {
-                attachment.attachment_scheme() == AccountCodeUpgradeAttachment::ATTACHMENT_SCHEME
-            })
-            .expect("note should carry an account code upgrade attachment");
-        let code_upgrade = AccountCodeUpgradeAttachment::try_from(code_attachment)?;
+        let code_upgrade = AccountCodeUpgradeAttachment::try_from_attachments(note.attachments())?;
         assert_eq!(code_upgrade.code_upgrade().code(), &code);
 
         Ok(())
@@ -346,16 +316,16 @@ mod tests {
     /// code itself.
     #[test]
     fn caller_code_attachment_is_rejected() -> anyhow::Result<()> {
-        let code_attachment = NoteAttachment::try_from(&AccountCodeUpgradeAttachment::new(
-            AccountCodeUpgrade::new(AccountCode::mock()),
-        ))?;
+        let code_attachments =
+            AccountCodeUpgradeAttachment::new(AccountCodeUpgrade::new(AccountCode::mock()))
+                .to_attachments()?;
 
         let result = UpgradeNote::builder()
             .sender(account_id(2))
             .target(account_id(1))
             .code(AccountCode::mock())
             .serial_number(Word::empty())
-            .attachment(code_attachment)
+            .attachments(code_attachments)
             .build();
 
         assert_matches!(result, Err(NoteError::Other { error_msg, .. })
@@ -366,16 +336,13 @@ mod tests {
         Ok(())
     }
 
-    /// Code that does not fit into a single note attachment is rejected.
+    /// Code that does not fit into the note attachments is rejected.
     #[test]
     fn too_large_code_is_rejected() -> anyhow::Result<()> {
-        let result = build_upgrade_note(account_id(1), too_large_code()?);
+        let code = code_with_procedures(AccountCode::MAX_NUM_PROCEDURES - 1)?;
+        let result = build_upgrade_note(account_id(1), code);
 
-        assert_matches!(result, Err(NoteError::Other { source: Some(source), .. })
-        if matches!(
-            source.downcast_ref::<AccountCodeUpgradeAttachmentError>(),
-            Some(AccountCodeUpgradeAttachmentError::CodeTooLarge(_))
-        ));
+        assert_matches!(result, Err(NoteError::NoteAttachmentsTooManyWords(_)));
 
         Ok(())
     }
