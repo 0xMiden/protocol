@@ -218,7 +218,7 @@ pub enum TransactionKernelError {
     #[error("failed to add asset to note")]
     FailedToAddAssetToNote(#[source] NoteError),
     #[error(
-        "transaction initialized an upgrade to account code {0} but the advice map does not provide the new code"
+        "transaction initialized an upgrade to account code {0} but the advice map did not provide the new code"
     )]
     AccountCodeUpgradeMissing(Word),
     #[error(
