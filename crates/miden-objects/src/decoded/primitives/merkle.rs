@@ -1,3 +1,7 @@
+use alloc::vec::Vec;
+
+use miden_protocol::Word;
+use miden_protocol::crypto::merkle::MerkleError;
 pub use proto::primitives::DecodedMerklePath as MerklePath;
 
 use crate::decoded::VerificationError;
@@ -8,10 +12,23 @@ mod tests;
 
 impl Verify for MerklePath {
     type Verified = miden_protocol::crypto::merkle::MerklePath;
-    type Error = core::convert::Infallible;
+    type Error = MerkleError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(Self::Verified::new(self.siblings.into_inner()))
+        merkle_path_from_nodes(self.siblings.into_inner())
     }
+}
+
+/// Builds a Merkle path from untrusted nodes.
+///
+/// [`MerklePath::new`](miden_protocol::crypto::merkle::MerklePath::new) panics on paths deeper
+/// than `u8::MAX`, so the depth must be checked before construction.
+fn merkle_path_from_nodes(
+    nodes: Vec<Word>,
+) -> Result<miden_protocol::crypto::merkle::MerklePath, MerkleError> {
+    if nodes.len() > usize::from(u8::MAX) {
+        return Err(MerkleError::DepthTooBig(nodes.len() as u64));
+    }
+    Ok(miden_protocol::crypto::merkle::MerklePath::new(nodes))
 }
 
 pub use proto::primitives::DecodedSparseMerklePath as SparseMerklePath;
@@ -41,7 +58,7 @@ impl Verify for MmrDelta {
 pub use proto::primitives::DecodedTrackedMmrLeaf as TrackedMmrLeaf;
 
 impl Verify for TrackedMmrLeaf {
-    type Verified = (u64, miden_protocol::Word, alloc::vec::Vec<miden_protocol::Word>);
+    type Verified = (u64, Word, Vec<Word>);
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok((self.position, self.leaf, self.path.into_inner()))
@@ -56,7 +73,6 @@ impl Verify for PartialMmr {
     type Error = VerificationError;
 
     fn verify(self) -> Result<Self::Verified, Self::Error> {
-        use miden_protocol::crypto::merkle::MerklePath;
         use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 
         let size = usize::try_from(self.forest)?;
@@ -77,7 +93,8 @@ impl Verify for PartialMmr {
         let mut mmr = PartialMmr::from_peaks(peaks);
         for tracked in leaves {
             let position = usize::try_from(tracked.position)?;
-            mmr.track(position, tracked.leaf, &MerklePath::new(tracked.path.into_inner()))?;
+            let path = merkle_path_from_nodes(tracked.path.into_inner())?;
+            mmr.track(position, tracked.leaf, &path)?;
         }
         Ok(mmr)
     }
