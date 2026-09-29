@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.17.0-rc.8 (2026-09-29)
 
 ### Features
 
