@@ -3,3 +3,4 @@ pub mod ownable2step
 pub mod pausable
 pub mod rbac
 pub mod role_symbol
+pub mod scheduler

@@ -1,0 +1,14 @@
+# SchedulerManager component shim.
+#
+# Exposes `schedule`, `cancel`, `set_min_delay` and `set_procedure_scheduling` as
+# `Invocation: call` admin procedures, gated by the account-wide `Authority` component via
+# `exec.authority::assert_authorized`.
+#
+# Companion components required:
+# - `Authority` (installed via `AccessControl::Ownable2Step` / `AccessControl::Rbac`).
+# - `Scheduler` — provides the storage slots.
+
+pub use {schedule} from miden::standards::access::scheduler::manager
+pub use {cancel} from miden::standards::access::scheduler::manager
+pub use {set_min_delay} from miden::standards::access::scheduler::manager
+pub use {set_procedure_scheduling} from miden::standards::access::scheduler::manager
