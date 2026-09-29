@@ -56,19 +56,34 @@ impl AccountCodeUpgradeAttachment {
     pub fn try_from_attachments(
         attachments: &NoteAttachments,
     ) -> Result<Self, AccountCodeUpgradeAttachmentError> {
-        let elements: Vec<Felt> = attachments
-            .iter()
-            .filter(|attachment| attachment.attachment_scheme() == Self::ATTACHMENT_SCHEME)
-            .flat_map(|attachment| attachment.as_elements().iter().copied())
-            .collect();
+        Self::from_chunks(attachments.iter())
+    }
 
-        if elements.is_empty() {
-            return Err(AccountCodeUpgradeAttachmentError::MissingCodeAttachment);
+    /// Ensures `attachments` carry the chunks of `code_upgrade`, appending them if none are
+    /// present.
+    ///
+    /// This lets the caller supply the chunks themselves, e.g. to place them among their other
+    /// attachments in their own order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the chunks in `attachments` do not decode or carry code other than `code_upgrade`.
+    /// - no chunk is present and the chunks of `code_upgrade` cannot be built.
+    pub(crate) fn ensure_presence(
+        attachments: &mut Vec<NoteAttachment>,
+        code_upgrade: AccountCodeUpgrade,
+    ) -> Result<(), NoteError> {
+        let is_present =
+            Self::validate_code(attachments, code_upgrade.commitment()).map_err(|err| {
+                NoteError::other_with_source("attached account code upgrade is invalid", err)
+            })?;
+
+        if !is_present {
+            attachments.extend(Self::new(code_upgrade).to_attachments()?);
         }
 
-        AccountCodeUpgrade::try_from_elements(&elements)
-            .map(Self::new)
-            .map_err(AccountCodeUpgradeAttachmentError::DecodeCode)
+        Ok(())
     }
 
     // PUBLIC ACCESSORS
@@ -104,12 +119,63 @@ impl AccountCodeUpgradeAttachment {
             .map(|chunk| NoteAttachment::with_words(Self::ATTACHMENT_SCHEME, chunk.to_vec()))
             .collect()
     }
+
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Decodes the [`AccountCodeUpgradeAttachment`] from the chunks among `attachments`, see
+    /// [`Self::try_from_attachments`].
+    fn from_chunks<'attachment>(
+        attachments: impl IntoIterator<Item = &'attachment NoteAttachment>,
+    ) -> Result<Self, AccountCodeUpgradeAttachmentError> {
+        let elements: Vec<Felt> = attachments
+            .into_iter()
+            .filter(|attachment| attachment.attachment_scheme() == Self::ATTACHMENT_SCHEME)
+            .flat_map(|attachment| attachment.as_elements().iter().copied())
+            .collect();
+
+        if elements.is_empty() {
+            return Err(AccountCodeUpgradeAttachmentError::MissingCodeAttachment);
+        }
+
+        AccountCodeUpgrade::try_from_elements(&elements)
+            .map(Self::new)
+            .map_err(AccountCodeUpgradeAttachmentError::DecodeCode)
+    }
+
+    /// Validates the chunks among `attachments` against `code_commitment`, returning whether any
+    /// chunk is present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the chunks do not decode or carry code with another commitment.
+    fn validate_code(
+        attachments: &[NoteAttachment],
+        code_commitment: Word,
+    ) -> Result<bool, AccountCodeUpgradeAttachmentError> {
+        match Self::from_chunks(attachments) {
+            Ok(attachment) => {
+                let actual = attachment.code_upgrade.commitment();
+                if actual != code_commitment {
+                    return Err(AccountCodeUpgradeAttachmentError::CodeCommitmentMismatch {
+                        expected: code_commitment,
+                        actual,
+                    });
+                }
+
+                Ok(true)
+            },
+            Err(AccountCodeUpgradeAttachmentError::MissingCodeAttachment) => Ok(false),
+            Err(err) => Err(err),
+        }
+    }
 }
 
 // ACCOUNT CODE UPGRADE ATTACHMENT ERROR
 // ================================================================================================
 
-/// Errors that can occur when decoding an [`AccountCodeUpgradeAttachment`] from note attachments.
+/// Errors that can occur when decoding or validating an [`AccountCodeUpgradeAttachment`] from note
+/// attachments.
 #[derive(Debug, thiserror::Error)]
 pub enum AccountCodeUpgradeAttachmentError {
     #[error(
@@ -119,6 +185,8 @@ pub enum AccountCodeUpgradeAttachmentError {
     MissingCodeAttachment,
     #[error("failed to decode the account code of the attachments")]
     DecodeCode(#[source] DeserializationError),
+    #[error("attached account code {actual} does not match expected code {expected}")]
+    CodeCommitmentMismatch { expected: Word, actual: Word },
 }
 
 // TESTS
@@ -126,11 +194,13 @@ pub enum AccountCodeUpgradeAttachmentError {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
     use miden_protocol::Word;
     use miden_protocol::account::{AccountCode, AccountCodeUpgrade};
+    use miden_protocol::errors::NoteError;
     use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments};
 
     use super::{AccountCodeUpgradeAttachment, AccountCodeUpgradeAttachmentError};
@@ -183,6 +253,72 @@ mod tests {
             AccountCodeUpgradeAttachment::try_from_attachments(&note_attachments),
             Err(AccountCodeUpgradeAttachmentError::MissingCodeAttachment)
         );
+
+        Ok(())
+    }
+
+    /// Caller-supplied chunks of the same code are kept in their position, and no duplicate chunks
+    /// are appended.
+    #[test]
+    fn ensure_presence_keeps_matching_chunks() -> anyhow::Result<()> {
+        let attachment = code_attachment(200)?;
+        let unrelated =
+            NoteAttachment::with_word(NoteAttachmentScheme::new(64)?, Word::from([7u32, 0, 0, 0]));
+        let mut attachments = attachment.to_attachments()?;
+        attachments.push(unrelated);
+        let supplied = attachments.clone();
+
+        AccountCodeUpgradeAttachment::ensure_presence(
+            &mut attachments,
+            attachment.code_upgrade().clone(),
+        )?;
+
+        assert_eq!(attachments, supplied);
+
+        Ok(())
+    }
+
+    /// Caller-supplied chunks of other code are rejected instead of being silently shadowed by
+    /// the chunks of the expected code.
+    #[test]
+    fn ensure_presence_rejects_other_code() -> anyhow::Result<()> {
+        let attachment = code_attachment(1)?;
+        let other_attachment = code_attachment(2)?;
+        let mut attachments = other_attachment.to_attachments()?;
+
+        let result = AccountCodeUpgradeAttachment::ensure_presence(
+            &mut attachments,
+            attachment.code_upgrade().clone(),
+        );
+
+        assert_matches!(result, Err(NoteError::Other { source: Some(source), .. })
+            if matches!(
+                source.downcast_ref::<AccountCodeUpgradeAttachmentError>(),
+                Some(AccountCodeUpgradeAttachmentError::CodeCommitmentMismatch { expected, actual })
+                    if *expected == attachment.code_upgrade().commitment()
+                        && *actual == other_attachment.code_upgrade().commitment()
+            )
+        );
+
+        Ok(())
+    }
+
+    /// The appended chunks are placed after the caller's attachments, leaving their order intact.
+    #[test]
+    fn ensure_presence_appends_missing_chunks() -> anyhow::Result<()> {
+        let attachment = code_attachment(200)?;
+        let unrelated =
+            NoteAttachment::with_word(NoteAttachmentScheme::new(64)?, Word::from([7u32, 0, 0, 0]));
+        let mut attachments = vec![unrelated.clone()];
+
+        AccountCodeUpgradeAttachment::ensure_presence(
+            &mut attachments,
+            attachment.code_upgrade().clone(),
+        )?;
+
+        let mut expected = vec![unrelated];
+        expected.extend(attachment.to_attachments()?);
+        assert_eq!(attachments, expected);
 
         Ok(())
     }

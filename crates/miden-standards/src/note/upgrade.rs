@@ -73,7 +73,8 @@ impl UpgradeNote {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the attachments already carry an [`AccountCodeUpgradeAttachment`].
+    /// - the attachments carry an [`AccountCodeUpgradeAttachment`] that does not decode or carries
+    ///   code other than `code`.
     /// - `target` is not a public account (the note is bound to it via a `NetworkAccountTarget`,
     ///   which requires a public target).
     /// - the attachments carry a `NetworkAccountTarget` for an account other than `target`.
@@ -87,17 +88,9 @@ impl UpgradeNote {
         code: AccountCode,
         serial_number: Word,
     ) -> Result<Self, NoteError> {
-        if attachments.iter().any(|attachment| {
-            attachment.attachment_scheme() == AccountCodeUpgradeAttachment::ATTACHMENT_SCHEME
-        }) {
-            return Err(NoteError::other(
-                "upgrade note attachments must not carry a user-constructed account code upgrade attachment",
-            ));
-        }
-
         let code_upgrade = AccountCodeUpgrade::new(code);
         let new_code_commitment = code_upgrade.commitment();
-        attachments.extend(AccountCodeUpgradeAttachment::new(code_upgrade).to_attachments()?);
+        AccountCodeUpgradeAttachment::ensure_presence(&mut attachments, code_upgrade)?;
 
         // Bind the note to `target`.
         NetworkAccountTarget::ensure_presence(&mut attachments, target).map_err(|err| {
@@ -308,30 +301,6 @@ mod tests {
 
         let code_upgrade = AccountCodeUpgradeAttachment::try_from_attachments(note.attachments())?;
         assert_eq!(code_upgrade.code_upgrade().code(), &code);
-
-        Ok(())
-    }
-
-    /// A caller-supplied `AccountCodeUpgradeAttachment` is rejected, since the builder attaches the
-    /// code itself.
-    #[test]
-    fn caller_code_attachment_is_rejected() -> anyhow::Result<()> {
-        let code_attachments =
-            AccountCodeUpgradeAttachment::new(AccountCodeUpgrade::new(AccountCode::mock()))
-                .to_attachments()?;
-
-        let result = UpgradeNote::builder()
-            .sender(account_id(2))
-            .target(account_id(1))
-            .code(AccountCode::mock())
-            .serial_number(Word::empty())
-            .attachments(code_attachments)
-            .build();
-
-        assert_matches!(result, Err(NoteError::Other { error_msg, .. })
-        if error_msg.contains(
-          "must not carry a user-constructed account code upgrade attachment"
-        ));
 
         Ok(())
     }
