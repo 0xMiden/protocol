@@ -52,7 +52,7 @@ pub const RBAC_CONFIG_CONSUMPTION_CYCLES: u32 = 23591;
 pub const NETWORK_ACCOUNT_CONFIG_CONSUMPTION_CYCLES: u32 = 20468;
 
 /// Cycles of consuming an UPGRADE note (single benchmarked path).
-pub const UPGRADE_CONSUMPTION_CYCLES: u32 = 19379;
+pub const UPGRADE_CONSUMPTION_CYCLES: u32 = 20766;
 
 /// Cycles of consuming a FEE_SPONSORSHIP note (single benchmarked path).
 pub const FEE_SPONSORSHIP_CONSUMPTION_CYCLES: u32 = 22803;

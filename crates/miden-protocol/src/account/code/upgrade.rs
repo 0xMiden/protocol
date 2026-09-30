@@ -24,11 +24,10 @@ use crate::{Felt, Hasher, WORD_SIZE, Word};
 ///
 /// The kernel only learns the commitment of the new code, so the host must obtain the new code when
 /// the kernel initializes the upgrade. It looks for the code, encoded by
-/// [`AccountCodeUpgrade::to_elements`], in:
-/// 1. the advice map, under [`AccountCodeUpgrade::advice_map_key`], which is how local transactions
-///    provide it, e.g. via
-///    [`TransactionArgs::with_account_code_upgrade`](crate::transaction::TransactionArgs::with_account_code_upgrade).
-/// 2. the attachments of the transaction's input notes, which is how a note carries it.
+/// [`AccountCodeUpgrade::to_elements`], in the advice map under
+/// [`AccountCodeUpgrade::advice_map_key`]. Local transactions provide it e.g. via
+/// [`TransactionArgs::with_account_code_upgrade`](crate::transaction::TransactionArgs::with_account_code_upgrade),
+/// while a note script can insert it during execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountCodeUpgrade {
     code: AccountCode,

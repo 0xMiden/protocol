@@ -33,11 +33,18 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
     ERR_UPGRADE_NOTE_IS_NOT_PUBLIC,
+    ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT,
     ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS,
 };
 use miden_standards::note::config::{NetworkAccountConfig, NetworkAccountConfigNote};
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, P2idNote, UpgradeNote};
-use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::note::{
+    AccountCodeUpgradeAttachment,
+    NetworkAccountTarget,
+    NoteExecutionHint,
+    P2idNote,
+    UpgradeNote,
+};
+use miden_standards::testing::account_component::{MockAccountComponent, MockProceduresComponent};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -967,13 +974,18 @@ fn build_upgradeable_network_account(
         .build_existing()?)
 }
 
-/// Returns the code of an upgradeable network account extended with the [`BasicWallet`].
+/// Returns the code of an upgradeable network account extended with the [`BasicWallet`] and
+/// `extra_components`.
 ///
 /// The allowlists only live in storage, so the code does not depend on them.
-fn upgraded_network_account_code(owner: AccountId) -> anyhow::Result<AccountCode> {
+fn upgraded_network_account_code(
+    owner: AccountId,
+    extra_components: Vec<AccountComponent>,
+) -> anyhow::Result<AccountCode> {
     let mut components =
         upgradeable_network_account_components(owner, vec![placeholder_script_root()])?;
     components.push(BasicWallet.into());
+    components.extend(extra_components);
 
     Ok(AccountCode::from_components(&components)?)
 }
@@ -997,17 +1009,31 @@ fn build_upgrade_note(
 /// later transaction can call procedures that only exist in the new code.
 ///
 /// The transaction does not provide the new code, so the host must take it from the note's
-/// attachment.
+/// attachments.
+#[rstest]
+#[case::single_chunk(vec![], 1)]
+#[case::two_chunks(vec![MockProceduresComponent::new(150).into()], 2)]
 #[tokio::test]
-async fn test_auth_network_account_upgrades_code_via_authorized_note() -> anyhow::Result<()> {
+async fn test_auth_network_account_upgrades_code_via_authorized_note(
+    #[case] extra_components: Vec<AccountComponent>,
+    #[case] expected_num_chunks: usize,
+) -> anyhow::Result<()> {
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
-    let upgraded_code = upgraded_network_account_code(owner)?;
+    let upgraded_code = upgraded_network_account_code(owner, extra_components)?;
     let account = build_upgradeable_network_account(
         owner,
         vec![UpgradeNote::script_root().into(), P2idNote::script_root().into()],
     )?;
     assert_ne!(account.code(), &upgraded_code);
     let upgrade_note = build_upgrade_note(owner, account.id(), upgraded_code.clone())?;
+    let num_chunks = upgrade_note
+        .attachments()
+        .iter()
+        .filter(|attachment| {
+            attachment.attachment_scheme() == AccountCodeUpgradeAttachment::ATTACHMENT_SCHEME
+        })
+        .count();
+    assert_eq!(num_chunks, expected_num_chunks);
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -1076,7 +1102,8 @@ async fn test_auth_network_account_rejects_unauthorized_upgrade_note() -> anyhow
 
     // The note sender is not the owner, so the OwnerControlled authority check must reject it.
     let not_owner = AccountId::builder().account_type(AccountType::Public).build_with_seed([3; 32]);
-    let note = build_upgrade_note(not_owner, account.id(), upgraded_network_account_code(owner)?)?;
+    let note =
+        build_upgrade_note(not_owner, account.id(), upgraded_network_account_code(owner, vec![])?)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -1104,7 +1131,8 @@ async fn test_auth_network_account_rejects_upgrade_note_for_other_target() -> an
 
     let other_target =
         AccountId::builder().account_type(AccountType::Public).build_with_seed([5; 32]);
-    let note = build_upgrade_note(owner, other_target, upgraded_network_account_code(owner)?)?;
+    let note =
+        build_upgrade_note(owner, other_target, upgraded_network_account_code(owner, vec![])?)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -1131,7 +1159,8 @@ async fn test_auth_network_account_rejects_private_upgrade_note() -> anyhow::Res
     let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
     let account =
         build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
-    let note = build_upgrade_note(owner, account.id(), upgraded_network_account_code(owner)?)?;
+    let note =
+        build_upgrade_note(owner, account.id(), upgraded_network_account_code(owner, vec![])?)?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -1185,6 +1214,37 @@ async fn test_auth_network_account_rejects_upgrade_note_with_wrong_storage_item_
         .await;
 
     assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// An upgrade note that does not carry the new code in an `AccountCodeUpgradeAttachment` must be
+/// rejected by the note script, since it is the only source of the code.
+#[tokio::test]
+async fn test_auth_network_account_rejects_upgrade_note_without_code_attachment()
+-> anyhow::Result<()> {
+    let owner: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let account =
+        build_upgradeable_network_account(owner, vec![UpgradeNote::script_root().into()])?;
+    let upgraded_code = upgraded_network_account_code(owner, vec![])?;
+    let note = NoteBuilder::new(owner, &mut rand::rng())
+        .script(UpgradeNote::script())
+        .note_storage(upgraded_code.commitment().as_elements().to_vec())?
+        .attachment(NetworkAccountTarget::new(account.id(), NoteExecutionHint::Always)?)
+        .build()?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_transaction(account.id())
+        .unauthenticated_input_note(note)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_UPGRADE_NOTE_MISSING_CODE_ATTACHMENT);
 
     Ok(())
 }
