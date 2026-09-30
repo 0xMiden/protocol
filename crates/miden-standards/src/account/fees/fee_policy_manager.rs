@@ -144,17 +144,25 @@ impl FeePolicyManager {
         &FEE_ASSET_ID_SLOT_NAME
     }
 
-    /// Reads the active fee policy procedure root from an account's storage header, or returns
-    /// `None` if the account has no fee policy manager.
-    pub fn read_active_fee_policy(header: &AccountStorageHeader) -> Option<AccountProcedureRoot> {
+    /// Reads the active fee policy procedure root from a deployed account's storage header, or
+    /// returns `None` if the account has no fee policy manager.
+    ///
+    /// Unlike [`Self::active_fee_policy`], which returns the policy a manager was built with, this
+    /// returns the policy the account uses now, which `set_fee_policy` may have switched since.
+    pub fn active_fee_policy_from_storage(
+        header: &AccountStorageHeader,
+    ) -> Option<AccountProcedureRoot> {
         header
             .find_slot_header_by_name(Self::active_fee_policy_slot())
             .map(|slot| AccountProcedureRoot::from_raw(slot.value()))
     }
 
-    /// Reads the ID of the asset fees are charged in from an account's storage header, or returns
-    /// `None` if the account has no fee policy manager.
-    pub fn read_fee_asset_id(header: &AccountStorageHeader) -> Option<AssetId> {
+    /// Reads the ID of the asset fees are charged in from a deployed account's storage header, or
+    /// returns `None` if the account has no fee policy manager.
+    ///
+    /// This is the storage counterpart of [`Self::fee_asset_id`], for an account whose
+    /// [`FeePolicyManager`] is not at hand.
+    pub fn fee_asset_id_from_storage(header: &AccountStorageHeader) -> Option<AssetId> {
         header
             .find_slot_header_by_name(Self::fee_asset_id_slot())
             .and_then(|slot| AssetId::try_from(slot.value()).ok())
@@ -302,17 +310,17 @@ mod tests {
         let header =
             AccountStorage::new(fee_policy_manager.to_storage_slots().to_vec())?.to_header();
         assert_eq!(
-            FeePolicyManager::read_active_fee_policy(&header),
+            FeePolicyManager::active_fee_policy_from_storage(&header),
             Some(BasicConstantFeePolicy::root())
         );
         assert_eq!(
-            FeePolicyManager::read_fee_asset_id(&header),
+            FeePolicyManager::fee_asset_id_from_storage(&header),
             Some(fee_policy_manager.fee_asset_id())
         );
 
         let empty_header = AccountStorage::new(Vec::new())?.to_header();
-        assert_eq!(FeePolicyManager::read_active_fee_policy(&empty_header), None);
-        assert_eq!(FeePolicyManager::read_fee_asset_id(&empty_header), None);
+        assert_eq!(FeePolicyManager::active_fee_policy_from_storage(&empty_header), None);
+        assert_eq!(FeePolicyManager::fee_asset_id_from_storage(&empty_header), None);
 
         Ok(())
     }
