@@ -1,0 +1,91 @@
+use {NoteArgs} from miden::protocol::types
+use miden::protocol::active_note
+use miden::standards::account_upgrade
+use miden::standards::note::note_target
+
+# CONSTANTS
+# =================================================================================================
+
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
+const STORAGE_PTR = 0
+
+# Memory address of the new code commitment in the Upgrade note storage.
+const NEW_CODE_COMMITMENT_PTR = STORAGE_PTR
+
+# Expected note storage item count: the new code commitment.
+const NUM_STORAGE_ITEMS = 4
+
+# ERRORS
+# =================================================================================================
+
+const ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "upgrade note storage item count is not the expected count"
+
+const ERR_UPGRADE_NOTE_IS_NOT_PUBLIC = "upgrade note must be public"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! Upgrade script: upgrades the code of the consuming account by calling its `upgrade` procedure.
+#!
+#! The new code commitment is read from the note storage:
+#! - `[NEW_CODE_COMMITMENT]`.
+#!
+#! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
+#! script asserts the consuming account matches that target before doing anything else, so the note
+#! cannot be consumed by any other account that happens to accept its sender.
+#!
+#! The script does not provide the new code itself. It must be present in the advice map, usually
+#! through an `AccountCodeUpgradeAttachment`.
+#!
+#! Authorization is enforced by the called `upgrade` procedure via the account-wide `Authority`
+#! component, which resolves the note sender against the configured owner or role.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::account_upgrade::upgrade` (the `UpgradeManager` component), backed by an
+#!   `Authority` companion component.
+#!
+#! Consumers: target account (attachment)
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note is not public.
+#! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items is not NUM_STORAGE_ITEMS.
+#! - the note sender is not authorized (per the `Authority` component).
+#! - the `upgrade` procedure panics.
+@note_script
+pub proc main(args: NoteArgs)
+    # drop the note script args
+    dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_UPGRADE_NOTE_IS_NOT_PUBLIC
+    # => [pad(16)]
+
+    # abort if the consuming account is not the note's target account
+    exec.note_target::assert_active_account_is_network_target_account
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    # => [num_storage_items, pad(16)]
+
+    eq.NUM_STORAGE_ITEMS
+    assert.err=ERR_UPGRADE_NOTE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [pad(16)]
+
+    # storage upgrade commitment is set to the empty word to signal no change
+    padw padw padw padw
+    mem_loadw_le.NEW_CODE_COMMITMENT_PTR
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8), pad(16)]
+
+    call.account_upgrade::upgrade
+    # => [pad(16), pad(16)]
+
+    # truncate the stack
+    dropw dropw dropw dropw
+    # => [pad(16)]
+end
