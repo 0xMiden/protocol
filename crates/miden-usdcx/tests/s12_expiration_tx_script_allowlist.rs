@@ -15,7 +15,7 @@
 //!
 //! - the tx-script allowlist holds exactly the one expiration root — an extra entry is as much a
 //!   failure as a missing one;
-//! - the note-script allowlist contains all ten roots independently of the transaction-script
+//! - the note-script allowlist contains all eleven roots independently of the transaction-script
 //!   allowlist;
 //! - and enforcement actually happens on-chain: the expiration script is admitted and executes,
 //!   while an arbitrary no-op script is refused with the allowlist's own error.
@@ -93,11 +93,11 @@ fn auth_component_note_script_allowlist_is_untouched_by_s12() -> Result<()> {
     let note_keys = allowlisted_keys(&component, AuthNetworkAccount::allowed_note_scripts_slot());
     assert_eq!(
         note_keys.len(),
-        10,
-        "S12 must leave the note-script allowlist at EXACTLY the 10 roots; found {}",
+        11,
+        "S12 must leave the note-script allowlist at EXACTLY the 11 roots; found {}",
         note_keys.len(),
     );
-    // The exact ten-root set is checked in `f5_network_account_auth.rs`.
+    // The exact eleven-root set is checked in `f5_network_account_auth.rs`.
     Ok(())
 }
 

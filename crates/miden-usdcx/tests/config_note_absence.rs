@@ -1,6 +1,6 @@
 //! Network-account configuration is excluded while fee configuration is allowed.
 //!
-//! The production auth component admits ten note roots, including the constant-fee configuration
+//! The production auth component admits eleven note roots, including the constant-fee configuration
 //! and fee-sponsorship notes. It excludes `NetworkAccountConfigNote`, so accepted notes cannot
 //! modify the note-script or transaction-script allowlists.
 
@@ -78,8 +78,8 @@ fn auth_component_materializes_the_exact_fee_enabled_allowlist() -> Result<()> {
     let note_keys = allowlisted_keys(&component, AuthNetworkAccount::allowed_note_scripts_slot());
     assert_eq!(
         note_keys.len(),
-        10,
-        "the auth component's note-script allowlist must contain exactly 10 roots; \
+        11,
+        "the auth component's note-script allowlist must contain exactly 11 roots; \
          found {}",
         note_keys.len(),
     );
@@ -93,7 +93,7 @@ fn auth_component_materializes_the_exact_fee_enabled_allowlist() -> Result<()> {
     Ok(())
 }
 
-/// The built faucet contains the same ten-root allowlist as the auth component.
+/// The built faucet contains the same eleven-root allowlist as the auth component.
 #[test]
 fn built_account_materializes_the_exact_fee_enabled_allowlist() -> Result<()> {
     let pf = setup_production_faucet(0, |_, _faucet_id| Vec::new())
@@ -111,8 +111,8 @@ fn built_account_materializes_the_exact_fee_enabled_allowlist() -> Result<()> {
 
     assert_eq!(
         roots.len(),
-        10,
-        "the built faucet's on-chain note-script allowlist must contain exactly 10 \
+        11,
+        "the built faucet's on-chain note-script allowlist must contain exactly 11 \
          roots; found {}",
         roots.len(),
     );

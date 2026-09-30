@@ -18,7 +18,7 @@ use miden_standards::note::config::{
     PauseConfigNote,
     RbacConfigNote,
 };
-use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote};
+use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote, UpgradeNote};
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_tx::NetworkNotePricer;
 
@@ -28,9 +28,9 @@ use crate::note::xreserve_admin::{XReserveMinBurnAmountNote, XReserveSetAttester
 impl XReserveStablecoinBuilder {
     /// Returns the production faucet's note-script allowlist.
     ///
-    /// The ten roots cover mint and burn, one faucet setter (`set_attester`), min-burn,
+    /// The eleven roots cover mint and burn, one faucet setter (`set_attester`), min-burn,
     /// max-supply, pause and blocklist administration, role administration, constant-fee
-    /// administration, and fee sponsorship. The general network account configuration note is
+    /// administration, fee sponsorship, and upgrades. The network account configuration note is
     /// excluded, so the note and transaction allowlists cannot be modified through an accepted
     /// note. The faucet-metadata root also carries other metadata setters, but this account
     /// builds those fields immutable, so their setters always trap: each setter first asserts
@@ -49,6 +49,7 @@ impl XReserveStablecoinBuilder {
             PauseConfigNote::script_root(),
             BlocklistConfigNote::script_root(),
             RbacConfigNote::script_root(),
+            UpgradeNote::script_root(),
             // Fee administration and sponsorship notes.
             ConstantFeePolicyConfigNote::script_root(),
             FeeSponsorshipNote::script_root(),
