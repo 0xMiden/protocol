@@ -100,6 +100,23 @@ def _stage_command(stage: Any) -> Any:
     return command
 
 
+def _cmd_estimate(args: argparse.Namespace) -> None:
+    config = _new_config(args)
+    print(stages.describe_plan(config, stages.estimate_plan(config), stages.environment_info()))
+
+
+def _cmd_all(args: argparse.Namespace) -> None:
+    config = _new_config(args)
+    run_dir = _create_run_dir(args, config)
+    print(f"run directory: {run_dir}")
+    stages.run_pipeline(run_dir, config, keep_workspaces=args.keep_workspaces)
+
+
+def _cmd_resume(args: argparse.Namespace) -> None:
+    run_dir, config = stages.load_run(args.run_dir)
+    stages.run_pipeline(run_dir, config, keep_workspaces=args.keep_workspaces)
+
+
 def _cmd_render_role(args: argparse.Namespace) -> None:
     print(roles.agents_json(roles.load_role(args.role)))
 
@@ -127,6 +144,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"skill-bench {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    everything = sub.add_parser("all", help="run every stage for a PR in a new run directory")
+    _config_options(everything)
+    everything.add_argument("--keep-workspaces", action="store_true", help="keep the replay workspaces for inspection")
+    everything.set_defaults(func=_cmd_all)
+
+    estimate = sub.add_parser("estimate", help="show how many sessions a run would start and its worst-case cost")
+    _config_options(estimate)
+    estimate.set_defaults(func=_cmd_estimate)
+
+    resume = sub.add_parser("resume", help="continue an interrupted run, skipping finished work")
+    resume.add_argument("--run-dir", required=True)
+    resume.add_argument("--keep-workspaces", action="store_true", help="keep the replay workspaces for inspection")
+    resume.set_defaults(func=_cmd_resume)
+
     fetch = sub.add_parser("fetch", help="create a run directory and fetch one human review round of the PR")
     _config_options(fetch)
     fetch.set_defaults(func=_cmd_fetch)
@@ -148,6 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("classify", stages.stage_classify, "classify the human review threads into ground-truth findings"),
         ("match", stages.stage_match, "match each valid run's findings to the ground truth"),
         ("attribute", stages.stage_attribute, "decide which snapshot skills cover each finding"),
+        ("report", stages.stage_report, "bucket every finding and write result.json and report.md"),
     ):
         stage_parser = sub.add_parser(name, help=help_text)
         stage_parser.add_argument("--run-dir", required=True)

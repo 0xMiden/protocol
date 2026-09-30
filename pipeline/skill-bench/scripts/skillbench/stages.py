@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
-from . import github, judge, runner, telemetry, workspace
+from . import github, judge, report, runner, telemetry, workspace
 from .util import BenchError, read_json, run, write_json
 
 
@@ -77,7 +78,14 @@ def environment_info() -> dict[str, Any]:
     return {"claude_version": version, "auth": auth}
 
 
+def run_ids(config: dict[str, Any]) -> list[str]:
+    return [f"{workspace.parse_arm(a).slug}.{i}" for a in config["arms"] for i in range(1, config["runs"] + 1)]
+
+
 def stage_replay(run_dir: Path, config: dict[str, Any], keep_workspaces: bool = False) -> None:
+    if all((run_dir / "runs" / f"{rid}.json").exists() for rid in run_ids(config)) and (run_dir / "builtins.json").exists():
+        print("all review runs already exist; nothing to replay")
+        return
     pr = read_json(run_dir / "pr.json")
     raw = raw_dir(run_dir)
     write_json(run_dir / "environment.json", environment_info())
@@ -274,3 +282,73 @@ def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
         write_json(path, {"arm": arm.name, "items": verdicts, "cost_usd": round(cost, 4)})
         covered = sum(1 for t in truth if verdicts[t["id"]]["covering_skills"])
         print(f"{arm.name}: {covered} of {len(truth)} human findings are covered by a snapshot skill")
+
+
+# --- report and orchestration ------------------------------------------
+
+
+def stage_report(run_dir: Path, config: dict[str, Any]) -> None:
+    result = report.build_result(run_dir)
+    write_json(run_dir / "result.json", result)
+    (run_dir / "report.md").write_text(report.render_markdown(result), encoding="utf-8")
+    for arm, summary in result["arms"].items():
+        recall = summary["recall"]["mean"]
+        print(f"{arm}: mean recall {'n/a' if recall is None else f'{recall:.0%}'} over {len(summary['runs'])} valid run(s)")
+    for fix in result["top_fixes"]:
+        print(f"fix: {fix['text']}")
+    print(f"report: {run_dir / 'report.md'}")
+
+
+def estimate_plan(config: dict[str, Any], candidates: int | None = None) -> dict[str, Any]:
+    """How many sessions a run will start, and the worst-case cost ceiling."""
+    arms = [workspace.parse_arm(a) for a in config["arms"]]
+    reviews = len(arms) * config["runs"]
+    classify = max(1, math.ceil(candidates / judge.CLASSIFY_BATCH)) if candidates else 1
+    attribute = sum(1 for a in arms if a.has_skills)
+    judge_calls = classify + reviews + attribute
+    calibration_cap = 0.5
+    ceiling = reviews * config["max_usd_review"] + calibration_cap + judge_calls * config["max_usd_judge"]
+    return {
+        "reviews": reviews,
+        "calibration": 1,
+        "judge_calls": {"classify": classify, "match": reviews, "attribute": attribute, "total": judge_calls},
+        "ceiling_usd": round(ceiling, 2),
+    }
+
+
+def describe_plan(config: dict[str, Any], plan: dict[str, Any], env: dict[str, Any]) -> str:
+    auth = env.get("auth") or {}
+    if auth.get("api_key_in_environment"):
+        billing = "ANTHROPIC_API_KEY is set, so runs are billed per token to that key."
+    elif auth.get("authMethod") == "claude.ai":
+        billing = (
+            f"You are logged in with a claude.ai {auth.get('subscriptionType') or ''} subscription, so runs count against "
+            "your usage limits (the same limits as your interactive use), not per-token billing."
+        )
+    else:
+        billing = "Could not determine the login method; check `claude auth status`."
+    calls = plan["judge_calls"]
+    return "\n".join(
+        [
+            f"Plan for {config['repo']}#{config['number']}, review round {config['round']}:",
+            f"- {plan['reviews']} review run(s): arms {', '.join(config['arms'])} x {config['runs']} run(s), reviewer "
+            f"{config['reviewer']}, model {config['model'] or 'default'}, each capped at ${config['max_usd_review']:.2f}",
+            f"- 1 calibration run in an empty project (model {config['calibration_model']}, capped at $0.50)",
+            f"- about {calls['total']} judge call(s) (classify {calls['classify']}, match {calls['match']}, attribute "
+            f"{calls['attribute']}) on {config['judge_model']}, each capped at ${config['max_usd_judge']:.2f}",
+            f"Worst-case ceiling: ${plan['ceiling_usd']:.2f}. Actual costs are usually far lower and are listed in the report.",
+            billing,
+        ]
+    )
+
+
+def run_pipeline(run_dir: Path, config: dict[str, Any], keep_workspaces: bool = False) -> None:
+    """Run every stage in order, skipping work whose output already exists."""
+    if not (run_dir / "pr.json").exists():
+        stage_fetch(run_dir, config)
+    stage_replay(run_dir, config, keep_workspaces)
+    if not (run_dir / "truth.json").exists():
+        stage_classify(run_dir, config)
+    stage_match(run_dir, config)
+    stage_attribute(run_dir, config)
+    stage_report(run_dir, config)
