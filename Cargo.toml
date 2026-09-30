@@ -13,7 +13,7 @@ members = [
   "crates/miden-testing",
   "crates/miden-tx",
   "crates/miden-tx-batch",
-  "crates/xusdc-encoding",
+  "crates/miden-usdcx",
 ]
 resolver = "3"
 
