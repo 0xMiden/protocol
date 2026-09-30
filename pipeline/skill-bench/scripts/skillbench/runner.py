@@ -6,12 +6,15 @@ Every replay is a separate `claude -p` process started in a sealed workspace
 * `--setting-sources project` and `syncClaudeAiSkills: false` keep user-level
   and account-synced skills out, so only the workspace's skills are listed;
 * `--tools` offers only Read, Grep, Glob, Bash and Skill, and
-  `--allowedTools` pre-approves only read-only git commands and Skill.
-  Read, Grep and Glob are deliberately *not* pre-approved: Claude Code
-  allows them inside the working directory anyway, and leaving them
-  unapproved makes it deny reads outside the workspace (a pre-approved
-  Read would open any path on the machine, including a checkout that
-  contains the pull request's later commits);
+  `--allowedTools` pre-approves only Skill. Everything else relies on
+  Claude Code's own checks, which allow file reads and read-only shell
+  and git commands (`git diff`, `git log`, `git show`, `git status`)
+  inside the working directory, and deny the rest in a headless session.
+  Nothing else may be pre-approved: a pre-approved Read opens any path on
+  the machine, including a checkout that holds the pull request's later
+  commits, and a prefix rule such as `Bash(git log:*)` also matches write
+  forms like `git log --output=<file>`, which could plant a `.git/config`
+  that runs commands;
 * `--strict-mcp-config` starts no MCP servers, and `--permission-mode
   default` ignores any other mode (the workspace settings keep only `deny`
   permission rules, see `workspace.py`);
@@ -40,14 +43,8 @@ from .workspace import Workspace, hermetic_git_env
 REVIEW_PROMPT = "Review the change between HEAD~1 and HEAD and report your findings."
 CALIBRATION_PROMPT = "Return an empty findings list. Do not use any tools."
 REVIEW_TOOLS = "Read,Grep,Glob,Bash,Skill"
-# Read, Grep and Glob must stay out of this list; see the module docstring.
-ALLOWED_TOOLS = [
-    "Skill",
-    "Bash(git diff:*)",
-    "Bash(git log:*)",
-    "Bash(git show:*)",
-    "Bash(git status:*)",
-]
+# Nothing but Skill may be pre-approved; see the module docstring.
+ALLOWED_TOOLS = ["Skill"]
 ISOLATION_SETTINGS = json.dumps({"syncClaudeAiSkills": False})
 MODES = ("plain", "repo-agent", "repo-agent+skills")
 

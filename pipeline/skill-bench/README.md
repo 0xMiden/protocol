@@ -48,7 +48,7 @@ A replay must see the code under review and the chosen skills, and nothing else.
 - Each run is its own `claude -p` process with:
   - `--setting-sources project` and `syncClaudeAiSkills: false`, so user-level and account-synced skills are not loaded;
   - `--strict-mcp-config`, so no MCP servers start;
-  - tools limited to `Read`, `Grep`, `Glob`, `Skill` and Bash, with only `Skill` and the read-only `git diff`, `git log`, `git show` and `git status` pre-approved. Claude Code allows file reads and read-only shell commands (such as `ls` or `head`) inside the working directory, and a headless session denies everything that needs approval. That includes reads of any path outside the workspace, whether by the file tools, by shell commands, or by `git -C` and `git diff --no-index`. The file tools are deliberately not pre-approved, because a pre-approved `Read` opens any path on the machine. Web tools are not available at all.
+  - tools limited to `Read`, `Grep`, `Glob`, `Skill` and Bash, with only `Skill` pre-approved. Claude Code's own checks allow file reads and read-only shell and git commands (such as `ls`, `head`, `git diff HEAD~1 HEAD`, `git log`, `git show` or `git status`) inside the working directory, and a headless session denies everything that needs approval. That includes reads of any path outside the workspace, whether by the file tools, by shell commands, or by `git -C` and `git diff --no-index`, and git's write options such as `--output=<file>`. Nothing else is pre-approved on purpose: a pre-approved `Read` opens any path on the machine, and a prefix rule such as `Bash(git log:*)` would also match write forms of the command. Web tools are not available at all.
 - Hooks and project-enabled plugins are removed from the workspace settings, so a replay runs no project code.
 - Runs are separate processes rather than subagents, because a subagent inherits its parent session's skill listing and working directory.
 
@@ -56,6 +56,8 @@ Each run is also checked, not just configured:
 
 - An *exposure check* compares the skills listed to the model, read from the session transcript, with the arm's snapshot. First, a calibration run in an empty project measures the skills that Claude Code itself lists (bundled skills such as `code-review`), because those appear in every arm. Any other skill from outside the snapshot makes the run invalid, and invalid runs are excluded from the results. Snapshot skills missing from the listing are reported.
 - Absolute paths outside the workspace that the reviewer read or named in a shell command are listed in the report.
+
+Pull request content is untrusted input. The reviewed code and the review comments can contain text that tries to steer a model. The reviewer is confined as described above. The judge sessions run with no tools at all, in an empty directory, and their answers are checked against a schema, with unknown ids and skill names dropped. Injected text can therefore bias the numbers of the run it appears in, but it cannot read or change anything. Tree extraction uses tarfile's safe filter, so a hostile repository cannot plant links that point outside the workspace.
 
 Limits: the isolation relies on Claude Code's permission checks, verified against Claude Code 2.1.280. A later version could behave differently, which is why every run also records attempted outside paths and denied tool calls. Replays use today's model and today's Claude Code, so they show how the historical skills perform now, not how an agent behaved at the time.
 
@@ -81,7 +83,7 @@ When a skill covers a missed finding, the first three miss buckets apply, even i
 
 ## Usage
 
-Requirements: Python 3.10 or newer (standard library only), git 2.28 or newer, the GitHub CLI `gh` (logged in), and Claude Code (developed against 2.1.280).
+Requirements: Python 3.12, or 3.10.12 / 3.11.4 or newer (standard library only, with tarfile's safe extraction filter), git 2.28 or newer, the GitHub CLI `gh` (logged in), and Claude Code (developed against 2.1.280).
 
 ### From Claude Code
 

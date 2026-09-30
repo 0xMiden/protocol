@@ -44,9 +44,9 @@ class ReviewCommandTest(unittest.TestCase):
         start = cmd.index("--allowedTools") + 1
         allowed = cmd[start : start + len(runner.ALLOWED_TOOLS)]
         self.assertEqual(allowed, runner.ALLOWED_TOOLS)
-        # Pre-approving a read tool would let it open files outside the workspace.
-        for tool in ("Read", "Grep", "Glob"):
-            self.assertNotIn(tool, allowed)
+        # Pre-approving a read tool would open files outside the workspace, and a
+        # prefix rule for git would also admit write forms such as --output=<file>.
+        self.assertEqual(allowed, ["Skill"])
 
     def test_parse_stream(self):
         stdout = "\n".join(

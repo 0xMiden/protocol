@@ -19,6 +19,7 @@ from the workspace settings.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -151,20 +152,22 @@ def resolve_source(repo: str, shas: list[str], source_repo: str | None, cache_di
 
 def extract_tree(git_dir: Path, sha: str, dest: Path, path: str | None = None) -> bool:
     """Extract a commit's tree (or one path of it) into `dest`. Returns False if `path` is absent."""
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise BenchError(f"expected a full commit SHA, got '{sha}'")
+    if not hasattr(tarfile, "data_filter"):
+        # Without the filter, a hostile tree could extract links that point outside the workspace.
+        raise BenchError("this Python lacks tarfile's safe extraction filter; use Python 3.12, or 3.10.12 / 3.11.4 or newer")
     if path is not None:
         listed = run(["git", "-C", str(git_dir), "ls-tree", "--name-only", sha, path], timeout=60).stdout
         if not listed.strip():
             return False
     dest.mkdir(parents=True, exist_ok=True)
-    cmd = ["git", "-C", str(git_dir), "archive", "--format=tar", sha] + ([path] if path else [])
+    cmd = ["git", "-C", str(git_dir), "archive", "--format=tar", sha] + (["--", path] if path else [])
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
         assert proc.stdout is not None
         try:
             with tarfile.open(fileobj=proc.stdout, mode="r|") as archive:
-                if hasattr(tarfile, "data_filter"):
-                    archive.extractall(dest, filter="data")
-                else:  # Python < 3.12
-                    archive.extractall(dest)
+                archive.extractall(dest, filter="data")
         except tarfile.TarError as exc:  # includes members the data filter refuses, such as absolute links
             proc.kill()
             raise BenchError(f"could not safely extract {sha[:12]}: {exc}") from exc
