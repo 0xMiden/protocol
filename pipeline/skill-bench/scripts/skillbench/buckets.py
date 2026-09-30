@@ -15,6 +15,7 @@ from typing import Any
 TP_SKILL = "tp-skill-attributable"
 TP_BASE = "tp-base-model"
 TP_OTHER = "tp-other-context"
+TP_NO_CONTROL = "tp-no-control"
 FN_NOT_EXPOSED = "fn-not-exposed"
 FN_TRIGGER = "fn-trigger-miss"
 FN_APPLICATION = "fn-application-miss"
@@ -23,12 +24,13 @@ FN_NOT_CODIFIABLE = "fn-not-codifiable"
 UF_SKILL = "unmatched-skill-linked"
 UF_OTHER = "unmatched-other"
 
-ORDER = [TP_SKILL, TP_BASE, TP_OTHER, FN_NOT_EXPOSED, FN_TRIGGER, FN_APPLICATION, FN_GAP, FN_NOT_CODIFIABLE, UF_SKILL, UF_OTHER]
+ORDER = [TP_SKILL, TP_BASE, TP_OTHER, TP_NO_CONTROL, FN_NOT_EXPOSED, FN_TRIGGER, FN_APPLICATION, FN_GAP, FN_NOT_CODIFIABLE, UF_SKILL, UF_OTHER]
 
 MEANING = {
     TP_SKILL: "caught, with a covering skill loaded, and the no-skills control mostly missed it",
     TP_BASE: "caught, but the no-skills control caught it in at least half its runs too",
     TP_OTHER: "caught without a covering skill loaded, and the control mostly missed it",
+    TP_NO_CONTROL: "caught, but no no-skills control run was valid, so the skills' part is unknown",
     FN_NOT_EXPOSED: "missed; a skill covers it but was never shown to the reviewer",
     FN_TRIGGER: "missed; a covering skill was shown but not loaded",
     FN_APPLICATION: "missed although a covering skill was loaded",
@@ -47,19 +49,20 @@ def truth_bucket(
     loaded: set[str],
     control_rate: float | None,
 ) -> str:
+    """`control_rate` is the share of no-skills runs that matched; None when none ran."""
     if matched:
-        if control_rate is not None and control_rate >= 0.5:
+        if control_rate is None:
+            return TP_NO_CONTROL
+        if control_rate >= 0.5:
             return TP_BASE
         return TP_SKILL if covering & loaded else TP_OTHER
-    if not codifiable:
-        return FN_NOT_CODIFIABLE
-    if not covering:
-        return FN_GAP
-    if not covering & listed:
-        return FN_NOT_EXPOSED
-    if not covering & loaded:
-        return FN_TRIGGER
-    return FN_APPLICATION
+    if covering:  # a skill states the rule, whatever the classifier thought of it
+        if not covering & listed:
+            return FN_NOT_EXPOSED
+        if not covering & loaded:
+            return FN_TRIGGER
+        return FN_APPLICATION
+    return FN_GAP if codifiable else FN_NOT_CODIFIABLE
 
 
 def unmatched_bucket(covering: set[str], loaded: set[str]) -> str:

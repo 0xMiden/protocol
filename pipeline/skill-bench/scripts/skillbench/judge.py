@@ -206,5 +206,5 @@ def filter_attribution(
         if not isinstance(entry, dict) or entry.get("id") not in item_ids:
             continue
         covering = sorted({s for s in entry.get("covering_skills") or [] if s in skill_names})
-        out[entry["id"]] = {"covering_skills": covering, "codifiable": bool(entry.get("codifiable"))}
+        out[entry["id"]] = {"covering_skills": covering}
     return out

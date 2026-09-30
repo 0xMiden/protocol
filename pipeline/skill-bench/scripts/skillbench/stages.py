@@ -276,9 +276,8 @@ def stage_attribute(run_dir: Path, config: dict[str, Any]) -> None:
                     cost += spent
             finally:
                 shutil.rmtree(root, ignore_errors=True)
-        codifiable = {t["id"]: t["codifiable"] for t in truth}
         for item in items:
-            verdicts.setdefault(item["id"], {"covering_skills": [], "codifiable": codifiable.get(item["id"], True)})
+            verdicts.setdefault(item["id"], {"covering_skills": []})
         write_json(path, {"arm": arm.name, "items": verdicts, "cost_usd": round(cost, 4)})
         covered = sum(1 for t in truth if verdicts[t["id"]]["covering_skills"])
         print(f"{arm.name}: {covered} of {len(truth)} human findings are covered by a snapshot skill")

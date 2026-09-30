@@ -43,6 +43,11 @@ def build_result(run_dir: Path) -> dict[str, Any]:
     for name, snapshot in sorted(snapshots.items()):
         notes += [f"{name}: {d}" for d in snapshot.get("deviations", [])]
     notes += pr.get("warnings", [])
+    if not any(r["arm"] == "none" for r in valid):
+        notes.append(
+            f"No valid run of the no-skills control arm: catches are bucketed {buckets.TP_NO_CONTROL}, "
+            "and no skill gets credit for them."
+        )
     return {
         "schema_version": SCHEMA_VERSION,
         "pr": {k: pr.get(k) for k in ("repo", "number", "title", "url", "round", "review_sha", "base_sha", "author", "reviewers")},

@@ -14,9 +14,14 @@ class TruthBucketTest(unittest.TestCase):
             # matched, covering, codifiable, listed, loaded, control_rate -> bucket
             ((True, {"s"}, True, {"s"}, {"s"}, 0.0), b.TP_SKILL),
             ((True, {"s"}, True, {"s"}, {"s"}, 0.5), b.TP_BASE),
-            ((True, {"s"}, True, {"s"}, set(), None), b.TP_OTHER),
+            ((True, {"s"}, True, {"s"}, set(), 0.0), b.TP_OTHER),
             ((True, set(), True, set(), set(), 0.0), b.TP_OTHER),
-            ((False, {"s"}, False, {"s"}, {"s"}, 0.0), b.FN_NOT_CODIFIABLE),
+            # without a control run, a catch cannot be credited to the skills
+            ((True, {"s"}, True, {"s"}, {"s"}, None), b.TP_NO_CONTROL),
+            ((True, set(), True, set(), set(), None), b.TP_NO_CONTROL),
+            # a covering skill decides the miss bucket, whatever the classifier said
+            ((False, {"s"}, False, {"s"}, {"s"}, 0.0), b.FN_APPLICATION),
+            ((False, set(), False, set(), set(), 0.0), b.FN_NOT_CODIFIABLE),
             ((False, set(), True, set(), set(), 0.0), b.FN_GAP),
             ((False, {"s"}, True, set(), set(), 0.0), b.FN_NOT_EXPOSED),
             ((False, {"s"}, True, {"s"}, set(), 0.0), b.FN_TRIGGER),

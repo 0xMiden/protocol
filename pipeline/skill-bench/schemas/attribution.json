@@ -1,18 +1,29 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["items"],
+  "required": [
+    "items"
+  ],
   "properties": {
     "items": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "covering_skills", "codifiable"],
+        "required": [
+          "id",
+          "covering_skills"
+        ],
         "properties": {
-          "id": {"type": "string"},
-          "covering_skills": {"type": "array", "items": {"type": "string"}},
-          "codifiable": {"type": "boolean"}
+          "id": {
+            "type": "string"
+          },
+          "covering_skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     }

@@ -72,11 +72,11 @@ class AttributionTest(unittest.TestCase):
         items = judge.attribution_items(truth, unmatched)
         self.assertEqual([i["source"] for i in items], ["human review", "automated review"])
         result = {"items": [
-            {"id": "t1", "covering_skills": ["masm-rust-constant-parity", "made-up"], "codifiable": True},
-            {"id": "zz", "covering_skills": ["x"], "codifiable": True},
+            {"id": "t1", "covering_skills": ["masm-rust-constant-parity", "made-up"]},
+            {"id": "zz", "covering_skills": ["x"]},
         ]}
         verdicts = judge.filter_attribution(result, {"t1", "r.f1"}, {"masm-rust-constant-parity"})
-        self.assertEqual(verdicts, {"t1": {"covering_skills": ["masm-rust-constant-parity"], "codifiable": True}})
+        self.assertEqual(verdicts, {"t1": {"covering_skills": ["masm-rust-constant-parity"]}})
 
     def test_payload_truncates_skill_bodies(self):
         payload = judge.attribution_payload([{"name": "s", "description": "d", "body": "b" * 9000}], [])

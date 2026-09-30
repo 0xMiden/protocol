@@ -64,11 +64,14 @@ For each run of an arm with skills:
 - `tp-skill-attributable`: caught, with a covering skill loaded, and the no-skills control missed it in most of its runs.
 - `tp-base-model`: caught, but the control caught it in at least half its runs too, so the skills get no credit.
 - `tp-other-context`: caught without a covering skill loaded, and the control mostly missed it.
+- `tp-no-control`: caught, but no run of the no-skills control arm was valid, so what the skills contributed is unknown. The report says so, and no skill gets credit.
 - `fn-not-exposed`: missed; a skill covers it, but the reviewer was never shown that skill.
 - `fn-trigger-miss`: missed; a covering skill was shown but not loaded.
 - `fn-application-miss`: missed, although a covering skill was loaded.
 - `fn-coverage-gap`: missed; no skill covers it, though it could be written down as a rule.
-- `fn-not-codifiable`: missed; a design judgement that no skill could reasonably state.
+- `fn-not-codifiable`: missed; no skill covers it, and it is a design judgement that no skill could reasonably state.
+
+When a skill covers a missed finding, the first three miss buckets apply, even if the classifier judged the rule not codifiable.
 - `unmatched-skill-linked`: raised by the agent only, with a covering skill loaded.
 - `unmatched-other`: raised by the agent only, without a covering skill.
 
