@@ -1,0 +1,14 @@
+[package]
+name              = "xreserve-faucet-burn-policy"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "xreserve::components::faucet_burn_policy"
+path      = "faucet_burn_policy.masm"
+
+[dependencies]
+xreserve.workspace        = true
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true

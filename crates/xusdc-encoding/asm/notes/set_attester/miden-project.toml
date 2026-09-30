@@ -1,0 +1,14 @@
+[package]
+name              = "xreserve-set-attester-note"
+version.workspace = true
+
+[lib]
+kind      = "note"
+namespace = "xreserve::notes::set_attester"
+path      = "set_attester.masm"
+
+[dependencies]
+xreserve.workspace        = true
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
