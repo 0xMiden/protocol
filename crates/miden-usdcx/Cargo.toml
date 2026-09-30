@@ -24,11 +24,11 @@ std     = ["miden-protocol/std", "miden-standards/std", "miden-tx/std"]
 # Exposes the whole `xreserve` MASM library.
 testing = []
 # Enables the canonical golden-vector generator binary.
-vectors = ["dep:miden-crypto", "dep:rand", "dep:sha3"]
+vectors = ["dep:k256", "dep:miden-crypto", "dep:rand", "dep:sha3"]
 
 [dependencies]
 # Workspace dependencies
-miden-protocol  = { features = ["testing"], workspace = true }
+miden-protocol  = { workspace = true }
 miden-standards = { workspace = true }
 miden-tx        = { workspace = true }
 
@@ -36,11 +36,9 @@ miden-tx        = { workspace = true }
 bon        = { workspace = true }
 serde      = { features = ["alloc", "derive"], workspace = true }
 serde_json = { features = ["alloc"], workspace = true }
-# A regular dependency because the vector generator binary uses it. The library itself reaches
-# secp256k1 through miden-protocol.
-k256 = { features = ["ecdsa"], workspace = true }
 
 # Optional vector-generator dependencies
+k256         = { features = ["ecdsa"], optional = true, workspace = true }
 miden-crypto = { features = ["std"], optional = true, workspace = true }
 rand         = { optional = true, workspace = true }
 sha3         = { optional = true, workspace = true }
@@ -49,6 +47,7 @@ sha3         = { optional = true, workspace = true }
 # Depends on itself so the `testing` feature is on for the test build.
 anyhow          = { workspace = true }
 assert_matches  = { workspace = true }
+k256            = { workspace = true }
 miden-crypto    = { features = ["std"], workspace = true }
 miden-processor = { workspace = true }
 miden-standards = { features = ["testing"], workspace = true }
