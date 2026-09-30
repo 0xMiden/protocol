@@ -15,6 +15,7 @@ use miden_standards::note::config::{
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
     FaucetMetadataConfigNote,
+    NetworkAccountConfigNote,
     PauseConfigNote,
     RbacConfigNote,
 };
@@ -28,14 +29,12 @@ use crate::note::xreserve_admin::{XReserveMinBurnAmountNote, XReserveSetAttester
 impl XReserveStablecoinBuilder {
     /// Returns the production faucet's note-script allowlist.
     ///
-    /// The eleven roots cover mint and burn, one faucet setter (`set_attester`), min-burn,
-    /// max-supply, pause and blocklist administration, role administration, constant-fee
-    /// administration, fee sponsorship, and upgrades. The network account configuration note is
-    /// excluded, so the note and transaction allowlists cannot be modified through an accepted
-    /// note. The faucet-metadata root also carries other metadata setters, but this account
-    /// builds those fields immutable, so their setters always trap: each setter first asserts
-    /// its flag in the faucet's `mutability_config` storage word, which is set at construction
-    /// and has no writer.
+    /// The twelve roots cover supply, administration, fees, upgrades, and network configuration.
+    /// `ADMIN` can update the note-script, transaction-script, and fee-policy allowlists through
+    /// `NetworkAccountConfigNote`. The faucet-metadata root also carries other metadata setters,
+    /// but this account builds those fields immutable, so their setters always trap: each setter
+    /// asserts its flag in the faucet's `mutability_config` storage word, which is set at
+    /// construction and has no writer.
     pub fn allowed_note_scripts() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([
             // Supply notes.
@@ -50,6 +49,7 @@ impl XReserveStablecoinBuilder {
             BlocklistConfigNote::script_root(),
             RbacConfigNote::script_root(),
             UpgradeNote::script_root(),
+            NetworkAccountConfigNote::script_root(),
             // Fee administration and sponsorship notes.
             ConstantFeePolicyConfigNote::script_root(),
             FeeSponsorshipNote::script_root(),
@@ -58,8 +58,7 @@ impl XReserveStablecoinBuilder {
 
     /// Builds the production `AuthNetworkAccount` component from the network fee parameters and
     /// fee asset. It constructs the xUSDC fee schedule through the pricer, admits only
-    /// `ExpirationTransactionScript::script_root()` as a transaction script, and excludes the
-    /// mutable `NetworkAccountConfigNote` entry point.
+    /// `ExpirationTransactionScript::script_root()` as a transaction script at construction.
     pub fn auth_component(
         fee_parameters: FeeParameters,
         fee_asset_id: AssetId,

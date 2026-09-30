@@ -85,6 +85,7 @@ use miden_standards::note::config::{
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
     FaucetMetadataConfigNote,
+    NetworkAccountConfigNote,
     PauseConfigNote,
     RbacConfigNote,
 };
@@ -583,9 +584,7 @@ pub fn production_component_set(token_supply: u64) -> Result<Vec<AccountComponen
         .map_err(|e| anyhow::anyhow!("composing the production faucet components: {e}"))
 }
 
-/// The eleven allowlisted note scripts as labelled `(name, script)` pairs: two supply notes, seven
-/// administration and configuration notes (one faucet-owned, six standard), the constant-fee
-/// configuration note, and the sponsorship note.
+/// The twelve allowlisted note scripts as labelled `(name, script)` pairs.
 pub fn allowlisted_note_scripts() -> Vec<(&'static str, NoteScript)> {
     vec![
         ("stock_mint_note", MintNote::script()),
@@ -597,6 +596,7 @@ pub fn allowlisted_note_scripts() -> Vec<(&'static str, NoteScript)> {
         ("stock_blocklist_config_note", BlocklistConfigNote::script()),
         ("stock_rbac_action_note", RbacConfigNote::script()),
         ("stock_upgrade_note", UpgradeNote::script()),
+        ("stock_network_account_config_note", NetworkAccountConfigNote::script()),
         ("stock_constant_fee_policy_config_note", ConstantFeePolicyConfigNote::script()),
         ("stock_fee_sponsorship_note", FeeSponsorshipNote::script()),
     ]

@@ -286,13 +286,13 @@ fn builder_rejects_a_zero_min_burn_floor() -> Result<()> {
 // 4 — POSTURE: the note-script allowlist pins the stock MintNote
 // ================================================================================================
 
-/// The eleven-root allowlist uses the standard `MintNote::script_root()` for minting.
+/// The twelve-root allowlist uses the standard `MintNote::script_root()` for minting.
 #[test]
 fn note_allowlist_pins_the_stock_mint_note() -> Result<()> {
     let _serial = tripwire_serial_guard_blocking();
     let allowlist =
         miden_usdcx::account::xreserve::XReserveStablecoinBuilder::allowed_note_scripts();
-    assert_eq!(allowlist.len(), 11, "the allowlist contains 11 roots");
+    assert_eq!(allowlist.len(), 12, "the allowlist contains 12 roots");
     assert!(
         allowlist.contains(&MintNote::script_root()),
         "row 1 must be the STOCK miden-standards MintNote script root"

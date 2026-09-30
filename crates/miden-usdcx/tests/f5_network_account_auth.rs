@@ -200,14 +200,14 @@ fn production_faucet_auth_component_is_stock_network_account() -> Result<()> {
 // root
 // ================================================================================================
 
-/// The note-script allowlist contains exactly eleven roots: two supply notes, seven administration
+/// The note-script allowlist contains exactly twelve roots: two supply notes, eight administration
 /// and configuration notes, and two fee notes. The builder defines the set
 /// ([`XReserveStablecoinBuilder::allowed_note_scripts`]); the built account must store it.
 #[test]
-fn production_faucet_note_allowlist_contains_the_eleven_expected_roots() -> Result<()> {
+fn production_faucet_note_allowlist_contains_the_twelve_expected_roots() -> Result<()> {
     let (_chain, account) = production_faucet()?;
     let expected = XReserveStablecoinBuilder::allowed_note_scripts();
-    assert_eq!(expected.len(), 11, "the expected allowlist contains exactly 11 distinct roots");
+    assert_eq!(expected.len(), 12, "the expected allowlist contains exactly 12 distinct roots");
 
     // The built account stores the builder's allowlist.
     let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
@@ -215,7 +215,7 @@ fn production_faucet_note_allowlist_contains_the_eleven_expected_roots() -> Resu
     assert_eq!(
         allowlist.allowed_script_roots(),
         &expected,
-        "the built faucet's allowlist map must equal the builder's 11 roots",
+        "the built faucet's allowlist map must equal the builder's 12 roots",
     );
     Ok(())
 }

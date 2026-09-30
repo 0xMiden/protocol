@@ -140,9 +140,9 @@ async fn emit_and_consume_mint(
         .await)
 }
 
-/// The allowlist contains eleven roots, including the three standard administration notes.
+/// The allowlist contains twelve roots, including the standard administration notes.
 #[test]
-fn the_allowlist_contains_the_eleven_expected_roots() {
+fn the_allowlist_contains_the_twelve_expected_roots() {
     let allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
 
     assert_eq!(
