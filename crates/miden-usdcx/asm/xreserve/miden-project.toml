@@ -9,6 +9,6 @@ path      = "mod.masm"
 # The transaction kernel is not listed because the protocol package declares it, and a kernel
 # dependency is always linked dynamically into a library target.
 [dependencies]
-miden-core      = { linkage = "dynamic", version = "0.34" }
+miden-core      = { linkage = "dynamic", version = "0.35" }
 miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
 miden-standards = { linkage = "dynamic", version = "0.17.0" }
