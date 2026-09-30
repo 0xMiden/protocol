@@ -266,10 +266,10 @@ pub enum TransactionKernelError {
     )]
     MalformedNoteStorage(#[source] NoteError),
     #[error(
-        "note script data `{data:?}` extracted from the advice map by the event handler is not well formed"
+        "note script elements `{script_elements:?}` extracted from the advice map by the event handler are not well formed"
     )]
     MalformedNoteScript {
-        data: Vec<Felt>,
+        script_elements: Vec<Felt>,
         source: DeserializationError,
     },
     #[error(

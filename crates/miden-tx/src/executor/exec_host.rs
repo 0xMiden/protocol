@@ -367,7 +367,7 @@ where
 
         match note_script {
             Some(note_script) => {
-                let script_felts: Vec<Felt> = (&note_script).into();
+                let script_felts = note_script.to_elements();
                 let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
