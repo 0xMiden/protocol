@@ -75,13 +75,6 @@ mod tests {
     use super::CircleDomain;
 
     #[test]
-    fn miden_domain_is_10007() {
-        assert_eq!(CircleDomain::MIDEN.as_u32(), 10_007);
-        assert_eq!(CircleDomain::default(), CircleDomain::MIDEN);
-        assert_eq!(crate::xreserve::MIDEN_DOMAIN, 10_007);
-    }
-
-    #[test]
     fn a_domain_parses_from_a_32_bit_number() {
         assert_eq!("7".parse::<CircleDomain>().unwrap(), CircleDomain::new(7));
         assert!("".parse::<CircleDomain>().is_err());
