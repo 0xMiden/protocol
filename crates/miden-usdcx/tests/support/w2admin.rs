@@ -52,7 +52,7 @@ use super::{ProductionFaucet, add_faucet_account, setup_production_faucet, test_
 // ================================================================================================
 
 /// Number of note-script roots in the production allowlist.
-pub const PRODUCTION_ALLOWLIST_ROOTS: usize = 10;
+pub const PRODUCTION_ALLOWLIST_ROOTS: usize = 12;
 
 /// The `DOM_PAUSER` role symbol felt the retired `pause_admin.masm` hard-coded. The role identity
 /// had to survive the move from a MASM literal into the procedure-role map, so it is pinned here as

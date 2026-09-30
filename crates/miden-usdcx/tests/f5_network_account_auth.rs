@@ -1,24 +1,16 @@
 //! Production transaction authorization for the Miden network-account faucet.
 //!
-//! The standard network-account auth component is the faucet's only authorization surface.
+//! The faucet has no signing key. Network-account authorization checks its script allowlists;
+//! individual procedures also enforce their own rules, such as ADMIN authorization.
 //!
-//! The account is keyless, so transactions are authorized by their accepted note and transaction
-//! scripts rather than a signature.
+//! A new faucet allows twelve note scripts, including `UpgradeNote` and `NetworkAccountConfigNote`.
+//! Both require ADMIN. `NetworkAccountConfigNote` can change the script and fee-policy allowlists.
+//! `RbacConfigNote` handles role membership and administration.
 //!
-//! The note-script allowlist contains two supply notes, six administration and configuration notes,
-//! the fee configuration note, and the sponsorship note. The general network-account configuration
-//! note is excluded, so accepted notes cannot modify the note or transaction allowlists. The
-//! `RbacConfigNote` supports role grants, revocations, administration changes, and renunciation.
+//! Its initial transaction-script allowlist contains only the expiration script.
+//! Other transaction scripts are rejected unless ADMIN changes that allowlist.
 //!
-//! Its transaction-script allowlist contains exactly one entry, the canonical expiration script.
-//! Any other transaction script is rejected. This is what stops an arbitrary script from being run
-//! against the faucet's own procedures.
-//!
-//! The remaining tests cover the routing attachments that make a network account reachable: a mint
-//! note carries two attachments — the merged transport (the attestation followed by the deposit
-//! intent) and the target routing the note to the faucet with an
-//! always-execute hint — and a burn note carries the routing attachment. Both the wire form and
-//! the semantics are checked.
+//! The remaining tests check mint and burn note attachments, including the faucet target.
 //!
 //! Sibling suites cover per-operation admin authorization in `f5_admin_notes.rs` and mint transport
 //! failures such as missing attachments and tampered attestations in
@@ -73,7 +65,7 @@ use support::*;
 // HELPERS
 // ================================================================================================
 
-/// A deterministic standalone note rng (only the serial number depends on it, never the gate).
+/// A repeatable RNG for note serial numbers.
 fn note_rng(seed: u64) -> RandomCoin {
     RandomCoin::new(Word::from([
         Felt::from(seed as u32),
@@ -83,7 +75,7 @@ fn note_rng(seed: u64) -> RandomCoin {
     ]))
 }
 
-/// A representative burn payload with arbitrary destination fields that round-trip.
+/// A sample burn payload for encoding checks.
 fn sample_burn_items() -> XReserveBurnItems {
     XReserveBurnItems {
         dest_domain: CircleDomain::new(9),
@@ -96,16 +88,11 @@ const REMOTE_RECIPIENT_BYTE_OFF: usize = 19 * 4;
 /// First byte of the 32-byte `remoteToken` field (felt 11 x 4 bytes of the fixed header).
 const REMOTE_TOKEN_BYTE_OFF: usize = 11 * 4;
 
-/// The attested wire amount spliced into the payload (any in-range value; the factory re-derives
-/// the note storage from it).
+/// The deposit amount used to build the mint note.
 const MINT_AMOUNT: u64 = 5_000;
 
-/// Builds a deposit-intent payload that a real mint note can be constructed from.
-///
-/// It starts from the canonical accept vector and splices in an in-range amount and maxFee plus a
-/// `remoteRecipient` holding the given account id in its bytes32 form. Those fields have to be
-/// genuinely valid, because the note factory decodes them to derive the mint note's storage — a
-/// payload that merely looks well-formed would fail at construction, not at the check under test.
+/// Builds a valid deposit payload for the given recipient from an existing test vector.
+/// It must pass decoding so the tests reach the attachment checks, rather than failing to build.
 fn attested_deposit_intent_payload(
     recipient: miden_protocol::account::AccountId,
     faucet_id: miden_protocol::account::AccountId,
@@ -122,15 +109,13 @@ fn attested_deposit_intent_payload(
     payload[MAX_FEE_BYTE_OFF..MAX_FEE_BYTE_OFF + 32].copy_from_slice(&uint256_be(1));
     payload[REMOTE_RECIPIENT_BYTE_OFF..REMOTE_RECIPIENT_BYTE_OFF + 32]
         .copy_from_slice(&EthEmbeddedAccountId::from_account_id(recipient).to_bytes32());
-    // the transport can only be built for the faucet the intent names, so the vector's synthetic
-    // token has to become this faucet's id
+    // Replace the sample token with the target faucet's account ID.
     payload[REMOTE_TOKEN_BYTE_OFF..REMOTE_TOKEN_BYTE_OFF + 32]
         .copy_from_slice(&EthEmbeddedAccountId::from_account_id(faucet_id).to_bytes32());
     payload
 }
 
-/// Builds the current PRODUCTION faucet and returns its MockChain + committed faucet account
-/// object. The faucet id (`account.id()`) is PUBLIC — usable as a `NetworkAccountTarget` target.
+/// Builds and commits a faucet with the production components.
 fn production_faucet() -> Result<(MockChain, Account)> {
     let pf = setup_production_faucet(0, |_, _faucet_id| Vec::new())
         .context("building the production faucet")?;
@@ -142,8 +127,8 @@ fn production_faucet() -> Result<(MockChain, Account)> {
     Ok((pf.mock_chain, account))
 }
 
-/// The auth-procedure MAST root of the stock `AuthNetworkAccount` component (independent of the
-/// allowlist storage contents; a dummy non-empty allowlist is used only to construct it).
+/// Gets the standard network-account auth procedure's root.
+/// Its root does not depend on the allowlist entries stored in the component.
 fn stock_network_auth_proc_root() -> Word {
     let component: AccountComponent = AuthNetworkAccount::custom(
         BTreeSet::from_iter([MintNote::script_root()]),
@@ -160,11 +145,10 @@ fn stock_network_auth_proc_root() -> Word {
     Word::from(root)
 }
 
-// PROOF #6 — the production faucet is a network account, authed by the stock AuthNetworkAccount
+// NETWORK-ACCOUNT AUTHORIZATION
 // ================================================================================================
 
-/// The production faucet must be a network account (public + the standardized note-script allowlist
-/// slot).
+/// The faucet is a public network account with a note-script allowlist.
 #[test]
 fn production_faucet_is_a_network_account() -> Result<()> {
     let (_chain, account) = production_faucet()?;
@@ -178,9 +162,7 @@ fn production_faucet_is_a_network_account() -> Result<()> {
     Ok(())
 }
 
-/// The production faucet's dedicated auth component must be the STOCK `AuthNetworkAccount` (not a
-/// custom / mutable-allowlist component): its auth-procedure MAST root must appear in the account
-/// code.
+/// The faucet uses the standard network-account auth procedure.
 #[test]
 fn production_faucet_auth_component_is_stock_network_account() -> Result<()> {
     let (_chain, account) = production_faucet()?;
@@ -195,18 +177,15 @@ fn production_faucet_auth_component_is_stock_network_account() -> Result<()> {
     Ok(())
 }
 
-// PROOF #5 — the frozen note-script allowlist + a tx-script allowlist of EXACTLY the expiration
-// root
+// INITIAL SCRIPT ALLOWLISTS
 // ================================================================================================
 
-/// The note-script allowlist contains exactly ten roots: two supply notes, six administration and
-/// configuration notes, and two fee notes. The builder defines the set
-/// ([`XReserveStablecoinBuilder::allowed_note_scripts`]); the built account must store it.
+/// The built account stores all twelve note scripts allowed by the builder.
 #[test]
-fn production_faucet_note_allowlist_contains_the_ten_expected_roots() -> Result<()> {
+fn production_faucet_note_allowlist_contains_the_twelve_expected_roots() -> Result<()> {
     let (_chain, account) = production_faucet()?;
     let expected = XReserveStablecoinBuilder::allowed_note_scripts();
-    assert_eq!(expected.len(), 10, "the expected allowlist contains exactly 10 distinct roots");
+    assert_eq!(expected.len(), 12, "the expected allowlist contains exactly 12 distinct roots");
 
     // The built account stores the builder's allowlist.
     let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
@@ -214,15 +193,12 @@ fn production_faucet_note_allowlist_contains_the_ten_expected_roots() -> Result<
     assert_eq!(
         allowlist.allowed_script_roots(),
         &expected,
-        "the built faucet's allowlist map must equal the builder's 10 roots",
+        "the built faucet's allowlist map must equal the builder's 12 roots",
     );
     Ok(())
 }
 
-/// The tx-script allowlist must exist and equal EXACTLY the one canonical
-/// `ExpirationTransactionScript::script_root()` — the sole-mint-surface
-/// posture, expressed as a ONE-root allowlist that admits only the protocol-standard
-/// expiration bounder rather than an empty set. Extra/missing = RED.
+/// The built account allows only the expiration transaction script.
 #[test]
 fn production_faucet_tx_script_allowlist_is_exactly_the_expiration_root() -> Result<()> {
     let (_chain, account) = production_faucet()?;
@@ -239,11 +215,10 @@ fn production_faucet_tx_script_allowlist_is_exactly_the_expiration_root() -> Res
     Ok(())
 }
 
-// PROOF #1 — the auth boundary is real (non-allowlisted note + any tx script rejected)
+// REJECTING UNLISTED SCRIPTS
 // ================================================================================================
 
-/// Consuming a note whose script root is NOT in the allowlist must be rejected by the network-auth
-/// component with the exact allowlist error.
+/// Consuming an unlisted note script fails with the allowlist error.
 #[tokio::test]
 async fn non_allowlisted_note_is_rejected_by_auth() -> Result<()> {
     let (chain, account) = production_faucet()?;
@@ -268,16 +243,12 @@ async fn non_allowlisted_note_is_rejected_by_auth() -> Result<()> {
     Ok(())
 }
 
-/// Any transaction script OTHER than the canonical `ExpirationTransactionScript` must be rejected
-/// by the one-root tx-script allowlist, AND that canonical expiration script must be ADMITTED
-/// the `nop` probe still trips `ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED`, while the
-/// expiration script clears the allowlist gate and executes.
+/// The expiration script passes the allowlist check; an unlisted no-op script does not.
 #[tokio::test]
 async fn non_expiration_tx_script_is_rejected_and_expiration_is_admitted() -> Result<()> {
     let (chain, account) = production_faucet()?;
 
-    // NEGATIVE — an arbitrary (nop) tx script is NOT the expiration root, so the allowlist rejects
-    // it.
+    // A no-op script is not allowlisted.
     let bogus = CodeBuilder::new()
         .compile_tx_script("@transaction_script\npub proc main\n    nop\nend\n")
         .context("compiling the probe tx script")?;
@@ -290,12 +261,8 @@ async fn non_expiration_tx_script_is_rejected_and_expiration_is_admitted() -> Re
         .await;
     assert_transaction_executor_error!(rejected, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
 
-    // POSITIVE — the canonical expiration script IS allowlisted, so it CLEARS the allowlist gate.
-    // An expiration-only tx changes no account state and consumes no notes, so the kernel rejects
-    // it with the empty-tx epilogue assertion — downstream of, and orthogonal to, the allowlist
-    // gate. The precise invariant: the expiration script is NOT rejected by the tx-script
-    // allowlist (a mutation dropping the expiration root flips this back to the allowlist error
-    // — RED — caught here).
+    // The expiration script must pass the allowlist check. The transaction may still fail
+    // because it consumes no notes and changes no state.
     let expiration = ExpirationTransactionScript::new(NonZeroU16::new(64).expect("64 is non-zero"));
     let admitted = chain
         .build_transaction(account.id())
@@ -319,17 +286,13 @@ async fn non_expiration_tx_script_is_rejected_and_expiration_is_admitted() -> Re
     Ok(())
 }
 
-// PROOF #2 / #3 — exact routing-attachment wire form + NetworkAccountTarget semantics
+// NOTE ATTACHMENTS
 // ================================================================================================
 
-/// The mint note (the STOCK `MintNote` built by `XUsdcMintNote::create`) must carry EXACTLY TWO
-/// attachments — the merged scheme-4 transport (the 11-word attestation
-/// `[feeAmount(8), pubkey(16), signature(17), pad(3)]`, then the packed DepositIntent preimage)
-/// and the scheme-2 `NetworkAccountTarget` routing attachment
-/// addressed to the faucet with `NoteExecutionHint::Always`.
+/// The mint note carries two attachments: the scheme-4 attestation and deposit payload,
+/// and the scheme-2 faucet target with `NoteExecutionHint::Always`.
 ///
-/// The attestation section comes FIRST because it is fixed-width: that is what keeps the intent's
-/// starting offset a constant instead of a function of `hookDataLen`.
+/// The fixed-size attestation comes first, so the deposit payload starts at a fixed offset.
 #[test]
 fn mint_note_carries_the_merged_transport_and_the_routing_target() -> Result<()> {
     let (_chain, faucet) = production_faucet()?;
@@ -366,7 +329,7 @@ fn mint_note_carries_the_merged_transport_and_the_routing_target() -> Result<()>
         "exactly one scheme-2 routing attachment"
     );
 
-    // the merged content, at the documented offsets: attestation, carried payload
+    // Check the attestation and deposit payload at their expected offsets.
     let transport = note
         .attachments()
         .iter()

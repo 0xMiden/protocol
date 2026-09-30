@@ -1,18 +1,7 @@
-//! The UNREACHABLE and READ-ONLY halves of the FULL-ACCOUNT CALLABLE-SURFACE proofs,
-//! split out of `account_callable_surface.rs` to respect the file-size
-//! ceiling. `account_callable_surface.rs` holds the
-//! freeze/unfreeze disposition + the asset-callback (transfer-blocklist-live) proof; THIS file
-//! holds:
-//!   * `authority::get_authority` is READ-ONLY in execution (executed bounding, not documentation);
-//!   * 13 mutator, upgrade and fee procedures in three reachability tiers. Tier A contains five
-//!     unreachable procedures: the four allowlist mutators and the upgrade hook. Tier B contains
-//!     six fee procedures and the `compute_note_fee` callback; these have no direct external entry
-//!     point but are used by the internal fee-estimation path. Tier C contains `set_note_fee`,
-//!     which is reached through the fee configuration note and authorized by `ADMIN`.
+//! Checks which configuration and fee procedures the initial note scripts directly reference.
 //!
-//! The small conformance helpers (`production_components`/`component_surface`) are duplicated
-//! here so this module is self-contained; both copies are single-sourced from
-//! `XReserveStablecoinBuilder`, so neither can drift from what ships.
+//! Configuration and upgrade notes call the existing ADMIN-gated procedures. The execution tests
+//! in `config_note_allowlist.rs` check authorization for all six allowlist changes.
 
 mod support;
 
@@ -24,14 +13,12 @@ use miden_protocol::account::{AccountComponent, StorageSlotContent};
 use miden_protocol::assembly::mast::MastNodeExt;
 use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::auth::AuthNetworkAccount;
-use miden_standards::note::config::ConstantFeePolicyConfigNote;
+use miden_standards::note::UpgradeNote;
+use miden_standards::note::config::{ConstantFeePolicyConfigNote, NetworkAccountConfigNote};
 use miden_usdcx::account::xreserve::XReserveStablecoinBuilder;
 use support::*;
 
-/// The production composition, component by component: the SHIPPED component set
-/// (`support::production_component_set` → `XReserveStablecoinBuilder::build_components()`) PLUS the
-/// `AuthNetworkAccount` auth component the MockChain fixture installs — both single-sourced from
-/// `XReserveStablecoinBuilder`, so this cannot drift from what ships.
+/// Builds the faucet components, including network-account authorization.
 fn production_components() -> Result<Vec<AccountComponent>> {
     let mut components =
         production_component_set(0).context("the production composition must build")?;
@@ -42,8 +29,7 @@ fn production_components() -> Result<Vec<AccountComponent>> {
     Ok(components)
 }
 
-/// Every callable procedure of the composed account, as `(path, root)` — read from each component's
-/// FILTERED interface (the `@account_procedure` / `@auth_script` exports).
+/// Lists each component's exported procedures as `(path, root)` pairs.
 fn component_surface(components: &[AccountComponent]) -> Vec<(String, Word)> {
     let mut surface = Vec::new();
     for component in components {
@@ -59,47 +45,34 @@ fn component_surface(components: &[AccountComponent]) -> Vec<(String, Word)> {
     surface
 }
 
-// FEE AND MUTATOR PROCEDURES
+// CONFIGURATION AND FEE PROCEDURES
 // ================================================================================================
-//
-// The 13 procedures fall into three reachability tiers.
-//
-// Tier A contains five unreachable procedures: the four allowlist mutators and the
-// `UpgradeManager::upgrade` hook. No accepted note or transaction script references them.
-//
-// Tier B contains six fee procedures and the `compute_note_fee` callback. Accepted notes and
-// transaction scripts do not reference them directly. The auth component invokes the fee
-// estimation path for input notes.
-//
-// Tier C contains `ConstantFeeManager::set_note_fee`, which is called by
-// `ConstantFeePolicyConfigNote` and authorized through the `ADMIN` fallback.
 
-/// Tier A contains the five unreachable procedures: the four allowlist mutators and the upgrade
-/// hook.
-const TIER_A_MUTATOR_ROWS: [&str; 5] = [
+/// The six ADMIN-gated setters called by the network-account configuration note.
+const TIER_A_MUTATOR_ROWS: [&str; 6] = [
     "::miden::standards::components::auth::network_account::add_allowed_note_script",
     "::miden::standards::components::auth::network_account::remove_allowed_note_script",
     "::miden::standards::components::auth::network_account::add_allowed_tx_script",
     "::miden::standards::components::auth::network_account::remove_allowed_tx_script",
-    "::miden::standards::components::upgrade::manager::upgrade",
+    "::miden::standards::components::auth::network_account::add_allowed_fee_policy",
+    "::miden::standards::components::auth::network_account::remove_allowed_fee_policy",
 ];
 
-/// Tier B contains six fee procedures and the fee-policy callback. These procedures have no direct
-/// external entry point, while the auth component invokes the fee-estimation path internally.
-const TIER_B_FEE_ROWS: [&str; 7] = [
+/// Fee procedures that the initial note scripts do not directly reference.
+const TIER_B_FEE_ROWS: [&str; 5] = [
     "::miden::standards::components::auth::network_account::estimate_note_fee",
     "::miden::standards::components::auth::network_account::get_fee_asset_id",
     "::miden::standards::components::auth::network_account::get_fee_policy",
     "::miden::standards::components::auth::network_account::set_fee_policy",
-    "::miden::standards::components::auth::network_account::add_allowed_fee_policy",
-    "::miden::standards::components::auth::network_account::remove_allowed_fee_policy",
     "::miden::standards::components::fees::policies::basic_constant_fee::compute_note_fee",
 ];
 
-const TIER_C_FEE_ADMIN_ROWS: [&str; 1] =
-    ["::miden::standards::components::fees::policies::constant_fee_manager::set_note_fee"];
+const TIER_C_ADMIN_ROWS: [&str; 2] = [
+    "::miden::standards::components::fees::policies::constant_fee_manager::set_note_fee",
+    "::miden::standards::components::upgrade::manager::upgrade",
+];
 
-/// Resolves account-procedure roots from the production composition by path.
+/// Looks up procedure roots in the faucet components.
 fn procedure_roots(paths: &[&'static str]) -> Result<Vec<(&'static str, Word)>> {
     let components = production_components()?;
     let surface = component_surface(&components);
@@ -115,53 +88,41 @@ fn procedure_roots(paths: &[&'static str]) -> Result<Vec<(&'static str, Word)>> 
         .collect()
 }
 
-/// Returns the roots of all 13 fee, mutator and upgrade procedures.
+/// Returns the roots of the configuration, fee, and upgrade procedures listed above.
 fn fee_and_mutator_procedure_roots() -> Result<Vec<(&'static str, Word)>> {
     let mut rows = procedure_roots(&TIER_A_MUTATOR_ROWS)?;
     rows.extend(procedure_roots(&TIER_B_FEE_ROWS)?);
-    rows.extend(procedure_roots(&TIER_C_FEE_ADMIN_ROWS)?);
+    rows.extend(procedure_roots(&TIER_C_ADMIN_ROWS)?);
     Ok(rows)
 }
 
-/// Tier A, UNREACHABLE, leg 1 (static, exhaustive over the allowlist): NOT ONE of the 10
-/// allowlisted note scripts references ANY of the 5 Tier-A roots ANYWHERE in its MAST — so no
-/// admissible note can mutate the allowlists or record an upgrade. The swept set is asserted
-/// equal to the allowlist first, so a new note cannot dodge the sweep.
+/// Other initial note scripts do not directly reference the six allowlist setters.
 #[test]
-fn tier_a_mutators_are_unreachable_from_every_allowlisted_note() -> Result<()> {
+fn other_notes_do_not_reference_allowlist_setters() -> Result<()> {
     let allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
     let scripts = allowlisted_note_scripts();
     let swept: BTreeSet<_> = scripts.iter().map(|(_, s)| s.root()).collect();
-    assert_eq!(
-        swept, allowlist,
-        "the swept note scripts must be EXACTLY the 10-root note-script allowlist"
-    );
+    assert_eq!(swept, allowlist, "the swept note scripts must match the builder's allowlist");
 
     let rows = procedure_roots(&TIER_A_MUTATOR_ROWS)?;
-    for (label, script) in &scripts {
+    assert!(allowlist.contains(&NetworkAccountConfigNote::script_root()));
+    for (label, script) in scripts
+        .iter()
+        .filter(|(_, script)| script.root() != NetworkAccountConfigNote::script_root())
+    {
         let forest = script.mast();
-        for node in forest.nodes() {
-            for (path, root) in &rows {
-                assert_ne!(
-                    node.digest(),
-                    *root,
-                    "allowlisted note script `{label}` references the Tier-A root `{path}` — \
-                     the unreachability guarantee is BROKEN (an admissible note could reach a \
-                     procedure that has no admitted entry path)"
-                );
-            }
+        for (path, root) in &rows {
+            assert!(
+                !forest.nodes().iter().any(|node| node.digest() == *root),
+                "unexpected direct reference to {path} in {label}",
+            );
         }
     }
     Ok(())
 }
 
-/// Tier B, NO DIRECT REFERENCE (static, exhaustive over the allowlist): NOT ONE of the 10
-/// allowlisted note scripts references ANY of the 7 fee-tier roots ANYWHERE in its MAST — no
-/// admissible note calls the fee machinery ITSELF. This is deliberately NOT an unreachability
-/// claim: the fee-estimation path runs INTERNALLY on every input note (the auth procedure's
-/// `collect_sponsored_fees` -> `estimate_note_fee_internal` -> dyncall `compute_note_fee`),
-/// computing the scheduled zero fee — internally active but inert. What this sweep proves is
-/// that the only executor is that internal dispatch, never an admissible script.
+/// The initial note scripts do not directly reference these fee procedures.
+/// This does not rule out calls through other procedures, such as transaction authorization.
 #[test]
 fn tier_b_fee_rows_are_not_referenced_by_any_allowlisted_note() -> Result<()> {
     let allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
@@ -169,7 +130,7 @@ fn tier_b_fee_rows_are_not_referenced_by_any_allowlisted_note() -> Result<()> {
     let swept: BTreeSet<_> = scripts.iter().map(|(_, s)| s.root()).collect();
     assert_eq!(
         swept, allowlist,
-        "the swept note scripts must be EXACTLY the 10-root note-script allowlist"
+        "the swept note scripts must be EXACTLY the 12-root note-script allowlist"
     );
 
     let rows = procedure_roots(&TIER_B_FEE_ROWS)?;
@@ -191,27 +152,28 @@ fn tier_b_fee_rows_are_not_referenced_by_any_allowlisted_note() -> Result<()> {
 }
 
 #[test]
-fn set_note_fee_is_present_for_the_allowlisted_fee_config_route() -> Result<()> {
-    let rows = procedure_roots(&TIER_C_FEE_ADMIN_ROWS)?;
-    assert_eq!(rows.len(), 1, "the account must expose set_note_fee");
+fn admin_procedures_are_present_for_their_allowlisted_note_routes() -> Result<()> {
+    let rows = procedure_roots(&TIER_C_ADMIN_ROWS)?;
+    assert_eq!(rows.len(), 2, "the account must expose set_note_fee and upgrade");
     assert!(
         XReserveStablecoinBuilder::allowed_note_scripts()
             .contains(&ConstantFeePolicyConfigNote::script_root()),
         "the constant-fee configuration note must be allowlisted",
     );
+    assert!(
+        XReserveStablecoinBuilder::allowed_note_scripts().contains(&UpgradeNote::script_root()),
+        "the upgrade note must be allowlisted",
+    );
     Ok(())
 }
 
-/// Account procedures are not themselves admissible scripts. None of these procedure roots is a
-/// member of the ten-root note-script allowlist or the transaction-script allowlist. The production
-/// auth component contains only the canonical expiration root in its transaction-script allowlist.
-/// Tier C is reached through its allowlisted note rather than through a procedure root.
+/// The allowlists contain script roots, not these individual procedure roots.
+/// Notes call the procedures; the procedures are not accepted as standalone scripts.
 #[test]
 fn fee_and_mutator_procedures_are_not_admissible_via_either_allowlist() -> Result<()> {
     let note_allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
 
-    // the production auth component's materialized tx-script allowlist keys (non-empty values
-    // mark membership, matching the MASM `word::eqz` check — the s12 view).
+    // Read the transaction-script allowlist from the built auth component.
     let auth_component: AccountComponent =
         XReserveStablecoinBuilder::auth_component(test_fee_parameters(), test_fee_asset_id())
             .map_err(|e| anyhow::anyhow!("auth_component() must build: {e}"))?
@@ -236,7 +198,7 @@ fn fee_and_mutator_procedures_are_not_admissible_via_either_allowlist() -> Resul
         let as_note_root = NoteScriptRoot::from_raw(root);
         assert!(
             !note_allowlist.contains(&as_note_root),
-            "the `{path}` root must NOT be a member of the 10-root note-script allowlist"
+            "the `{path}` root must NOT be a member of the 12-root note-script allowlist"
         );
         assert!(
             !tx_allowlist.contains(&root),
