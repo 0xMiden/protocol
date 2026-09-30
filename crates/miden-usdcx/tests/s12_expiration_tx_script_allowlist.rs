@@ -1,24 +1,7 @@
-//! The transaction-script allowlist: exactly one script may run against the faucet.
+//! A new faucet allows only the expiration transaction script, which sets a transaction's expiry.
 //!
-//! A network account's transaction-script allowlist decides which scripts a transaction may carry.
-//! Left empty it admits none, and left open it would admit any script an attacker cared to write —
-//! against an account whose own procedures move supply. The faucet allowlists precisely one entry,
-//! the canonical expiration script, which is what a relayer needs to set a transaction's expiry and
-//! nothing more.
-//!
-//! This file checks that from the SOURCE side — the builder's auth component, read as component
-//! storage — which is a different vantage point from `f5_network_account_auth.rs`, where the same
-//! property is read off a finalized account. Both matter: the builder is where the value is
-//! decided, the account is where it is enforced.
-//!
-//! Three things are asserted:
-//!
-//! - the tx-script allowlist holds exactly the one expiration root — an extra entry is as much a
-//!   failure as a missing one;
-//! - the note-script allowlist contains all twelve roots independently of the transaction-script
-//!   allowlist;
-//! - and enforcement actually happens on-chain: the expiration script is admitted and executes,
-//!   while an arbitrary no-op script is refused with the allowlist's own error.
+//! These tests read the builder's allowlist and check it during transaction execution.
+//! The note-script allowlist is stored separately and contains twelve scripts.
 
 mod support;
 
@@ -37,9 +20,7 @@ use miden_tx::TransactionExecutorError;
 use miden_usdcx::account::xreserve::XReserveStablecoinBuilder;
 use support::*;
 
-/// Reads the non-empty keys of the named MAP storage slot out of an `AccountComponent`. Only
-/// non-empty values mark an allowlisted key (matching the MASM `word::eqz` check), so this view
-/// agrees with on-chain enforcement.
+/// Reads allowlist keys whose stored value is nonzero.
 fn allowlisted_keys(component: &AccountComponent, slot: &StorageSlotName) -> BTreeSet<Word> {
     let content = component
         .storage_slots()
@@ -56,9 +37,7 @@ fn allowlisted_keys(component: &AccountComponent, slot: &StorageSlotName) -> BTr
         .collect()
 }
 
-/// DIRECT test of the changed function: `auth_component()`'s tx-script allowlist slot must carry
-/// EXACTLY the one canonical `ExpirationTransactionScript::script_root()` — nothing more, nothing
-/// less.
+/// The builder allows only the expiration transaction script.
 #[test]
 fn auth_component_tx_script_allowlist_is_exactly_the_expiration_root() -> Result<()> {
     let component: AccountComponent =
@@ -101,14 +80,13 @@ fn auth_component_note_script_allowlist_is_untouched_by_s12() -> Result<()> {
     Ok(())
 }
 
-/// On-chain enforcement: the canonical expiration script is ADMITTED (clears the allowlist gate and
-/// executes) while an arbitrary no-op tx-script is REJECTED.
+/// The expiration script passes the allowlist check; an unlisted no-op script does not.
 #[tokio::test]
 async fn expiration_is_admitted_and_every_other_tx_script_is_rejected() -> Result<()> {
     let pf = setup_production_faucet(0, |_, _faucet_id| Vec::new())
         .context("building the production network-auth faucet")?;
 
-    // NEGATIVE — a nop tx script is not the expiration root, so the one-root allowlist rejects it.
+    // A no-op script is not allowlisted.
     let bogus = CodeBuilder::new()
         .compile_tx_script("@transaction_script\npub proc main\n    nop\nend\n")
         .context("compiling the nop probe tx script")?;
@@ -122,12 +100,8 @@ async fn expiration_is_admitted_and_every_other_tx_script_is_rejected() -> Resul
         .await;
     assert_transaction_executor_error!(rejected, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
 
-    // POSITIVE — the canonical expiration script IS allowlisted, so it CLEARS the allowlist gate.
-    // An expiration-only tx changes no account state and consumes no notes, so the kernel then
-    // rejects it with the empty-tx epilogue assertion — which is DOWNSTREAM of, and orthogonal to,
-    // the tx-script allowlist gate. The precise invariant is that the expiration script is
-    // NOT rejected by the tx-script allowlist; a mutation dropping the expiration root flips this
-    // back to `ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED` (the RED state), which this catches.
+    // The expiration script must pass the allowlist check. The transaction may still fail
+    // because it consumes no notes and changes no state.
     let expiration = ExpirationTransactionScript::new(NonZeroU16::new(64).expect("64 is non-zero"));
     let admitted = pf
         .mock_chain

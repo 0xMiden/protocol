@@ -41,7 +41,7 @@ fn required_fee_roots() -> [(&'static str, Word); 2] {
     ]
 }
 
-/// Reads the non-empty keys of a map storage slot from an `AccountComponent`.
+/// Reads allowlist keys whose stored value is nonzero.
 fn allowlisted_keys(component: &AccountComponent, slot: &StorageSlotName) -> BTreeSet<Word> {
     let content = component
         .storage_slots()

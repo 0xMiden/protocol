@@ -1,35 +1,7 @@
-//! FULL-ACCOUNT CALLABLE-SURFACE REACHABILITY PROOFS (S12, human-ratified 2026-07-13).
+//! Checks the faucet's initial script allowlists and transfer-policy callbacks.
 //!
-//! The composed account carries every callable procedure the STOCK components contribute
-//! (`Authority` incl. the v0.16 `freeze`/`unfreeze`, `RoleBasedAccessControl`, `FungibleFaucet`,
-//! `TokenPolicyManager`, `MinBurnAmount`, `Pausable`, and the `AuthNetworkAccount` auth procedure)
-//! alongside the two xreserve roots. A stock dependency bump can hand this faucet a NEW callable
-//! capability: at the v0.16 migration the stock `Authority` component began bundling
-//! authority-gated `freeze`/`unfreeze` procedures (upstream #3102/#3209) that no v0.15 composition
-//! had, and the #3047 `policy_manager::invoke_send_policy`/`invoke_receive_policy` transfer-policy
-//! dispatch wrappers plus `authority::get_authority` came with it (human-ratified in their OWN map
-//! row S24, NOT under S12). SINCE THE F4 REVERSAL (2026-07-23) the wrappers are LIVE, not inert:
-//! the stock `BasicBlocklist` is wired as the active send + receive policy, so
-//! `AssetCallbackFlag::Enabled` and the kernel `dyncall`s the wrappers on every policed-asset
-//! transfer, which run the account-wide pause check + `basic_blocklist::check_policy`.
-//! `invoke_wrappers_are_live_and_the_asset_is_policed` re-confirms the reversal at v16.
-//!
-//! What this file asserts about that surface is REACHABILITY, never its size or its literal
-//! membership: a count or a frozen path list records a changelog, and a stock bump edits it rather
-//! than being caught by it. What matters is that no admissible entry vector can reach a capability
-//! the composition does not intend.
-//!
-//! The initial twelve note scripts and the expiration transaction script do not call
-//! `freeze` or `unfreeze`. These checks cover the faucet as built: `ADMIN` can later change
-//! its allowlists through `NetworkAccountConfigNote` or replace its code through `UpgradeNote`.
-//!
-//! ROLE MANAGEMENT — REACHABLE, and deliberately so. The standard role-action note is allowlisted,
-//! and its single script root carries `grant_role`, `revoke_role`, `set_role_admin` and
-//! `renounce_role` alike, so all four are reachable on this account. That is a human-ratified
-//! capability decision, not an oversight: the role-admin graph the build seeds
-//! (`role_config[DOM_PAUSER].admin_role = DOM_MANAGER`) is runtime-mutable, each role's effective
-//! admin governs the role it administers exclusively, and a holder may drop its own membership.
-//! `w2admin_surface_finalization.rs` drives all four actions against the real faucet.
+//! `ADMIN` can later change the allowlists through `NetworkAccountConfigNote` or replace the
+//! faucet code through `UpgradeNote`. These tests do not cover those later configurations.
 
 mod support;
 
@@ -46,8 +18,7 @@ use miden_standards::account::policies::TokenPolicyManager;
 use miden_usdcx::account::xreserve::XReserveStablecoinBuilder;
 use support::*;
 
-/// The committed production faucet ACCOUNT (the real composed, auth-carrying account the network
-/// executes against).
+/// Builds and commits a faucet with the production components.
 fn production_account() -> Result<Account> {
     let pf = setup_production_faucet(0, |_, _faucet_id| Vec::new())
         .context("building the production network-auth faucet")?;
@@ -59,11 +30,10 @@ fn production_account() -> Result<Account> {
     Ok(account)
 }
 
-// S12 — FREEZE / UNFREEZE: PRESENT, AND PROVABLY UNREACHABLE
+// FREEZE AND UNFREEZE
 // ================================================================================================
 
-/// PRESENT: the v0.16 `Authority` freeze/unfreeze procedures ARE callable roots of the composed
-/// account (this is the fact S12 ratifies, stated explicitly rather than left implicit in a count).
+/// The account includes the standard freeze and unfreeze procedures.
 #[test]
 fn authority_freeze_and_unfreeze_are_present_on_the_account() -> Result<()> {
     let account = production_account()?;
@@ -82,10 +52,8 @@ fn authority_freeze_and_unfreeze_are_present_on_the_account() -> Result<()> {
     Ok(())
 }
 
-/// UNREACHABLE, leg 1 (static, exhaustive over the initial allowlist): NOT ONE of the 12
-/// allowlisted note scripts references the freeze or unfreeze root ANYWHERE in its MAST — so no
-/// admissible note can invoke them. Scanning every MAST node digest (not just the entrypoint)
-/// catches a call by root, a call by path, and any nested/external reference alike.
+/// The initial note scripts do not directly reference freeze or unfreeze.
+/// This scans each note's own MAST, not the code of referenced packages.
 #[test]
 fn freeze_and_unfreeze_are_unreachable_from_every_allowlisted_note() -> Result<()> {
     let allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
@@ -95,7 +63,7 @@ fn freeze_and_unfreeze_are_unreachable_from_every_allowlisted_note() -> Result<(
         12,
         "the unreachability sweep must cover all 12 allowlisted note scripts"
     );
-    // The scripts swept ARE the allowlist (no script can dodge the sweep by not being listed here).
+    // Check every script in the builder's allowlist.
     let swept: BTreeSet<_> = scripts.iter().map(|(_, s)| s.root()).collect();
     assert_eq!(
         swept, allowlist,
@@ -123,7 +91,7 @@ fn freeze_and_unfreeze_are_unreachable_from_every_allowlisted_note() -> Result<(
     Ok(())
 }
 
-/// Neither initial allowlist admits the freeze/unfreeze procedure roots as scripts.
+/// Neither freeze nor unfreeze is listed as an allowed note script.
 #[test]
 fn freeze_and_unfreeze_are_not_admissible_via_either_allowlist() -> Result<()> {
     let note_allowlist = XReserveStablecoinBuilder::allowed_note_scripts();
@@ -136,37 +104,19 @@ fn freeze_and_unfreeze_are_not_admissible_via_either_allowlist() -> Result<()> {
             "the `{name}` root must not be in the initial note-script allowlist"
         );
     }
-    // The tx-script entry vector is closed to freeze by the one-root tx-script allowlist (it admits
-    // ONLY the canonical expiration bounder, not freeze) — pinned + executed by
-    // `the_auth_component_rejects_non_expiration_tx_scripts_and_admits_expiration` below (and the
-    // canonical `f5_network_account_auth::production_faucet_tx_script_allowlist_is_exactly_the_expiration_root`).
-    // Together with the note-root non-membership above, no freeze/unfreeze call is admissible via
-    // either entry vector.
     Ok(())
 }
 
-// S24 (F4-REVERSAL) — the invoke_* wrappers are LIVE: the transfer blocklist is policed and the
-// callback flag is Enabled
+// TRANSFER-POLICY CALLBACKS
 // ================================================================================================
 
-/// F4-REVERSAL policed counterpart of the former
-/// `invoke_wrappers_are_inert_and_the_asset_stays_basic` (which asserted the OPPOSITE — no callback
-/// slots, `AssetCallbackFlag::Disabled` — under the basic-asset F4). The transfer blocklist is now
-/// wired as the active send + receive policy, so the #3047
-/// `invoke_send_policy`/`invoke_receive_policy` wrappers are LIVE. Asserts, directly on the shipped
-/// composition + account: (1) BOTH protocol asset-callback slots ARE installed and hold the
-/// fixed `invoke_*_policy` wrapper roots (the kernel dispatches them on every policed-asset
-/// transfer), and (2) the committed faucet account id carries `AssetCallbackFlag::Enabled` (every
-/// minted xUSDC is a POLICED asset — the silent-foot-gun tripwire: a fixture built Disabled with
-/// the policy wired would make the callbacks never fire, and this assertion catches it — mutation
-/// check (b)). Complements the policed `basic_asset_tripwire` (F4-reversal).
+/// Both transfer-policy callbacks are installed and the account's callback flag is enabled.
 #[test]
 fn invoke_wrappers_are_live_and_the_asset_is_policed() -> Result<()> {
     let components =
         production_component_set(0).context("the production composition must build")?;
 
-    // (1) the transfer blocklist is wired → BOTH asset-callback slots are installed, holding the
-    // fixed invoke_*_policy wrapper roots.
+    // Check the send and receive callbacks in component storage.
     let expected_callbacks = [
         (
             AssetCallbacks::on_before_asset_added_to_note_slot(),
@@ -196,9 +146,7 @@ fn invoke_wrappers_are_live_and_the_asset_is_policed() -> Result<()> {
         );
     }
 
-    // (2) the committed faucet account id carries the Enabled callback flag (policed asset). A
-    // Disabled flag with the policy wired would silently never fire the callbacks — the audited
-    // foot-gun. This assertion makes that impossible to miss (mutation check (b)).
+    // Installed callbacks only run when the account ID has this flag enabled.
     let account = production_account()?;
     assert_eq!(
         account.id().asset_callback_flag(),

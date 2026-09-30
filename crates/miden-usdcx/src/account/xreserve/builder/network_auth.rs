@@ -1,9 +1,4 @@
-//! The keyless network account's authorization surface: the note-script allowlist and the auth
-//! component that carries the fee manager built from the network fee parameters.
-//!
-//! It lives beside the builder rather than inside it because the grouping is cohesive: the faucet
-//! has no signing key, so this allowlist IS its authorization model, and nothing else decides which
-//! notes the account will consume.
+//! The faucet's note allowlist, transaction-script allowlist, and fee configuration.
 
 use std::collections::BTreeSet;
 
@@ -27,14 +22,12 @@ use super::{XReserveStablecoinBuilder, XReserveStablecoinBuilderError};
 use crate::note::xreserve_admin::{XReserveMinBurnAmountNote, XReserveSetAttesterNote};
 
 impl XReserveStablecoinBuilder {
-    /// Returns the production faucet's note-script allowlist.
+    /// Returns the note scripts allowed on a new faucet.
     ///
-    /// The twelve roots cover supply, administration, fees, upgrades, and network configuration.
-    /// `ADMIN` can update the note-script, transaction-script, and fee-policy allowlists through
-    /// `NetworkAccountConfigNote`. The faucet-metadata root also carries other metadata setters,
-    /// but this account builds those fields immutable, so their setters always trap: each setter
-    /// asserts its flag in the faucet's `mutability_config` storage word, which is set at
-    /// construction and has no writer.
+    /// `ADMIN` can change the script and fee-policy allowlists with `NetworkAccountConfigNote`,
+    /// or upgrade the faucet code with `UpgradeNote`.
+    /// Allowing `FaucetMetadataConfigNote` does not make all metadata mutable: its setters still
+    /// check the account's mutability settings.
     pub fn allowed_note_scripts() -> BTreeSet<NoteScriptRoot> {
         BTreeSet::from([
             // Supply notes.
@@ -56,9 +49,8 @@ impl XReserveStablecoinBuilder {
         ])
     }
 
-    /// Builds the production `AuthNetworkAccount` component from the network fee parameters and
-    /// fee asset. It constructs the xUSDC fee schedule through the pricer, admits only
-    /// `ExpirationTransactionScript::script_root()` as a transaction script at construction.
+    /// Builds network-account authorization and fees using the network's fee parameters and asset.
+    /// A new faucet allows only `ExpirationTransactionScript` as its transaction script.
     pub fn auth_component(
         fee_parameters: FeeParameters,
         fee_asset_id: AssetId,
