@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::assembly::Package;
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::utils::sync::LazyLock;
 
 static XRESERVE_PACKAGE: LazyLock<Arc<Package>> = LazyLock::new(|| {

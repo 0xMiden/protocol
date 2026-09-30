@@ -44,13 +44,13 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder};
 use miden_tx::TransactionExecutorError;
 use xusdc_encoding::account::xreserve::{
-    XReserveAdminAuthority,
     BLK_MANAGER_ROLE,
     DOM_PAUSER_ROLE,
+    XReserveAdminAuthority,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveMinBurnAmountNote;
 
-use super::{add_faucet_account, setup_production_faucet, test_account_id, ProductionFaucet};
+use super::{ProductionFaucet, add_faucet_account, setup_production_faucet, test_account_id};
 
 // PRODUCTION CONSTANTS
 // ================================================================================================

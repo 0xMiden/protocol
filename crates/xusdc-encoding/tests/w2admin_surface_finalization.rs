@@ -277,16 +277,18 @@ async fn the_administrator_role_hands_over_by_grant_then_revoke() -> Result<()> 
 #[tokio::test]
 async fn only_an_administrator_can_grant_the_administrator_role() -> Result<()> {
     let pf = admin_faucet(|faucet_id| {
-        vec![role_note(
-            unpauser_holder(),
-            faucet_id,
-            RbacConfig::GrantRole {
-                role: RoleBasedAccessControl::admin_role(),
-                account: successor(),
-            },
-            606,
-        )
-        .expect("the ADMIN grant note builds")]
+        vec![
+            role_note(
+                unpauser_holder(),
+                faucet_id,
+                RbacConfig::GrantRole {
+                    role: RoleBasedAccessControl::admin_role(),
+                    account: successor(),
+                },
+                606,
+            )
+            .expect("the ADMIN grant note builds"),
+        ]
     })?;
 
     let note = pf.seeded_notes[0].clone();

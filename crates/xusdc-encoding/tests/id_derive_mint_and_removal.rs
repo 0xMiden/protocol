@@ -48,14 +48,16 @@ async fn a_never_initialized_faucet_mints() -> Result<()> {
     let mut pf = setup_production_faucet(0, |recipient, faucet_id| {
         let commitment =
             gen_attester(1, &payload_for(recipient, faucet_id, MINT_AMOUNT, 0)).commitment;
-        vec![XReserveSetAttesterNote::create(
-            administrator(),
-            faucet_id,
-            commitment,
-            1,
-            &mut note_rng(2001),
-        )
-        .expect("building the administrator set_attester note")]
+        vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                faucet_id,
+                commitment,
+                1,
+                &mut note_rng(2001),
+            )
+            .expect("building the administrator set_attester note"),
+        ]
     })?;
     assert_eq!(pf.seeded_notes.len(), 1, "bring-up must be the attester note and nothing else");
     bring_up(&mut pf, 1).await?;
@@ -106,14 +108,16 @@ async fn a_foreign_remote_token_rejects_while_the_own_id_intent_mints() -> Resul
     let mut pf = setup_production_faucet(0, |recipient, faucet_id| {
         let commitment =
             gen_attester(1, &payload_for(recipient, faucet_id, MINT_AMOUNT, 0)).commitment;
-        vec![XReserveSetAttesterNote::create(
-            administrator(),
-            faucet_id,
-            commitment,
-            1,
-            &mut note_rng(2002),
-        )
-        .expect("building the administrator set_attester note")]
+        vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                faucet_id,
+                commitment,
+                1,
+                &mut note_rng(2002),
+            )
+            .expect("building the administrator set_attester note"),
+        ]
     })?;
     bring_up(&mut pf, 1).await?;
 

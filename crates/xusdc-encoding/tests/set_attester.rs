@@ -9,16 +9,16 @@
 mod support;
 
 use anyhow::{Context, Result};
+use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotPatch};
 use miden_protocol::asset::AssetAmount;
-use miden_protocol::Word;
 use miden_standards::account::policies::TokenPolicyManager;
-use miden_testing::{assert_transaction_executor_error, Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use support::*;
 use xusdc_encoding::account::xreserve::{
+    ATTESTATION_MINT_POLICY_PROC_PATH,
     XReserveFaucetExtension,
     XReserveStablecoinBuilder,
-    ATTESTATION_MINT_POLICY_PROC_PATH,
 };
 
 // The fixture gives ADMIN and ATTEST_ADMIN to id(1); DOM_PAUSER = id(2) and DOM_UNPAUSER = id(3)

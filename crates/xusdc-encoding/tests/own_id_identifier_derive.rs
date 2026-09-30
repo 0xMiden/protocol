@@ -43,11 +43,11 @@ use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_testing::{
-    assert_transaction_executor_error,
     AccountState,
     Auth,
     MockChain,
     MockTransactionInput,
+    assert_transaction_executor_error,
 };
 use miden_tx::TransactionExecutorError;
 use rstest::rstest;

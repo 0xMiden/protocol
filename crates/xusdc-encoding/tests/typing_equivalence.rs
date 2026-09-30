@@ -16,13 +16,13 @@ use miden_protocol::utils::serde::{Deserializable, DeserializationError, Seriali
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use xusdc_encoding::vectors::{load, parse_hex32};
 use xusdc_encoding::xreserve::encoding::{
-    bytes32_to_packed_felts,
     DepositIntent,
     EncodingError,
     EthEmbeddedAccountIdExt,
     ForeignChainAddress,
     Signature,
     XReserveBurnItems,
+    bytes32_to_packed_felts,
 };
 
 // Signature

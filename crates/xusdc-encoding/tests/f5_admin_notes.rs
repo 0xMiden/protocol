@@ -38,12 +38,12 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::PausableStorage;
 use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::note::config::{RbacConfig, RbacConfigNote};
-use miden_testing::{assert_transaction_executor_error, MockChain};
+use miden_testing::{MockChain, assert_transaction_executor_error};
 use support::*;
 use xusdc_encoding::account::xreserve::{
-    XReserveFaucetExtension,
     BLK_MANAGER_ROLE,
     DOM_PAUSER_ROLE,
+    XReserveFaucetExtension,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 
@@ -419,8 +419,10 @@ async fn pause_note_args_are_inert() -> Result<()> {
 /// (routing-only).
 async fn paused_faucet() -> Result<(MockChain, AccountId)> {
     let pf = setup_production_faucet(0, |_, faucet_id| {
-        vec![stock_pause_note(test_account_id(2), faucet_id, 60)
-            .expect("building the seeded pause note")]
+        vec![
+            stock_pause_note(test_account_id(2), faucet_id, 60)
+                .expect("building the seeded pause note"),
+        ]
     })
     .context("building the production faucet with a seeded pause")?;
     let mut chain = pf.mock_chain;

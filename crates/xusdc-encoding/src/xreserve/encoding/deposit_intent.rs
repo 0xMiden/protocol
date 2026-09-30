@@ -43,7 +43,7 @@ use miden_protocol::utils::serde::{
     Serializable,
     SliceReader,
 };
-use miden_protocol::{Felt, Word, MAX_NOTE_STORAGE_ITEMS};
+use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::interop::eth::{EthAmount, EthEmbeddedAccountId};
 
 use super::account_id::EthEmbeddedAccountIdExt;

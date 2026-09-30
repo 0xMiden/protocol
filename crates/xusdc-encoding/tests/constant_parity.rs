@@ -26,13 +26,13 @@ use xusdc_encoding::note::xreserve_mint::{
     XUSDC_MINT_TRANSPORT_PAYLOAD_WORD_OFF,
 };
 use xusdc_encoding::xreserve::encoding::{
+    ACCOUNT_ID_BYTES,
+    ASSET_AMOUNT_BYTES,
+    BYTES32_LEN,
     DepositIntent,
     DepositIntentField,
     DepositIntentHeader,
     MintIntent,
-    ACCOUNT_ID_BYTES,
-    ASSET_AMOUNT_BYTES,
-    BYTES32_LEN,
     PUBKEY_FELTS,
 };
 /// The shipped MASM sources, read here as TEXT so the constants written in them can be compared
@@ -455,6 +455,15 @@ fn masm_rust_constant_parity() {
 // The NAME coverage still has teeth: `masm_constants_bidirectional` below fails on a MASM error
 // constant that no `SHELL_ERR_TABLE` row names.
 
+/// A MASM source under the bidirectional sweep: its file name, its source, the numeric constants
+/// that have a parity row, and the `word("…")` constants it must define with their labels.
+type MasmConstSource = (
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+    Vec<(&'static str, &'static str)>,
+);
+
 /// Bidirectional sweep: every constant parsed from every MASM source must be
 /// covered by a parity row or a documented exemption — a new MASM-only constant
 /// (numeric, string, or `word("…")`) fails here until it gets a row.
@@ -463,7 +472,7 @@ fn masm_constants_bidirectional() {
     // every MASM-only string constant must be a known error (the encoding table or the faucet
     // shell table); a new one fails here until it gets a row
     let known_err = |name: &str| support::SHELL_ERR_TABLE.iter().any(|(n, _)| *n == name);
-    let sources: [(&str, &str, &[&str], Vec<(&str, &str)>); 7] = [
+    let sources: [MasmConstSource; 7] = [
         (
             "mint_intent.masm",
             MINT_INTENT_MASM,

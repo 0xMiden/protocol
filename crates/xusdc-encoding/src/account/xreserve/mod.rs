@@ -5,13 +5,8 @@ pub mod builder;
 
 pub use admin_authority::XReserveAdminAuthority;
 pub use builder::{
-    build_faucet_account,
-    record_used_nonces,
-    XReserveFaucetExtension,
-    XReserveStablecoinBuilder,
-    XReserveStablecoinBuilderError,
-    ATTESTATION_MINT_POLICY_PROC_PATH,
     ATTEST_ADMIN_ROLE,
+    ATTESTATION_MINT_POLICY_PROC_PATH,
     BLK_MANAGER_ROLE,
     DOM_PAUSER_ROLE,
     DOM_UNPAUSER_ROLE,
@@ -19,4 +14,9 @@ pub use builder::{
     USDCX_DECIMALS,
     USDCX_TOKEN_SYMBOL,
     XRESERVE_SET_ATTESTER_PROC_PATH,
+    XReserveFaucetExtension,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
+    build_faucet_account,
+    record_used_nonces,
 };

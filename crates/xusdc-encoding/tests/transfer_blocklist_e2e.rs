@@ -21,7 +21,7 @@ use miden_protocol::account::{Account, AccountId, RoleSymbol, StorageMapKey};
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::policies::BlocklistStorage;
-use miden_testing::{assert_transaction_executor_error, MockChain};
+use miden_testing::{MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use rstest::rstest;
 use support::*;

@@ -51,11 +51,11 @@ mod support;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
+use miden_protocol::Word;
 use miden_protocol::account::{Account, AssetCallbackFlag};
 use miden_protocol::assembly::mast::MastNodeExt;
 use miden_protocol::asset::AssetCallbacks;
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::Word;
 use miden_standards::account::access::Authority;
 use miden_standards::account::policies::TokenPolicyManager;
 use support::*;
@@ -178,8 +178,9 @@ fn freeze_and_unfreeze_are_not_admissible_via_either_allowlist() -> Result<()> {
 /// F4-REVERSAL policed counterpart of the former
 /// `invoke_wrappers_are_inert_and_the_asset_stays_basic` (which asserted the OPPOSITE — no callback
 /// slots, `AssetCallbackFlag::Disabled` — under the basic-asset F4). The transfer blocklist is now
-/// wired as the active send + receive policy, so the #3047 `invoke_send_policy`/`invoke_receive_policy` wrappers are LIVE. Asserts, directly on the
-/// shipped composition + account: (1) BOTH protocol asset-callback slots ARE installed and hold the
+/// wired as the active send + receive policy, so the #3047
+/// `invoke_send_policy`/`invoke_receive_policy` wrappers are LIVE. Asserts, directly on the shipped
+/// composition + account: (1) BOTH protocol asset-callback slots ARE installed and hold the
 /// fixed `invoke_*_policy` wrapper roots (the kernel dispatches them on every policed-asset
 /// transfer), and (2) the committed faucet account id carries `AssetCallbackFlag::Enabled` (every
 /// minted xUSDC is a POLICED asset — the silent-foot-gun tripwire: a fixture built Disabled with

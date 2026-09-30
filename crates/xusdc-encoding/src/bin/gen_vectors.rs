@@ -14,15 +14,15 @@
 //! nonce@204, hookDataLen@236, hookData@240; header = 240 bytes = 60 u32-LE felts.
 
 use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey};
+use miden_crypto::SequentialCommit;
 use miden_crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_crypto::utils::{Deserializable, Serializable};
-use miden_crypto::SequentialCommit;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::utils::bytes_to_packed_u32_elements;
 use miden_protocol::{Felt, Hasher, Word};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha3::{Digest, Keccak256};
 use xusdc_encoding::xreserve::encoding::CircleDomain;
 
@@ -264,7 +264,7 @@ fn att_keypair(seed: u64) -> SigningKey {
 /// 33-byte compressed SEC1 public key.
 fn att_pk33(sk: &SigningKey) -> [u8; 33] {
     sk.verifying_key()
-        .to_encoded_point(true)
+        .to_sec1_point(true)
         .as_bytes()
         .try_into()
         .expect("compressed secp256k1 pubkey is 33 bytes")
@@ -282,8 +282,7 @@ fn att_keccak256(msg: &[u8]) -> [u8; 32] {
 /// (r‖s‖v, v = recovery id). RAW secp256k1 over the keccak digest: NO EIP-712 domain, no
 /// struct; v is carried, unused on-chain.
 fn att_sign65(sk: &SigningKey, digest: &[u8; 32]) -> [u8; 65] {
-    let (sig, recid): (K256Signature, RecoveryId) =
-        sk.sign_prehash_recoverable(digest).expect("k256 prehash sign");
+    let (sig, recid): (K256Signature, RecoveryId) = sk.sign_prehash_recoverable(digest);
     let mut out = [0u8; 65];
     out[..64].copy_from_slice(sig.to_bytes().as_slice()); // 64-byte big-endian r || s
     out[64] = recid.to_byte(); // v in {0..3}

@@ -70,8 +70,10 @@ fn a_min_burn_note_carrying_a_zero_floor_cannot_be_built() {
 async fn set_min_burn_at_the_floor_still_succeeds() -> Result<()> {
     let _serial = tripwire_serial_guard().await;
     let mut pf = setup_production_faucet(0, |_recipient, faucet_id| {
-        vec![stock_min_burn_note(administrator(), faucet_id, 1, 722)
-            .expect("building the floor min-burn note")]
+        vec![
+            stock_min_burn_note(administrator(), faucet_id, 1, 722)
+                .expect("building the floor min-burn note"),
+        ]
     })?;
     let floor_note = pf.seeded_notes[0].clone();
 

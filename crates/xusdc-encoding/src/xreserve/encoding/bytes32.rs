@@ -17,11 +17,11 @@
 //! The fallible direct conversion also lives here, for the paths that genuinely need the original
 //! bytes back rather than a one-way key.
 
-use miden_protocol::account::StorageMapKey;
-use miden_protocol::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
 // `Word` is only named by the test-only lossless conversion and the unit tests.
 #[cfg(test)]
 use miden_protocol::Word;
+use miden_protocol::account::StorageMapKey;
+use miden_protocol::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
 use miden_protocol::{Felt, Hasher};
 
 use super::error::EncodingError;

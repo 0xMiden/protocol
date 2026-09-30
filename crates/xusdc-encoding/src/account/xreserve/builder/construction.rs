@@ -27,10 +27,10 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::FeePolicyManager;
 
 use super::{
-    XReserveStablecoinBuilder,
-    XReserveStablecoinBuilderError,
     USDCX_DECIMALS,
     USDCX_TOKEN_SYMBOL,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
 };
 use crate::xreserve::encoding::{CircleDomain, DepositNonce};
 

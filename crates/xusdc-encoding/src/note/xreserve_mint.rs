@@ -20,9 +20,9 @@
 
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -32,7 +32,7 @@ use miden_protocol::note::{
     NoteScriptRoot,
     NoteTag,
 };
-use miden_protocol::{Felt, Word, WORD_SIZE};
+use miden_protocol::{Felt, WORD_SIZE, Word};
 use miden_standards::note::{
     MintNote,
     MintNoteStorage,
@@ -42,13 +42,13 @@ use miden_standards::note::{
 };
 
 use crate::xreserve::encoding::{
+    BYTES_PER_PACKED_FELT,
     CircleDomain,
     DepositIntent,
     DepositIntentHeader,
     DepositNonce,
     MintIntent,
     Signature,
-    BYTES_PER_PACKED_FELT,
 };
 
 /// The mint-note transport attachment scheme (u16, project-chosen: >= 4, clear of

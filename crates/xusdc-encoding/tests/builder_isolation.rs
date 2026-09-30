@@ -105,7 +105,7 @@ fn build_accepts_isolated_blk_manager() -> Result<()> {
 #[test]
 fn build_seeds_every_member_of_a_multi_holder_role() -> Result<()> {
     use miden_protocol::account::RoleSymbol;
-    use xusdc_encoding::account::xreserve::{build_faucet_account, DOM_PAUSER_ROLE};
+    use xusdc_encoding::account::xreserve::{DOM_PAUSER_ROLE, build_faucet_account};
 
     let pausers = [test_account_id(2), test_account_id(6)];
     let account = build_faucet_account(

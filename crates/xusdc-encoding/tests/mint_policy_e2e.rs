@@ -94,14 +94,16 @@ async fn mint_rejects_a_removed_attester() -> Result<()> {
     let mut pf = fixture_with(0, |recipient, faucet_id| {
         let commitment =
             gen_attester(1, &payload_for(recipient, faucet_id, MINT_AMOUNT, 0)).commitment;
-        vec![XReserveSetAttesterNote::create(
-            administrator(),
-            faucet_id,
-            commitment,
-            0,
-            &mut note_rng(954),
-        )
-        .expect("building the administrator remove-attester note")]
+        vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                faucet_id,
+                commitment,
+                0,
+                &mut note_rng(954),
+            )
+            .expect("building the administrator remove-attester note"),
+        ]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester(enable) + set_attester(REMOVE)
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 30);
@@ -267,8 +269,10 @@ async fn mint_rejects_an_over_cap_amount() -> Result<()> {
 #[tokio::test]
 async fn mint_rejects_after_the_administrator_lowers_max_supply_below_the_amount() -> Result<()> {
     let mut pf = fixture_with(0, |_, faucet_id| {
-        vec![stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT - 1, 957)
-            .expect("building the administrator lower-cap note")]
+        vec![
+            stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT - 1, 957)
+                .expect("building the administrator lower-cap note"),
+        ]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester + set_max_supply(lower)
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 34);
@@ -282,8 +286,10 @@ async fn mint_rejects_after_the_administrator_lowers_max_supply_below_the_amount
 #[tokio::test]
 async fn mint_accepts_at_the_exact_raised_cap_boundary() -> Result<()> {
     let mut pf = fixture_with(0, |_, faucet_id| {
-        vec![stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT, 958)
-            .expect("building the administrator set-to-boundary note")]
+        vec![
+            stock_set_max_supply_note(administrator(), faucet_id, MINT_AMOUNT, 958)
+                .expect("building the administrator set-to-boundary note"),
+        ]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester + set_max_supply(= amount)
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 35);
@@ -316,7 +322,7 @@ async fn mint_accepts_after_the_administrator_raises_max_supply() -> Result<()> 
         ]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester + set_max_supply(lower) — the raise stays
-                                 // unconsumed
+    // unconsumed
 
     // under the lowered cap the attested amount rejects (the cap binds pre-raise)
     let payload_low = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 36);

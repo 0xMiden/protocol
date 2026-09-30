@@ -1,87 +1,68 @@
 [package]
-name = "xusdc-encoding"
-version = "0.0.0"
-edition = "2021"
-publish = false
-description = "xUSDC-on-Miden 04 shared encoding: hand-written MASM + Rust mirror and test harness"
+authors.workspace      = true
+description            = "USDCx components for the Miden protocol"
+edition.workspace      = true
+homepage.workspace     = true
+license.workspace      = true
+name                   = "xusdc-encoding"
+publish                = true
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
 
-# The four protocol-monorepo crates are pinned to the published crates.io release
-# `=0.17.0-rc.7` — an exact version pin, never a floating range, so the build stays
-# reproducible. The 0.17.0-rc.7 graph resolves the 0.33 assembler/VM family and miden-crypto 0.33. The
-# `testing` feature on the main miden-protocol dep is required by the committed vector generator
-# (AccountIdBuilder).
+[lib]
+bench = false
 
-[dependencies]
-miden-protocol  = { version = "=0.17.0-rc.7", features = ["testing"] }
-miden-standards = { version = "=0.17.0-rc.7" }
-miden-tx        = { version = "=0.17.0-rc.7" }
-serde = { workspace = true }
-serde_json = { workspace = true }
-# bon powers the note-factory builders and the dedicated note-storage types (the standards
-# PswapNote / PswapNoteStorage pattern the note factories adopt).
-bon = { workspace = true }
-# k256 is a REGULAR dependency (not vectors-gated) because the vector generator is a BINARY, and
-# `cargo run --bin` cannot see dev-dependencies. The library itself does not use it: the
-# SEC1→affine decompression and the attester commitment are the protocol's own
-# `ecdsa_k256_keccak::PublicKey` conversions, reached through miden-protocol, so this crate does
-# not carry a second copy of the curve arithmetic.
-k256 = { workspace = true }
-
-# Vector-generator crates: OPTIONAL, gated behind the `vectors` feature; never
-# compiled for the library or the normal `cargo test`/`cargo build` path. The generator
-# binary requires this feature ([[bin]] below). k256 (above, a regular dep) produces
-# the secp256k1 keypair + signature independently of miden-crypto's signer, sha3 the keccak
-# digest, and miden-crypto provides PublicKey::to_commitment — the canonical
-# attester-allowlist keying primitive the attestation vectors pin (the oracle the
-# cross-implementation commitment test checks against). `std` gates miden-crypto's `dsa`
-# module.
-sha3 = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
-miden-crypto = { version = "0.33", default-features = false, features = ["std"], optional = true }
-
-[build-dependencies]
-miden-assembly             = { workspace = true, features = ["std"] }
-miden-core-lib             = { workspace = true }
-miden-package-registry     = { workspace = true, features = ["resolver", "std"] }
-miden-protocol             = { version = "=0.17.0-rc.7" }
-miden-protocol-build-utils = { workspace = true }
-miden-standards            = { version = "=0.17.0-rc.7" }
-
-[features]
-# Enables the canonical golden-vector generator binary. Its keccak/commitment crates live
-# behind this feature so they never enter the library or the normal test build (k256 is a
-# regular dependency); regenerate the artifact with
-# `cargo run --bin gen_vectors --features vectors`.
-vectors = ["dep:sha3", "dep:rand", "dep:miden-crypto"]
-
-# Exposes the whole `xreserve` MASM library.
-testing = []
-
-# The committed-artifact generator: a normal binary, so its deps are real
-# [dependencies] (optional, feature-gated) — `cargo run --bin` cannot see dev-deps.
+# The test vector generator.
 [[bin]]
-name = "gen_vectors"
+name              = "gen_vectors"
 required-features = ["vectors"]
 
+[features]
+default = ["std"]
+std     = ["miden-protocol/std", "miden-standards/std", "miden-tx/std"]
+# Exposes the whole `xreserve` MASM library.
+testing = []
+# Enables the canonical golden-vector generator binary.
+vectors = ["dep:miden-crypto", "dep:rand", "dep:sha3"]
+
+[dependencies]
+# Workspace dependencies
+miden-protocol  = { features = ["testing"], workspace = true }
+miden-standards = { workspace = true }
+miden-tx        = { workspace = true }
+
+# External dependencies
+bon        = { workspace = true }
+serde      = { features = ["alloc", "derive"], workspace = true }
+serde_json = { features = ["alloc"], workspace = true }
+# A regular dependency because the vector generator binary uses it. The library itself reaches
+# secp256k1 through miden-protocol.
+k256 = { features = ["ecdsa"], workspace = true }
+
+# Optional vector-generator dependencies
+miden-crypto = { features = ["std"], optional = true, workspace = true }
+rand         = { optional = true, workspace = true }
+sha3         = { optional = true, workspace = true }
+
 [dev-dependencies]
-# This crate depends on ITSELF so the `testing` feature is on for the test build.
-xusdc-encoding  = { path = ".", features = ["testing"] }
-miden-standards = { version = "=0.17.0-rc.7", features = ["testing"] }
-miden-testing   = { version = "=0.17.0-rc.7" }
-# exact-error matching for u32-assert traps (OperationError::U32AssertionFailed); 0.33 is the
-# version the 0.17.0-rc.7 protocol graph resolves — the pin moves in lockstep with the protocol family so
-# exactly one processor copy exists and the error downcasts unify
-miden-processor = "0.33"
-tokio = { workspace = true, features = ["macros", "rt", "sync"] }
-anyhow = { workspace = true }
-rstest = { workspace = true }
-assert_matches = { workspace = true }
-# Attestation test vectors: deterministic secp256k1 keypairs + signatures generated
-# IN-TEST (zero touch to the canonical committed artifact), matching the
-# gen_vectors att_* helpers — k256 the keypair+signature (a regular dependency),
-# sha3 the keccak digest, miden-crypto the PublicKey::to_commitment allowlist key. The
-# secp256k1/keccak trio has a second consumer (the relayer's envelope binding + partner-key
-# fixture); the versions live in [workspace.dependencies].
-sha3 = { workspace = true }
-rand = { workspace = true }
-miden-crypto = { version = "0.33", default-features = false, features = ["std"] }
+# Depends on itself so the `testing` feature is on for the test build.
+anyhow          = { workspace = true }
+assert_matches  = { workspace = true }
+miden-crypto    = { features = ["std"], workspace = true }
+miden-processor = { workspace = true }
+miden-standards = { features = ["testing"], workspace = true }
+miden-testing   = { features = ["std"], workspace = true }
+rand            = { workspace = true }
+rstest          = { workspace = true }
+sha3            = { workspace = true }
+tokio           = { features = ["macros", "rt", "sync"], workspace = true }
+xusdc-encoding  = { features = ["testing"], path = "." }
+
+[build-dependencies]
+miden-assembly             = { features = ["std"], workspace = true }
+miden-core-lib             = { workspace = true }
+miden-package-registry     = { features = ["resolver", "std"], workspace = true }
+miden-protocol             = { workspace = true }
+miden-protocol-build-utils = { workspace = true }
+miden-standards            = { workspace = true }

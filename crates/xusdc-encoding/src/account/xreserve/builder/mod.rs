@@ -59,7 +59,7 @@ mod error;
 mod network_auth;
 
 use construction::build_usdcx_faucet;
-pub use construction::{build_faucet_account, record_used_nonces, XReserveFaucetExtension};
+pub use construction::{XReserveFaucetExtension, build_faucet_account, record_used_nonces};
 pub use error::XReserveStablecoinBuilderError;
 
 /// Dedicated role symbols mapped to attester administration, pause and unpause by
@@ -110,7 +110,7 @@ pub const USDCX_TOKEN_SYMBOL: &str = "USDCX";
 
 /// The spec-mandated token decimals (`token_config` decimals = 6; a Circle requirement of six
 /// decimal places — the amount reducer scales to 6dp, so a mismatched faucet would silently
-/// mis-scale every minted amount).
+/// scale every minted amount wrongly).
 pub const USDCX_DECIMALS: u8 = 6;
 
 /// Composes the xUSDC faucet account: `FungibleFaucet` + the assembled `xreserve` library
@@ -177,7 +177,7 @@ impl XReserveStablecoinBuilder {
     /// and `is_max_supply_mutable(true)` — so the
     /// builder BUILDS it here from `token_supply`, and the cap, the mutability invariant, the
     /// decimals and the symbol are guaranteed BY CONSTRUCTION. There is no way to hand the
-    /// builder an immutable or mis-configured faucet. The `xreserve` component is likewise not a
+    /// builder an immutable or misconfigured faucet. The `xreserve` component is likewise not a
     /// parameter — there is exactly one valid value (the shipped MASM), so the builder assembles it
     /// via [`XReserveFaucetExtension`]. The active mint and burn policies are fixed by the
     /// composition. The burn policy reads `min_burn_amount` from [`MinBurnAmount`]; this builder

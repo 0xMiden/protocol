@@ -26,8 +26,8 @@ use core::num::NonZeroU16;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
-use miden_protocol::account::{AccountComponent, StorageSlotContent, StorageSlotName};
 use miden_protocol::Word;
+use miden_protocol::account::{AccountComponent, StorageSlotContent, StorageSlotName};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED;

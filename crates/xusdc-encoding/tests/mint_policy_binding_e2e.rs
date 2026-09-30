@@ -28,11 +28,11 @@ mod support;
 
 use anyhow::{Context, Result};
 use miden_protocol::account::AccountId;
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_VERSION_MUST_BE_NONZERO,
 };
-use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteAttachmentScheme, NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::note::{NetworkAccountTarget, P2idNote, P2idNoteStorage};
@@ -96,7 +96,7 @@ async fn mint_rejects_a_tag_mismatch() -> Result<()> {
         &StoragePlan {
             recipient: pf.recipient_id,
             amount: MINT_AMOUNT,
-            tag: Some(NoteTag::with_account_target(pf.producer_id)), // mis-targeted
+            tag: Some(NoteTag::with_account_target(pf.producer_id)), // wrongly targeted
             public: true,
         },
         1,
@@ -499,7 +499,7 @@ async fn mint_rejects_a_non_u32_hook_data_len_limb() -> Result<()> {
 /// SUB-REGION ISOLATION: corrupting one region of the merged attachment surfaces THAT region's
 /// reject, never another's. The pubkey sub-region is read by the allowlist gate, the signature
 /// sub-region by the ECDSA verify, and the intent sub-region by the keccak — so a merge that
-/// mis-derived any offset would either mis-attribute the failure or, worse, verify the wrong
+/// wrongly derived any offset would either misattribute the failure or, worse, verify the wrong
 /// bytes. Each case's error identity is exactly the one it had when these were separate
 /// attachments.
 async fn tampered_sub_region_note(
@@ -599,8 +599,10 @@ async fn mint_rejects_a_tampered_intent_byte() -> Result<()> {
 #[tokio::test]
 async fn mint_halts_while_paused() -> Result<()> {
     let mut pf = fixture_with(0, |_, faucet_id| {
-        vec![stock_pause_note(dom_pauser(), faucet_id, 953)
-            .expect("building the DOM_PAUSER pause note")]
+        vec![
+            stock_pause_note(dom_pauser(), faucet_id, 953)
+                .expect("building the DOM_PAUSER pause note"),
+        ]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester + pause
     let payload = payload_for(pf.recipient_id, pf.faucet_id, MINT_AMOUNT, 28);

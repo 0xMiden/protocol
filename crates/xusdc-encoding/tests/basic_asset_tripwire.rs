@@ -23,6 +23,7 @@
 mod support;
 
 use anyhow::{Context, Result};
+use miden_protocol::Word;
 use miden_protocol::account::{
     AccountComponent,
     StorageMap,
@@ -31,7 +32,6 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::AssetCallbacks;
-use miden_protocol::Word;
 use miden_standards::account::policies::{BasicBlocklist, TokenPolicyManager};
 use support::{production_component_set, tripwire_serial_guard_blocking};
 

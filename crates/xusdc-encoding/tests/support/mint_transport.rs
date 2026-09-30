@@ -42,11 +42,11 @@ use miden_standards::note::{
     NoteExecutionHint,
     P2idNoteStorage,
 };
-use miden_testing::{assert_transaction_executor_error, MockChain};
+use miden_testing::{MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
-use xusdc_encoding::vectors::{load, MiVector};
-use xusdc_encoding::xreserve::encoding::{bytes32_to_storage_map_key, DepositIntent, MintIntent};
+use xusdc_encoding::vectors::{MiVector, load};
+use xusdc_encoding::xreserve::encoding::{DepositIntent, MintIntent, bytes32_to_storage_map_key};
 
 use super::*;
 
@@ -409,14 +409,16 @@ pub fn fixture_with(
     setup_production_faucet(token_supply, |recipient, faucet_id| {
         let commitment =
             gen_attester(1, &payload_for(recipient, faucet_id, MINT_AMOUNT, 0)).commitment;
-        let mut notes = vec![XReserveSetAttesterNote::create(
-            administrator(),
-            faucet_id,
-            commitment,
-            1,
-            &mut note_rng(952),
-        )
-        .expect("building the administrator set_attester note")];
+        let mut notes = vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                faucet_id,
+                commitment,
+                1,
+                &mut note_rng(952),
+            )
+            .expect("building the administrator set_attester note"),
+        ];
         notes.extend(extra_notes(recipient, faucet_id));
         notes
     })

@@ -46,28 +46,28 @@ use miden_protocol::{Felt, Word};
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::config::{RbacConfig, RbacConfigNote};
 use miden_standards::note::{P2idNote, P2idNoteStorage};
-use miden_testing::{assert_transaction_executor_error, MockChain};
+use miden_testing::{MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use support::*;
 use xusdc_encoding::account::xreserve::{
-    XReserveFaucetExtension,
     DOM_PAUSER_ROLE,
     DOM_UNPAUSER_ROLE,
+    XReserveFaucetExtension,
 };
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote,
     FIXED_XUSDC_BURN_TAG,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XReserveBurnNote,
 };
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
-use xusdc_encoding::vectors::{load, MiVector};
+use xusdc_encoding::vectors::{MiVector, load};
 use xusdc_encoding::xreserve::encoding::{
-    bytes32_to_storage_map_key,
     DepositIntent,
     ForeignChainAddress,
     Signature,
     XReserveBurnItems,
+    bytes32_to_storage_map_key,
 };
 
 // ACTORS (the builder seeds ADMIN / ATTEST_ADMIN = id(1), DOM_PAUSER = id(2),
@@ -115,8 +115,7 @@ const NEW_MAX_SUPPLY: u64 = 500_000;
 const MIN_BURN: u64 = 10;
 const BURN_LOW: u64 = 5; // < MIN_BURN -> the stock MinBurnAmount reject
 const BURN_OK: u64 = 20;
-const BURN_PAUSED: u64 = 10; // the paused-era emit traps (S10b); burned for real after unpause
-                             // (S11b)
+const BURN_PAUSED: u64 = 10; // the paused-era emit traps (S10b); burned for real after unpause (S11b)
 
 /// First byte of the 32-byte `remoteRecipient` field (felt 19 x 4 bytes of the fixed header).
 const REMOTE_RECIPIENT_BYTE_OFF: usize = 19 * 4;

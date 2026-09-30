@@ -26,12 +26,12 @@ use miden_standards::account::access::{Authority, PausableManager};
 use miden_standards::account::policies::BlocklistManager;
 
 use super::{
-    XReserveFaucetExtension,
     ATTEST_ADMIN_ROLE,
     BLK_MANAGER_ROLE,
     DOM_PAUSER_ROLE,
     DOM_UNPAUSER_ROLE,
     XRESERVE_SET_ATTESTER_PROC_PATH,
+    XReserveFaucetExtension,
 };
 
 /// Dedicated-role procedures: pause, unpause, set_attester, block and unblock.

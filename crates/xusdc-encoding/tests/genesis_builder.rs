@@ -8,11 +8,11 @@
 
 mod support;
 
-use miden_protocol::asset::AssetId;
 use miden_protocol::Felt;
+use miden_protocol::asset::AssetId;
 use miden_standards::account::fees::FeePolicyManager;
 use support::mint_transport::{marker, read_map_word};
-use support::{production_builder, test_fee_faucet_id, TEST_DOMAIN};
+use support::{TEST_DOMAIN, production_builder, test_fee_faucet_id};
 use xusdc_encoding::account::xreserve::XReserveFaucetExtension;
 use xusdc_encoding::record_used_nonces;
 use xusdc_encoding::xreserve::encoding::DepositNonce;

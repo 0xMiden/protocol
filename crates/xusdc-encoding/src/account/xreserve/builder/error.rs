@@ -26,8 +26,8 @@ pub enum XReserveStablecoinBuilderError {
     /// path). Carries the stock faucet error.
     FaucetComposition(FungibleFaucetError),
     /// The production `AuthNetworkAccount` auth component could not be assembled from the
-    /// note-script allowlist (the crate-root `build_account` path). Carries the stock
-    /// allowlist error.
+    /// note-script allowlist (the crate-root `build_account` path). Carries the stock allowlist
+    /// error.
     NetworkAuth(NetworkAccountNoteAllowlistError),
     /// The composed faucet [`Account`](miden_protocol::account::Account) could not be built from
     /// the component set (the crate-root `build_account` path). Carries the stock account
@@ -72,14 +72,13 @@ impl fmt::Display for XReserveStablecoinBuilderError {
         match self {
             Self::FaucetComposition(_) => {
                 write!(f, "the fixed-identity USDCx faucet could not be constructed")
-            }
-            Self::NetworkAuth(_) => write!(
-                f,
-                "the production network-account auth component could not be assembled"
-            ),
+            },
+            Self::NetworkAuth(_) => {
+                write!(f, "the production network-account auth component could not be assembled")
+            },
             Self::AccountComposition(_) => {
                 write!(f, "the composed faucet account could not be built")
-            }
+            },
             Self::FeePricing(_) => write!(f, "the xUSDC fee schedule could not be priced"),
             Self::AttestationPolicyProcNotFound => write!(
                 f,
@@ -108,10 +107,10 @@ impl fmt::Display for XReserveStablecoinBuilderError {
             ),
             Self::DuplicateRoleMember { role } => {
                 write!(f, "the {role} role lists the same member twice")
-            }
+            },
             Self::AttesterAllowlist(_) => {
                 write!(f, "the build-seeded attester allowlist lists a key twice")
-            }
+            },
             Self::MintPolicy(_) => write!(f, "mint policy descriptor construction failed"),
             Self::BurnPolicy(_) => write!(f, "burn policy descriptor construction failed"),
         }

@@ -41,8 +41,8 @@ use support::*;
 use xusdc_encoding::account::xreserve::XReserveFaucetExtension;
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
-use xusdc_encoding::vectors::{load, MiVector};
-use xusdc_encoding::xreserve::encoding::{bytes32_to_storage_map_key, Signature};
+use xusdc_encoding::vectors::{MiVector, load};
+use xusdc_encoding::xreserve::encoding::{Signature, bytes32_to_storage_map_key};
 
 // CIRCLE-FORMAT FIXTURE VALUES
 // ================================================================================================
@@ -155,14 +155,16 @@ fn fixture() -> Result<ProductionFaucet> {
         let commitment =
             gen_attester(1, &payload_for(recipient, faucet_id, CIRCLE_DEPOSIT_100_USDC, 0))
                 .commitment;
-        vec![XReserveSetAttesterNote::create(
-            administrator(),
-            faucet_id,
-            commitment,
-            1,
-            &mut note_rng(952),
-        )
-        .expect("building the administrator set_attester note")]
+        vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                faucet_id,
+                commitment,
+                1,
+                &mut note_rng(952),
+            )
+            .expect("building the administrator set_attester note"),
+        ]
     })
 }
 

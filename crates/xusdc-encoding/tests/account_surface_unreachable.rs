@@ -19,10 +19,10 @@ mod support;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
+use miden_protocol::Word;
 use miden_protocol::account::{AccountComponent, StorageSlotContent};
 use miden_protocol::assembly::mast::MastNodeExt;
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::Word;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::note::config::ConstantFeePolicyConfigNote;
 use support::*;

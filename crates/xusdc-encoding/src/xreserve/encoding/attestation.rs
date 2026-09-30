@@ -18,8 +18,8 @@
 //!
 //! Producing the digest and running the signature check are the faucet's job, not this module's.
 
-use miden_protocol::utils::bytes_to_packed_u32_elements;
 use miden_protocol::Felt;
+use miden_protocol::utils::bytes_to_packed_u32_elements;
 
 /// Number of u32 field elements an affine secp256k1 public key packs to
 /// (`qx_le_u32[8] || qy_le_u32[8]`) — the element count the commitment hashes.
@@ -169,7 +169,7 @@ mod tests {
             let recovered = VerifyingKey::recover_from_prehash(&digest, &sig, recovery_id)
                 .unwrap_or_else(|e| panic!("{}: public key recovery failed: {e}", v.id));
             assert_eq!(
-                recovered.to_encoded_point(true).as_bytes(),
+                recovered.to_sec1_point(true).as_bytes(),
                 &pubkey,
                 "{}: recovery id must recover the vector's public key",
                 v.id

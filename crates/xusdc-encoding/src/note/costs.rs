@@ -2,8 +2,8 @@
 //! corresponding standard note.
 
 use miden_protocol::note::NoteScriptRoot;
-use miden_standards::note::costs::{NoteConsumptionCost, NoteCost};
 use miden_standards::note::P2idNote;
+use miden_standards::note::costs::{NoteConsumptionCost, NoteCost};
 
 use super::xreserve_admin::XReserveSetAttesterNote;
 use super::xreserve_burn::XReserveBurnNote;

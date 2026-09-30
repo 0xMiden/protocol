@@ -36,13 +36,13 @@
 mod support;
 
 use anyhow::Result;
-use miden_processor::operation::OperationError;
 use miden_processor::ExecutionError;
+use miden_processor::operation::OperationError;
 use miden_protocol::{Felt, Word};
 use miden_testing::assert_transaction_executor_error;
 use rstest::rstest;
 use support::*;
-use xusdc_encoding::vectors::{load, MiVector};
+use xusdc_encoding::vectors::{MiVector, load};
 use xusdc_encoding::xreserve::encoding::{CircleDomain, DepositIntent, MintIntent};
 
 /// The faucet's domain configuration word: the remote domain id in element 0, zeros elsewhere.

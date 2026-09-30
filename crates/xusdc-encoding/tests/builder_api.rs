@@ -23,15 +23,15 @@ use miden_standards::account::access::{PausableManager, PausableStorage};
 use miden_standards::account::policies::{BlocklistManager, MinBurnAmount, TokenPolicyManager};
 use support::*;
 use xusdc_encoding::account::xreserve::{
+    ATTEST_ADMIN_ROLE,
+    ATTESTATION_MINT_POLICY_PROC_PATH,
+    BLK_MANAGER_ROLE,
+    DOM_PAUSER_ROLE,
+    DOM_UNPAUSER_ROLE,
     XReserveAdminAuthority,
     XReserveFaucetExtension,
     XReserveStablecoinBuilder,
     XReserveStablecoinBuilderError,
-    ATTESTATION_MINT_POLICY_PROC_PATH,
-    ATTEST_ADMIN_ROLE,
-    BLK_MANAGER_ROLE,
-    DOM_PAUSER_ROLE,
-    DOM_UNPAUSER_ROLE,
 };
 
 /// The standard production builder: the fixed test supplies through the ONE production-shape

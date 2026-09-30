@@ -50,7 +50,7 @@ use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::{MintNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::ExpirationTransactionScript;
-use miden_testing::{assert_transaction_executor_error, MockChain};
+use miden_testing::{MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use support::*;
 use xusdc_encoding::account::xreserve::XReserveStablecoinBuilder;

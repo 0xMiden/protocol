@@ -12,22 +12,22 @@
 //! `xreserve::deposit_intent::rebuild`. What binds the two is the round trip, not a
 //! field-by-field comparison.
 
+use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::utils::packed_u32_elements_to_bytes;
-use miden_protocol::Felt;
 
 use super::bytes32::packed_felts_to_bytes32;
 use super::deposit_intent::{
+    BYTES_PER_PACKED_FELT,
+    BYTES32_LEN,
+    BYTES32_PACKED_LIMBS,
     DepositIntent,
     DepositIntentField,
     DepositIntentHeader,
     DepositNonce,
     ForeignChainAddress,
     HookData,
-    BYTES32_LEN,
-    BYTES32_PACKED_LIMBS,
-    BYTES_PER_PACKED_FELT,
 };
 use super::domain::CircleDomain;
 use super::error::EncodingError;
@@ -265,7 +265,7 @@ mod tests {
     use miden_protocol::utils::serde::Serializable;
 
     use super::*;
-    use crate::vectors::{load, MiVector};
+    use crate::vectors::{MiVector, load};
 
     fn accepts() -> impl Iterator<Item = &'static MiVector> {
         load().families.mi.iter().filter(|v| v.kind == "accept")

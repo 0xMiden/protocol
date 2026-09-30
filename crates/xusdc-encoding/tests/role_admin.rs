@@ -28,7 +28,7 @@ use support::*;
 use xusdc_encoding::account::xreserve::DOM_PAUSER_ROLE;
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
-use xusdc_encoding::vectors::{load, MiVector};
+use xusdc_encoding::vectors::{MiVector, load};
 use xusdc_encoding::xreserve::encoding::Signature;
 
 // The production builder seeds ADMIN / ATTEST_ADMIN = id(1), DOM_PAUSER = id(2),
@@ -228,14 +228,16 @@ fn mint_fixture(extra_notes: impl Fn(AccountId) -> Vec<Note>) -> Result<Producti
         let commitment =
             gen_attester(1, &payload_for(recipient, MINT_AMOUNT, 0, faucet_id)).commitment;
         let route = faucet_id;
-        let mut notes = vec![XReserveSetAttesterNote::create(
-            administrator(),
-            route,
-            commitment,
-            1,
-            &mut note_rng(952),
-        )
-        .expect("building the administrator set_attester note")];
+        let mut notes = vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                route,
+                commitment,
+                1,
+                &mut note_rng(952),
+            )
+            .expect("building the administrator set_attester note"),
+        ];
         notes.extend(extra_notes(faucet_id));
         notes
     })

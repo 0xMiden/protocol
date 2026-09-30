@@ -39,7 +39,7 @@ use support::*;
 use xusdc_encoding::account::xreserve::{XReserveAdminAuthority, XReserveStablecoinBuilder};
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
-use xusdc_encoding::vectors::{load, MiVector};
+use xusdc_encoding::vectors::{MiVector, load};
 use xusdc_encoding::xreserve::encoding::Signature;
 
 // THE MINT FIXTURE — only the pause-halt proof needs a faucet that can actually mint
@@ -81,14 +81,16 @@ fn payload_for(recipient: AccountId, faucet_id: AccountId, nonce_variant: u8) ->
 fn mint_faucet(extra_notes: impl Fn(AccountId) -> Vec<Note>) -> Result<ProductionFaucet> {
     setup_production_faucet(0, |recipient, faucet_id| {
         let commitment = gen_attester(1, &payload_for(recipient, faucet_id, 0)).commitment;
-        let mut notes = vec![XReserveSetAttesterNote::create(
-            admin_holder(),
-            faucet_id,
-            commitment,
-            1,
-            &mut note_rng(952),
-        )
-        .expect("building the set_attester note")];
+        let mut notes = vec![
+            XReserveSetAttesterNote::create(
+                admin_holder(),
+                faucet_id,
+                commitment,
+                1,
+                &mut note_rng(952),
+            )
+            .expect("building the set_attester note"),
+        ];
         notes.extend(extra_notes(faucet_id));
         notes
     })

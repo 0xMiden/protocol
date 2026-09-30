@@ -44,13 +44,13 @@ use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_testing::assert_transaction_executor_error;
 use miden_tx::TransactionExecutorError;
 use support::*;
-use xusdc_encoding::account::xreserve::builder::XRESERVE_BURN_POLICY_PROC_PATH;
 use xusdc_encoding::account::xreserve::XReserveStablecoinBuilder;
+use xusdc_encoding::account::xreserve::builder::XRESERVE_BURN_POLICY_PROC_PATH;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote,
-    XUsdcBurnAttachment,
     FIXED_XUSDC_BURN_TAG,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XReserveBurnNote,
+    XUsdcBurnAttachment,
 };
 use xusdc_encoding::xreserve::encoding::{CircleDomain, ForeignChainAddress, XReserveBurnItems};
 

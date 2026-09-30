@@ -20,10 +20,9 @@
 //! `typing_builder_byte_identity.rs`. A single felt of drift — a reordered attachment section, a
 //! dropped pad felt, a different serial derivation — flips one of them RED and names which.
 //!
-//! Re-freezing is a reviewed act, and the anchors below were last re-captured on the protocol
-//! v0.17.0-rc.5 migration: the P2ID recipe the recipient embeds moved with the protocol's
-//! note-script rework, so the id, the nullifier and the serialization move with it, and the
-//! serialized form gained the protocol's new version bytes. The attachment words and their
+//! Re-freezing is a reviewed act, and the anchors below were last re-captured on the Miden VM
+//! v0.34 migration: the P2ID script root the recipient embeds moved with the VM's MAST changes, so
+//! the id, the nullifier and the serialization move with it. The attachment words and their
 //! commitment — the bytes this crate ENCODES — did not move.
 //!
 //! The vector payload is used verbatim except for `remoteToken`, which is spliced to a
@@ -34,14 +33,14 @@
 
 mod support;
 
+use miden_protocol::Hasher;
 use miden_protocol::note::Note;
 use miden_protocol::utils::serde::Serializable;
-use miden_protocol::Hasher;
 use miden_standards::interop::eth::EthEmbeddedAccountId;
-use support::mint_transport::{note_rng, REMOTE_TOKEN_BYTE_OFF};
+use support::mint_transport::{REMOTE_TOKEN_BYTE_OFF, note_rng};
 use support::{mint_note_from_payload, test_account_id, test_faucet_id};
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
-use xusdc_encoding::vectors::{load, AttVector, MiVector};
+use xusdc_encoding::vectors::{AttVector, MiVector, load};
 use xusdc_encoding::xreserve::encoding::Signature;
 
 /// The fixed serial-number seed the anchors were captured at (production draws a random serial; a
@@ -62,26 +61,22 @@ struct Anchors {
 /// `mi-pos-empty-hookdata` + the `att-1` attestation.
 const GOLDEN_EMPTY_HOOKDATA: Anchors = Anchors {
     vector: "mi-pos-empty-hookdata",
-    note_id: "0x4cfe334cf3d28fd65a0cba228e543e59a11992fc1b95cc42e4bc5654a5be604b",
-    nullifier: "0xbc678c2b193275ce09af6b661e15458b9cbda5c26bd5cdae3f3f73d75583cd88",
-    recipient_digest:
-        "Word([2238847437286058676, 9940813624765626549, 5894512297591712141, 6654504467450020224])",
-    attachments_commitment:
-        "Word([353043364000201756, 2103906947509450114, 2847978362983062168, 17438370209489194753])",
-    serialized: "860 bytes, digest Word([13227256643789209165, 7421342565579071121, 13867472912855175441, 1696488499270051521])",
+    note_id: "0xaff1d32af5e0d0e882d5a94186617841468704212b57563e63648ad873d3174c",
+    nullifier: "0x879384bac4e9e922988d71576583d6f264ab4391c2175b206dbac03c36472277",
+    recipient_digest: "Word([11867579848881603684, 6006585696994844808, 4196435664769905349, 15392870615192164321])",
+    attachments_commitment: "Word([353043364000201756, 2103906947509450114, 2847978362983062168, 17438370209489194753])",
+    serialized: "860 bytes, digest Word([6736785046010842377, 12894613387061357379, 984063966474336787, 6735226487517206567])",
     attachments: "[scheme=4 words=16, scheme=2 words=1]",
 };
 
 /// `mi-pos-hookdata` (ten bytes of hookData) + the `att-2` attestation.
 const GOLDEN_HOOKDATA: Anchors = Anchors {
     vector: "mi-pos-hookdata",
-    note_id: "0xe4fc7c5fcb1b232f8062b4c4aa06d12e21818f67212e25e269d7cc8d2d261fd5",
-    nullifier: "0xbde759f5f188c9627b5278522cd19b3878879724697c58bd49e8a2aec0a7c6dc",
-    recipient_digest:
-        "Word([6918311846619156983, 7998153661032130718, 17890870146669276851, 13393816309602948115])",
-    attachments_commitment:
-        "Word([17867121675036495872, 14584486229891685892, 2103155763186269017, 7340241149790238384])",
-    serialized: "892 bytes, digest Word([13563863070255213944, 786461589394534408, 758505738137364404, 12926656985559063800])",
+    note_id: "0xf11ea61566fc3cedd8367b3b4ae3af0bee29d63ff28f871dba75248d6aa1f4c0",
+    nullifier: "0x77da879d8214de28cfe886759de35396175d4beb5c926324dc91d150dbf0b285",
+    recipient_digest: "Word([13320197521365420415, 15461830341399497377, 7443517267556847472, 8660854343918263487])",
+    attachments_commitment: "Word([17867121675036495872, 14584486229891685892, 2103155763186269017, 7340241149790238384])",
+    serialized: "892 bytes, digest Word([10971024592423916534, 5803637381930678, 11233225053882035835, 18142891001345004796])",
     attachments: "[scheme=4 words=17, scheme=2 words=1]",
 };
 

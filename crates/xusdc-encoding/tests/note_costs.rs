@@ -3,11 +3,11 @@
 mod support;
 
 use anyhow::{Context, Result};
+use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
-use miden_protocol::Word;
 use miden_testing::{Auth, MockChain};
 use support::mint_transport::{
     administrator,
@@ -143,14 +143,16 @@ async fn mint_cycles(hook_data_len: usize, nonce_variant: u8) -> Result<u32> {
 
 async fn set_attester_cycles(enabled: u8) -> Result<u32> {
     let mut faucet = priced_fixture_with(|_, faucet_id| {
-        vec![XReserveSetAttesterNote::create(
-            administrator(),
-            faucet_id,
-            Word::from([21u32, 22, 23, 24]),
-            enabled,
-            &mut note_rng(2_001 + u64::from(enabled)),
-        )
-        .expect("building the benchmark set-attester note")]
+        vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                faucet_id,
+                Word::from([21u32, 22, 23, 24]),
+                enabled,
+                &mut note_rng(2_001 + u64::from(enabled)),
+            )
+            .expect("building the benchmark set-attester note"),
+        ]
     })?;
     bring_up(&mut faucet, 1).await?;
     let note = faucet.seeded_notes[1].clone();

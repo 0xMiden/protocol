@@ -33,10 +33,10 @@ use miden_testing::{Auth, MockChain};
 use miden_tx::LocalTransactionProver;
 use support::*;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote,
     FIXED_XUSDC_BURN_TAG,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
+    XReserveBurnNote,
 };
 use xusdc_encoding::vectors::load;
 use xusdc_encoding::xreserve::encoding::{CircleDomain, ForeignChainAddress, XReserveBurnItems};
@@ -95,9 +95,11 @@ fn withdrawal_payload(attachments: &NoteAttachments) -> Vec<Felt> {
         "the withdrawal-payload attachment carries exactly 3 words",
     );
     let mut felts = attachment.content().to_elements();
-    assert!(felts[XReserveBurnNote::NUM_PAYLOAD_ITEMS..]
-        .iter()
-        .all(|felt| *felt == Felt::ZERO));
+    assert!(
+        felts[XReserveBurnNote::NUM_PAYLOAD_ITEMS..]
+            .iter()
+            .all(|felt| *felt == Felt::ZERO)
+    );
     felts.truncate(XReserveBurnNote::NUM_PAYLOAD_ITEMS);
     felts
 }

@@ -36,7 +36,7 @@ use miden_tx::TransactionExecutorError;
 use support::*;
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
-use xusdc_encoding::vectors::{load, MiVector};
+use xusdc_encoding::vectors::{MiVector, load};
 use xusdc_encoding::xreserve::encoding::Signature;
 
 /// Deterministic note rng for the production admin notes (serial only; never affects the gate).
@@ -168,14 +168,16 @@ fn mint_fixture(extra_notes: impl Fn(AccountId) -> Vec<Note>) -> Result<Producti
         let commitment =
             gen_attester(1, &payload_for(recipient, MINT_AMOUNT, 0, faucet_id)).commitment;
         let route = faucet_id;
-        let mut notes = vec![XReserveSetAttesterNote::create(
-            administrator(),
-            route,
-            commitment,
-            1,
-            &mut prod_note_rng(952),
-        )
-        .expect("building the administrator set_attester note")];
+        let mut notes = vec![
+            XReserveSetAttesterNote::create(
+                administrator(),
+                route,
+                commitment,
+                1,
+                &mut prod_note_rng(952),
+            )
+            .expect("building the administrator set_attester note"),
+        ];
         notes.extend(extra_notes(faucet_id));
         notes
     })
@@ -323,8 +325,10 @@ async fn administrator_has_no_unpause_path() -> Result<()> {
 #[tokio::test]
 async fn dom_pauser_pause_halts_mint() -> Result<()> {
     let mut pf = mint_fixture(|faucet_id| {
-        vec![stock_pause_note(dom_pauser(), faucet_id, 7)
-            .expect("building the DOM_PAUSER pause note")]
+        vec![
+            stock_pause_note(dom_pauser(), faucet_id, 7)
+                .expect("building the DOM_PAUSER pause note"),
+        ]
     })?;
     bring_up(&mut pf, 2).await?; // set_attester + pause
     assert_eq!(

@@ -1,5 +1,5 @@
 [workspace]
-members = ["faucet_extension", "faucet_burn_policy"]
+members = ["faucet_burn_policy", "faucet_extension"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,7 +9,7 @@ version = "0.1.0"
 # integrated into `StandardsLib` and loaded into every executor automatically (by
 # `TransactionMastStore::new`).
 [workspace.dependencies]
-xreserve        = { linkage = "static", version = "0.1.0" }
-miden-core      = { linkage = "dynamic", version = "0.33" }
+miden-core      = { linkage = "dynamic", version = "0.34" }
 miden-protocol  = { linkage = "dynamic", version = "0.17.0" }
 miden-standards = { linkage = "dynamic", version = "0.17.0" }
+xreserve        = { linkage = "static", version = "0.1.0" }

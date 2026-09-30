@@ -27,6 +27,7 @@
 //! There is no ownership note either: the faucet installs no two-step ownership component, so
 //! rotation is a grant and a revoke of the `ADMIN` role through the standard role-action note.
 
+use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -41,7 +42,6 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::Felt;
 
 mod min_burn_amount;
 mod set_attester;

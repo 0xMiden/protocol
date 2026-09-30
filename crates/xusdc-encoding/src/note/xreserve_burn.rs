@@ -35,10 +35,10 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::{Felt, Word, WORD_SIZE};
+use miden_protocol::{Felt, WORD_SIZE, Word};
 use miden_standards::note::BurnNote;
 
-use crate::xreserve::encoding::{XReserveBurnItems, BURN_NOTE_ITEMS_FELTS};
+use crate::xreserve::encoding::{BURN_NOTE_ITEMS_FELTS, XReserveBurnItems};
 
 /// The fixed tag every xUSDC burn note carries — ASCII `"BURN"`.
 ///

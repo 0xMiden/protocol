@@ -9,11 +9,11 @@ mod support;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
-use miden_protocol::account::{AccountComponent, StorageSlotContent, StorageSlotName};
 use miden_protocol::Word;
+use miden_protocol::account::{AccountComponent, StorageSlotContent, StorageSlotName};
 use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccountNoteAllowlist};
-use miden_standards::note::config::{ConstantFeePolicyConfigNote, NetworkAccountConfigNote};
 use miden_standards::note::FeeSponsorshipNote;
+use miden_standards::note::config::{ConstantFeePolicyConfigNote, NetworkAccountConfigNote};
 use support::*;
 use xusdc_encoding::account::xreserve::XReserveStablecoinBuilder;
 

@@ -10,19 +10,19 @@
 use std::env;
 use std::path::Path;
 
-use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_assembly::ProjectTargetSelector;
+use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_core_lib::CoreLibrary;
 use miden_package_registry::{InMemoryPackageRegistry, PackageCache};
-use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::ProtocolLib;
+use miden_protocol::transaction::TransactionKernel;
 use miden_protocol_build_utils::{
+    ErrorModule,
+    PROJECT_MANIFEST,
     assemble_project,
     assemble_workspace,
     extract_all_masm_errors,
     generate_error_file,
-    ErrorModule,
-    PROJECT_MANIFEST,
 };
 use miden_standards::StandardsLib;
 

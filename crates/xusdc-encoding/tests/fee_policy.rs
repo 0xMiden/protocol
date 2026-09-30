@@ -42,7 +42,7 @@ use miden_standards::note::config::{
     RbacConfigNote,
 };
 use miden_standards::note::{FeeSponsorshipNote, MintNote, P2idNote, TxFeeNote};
-use miden_testing::{assert_transaction_executor_error, Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::NetworkNotePricer;
 use support::mint_transport::commit;
 use support::*;
@@ -54,8 +54,8 @@ use xusdc_encoding::note::costs::{
 };
 use xusdc_encoding::note::xreserve_admin::XReserveSetAttesterNote;
 use xusdc_encoding::note::xreserve_burn::{
-    XReserveBurnNote,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
+    XReserveBurnNote,
 };
 use xusdc_encoding::note::xreserve_mint::DepositAttestation;
 use xusdc_encoding::xreserve::encoding::{ForeignChainAddress, Signature, XReserveBurnItems};

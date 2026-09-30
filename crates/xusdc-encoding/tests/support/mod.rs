@@ -34,9 +34,9 @@ use anyhow::{Context, Result};
 // keypair+signature, sha3 the keccak digest, miden-crypto `PublicKey::to_commitment` the
 // allowlist-key oracle, miden_protocol `bytes_to_packed_u32_elements` the advice felt packing.
 use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey};
+use miden_crypto::SequentialCommit;
 use miden_crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_crypto::utils::Deserializable;
-use miden_crypto::SequentialCommit;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
@@ -108,14 +108,14 @@ pub use w2admin::{
 };
 use xusdc_encoding::account::xreserve::builder::XRESERVE_BURN_POLICY_PROC_PATH;
 use xusdc_encoding::account::xreserve::{
-    XReserveAdminAuthority,
-    XReserveFaucetExtension,
-    XReserveStablecoinBuilder,
-    XReserveStablecoinBuilderError,
     ATTEST_ADMIN_ROLE,
     BLK_MANAGER_ROLE,
     DOM_PAUSER_ROLE,
     DOM_UNPAUSER_ROLE,
+    XReserveAdminAuthority,
+    XReserveFaucetExtension,
+    XReserveStablecoinBuilder,
+    XReserveStablecoinBuilderError,
 };
 use xusdc_encoding::errors;
 use xusdc_encoding::note::xreserve_admin::{XReserveMinBurnAmountNote, XReserveSetAttesterNote};
@@ -1076,7 +1076,7 @@ pub fn gen_attester(seed: u64, payload: &[u8]) -> AttesterVector {
     let sk = SigningKey::from_slice(&key_bytes).expect("the seed yields a valid non-zero scalar");
     let pk33: [u8; 33] = sk
         .verifying_key()
-        .to_encoded_point(true)
+        .to_sec1_point(true)
         .as_bytes()
         .try_into()
         .expect("compressed secp256k1 pubkey is 33 bytes");
@@ -1085,8 +1085,7 @@ pub fn gen_attester(seed: u64, payload: &[u8]) -> AttesterVector {
     hasher.update(payload);
     let digest: [u8; 32] = hasher.finalize().into();
 
-    let (sig, recid): (K256Signature, RecoveryId) =
-        sk.sign_prehash_recoverable(&digest).expect("k256 prehash sign");
+    let (sig, recid): (K256Signature, RecoveryId) = sk.sign_prehash_recoverable(&digest);
     let mut sig65 = [0u8; 65];
     sig65[..64].copy_from_slice(sig.to_bytes().as_ref());
     sig65[64] = recid.to_byte();
@@ -1512,6 +1511,7 @@ pub struct GuardedMint {
 /// `OracleAllowAll` path bypasses the builder and is unaffected. The immutable control
 /// (`set_max_supply_immutable_traps`) builds its immutable fixture via the builder-bypassing
 /// [`setup_bare_immutable_faucet`] instead of this helper.
+#[allow(clippy::too_many_arguments)]
 pub fn setup_guarded_mint_account(
     selection: GuardSelection,
     max_supply: u64,
@@ -1718,6 +1718,7 @@ fn seeded_dom_roles_rbac_component(
 /// Builds test components with either the custom burn policy or `BurnAllowAll` active.
 /// Both versions use the same components and minimum burn amount so tests can compare the policies.
 /// Production allows only the custom burn policy.
+#[allow(clippy::too_many_arguments)]
 fn oracle_burn_components(
     faucet: FungibleFaucet,
     xreserve_component: AccountComponent,
