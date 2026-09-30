@@ -11,17 +11,14 @@ use serde::{Deserialize, Serialize};
 ///
 /// It names Miden as the `remoteDomain` a deposit is addressed to and the faucet is configured
 /// with, and the source chains a withdrawal can be sent to as its destination domain. Every `u32`
-/// is a well-formed identifier; which one Circle assigns Miden is still open.
+/// is a well-formed identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CircleDomain(u32);
 
 impl CircleDomain {
     /// Miden's domain identifier.
-    ///
-    /// TODO: Circle has not assigned Miden a domain yet, so this is a placeholder. Replace it with
-    /// the real value once Circle confirms it.
-    pub const MIDEN: Self = Self(0);
+    pub const MIDEN: Self = Self(10_007);
 
     /// Wraps a Circle domain identifier.
     pub const fn new(value: u32) -> Self {
