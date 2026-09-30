@@ -25,7 +25,13 @@ mod support;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::note::{NoteAttachmentScheme, NoteAttachments, NoteTag, NoteType};
+use miden_protocol::note::{
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteTag,
+    NoteType,
+};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -36,9 +42,15 @@ use miden_usdcx::note::xreserve_burn::{
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME,
     XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_WORDS,
     XReserveBurnNote,
+    XUsdcBurnAttachment,
 };
 use miden_usdcx::vectors::load;
-use miden_usdcx::xreserve::encoding::{CircleDomain, ForeignChainAddress, XReserveBurnItems};
+use miden_usdcx::xreserve::encoding::{
+    CircleDomain,
+    EncodingError,
+    ForeignChainAddress,
+    XReserveBurnItems,
+};
 use support::*;
 
 // HARNESS
@@ -229,6 +241,25 @@ fn burn_note_payload_schema() {
     let decoded = XReserveBurnItems::decode(&payload_felts).expect("decoding DC-7 items");
     assert_eq!(decoded, items, "attachment payload decode == input items (DC-7 order)");
 
+    let attachment = note
+        .attachments()
+        .iter()
+        .find(|attachment| {
+            attachment.attachment_scheme().as_u16() == XRESERVE_BURN_WITHDRAWAL_ATTACHMENT_SCHEME
+        })
+        .unwrap();
+    let decoded = XUsdcBurnAttachment::try_from(attachment).unwrap();
+    assert_eq!(decoded.items(), &items);
+    assert_eq!(decoded.into_items(), items);
+
+    let mut words = attachment.content().as_words().to_vec();
+    words[2][1] = Felt::ONE;
+    words[2][2] = Felt::ONE;
+    words[2][3] = Felt::ONE;
+    let nonzero_padding =
+        NoteAttachment::with_words(attachment.attachment_scheme(), words).unwrap();
+    assert_eq!(XUsdcBurnAttachment::try_from(&nonzero_padding).unwrap().into_items(), items);
+
     // NoteAssets carries the burned xUSDC FungibleAsset with the separately supplied amount.
     let asset = note.assets().iter_fungible().next().expect("note carries one fungible asset");
     assert_eq!(asset.faucet_id(), faucet, "asset issued by the faucet");
@@ -247,6 +278,33 @@ fn burn_note_payload_schema() {
     // in the withdrawal-payload attachment, so they are read from the payload the listener decodes
     // rather than inferred from a metadata field that means something else.
     assert_eq!(note.metadata().sender(), sender, "metadata.sender == depositor");
+}
+
+#[test]
+fn burn_attachment_rejects_malformed_payloads() {
+    let attachment = NoteAttachment::from(&XUsdcBurnAttachment::new(sample_items()));
+    for (name, scheme, word_count, invalid_limb) in [
+        ("wrong scheme", 7, 3, None),
+        ("too few words", 6, 2, None),
+        ("too many words", 6, 4, None),
+        ("domain above u32", 6, 3, Some(0)),
+        ("recipient limb above u32", 6, 3, Some(8)),
+    ] {
+        let mut words = attachment.content().as_words().to_vec();
+        words.resize(word_count, Word::default());
+        if let Some(index) = invalid_limb {
+            words[index / 4][index % 4] = Felt::new(u64::from(u32::MAX) + 1).unwrap();
+        }
+        let malformed =
+            NoteAttachment::with_words(NoteAttachmentScheme::new(scheme).unwrap(), words).unwrap();
+        assert!(
+            matches!(
+                XUsdcBurnAttachment::try_from(&malformed),
+                Err(EncodingError::BurnItemsMalformed)
+            ),
+            "{name}",
+        );
+    }
 }
 
 // 3 — PRODUCING SIDE: the constructor can only make Public notes (it takes no note-type argument)
