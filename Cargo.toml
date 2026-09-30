@@ -13,6 +13,7 @@ members = [
   "crates/miden-testing",
   "crates/miden-tx",
   "crates/miden-tx-batch",
+  "crates/miden-usdcx",
 ]
 resolver = "3"
 
@@ -76,6 +77,7 @@ fs-err           = { default-features = false, version = "3" }
 getrandom        = { version = "0.4" }
 getrandom-03     = { package = "getrandom", version = "0.3" }
 heck             = { version = "0.5" }
+k256             = { default-features = false, version = "0.14" }
 primitive-types  = { default-features = false, version = "0.14" }
 proc-macro-crate = { version = "3.4" }
 proc-macro2      = { version = "1" }
@@ -90,6 +92,7 @@ regex            = { version = "1.11" }
 rstest           = { version = "0.26" }
 serde            = { default-features = false, version = "1.0" }
 serde_json       = { default-features = false, version = "1.0" }
+sha3             = { default-features = false, version = "0.12" }
 syn              = { features = ["full"], version = "2" }
 thiserror        = { default-features = false, version = "2.0" }
 tokio            = { default-features = false, features = ["sync"], version = "1" }
