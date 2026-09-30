@@ -170,6 +170,19 @@ def extract_tree(git_dir: Path, sha: str, dest: Path, path: str | None = None) -
     return True
 
 
+def export_attribute_deviation(git_dir: Path, shas: list[str]) -> str | None:
+    """`git archive` applies export-ignore and export-subst; say so when a tree uses them."""
+    for sha in shas:
+        proc = run(
+            ["git", "-C", str(git_dir), "grep", "-l", "-E", "export-(ignore|subst)", sha, "--", ".gitattributes", "*/.gitattributes"],
+            check=False,
+            timeout=60,
+        )
+        if proc.stdout.strip():
+            return "the repository sets export-ignore or export-subst attributes, so some files may be missing or rewritten in the replay"
+    return None
+
+
 # --- isolation -----------------------------------------------------------
 
 
@@ -201,14 +214,15 @@ def build_template(source: Path, base_sha: str, review_sha: str, work_root: Path
     extract_tree(source, base_sha, base_dir)
     shutil.rmtree(base_dir / ".claude", ignore_errors=True)
     _git("init", "-q", "-b", "main", str(base_dir), env=env)
-    _git("add", "-A", cwd=base_dir, env=env)
+    # --force: every file came from a commit, so ignore rules must not drop any of them
+    _git("add", "-A", "--force", cwd=base_dir, env=env)
     _git("commit", "-q", "--allow-empty", "--no-verify", "-m", BASE_MESSAGE, cwd=base_dir, env=env)
 
     extract_tree(source, review_sha, template)
     shutil.rmtree(template / ".claude", ignore_errors=True)
     shutil.move(str(base_dir / ".git"), str(template / ".git"))
     shutil.rmtree(base_dir)
-    _git("add", "-A", cwd=template, env=env)
+    _git("add", "-A", "--force", cwd=template, env=env)
     _git("commit", "-q", "--allow-empty", "--no-verify", "-m", REVIEW_MESSAGE, cwd=template, env=env)
     with (template / ".git" / "info" / "exclude").open("a", encoding="utf-8") as exclude:
         exclude.write("/.claude/\n")

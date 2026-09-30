@@ -190,6 +190,7 @@ def select_review_round(pr: dict[str, Any], skills_dir: str = ".claude/skills", 
         raise BenchError(f"round {round_number} does not exist; the pull request has {len(rounds)} review round(s)")
     chosen = rounds[round_number - 1]
     review_sha = chosen["sha"]
+    round_of = {r["sha"]: r["round"] for r in rounds}
 
     candidates: list[dict[str, Any]] = []
     excluded: list[dict[str, str]] = []
@@ -207,8 +208,11 @@ def select_review_round(pr: dict[str, Any], skills_dir: str = ".claude/skills", 
         if root["author"]["login"] == pr_author:
             excluded.append({"thread_id": thread["id"], "url": root.get("url", ""), "reason": "started by the PR author"})
             continue
-        if (root.get("originalCommit") or {}).get("oid") != review_sha:
-            excluded.append({"thread_id": thread["id"], "url": root.get("url", ""), "reason": "later review round"})
+        commit = (root.get("originalCommit") or {}).get("oid")
+        if commit != review_sha:
+            other = round_of.get(commit)
+            reason = "another commit" if other is None else ("earlier" if other < round_number else "later") + " review round"
+            excluded.append({"thread_id": thread["id"], "url": root.get("url", ""), "reason": reason})
             continue
         candidates.append(
             {

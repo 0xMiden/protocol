@@ -141,7 +141,8 @@ class SelectReviewRoundTest(unittest.TestCase):
         pr = github.select_review_round(pr_fixture(), round_number=2)
         self.assertEqual(pr["review_sha"], "c2")
         self.assertEqual([c["thread_id"] for c in pr["candidates"]], ["th-later"])
-        self.assertIn("later review round", {e["reason"] for e in pr["excluded_threads"]})
+        self.assertIn("earlier review round", {e["reason"] for e in pr["excluded_threads"]})
+        self.assertNotIn("later review round", {e["reason"] for e in pr["excluded_threads"]})
 
     def test_a_missing_round_is_an_error(self):
         with self.assertRaises(BenchError):

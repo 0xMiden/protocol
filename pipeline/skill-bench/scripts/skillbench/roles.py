@@ -52,6 +52,8 @@ def agents_json(role: Role, *, name: str | None = None, add_tools: tuple[str, ..
     spec: dict[str, object] = {"description": role.description, "prompt": role.prompt}
     if role.tools is not None:
         spec["tools"] = role.tools + [t for t in add_tools if t not in role.tools]
+    if role.model:
+        spec["model"] = role.model  # keep the agent's own model, as `--agent <name>` would
     return json.dumps({name or role.name: spec})
 
 

@@ -47,11 +47,14 @@ def prepare_workspaces(run_dir: Path, config: dict[str, Any]) -> tuple[Path, dic
     source = workspace.resolve_source(config["repo"], shas, config.get("source_repo"), cache_dir())
     work_root = workspace.new_work_root(config.get("work_dir"))
     template = workspace.build_template(source, pr["base_sha"], pr["review_sha"], work_root)
+    export_note = workspace.export_attribute_deviation(source, [pr["base_sha"], pr["review_sha"]])
     built = {}
     for arm in arms:
         ws = workspace.materialize(template, arm, source, pr["base_sha"], work_root, config["skills_dir"])
         if pr["modified_claude_files"]:
             ws.deviations.append("the PR's own changes under .claude/ are not part of the replayed diff")
+        if export_note:
+            ws.deviations.append(export_note)
         built[arm.name] = ws
     return work_root, built
 
