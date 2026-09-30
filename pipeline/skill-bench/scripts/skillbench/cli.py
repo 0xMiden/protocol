@@ -8,12 +8,14 @@ a stage can be re-run on stored artifacts without repeating earlier ones.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import __version__, github
+from . import __version__, github, workspace
 from .util import BenchError, read_json, write_json
 
 DEFAULT_OUT = "skill-bench-results"
@@ -26,6 +28,9 @@ def _config_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run-dir", help="use this exact run directory instead of a new timestamped one")
     parser.add_argument("--skills-dir", default=".claude/skills", help="skills directory inside the repository (default: .claude/skills)")
     parser.add_argument("--round", type=int, default=1, help="which human review round to replay, 1 = the first (default: 1)")
+    parser.add_argument("--arms", default="at-pr,none", help="comma-separated arms: at-pr, none, ref:<sha> (default: at-pr,none)")
+    parser.add_argument("--source-repo", help="local clone that contains the PR's commits (default: this checkout, else a cached mirror)")
+    parser.add_argument("--work-dir", help="parent directory for replay workspaces; must be outside any project (default: the system temp directory)")
 
 
 def _new_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -40,6 +45,9 @@ def _new_config(args: argparse.Namespace) -> dict[str, Any]:
         "number": number,
         "skills_dir": args.skills_dir.rstrip("/"),
         "round": args.round,
+        "arms": [workspace.parse_arm(a).name for a in args.arms.split(",") if a.strip()],
+        "source_repo": args.source_repo,
+        "work_dir": args.work_dir,
     }
 
 
@@ -77,6 +85,36 @@ def stage_fetch(run_dir: Path, config: dict[str, Any]) -> None:
     )
 
 
+def cache_dir() -> Path:
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "skill-bench"
+
+
+def prepare_workspaces(run_dir: Path, config: dict[str, Any]) -> tuple[Path, dict[str, workspace.Workspace]]:
+    """Build one sealed workspace per arm under a fresh work root outside any project."""
+    pr = read_json(run_dir / "pr.json")
+    arms = [workspace.parse_arm(a) for a in config["arms"]]
+    shas = [pr["base_sha"], pr["review_sha"]] + [a.ref for a in arms if a.ref]
+    source = workspace.resolve_source(config["repo"], shas, config.get("source_repo"), cache_dir())
+    work_root = workspace.new_work_root(config.get("work_dir"))
+    template = workspace.build_template(source, pr["base_sha"], pr["review_sha"], work_root)
+    built = {}
+    for arm in arms:
+        ws = workspace.materialize(template, arm, source, pr["base_sha"], work_root, config["skills_dir"])
+        if pr["modified_claude_files"]:
+            ws.deviations.append("the PR's own changes under .claude/ are not part of the replayed diff")
+        built[arm.name] = ws
+    return work_root, built
+
+
+def _cmd_workspace(args: argparse.Namespace) -> None:
+    run_dir, config = load_run(args.run_dir)
+    work_root, built = prepare_workspaces(run_dir, config)
+    summary = {name: {"path": str(ws.path), **ws.describe()} for name, ws in built.items()}
+    print(json.dumps(summary, indent=2))
+    print(f"workspaces are under {work_root}; delete it when done", file=sys.stderr)
+
+
 def _cmd_fetch(args: argparse.Namespace) -> None:
     config = _new_config(args)
     run_dir = _create_run_dir(args, config)
@@ -95,6 +133,10 @@ def build_parser() -> argparse.ArgumentParser:
     fetch = sub.add_parser("fetch", help="create a run directory and fetch one human review round of the PR")
     _config_options(fetch)
     fetch.set_defaults(func=_cmd_fetch)
+
+    ws = sub.add_parser("workspace", help="build the sealed replay workspaces of a run for inspection")
+    ws.add_argument("--run-dir", required=True)
+    ws.set_defaults(func=_cmd_workspace)
     return parser
 
 
